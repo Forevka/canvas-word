@@ -7,16 +7,28 @@
     <style>
       html, body { margin: 0; height: 100%; }
       body { display: flex; flex-direction: column; font-family: Arial, sans-serif; }
+      /* Word 2024-style ribbon: labeled groups, icon buttons, divider rules. */
       #toolbar {
-        flex: 0 0 auto; display: flex; gap: 4px; align-items: center;
-        padding: 6px 12px; background: #f8f9fa; border-bottom: 1px solid #dadce0;
+        flex: 0 0 auto; display: flex; align-items: stretch; flex-wrap: wrap;
+        padding: 4px 8px 2px; background: #f9fafb; border-bottom: 1px solid #d0d4d9;
       }
+      .rib-group { display: flex; flex-direction: column; align-items: center; padding: 0 7px; position: relative; }
+      .rib-group + .rib-group::before {
+        content: ""; position: absolute; left: 0; top: 4px; bottom: 4px; width: 1px; background: #e2e5e9;
+      }
+      .rib-controls { display: flex; align-items: center; gap: 2px; height: 34px; }
+      .rib-label { font-size: 10px; color: #6b7280; padding: 0 2px 2px; white-space: nowrap; user-select: none; }
       #toolbar button {
-        min-width: 30px; height: 28px; border: 1px solid transparent; border-radius: 4px;
-        background: transparent; cursor: pointer; font-size: 14px; color: #3c4043;
+        min-width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
+        border: 1px solid transparent; border-radius: 4px; background: transparent; cursor: pointer;
+        color: #3b3f44; font-size: 13px; padding: 0 4px;
       }
-      #toolbar button:hover { background: #e8eaed; }
-      #toolbar .sep { width: 1px; height: 20px; background: #dadce0; margin: 0 6px; }
+      #toolbar button:hover { background: #e4e7eb; }
+      #toolbar button:active { background: #d8dce1; }
+      #toolbar button svg { width: 16px; height: 16px; display: block; }
+      #toolbar select, #toolbar input[type="number"] {
+        height: 26px; border: 1px solid #d0d4d9; border-radius: 4px; background: #fff; font-size: 13px;
+      }
       #app { flex: 1 1 auto; min-height: 0; overflow: auto; background: #e8eaed; position: relative; }
     </style>
   </head>

@@ -89,14 +89,19 @@ import {
   toggleHighlight,
   toggleVerticalAlign,
   setLinkCmd,
+  insertPageBreak,
   insertSectionBreak,
   applyPageSetup,
   pageSetupAt,
   setBandVariantEnabled,
   insertTocCmd,
   insertFootnoteCmd,
+  insertContentControl,
+  removeContentControl,
+  sdtAtPosition,
 } from "./editor/commands";
 import { defaultStylesheet } from "./model/stylesheet";
+import { ICONS } from "./ui/icons";
 
 const TOOLBAR_SVG =
   "data:image/svg+xml," +
@@ -107,29 +112,52 @@ const TOOLBAR_SVG =
       `</svg>`,
   );
 
+// One function assigned by the find-bar block below; the ribbon's Find button
+// and the global Ctrl+F shortcut share it.
+let openFind: () => void = () => {};
+
 const toolbar = document.getElementById("toolbar");
 if (toolbar) {
-  const btn = (label: string, title: string, onClick: () => void, style = ""): void => {
+  // ---- ribbon scaffolding: labeled groups of icon buttons (Word 2024) ----
+  let controls: HTMLDivElement = document.createElement("div");
+  const group = (label: string): void => {
+    const g = document.createElement("div");
+    g.className = "rib-group";
+    controls = document.createElement("div");
+    controls.className = "rib-controls";
+    const l = document.createElement("div");
+    l.className = "rib-label";
+    l.textContent = label;
+    g.append(controls, l);
+    toolbar.appendChild(g);
+  };
+  const btn = (icon: string, title: string, onClick: () => void): HTMLButtonElement => {
     const b = document.createElement("button");
-    b.textContent = label;
+    b.innerHTML = icon;
     b.title = title;
-    if (style) b.setAttribute("style", style);
     // mousedown must not steal focus from the IME proxy
     b.addEventListener("mousedown", (e) => e.preventDefault());
     b.addEventListener("click", onClick);
-    toolbar.appendChild(b);
+    controls.appendChild(b);
+    return b;
   };
-  const sep = (): void => {
-    const s = document.createElement("div");
-    s.className = "sep";
-    toolbar.appendChild(s);
+  /** Letter buttons (B, I, U, x²…) — Word renders these as styled text. */
+  const txtBtn = (label: string, title: string, onClick: () => void, style = ""): HTMLButtonElement => {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.title = title;
+    if (style) b.style.cssText += style;
+    b.addEventListener("mousedown", (e) => e.preventDefault());
+    b.addEventListener("click", onClick);
+    controls.appendChild(b);
+    return b;
   };
   const select = (title: string, width: number): HTMLSelectElement => {
     const s = document.createElement("select");
     s.title = title;
-    s.style.cssText = `height:28px;border:1px solid #dadce0;border-radius:4px;background:#fff;font-size:13px;width:${width}px;`;
+    s.style.width = `${width}px`;
     s.addEventListener("mousedown", (e) => e.stopPropagation());
-    toolbar.appendChild(s);
+    controls.appendChild(s);
     return s;
   };
   const opt = (s: HTMLSelectElement, value: string, label: string): void => {
@@ -139,34 +167,31 @@ if (toolbar) {
     s.appendChild(o);
   };
 
-  // ---- named styles gallery ----
-  const styleSelect = select("Paragraph style", 110);
-  const stylesheet = (): ReturnType<typeof defaultStylesheet> =>
-    editor.getDocument().stylesheet ?? defaultStylesheet();
-  const rebuildStyleOptions = (): void => {
-    styleSelect.textContent = "";
-    for (const s of stylesheet().styles) opt(styleSelect, s.id, s.name);
-  };
-  rebuildStyleOptions();
-  styleSelect.addEventListener("change", () => {
-    editor.dispatch(applyNamedStyle(styleSelect.value));
-    editor.focus();
+  // ---- File ----
+  group("File");
+  btn(ICONS.open, "Open .docx", () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      if (file) void openDocxFile(file);
+    });
+    input.click();
   });
-  btn("✎", "Update current style to match selection", () => {
-    editor.dispatch(updateStyleToSelection(styleSelect.value));
-  });
-  btn("✚", "New style from selection…", () => {
-    const name = prompt("New style name:");
-    if (name) {
-      editor.dispatch(createStyleFromSelection(name));
-      rebuildStyleOptions();
-      syncToolbar();
-    }
-  });
-  sep();
 
-  // ---- font family / size / line spacing ----
-  const fontSelect = select("Font family", 130);
+  // ---- Undo ----
+  group("Undo");
+  btn(ICONS.undo, "Undo (Ctrl+Z)", () => editor.undo());
+  btn(ICONS.redo, "Redo (Ctrl+Y)", () => editor.redo());
+
+  // ---- Clipboard ----
+  group("Clipboard");
+  btn(ICONS.painter, "Format painter (double-click = sticky)", () => editor.armFormatPainter(false));
+
+  // ---- Font ----
+  group("Font");
+  const fontSelect = select("Font family", 124);
   const FONTS = [
     "Georgia, serif",
     "Arial, sans-serif",
@@ -181,13 +206,12 @@ if (toolbar) {
     editor.setCharStyle({ fontFamily: fontSelect.value });
     editor.focus();
   });
-
   const sizeInput = document.createElement("input");
   sizeInput.type = "number";
   sizeInput.min = "6";
   sizeInput.max = "96";
   sizeInput.title = "Font size (px)";
-  sizeInput.style.cssText = "width:48px;height:26px;border:1px solid #dadce0;border-radius:4px;font-size:13px;padding:0 4px;";
+  sizeInput.style.cssText = "width:46px;padding:0 4px;";
   sizeInput.addEventListener("mousedown", (e) => e.stopPropagation());
   sizeInput.addEventListener("change", () => {
     const v = Number(sizeInput.value);
@@ -196,20 +220,77 @@ if (toolbar) {
       editor.focus();
     }
   });
-  toolbar.appendChild(sizeInput);
+  controls.appendChild(sizeInput);
+  txtBtn("B", "Bold (Ctrl+B)", () => editor.toggleStyle("bold"), "font-weight:700;");
+  txtBtn("I", "Italic (Ctrl+I)", () => editor.toggleStyle("italic"), "font-style:italic;font-family:Georgia,serif;");
+  txtBtn("U", "Underline (Ctrl+U)", () => editor.toggleStyle("underline"), "text-decoration:underline;");
+  txtBtn("ab", "Strikethrough", () => editor.toggleStyle("strikethrough"), "text-decoration:line-through;");
+  txtBtn("x²", "Superscript", () => editor.dispatch(toggleVerticalAlign("super")));
+  txtBtn("x₂", "Subscript", () => editor.dispatch(toggleVerticalAlign("sub")));
+  btn(ICONS.highlight, "Highlight (yellow)", () => editor.dispatch(toggleHighlight()));
+  btn(ICONS.link, "Insert/remove hyperlink", () => {
+    const url = prompt("Link URL (empty to remove):");
+    if (url !== null) editor.dispatch(setLinkCmd(url.trim() === "" ? null : url.trim()));
+  });
 
-  const spacingSelect = select("Line spacing", 58);
+  // ---- Paragraph ----
+  group("Paragraph");
+  btn(ICONS.bullets, "Bulleted list", () => editor.dispatch(toggleList("bullet")));
+  btn(ICONS.numbering, "Numbered list (Tab/Shift+Tab change level)", () => editor.dispatch(toggleList("decimal")));
+  btn(ICONS.alignLeft, "Align left", () => editor.align("left"));
+  btn(ICONS.alignCenter, "Center", () => editor.align("center"));
+  btn(ICONS.alignRight, "Align right", () => editor.align("right"));
+  btn(ICONS.alignJustify, "Justify", () => editor.align("justify"));
+  const spacingSelect = select("Line spacing", 56);
   for (const v of ["1", "1.15", "1.35", "1.5", "2"]) opt(spacingSelect, v, `${v}×`);
   spacingSelect.addEventListener("change", () => {
     editor.dispatch(setParaProps({ lineHeight: Number(spacingSelect.value) }));
     editor.focus();
   });
-  sep();
+
+  // ---- Styles ----
+  group("Styles");
+  const styleSelect = select("Paragraph style", 128);
+  const stylesheet = (): ReturnType<typeof defaultStylesheet> =>
+    editor.getDocument().stylesheet ?? defaultStylesheet();
+  const rebuildStyleOptions = (): void => {
+    styleSelect.textContent = "";
+    for (const s of stylesheet().styles) opt(styleSelect, s.id, s.name);
+  };
+  rebuildStyleOptions();
+  styleSelect.addEventListener("change", () => {
+    editor.dispatch(applyNamedStyle(styleSelect.value));
+    editor.focus();
+  });
+  btn(ICONS.stylePencil, "Update current style to match selection", () => {
+    editor.dispatch(updateStyleToSelection(styleSelect.value));
+  });
+  btn(ICONS.styleNew, "New style from selection…", () => {
+    const name = prompt("New style name:");
+    if (name) {
+      editor.dispatch(createStyleFromSelection(name));
+      rebuildStyleOptions();
+      syncToolbar();
+    }
+  });
 
   // toolbar controls mirror the caret formatting
+  let lastStylesheet = editor.getDocument().stylesheet ?? null;
   syncToolbar = (): void => {
+    // A .docx import swaps the whole stylesheet — rebuild the gallery so
+    // imported style ids (Heading 1, …) resolve instead of sticking on Normal.
+    const sheet = editor.getDocument().stylesheet ?? null;
+    if (sheet !== lastStylesheet) {
+      lastStylesheet = sheet;
+      rebuildStyleOptions();
+    }
     const f = editor.currentFormat();
-    if (f.styleId && [...styleSelect.options].some((o) => o.value === f.styleId)) {
+    if (f.styleId) {
+      if (![...styleSelect.options].some((o) => o.value === f.styleId)) {
+        // Paragraph references a style the gallery doesn't list (importer kept
+        // the ref but the sheet lacks it) — surface it rather than lying.
+        opt(styleSelect, f.styleId, f.styleId);
+      }
       styleSelect.value = f.styleId;
     }
     if (f.fontFamily) {
@@ -225,85 +306,94 @@ if (toolbar) {
     }
   };
 
-  btn("↶", "Undo (Ctrl+Z)", () => editor.undo());
-  btn("↷", "Redo (Ctrl+Y)", () => editor.redo());
-  sep();
-  btn("B", "Bold (Ctrl+B)", () => editor.toggleStyle("bold"), "font-weight:700");
-  btn("I", "Italic (Ctrl+I)", () => editor.toggleStyle("italic"), "font-style:italic");
-  btn("U", "Underline (Ctrl+U)", () => editor.toggleStyle("underline"), "text-decoration:underline");
-  btn("S", "Strikethrough", () => editor.toggleStyle("strikethrough"), "text-decoration:line-through");
-  btn("🖍", "Highlight (yellow)", () => editor.dispatch(toggleHighlight()));
-  btn("x²", "Superscript", () => editor.dispatch(toggleVerticalAlign("super")));
-  btn("x₂", "Subscript", () => editor.dispatch(toggleVerticalAlign("sub")));
-  btn("🔗", "Insert/remove hyperlink", () => {
-    const url = prompt("Link URL (empty to remove):");
-    if (url !== null) editor.dispatch(setLinkCmd(url.trim() === "" ? null : url.trim()));
-  });
-  btn("🖌", "Format painter (double-click = sticky)", () => editor.armFormatPainter(false));
-  sep();
-  btn("•≡", "Bulleted list", () => editor.dispatch(toggleList("bullet")));
-  btn("1≡", "Numbered list (Tab/Shift+Tab change level)", () => editor.dispatch(toggleList("decimal")));
-  sep();
-  // alignment routes to the selected image when one is selected
-  btn("⫷", "Align left", () => editor.align("left"));
-  btn("⫶", "Center", () => editor.align("center"));
-  btn("⫸", "Align right", () => editor.align("right"));
-  btn("☰", "Justify", () => editor.align("justify"));
-  sep();
-  btn("🖼", "Insert image", () => {
+  // ---- Insert ----
+  group("Insert");
+  btn(ICONS.image, "Insert image", () => {
     editor.dispatch(insertImage(TOOLBAR_SVG, 280, 100)); // top-level caret
     editor.dispatch(insertImageInCell(TOOLBAR_SVG, 280, 100)); // table-cell caret
   });
-  btn("⊞", "Insert 3×3 table", () => editor.dispatch(insertTable(3, 3)));
-  sep();
-  // table group — acts on the cell containing the caret (no-op outside tables)
-  btn("⤒+", "Insert row above", () => editor.dispatch(insertTableRowCmd("above")));
-  btn("⤓+", "Insert row below", () => editor.dispatch(insertTableRowCmd("below")));
-  btn("⇤+", "Insert column left", () => editor.dispatch(insertTableColumnCmd("left")));
-  btn("⇥+", "Insert column right", () => editor.dispatch(insertTableColumnCmd("right")));
-  btn("─✕", "Delete row", () => editor.dispatch(deleteTableRowCmd()));
-  btn("│✕", "Delete column", () => editor.dispatch(deleteTableColumnCmd()));
-  btn("⊞✕", "Delete table", () => editor.dispatch(deleteTableCmd()));
-  btn("⬚⬚", "Merge cells (select across cells in one row)", () => editor.dispatch(mergeCellsCmd()));
-  btn("⬚|⬚", "Unmerge cell", () => editor.dispatch(unmergeCellCmd()));
-  sep();
-  // image wrap mode — acts on the selected image
-  btn("◧", "Wrap text around image (square)", () => {
-    const id = editor.getSelectedObject();
-    if (id) editor.dispatch(setImageProps(id, { wrap: "square", align: "left" }));
+  btn(ICONS.table, "Insert 3×3 table", () => editor.dispatch(insertTable(3, 3)));
+  btn(ICONS.pageBreak, "Page break (Ctrl+Enter)", () => {
+    editor.dispatch(insertPageBreak());
+    editor.focus();
   });
-  btn("▣", "Image in line with text (block)", () => {
-    const id = editor.getSelectedObject();
-    if (id) editor.dispatch(setImageProps(id, { wrap: "block", align: "center" }));
-  });
-  sep();
-  // sections & page setup
-  btn("§⏎", "Insert section break (next page)", () => {
+  btn(ICONS.sectionBreak, "Section break — next page", () => {
     editor.dispatch(insertSectionBreak());
     editor.focus();
   });
-  btn("📐", "Page setup (applies to the caret's section)", () => {
-    pageSetupPanel.toggle();
-  });
-  btn("☰§", "Insert / update table of contents (Ctrl+click an entry jumps to it)", () => {
+  btn(ICONS.toc, "Insert / update table of contents (Ctrl+click an entry jumps to it)", () => {
     editor.dispatch(insertTocCmd());
     editor.focus();
   });
-  btn("a¹", "Insert footnote", () => {
+  txtBtn("ab¹", "Insert footnote", () => {
     editor.dispatch(insertFootnoteCmd());
     editor.focus();
+  }, "font-size:11px;");
+
+  // ---- Controls (content controls / w:sdt) ----
+  group("Controls");
+  btn(ICONS.sdtText, "Rich text content control (wraps the selection)", () => {
+    editor.dispatch(insertContentControl("richText", { alias: "Text" }));
+    editor.focus();
   });
-  sep();
-  btn("📂", "Open .docx", () => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-    input.addEventListener("change", () => {
-      const file = input.files?.[0];
-      if (file) void openDocxFile(file);
-    });
-    input.click();
+  btn(ICONS.sdtCheckbox, "Check box content control", () => {
+    editor.dispatch(insertContentControl("checkbox", { alias: "Check Box" }));
+    editor.focus();
   });
+  btn(ICONS.sdtDropdown, "Drop-down list content control", () => {
+    const raw = prompt("List items (comma-separated):", "Yes, No, N/A");
+    if (raw === null) return;
+    const listItems = raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+      .map((s) => ({ display: s, value: s }));
+    editor.dispatch(insertContentControl("dropDown", { alias: "Drop-Down List", listItems }));
+    editor.focus();
+  });
+  btn(ICONS.sdtDate, "Date picker content control", () => {
+    editor.dispatch(insertContentControl("date", { alias: "Date", dateFormat: "M/d/yyyy" }));
+    editor.focus();
+  });
+  btn(ICONS.sdtRemove, "Remove the content control at the caret (keeps its text)", () => {
+    const sel = editor.getSelection();
+    const id = sel ? sdtAtPosition(editor.getDocument(), sel.focus) : null;
+    if (id) editor.dispatch(removeContentControl(id, false));
+    editor.focus();
+  });
+
+  // ---- Layout ----
+  group("Layout");
+  btn(ICONS.pageSetup, "Page setup (applies to the caret's section)", () => {
+    pageSetupPanel.toggle();
+  });
+
+  // ---- Table (acts on the cell containing the caret; no-op outside tables) ----
+  group("Table");
+  btn(ICONS.rowAbove, "Insert row above", () => editor.dispatch(insertTableRowCmd("above")));
+  btn(ICONS.rowBelow, "Insert row below", () => editor.dispatch(insertTableRowCmd("below")));
+  btn(ICONS.colLeft, "Insert column left", () => editor.dispatch(insertTableColumnCmd("left")));
+  btn(ICONS.colRight, "Insert column right", () => editor.dispatch(insertTableColumnCmd("right")));
+  btn(ICONS.deleteRow, "Delete row", () => editor.dispatch(deleteTableRowCmd()));
+  btn(ICONS.deleteCol, "Delete column", () => editor.dispatch(deleteTableColumnCmd()));
+  btn(ICONS.deleteTable, "Delete table", () => editor.dispatch(deleteTableCmd()));
+  btn(ICONS.mergeCells, "Merge cells (select across cells in one row)", () => editor.dispatch(mergeCellsCmd()));
+  btn(ICONS.unmergeCells, "Unmerge cell", () => editor.dispatch(unmergeCellCmd()));
+
+  // ---- Picture (acts on the selected image) ----
+  group("Picture");
+  btn(ICONS.wrapSquare, "Wrap text around image (square)", () => {
+    const id = editor.getSelectedObject();
+    if (id) editor.dispatch(setImageProps(id, { wrap: "square", align: "left" }));
+  });
+  btn(ICONS.wrapInline, "Image in line with text (block)", () => {
+    const id = editor.getSelectedObject();
+    if (id) editor.dispatch(setImageProps(id, { wrap: "block", align: "center" }));
+  });
+
+  // ---- Editing ----
+  group("Editing");
+  btn(ICONS.find, "Find & replace (Ctrl+F)", () => openFind());
 }
 
 // ---- page setup panel (📐) ---------------------------------------------------
@@ -459,11 +549,11 @@ const pageSetupPanel = (() => {
   const update = (s: { index: number; total: number }): void => {
     counter.textContent = s.total > 0 ? `${s.index}/${s.total}` : findInput.value ? "0/0" : "";
   };
-  mkBtn("↑", "Previous (Shift+Enter)", () => update(editor.searchNav(-1)));
-  mkBtn("↓", "Next (Enter)", () => update(editor.searchNav(1)));
+  mkBtn("‹", "Previous (Shift+Enter)", () => update(editor.searchNav(-1)));
+  mkBtn("›", "Next (Enter)", () => update(editor.searchNav(1)));
   const replaceInput = mkInput("Replace", 120);
-  mkBtn("⇄", "Replace current", () => update(editor.searchReplaceCurrent(replaceInput.value)));
-  mkBtn("⇄∀", "Replace all", () => {
+  mkBtn("Replace", "Replace current", () => update(editor.searchReplaceCurrent(replaceInput.value)));
+  mkBtn("All", "Replace all", () => {
     const n = editor.searchReplaceAll(replaceInput.value);
     update(editor.search(findInput.value));
     counter.textContent += ` (${n} replaced)`;
@@ -473,8 +563,15 @@ const pageSetupPanel = (() => {
     editor.searchClear();
     editor.focus();
   };
-  mkBtn("✕", "Close (Esc)", close);
+  mkBtn("×", "Close (Esc)", close);
   document.body.appendChild(bar);
+
+  openFind = (): void => {
+    bar.style.display = "flex";
+    findInput.select();
+    findInput.focus();
+    if (findInput.value) update(editor.search(findInput.value));
+  };
 
   findInput.addEventListener("input", () => update(editor.search(findInput.value)));
   bar.addEventListener("keydown", (ev) => {
@@ -490,10 +587,7 @@ const pageSetupPanel = (() => {
   window.addEventListener("keydown", (ev) => {
     if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "f") {
       ev.preventDefault();
-      bar.style.display = "flex";
-      findInput.select();
-      findInput.focus();
-      if (findInput.value) update(editor.search(findInput.value));
+      openFind();
     }
   });
 }
