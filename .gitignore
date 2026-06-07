@@ -8,3 +8,6 @@ shots/
 
 # large local test documents (real fixtures live in src/**/__fixtures__/)
 /RenderedReportsDocx_*
+
+# Office lock files
+~$*
