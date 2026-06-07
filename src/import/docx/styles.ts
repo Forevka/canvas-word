@@ -20,9 +20,12 @@ import type { IRParaProps, IRRunProps } from "./types";
 import { WarningSink } from "./types";
 import { attr, el, els, parseXml, rootEl, val } from "./xml";
 
-interface StyleDef {
+export interface StyleDef {
   id: string;
   type: string; // "paragraph" | "character" | "table" | "numbering"
+  /** w:name — the human-readable name ("Heading 2"); generated documents use
+   *  opaque numeric styleIds, so the NAME is what the style gallery shows. */
+  name?: string;
   basedOnId?: string;
   rPr: IRRunProps;
   pPr: IRParaProps;
@@ -66,6 +69,8 @@ export function parseStylesXml(xmlText: string, warnings: WarningSink): StylesDa
       rPr: rPrEl ? decodeRunProps(rPrEl) : {},
       pPr: pPrEl ? decodeParaProps(pPrEl, warnings) : {},
     };
+    const name = val(style, "w:name");
+    if (name) def.name = name;
     const basedOnId = val(style, "w:basedOn");
     if (basedOnId) def.basedOnId = basedOnId;
     data.styles.set(id, def);

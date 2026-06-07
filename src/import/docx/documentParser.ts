@@ -12,6 +12,7 @@ import type {
   IRInline,
   IRParagraph,
   IRRunProps,
+  IRSdtProps,
   IRSection,
   IRTable,
   IRTableCell,
@@ -26,6 +27,10 @@ interface ParseCtx {
    *  tokens (the layout substitutes them per page). In the body, fields keep
    *  their cached result text — a TOC's "page 5" should stay "5". */
   fieldTokens: boolean;
+  /** Content-control registry filled as w:sdt elements are parsed; shared
+   *  across body and band parts so ids never collide. */
+  sdts: Record<string, IRSdtProps>;
+  nextSdt: { n: number };
 }
 
 export function parseDocumentXml(xmlText: string, partName: string, warnings: WarningSink): IRDocument {
@@ -34,7 +39,8 @@ export function parseDocumentXml(xmlText: string, partName: string, warnings: Wa
   if (!body) {
     throw new ImportError("MALFORMED_XML", `${partName} has no w:document/w:body root.`);
   }
-  const ctx: ParseCtx = { warnings, fieldTokens: false };
+  const sdts: Record<string, IRSdtProps> = {};
+  const ctx: ParseCtx = { warnings, fieldTokens: false, sdts, nextSdt: { n: 0 } };
 
   const blocks: IRBlock[] = [];
   walkBlocks(children(body), blocks, ctx);
@@ -42,17 +48,23 @@ export function parseDocumentXml(xmlText: string, partName: string, warnings: Wa
   const sectPr = el(body, "w:sectPr");
   const section = sectPr ? parseSection(sectPr, warnings) : null;
 
-  return { blocks, section };
+  return { blocks, section, sdts };
 }
 
-/** header1.xml / footer1.xml — same block content under a w:hdr / w:ftr root. */
-export function parseHeaderFooterXml(xmlText: string, partName: string, warnings: WarningSink): IRBlock[] {
+/** header1.xml / footer1.xml — same block content under a w:hdr / w:ftr root.
+ *  Pass the document's sdt registry so band controls join the same id space. */
+export function parseHeaderFooterXml(
+  xmlText: string,
+  partName: string,
+  warnings: WarningSink,
+  sdts: Record<string, IRSdtProps> = {},
+): IRBlock[] {
   const nodes = parseXml(xmlText, partName);
   const root = rootEl(nodes, "w:hdr") ?? rootEl(nodes, "w:ftr");
   if (!root) {
     throw new ImportError("MALFORMED_XML", `${partName} has no w:hdr/w:ftr root.`);
   }
-  const ctx: ParseCtx = { warnings, fieldTokens: true };
+  const ctx: ParseCtx = { warnings, fieldTokens: true, sdts, nextSdt: { n: Object.keys(sdts).length } };
   const blocks: IRBlock[] = [];
   walkBlocks(children(root), blocks, ctx);
   return blocks;
@@ -71,10 +83,21 @@ function walkBlocks(nodes: XmlNode[], out: IRBlock[], ctx: ParseCtx): void {
         out.push(parseTable(node, ctx));
         break;
       case "w:sdt": {
-        // Content controls are transparent containers for us — unwrap.
-        ctx.warnings.add("sdt-unwrapped", "Content controls were unwrapped to their content.");
         const content = el(node, "w:sdtContent");
-        if (content) walkBlocks(children(content), out, ctx);
+        if (!content) break;
+        const props = parseSdtPr(el(node, "w:sdtPr"));
+        if (!props) {
+          // No usable w:sdtPr — a transparent container; unwrap.
+          ctx.warnings.add("sdt-unwrapped", "Content controls were unwrapped to their content.");
+          walkBlocks(children(content), out, ctx);
+          break;
+        }
+        const sdtId = `sdt${ctx.nextSdt.n++}`;
+        ctx.sdts[sdtId] = props;
+        const inner: IRBlock[] = [];
+        walkBlocks(children(content), inner, ctx);
+        for (const b of inner) tagBlockSdt(b, sdtId);
+        out.push(...inner);
         break;
       }
       case "w:sectPr":
@@ -126,9 +149,22 @@ function walkInlines(nodes: XmlNode[], out: IRInline[], ctx: ParseCtx, field: Fi
         walkInlines(children(node), out, ctx, field);
         break;
       case "w:sdt": {
-        ctx.warnings.add("sdt-unwrapped", "Content controls were unwrapped to their content.");
         const content = el(node, "w:sdtContent");
-        if (content) walkInlines(children(content), out, ctx, field);
+        if (!content) break;
+        const props = parseSdtPr(el(node, "w:sdtPr"));
+        if (!props) {
+          ctx.warnings.add("sdt-unwrapped", "Content controls were unwrapped to their content.");
+          walkInlines(children(content), out, ctx, field);
+          break;
+        }
+        const sdtId = `sdt${ctx.nextSdt.n++}`;
+        ctx.sdts[sdtId] = props;
+        const inner: IRInline[] = [];
+        walkInlines(children(content), inner, ctx, field);
+        for (const inline of inner) {
+          if (inline.kind === "run") inline.sdtId = sdtId;
+        }
+        out.push(...inner);
         break;
       }
       case "w:fldSimple": {
@@ -365,6 +401,65 @@ function parseCell(tc: XmlNode, ctx: ParseCtx): IRTableCell {
   const blocks: IRBlock[] = [];
   walkBlocks(children(tc), blocks, ctx);
   return { blocks, gridSpan, vMergeContinue };
+}
+
+// ---------------------------------------------------------------------------
+// Content controls (w:sdt)
+
+/** w:sdtPr → IRSdtProps. Returns null when there are no properties at all
+ *  (some producers emit bare w:sdt wrappers — those just unwrap). */
+function parseSdtPr(pr: XmlNode | undefined): IRSdtProps | null {
+  if (!pr) return null;
+  const props: IRSdtProps = { type: "richText" };
+  const alias = el(pr, "w:alias");
+  const aliasVal = alias && attr(alias, "w:val");
+  if (aliasVal) props.alias = aliasVal;
+  const tag = el(pr, "w:tag");
+  const tagVal = tag && attr(tag, "w:val");
+  if (tagVal) props.tag = tagVal;
+  if (el(pr, "w:text")) props.type = "plainText";
+  const list = el(pr, "w:dropDownList") ?? el(pr, "w:comboBox");
+  if (list) {
+    props.type = list.tagName === "w:dropDownList" ? "dropDown" : "comboBox";
+    props.listItems = els(list, "w:listItem").map((li) => ({
+      display: attr(li, "w:displayText") ?? attr(li, "w:value") ?? "",
+      value: attr(li, "w:value") ?? attr(li, "w:displayText") ?? "",
+    }));
+  }
+  const date = el(pr, "w:date");
+  if (date) {
+    props.type = "date";
+    const fmt = el(date, "w:dateFormat");
+    const fmtVal = fmt && attr(fmt, "w:val");
+    if (fmtVal) props.dateFormat = fmtVal;
+  }
+  const checkbox = el(pr, "w14:checkbox");
+  if (checkbox) {
+    props.type = "checkbox";
+    const checked = el(checkbox, "w14:checked");
+    const v = checked && attr(checked, "w14:val");
+    props.checked = v === "1" || v === "true";
+  }
+  if (el(pr, "w:showingPlcHdr")) props.placeholder = true;
+  const lock = el(pr, "w:lock");
+  const lockVal = lock && attr(lock, "w:val");
+  if (lockVal === "contentLocked" || lockVal === "sdtContentLocked") props.lockContent = true;
+  if (lockVal === "sdtLocked" || lockVal === "sdtContentLocked") props.lockControl = true;
+  return props;
+}
+
+/** Block-level control: every run in the wrapped paragraphs (including table
+ *  cell paragraphs) joins the control. */
+function tagBlockSdt(block: IRBlock, sdtId: string): void {
+  if (block.kind === "paragraph") {
+    for (const inline of block.inlines) {
+      if (inline.kind === "run" && inline.sdtId === undefined) inline.sdtId = sdtId;
+    }
+    return;
+  }
+  for (const row of block.rows) {
+    for (const cell of row.cells) for (const b of cell.blocks) tagBlockSdt(b, sdtId);
+  }
 }
 
 // ---------------------------------------------------------------------------

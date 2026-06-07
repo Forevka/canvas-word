@@ -85,8 +85,23 @@ export interface IRRunProps {
   vanish?: boolean;
 }
 
+/** w:sdtPr — content-control properties, decoded faithfully (mapToModel turns
+ *  these into the model's SdtProps; runs inside the control carry the sdtId). */
+export interface IRSdtProps {
+  type: "richText" | "plainText" | "checkbox" | "dropDown" | "comboBox" | "date";
+  alias?: string;
+  tag?: string;
+  /** w:showingPlcHdr — the content is currently the gray placeholder. */
+  placeholder?: boolean;
+  listItems?: { display: string; value: string }[];
+  dateFormat?: string;
+  checked?: boolean;
+  lockContent?: boolean;
+  lockControl?: boolean;
+}
+
 export type IRInline =
-  | { kind: "run"; text: string; props: IRRunProps }
+  | { kind: "run"; text: string; props: IRRunProps; sdtId?: string }
   /** w:br / w:cr — soft line break (model has none; mapToModel splits the
    *  paragraph). page=true for w:br w:type="page": the following content
    *  starts a new page (maps to ParaStyle.pageBreakBefore). */
@@ -169,4 +184,6 @@ export interface IRSection {
 export interface IRDocument {
   blocks: IRBlock[];
   section: IRSection | null;
+  /** Content controls found in the body (header/footer parsing extends it). */
+  sdts: Record<string, IRSdtProps>;
 }

@@ -5,13 +5,13 @@
 import type { Block, SectionProps } from "../../model/document";
 import { findMainDocumentPart } from "./contentTypes";
 import { parseDocumentXml, parseHeaderFooterXml } from "./documentParser";
-import { createMapper, type Mapper } from "./mapToModel";
+import { buildStylesheet, collectUsedStyleIds, createMapper, mapSdts, type Mapper } from "./mapToModel";
 import { createMediaStore, type MediaStore } from "./media";
 import { findByType, parseRelationships, relsPartFor, type Relationships } from "./relationships";
 import { createStyleResolver, parseStylesXml, EMPTY_STYLES } from "./styles";
 import { parseThemeXml, EMPTY_THEME } from "./theme";
 import { openArchive, type Archive } from "./zip";
-import { ImportError, WarningSink, type ImportPhase, type ImportResult } from "./types";
+import { ImportError, WarningSink, type ImportPhase, type ImportResult, type IRSdtProps } from "./types";
 
 export function runImport(
   bytes: Uint8Array,
@@ -49,7 +49,7 @@ export function runImport(
   progress("parse", 1);
 
   progress("map", 0);
-  const mapper = createMapper(warnings, resolver);
+  const mapper = createMapper(warnings, resolver, ir.sdts);
   const mediaStores: MediaStore[] = [];
   const mediaFor = (partRels: Relationships): MediaStore => {
     const store = createMediaStore(archive, partRels, warnings);
@@ -62,15 +62,23 @@ export function runImport(
   const section = mapper.mapSection(ir.section);
 
   // Header/footer parts are full block stories with their OWN rels (images in
-  // a header resolve through header1.xml.rels, not the document's).
-  const header = mapStory(archive, rels, ir.section?.headerRelId, mapper, mediaFor, warnings);
+  // a header resolve through header1.xml.rels, not the document's). Their
+  // content controls join the document's sdt registry.
+  const header = mapStory(archive, rels, ir.section?.headerRelId, mapper, mediaFor, warnings, ir.sdts);
   if (header) section.header = header;
-  const footer = mapStory(archive, rels, ir.section?.footerRelId, mapper, mediaFor, warnings);
+  const footer = mapStory(archive, rels, ir.section?.footerRelId, mapper, mediaFor, warnings, ir.sdts);
   if (footer) section.footer = footer;
   progress("map", 1);
 
+  const doc: ImportResult["doc"] = { section, blocks };
+  const sdts = mapSdts(ir.sdts);
+  if (Object.keys(sdts).length > 0) doc.sdts = sdts;
+  // Style gallery: used paragraph styles (+ basedOn closure) with w:name labels.
+  const stylesheet = buildStylesheet(styles, collectUsedStyleIds(ir.blocks));
+  if (stylesheet) doc.stylesheet = stylesheet;
+
   return {
-    doc: { section, blocks },
+    doc,
     warnings: warnings.list,
     mediaUrls: mediaStores.flatMap((s) => s.urls()),
   };
@@ -83,6 +91,7 @@ function mapStory(
   mapper: Mapper,
   mediaFor: (rels: Relationships) => MediaStore,
   warnings: WarningSink,
+  sdts: Record<string, IRSdtProps>,
 ): Block[] | undefined {
   if (!relId) return undefined;
   const rel = documentRels.get(relId);
@@ -91,7 +100,7 @@ function mapStory(
     warnings.add("header-missing", "A referenced header/footer part was missing from the archive.");
     return undefined;
   }
-  const ir = parseHeaderFooterXml(xml, rel.target, warnings);
+  const ir = parseHeaderFooterXml(xml, rel.target, warnings, sdts);
   const blocks = mapper.mapBlocks(ir, mediaFor(relsOf(archive, rel.target)));
   return blocks.length > 0 ? blocks : undefined;
 }

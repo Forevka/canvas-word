@@ -16,14 +16,16 @@ import type {
   ParaStyle,
   Paragraph,
   Run,
+  SdtProps,
   SectionProps,
   TableBlock,
   TableCell,
 } from "../../model/document";
+import type { NamedStyle, Stylesheet } from "../../model/stylesheet";
 import { normalizeRuns } from "../../model/ops";
 import type { MediaStore } from "./media";
-import type { StyleResolver } from "./styles";
-import type { IRBlock, IRInline, IRParaProps, IRParagraph, IRRunProps, IRSection, IRTable } from "./types";
+import type { StyleResolver, StylesData } from "./styles";
+import type { IRBlock, IRInline, IRParaProps, IRParagraph, IRRunProps, IRSdtProps, IRSection, IRTable } from "./types";
 import { WarningSink } from "./types";
 import { emuToPx, halfPointsToPx, round2, twipsToPx } from "./units";
 
@@ -68,7 +70,11 @@ export interface Mapper {
   emptyParagraph(): Paragraph;
 }
 
-export function createMapper(warnings: WarningSink, resolver: StyleResolver): Mapper {
+export function createMapper(
+  warnings: WarningSink,
+  resolver: StyleResolver,
+  sdts: Record<string, IRSdtProps> = {},
+): Mapper {
   // Import-distinct id prefix: commands.ts mints `n…`, sampleDoc `b…`.
   let nextId = 0;
   const id = (): string => `i${nextId++}`;
@@ -176,7 +182,7 @@ export function createMapper(warnings: WarningSink, resolver: StyleResolver): Ma
             warnings.add("hidden-text", "Hidden text (w:vanish) was dropped.");
             break;
           }
-          runs.push(mapRun(inline.text, effective));
+          runs.push(mapRun(inline.text, effective, inline.sdtId));
           trailingBreak = false;
           break;
         }
@@ -225,13 +231,24 @@ export function createMapper(warnings: WarningSink, resolver: StyleResolver): Ma
     return image;
   }
 
-  function mapRun(rawText: string, effective: IRRunProps): Run {
+  function mapRun(rawText: string, effective: IRRunProps, sdtId?: string): Run {
     let text = rawText;
     if (text.includes("\t")) {
       warnings.add("tabs", "Tab stops became fixed spaces (no tab-stop layout).");
       text = text.replaceAll("\t", TAB_AS_SPACES);
     }
-    return { text, style: mapCharStyle(effective) };
+    const style = mapCharStyle(effective);
+    if (sdtId) {
+      style.sdtId = sdtId;
+      const sdt = sdts[sdtId];
+      // Checkbox glyphs arrive in symbol fonts (MS Gothic / Wingdings private
+      // chars) — normalize to the Unicode glyphs the editor toggles between.
+      if (sdt?.type === "checkbox" && text.length > 0) {
+        text = sdt.checked ? "☒" : "☐";
+        style.fontFamily = DEFAULT_CHAR.fontFamily;
+      }
+    }
+    return { text, style };
   }
 
   // -------------------------------------------------------------------------
@@ -318,6 +335,99 @@ function mapCharStyle(props: IRRunProps): CharStyle {
   if (props.strikethrough !== undefined) style.strikethrough = props.strikethrough;
   if (props.color && props.color !== "auto") style.color = `#${props.color.toLowerCase()}`;
   return style;
+}
+
+/** IR content controls → model SdtProps (shapes match; copy defined fields). */
+export function mapSdts(ir: Record<string, IRSdtProps>): Record<string, SdtProps> {
+  const out: Record<string, SdtProps> = {};
+  for (const [id, p] of Object.entries(ir)) {
+    const props: SdtProps = { type: p.type };
+    if (p.alias !== undefined) props.alias = p.alias;
+    if (p.tag !== undefined) props.tag = p.tag;
+    if (p.placeholder) props.placeholder = true;
+    if (p.listItems !== undefined) props.listItems = p.listItems;
+    if (p.dateFormat !== undefined) props.dateFormat = p.dateFormat;
+    if (p.checked !== undefined) props.checked = p.checked;
+    if (p.lockContent) props.lockContent = true;
+    if (p.lockControl) props.lockControl = true;
+    out[id] = props;
+  }
+  return out;
+}
+
+/** Paragraph styleIds referenced anywhere in the IR (incl. table cells). */
+export function collectUsedStyleIds(blocks: IRBlock[], into: Set<string> = new Set()): Set<string> {
+  for (const b of blocks) {
+    if (b.kind === "paragraph") {
+      if (b.props.styleId) into.add(b.props.styleId);
+    } else {
+      for (const row of b.rows) for (const cell of row.cells) collectUsedStyleIds(cell.blocks, into);
+    }
+  }
+  return into;
+}
+
+/** Patch-only style mappers: a NamedStyle carries each style's OWN deltas —
+ *  the editor resolves basedOn chains itself. Theme-indirected fields are
+ *  skipped (the resolver already baked them into the runs). */
+function mapCharPatch(props: IRRunProps): Partial<CharStyle> {
+  const out: Partial<CharStyle> = {};
+  if (props.fontAscii) out.fontFamily = `${props.fontAscii}, serif`;
+  if (props.sizeHalfPoints !== undefined) out.fontSizePx = round2(halfPointsToPx(props.sizeHalfPoints));
+  if (props.bold !== undefined) out.bold = props.bold;
+  if (props.italic !== undefined) out.italic = props.italic;
+  if (props.underline !== undefined) out.underline = props.underline;
+  if (props.strikethrough !== undefined) out.strikethrough = props.strikethrough;
+  if (props.color && props.color !== "auto") out.color = `#${props.color.toLowerCase()}`;
+  return out;
+}
+
+function mapParaPatch(props: IRParaProps): Partial<ParaStyle> {
+  const out: Partial<ParaStyle> = {};
+  if (props.align) out.align = props.align;
+  if (props.lineHeight !== undefined) out.lineHeight = round2(props.lineHeight);
+  if (props.spaceBeforeTwips !== undefined) out.spaceBeforePx = round2(twipsToPx(props.spaceBeforeTwips));
+  if (props.spaceAfterTwips !== undefined) out.spaceAfterPx = round2(twipsToPx(props.spaceAfterTwips));
+  if (props.indentLeftTwips !== undefined) out.indentLeftPx = round2(twipsToPx(props.indentLeftTwips));
+  if (props.indentFirstLineTwips !== undefined)
+    out.indentFirstLinePx = round2(twipsToPx(props.indentFirstLineTwips));
+  if (props.keepWithNext) out.keepWithNext = true;
+  return out;
+}
+
+/** styles.xml → editor Stylesheet, restricted to paragraph styles the document
+ *  actually USES (plus their basedOn closure and the default style) — a
+ *  generated report carries hundreds of unused styles. Display names come from
+ *  w:name; generated documents use opaque numeric styleIds. */
+export function buildStylesheet(data: StylesData, usedIds: Set<string>): Stylesheet | undefined {
+  if (data.styles.size === 0) return undefined;
+  const include = new Set<string>();
+  const addWithBases = (id: string): void => {
+    for (let cur = data.styles.get(id); cur && !include.has(cur.id); cur = cur.basedOnId ? data.styles.get(cur.basedOnId) : undefined) {
+      if (cur.type === "paragraph") include.add(cur.id);
+    }
+  };
+  for (const id of usedIds) addWithBases(id);
+  if (data.defaultParaStyleId) addWithBases(data.defaultParaStyleId);
+  if (include.size === 0) return undefined;
+
+  const styles: NamedStyle[] = [];
+  for (const id of include) {
+    const def = data.styles.get(id)!;
+    const style: NamedStyle = {
+      id,
+      name: def.name ?? id,
+      char: mapCharPatch(def.rPr),
+      para: mapParaPatch(def.pPr),
+    };
+    if (def.basedOnId && include.has(def.basedOnId)) style.basedOn = def.basedOnId;
+    styles.push(style);
+  }
+  // Default style first — the gallery reads top-to-bottom.
+  styles.sort((a, b) =>
+    a.id === data.defaultParaStyleId ? -1 : b.id === data.defaultParaStyleId ? 1 : a.name.localeCompare(b.name),
+  );
+  return { styles, defaultStyleId: data.defaultParaStyleId ?? styles[0]!.id };
 }
 
 function mapParaStyle(props: IRParaProps): ParaStyle {
