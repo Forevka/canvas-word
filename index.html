@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>canvas-word</title>
+    <style>
+      html, body { margin: 0; height: 100%; }
+      body { display: flex; flex-direction: column; font-family: Arial, sans-serif; }
+      #toolbar {
+        flex: 0 0 auto; display: flex; gap: 4px; align-items: center;
+        padding: 6px 12px; background: #f8f9fa; border-bottom: 1px solid #dadce0;
+      }
+      #toolbar button {
+        min-width: 30px; height: 28px; border: 1px solid transparent; border-radius: 4px;
+        background: transparent; cursor: pointer; font-size: 14px; color: #3c4043;
+      }
+      #toolbar button:hover { background: #e8eaed; }
+      #toolbar .sep { width: 1px; height: 20px; background: #dadce0; margin: 0 6px; }
+      #app { flex: 1 1 auto; min-height: 0; overflow: auto; background: #e8eaed; position: relative; }
+    </style>
+  </head>
+  <body>
+    <div id="toolbar"></div>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -86,6 +86,15 @@ import {
   createStyleFromSelection,
   setParaProps,
   toggleList,
+  toggleHighlight,
+  toggleVerticalAlign,
+  setLinkCmd,
+  insertSectionBreak,
+  applyPageSetup,
+  pageSetupAt,
+  setBandVariantEnabled,
+  insertTocCmd,
+  insertFootnoteCmd,
 } from "./editor/commands";
 import { defaultStylesheet } from "./model/stylesheet";
 
@@ -223,6 +232,14 @@ if (toolbar) {
   btn("I", "Italic (Ctrl+I)", () => editor.toggleStyle("italic"), "font-style:italic");
   btn("U", "Underline (Ctrl+U)", () => editor.toggleStyle("underline"), "text-decoration:underline");
   btn("S", "Strikethrough", () => editor.toggleStyle("strikethrough"), "text-decoration:line-through");
+  btn("🖍", "Highlight (yellow)", () => editor.dispatch(toggleHighlight()));
+  btn("x²", "Superscript", () => editor.dispatch(toggleVerticalAlign("super")));
+  btn("x₂", "Subscript", () => editor.dispatch(toggleVerticalAlign("sub")));
+  btn("🔗", "Insert/remove hyperlink", () => {
+    const url = prompt("Link URL (empty to remove):");
+    if (url !== null) editor.dispatch(setLinkCmd(url.trim() === "" ? null : url.trim()));
+  });
+  btn("🖌", "Format painter (double-click = sticky)", () => editor.armFormatPainter(false));
   sep();
   btn("•≡", "Bulleted list", () => editor.dispatch(toggleList("bullet")));
   btn("1≡", "Numbered list (Tab/Shift+Tab change level)", () => editor.dispatch(toggleList("decimal")));
@@ -260,6 +277,23 @@ if (toolbar) {
     if (id) editor.dispatch(setImageProps(id, { wrap: "block", align: "center" }));
   });
   sep();
+  // sections & page setup
+  btn("§⏎", "Insert section break (next page)", () => {
+    editor.dispatch(insertSectionBreak());
+    editor.focus();
+  });
+  btn("📐", "Page setup (applies to the caret's section)", () => {
+    pageSetupPanel.toggle();
+  });
+  btn("☰§", "Insert / update table of contents (Ctrl+click an entry jumps to it)", () => {
+    editor.dispatch(insertTocCmd());
+    editor.focus();
+  });
+  btn("a¹", "Insert footnote", () => {
+    editor.dispatch(insertFootnoteCmd());
+    editor.focus();
+  });
+  sep();
   btn("📂", "Open .docx", () => {
     const input = document.createElement("input");
     input.type = "file";
@@ -269,6 +303,198 @@ if (toolbar) {
       if (file) void openDocxFile(file);
     });
     input.click();
+  });
+}
+
+// ---- page setup panel (📐) ---------------------------------------------------
+// Applies to the CARET's section: size preset, orientation, margin preset.
+const pageSetupPanel = (() => {
+  const SIZES: Record<string, { w: number; h: number }> = {
+    Letter: { w: 816, h: 1056 }, // 8.5×11in @96dpi
+    A4: { w: 794, h: 1123 },
+    Legal: { w: 816, h: 1344 },
+  };
+  const MARGINS: Record<string, { top: number; right: number; bottom: number; left: number }> = {
+    Normal: { top: 96, right: 96, bottom: 96, left: 96 },
+    Narrow: { top: 48, right: 48, bottom: 48, left: 48 },
+    Wide: { top: 96, right: 144, bottom: 96, left: 144 },
+  };
+  const panel = document.createElement("div");
+  panel.style.cssText =
+    "position:fixed;top:46px;right:24px;display:none;flex-direction:column;gap:6px;" +
+    "background:#fff;border:1px solid #dadce0;border-radius:8px;padding:10px 12px;" +
+    "box-shadow:0 2px 8px rgba(0,0,0,.18);z-index:10;font-size:13px;";
+  const row = (label: string, control: HTMLElement): void => {
+    const r = document.createElement("div");
+    r.style.cssText = "display:flex;align-items:center;gap:8px;justify-content:space-between;";
+    const l = document.createElement("span");
+    l.textContent = label;
+    r.append(l, control);
+    panel.appendChild(r);
+  };
+  const mkSelect = (entries: string[]): HTMLSelectElement => {
+    const s = document.createElement("select");
+    s.style.cssText = "height:26px;border:1px solid #dadce0;border-radius:4px;background:#fff;font-size:13px;width:120px;";
+    for (const e of entries) {
+      const o = document.createElement("option");
+      o.value = e;
+      o.textContent = e;
+      s.appendChild(o);
+    }
+    return s;
+  };
+  const sizeSel = mkSelect(Object.keys(SIZES));
+  const orientSel = mkSelect(["Portrait", "Landscape"]);
+  const marginSel = mkSelect(Object.keys(MARGINS));
+  const colsSel = mkSelect(["One", "Two", "Three"]);
+  const startInput = document.createElement("input");
+  startInput.type = "number";
+  startInput.min = "0";
+  startInput.placeholder = "continue";
+  startInput.title = "Restart page numbering at this section (blank = continue)";
+  startInput.style.cssText = "height:24px;border:1px solid #dadce0;border-radius:4px;padding:0 6px;font-size:13px;width:108px;";
+  const mkCheck = (): HTMLInputElement => {
+    const c = document.createElement("input");
+    c.type = "checkbox";
+    c.style.cssText = "width:16px;height:16px;";
+    return c;
+  };
+  const firstCheck = mkCheck();
+  const evenCheck = mkCheck();
+  row("Size", sizeSel);
+  row("Orientation", orientSel);
+  row("Margins", marginSel);
+  row("Columns", colsSel);
+  row("Number from", startInput);
+  row("Different first page", firstCheck);
+  row("Different odd & even", evenCheck);
+  // Variant toggles apply immediately (independent of the geometry Apply).
+  firstCheck.addEventListener("change", () => {
+    editor.dispatch(setBandVariantEnabled("first", firstCheck.checked));
+  });
+  evenCheck.addEventListener("change", () => {
+    editor.dispatch(setBandVariantEnabled("even", evenCheck.checked));
+  });
+  const apply = document.createElement("button");
+  apply.textContent = "Apply to this section";
+  apply.style.cssText = "height:28px;border:1px solid #1a73e8;border-radius:4px;background:#1a73e8;color:#fff;cursor:pointer;font-size:13px;";
+  apply.addEventListener("click", () => {
+    const size = SIZES[sizeSel.value]!;
+    const landscape = orientSel.value === "Landscape";
+    const colCount = { One: 1, Two: 2, Three: 3 }[colsSel.value] ?? 1;
+    const start = startInput.value.trim() === "" ? null : Math.max(0, Number(startInput.value));
+    editor.dispatch(
+      applyPageSetup({
+        pageWidthPx: landscape ? size.h : size.w,
+        pageHeightPx: landscape ? size.w : size.h,
+        marginPx: { ...MARGINS[marginSel.value]! },
+        columns: colCount > 1 ? { count: colCount, gapPx: 24 } : null,
+        pageNumberStart: start !== null && Number.isFinite(start) ? start : null,
+      }),
+    );
+    panel.style.display = "none";
+    editor.focus();
+  });
+  panel.appendChild(apply);
+  document.body.appendChild(panel);
+
+  return {
+    toggle(): void {
+      if (panel.style.display === "flex") {
+        panel.style.display = "none";
+        return;
+      }
+      // Seed controls from the caret's section.
+      const geo = pageSetupAt({ doc: editor.getDocument(), selection: editor.getSelection() });
+      const landscape = geo.pageWidthPx > geo.pageHeightPx;
+      const w = landscape ? geo.pageHeightPx : geo.pageWidthPx;
+      const h = landscape ? geo.pageWidthPx : geo.pageHeightPx;
+      sizeSel.value =
+        Object.keys(SIZES).find((k) => SIZES[k]!.w === w && SIZES[k]!.h === h) ?? "Letter";
+      orientSel.value = landscape ? "Landscape" : "Portrait";
+      marginSel.value =
+        Object.keys(MARGINS).find((k) => {
+          const m = MARGINS[k]!;
+          return m.top === geo.marginPx.top && m.right === geo.marginPx.right &&
+            m.bottom === geo.marginPx.bottom && m.left === geo.marginPx.left;
+        }) ?? "Normal";
+      colsSel.value = geo.columns?.count === 2 ? "Two" : geo.columns?.count === 3 ? "Three" : "One";
+      startInput.value = geo.pageNumberStart === null ? "" : String(geo.pageNumberStart);
+      const sec = editor.getDocument().section;
+      firstCheck.checked = sec.headerFirst !== undefined || sec.footerFirst !== undefined;
+      evenCheck.checked = sec.headerEven !== undefined || sec.footerEven !== undefined;
+      panel.style.display = "flex";
+    },
+  };
+})();
+
+// ---- find & replace bar (Ctrl+F) -------------------------------------------
+{
+  const bar = document.createElement("div");
+  bar.style.cssText =
+    "position:fixed;top:46px;right:24px;display:none;gap:4px;align-items:center;" +
+    "background:#fff;border:1px solid #dadce0;border-radius:8px;padding:6px 8px;" +
+    "box-shadow:0 2px 8px rgba(0,0,0,.18);z-index:10;font-size:13px;";
+  const mkInput = (placeholder: string, width: number): HTMLInputElement => {
+    const i = document.createElement("input");
+    i.placeholder = placeholder;
+    i.style.cssText = `width:${width}px;height:24px;border:1px solid #dadce0;border-radius:4px;padding:0 6px;font-size:13px;`;
+    bar.appendChild(i);
+    return i;
+  };
+  const mkBtn = (label: string, title: string, onClick: () => void): HTMLButtonElement => {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.title = title;
+    b.style.cssText = "height:24px;border:none;background:transparent;cursor:pointer;font-size:13px;color:#3c4043;";
+    b.addEventListener("click", onClick);
+    bar.appendChild(b);
+    return b;
+  };
+  const findInput = mkInput("Find", 140);
+  const counter = document.createElement("span");
+  counter.style.cssText = "color:#80868b;min-width:40px;text-align:center;";
+  counter.textContent = "";
+  bar.appendChild(counter);
+  const update = (s: { index: number; total: number }): void => {
+    counter.textContent = s.total > 0 ? `${s.index}/${s.total}` : findInput.value ? "0/0" : "";
+  };
+  mkBtn("↑", "Previous (Shift+Enter)", () => update(editor.searchNav(-1)));
+  mkBtn("↓", "Next (Enter)", () => update(editor.searchNav(1)));
+  const replaceInput = mkInput("Replace", 120);
+  mkBtn("⇄", "Replace current", () => update(editor.searchReplaceCurrent(replaceInput.value)));
+  mkBtn("⇄∀", "Replace all", () => {
+    const n = editor.searchReplaceAll(replaceInput.value);
+    update(editor.search(findInput.value));
+    counter.textContent += ` (${n} replaced)`;
+  });
+  const close = (): void => {
+    bar.style.display = "none";
+    editor.searchClear();
+    editor.focus();
+  };
+  mkBtn("✕", "Close (Esc)", close);
+  document.body.appendChild(bar);
+
+  findInput.addEventListener("input", () => update(editor.search(findInput.value)));
+  bar.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      update(editor.searchNav(ev.shiftKey ? -1 : 1));
+      ev.preventDefault();
+    } else if (ev.key === "Escape") {
+      close();
+      ev.preventDefault();
+    }
+    ev.stopPropagation(); // typing in the bar never reaches the editor keymap
+  });
+  window.addEventListener("keydown", (ev) => {
+    if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "f") {
+      ev.preventDefault();
+      bar.style.display = "flex";
+      findInput.select();
+      findInput.focus();
+      if (findInput.value) update(editor.search(findInput.value));
+    }
   });
 }
 
