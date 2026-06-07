@@ -1,0 +1,514 @@
+// Geometry queries over the LayoutTree — consumed by the input layer (selection,
+// caret movement) and the wiring layer (selection highlight rects). Read-only.
+//
+// Internals: a flattened, document-ordered line list is built lazily per tree
+// (WeakMap cache), and per-fragment grapheme-cluster advances are measured lazily
+// with one cached prefix-measureText pass — most fragments are never hit-tested.
+
+import type { DocPosition, DocSelection } from "../model/position";
+import type { InlineFragment, LayoutTree, LineBox, PlacedBlock } from "./layoutTree";
+import { charStyleToFont } from "./metrics";
+
+export interface CaretRect {
+  pageIndex: number;
+  x: number;
+  y: number;
+  height: number;
+}
+
+export interface Rect {
+  pageIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// ---------------------------------------------------------------------------
+// Flattened line list (document order), cached per tree
+
+interface LineEntry {
+  pageIndex: number;
+  block: PlacedBlock;
+  line: LineBox;
+  /** Paragraph-text offsets covered by this line (empty line: 0..0). */
+  startOffset: number;
+  endOffset: number;
+}
+
+interface TreeIndex {
+  entries: LineEntry[];
+  /** blockId -> indexes into entries, in order. */
+  byBlock: Map<string, number[]>;
+  /** blockId -> document-order ordinal, for cross-block position comparison. */
+  blockOrder: Map<string, number>;
+}
+
+/** Story-editing scope: limit every query to ONE page's margin band. The same
+ *  band block ids repeat on every page, so an unscoped lookup would be
+ *  ambiguous — the scope pins queries to the page being edited. */
+export interface GeoScope {
+  band: "header" | "footer";
+  pageIndex: number;
+}
+
+const indexCache = new WeakMap<LayoutTree, TreeIndex>();
+const bandIndexCache = new WeakMap<LayoutTree, Map<string, TreeIndex>>();
+
+function buildIndex(
+  pageBlocks: Iterable<{ pageIndex: number; blocks: PlacedBlock[] }>,
+  indexBandTables: boolean,
+): TreeIndex {
+  const entries: LineEntry[] = [];
+  const byBlock = new Map<string, number[]>();
+  const blockOrder = new Map<string, number>();
+  const indexBlock = (pageIndex: number, block: PlacedBlock, depth = 0): void => {
+    if (block.table) {
+      // Cell paragraphs are regular PlacedBlocks — index them in cell order and
+      // every caret/selection query works inside tables with no special cases.
+      // (Band tables stay unindexed; NESTED tables render but their inner cells
+      // are read-only — the paragraph locator only goes one level deep.)
+      if (!indexBandTables || depth > 0) return;
+      for (const row of block.table.rows) {
+        for (const cell of row.cells) for (const cb of cell.blocks) indexBlock(pageIndex, cb, depth + 1);
+      }
+      return;
+    }
+    if (block.image) return; // images carry no lines
+    if (!blockOrder.has(block.blockId)) blockOrder.set(block.blockId, blockOrder.size);
+    let list = byBlock.get(block.blockId);
+    if (!list) {
+      list = [];
+      byBlock.set(block.blockId, list);
+    }
+    for (const line of block.lines) {
+      const first = line.fragments[0];
+      const last = line.fragments[line.fragments.length - 1];
+      list.push(entries.length);
+      entries.push({
+        pageIndex,
+        block,
+        line,
+        startOffset: first ? first.startOffset : (line.emptyOffset ?? 0),
+        endOffset: last ? last.endOffset : (line.emptyOffset ?? 0),
+      });
+    }
+  };
+  for (const pb of pageBlocks) {
+    for (const block of pb.blocks) indexBlock(pb.pageIndex, block);
+  }
+  return { entries, byBlock, blockOrder };
+}
+
+function treeIndex(tree: LayoutTree): TreeIndex {
+  let idx = indexCache.get(tree);
+  if (idx) return idx;
+  idx = buildIndex(
+    tree.pages.map((p) => ({ pageIndex: p.index, blocks: p.blocks })),
+    true,
+  );
+  indexCache.set(tree, idx);
+  return idx;
+}
+
+function getIndex(tree: LayoutTree, scope?: GeoScope): TreeIndex {
+  if (!scope) return treeIndex(tree);
+  let perTree = bandIndexCache.get(tree);
+  if (!perTree) {
+    perTree = new Map();
+    bandIndexCache.set(tree, perTree);
+  }
+  const key = `${scope.band}:${scope.pageIndex}`;
+  let idx = perTree.get(key);
+  if (!idx) {
+    // Band tables ARE indexed (imported footers are routinely a table of text
+    // beside a page-number paragraph) — their cell paragraphs edit like body cells.
+    const blocks = tree.pages[scope.pageIndex]?.[scope.band] ?? [];
+    idx = buildIndex([{ pageIndex: scope.pageIndex, blocks }], true);
+    perTree.set(key, idx);
+  }
+  return idx;
+}
+
+export function comparePositions(
+  tree: LayoutTree,
+  a: DocPosition,
+  b: DocPosition,
+  scope?: GeoScope,
+): number {
+  const order = getIndex(tree, scope).blockOrder;
+  const oa = order.get(a.blockId) ?? 0;
+  const ob = order.get(b.blockId) ?? 0;
+  return oa !== ob ? oa - ob : a.offset - b.offset;
+}
+
+// ---------------------------------------------------------------------------
+// Lazy per-fragment cluster advances
+
+interface ClusterInfo {
+  /** Local cluster boundary offsets: [0, ...,] text.length — length n+1. */
+  boundaries: number[];
+  /** Cumulative advance at each boundary — length n+1, advances[0] === 0. */
+  advances: number[];
+}
+
+const clusterCache = new WeakMap<InlineFragment, ClusterInfo>();
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+const advCtx = document.createElement("canvas").getContext("2d")!;
+
+function clustersOf(frag: InlineFragment): ClusterInfo {
+  let info = clusterCache.get(frag);
+  if (info) return info;
+  advCtx.font = charStyleToFont(frag.style);
+  // letter/wordSpacing are supported in all evergreen canvases; must match paint.
+  const ctx2 = advCtx as CanvasRenderingContext2D & { letterSpacing: string; wordSpacing: string };
+  ctx2.letterSpacing = `${frag.style.letterSpacingPx ?? 0}px`;
+  ctx2.wordSpacing = `${frag.wordSpacingPx ?? 0}px`;
+  const boundaries: number[] = [0];
+  const advances: number[] = [0];
+  for (const seg of graphemeSegmenter.segment(frag.text)) {
+    const end = seg.index + seg.segment.length;
+    boundaries.push(end);
+    // Prefix measurement keeps kerning/ligature effects consistent with the
+    // single fillText the paint layer issues for the whole fragment.
+    advances.push(advCtx.measureText(frag.text.slice(0, end)).width);
+  }
+  info = { boundaries, advances };
+  clusterCache.set(frag, info);
+  return info;
+}
+
+/** Model-offset delta (relative to startOffset) of a fragment-text-local index.
+ *  Identity unless pretext collapsed whitespace inside the fragment. */
+const localToModel = (frag: InlineFragment, local: number): number =>
+  frag.offsetMap ? (frag.offsetMap[local] ?? frag.offsetMap[frag.offsetMap.length - 1]!) : local;
+
+/** X of `offset` within a line, in page coordinates. Clamps into the line. */
+function xAtOffset(entry: LineEntry, offset: number): number {
+  const { block, line } = entry;
+  if (line.fragments.length === 0) return block.x;
+  const first = line.fragments[0]!;
+  if (offset <= first.startOffset) return block.x + first.x;
+  for (const frag of line.fragments) {
+    if (offset > frag.endOffset) continue;
+    if (offset < frag.startOffset) return block.x + frag.x; // offset in an eaten gap
+    const { boundaries, advances } = clustersOf(frag);
+    const modelLocal = offset - frag.startOffset;
+    for (let k = 0; k < boundaries.length; k++) {
+      if (localToModel(frag, boundaries[k]!) >= modelLocal) return block.x + frag.x + advances[k]!;
+    }
+    return block.x + frag.x + advances[advances.length - 1]!;
+  }
+  const lastFrag = line.fragments[line.fragments.length - 1]!;
+  const { advances } = clustersOf(lastFrag);
+  return block.x + lastFrag.x + advances[advances.length - 1]!;
+}
+
+/** Nearest cluster-boundary offset at page-x within a line (rounds to midpoint). */
+function offsetAtX(entry: LineEntry, x: number): number {
+  const { block, line } = entry;
+  if (line.fragments.length === 0) return entry.startOffset;
+  const local = x - block.x;
+  const first = line.fragments[0]!;
+  if (local <= first.x) return first.startOffset;
+  for (let fi = 0; fi < line.fragments.length; fi++) {
+    const frag = line.fragments[fi]!;
+    const next = line.fragments[fi + 1];
+    const fragEnd = frag.x + frag.width;
+    if (local > fragEnd) {
+      if (next && local >= next.x) continue;
+      // In the gap after this fragment (or past the last one): nearest edge.
+      if (next) {
+        const mid = (fragEnd + next.x) / 2;
+        return local < mid ? frag.endOffset : next.startOffset;
+      }
+      return frag.endOffset;
+    }
+    const { boundaries, advances } = clustersOf(frag);
+    const fx = local - frag.x;
+    for (let k = 0; k + 1 < advances.length; k++) {
+      if (fx <= advances[k + 1]!) {
+        const mid = (advances[k]! + advances[k + 1]!) / 2;
+        const boundary = fx < mid ? boundaries[k]! : boundaries[k + 1]!;
+        return frag.startOffset + localToModel(frag, boundary);
+      }
+    }
+    return frag.endOffset;
+  }
+  return entry.endOffset;
+}
+
+/** The line entry a position renders on (offsets in eaten line-break whitespace
+ *  get previous-line affinity, matching where the text visually ended). */
+function entryOf(idx: TreeIndex, pos: DocPosition): LineEntry | null {
+  const lineIdxs = idx.byBlock.get(pos.blockId);
+  if (!lineIdxs || lineIdxs.length === 0) return null;
+  let chosen = idx.entries[lineIdxs[0]!]!;
+  for (const li of lineIdxs) {
+    const e = idx.entries[li]!;
+    if (e.startOffset <= pos.offset) chosen = e;
+    else break;
+  }
+  return chosen;
+}
+
+function entryIndexOf(idx: TreeIndex, pos: DocPosition): number {
+  const lineIdxs = idx.byBlock.get(pos.blockId);
+  if (!lineIdxs || lineIdxs.length === 0) return -1;
+  let chosen = lineIdxs[0]!;
+  for (const li of lineIdxs) {
+    if (idx.entries[li]!.startOffset <= pos.offset) chosen = li;
+    else break;
+  }
+  return chosen;
+}
+
+// ---------------------------------------------------------------------------
+// Public queries
+
+/** Point on a page -> nearest document position. Vertically-containing lines
+ *  are ranked by horizontal distance — table cells put several lines at the
+ *  same y, so pure line-by-y would always land in the leftmost column. */
+export function hitTest(
+  tree: LayoutTree,
+  pageIndex: number,
+  x: number,
+  y: number,
+  scope?: GeoScope,
+): DocPosition | null {
+  const idx = getIndex(tree, scope);
+
+  const xDistance = (e: LineEntry): number => {
+    const first = e.line.fragments[0];
+    const last = e.line.fragments[e.line.fragments.length - 1];
+    const left = e.block.x + (first ? first.x : 0);
+    const right = first && last ? e.block.x + last.x + last.width : left + 1;
+    return x < left ? left - x : x > right ? x - right : 0;
+  };
+
+  let containing: LineEntry | null = null; // best line whose vertical span holds y
+  let before: LineEntry | null = null; // nearest line fully above y on this page
+  let after: LineEntry | null = null; // first line below y on this page
+  let earlier: LineEntry | null = null; // last line on an earlier page
+
+  for (const e of idx.entries) {
+    if (e.pageIndex > pageIndex) break;
+    if (e.pageIndex < pageIndex) {
+      earlier = e;
+      continue;
+    }
+    const top = e.block.y + e.line.y;
+    const bottom = top + e.line.height;
+    if (y >= top && y < bottom) {
+      if (containing === null || xDistance(e) < xDistance(containing)) containing = e;
+    } else if (bottom <= y) {
+      if (before === null || top >= before.block.y + before.line.y) before = e;
+    } else if (after === null) {
+      after = e;
+    }
+  }
+
+  const best = containing ?? before ?? after ?? earlier ?? idx.entries[0] ?? null;
+  if (!best) return null;
+  return { blockId: best.block.blockId, offset: offsetAtX(best, x) };
+}
+
+export function caretRect(tree: LayoutTree, pos: DocPosition, scope?: GeoScope): CaretRect | null {
+  const e = entryOf(getIndex(tree, scope), pos);
+  if (!e) return null;
+  return {
+    pageIndex: e.pageIndex,
+    x: xAtOffset(e, Math.min(pos.offset, Math.max(e.endOffset, e.startOffset))),
+    y: e.block.y + e.line.y,
+    height: e.line.height,
+  };
+}
+
+/** Per-line highlight rectangles; handles multi-block and multi-page selections. */
+export function selectionRects(tree: LayoutTree, sel: DocSelection, scope?: GeoScope): Rect[] {
+  const idx = getIndex(tree, scope);
+  const [from, to] =
+    comparePositions(tree, sel.anchor, sel.focus, scope) <= 0
+      ? [sel.anchor, sel.focus]
+      : [sel.focus, sel.anchor];
+  const fromIdx = entryIndexOf(idx, from);
+  const toIdx = entryIndexOf(idx, to);
+  if (fromIdx < 0 || toIdx < 0) return [];
+
+  const rects: Rect[] = [];
+  for (let i = fromIdx; i <= toIdx; i++) {
+    const e = idx.entries[i]!;
+    const x1 = i === fromIdx ? xAtOffset(e, from.offset) : xAtOffset(e, e.startOffset);
+    // Interior lines extend a touch past the text end (Word marks the line break).
+    const x2 = i === toIdx ? xAtOffset(e, to.offset) : xAtOffset(e, e.endOffset) + 4;
+    if (x2 <= x1) continue;
+    rects.push({
+      pageIndex: e.pageIndex,
+      x: x1,
+      y: e.block.y + e.line.y,
+      width: x2 - x1,
+      height: e.line.height,
+    });
+  }
+  return rects;
+}
+
+/** Home/End need line geometry, not just the model. */
+export function lineEdges(
+  tree: LayoutTree,
+  pos: DocPosition,
+  scope?: GeoScope,
+): { home: DocPosition; end: DocPosition } | null {
+  const e = entryOf(getIndex(tree, scope), pos);
+  if (!e) return null;
+  return {
+    home: { blockId: e.block.blockId, offset: e.startOffset },
+    end: { blockId: e.block.blockId, offset: e.endOffset },
+  };
+}
+
+export function positionOnAdjacentLine(
+  tree: LayoutTree,
+  pos: DocPosition,
+  direction: "up" | "down",
+  goalX: number,
+  scope?: GeoScope,
+): DocPosition | null {
+  const idx = getIndex(tree, scope);
+  const i = entryIndexOf(idx, pos);
+  if (i < 0) return null;
+  const j = direction === "up" ? i - 1 : i + 1;
+  const e = idx.entries[j];
+  if (!e) return null;
+  return { blockId: e.block.blockId, offset: offsetAtX(e, goalX) };
+}
+
+// ---------------------------------------------------------------------------
+// Object (image) and table-structure hit-testing
+
+export interface ObjectHit {
+  blockId: string;
+  rect: Rect;
+}
+
+function scanImages(
+  blocks: PlacedBlock[],
+  visit: (b: PlacedBlock) => boolean, // return true to stop
+): boolean {
+  for (const block of blocks) {
+    if (block.image && visit(block)) return true;
+    if (block.table) {
+      for (const row of block.table.rows) {
+        for (const cell of row.cells) if (scanImages(cell.blocks, visit)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** Image block under a page point — including images inside table cells.
+ *  (Band objects stay read-only.) */
+export function hitTestObject(tree: LayoutTree, pageIndex: number, x: number, y: number): ObjectHit | null {
+  const page = tree.pages[pageIndex];
+  if (!page) return null;
+  let hit: ObjectHit | null = null;
+  scanImages(page.blocks, (block) => {
+    const { width, height } = block.image!;
+    if (x >= block.x && x <= block.x + width && y >= block.y && y <= block.y + height) {
+      hit = { blockId: block.blockId, rect: { pageIndex, x: block.x, y: block.y, width, height } };
+      return true;
+    }
+    return false;
+  });
+  return hit;
+}
+
+/** Where the selection frame for an image block lives right now (post-relayout). */
+export function objectRect(tree: LayoutTree, blockId: string): Rect | null {
+  for (const page of tree.pages) {
+    let rect: Rect | null = null;
+    scanImages(page.blocks, (block) => {
+      if (block.blockId !== blockId) return false;
+      rect = {
+        pageIndex: page.index,
+        x: block.x,
+        y: block.y,
+        width: block.image!.width,
+        height: block.image!.height,
+      };
+      return true;
+    });
+    if (rect) return rect;
+  }
+  return null;
+}
+
+/** Hyperlink under a page point, if the fragment there carries one. */
+export function linkAt(
+  tree: LayoutTree,
+  pageIndex: number,
+  x: number,
+  y: number,
+  scope?: GeoScope,
+): string | null {
+  const idx = getIndex(tree, scope);
+  for (const e of idx.entries) {
+    if (e.pageIndex !== pageIndex) continue;
+    const top = e.block.y + e.line.y;
+    if (y < top || y >= top + e.line.height) continue;
+    for (const frag of e.line.fragments) {
+      const fx = e.block.x + frag.x;
+      if (x >= fx && x <= fx + frag.width) return frag.style.link ?? null;
+    }
+  }
+  return null;
+}
+
+export interface ColumnBoundaryHit {
+  tableId: string;
+  /** Boundary between columns boundaryIndex and boundaryIndex+1. */
+  boundaryIndex: number;
+  x: number;
+  tableX: number;
+  tableWidth: number;
+}
+
+const COLUMN_GRIP_PX = 4;
+
+/** Interior column boundary of a body table within grip distance of a point.
+ *  Boundaries come from colWidths, not row cells — merged cells make row-cell
+ *  edges unreliable as column markers. */
+export function hitTestColumnBoundary(
+  tree: LayoutTree,
+  pageIndex: number,
+  x: number,
+  y: number,
+): ColumnBoundaryHit | null {
+  const page = tree.pages[pageIndex];
+  if (!page) return null;
+  for (const block of page.blocks) {
+    const t = block.table;
+    if (!t) continue;
+    if (y < t.y || y > t.y + t.height) continue;
+    let edge = t.x;
+    for (let ci = 0; ci + 1 < t.colWidths.length; ci++) {
+      edge += t.colWidths[ci]!;
+      if (Math.abs(x - edge) <= COLUMN_GRIP_PX) {
+        return { tableId: block.blockId, boundaryIndex: ci, x: edge, tableX: t.x, tableWidth: t.width };
+      }
+    }
+  }
+  return null;
+}
+
+/** First/last positions in the document — or in the scoped band story. */
+export function documentEdges(tree: LayoutTree, scope?: GeoScope): { start: DocPosition; end: DocPosition } | null {
+  const idx = getIndex(tree, scope);
+  const first = idx.entries[0];
+  const last = idx.entries[idx.entries.length - 1];
+  if (!first || !last) return null;
+  return {
+    start: { blockId: first.block.blockId, offset: first.startOffset },
+    end: { blockId: last.block.blockId, offset: last.endOffset },
+  };
+}
