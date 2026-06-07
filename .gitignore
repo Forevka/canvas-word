@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+# local agent state / scratch
+.omc/
+shots/
+
+# large local test documents (real fixtures live in src/**/__fixtures__/)
+/RenderedReportsDocx_*
