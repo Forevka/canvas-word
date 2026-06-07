@@ -242,8 +242,18 @@ co-fit, so growing a note pushes body lines to the next page live.
 (w:keepLines — paragraphs move whole instead of splitting), page and column
 breaks.
 
-**Documents** — .docx *import* (separate workstream, in flight), 1000-page
-stress generator (`?stress=N`).
+**Content controls (SDT)** — inline w:sdt controls as first-class citizens:
+rich/plain text, check box (click toggles ☐/☒), drop-down list & combo box
+(click opens a chooser), date picker; gray placeholder text is selected whole
+on entry and replaced by the first keystroke (Word); the active control draws
+Word's gray frame + alias title tab; content/control locks honored; Controls
+ribbon group inserts them, the importer maps `w:sdtPr` losslessly (alias, tag,
+list items, date format, checkbox state, locks, placeholder flag).
+
+**Documents** — .docx *import* (separate workstream; now also maps content
+controls, and builds the style gallery from styles.xml `w:name` display names —
+generated reports use opaque numeric styleIds), 1000-page stress generator
+(`?stress=N`).
 
 ## Verified performance
 
