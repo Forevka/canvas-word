@@ -1,7 +1,7 @@
 // Commands: pure (state) -> Transaction | null. The keymap, the IME proxy, and
 // (later) toolbar buttons all dispatch through these.
 
-import type { Block, CharStyle, ImageBlock, ParaStyle, Paragraph, TableBlock, TableCell, TableRow } from "../model/document";
+import type { Block, CharStyle, ImageBlock, ParaStyle, Paragraph, SdtProps, SdtType, TableBlock, TableCell, TableRow } from "../model/document";
 import type { DocPosition, DocSelection } from "../model/position";
 import { isCollapsed } from "../model/position";
 import type { Op, SectionGeometry } from "../model/ops";
@@ -630,6 +630,187 @@ export function insertTocCmd(): Command {
     fresh.forEach((p, k) => ops.push({ type: "insertBlock", index: insertIndex + k, block: p }));
     const first = fresh[0]!;
     return tr(ops, caret(first.id, 0), "command");
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Content controls (OOXML w:sdt) — contiguous runs sharing a CharStyle.sdtId
+// form one inline control; properties live in Document.sdts. Placeholder text
+// is gray and replaced WHOLE on first input (Word).
+
+export interface SdtRange {
+  blockId: string;
+  start: number;
+  end: number;
+}
+
+/** Every contiguous run span carrying this sdtId, document order. */
+export function findSdtRanges(doc: EditorState["doc"], id: string): SdtRange[] {
+  const out: SdtRange[] = [];
+  for (const p of paragraphsOf(doc)) {
+    let off = 0;
+    let open: SdtRange | null = null;
+    for (const r of p.runs) {
+      if (r.style.sdtId === id) {
+        if (open) open.end = off + r.text.length;
+        else open = { blockId: p.id, start: off, end: off + r.text.length };
+      } else if (open) {
+        out.push(open);
+        open = null;
+      }
+      off += r.text.length;
+    }
+    if (open) out.push(open);
+  }
+  return out;
+}
+
+/** The control containing a position (the run at the caret, either side). */
+export function sdtAtPosition(doc: EditorState["doc"], pos: DocPosition): string | null {
+  const block = blockById(doc, pos.blockId);
+  if (!block) return null;
+  let off = 0;
+  let before: string | null = null;
+  let after: string | null = null;
+  for (const r of block.runs) {
+    const end = off + r.text.length;
+    if (pos.offset > off && pos.offset <= end) before = r.style.sdtId ?? null;
+    if (pos.offset >= off && pos.offset < end) after = r.style.sdtId ?? null;
+    off = end;
+  }
+  return after ?? before;
+}
+
+const PLACEHOLDER_TEXT: Record<SdtType, string> = {
+  richText: "Click or tap here to enter text.",
+  plainText: "Click or tap here to enter text.",
+  checkbox: "☐",
+  dropDown: "Choose an item.",
+  comboBox: "Choose an item.",
+  date: "Click or tap to enter a date.",
+};
+
+const SDT_PLACEHOLDER_COLOR = "#767676";
+
+let sdtCounter = 0;
+const freshSdtId = (): string => `sdt_${Date.now().toString(36)}_${sdtCounter++}`;
+
+/** Insert a content control at the caret (placeholder content) or wrap the
+ *  selected text (becomes the control's content). */
+export function insertContentControl(type: SdtType, props: Partial<SdtProps> = {}): Command {
+  return (state) => {
+    const sel = state.selection;
+    if (!sel) return null;
+    const id = freshSdtId();
+    const full: SdtProps = { type, ...props };
+    if (type === "checkbox") full.checked = props.checked ?? false;
+    const ops: Op[] = [];
+    if (!isCollapsed(sel) && type !== "checkbox") {
+      // Wrap the selection: its text becomes real (non-placeholder) content.
+      const [from, to] = orderedRange(state, sel);
+      if (from.blockId !== to.blockId) return null; // inline controls only
+      const block = blockById(state.doc, from.blockId);
+      if (!block) return null;
+      ops.push({ type: "setSdtProps", id, props: full });
+      ops.push({
+        type: "setRuns",
+        blockId: from.blockId,
+        runs: applyStylePatchToRuns(block.runs, from.offset, to.offset, { sdtId: id }),
+      });
+      return tr(ops, sel, "command");
+    }
+    // Collapsed caret: insert gray placeholder content (checkbox: the glyph).
+    const at = isCollapsed(sel) ? sel.focus : orderedRange(state, sel)[0];
+    const block = blockById(state.doc, at.blockId);
+    if (!block) return null;
+    const inherited = styleAtRuns(block.runs, at.offset) ?? DEFAULT_CELL_CHAR;
+    const isCheckbox = type === "checkbox";
+    if (!isCheckbox) full.placeholder = true;
+    ops.push({ type: "setSdtProps", id, props: full });
+    ops.push({
+      type: "insertText",
+      at,
+      text: PLACEHOLDER_TEXT[type],
+      style: {
+        ...inherited,
+        color: isCheckbox ? inherited.color : SDT_PLACEHOLDER_COLOR,
+        sdtId: id,
+        link: undefined,
+        footnoteRef: undefined,
+      },
+    });
+    const len = PLACEHOLDER_TEXT[type].length;
+    return tr(
+      ops,
+      {
+        anchor: { blockId: at.blockId, offset: at.offset },
+        focus: { blockId: at.blockId, offset: at.offset + len },
+      },
+      "command",
+    );
+  };
+}
+
+/** Replace a control's content with `text` (dropdown pick, date pick, first
+ *  typed character into a placeholder). Clears the placeholder flag. */
+export function setSdtContent(id: string, text: string, patch: Partial<SdtProps> = {}): Command {
+  return (state) => {
+    const props = state.doc.sdts?.[id];
+    const range = findSdtRanges(state.doc, id)[0];
+    if (!props || !range) return null;
+    const block = blockById(state.doc, range.blockId);
+    if (!block) return null;
+    const base = styleAtRuns(block.runs, range.start + 1) ?? DEFAULT_CELL_CHAR;
+    const ops: Op[] = [
+      { type: "deleteRange", blockId: range.blockId, start: range.start, end: range.end },
+      {
+        type: "insertText",
+        at: { blockId: range.blockId, offset: range.start },
+        text,
+        style: { ...base, color: props.placeholder ? "#202124" : base.color, sdtId: id },
+      },
+      { type: "setSdtProps", id, props: { ...props, ...patch, placeholder: false } },
+    ];
+    return tr(ops, caret(range.blockId, range.start + text.length), "command");
+  };
+}
+
+export function toggleSdtCheckbox(id: string): Command {
+  return (state) => {
+    const props = state.doc.sdts?.[id];
+    if (!props || props.type !== "checkbox" || props.lockContent) return null;
+    const checked = !(props.checked ?? false);
+    return setSdtContent(id, checked ? "☒" : "☐", { checked })(state);
+  };
+}
+
+/** Remove the control: strip the run markers; optionally delete its content. */
+export function removeContentControl(id: string, deleteContents: boolean): Command {
+  return (state) => {
+    const props = state.doc.sdts?.[id];
+    if (!props || props.lockControl) return null;
+    const ranges = findSdtRanges(state.doc, id);
+    const ops: Op[] = [];
+    // Back-to-front so earlier offsets stay valid when deleting.
+    for (const r of [...ranges].reverse()) {
+      if (deleteContents) {
+        ops.push({ type: "deleteRange", blockId: r.blockId, start: r.start, end: r.end });
+      } else {
+        const block = blockById(state.doc, r.blockId)!;
+        ops.push({
+          type: "setRuns",
+          blockId: r.blockId,
+          runs: applyStylePatchToRuns(block.runs, r.start, r.end, { sdtId: undefined }),
+        });
+      }
+    }
+    ops.push({ type: "setSdtProps", id, props: null });
+    const first = ranges[0];
+    return tr(
+      ops,
+      first ? caret(first.blockId, first.start) : state.selection,
+      "command",
+    );
   };
 }
 

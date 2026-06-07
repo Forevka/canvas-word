@@ -12,6 +12,7 @@ import type {
   ParaStyle,
   Paragraph,
   Run,
+  SdtProps,
   TableBlock,
   TableCell,
   TableRow,
@@ -49,7 +50,8 @@ export type Op =
   | { type: "setListDefinition"; listId: string; def: import("./lists").ListDefinition | null }
   | { type: "setSectionProps"; geometry: SectionGeometry }
   | { type: "setSectionBand"; band: BandContainer; blocks: Block[] | null }
-  | { type: "setFootnote"; noteId: string; paras: Paragraph[] | null };
+  | { type: "setFootnote"; noteId: string; paras: Paragraph[] | null }
+  | { type: "setSdtProps"; id: string; props: SdtProps | null };
 
 /** Page-setup fields of the final section (`doc.section`). Bands are NOT here —
  *  they change through container ops; mid-document sections change through
@@ -93,7 +95,8 @@ export function styleEq(a: CharStyle, b: CharStyle): boolean {
     a.highlightColor === b.highlightColor &&
     a.verticalAlign === b.verticalAlign &&
     a.link === b.link &&
-    a.footnoteRef === b.footnoteRef // adjacent refs must never merge into one run
+    a.footnoteRef === b.footnoteRef && // adjacent refs must never merge into one run
+    a.sdtId === b.sdtId // content-control boundaries survive normalization
   );
 }
 
@@ -734,6 +737,19 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
           return kept || !fallback ? p : { blockId: fallback.id, offset: 0 };
         },
         dirtyBlockIds: [],
+      };
+    }
+
+    case "setSdtProps": {
+      const old = doc.sdts?.[op.id] ?? null;
+      const sdts = { ...(doc.sdts ?? {}) };
+      if (op.props) sdts[op.id] = op.props;
+      else delete sdts[op.id];
+      return {
+        doc: { ...doc, sdts },
+        inverse: { type: "setSdtProps", id: op.id, props: old },
+        mapPosition: identity,
+        dirtyBlockIds: [], // run markers change via setRuns/applyStylePatch ops
       };
     }
 

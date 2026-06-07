@@ -19,6 +19,34 @@ export interface CharStyle {
    *  kept in sync by the insert command's renumber pass; typically also
    *  verticalAlign 'super'). Points into Document.footnotes. */
   footnoteRef?: string | undefined;
+  /** Content-control membership (OOXML w:sdt): contiguous runs sharing an
+   *  sdtId form one inline control; properties live in `Document.sdts`.
+   *  `| undefined` so removing a control can strip the marker. */
+  sdtId?: string | undefined;
+}
+
+/** Structured document tag (Word content control) properties — a direct
+ *  mirror of w:sdtPr so the importer can map losslessly. */
+export type SdtType = "richText" | "plainText" | "checkbox" | "dropDown" | "comboBox" | "date";
+
+export interface SdtProps {
+  type: SdtType;
+  /** Title shown on the control's tab (w:alias). */
+  alias?: string;
+  /** Machine-readable tag (w:tag). */
+  tag?: string;
+  /** Content is currently the gray placeholder — typing replaces it whole. */
+  placeholder?: boolean;
+  /** Dropdown / combo box choices (w:listItem). */
+  listItems?: { display: string; value: string }[];
+  /** Date display format (w:date/@w:fullDate format, e.g. "M/d/yyyy"). */
+  dateFormat?: string;
+  /** Checkbox state (w14:checkbox). */
+  checked?: boolean;
+  /** w:lock="sdtContentLocked" — contents cannot be edited. */
+  lockContent?: boolean;
+  /** w:lock="sdtLocked" — the control cannot be deleted. */
+  lockControl?: boolean;
 }
 
 export interface ParaStyle {
@@ -180,4 +208,6 @@ export interface Document {
    *  a paragraph story laid out in the page-bottom footnote area; notes render
    *  on whatever page their reference run lands on. */
   footnotes?: Record<string, Paragraph[]>;
+  /** Content-control properties keyed by sdtId (runs carry the membership). */
+  sdts?: Record<string, SdtProps>;
 }

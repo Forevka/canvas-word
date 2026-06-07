@@ -26,6 +26,7 @@ import { htmlToFragment } from "./input/clipboard";
 import { createA11yMirror } from "./a11y/mirror";
 import {
   changeListLevel,
+  findSdtRanges,
   insertText,
   insertFragment,
   deleteBackward,
@@ -33,13 +34,16 @@ import {
   deleteImage,
   insertTableRowCmd,
   replaceBackAndInsert,
+  sdtAtPosition,
   setAlignment,
   setCharStyle as setCharStyleCmd,
   setImageProps,
   setParaProps,
+  setSdtContent,
   setTableColFractionsCmd,
   splitParagraph,
   toggleCharStyle,
+  toggleSdtCheckbox,
 } from "./editor/commands";
 import type { Command, EditorState, Transaction } from "./editor/state";
 import { UndoManager } from "./editor/undo";
@@ -112,7 +116,37 @@ export function createEditor(
 
   // ---- selection visuals + proxy follow ----------------------------------
 
+  const SDT_LABELS: Record<string, string> = {
+    richText: "Rich Text",
+    plainText: "Text",
+    checkbox: "Check Box",
+    dropDown: "Drop-Down List",
+    comboBox: "Combo Box",
+    date: "Date",
+  };
+
+  /** Word's active-control chrome: gray frame + title tab around the control
+   *  containing the caret. Cleared when the caret leaves. */
+  const updateSdtAdornment = (): void => {
+    const focus = selection?.focus;
+    const id = focus ? sdtAtPosition(doc, focus) : null;
+    const props = id ? doc.sdts?.[id] : undefined;
+    if (!id || !props) {
+      paint.setSdtAdornment(null);
+      return;
+    }
+    const rects = findSdtRanges(doc, id).flatMap((r) =>
+      selectionRects(
+        tree,
+        { anchor: { blockId: r.blockId, offset: r.start }, focus: { blockId: r.blockId, offset: r.end } },
+        scope(),
+      ),
+    );
+    paint.setSdtAdornment({ rects, label: props.alias ?? SDT_LABELS[props.type] ?? "Content control" });
+  };
+
   const refreshSelectionVisuals = (): void => {
+    updateSdtAdornment();
     if (!selection) {
       paint.setSelectionRects([]);
       paint.setCaret(null);
@@ -137,6 +171,24 @@ export function createEditor(
   };
 
   const setSelection = (next: DocSelection | null): void => {
+    // Word: entering a placeholder control selects its whole content, so the
+    // first keystroke replaces the prompt text.
+    if (next && isCollapsed(next)) {
+      const focus = next.focus;
+      const id = sdtAtPosition(doc, focus);
+      const props = id ? doc.sdts?.[id] : undefined;
+      if (id && props?.placeholder) {
+        const r = findSdtRanges(doc, id).find(
+          (rr) => rr.blockId === focus.blockId && focus.offset >= rr.start && focus.offset <= rr.end,
+        );
+        if (r && r.end > r.start) {
+          next = {
+            anchor: { blockId: r.blockId, offset: r.start },
+            focus: { blockId: r.blockId, offset: r.end },
+          };
+        }
+      }
+    }
     selection = next;
     pendingStyle = null; // moving the caret drops the pending typing style
     refreshSelectionVisuals();
@@ -380,7 +432,114 @@ export function createEditor(
 
   const autoCorrect = { quotes: true, dashes: true, symbols: true };
 
+  // ---- Content controls (SDT): popups, typing rules ------------------------
+
+  /** The control + props under the caret (focus side). */
+  const sdtAtCaret = (): { id: string; props: NonNullable<Document["sdts"]>[string] } | null => {
+    const focus = selection?.focus;
+    const id = focus ? sdtAtPosition(doc, focus) : null;
+    const props = id ? doc.sdts?.[id] : undefined;
+    return id && props ? { id, props } : null;
+  };
+
+  let sdtPopup: HTMLDivElement | null = null;
+  const closeSdtPopup = (): void => {
+    sdtPopup?.remove();
+    sdtPopup = null;
+  };
+
+  /** Dropdown list / combo / date picker beside the control (Word's chooser). */
+  const openSdtPopup = (id: string): void => {
+    closeSdtPopup();
+    const props = doc.sdts?.[id];
+    const range = findSdtRanges(doc, id)[0];
+    if (!props || !range) return;
+    const rect = caretRect(tree, { blockId: range.blockId, offset: range.start }, scope());
+    if (!rect) return;
+    const at = paint.caretToContainer(rect);
+    if (!at) return;
+    const panel = document.createElement("div");
+    panel.style.cssText =
+      `position:absolute;left:${at.left}px;top:${at.top + rect.height + 4}px;z-index:30;` +
+      "background:#fff;border:1px solid #c8c8c8;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.22);" +
+      "font:13px Arial;min-width:160px;max-height:240px;overflow:auto;padding:4px;";
+    panel.addEventListener("mousedown", (e) => {
+      e.stopPropagation(); // keep the press away from the selection controller
+    });
+    if (props.type === "date") {
+      const input = document.createElement("input");
+      input.type = "date";
+      input.style.cssText = "font:13px Arial;border:1px solid #c8c8c8;border-radius:4px;padding:3px 6px;";
+      const pick = (): void => {
+        if (!input.value) return;
+        const [y, m, d] = input.value.split("-").map(Number);
+        const fmt = props.dateFormat ?? "M/d/yyyy";
+        const text = fmt
+          .replace(/yyyy/g, String(y))
+          .replace(/MM/g, String(m!).padStart(2, "0"))
+          .replace(/M(?!M)/g, String(m))
+          .replace(/dd/g, String(d!).padStart(2, "0"))
+          .replace(/d(?!d)/g, String(d));
+        dispatch(setSdtContent(id, text));
+        closeSdtPopup();
+        proxy.focus();
+      };
+      input.addEventListener("change", pick);
+      panel.appendChild(input);
+    } else {
+      for (const item of props.listItems ?? []) {
+        const row = document.createElement("div");
+        row.textContent = item.display;
+        row.style.cssText = "padding:4px 10px;border-radius:4px;cursor:pointer;";
+        row.addEventListener("mouseenter", () => (row.style.background = "#e8eaed"));
+        row.addEventListener("mouseleave", () => (row.style.background = ""));
+        row.addEventListener("click", () => {
+          dispatch(setSdtContent(id, item.display));
+          closeSdtPopup();
+          proxy.focus();
+        });
+        panel.appendChild(row);
+      }
+      if ((props.listItems ?? []).length === 0) {
+        const empty = document.createElement("div");
+        empty.textContent = "(no list items)";
+        empty.style.cssText = "padding:4px 10px;color:#80868b;";
+        panel.appendChild(empty);
+      }
+    }
+    container.appendChild(panel);
+    sdtPopup = panel;
+  };
+
+  const onSdtPress = (pos: DocPosition): boolean => {
+    closeSdtPopup();
+    const id = sdtAtPosition(doc, pos);
+    const props = id ? doc.sdts?.[id] : undefined;
+    if (!id || !props) return false;
+    if (props.type === "checkbox") {
+      dispatch(toggleSdtCheckbox(id));
+      return true; // consume: the click IS the toggle
+    }
+    if (props.type === "dropDown" || props.type === "comboBox" || props.type === "date") {
+      // Open after the controller places the caret (same frame ordering).
+      requestAnimationFrame(() => openSdtPopup(id));
+    }
+    return false;
+  };
+  container.addEventListener("mousedown", () => closeSdtPopup());
+
   const insertWithAutoCorrect = (data: string): void => {
+    const sdt = sdtAtCaret();
+    if (sdt) {
+      const { id, props } = sdt;
+      // Not text-editable: locked content, pure dropdowns, checkboxes.
+      if (props.lockContent || props.type === "dropDown" || props.type === "checkbox") return;
+      if (props.placeholder) {
+        // First keystroke replaces the gray prompt with real content.
+        dispatch(setSdtContent(id, data));
+        return;
+      }
+    }
     if (data.length === 1 && selection && isCollapsed(selection)) {
       const block = blockById(doc, selection.focus.blockId);
       const prev = block ? textOfRuns(block.runs).slice(0, selection.focus.offset) : "";
@@ -635,12 +794,28 @@ export function createEditor(
 
   // ---- input layer wiring ---------------------------------------------------
 
+  /** True when the caret sits in a control whose content must not be edited. */
+  const sdtBlocksEdit = (): boolean => {
+    const sdt = sdtAtCaret();
+    return !!sdt && (sdt.props.lockContent === true || sdt.props.type === "dropDown");
+  };
+
   const proxy = createImeProxy(container, {
     onInsertText: (text) => insertWithAutoCorrect(text),
-    onDeleteBackward: () => dispatch(deleteBackward()),
-    onDeleteForward: () => dispatch(deleteForward()),
-    onSplitParagraph: () => dispatch(splitParagraph()),
+    onDeleteBackward: () => {
+      if (sdtBlocksEdit()) return;
+      dispatch(deleteBackward());
+    },
+    onDeleteForward: () => {
+      if (sdtBlocksEdit()) return;
+      dispatch(deleteForward());
+    },
+    onSplitParagraph: () => {
+      if (sdtAtCaret()) return; // controls are inline — no paragraph splits inside
+      dispatch(splitParagraph());
+    },
     onPaste: ({ html, text }) => {
+      if (sdtBlocksEdit()) return;
       if (html) {
         const fragment = htmlToFragment(html);
         if (fragment) {
@@ -685,6 +860,7 @@ export function createEditor(
     },
     startColumnDrag,
     onTab: tabInTable,
+    onSdtPress,
     jumpToBlock: (blockId: string): void => {
       // Word: Ctrl+click on a TOC entry moves the caret to the heading.
       if (!blockById(doc, blockId)) return;

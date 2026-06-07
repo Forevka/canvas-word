@@ -65,6 +65,10 @@ export interface SelectionControllerDeps {
   onTab(backward: boolean): boolean;
   /** Move the caret to a block's start and scroll it into view (TOC jump). */
   jumpToBlock(blockId: string): void;
+  /** Single click landed on a content control. Return true to CONSUME the
+   *  press (checkbox toggle); false lets the caret place normally (dropdown /
+   *  date popups open beside the caret). */
+  onSdtPress(pos: DocPosition): boolean;
 }
 
 export interface SelectionController {
@@ -250,6 +254,12 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
 
     const pos = posFromEvent(ev);
     if (!pos) return;
+    // Content controls intercept single clicks (checkbox toggles consume the
+    // press; dropdown/date open beside the normally-placed caret).
+    if (ev.detail === 1 && deps.onSdtPress(pos)) {
+      ev.preventDefault();
+      return;
+    }
     ev.preventDefault();
     if (ev.detail >= 3) {
       deps.setSelection({

@@ -29,6 +29,9 @@ export interface PaintScheduler {
   setSelectionRects(rects: Rect[]): void;
   /** Find-bar match highlights — painted under the selection. */
   setSearchRects(rects: Rect[]): void;
+  /** Content-control focus adornment: bounding boxes + a title tab (Word's
+   *  gray frame around the active control). Null clears. */
+  setSdtAdornment(adorn: { rects: Rect[]; label: string } | null): void;
   setCaret(caret: CaretRect | null): void;
   /** Coalesce: mark pages dirty now, paint once on the next animation frame. */
   invalidatePages(pageIndexes: number[]): void;
@@ -63,6 +66,7 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
   let tree: LayoutTree | null = null;
   let selectionRects: Rect[] = [];
   let searchRects: Rect[] = [];
+  let sdtAdorn: { rects: Rect[]; label: string } | null = null;
   let bandEditMode: "header" | "footer" | null = null;
 
   const pagesWrap = document.createElement("div");
@@ -168,6 +172,32 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
     ctx.fillStyle = SELECTION_COLOR;
     for (const r of selectionRects) {
       if (r.pageIndex === page.index) ctx.fillRect(r.x, r.y, r.width, r.height);
+    }
+
+    // 2c. content-control adornment: gray frame + title tab (Word's active
+    // control chrome). The tab text is UI chrome, not document text — measuring
+    // it here doesn't violate the paint-never-measures-layout invariant.
+    if (sdtAdorn) {
+      const onPage = sdtAdorn.rects.filter((r) => r.pageIndex === page.index);
+      ctx.strokeStyle = "#a8a8a8";
+      ctx.lineWidth = 1;
+      for (const r of onPage) {
+        ctx.strokeRect(r.x - 2.5, r.y - 1.5, r.width + 5, r.height + 3);
+      }
+      const first = onPage[0];
+      if (first && sdtAdorn.label) {
+        ctx.font = "10px Arial";
+        const w = ctx.measureText(sdtAdorn.label).width + 10;
+        const tabH = 15;
+        const tx = first.x - 2.5;
+        const ty = first.y - 1.5 - tabH;
+        ctx.fillStyle = "#d8d8d8";
+        ctx.beginPath();
+        ctx.roundRect(tx, ty, w, tabH, [3, 3, 0, 0]);
+        ctx.fill();
+        ctx.fillStyle = "#3c4043";
+        ctx.fillText(sdtAdorn.label, tx + 5, ty + 11);
+      }
     }
 
     // 3. blocks: text fragments (one fillText each), images, table grids
@@ -350,6 +380,13 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
     setSearchRects(rects: Rect[]): void {
       const affected = new Set([...pagesOf(searchRects), ...pagesOf(rects)]);
       searchRects = rects;
+      for (const i of affected) if (liveCanvases.has(i)) dirty.add(i);
+      schedule();
+    },
+
+    setSdtAdornment(adorn: { rects: Rect[]; label: string } | null): void {
+      const affected = new Set([...pagesOf(sdtAdorn?.rects ?? []), ...pagesOf(adorn?.rects ?? [])]);
+      sdtAdorn = adorn;
       for (const i of affected) if (liveCanvases.has(i)) dirty.add(i);
       schedule();
     },
