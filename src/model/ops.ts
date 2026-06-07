@@ -1,0 +1,803 @@
+// All mutation flows through operations. Applying an op returns the new document
+// (structurally shared), the op's exact INVERSE (undo is free), and a position
+// mapper so selections survive edits. This seam is also where OT/CRDT
+// collaboration would slot in later.
+
+import type {
+  BandContainer,
+  Block,
+  CharStyle,
+  Document,
+  ImageBlock,
+  ParaStyle,
+  Paragraph,
+  Run,
+  TableBlock,
+  TableCell,
+  TableRow,
+} from "./document";
+import { BAND_CONTAINERS } from "./document";
+import type { DocPosition } from "./position";
+import {
+  locateParagraph,
+  paragraphAt,
+  replaceParagraphAt,
+  styleAtRuns,
+  textOfRuns,
+  type ParaLocation,
+} from "./text";
+
+export type Op =
+  | { type: "insertText"; at: DocPosition; text: string; style?: CharStyle }
+  | { type: "insertRuns"; at: DocPosition; runs: Run[] }
+  | { type: "deleteRange"; blockId: string; start: number; end: number }
+  | { type: "setRuns"; blockId: string; runs: Run[] }
+  | { type: "setParaStyle"; blockId: string; patch: Partial<ParaStyle> }
+  | { type: "splitParagraph"; at: DocPosition; newBlockId: string; newStyle?: ParaStyle }
+  | { type: "mergeParagraphs"; firstBlockId: string }
+  | { type: "insertBlock"; index: number; block: Block; where?: Container }
+  | { type: "removeBlock"; blockId: string }
+  | { type: "setImageProps"; blockId: string; patch: Partial<Pick<ImageBlock, "widthPx" | "heightPx" | "align" | "wrap">> }
+  | { type: "setTableRow"; tableId: string; rowIndex: number; row: TableRow }
+  | { type: "setTableStructure"; tableId: string; rows: TableRow[]; colFractions?: number[] }
+  | { type: "setTableColFractions"; blockId: string; fractions: number[] }
+  | { type: "insertTableRow"; tableId: string; rowIndex: number; row: TableRow }
+  | { type: "removeTableRow"; tableId: string; rowIndex: number }
+  | { type: "insertTableColumn"; tableId: string; colIndex: number; cells: TableCell[]; fractions?: number[] }
+  | { type: "removeTableColumn"; tableId: string; colIndex: number }
+  | { type: "setStylesheet"; stylesheet: import("./stylesheet").Stylesheet }
+  | { type: "setListDefinition"; listId: string; def: import("./lists").ListDefinition | null }
+  | { type: "setSectionProps"; geometry: SectionGeometry }
+  | { type: "setSectionBand"; band: BandContainer; blocks: Block[] | null }
+  | { type: "setFootnote"; noteId: string; paras: Paragraph[] | null };
+
+/** Page-setup fields of the final section (`doc.section`). Bands are NOT here —
+ *  they change through container ops; mid-document sections change through
+ *  setParaStyle on their break paragraph's `sectionBreak.props`. */
+export interface SectionGeometry {
+  pageWidthPx: number;
+  pageHeightPx: number;
+  marginPx: { top: number; right: number; bottom: number; left: number };
+  /** `null` = single column (the explicit "off" — SectionPatch distinguishes it
+   *  from "inherit"). */
+  columns: { count: number; gapPx: number } | null;
+  /** `null` = continue numbering from the previous section. */
+  pageNumberStart: number | null;
+}
+
+/** Top-level block containers: the body, or one of the six margin-band stories
+ *  (default header/footer + first/even variants). */
+export type Container = "body" | BandContainer;
+
+export interface ApplyResult {
+  doc: Document;
+  inverse: Op;
+  /** Remaps any stored position across this edit (selection, bookmarks). */
+  mapPosition(pos: DocPosition): DocPosition;
+  dirtyBlockIds: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Run-list surgery (pure helpers)
+
+export function styleEq(a: CharStyle, b: CharStyle): boolean {
+  return (
+    a.fontFamily === b.fontFamily &&
+    a.fontSizePx === b.fontSizePx &&
+    a.bold === b.bold &&
+    a.italic === b.italic &&
+    a.underline === b.underline &&
+    a.strikethrough === b.strikethrough &&
+    a.color === b.color &&
+    (a.letterSpacingPx ?? 0) === (b.letterSpacingPx ?? 0) &&
+    a.highlightColor === b.highlightColor &&
+    a.verticalAlign === b.verticalAlign &&
+    a.link === b.link &&
+    a.footnoteRef === b.footnoteRef // adjacent refs must never merge into one run
+  );
+}
+
+/** Merge equal-styled neighbors, drop empties. An all-empty paragraph keeps ONE
+ *  empty run so the paragraph mark still carries a style (Word behavior). */
+export function normalizeRuns(runs: Run[], fallback: CharStyle): Run[] {
+  const nonEmpty = runs.filter((r) => r.text.length > 0);
+  if (nonEmpty.length === 0) return [{ text: "", style: runs[0]?.style ?? fallback }];
+  const out: Run[] = [{ ...nonEmpty[0]! }];
+  for (let i = 1; i < nonEmpty.length; i++) {
+    const r = nonEmpty[i]!;
+    const last = out[out.length - 1]!;
+    if (styleEq(last.style, r.style)) last.text += r.text;
+    else out.push({ ...r });
+  }
+  return out;
+}
+
+/** Split a run list at a UTF-16 offset. */
+export function splitRunsAt(runs: Run[], offset: number): [Run[], Run[]] {
+  const head: Run[] = [];
+  const tail: Run[] = [];
+  let cum = 0;
+  for (const r of runs) {
+    const end = cum + r.text.length;
+    if (end <= offset) head.push(r);
+    else if (cum >= offset) tail.push(r);
+    else {
+      head.push({ text: r.text.slice(0, offset - cum), style: r.style });
+      tail.push({ text: r.text.slice(offset - cum), style: r.style });
+    }
+    cum = end;
+  }
+  return [head, tail];
+}
+
+export function sliceRuns(runs: Run[], start: number, end: number): Run[] {
+  const [, fromStart] = splitRunsAt(runs, start);
+  const [middle] = splitRunsAt(fromStart, end - start);
+  return middle;
+}
+
+function fallbackStyle(runs: Run[], offset: number): CharStyle {
+  return (
+    styleAtRuns(runs, offset) ?? {
+      fontFamily: "Georgia, serif",
+      fontSizePx: 16,
+      bold: false,
+      italic: false,
+      underline: false,
+      strikethrough: false,
+      color: "#202124",
+    }
+  );
+}
+
+export function insertTextInRuns(runs: Run[], offset: number, text: string, style?: CharStyle): Run[] {
+  const st = style ?? fallbackStyle(runs, offset);
+  const [head, tail] = splitRunsAt(runs, offset);
+  return normalizeRuns([...head, { text, style: st }, ...tail], st);
+}
+
+export function insertRunsInRuns(runs: Run[], offset: number, inserted: Run[]): Run[] {
+  const [head, tail] = splitRunsAt(runs, offset);
+  return normalizeRuns([...head, ...inserted, ...tail], fallbackStyle(runs, offset));
+}
+
+export function deleteInRuns(runs: Run[], start: number, end: number): Run[] {
+  const [head, fromStart] = splitRunsAt(runs, start);
+  const [, tail] = splitRunsAt(fromStart, end - start);
+  return normalizeRuns([...head, ...tail], fallbackStyle(runs, start));
+}
+
+export function applyStylePatchToRuns(
+  runs: Run[],
+  start: number,
+  end: number,
+  patch: Partial<CharStyle>,
+): Run[] {
+  const [head, fromStart] = splitRunsAt(runs, start);
+  const [middle, tail] = splitRunsAt(fromStart, end - start);
+  const styled = middle.map((r) => ({ text: r.text, style: { ...r.style, ...patch } }));
+  return normalizeRuns([...head, ...styled, ...tail], fallbackStyle(runs, start));
+}
+
+// ---------------------------------------------------------------------------
+// applyOp
+
+const identity = (p: DocPosition): DocPosition => p;
+
+/** Content ops accept ANY paragraph (top-level or table cell). */
+function mustLocate(doc: Document, blockId: string): { loc: ParaLocation; block: Paragraph } {
+  const loc = locateParagraph(doc, blockId);
+  if (!loc) throw new Error(`paragraph ${blockId} not found`);
+  return { loc, block: paragraphAt(doc, loc) };
+}
+
+// ---- container plumbing: structural ops work on the body OR a band story ----
+
+export function containerBlocks(doc: Document, where: Container): Block[] {
+  return where === "body" ? doc.blocks : (doc.section[where] ?? []);
+}
+
+function withContainerBlocks(doc: Document, where: Container, blocks: Block[]): Document {
+  if (where === "body") return { ...doc, blocks };
+  return { ...doc, section: { ...doc.section, [where]: blocks } };
+}
+
+/** Which container holds this TOP-LEVEL block (paragraphs in table cells are
+ *  not top-level and return null). */
+export function containerOf(doc: Document, blockId: string): { where: Container; index: number } | null {
+  for (const where of ["body", ...BAND_CONTAINERS] as Container[]) {
+    const index = containerBlocks(doc, where).findIndex((b) => b.id === blockId);
+    if (index >= 0) return { where, index };
+  }
+  return null;
+}
+
+function mustTable(doc: Document, blockId: string): { where: Container; bi: number; block: TableBlock } {
+  const found = containerOf(doc, blockId);
+  const block = found ? containerBlocks(doc, found.where)[found.index] : undefined;
+  if (!found || !block || block.kind !== "table") throw new Error(`table ${blockId} not found`);
+  return { where: found.where, bi: found.index, block };
+}
+
+function replaceTable(doc: Document, where: Container, bi: number, table: TableBlock): Document {
+  const blocks = containerBlocks(doc, where).slice();
+  blocks[bi] = { ...table, revision: table.revision + 1 };
+  return withContainerBlocks(doc, where, blocks);
+}
+
+/** Path-clone a table (body or band) replacing one cell's block list
+ *  (revision bumped). */
+function replaceCellBlocks(
+  doc: Document,
+  where: Container,
+  bi: number,
+  ri: number,
+  ci: number,
+  cellBlocks: Block[],
+): Document {
+  const blocks = containerBlocks(doc, where).slice();
+  const table = blocks[bi] as TableBlock;
+  const rows = table.rows.slice();
+  const row = { cells: rows[ri]!.cells.slice() };
+  row.cells[ci] = { ...row.cells[ci]!, blocks: cellBlocks };
+  rows[ri] = row;
+  blocks[bi] = { ...table, rows, revision: table.revision + 1 };
+  return withContainerBlocks(doc, where, blocks);
+}
+
+/** First caret-capable paragraph in a set of rows (cells may start with images). */
+export function firstParagraphInRows(rows: TableRow[]): Paragraph | undefined {
+  for (const row of rows) {
+    for (const cell of row.cells) {
+      for (const b of cell.blocks) if (b.kind === "paragraph") return b;
+    }
+  }
+  return undefined;
+}
+
+/** Find an image block anywhere editable: top-level containers or table cells. */
+export type ImageLocation =
+  | { kind: "top"; where: Container; index: number; image: ImageBlock }
+  | { kind: "cell"; bi: number; ri: number; ci: number; ii: number; image: ImageBlock };
+
+export function locateImage(doc: Document, blockId: string): ImageLocation | null {
+  const found = containerOf(doc, blockId);
+  if (found) {
+    const block = containerBlocks(doc, found.where)[found.index];
+    if (block?.kind === "image") return { kind: "top", where: found.where, index: found.index, image: block };
+    return null;
+  }
+  for (let bi = 0; bi < doc.blocks.length; bi++) {
+    const b = doc.blocks[bi]!;
+    if (b.kind !== "table") continue;
+    for (let ri = 0; ri < b.rows.length; ri++) {
+      const row = b.rows[ri]!;
+      for (let ci = 0; ci < row.cells.length; ci++) {
+        const cell = row.cells[ci]!;
+        for (let ii = 0; ii < cell.blocks.length; ii++) {
+          const cb = cell.blocks[ii]!;
+          if (cb.kind === "image" && cb.id === blockId) return { kind: "cell", bi, ri, ci, ii, image: cb };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/** Column fractions normalized to the table's column count. */
+export function effectiveFractions(t: TableBlock): number[] {
+  const n = Math.max(1, ...t.rows.map((r) => r.cells.length));
+  if (t.colFractions && t.colFractions.length === n) return t.colFractions;
+  return Array.from({ length: n }, () => 1 / n);
+}
+
+function bump(block: Paragraph, runs: Run[]): Paragraph {
+  return { ...block, runs, revision: block.revision + 1 };
+}
+
+export function applyOp(doc: Document, op: Op): ApplyResult {
+  switch (op.type) {
+    case "insertText": {
+      const { loc, block } = mustLocate(doc, op.at.blockId);
+      const runs = insertTextInRuns(block.runs, op.at.offset, op.text, op.style);
+      const len = op.text.length;
+      return {
+        doc: replaceParagraphAt(doc, loc, bump(block, runs)),
+        inverse: { type: "deleteRange", blockId: block.id, start: op.at.offset, end: op.at.offset + len },
+        mapPosition: (p) =>
+          p.blockId === block.id && p.offset >= op.at.offset
+            ? { blockId: p.blockId, offset: p.offset + len }
+            : p,
+        dirtyBlockIds: [block.id],
+      };
+    }
+
+    case "insertRuns": {
+      const { loc, block } = mustLocate(doc, op.at.blockId);
+      const len = textOfRuns(op.runs).length;
+      const runs = insertRunsInRuns(block.runs, op.at.offset, op.runs);
+      return {
+        doc: replaceParagraphAt(doc, loc, bump(block, runs)),
+        inverse: { type: "deleteRange", blockId: block.id, start: op.at.offset, end: op.at.offset + len },
+        mapPosition: (p) =>
+          p.blockId === block.id && p.offset >= op.at.offset
+            ? { blockId: p.blockId, offset: p.offset + len }
+            : p,
+        dirtyBlockIds: [block.id],
+      };
+    }
+
+    case "deleteRange": {
+      const { loc, block } = mustLocate(doc, op.blockId);
+      const removed = sliceRuns(block.runs, op.start, op.end);
+      const runs = deleteInRuns(block.runs, op.start, op.end);
+      const len = op.end - op.start;
+      return {
+        doc: replaceParagraphAt(doc, loc, bump(block, runs)),
+        inverse: { type: "insertRuns", at: { blockId: block.id, offset: op.start }, runs: removed },
+        mapPosition: (p) => {
+          if (p.blockId !== block.id || p.offset <= op.start) return p;
+          return { blockId: p.blockId, offset: p.offset >= op.end ? p.offset - len : op.start };
+        },
+        dirtyBlockIds: [block.id],
+      };
+    }
+
+    case "setRuns": {
+      const { loc, block } = mustLocate(doc, op.blockId);
+      return {
+        doc: replaceParagraphAt(doc, loc, bump(block, op.runs)),
+        inverse: { type: "setRuns", blockId: block.id, runs: block.runs },
+        mapPosition: identity, // callers use setRuns for length-preserving restyles
+        dirtyBlockIds: [block.id],
+      };
+    }
+
+    case "setParaStyle": {
+      const { loc, block } = mustLocate(doc, op.blockId);
+      const oldPatch: Partial<ParaStyle> = {};
+      for (const key of Object.keys(op.patch) as (keyof ParaStyle)[]) {
+        // @ts-expect-error — keyed copy of the previous values for the inverse
+        oldPatch[key] = block.style[key];
+      }
+      const styled: Paragraph = {
+        ...block,
+        style: { ...block.style, ...op.patch },
+        revision: block.revision + 1,
+      };
+      return {
+        doc: replaceParagraphAt(doc, loc, styled),
+        inverse: { type: "setParaStyle", blockId: block.id, patch: oldPatch },
+        mapPosition: identity,
+        dirtyBlockIds: [block.id],
+      };
+    }
+
+    case "splitParagraph": {
+      const loc = locateParagraph(doc, op.at.blockId);
+      if (!loc) throw new Error(`paragraph ${op.at.blockId} not found`);
+      const block = paragraphAt(doc, loc);
+      const [headRuns, tailRuns] = splitRunsAt(block.runs, op.at.offset);
+      const carry = fallbackStyle(block.runs, op.at.offset);
+      const head = bump(block, normalizeRuns(headRuns, carry));
+      const tail: Paragraph = {
+        kind: "paragraph",
+        id: op.newBlockId,
+        revision: 0,
+        runs: normalizeRuns(tailRuns, carry),
+        style: op.newStyle ?? { ...block.style },
+      };
+      let next: Document;
+      if (loc.kind === "cell") {
+        const table = containerBlocks(doc, loc.where)[loc.bi] as TableBlock;
+        const cellBlocks = table.rows[loc.ri]!.cells[loc.ci]!.blocks.slice();
+        cellBlocks.splice(loc.pi, 1, head, tail);
+        next = replaceCellBlocks(doc, loc.where, loc.bi, loc.ri, loc.ci, cellBlocks);
+      } else if (loc.kind === "footnote") {
+        const paras = doc.footnotes![loc.noteId]!.slice();
+        paras.splice(loc.pi, 1, head, tail);
+        next = { ...doc, footnotes: { ...doc.footnotes, [loc.noteId]: paras } };
+      } else {
+        const where: Container = loc.kind === "band" ? loc.band : "body";
+        const blocks = containerBlocks(doc, where).slice();
+        blocks.splice(loc.bi, 1, head, tail);
+        next = withContainerBlocks(doc, where, blocks);
+      }
+      return {
+        doc: next,
+        inverse: { type: "mergeParagraphs", firstBlockId: block.id },
+        mapPosition: (p) =>
+          p.blockId === block.id && p.offset >= op.at.offset
+            ? { blockId: op.newBlockId, offset: p.offset - op.at.offset }
+            : p,
+        dirtyBlockIds: [block.id, op.newBlockId],
+      };
+    }
+
+    case "mergeParagraphs": {
+      const loc = locateParagraph(doc, op.firstBlockId);
+      if (!loc) throw new Error(`paragraph ${op.firstBlockId} not found`);
+      const block = paragraphAt(doc, loc);
+      let nextPara: Paragraph;
+      if (loc.kind === "cell") {
+        const table = containerBlocks(doc, loc.where)[loc.bi] as TableBlock;
+        const candidate = table.rows[loc.ri]!.cells[loc.ci]!.blocks[loc.pi + 1];
+        if (!candidate || candidate.kind !== "paragraph") {
+          throw new Error("mergeParagraphs: no next paragraph in cell");
+        }
+        nextPara = candidate;
+      } else if (loc.kind === "footnote") {
+        const candidate = doc.footnotes![loc.noteId]![loc.pi + 1];
+        if (!candidate) throw new Error("mergeParagraphs: no next paragraph in footnote");
+        nextPara = candidate;
+      } else {
+        const where: Container = loc.kind === "band" ? loc.band : "body";
+        const candidate = containerBlocks(doc, where)[loc.bi + 1];
+        if (!candidate || candidate.kind !== "paragraph") {
+          throw new Error("mergeParagraphs: no next paragraph");
+        }
+        nextPara = candidate;
+      }
+      const headLen = textOfRuns(block.runs).length;
+      const merged = bump(
+        block,
+        normalizeRuns([...block.runs, ...nextPara.runs], fallbackStyle(block.runs, headLen)),
+      );
+      let next: Document;
+      if (loc.kind === "cell") {
+        const table = containerBlocks(doc, loc.where)[loc.bi] as TableBlock;
+        const cellBlocks = table.rows[loc.ri]!.cells[loc.ci]!.blocks.slice();
+        cellBlocks.splice(loc.pi, 2, merged);
+        next = replaceCellBlocks(doc, loc.where, loc.bi, loc.ri, loc.ci, cellBlocks);
+      } else if (loc.kind === "footnote") {
+        const paras = doc.footnotes![loc.noteId]!.slice();
+        paras.splice(loc.pi, 2, merged);
+        next = { ...doc, footnotes: { ...doc.footnotes, [loc.noteId]: paras } };
+      } else {
+        const where: Container = loc.kind === "band" ? loc.band : "body";
+        const blocks = containerBlocks(doc, where).slice();
+        blocks.splice(loc.bi, 2, merged);
+        next = withContainerBlocks(doc, where, blocks);
+      }
+      return {
+        doc: next,
+        inverse: {
+          type: "splitParagraph",
+          at: { blockId: block.id, offset: headLen },
+          newBlockId: nextPara.id,
+          newStyle: nextPara.style,
+        },
+        mapPosition: (p) =>
+          p.blockId === nextPara.id ? { blockId: block.id, offset: headLen + p.offset } : p,
+        dirtyBlockIds: [block.id, nextPara.id],
+      };
+    }
+
+    case "insertBlock": {
+      const where = op.where ?? "body";
+      const blocks = containerBlocks(doc, where).slice();
+      blocks.splice(op.index, 0, op.block);
+      return {
+        doc: withContainerBlocks(doc, where, blocks),
+        inverse: { type: "removeBlock", blockId: op.block.id },
+        mapPosition: identity,
+        dirtyBlockIds: [op.block.id],
+      };
+    }
+
+    case "removeBlock": {
+      const found = containerOf(doc, op.blockId);
+      if (!found) throw new Error(`block ${op.blockId} not found`);
+      const blocks = containerBlocks(doc, found.where).slice();
+      const block = blocks[found.index]!;
+      blocks.splice(found.index, 1);
+      const neighbor = blocks[Math.min(found.index, blocks.length - 1)];
+      return {
+        doc: withContainerBlocks(doc, found.where, blocks),
+        inverse: { type: "insertBlock", index: found.index, block, where: found.where },
+        mapPosition: (p) =>
+          p.blockId === op.blockId && neighbor
+            ? { blockId: neighbor.id, offset: 0 }
+            : p,
+        dirtyBlockIds: [op.blockId],
+      };
+    }
+
+    case "setImageProps": {
+      const loc = locateImage(doc, op.blockId);
+      if (!loc) throw new Error(`image ${op.blockId} not found`);
+      const block = loc.image;
+      const oldPatch: typeof op.patch = {};
+      for (const key of Object.keys(op.patch) as (keyof typeof op.patch)[]) {
+        // @ts-expect-error — keyed copy of previous values for the inverse
+        oldPatch[key] = block[key];
+      }
+      const updated: ImageBlock = { ...block, ...op.patch, revision: block.revision + 1 };
+      let next: Document;
+      if (loc.kind === "top") {
+        const blocks = containerBlocks(doc, loc.where).slice();
+        blocks[loc.index] = updated;
+        next = withContainerBlocks(doc, loc.where, blocks);
+      } else {
+        const table = doc.blocks[loc.bi] as TableBlock;
+        const cellBlocks = table.rows[loc.ri]!.cells[loc.ci]!.blocks.slice();
+        cellBlocks[loc.ii] = updated;
+        next = replaceCellBlocks(doc, "body", loc.bi, loc.ri, loc.ci, cellBlocks); // locateImage cells are body-only
+
+      }
+      return {
+        doc: next,
+        inverse: { type: "setImageProps", blockId: op.blockId, patch: oldPatch },
+        mapPosition: identity,
+        dirtyBlockIds: [op.blockId],
+      };
+    }
+
+    case "setTableColFractions": {
+      const { where, bi, block } = mustTable(doc, op.blockId);
+      const old = effectiveFractions(block);
+      return {
+        doc: replaceTable(doc, where, bi, { ...block, colFractions: op.fractions }),
+        inverse: { type: "setTableColFractions", blockId: op.blockId, fractions: old },
+        mapPosition: identity,
+        dirtyBlockIds: [op.blockId],
+      };
+    }
+
+    case "setTableRow": {
+      const { where, bi, block } = mustTable(doc, op.tableId);
+      const old = block.rows[op.rowIndex];
+      if (!old) throw new Error("setTableRow: no such row");
+      const removedIds = new Set(old.cells.flatMap((c) => c.blocks.map((p) => p.id)));
+      const rows = block.rows.slice();
+      rows[op.rowIndex] = op.row;
+      const fallback = firstParagraphInRows([op.row]);
+      return {
+        doc: replaceTable(doc, where, bi, { ...block, rows }),
+        inverse: { type: "setTableRow", tableId: op.tableId, rowIndex: op.rowIndex, row: old },
+        mapPosition: (p) => {
+          if (!removedIds.has(p.blockId)) return p;
+          // position survives if its paragraph still exists in the new row
+          const kept = op.row.cells.some((c) => c.blocks.some((b) => b.id === p.blockId));
+          return kept || !fallback ? p : { blockId: fallback.id, offset: 0 };
+        },
+        dirtyBlockIds: [op.tableId],
+      };
+    }
+
+    case "insertTableRow": {
+      const { where, bi, block } = mustTable(doc, op.tableId);
+      const rows = block.rows.slice();
+      rows.splice(op.rowIndex, 0, op.row);
+      return {
+        doc: replaceTable(doc, where, bi, { ...block, rows }),
+        inverse: { type: "removeTableRow", tableId: op.tableId, rowIndex: op.rowIndex },
+        mapPosition: identity,
+        dirtyBlockIds: [op.tableId],
+      };
+    }
+
+    case "removeTableRow": {
+      const { where, bi, block } = mustTable(doc, op.tableId);
+      const removed = block.rows[op.rowIndex];
+      if (!removed) throw new Error("removeTableRow: no such row");
+      const rows = block.rows.slice();
+      rows.splice(op.rowIndex, 1);
+      const removedIds = new Set(removed.cells.flatMap((c) => c.blocks.map((p) => p.id)));
+      const fallbackRow = rows[Math.min(op.rowIndex, rows.length - 1)];
+      const fallback = fallbackRow ? firstParagraphInRows([fallbackRow]) : undefined;
+      return {
+        doc: replaceTable(doc, where, bi, { ...block, rows }),
+        inverse: { type: "insertTableRow", tableId: op.tableId, rowIndex: op.rowIndex, row: removed },
+        mapPosition: (p) =>
+          removedIds.has(p.blockId) && fallback ? { blockId: fallback.id, offset: 0 } : p,
+        dirtyBlockIds: [op.tableId],
+      };
+    }
+
+    case "setListDefinition": {
+      const old = doc.lists?.[op.listId] ?? null;
+      const lists = { ...(doc.lists ?? {}) };
+      if (op.def) lists[op.listId] = op.def;
+      else delete lists[op.listId];
+      return {
+        doc: { ...doc, lists },
+        inverse: { type: "setListDefinition", listId: op.listId, def: old },
+        mapPosition: identity,
+        // Indents come from the definition → every paragraph in the list must
+        // re-measure; their (revision,width) line-cache keys change with width.
+        dirtyBlockIds: [],
+      };
+    }
+
+    case "setTableStructure": {
+      const { where, bi, block } = mustTable(doc, op.tableId);
+      const oldIds = new Set(
+        block.rows.flatMap((r) => r.cells.flatMap((c) => c.blocks.map((p) => p.id))),
+      );
+      const fallback = firstParagraphInRows(op.rows);
+      const next: TableBlock = { ...block, rows: op.rows };
+      if (op.colFractions) next.colFractions = op.colFractions;
+      else delete next.colFractions;
+      const inverse: Op = { type: "setTableStructure", tableId: op.tableId, rows: block.rows };
+      if (block.colFractions) inverse.colFractions = block.colFractions;
+      return {
+        doc: replaceTable(doc, where, bi, next),
+        inverse,
+        mapPosition: (p) => {
+          if (!oldIds.has(p.blockId)) return p;
+          const kept = op.rows.some((r) =>
+            r.cells.some((c) => c.blocks.some((b) => b.id === p.blockId)),
+          );
+          return kept || !fallback ? p : { blockId: fallback.id, offset: 0 };
+        },
+        dirtyBlockIds: [op.tableId],
+      };
+    }
+
+    case "insertTableColumn": {
+      const { where, bi, block } = mustTable(doc, op.tableId);
+      const snapshot: Op = { type: "setTableStructure", tableId: op.tableId, rows: block.rows };
+      if (block.colFractions) snapshot.colFractions = block.colFractions;
+      // Span-aware: a merged cell covering the insertion point grows by one
+      // column instead of having a new cell slotted into its middle.
+      const rows = block.rows.map((row, ri) => {
+        const cells: TableCell[] = [];
+        let col = 0;
+        let inserted = false;
+        for (const cell of row.cells) {
+          const span = cell.colSpan ?? 1;
+          if (!inserted && op.colIndex > col && op.colIndex < col + span) {
+            cells.push({ ...cell, colSpan: span + 1 });
+            inserted = true;
+          } else if (!inserted && op.colIndex === col) {
+            const fresh = op.cells[ri];
+            if (fresh) cells.push(fresh);
+            cells.push(cell);
+            inserted = true;
+          } else {
+            cells.push(cell);
+          }
+          col += span;
+        }
+        if (!inserted) {
+          const fresh = op.cells[ri];
+          if (fresh) cells.push(fresh); // append at the right edge
+        }
+        return { cells };
+      });
+      let fractions = op.fractions;
+      if (!fractions) {
+        const old = effectiveFractions(block);
+        const fresh = 1 / (old.length + 1);
+        fractions = old.map((f) => f * (1 - fresh));
+        fractions.splice(op.colIndex, 0, fresh);
+      }
+      return {
+        doc: replaceTable(doc, where, bi, { ...block, rows, colFractions: fractions }),
+        inverse: snapshot,
+        mapPosition: identity,
+        dirtyBlockIds: [op.tableId],
+      };
+    }
+
+    case "setStylesheet": {
+      const old = doc.stylesheet ?? { styles: [], defaultStyleId: "Normal" };
+      return {
+        doc: { ...doc, stylesheet: op.stylesheet },
+        inverse: { type: "setStylesheet", stylesheet: old },
+        mapPosition: identity,
+        dirtyBlockIds: [], // restyling paragraphs happens via setRuns/setParaStyle ops
+      };
+    }
+
+    case "setSectionProps": {
+      const s = doc.section;
+      const old: SectionGeometry = {
+        pageWidthPx: s.pageWidthPx,
+        pageHeightPx: s.pageHeightPx,
+        marginPx: { ...s.marginPx },
+        columns: s.columns ? { ...s.columns } : null,
+        pageNumberStart: s.pageNumberStart ?? null,
+      };
+      const next = {
+        ...s,
+        pageWidthPx: op.geometry.pageWidthPx,
+        pageHeightPx: op.geometry.pageHeightPx,
+        marginPx: op.geometry.marginPx,
+      };
+      if (op.geometry.columns) next.columns = op.geometry.columns;
+      else delete next.columns;
+      if (op.geometry.pageNumberStart !== null) next.pageNumberStart = op.geometry.pageNumberStart;
+      else delete next.pageNumberStart;
+      return {
+        doc: { ...doc, section: next },
+        inverse: { type: "setSectionProps", geometry: old },
+        mapPosition: identity,
+        dirtyBlockIds: [], // geometry change → full re-walk; line caches keyed by width
+      };
+    }
+
+    case "setFootnote": {
+      const old = doc.footnotes?.[op.noteId] ?? null;
+      const footnotes = { ...(doc.footnotes ?? {}) };
+      if (op.paras) footnotes[op.noteId] = op.paras;
+      else delete footnotes[op.noteId];
+      const removedIds = new Set((old ?? []).map((p) => p.id));
+      const fallback = doc.blocks.find((b) => b.kind === "paragraph");
+      return {
+        doc: { ...doc, footnotes },
+        inverse: { type: "setFootnote", noteId: op.noteId, paras: old },
+        mapPosition: (p) => {
+          if (!removedIds.has(p.blockId)) return p;
+          const kept = (op.paras ?? []).some((b) => b.id === p.blockId);
+          return kept || !fallback ? p : { blockId: fallback.id, offset: 0 };
+        },
+        dirtyBlockIds: [],
+      };
+    }
+
+    case "setSectionBand": {
+      const old = doc.section[op.band] ?? null;
+      const section = { ...doc.section };
+      if (op.blocks) section[op.band] = op.blocks;
+      else delete section[op.band];
+      const removedIds = new Set(
+        (old ?? []).filter((b) => b.kind === "paragraph").map((b) => b.id),
+      );
+      const fallback = doc.blocks.find((b) => b.kind === "paragraph");
+      return {
+        doc: { ...doc, section },
+        inverse: { type: "setSectionBand", band: op.band, blocks: old },
+        mapPosition: (p) => {
+          if (!removedIds.has(p.blockId)) return p;
+          const kept = (op.blocks ?? []).some((b) => b.id === p.blockId);
+          return kept || !fallback ? p : { blockId: fallback.id, offset: 0 };
+        },
+        dirtyBlockIds: [],
+      };
+    }
+
+    case "removeTableColumn": {
+      const { where, bi, block } = mustTable(doc, op.tableId);
+      const snapshot: Op = { type: "setTableStructure", tableId: op.tableId, rows: block.rows };
+      if (block.colFractions) snapshot.colFractions = block.colFractions;
+      const oldFractions = effectiveFractions(block);
+      const removedIds = new Set<string>();
+      // Span-aware: a merged cell covering the removed column shrinks; an
+      // unmerged cell at that column is dropped.
+      const rows = block.rows.map((row) => {
+        const cells: TableCell[] = [];
+        let col = 0;
+        for (const cell of row.cells) {
+          const span = cell.colSpan ?? 1;
+          if (op.colIndex >= col && op.colIndex < col + span) {
+            if (span > 1) {
+              const shrunk: TableCell = { ...cell };
+              if (span - 1 > 1) shrunk.colSpan = span - 1;
+              else delete shrunk.colSpan;
+              cells.push(shrunk);
+            } else {
+              for (const p of cell.blocks) removedIds.add(p.id);
+            }
+          } else {
+            cells.push(cell);
+          }
+          col += span;
+        }
+        return { cells };
+      });
+      const rest = oldFractions.filter((_, i) => i !== op.colIndex);
+      const sum = rest.reduce((s, f) => s + f, 0) || 1;
+      const fractions = rest.map((f) => f / sum);
+      const fallback = firstParagraphInRows(rows);
+      return {
+        doc: replaceTable(doc, where, bi, { ...block, rows, colFractions: fractions }),
+        inverse: snapshot,
+        mapPosition: (p) =>
+          removedIds.has(p.blockId) && fallback ? { blockId: fallback.id, offset: 0 } : p,
+        dirtyBlockIds: [op.tableId],
+      };
+    }
+  }
+}
