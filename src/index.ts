@@ -49,6 +49,7 @@ import {
   replaceBackAndInsert,
   replaceSdtContent,
   replaceSdtBlockSpan,
+  replaceSdtCellContent,
   sdtAtPosition,
   setAlignment,
   setCharStyle as setCharStyleCmd,
@@ -1109,6 +1110,22 @@ export function createEditor(
     return d.innerHTML;
   };
 
+  /** Split the inspector's edited HTML into one run-list per top-level block
+   *  (paragraph), preserving order and empties — so a cell-hosted control's N
+   *  paragraphs map 1:1 back to its N tagged cell ranges. */
+  const editedBlockRuns = (html: string): import("./model/document").Run[][] => {
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    const out: import("./model/document").Run[][] = [];
+    for (const node of Array.from(parsed.body.childNodes)) {
+      if (node instanceof HTMLElement) {
+        out.push(htmlToFragment(node.outerHTML)?.blocks[0]?.runs ?? []);
+      } else if (node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() !== "") {
+        out.push(htmlToFragment(`<p>${escapeForBuffer(node.textContent ?? "")}</p>`)?.blocks[0]?.runs ?? []);
+      }
+    }
+    return out;
+  };
+
   /** `blockLevel` controls round-trip through whole-block replacement (objects
    *  preserved by ref); inline controls round-trip through a paragraph fragment.
    *  `objRefs` holds the block-level span's images/tables in data-cw-ref order. */
@@ -1168,9 +1185,17 @@ export function createEditor(
       editable,
       onSave: (html: string): boolean => {
         const before = doc;
+        const ranges = findSdtRanges(doc, id);
+        const multiBlock = new Set(ranges.map((r) => r.blockId)).size > 1;
         if (data.blockLevel) {
+          // Body/band block-level control: whole-span replacement, objects by ref.
           dispatch(replaceSdtBlockSpan(id, htmlToBlocksPreserving(html, data.objRefs)));
+        } else if (multiBlock) {
+          // Cell-hosted control spanning several cells: rewrite each cell in place.
+          const edited = editedBlockRuns(html);
+          dispatch(replaceSdtCellContent(id, ranges.map((_, i) => edited[i] ?? [])));
         } else {
+          // True inline control (one paragraph): fragment replacement.
           const fragment = htmlToFragment(html) ?? emptyFragmentLike(id);
           dispatch(replaceSdtContent(id, fragment));
         }

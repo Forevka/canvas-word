@@ -1,7 +1,7 @@
 // Commands: pure (state) -> Transaction | null. The keymap, the IME proxy, and
 // (later) toolbar buttons all dispatch through these.
 
-import type { Block, CharStyle, ImageBlock, ParaStyle, Paragraph, SdtProps, SdtType, TableBlock, TableCell, TableRow } from "../model/document";
+import type { Block, CharStyle, ImageBlock, ParaStyle, Paragraph, Run, SdtProps, SdtType, TableBlock, TableCell, TableRow } from "../model/document";
 import type { DocPosition, DocSelection } from "../model/position";
 import { isCollapsed } from "../model/position";
 import type { Op, SectionGeometry } from "../model/ops";
@@ -871,6 +871,64 @@ export function replaceSdtBlockSpan(id: string, blocks: Block[]): Command {
 
     const firstPara = fresh.find((b) => b.kind === "paragraph")!;
     return { ops, selectionAfter: caret(firstPara.id, 0), origin: "command" };
+  };
+}
+
+/** Replace a CELL-HOSTED control's content in place, one tagged range at a time.
+ *  Used when the control's ranges span multiple table cells (insertFragment can't
+ *  replace a cross-cell selection). `runsPerRange[i]` is the new content for the
+ *  i-th range in findSdtRanges order; a missing entry leaves that range as-is.
+ *  Runs are re-tagged with the sdtId; the table grid (cells, rows) is untouched. */
+export function replaceSdtCellContent(id: string, runsPerRange: Run[][]): Command {
+  return (state) => {
+    const props = state.doc.sdts?.[id];
+    const ranges = findSdtRanges(state.doc, id);
+    if (!props || ranges.length === 0) return null;
+
+    // Group by block; within a block rewrite high→low so earlier offsets stay valid.
+    const byBlock = new Map<string, { idx: number; r: SdtRange }[]>();
+    ranges.forEach((r, idx) => {
+      const list = byBlock.get(r.blockId) ?? [];
+      list.push({ idx, r });
+      byBlock.set(r.blockId, list);
+    });
+    const ops: Op[] = [];
+    for (const [blockId, list] of byBlock) {
+      const block = blockById(state.doc, blockId);
+      if (!block) continue;
+      list.sort((a, b) => b.r.start - a.r.start);
+      for (const { idx, r } of list) {
+        const provided = runsPerRange[idx];
+        if (provided === undefined) continue; // untouched range
+        const base = styleAtRuns(block.runs, r.start + 1) ?? styleAtRuns(block.runs, r.start) ?? DEFAULT_CELL_CHAR;
+        // The inspector has no font UI, so typography (family/size/color) stays
+        // the cell's own; only the inline toggles the user can flip (B/I/U via
+        // contentEditable, links) ride over from the edited runs.
+        let runs: Run[] = provided.map((rn) => ({
+          text: rn.text,
+          style: {
+            ...base,
+            bold: rn.style.bold,
+            italic: rn.style.italic,
+            underline: rn.style.underline,
+            strikethrough: rn.style.strikethrough,
+            verticalAlign: rn.style.verticalAlign,
+            highlightColor: rn.style.highlightColor,
+            link: rn.style.link,
+            sdtId: id,
+          },
+        }));
+        if (runs.length === 0 || runs.every((rn) => rn.text.length === 0)) {
+          runs = [{ text: "", style: { ...base, sdtId: id } }];
+        }
+        ops.push({ type: "deleteRange", blockId, start: r.start, end: r.end });
+        ops.push({ type: "insertRuns", at: { blockId, offset: r.start }, runs });
+      }
+    }
+    if (ops.length === 0) return null;
+    if (props.placeholder) ops.push({ type: "setSdtProps", id, props: { ...props, placeholder: false } });
+    const f = ranges[0]!;
+    return { ops, selectionAfter: caret(f.blockId, f.start), origin: "command" };
   };
 }
 
