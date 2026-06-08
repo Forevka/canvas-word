@@ -5,7 +5,7 @@
 import type { IRParaProps, IRRunProps } from "./types";
 import { WarningSink } from "./types";
 import { lineAutoToMultiplier } from "./units";
-import { attr, el, numAttr, onOff, val, type XmlNode } from "./xml";
+import { attr, el, els, numAttr, onOff, val, type XmlNode } from "./xml";
 
 export function decodeRunProps(rPr: XmlNode): IRRunProps {
   const props: IRRunProps = {};
@@ -92,6 +92,23 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
 
   const keepLines = onOff(el(pPr, "w:keepLines"));
   if (keepLines !== undefined) props.keepLinesTogether = keepLines;
+
+  const tabs = el(pPr, "w:tabs");
+  if (tabs) {
+    const stops: NonNullable<IRParaProps["tabStops"]> = [];
+    for (const t of els(tabs, "w:tab")) {
+      const pos = numAttr(t, "w:pos");
+      const tabVal = attr(t, "w:val");
+      // "clear" removes a stop; "bar" is a vertical rule, not a tab stop.
+      if (pos === undefined || tabVal === "clear" || tabVal === "bar") continue;
+      const stop: { posTwips: number; val?: string; leader?: string } = { posTwips: pos };
+      if (tabVal) stop.val = tabVal;
+      const leader = attr(t, "w:leader");
+      if (leader) stop.leader = leader;
+      stops.push(stop);
+    }
+    if (stops.length > 0) props.tabStops = stops;
+  }
 
   const pageBreakBefore = onOff(el(pPr, "w:pageBreakBefore"));
   if (pageBreakBefore !== undefined) props.pageBreakBefore = pageBreakBefore;

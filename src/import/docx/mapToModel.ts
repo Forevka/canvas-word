@@ -18,8 +18,11 @@ import type {
   Run,
   SdtProps,
   SectionProps,
+  TabAlign,
   TableBlock,
   TableCell,
+  TabLeader,
+  TabStop,
 } from "../../model/document";
 import type { NamedStyle, Stylesheet } from "../../model/stylesheet";
 import type { ListDefinition, ListLevel, ListNumberFormat } from "../../model/lists";
@@ -77,8 +80,6 @@ const DEFAULT_SECTION: SectionProps = {
   pageHeightPx: 1056,
   marginPx: { top: 96, right: 96, bottom: 96, left: 96 },
 };
-
-const TAB_AS_SPACES = "    ";
 
 export interface Mapper {
   /** Map a block list (document body, header story, footer story). resolveLink
@@ -328,11 +329,9 @@ export function createMapper(
   }
 
   function mapRun(rawText: string, effective: IRRunProps, resolveLink: LinkResolver, sdtId?: string): Run {
+    // "\t" is preserved — the layout engine positions it at the paragraph's tab
+    // stops (or the default interval); no flattening to spaces.
     let text = rawText;
-    if (text.includes("\t")) {
-      warnings.add("tabs", "Tab stops became fixed spaces (no tab-stop layout).");
-      text = text.replaceAll("\t", TAB_AS_SPACES);
-    }
     const style = mapCharStyle(effective);
     if (effective.linkRelId) {
       const url = resolveLink(effective.linkRelId);
@@ -364,92 +363,102 @@ export function createMapper(
   // -------------------------------------------------------------------------
   // Tables — cells are full block stories; gridSpan maps to colSpan.
 
-  /** Collapse the OOXML border/shading cascade onto every cell of a squared-off
-   *  grid. Borders are set only when the table carries border info at SOME layer
-   *  (style, table, or any cell) — otherwise they're left absent so the renderer
-   *  draws its default light grid for native/unstyled tables. */
-  function resolveTableStyling(
-    ir: IRTable,
-    grid: { cell: TableCell; ir: IRTableCell | null }[][],
-    width: number,
-  ): void {
-    const styled = ir.styleId ? tableStyle(ir.styleId) : {};
-    const hasBorderInfo =
-      !!styled.borders || !!ir.borders || ir.rows.some((r) => r.cells.some((c) => c.borders));
-    const lastRow = grid.length - 1;
+  /** A model cell with its source IR (null for padding) and grid position —
+   *  the border/shading pass needs the position; row spans make it non-trivial. */
+  interface PlacedCell {
+    cell: TableCell;
+    ir: IRTableCell | null;
+    startRow: number;
+    startCol: number;
+    colSpan: number;
+  }
 
-    grid.forEach((row, ri) => {
-      let col = 0;
-      for (const { cell, ir: irCell } of row) {
-        const span = cell.colSpan ?? 1;
-        const pos: CellPosition = {
-          top: ri === 0,
-          bottom: ri === lastRow,
-          left: col === 0,
-          right: col + span - 1 === width - 1,
-        };
-        // Cell shading wins over table, table over style.
-        const shd = irCell?.shd ?? ir.shd ?? styled.shd;
-        if (shd) cell.shading = shd;
-        if (hasBorderInfo) {
-          const src: BorderSources = { cell: irCell?.borders, table: ir.borders, style: styled.borders };
-          cell.borders = resolveCellBorders(src, pos);
-        }
-        col += span;
-      }
-    });
+  /** Collapse the OOXML border/shading cascade onto one placed cell. Borders are
+   *  set only when the table carries border info at SOME layer (style, table, or
+   *  any cell) — otherwise left absent so the renderer draws its default grid. */
+  function styleCell(
+    p: PlacedCell,
+    ir: IRTable,
+    styled: ResolvedTableStyle,
+    hasBorderInfo: boolean,
+    width: number,
+    rowCount: number,
+  ): void {
+    const rowSpan = p.cell.rowSpan ?? 1;
+    const pos: CellPosition = {
+      top: p.startRow === 0,
+      bottom: p.startRow + rowSpan - 1 === rowCount - 1,
+      left: p.startCol === 0,
+      right: p.startCol + p.colSpan - 1 === width - 1,
+    };
+    const shd = p.ir?.shd ?? ir.shd ?? styled.shd; // cell over table over style
+    if (shd) p.cell.shading = shd;
+    if (hasBorderInfo) {
+      const src: BorderSources = { cell: p.ir?.borders, table: ir.borders, style: styled.borders };
+      p.cell.borders = resolveCellBorders(src, pos);
+    }
   }
 
   function mapTable(ir: IRTable, media: MediaStore, resolveLink: LinkResolver): TableBlock {
-    // Cell paired with its source IR (null for padding cells) so the border /
-    // shading pass can read direct formatting after the grid is squared off.
-    interface Built {
-      cell: TableCell;
-      ir: IRTableCell | null;
-    }
-    const padCell = (): Built => ({ cell: { id: id(), blocks: [emptyParagraph()] }, ir: null });
-    const spanSum = (row: Built[]): number => row.reduce((s, b) => s + (b.cell.colSpan ?? 1), 0);
-
-    const built: Built[][] = ir.rows.map((irRow) => {
-      const row: Built[] = [];
-      for (const irCell of irRow.cells) {
-        if (irCell.vMergeContinue) {
-          // No vertical spans in the model — the continuation stays as its own
-          // (typically empty) cell.
-          warnings.add("cell-vmerge", "Vertically merged cells were split (no row spans).");
-        }
-        const blocks: Block[] = [];
-        for (const b of irCell.blocks) {
-          if (b.kind === "paragraph") blocks.push(...mapParagraph(b, media, resolveLink));
-          else blocks.push(mapTable(b, media, resolveLink)); // nested table — model renders one level
-        }
-        const cell: TableCell = { id: id(), blocks: blocks.length > 0 ? blocks : [emptyParagraph()] };
-        if (irCell.gridSpan > 1) cell.colSpan = irCell.gridSpan;
-        row.push({ cell, ir: irCell });
+    const buildCell = (irCell: IRTableCell): TableCell => {
+      const blocks: Block[] = [];
+      for (const b of irCell.blocks) {
+        if (b.kind === "paragraph") blocks.push(...mapParagraph(b, media, resolveLink));
+        else blocks.push(mapTable(b, media, resolveLink)); // nested table — model renders one level
       }
-      return row;
+      const cell: TableCell = { id: id(), blocks: blocks.length > 0 ? blocks : [emptyParagraph()] };
+      if (irCell.gridSpan > 1) cell.colSpan = irCell.gridSpan;
+      return cell;
+    };
+
+    // Column count: the widest row by grid columns. Merge-continuation cells are
+    // still present in their rows (each covered row carries a w:vMerge cell), so
+    // every row sums to the full width before we drop them.
+    const width = Math.max(1, ...ir.rows.map((r) => r.cells.reduce((s, c) => s + Math.max(1, c.gridSpan), 0)));
+
+    // owner[col] = the cell currently spanning down into column `col` (HTML
+    // rowspan). A w:vMerge="continue" cell is dropped and bumps its owner's
+    // rowSpan; the row simply omits a cell for those columns.
+    const owner = new Array<TableCell | undefined>(width);
+    const placedRows: PlacedCell[][] = ir.rows.map((irRow, ri) => {
+      const placed: PlacedCell[] = [];
+      let col = 0;
+      for (const irCell of irRow.cells) {
+        if (col >= width) break; // overflow beyond the declared grid — drop
+        const span = Math.max(1, Math.min(irCell.gridSpan, width - col));
+        if (irCell.vMergeContinue) {
+          const o = owner[col];
+          if (o) o.rowSpan = (o.rowSpan ?? 1) + 1;
+          else warnings.add("cell-vmerge-orphan", "A merged-cell continuation had no cell above to extend.");
+          col += span; // owner[col..] persists so deeper continuations find it
+          continue;
+        }
+        const cell = buildCell(irCell);
+        placed.push({ cell, ir: irCell, startRow: ri, startCol: col, colSpan: span });
+        for (let k = 0; k < span && col + k < width; k++) owner[col + k] = cell;
+        col += span;
+      }
+      // Genuinely short row (not rowspan holes): pad the trailing columns.
+      while (col < width) {
+        const cell: TableCell = { id: id(), blocks: [emptyParagraph()] };
+        placed.push({ cell, ir: null, startRow: ri, startCol: col, colSpan: 1 });
+        owner[col] = cell;
+        col += 1;
+      }
+      return placed;
     });
 
-    // Keep every row's span total equal (ragged rows exist in real files).
-    const width = Math.max(1, ...built.map(spanSum));
-    for (const row of built) {
-      for (let w = spanSum(row); w < width; w++) row.push(padCell());
-    }
+    // Borders/shading after all rows so each owner's rowSpan is final.
+    const styled = ir.styleId ? tableStyle(ir.styleId) : {};
+    const hasBorderInfo = !!styled.borders || !!ir.borders || ir.rows.some((r) => r.cells.some((c) => c.borders));
+    for (const row of placedRows) for (const p of row) styleCell(p, ir, styled, hasBorderInfo, width, ir.rows.length);
 
-    resolveTableStyling(ir, built, width);
-
-    const rows = built.map((row) => ({ cells: row.map((b) => b.cell) }));
+    const rows = placedRows.map((row) => ({ cells: row.map((p) => p.cell) }));
     const table: TableBlock = { kind: "table", id: id(), revision: 0, rows };
-    // w:tblGrid column widths → fractions of content width (when consistent).
-    if (ir.colWidthsTwips && ir.colWidthsTwips.length === width) {
-      const total = ir.colWidthsTwips.reduce((s, w) => s + w, 0);
-      if (total > 0) {
-        const fractions = ir.colWidthsTwips.map((w) => Math.round((w / total) * 10000) / 10000);
-        fractions[fractions.length - 1] =
-          Math.round((1 - fractions.slice(0, -1).reduce((s, f) => s + f, 0)) * 10000) / 10000;
-        table.colFractions = fractions;
-      }
-    }
+    // Always emit colFractions of the true width: dropped continuation cells mean
+    // a row's cell count no longer equals the column count, so the layout engine
+    // can't infer the column count from cells.length anymore.
+    table.colFractions = columnFractions(ir.colWidthsTwips, width);
     return table;
   }
 
@@ -556,6 +565,48 @@ function buildListLevel(ir: IRListDefinition["levels"][number] | undefined, i: n
   return level;
 }
 
+const TAB_ALIGN: Record<string, TabAlign> = {
+  left: "left",
+  start: "left",
+  num: "left",
+  center: "center",
+  right: "right",
+  end: "right",
+  decimal: "decimal",
+};
+const TAB_LEADER: Record<string, TabLeader> = {
+  dot: "dot",
+  middleDot: "dot",
+  hyphen: "dash",
+  underscore: "underscore",
+};
+
+/** Raw w:tabs → model TabStop[] (twips → px), sorted by position. */
+function mapTabStops(raw: NonNullable<IRParaProps["tabStops"]>): TabStop[] {
+  const stops = raw.map((t) => {
+    const stop: TabStop = { posPx: round2(twipsToPx(t.posTwips)) };
+    const align = t.val ? TAB_ALIGN[t.val] : undefined;
+    if (align && align !== "left") stop.align = align;
+    const leader = t.leader ? TAB_LEADER[t.leader] : undefined;
+    if (leader) stop.leader = leader;
+    return stop;
+  });
+  stops.sort((a, b) => a.posPx - b.posPx);
+  return stops;
+}
+
+/** Column fractions of length `width` (sum ≈ 1). From w:tblGrid when it matches
+ *  the column count, else equal columns. The last cell absorbs rounding. */
+function columnFractions(widthsTwips: number[] | undefined, width: number): number[] {
+  const fractions =
+    widthsTwips && widthsTwips.length === width && widthsTwips.reduce((s, w) => s + w, 0) > 0
+      ? widthsTwips.map((w) => Math.round((w / widthsTwips.reduce((s, x) => s + x, 0)) * 10000) / 10000)
+      : Array.from({ length: width }, () => Math.round((1 / width) * 10000) / 10000);
+  fractions[fractions.length - 1] =
+    Math.round((1 - fractions.slice(0, -1).reduce((s, f) => s + f, 0)) * 10000) / 10000;
+  return fractions;
+}
+
 // ---------------------------------------------------------------------------
 // Style mapping (pure)
 
@@ -640,6 +691,7 @@ function mapParaPatch(props: IRParaProps): Partial<ParaStyle> {
     out.indentFirstLinePx = round2(twipsToPx(props.indentFirstLineTwips));
   if (props.keepWithNext) out.keepWithNext = true;
   if (props.keepLinesTogether) out.keepLinesTogether = true;
+  if (props.tabStops) out.tabStops = mapTabStops(props.tabStops);
   return out;
 }
 
@@ -689,6 +741,7 @@ function mapParaStyle(props: IRParaProps): ParaStyle {
     style.indentFirstLinePx = round2(twipsToPx(props.indentFirstLineTwips));
   if (props.keepWithNext) style.keepWithNext = true;
   if (props.keepLinesTogether) style.keepLinesTogether = true;
+  if (props.tabStops) style.tabStops = mapTabStops(props.tabStops);
   if (props.pageBreakBefore) style.pageBreakBefore = true;
   if (props.styleId) style.namedStyle = props.styleId;
   return style;

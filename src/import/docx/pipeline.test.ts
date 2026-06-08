@@ -83,10 +83,10 @@ describe("docx pipeline — paragraphs and runs", () => {
 });
 
 describe("docx pipeline — lossy policies emit warnings", () => {
-  it("converts tabs to fixed spaces", () => {
+  it("preserves tabs as \\t (laid out at tab stops, not flattened)", () => {
     const r = importBody(`<w:p><w:r><w:t>a</w:t><w:tab/><w:t>b</w:t></w:r></w:p>`);
-    expect(para(r.doc.blocks[0]).runs[0]!.text).toBe("a    b");
-    expect(warningCodes(r)).toContain("tabs");
+    expect(para(r.doc.blocks[0]).runs[0]!.text).toBe("a\tb");
+    expect(warningCodes(r)).not.toContain("tabs");
   });
 
   it("splits soft line breaks into paragraphs with hugged spacing", () => {
@@ -236,13 +236,19 @@ describe("docx pipeline — tables", () => {
     expect(r.warnings).toHaveLength(0); // faithful — no longer a lossy mapping
   });
 
-  it("splits vertical merges with a warning (no row spans in the model)", () => {
+  it("maps vertical merges to rowSpan (continuation cells dropped, HTML semantics)", () => {
     const restart = cell("tall", `<w:tcPr><w:vMerge w:val="restart"/></w:tcPr>`);
     const cont = `<w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p/></w:tc>`;
     const r = importBody(
       `<w:tbl><w:tr>${restart}${cell("b")}</w:tr><w:tr>${cont}${cell("d")}</w:tr></w:tbl>`,
     );
-    expect(warningCodes(r)).toContain("cell-vmerge");
+    const tbl = r.doc.blocks[0] as TableBlock;
+    // Row 0: the restart cell spans 2 rows; row 1 omits its column entirely.
+    expect(tbl.rows[0]!.cells[0]!.rowSpan).toBe(2);
+    expect(tbl.rows[0]!.cells).toHaveLength(2); // "tall" + "b"
+    expect(tbl.rows[1]!.cells).toHaveLength(1); // only "d" (continuation dropped)
+    expect((tbl.rows[1]!.cells[0]!.blocks[0] as Paragraph).runs[0]!.text).toBe("d");
+    expect(warningCodes(r)).not.toContain("cell-vmerge");
   });
 
   it("derives colFractions from w:tblGrid", () => {
@@ -347,11 +353,14 @@ describe("docx pipeline — real Word output", () => {
     expect(paras[2]!.runs[0]!.style.fontFamily).toBe("Aptos, serif");
     expect(paras[2]!.runs[0]!.style.fontSizePx).toBeCloseTo(14.67, 2);
 
+    // The tab in para 1 is preserved as "\t" (laid out at tab stops now).
+    expect(paras[1]!.runs.map((x) => x.text).join("")).toContain("\t");
+
     const tbl = r.doc.blocks.find((b): b is TableBlock => b.kind === "table");
     expect(tbl).toBeDefined();
     expect(tbl!.rows).toHaveLength(2);
     expect((tbl!.rows[0]!.cells[0]!.blocks[0] as Paragraph).runs[0]!.text).toBe("A1");
 
-    expect(r.warnings.map((w) => w.code)).toEqual(["tabs"]);
+    expect(r.warnings).toEqual([]); // nothing lossy in this document anymore
   });
 });

@@ -163,11 +163,11 @@ than a silent drop:
 | Newspaper columns | `SectionProps.columns` | Faithful: `w:cols` (count > 1) with px gap (0.5in default) |
 | Page-number restart | `SectionProps.pageNumberStart` | Faithful: `w:pgNumType/@w:start` |
 | `w:br` (soft line break) | no soft breaks | Split into a new paragraph with `spaceBefore/After: 0` |
-| `w:tab` | no tab stops | Replace with fixed spaces (warning) |
+| `w:tab` / `w:tabs` | `ParaStyle.tabStops` | Faithful: `\t` preserved (laid out at stops); `w:tabs` → per-stop posPx/align/leader (clear/bar skipped) |
 | `gridSpan` | — | Faithful: maps to `TableCell.colSpan` (and `w:tblGrid` → `colFractions`) |
 | Table borders | `TableCell.borders` | Faithful: cascade table style → `w:tblBorders` → `w:tcBorders` collapsed per-edge (inside/outside selection; first-definition-wins, `nil` suppresses). Unstyled tables keep the renderer's default grid |
 | Table/cell shading | `TableCell.shading` | Faithful: `w:shd[@w:fill]` (cell over table over style); pattern shading approximated by its color |
-| `vMerge` | no row spans | Continuation cells stay as separate (empty) cells; warning |
+| `vMerge` | `TableCell.rowSpan` | Faithful: continuation cells dropped, the restart cell's `rowSpan` bumped (HTML semantics); `colFractions` always emitted so the layout keeps the column count |
 | Explicit page breaks (`w:br type="page"`, `w:pageBreakBefore`) | — | Faithful: map to `ParaStyle.pageBreakBefore` (inline breaks split the paragraph; the follower carries the break) |
 | Multiple sections | single `SectionProps` | Page *geometry*: body-level `sectPr` wins (last section), with warning. Page *boundaries*: non-continuous section breaks set `pageBreakBefore` on the following block |
 
@@ -214,7 +214,6 @@ or rich headers, the importer seam already collects the data (the IR keeps it; o
    `keepLinesTogether`; `w:cols` → `SectionProps.columns`; `w:pgNumType` →
    `pageNumberStart`; table border/shading cascade → `TableCell.borders`/`shading`.
 
-Still on the backlog (need model or layout support): cell vertical-merge row spans,
-tab-stop positions, table-style *conditional* formatting (firstRow/banding via
+Still on the backlog: table-style *conditional* formatting (firstRow/banding via
 `w:tblStylePr`), first/even header variants, east-asian/complex-script fonts, OMML math,
 a warnings-summary UI toast.

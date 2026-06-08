@@ -147,6 +147,8 @@ export interface IRParaProps {
   keepWithNext?: boolean;
   /** w:keepLines — maps onto ParaStyle.keepLinesTogether. */
   keepLinesTogether?: boolean;
+  /** w:pPr/w:tabs — raw tab stops (pos in twips; val/leader raw OOXML names). */
+  tabStops?: { posTwips: number; val?: string; leader?: string }[];
   /** w:pageBreakBefore — this paragraph starts a new page. */
   pageBreakBefore?: boolean;
   /** w:numPr — list membership. numId "0" / null = explicitly NOT a list
