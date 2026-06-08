@@ -287,9 +287,31 @@ export function locateImage(doc: Document, blockId: string): ImageLocation | nul
   return null;
 }
 
+/** The table's true grid-column count: the widest row measured in GRID columns,
+ *  not cells — colSpan widens a cell and a rowSpan from an earlier row leaves a
+ *  hole that this row's cells shift past (HTML table model). Counting cells
+ *  alone undercounts any row with a colSpan or a vertical-merge hole. */
+export function gridColumnCount(t: TableBlock): number {
+  let maxCols = 1;
+  const rowsRemaining: number[] = [];
+  for (const row of t.rows) {
+    let col = 0;
+    for (const cell of row.cells) {
+      while ((rowsRemaining[col] ?? 0) > 0) col++;
+      const span = Math.max(1, cell.colSpan ?? 1);
+      const rowSpan = Math.max(1, cell.rowSpan ?? 1);
+      if (rowSpan > 1) for (let k = 0; k < span; k++) rowsRemaining[col + k] = rowSpan;
+      col += span;
+    }
+    maxCols = Math.max(maxCols, col);
+    for (let c = 0; c < rowsRemaining.length; c++) if (rowsRemaining[c]! > 0) rowsRemaining[c]!--;
+  }
+  return maxCols;
+}
+
 /** Column fractions normalized to the table's column count. */
 export function effectiveFractions(t: TableBlock): number[] {
-  const n = Math.max(1, ...t.rows.map((r) => r.cells.length));
+  const n = gridColumnCount(t);
   if (t.colFractions && t.colFractions.length === n) return t.colFractions;
   return Array.from({ length: n }, () => 1 / n);
 }
