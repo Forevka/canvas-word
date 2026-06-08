@@ -6,11 +6,15 @@ import type { CharStyle, Document, ParaStyle, TableBlock } from "./model/documen
 import { BAND_CONTAINERS } from "./model/document";
 import type { DocPosition, DocSelection } from "./model/position";
 import { isCollapsed } from "./model/position";
-import { applyOp, effectiveFractions, type Op } from "./model/ops";
+import { applyOp, effectiveFractions, locateImage, type Op } from "./model/ops";
 import { bandParagraphs, blockById, containerListOf, locateParagraph, paragraphsOf, styleAtRuns, textOfRuns } from "./model/text";
 import { createLayoutEngine, type LayoutEngine } from "./layout/engine";
 import {
   caretRect,
+  comparePositions,
+  hitTest,
+  hitTestObject,
+  linkAt,
   objectRect,
   selectionRects,
   type ColumnBoundaryHit,
@@ -22,29 +26,42 @@ import { createSelectionController } from "./input/selectionController";
 import { createObjectFrame } from "./input/objectController";
 import { createImeProxy } from "./input/imeProxy";
 import { createKeymapHandler, type StyleKey } from "./input/keymap";
-import { htmlToFragment } from "./input/clipboard";
+import { extractFragment, fragmentToHtml, fragmentToPlainText, htmlToFragment } from "./input/clipboard";
+import { showContextMenu, type ContextMenuHandle, type MenuEntry } from "./ui/contextMenu";
 import { createA11yMirror } from "./a11y/mirror";
 import {
   changeListLevel,
+  deleteTableRowCmd,
+  deleteTableColumnCmd,
+  deleteTableCmd,
   findSdtRanges,
+  insertContentControl,
   insertText,
   insertFragment,
   deleteBackward,
   deleteForward,
   deleteImage,
+  insertTableColumnCmd,
   insertTableRowCmd,
+  mergeCellsCmd,
+  removeContentControl,
   replaceBackAndInsert,
   sdtAtPosition,
   setAlignment,
   setCharStyle as setCharStyleCmd,
   setImageProps,
+  setLinkCmd,
   setParaProps,
   setSdtContent,
   setTableColFractionsCmd,
   splitParagraph,
   toggleCharStyle,
+  toggleList,
   toggleSdtCheckbox,
+  unmergeCellCmd,
 } from "./editor/commands";
+import type { SdtType } from "./model/document";
+import { ICONS } from "./ui/icons";
 import type { Command, EditorState, Transaction } from "./editor/state";
 import { UndoManager } from "./editor/undo";
 
@@ -886,6 +903,353 @@ export function createEditor(
   const keymapHandler = createKeymapHandler({ dispatch, undo, redo, toggleStyle });
   container.addEventListener("keydown", keymapHandler);
 
+  // ---- clipboard (context-menu Cut/Copy/Paste) -----------------------------
+  // Copy/cut serialize the model fragment to the async Clipboard API; paste
+  // reads it back. The keyboard path still flows through the native copy/cut
+  // events on the controller — these are the menu's gesture-driven equivalents.
+
+  const orderedSelection = (): [DocPosition, DocPosition] | null => {
+    if (!selection || isCollapsed(selection)) return null;
+    const cmp = comparePositions(tree, selection.anchor, selection.focus, scope());
+    return cmp <= 0 ? [selection.anchor, selection.focus] : [selection.focus, selection.anchor];
+  };
+
+  const copySelection = async (): Promise<void> => {
+    const o = orderedSelection();
+    if (!o) return;
+    const fragment = extractFragment(paragraphsOf(doc), o[0], o[1]);
+    const html = fragmentToHtml(fragment);
+    const text = fragmentToPlainText(fragment);
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([text], { type: "text/plain" }),
+        }),
+      ]);
+    } catch {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        /* clipboard unavailable (no permission / insecure context) */
+      }
+    }
+  };
+
+  const pasteText = (text: string): void => {
+    const parts = text.replace(/\r\n?/g, "\n").split("\n");
+    dispatch(insertText(parts[0] ?? "", "paste"));
+    for (let i = 1; i < parts.length; i++) {
+      dispatch(splitParagraph());
+      if (parts[i]!.length > 0) dispatch(insertText(parts[i]!, "paste"));
+    }
+  };
+
+  const pasteFromClipboard = async (): Promise<void> => {
+    if (sdtBlocksEdit()) return;
+    try {
+      const items = await navigator.clipboard.read();
+      for (const it of items) {
+        if (it.types.includes("text/html")) {
+          const html = await (await it.getType("text/html")).text();
+          const frag = htmlToFragment(html);
+          if (frag) {
+            dispatch(insertFragment(frag));
+            return;
+          }
+        }
+      }
+      for (const it of items) {
+        if (it.types.includes("text/plain")) {
+          pasteText(await (await it.getType("text/plain")).text());
+          return;
+        }
+      }
+    } catch {
+      try {
+        pasteText(await navigator.clipboard.readText());
+      } catch {
+        /* clipboard read blocked */
+      }
+    }
+  };
+
+  // ---- contextual right-click menu -----------------------------------------
+  // Composition matrix (sections concatenated, only present targets emitted):
+  //   always              → Clipboard (Cut/Copy/Paste)
+  //   hyperlink           → Link (Open/Edit/Remove)
+  //   image object        → Image (Wrap/Align/Delete)
+  //   content control     → Control (Toggle|Choose/Remove)
+  //   editable text       → Font, Paragraph, Insert
+  //   list paragraph      → List (level up/down, remove)
+  //   table cell          → Table (Insert/Delete/Merge/Unmerge)
+  //   header/footer band  → Band (Edit / Close)
+  let contextMenu: ContextMenuHandle | null = null;
+  const closeContextMenu = (): void => {
+    contextMenu?.close();
+    contextMenu = null;
+  };
+
+  const positionWithinSelection = (pos: DocPosition): boolean => {
+    if (!selection || isCollapsed(selection)) return false;
+    const cmp = comparePositions(tree, selection.anchor, selection.focus, scope());
+    const [min, max] = cmp <= 0 ? [selection.anchor, selection.focus] : [selection.focus, selection.anchor];
+    return (
+      comparePositions(tree, min, pos, scope()) <= 0 &&
+      comparePositions(tree, pos, max, scope()) <= 0
+    );
+  };
+
+  const bandAtPoint = (pt: { pageIndex: number; y: number }): "header" | "footer" | null => {
+    const pg = tree.pages[pt.pageIndex];
+    if (!pg) return null;
+    if (pt.y < pg.contentTopPx) return pg.headerSource || doc.section.header ? "header" : null;
+    if (pt.y > pg.contentBottomPx) return pg.footerSource || doc.section.footer ? "footer" : null;
+    return null;
+  };
+
+  /** First caret-capable paragraph of the cell holding `imageId` (so the Table
+   *  section's commands, which read the caret's cell, apply to an image's cell). */
+  const caretIntoImageCell = (imageId: string): void => {
+    const loc = locateImage(doc, imageId);
+    if (loc?.kind !== "cell") return;
+    const table = doc.blocks[loc.bi] as TableBlock;
+    const para = table.rows[loc.ri]!.cells[loc.ci]!.blocks.find((b) => b.kind === "paragraph");
+    if (para) {
+      selection = { anchor: { blockId: para.id, offset: 0 }, focus: { blockId: para.id, offset: 0 } };
+    }
+  };
+
+  const listKindOf = (p: import("./model/document").Paragraph): "bullet" | "decimal" | null => {
+    const ref = p.style.list;
+    if (!ref) return null;
+    const def = doc.lists?.[ref.listId];
+    const level = def?.levels[Math.min(ref.level, def.levels.length - 1)];
+    return level?.format === "bullet" ? "bullet" : "decimal";
+  };
+
+  const buildContextEntries = (pt: { pageIndex: number; x: number; y: number }): MenuEntry[] => {
+    const item = (
+      label: string,
+      onClick: () => void,
+      opts: { icon?: string; shortcut?: string; disabled?: boolean; danger?: boolean } = {},
+    ): MenuEntry => ({ kind: "item", label, onClick, ...opts });
+    const sep: MenuEntry = { kind: "sep" };
+
+    const hasSel = !!selection && !isCollapsed(selection);
+    const focus = selection?.focus ?? null;
+    const para = focus ? blockById(doc, focus.blockId) : undefined;
+    const loc = focus ? locateParagraph(doc, focus.blockId) : null;
+    const imgId = selectedObject;
+    const imgInCell = imgId ? locateImage(doc, imgId)?.kind === "cell" : false;
+    const inCell = loc?.kind === "cell" || imgInCell;
+    const sdtId = focus && !imgId ? sdtAtPosition(doc, focus) : null;
+    const linkUrl = linkAt(tree, pt.pageIndex, pt.x, pt.y, scope());
+    const band = bandAtPoint(pt);
+
+    const entries: MenuEntry[] = [];
+
+    // Clipboard — always.
+    entries.push(
+      item("Cut", () => void copySelection().then(() => dispatch(deleteBackward())), {
+        shortcut: "Ctrl+X",
+        disabled: !hasSel || sdtBlocksEdit(),
+      }),
+      item("Copy", () => void copySelection(), { shortcut: "Ctrl+C", disabled: !hasSel }),
+      item("Paste", () => void pasteFromClipboard(), { shortcut: "Ctrl+V", disabled: sdtBlocksEdit() }),
+    );
+
+    // Link.
+    if (linkUrl) {
+      entries.push(
+        sep,
+        item("Open Hyperlink", () => window.open(linkUrl, "_blank", "noopener"), { icon: ICONS.link }),
+        item("Edit Hyperlink…", () => {
+          const u = prompt("Link URL:", linkUrl);
+          if (u !== null) dispatch(setLinkCmd(u.trim() === "" ? null : u.trim()));
+        }),
+        item("Remove Hyperlink", () => dispatch(setLinkCmd(null)), { danger: true }),
+      );
+    }
+
+    // Image.
+    if (imgId) {
+      entries.push(
+        sep,
+        {
+          kind: "submenu",
+          label: "Wrap Text",
+          icon: ICONS.wrapSquare,
+          items: [
+            { kind: "item", label: "In Line with Text", icon: ICONS.wrapInline, onClick: () => dispatch(setImageProps(imgId, { wrap: "block", align: "center" })) },
+            { kind: "item", label: "Square", icon: ICONS.wrapSquare, onClick: () => dispatch(setImageProps(imgId, { wrap: "square", align: "left" })) },
+          ],
+        },
+        {
+          kind: "submenu",
+          label: "Align",
+          icon: ICONS.alignLeft,
+          items: [
+            { kind: "item", label: "Left", icon: ICONS.alignLeft, onClick: () => dispatch(setImageProps(imgId, { align: "left" })) },
+            { kind: "item", label: "Center", icon: ICONS.alignCenter, onClick: () => dispatch(setImageProps(imgId, { align: "center" })) },
+            { kind: "item", label: "Right", icon: ICONS.alignRight, onClick: () => dispatch(setImageProps(imgId, { align: "right" })) },
+          ],
+        },
+        item("Delete Image", () => {
+          selectObject(null);
+          dispatch(deleteImage(imgId));
+        }, { icon: ICONS.image, danger: true }),
+      );
+    }
+
+    // Content control.
+    if (sdtId) {
+      const props = doc.sdts?.[sdtId];
+      if (props) {
+        entries.push(sep);
+        if (props.type === "checkbox") {
+          entries.push(item("Toggle Check Box", () => dispatch(toggleSdtCheckbox(sdtId)), { icon: ICONS.sdtCheckbox }));
+        }
+        if ((props.type === "dropDown" || props.type === "comboBox") && (props.listItems?.length ?? 0) > 0) {
+          entries.push({
+            kind: "submenu",
+            label: "Choose Item",
+            icon: ICONS.sdtDropdown,
+            items: props.listItems!.map((li) => ({ kind: "item", label: li.display, onClick: () => dispatch(setSdtContent(sdtId, li.display)) })),
+          });
+        }
+        if (!props.lockControl) {
+          entries.push(item("Remove Content Control", () => dispatch(removeContentControl(sdtId, false)), { icon: ICONS.sdtRemove, danger: true }));
+        }
+      }
+    }
+
+    // Text formatting — not for a selected image.
+    if (!imgId && focus) {
+      entries.push(
+        sep,
+        item("Bold", () => toggleStyle("bold"), { shortcut: "Ctrl+B" }),
+        item("Italic", () => toggleStyle("italic"), { shortcut: "Ctrl+I" }),
+        item("Underline", () => toggleStyle("underline"), { shortcut: "Ctrl+U" }),
+        {
+          kind: "submenu",
+          label: "Alignment",
+          icon: ICONS.alignLeft,
+          items: [
+            { kind: "item", label: "Left", icon: ICONS.alignLeft, onClick: () => dispatch(setAlignment("left")) },
+            { kind: "item", label: "Center", icon: ICONS.alignCenter, onClick: () => dispatch(setAlignment("center")) },
+            { kind: "item", label: "Right", icon: ICONS.alignRight, onClick: () => dispatch(setAlignment("right")) },
+            { kind: "item", label: "Justify", icon: ICONS.alignJustify, onClick: () => dispatch(setAlignment("justify")) },
+          ],
+        },
+        item("Bullets", () => dispatch(toggleList("bullet")), { icon: ICONS.bullets }),
+        item("Numbering", () => dispatch(toggleList("decimal")), { icon: ICONS.numbering }),
+        sep,
+        item("Insert Hyperlink…", () => {
+          const u = prompt("Link URL:");
+          if (u !== null && u.trim() !== "") dispatch(setLinkCmd(u.trim()));
+        }, { icon: ICONS.link }),
+        {
+          kind: "submenu",
+          label: "Insert Content Control",
+          icon: ICONS.sdtText,
+          items: (["richText", "checkbox", "dropDown", "date"] as SdtType[]).map((type) => ({
+            kind: "item" as const,
+            label: (
+              { richText: "Rich Text", checkbox: "Check Box", dropDown: "Drop-Down List", date: "Date Picker" } as Record<string, string>
+            )[type] ?? type,
+            onClick: () => {
+              const props: Parameters<typeof insertContentControl>[1] =
+                type === "dropDown"
+                  ? { listItems: [{ display: "Item 1", value: "Item 1" }, { display: "Item 2", value: "Item 2" }] }
+                  : type === "date"
+                    ? { dateFormat: "M/d/yyyy" }
+                    : {};
+              dispatch(insertContentControl(type, props));
+            },
+          })),
+        },
+      );
+    }
+
+    // List.
+    if (!imgId && para?.style.list) {
+      const kind = listKindOf(para) ?? "bullet";
+      entries.push(
+        sep,
+        item("Increase List Level", () => dispatch(changeListLevel(1))),
+        item("Decrease List Level", () => dispatch(changeListLevel(-1))),
+        item("Remove List", () => dispatch(toggleList(kind)), { danger: true }),
+      );
+    }
+
+    // Table.
+    if (inCell) {
+      entries.push(
+        sep,
+        {
+          kind: "submenu",
+          label: "Insert",
+          icon: ICONS.rowBelow,
+          items: [
+            { kind: "item", label: "Row Above", icon: ICONS.rowAbove, onClick: () => dispatch(insertTableRowCmd("above")) },
+            { kind: "item", label: "Row Below", icon: ICONS.rowBelow, onClick: () => dispatch(insertTableRowCmd("below")) },
+            { kind: "item", label: "Column Left", icon: ICONS.colLeft, onClick: () => dispatch(insertTableColumnCmd("left")) },
+            { kind: "item", label: "Column Right", icon: ICONS.colRight, onClick: () => dispatch(insertTableColumnCmd("right")) },
+          ],
+        },
+        {
+          kind: "submenu",
+          label: "Delete",
+          icon: ICONS.deleteRow,
+          items: [
+            { kind: "item", label: "Row", icon: ICONS.deleteRow, danger: true, onClick: () => dispatch(deleteTableRowCmd()) },
+            { kind: "item", label: "Column", icon: ICONS.deleteCol, danger: true, onClick: () => dispatch(deleteTableColumnCmd()) },
+            { kind: "item", label: "Table", icon: ICONS.deleteTable, danger: true, onClick: () => dispatch(deleteTableCmd()) },
+          ],
+        },
+        item("Merge Cells", () => dispatch(mergeCellsCmd()), { icon: ICONS.mergeCells, disabled: !hasSel }),
+        item("Unmerge Cell", () => dispatch(unmergeCellCmd()), { icon: ICONS.unmergeCells }),
+      );
+    }
+
+    // Header/footer band.
+    if (activeStory) {
+      entries.push(sep, item("Close Header/Footer", () => setStory(null)));
+    } else if (band) {
+      entries.push(
+        sep,
+        item(`Edit ${band === "header" ? "Header" : "Footer"}`, () => setStory({ band, pageIndex: pt.pageIndex })),
+      );
+    }
+
+    return entries;
+  };
+
+  const onContextMenu = (ev: MouseEvent): void => {
+    const pt = paint.clientToPage(ev.clientX, ev.clientY);
+    if (!pt) return;
+    ev.preventDefault();
+    closeContextMenu();
+    proxy.focus();
+
+    // Word: right-click places focus unless it lands inside an existing range.
+    const imageId = hitTestObject(tree, pt.pageIndex, pt.x, pt.y)?.blockId ?? null;
+    if (imageId) {
+      selectObject(imageId);
+      caretIntoImageCell(imageId); // lets the Table section act on the image's cell
+    } else {
+      selectObject(null);
+      const pos = hitTest(tree, pt.pageIndex, pt.x, pt.y, scope());
+      if (pos && !positionWithinSelection(pos)) setSelection({ anchor: pos, focus: pos });
+    }
+    refreshSelectionVisuals();
+
+    const entries = buildContextEntries(pt);
+    if (entries.length > 0) contextMenu = showContextMenu(ev.clientX, ev.clientY, entries);
+  };
+  container.addEventListener("contextmenu", onContextMenu);
+
   return {
     focus(): void {
       proxy.focus();
@@ -958,7 +1322,9 @@ export function createEditor(
     destroy(): void {
       cancelFormatPainter();
       searchClear();
+      closeContextMenu();
       container.removeEventListener("keydown", keymapHandler);
+      container.removeEventListener("contextmenu", onContextMenu);
       controller.destroy();
       objectFrame.destroy();
       mirror.destroy();
