@@ -121,6 +121,20 @@ export const ICONS = {
   find: svg(`<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/>`),
   stylePencil: svg(`<path d="M3 13l.8-3L10.5 3.3a1.5 1.5 0 0 1 2.2 2.2L6 12.2 3 13z"/><path d="M9.5 4.5l2 2"/>`),
   styleNew: svg(`<path d="M8 3v10M3 8h10"/>`),
+  cut: svg(`<circle cx="4" cy="11.5" r="2"/><circle cx="12" cy="11.5" r="2"/><path d="M5.4 10.1 13 2.5M10.6 10.1 3 2.5"/>`),
+  copy: svg(`<rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V2.5h7"/>`),
+  paste: svg(`<rect x="3" y="3" width="10" height="11" rx="1"/><path d="M5.5 3V2h5v1"/><path d="M6 3h4"/>`),
+  clearFormat: svg(`<path d="M5 13h7"/><path d="M9.5 3.5 6 13"/><path d="M3.5 3.5h8"/><path d="M11 9.5l3 3M14 9.5l-3 3"/>`),
+  indentIncrease: filled(`<path d="M2 3.5h12v1.2H2zM6 6.7h8v1.2H6zM6 9.9h8v1.2H6zM2 13.1h12v1.2H2z" stroke="none"/><path d="M2 6.4l2.6 2.1L2 10.6z" stroke="none"/>`),
+  indentDecrease: filled(`<path d="M2 3.5h12v1.2H2zM6 6.7h8v1.2H6zM6 9.9h8v1.2H6zM2 13.1h12v1.2H2z" stroke="none"/><path d="M4.6 6.4 2 8.5l2.6 2.1z" stroke="none"/>`),
+  sort: svg(`<path d="M4 3v10M2.3 11l1.7 2 1.7-2"/><path d="M8 4h6M8 7h4M8 10h2"/>`),
+  shading: svg(`<path d="M8 2.5 12.5 7a3.2 3.2 0 1 1-4.5-4.5z" transform="rotate(45 8 7)"/><path d="M3 13.5h10"/>`),
+  borders: svg(`<rect x="2" y="2.5" width="12" height="11" rx=".5"/><path d="M2 8h12M8 2.5v11"/>`),
+  replace: svg(`<path d="M2.5 4.5h7l-2-2M9.5 4.5l-2 2"/><path d="M13.5 11.5h-7l2-2M6.5 11.5l2 2"/>`),
+  select: svg(`<path d="M2.5 2.5h3M10.5 2.5h3M2.5 13.5h3M10.5 13.5h3M2.5 2.5v3M2.5 10.5v3M13.5 2.5v3M13.5 10.5v3"/><path d="M6.5 8h3M8 6.5v3"/>`),
+  multilevel: filled(`<path d="M2 3.4h2v1.2H2zM5.5 3.4h8.5v1.2H5.5zM4 7.4h2v1.2H4zM7.5 7.4h6.5v1.2H7.5zM6 11.4h2v1.2H6zM9.5 11.4h4.5v1.2H9.5z" stroke="none"/>`),
+  marks: svg(`<path d="M11.5 3.5H7a2.5 2.5 0 0 0 0 5h1.5"/><path d="M9 3.5v9M11.5 3.5v9"/>`),
+  textEffects: svg(`<path d="M4 12.5 7 4l3 8.5M5 9.5h4"/><path d="M11.5 4.5l.7 1.4 1.4.2-1 1 .2 1.4-1.3-.7-1.3.7.2-1.4-1-1 1.4-.2z" fill="currentColor" stroke="none"/>`),
 } as const;
 
 export type IconName = keyof typeof ICONS;

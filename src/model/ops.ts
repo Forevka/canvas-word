@@ -182,6 +182,33 @@ export function applyStylePatchToRuns(
   return normalizeRuns([...head, ...styled, ...tail], fallbackStyle(runs, start));
 }
 
+/** Rewrite the TEXT of runs in [start,end) through `fn`, preserving each run's
+ *  style. `fn` receives the whole covered string (so it can do context-aware
+ *  transforms like sentence case) and must return a string of the SAME length —
+ *  if the length changes the slice is left untouched (run offsets must stay
+ *  stable). Used by change-case; transforms here are 1:1 per character. */
+export function mapTextInRuns(
+  runs: Run[],
+  start: number,
+  end: number,
+  fn: (covered: string) => string,
+): Run[] {
+  const [head, fromStart] = splitRunsAt(runs, start);
+  const [middle, tail] = splitRunsAt(fromStart, end - start);
+  const original = middle.map((r) => r.text).join("");
+  const next = fn(original);
+  let i = 0;
+  const out =
+    next.length === original.length
+      ? middle.map((r) => {
+          const text = next.slice(i, i + r.text.length);
+          i += r.text.length;
+          return { text, style: r.style };
+        })
+      : middle;
+  return normalizeRuns([...head, ...out, ...tail], fallbackStyle(runs, start));
+}
+
 // ---------------------------------------------------------------------------
 // applyOp
 

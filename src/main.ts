@@ -96,6 +96,10 @@ import {
   toggleList,
   toggleHighlight,
   toggleVerticalAlign,
+  changeCaseCmd,
+  adjustIndentCmd,
+  clearCharFormatting,
+  type CaseMode,
   setLinkCmd,
   insertPageBreak,
   insertSectionBreak,
@@ -108,7 +112,7 @@ import {
   removeContentControl,
   sdtAtPosition,
 } from "./editor/commands";
-import { defaultStylesheet } from "./model/stylesheet";
+import { defaultStylesheet, resolveStyle } from "./model/stylesheet";
 import { ICONS } from "./ui/icons";
 
 const TOOLBAR_SVG =
@@ -126,42 +130,117 @@ let openFind: () => void = () => {};
 
 const toolbar = document.getElementById("toolbar");
 if (toolbar) {
-  // ---- ribbon scaffolding: labeled groups of icon buttons (Word 2024) ----
-  let controls: HTMLDivElement = document.createElement("div");
-  const group = (label: string): void => {
-    const g = document.createElement("div");
-    g.className = "rib-group";
-    controls = document.createElement("div");
-    controls.className = "rib-controls";
-    const l = document.createElement("div");
-    l.className = "rib-label";
+  // ===== Word-style tabbed ribbon ==========================================
+  // A tab strip drives a stack of panels (one visible at a time). Each panel
+  // holds labeled groups of controls. The Home tab mirrors Word's layout; the
+  // app's other real commands live on Insert / Layout / Table / View. Features
+  // the engine/renderer can't do yet render as disabled stubs (greyed, tooltip).
+  const CARET =
+    `<svg class="caret" viewBox="0 0 8 8" fill="none" stroke="currentColor" ` +
+    `stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 3 4 5.5 6.5 3"/></svg>`;
+  const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string): HTMLElementTagNameMap[K] => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    return e;
+  };
+
+  const tabsBar = el("div", "rib-tabs");
+  const bodies = el("div", "rib-bodies");
+  toolbar.append(tabsBar, bodies);
+  const tabButtons = new Map<string, HTMLButtonElement>();
+  const tabPanels = new Map<string, HTMLDivElement>();
+  const showTab = (id: string): void => {
+    for (const [tid, b] of tabButtons) b.classList.toggle("active", tid === id);
+    for (const [tid, p] of tabPanels) p.classList.toggle("active", tid === id);
+  };
+  const tab = (id: string, label: string, kind?: "file"): HTMLDivElement => {
+    const t = el("button", "rib-tab" + (kind === "file" ? " file" : ""));
+    t.textContent = label;
+    t.addEventListener("click", () => showTab(id));
+    tabButtons.set(id, t);
+    tabsBar.appendChild(t);
+    const p = el("div", "rib-panel");
+    p.dataset["tab"] = id;
+    tabPanels.set(id, p);
+    bodies.appendChild(p);
+    return p;
+  };
+
+  // `controls` is the container the btn/select helpers append into; group() and
+  // row() retarget it as the ribbon is built.
+  let controls: HTMLElement = el("div");
+  const group = (panel: HTMLElement, label: string): void => {
+    const g = el("div", "rib-group");
+    controls = el("div", "rib-controls");
+    const l = el("div", "rib-label");
     l.textContent = label;
     g.append(controls, l);
-    toolbar.appendChild(g);
+    panel.appendChild(g);
   };
-  const btn = (icon: string, title: string, onClick: () => void): HTMLButtonElement => {
-    const b = document.createElement("button");
-    b.innerHTML = icon;
+  /** A group whose controls stack in two rows (Font, Paragraph). Returns a
+   *  `row()` that opens a fresh row and points the helpers at it. */
+  const groupRows = (panel: HTMLElement, label: string): (() => void) => {
+    const g = el("div", "rib-group");
+    const rows = el("div", "rib-rows");
+    const l = el("div", "rib-label");
+    l.textContent = label;
+    g.append(rows, l);
+    panel.appendChild(g);
+    return () => {
+      controls = el("div", "rib-row");
+      rows.appendChild(controls);
+    };
+  };
+  const sep = (): void => {
+    const d = el("div");
+    d.style.cssText = "width:1px;height:18px;background:#e1dfdd;margin:0 3px;flex:0 0 auto;";
+    controls.appendChild(d);
+  };
+
+  const btn = (icon: string, title: string, onClick: () => void, caret = false): HTMLButtonElement => {
+    const b = el("button", "rib-btn");
+    b.innerHTML = icon + (caret ? CARET : "");
     b.title = title;
-    // mousedown must not steal focus from the IME proxy
-    b.addEventListener("mousedown", (e) => e.preventDefault());
+    b.addEventListener("mousedown", (e) => e.preventDefault()); // keep IME-proxy focus
     b.addEventListener("click", onClick);
     controls.appendChild(b);
     return b;
   };
   /** Letter buttons (B, I, U, x²…) — Word renders these as styled text. */
-  const txtBtn = (label: string, title: string, onClick: () => void, style = ""): HTMLButtonElement => {
-    const b = document.createElement("button");
-    b.textContent = label;
+  const txtBtn = (label: string, title: string, onClick: () => void, style = "", caret = false): HTMLButtonElement => {
+    const b = el("button", "rib-btn");
     b.title = title;
-    if (style) b.style.cssText += style;
+    const s = el("span");
+    s.textContent = label;
+    if (style) s.style.cssText = style;
+    b.appendChild(s);
+    if (caret) b.insertAdjacentHTML("beforeend", CARET);
     b.addEventListener("mousedown", (e) => e.preventDefault());
     b.addEventListener("click", onClick);
     controls.appendChild(b);
     return b;
   };
+  /** Large Paste-style button: icon over a caption (with optional caret). */
+  const bigBtn = (icon: string, caption: string, title: string, onClick: () => void, caret = false): HTMLButtonElement => {
+    const b = el("button", "rib-btn rib-big");
+    b.title = title;
+    b.innerHTML = icon + `<span class="big-cap">${caption}${caret ? CARET : ""}</span>`;
+    b.addEventListener("mousedown", (e) => e.preventDefault());
+    b.addEventListener("click", onClick);
+    controls.appendChild(b);
+    return b;
+  };
+  /** Disabled placeholder for a feature the engine/renderer doesn't support. */
+  const stub = (inner: string, title: string): HTMLButtonElement => {
+    const b = el("button", "rib-btn");
+    b.innerHTML = inner;
+    b.title = `${title} — not supported by the engine yet`;
+    b.disabled = true;
+    controls.appendChild(b);
+    return b;
+  };
   const select = (title: string, width: number): HTMLSelectElement => {
-    const s = document.createElement("select");
+    const s = el("select");
     s.title = title;
     s.style.width = `${width}px`;
     s.addEventListener("mousedown", (e) => e.stopPropagation());
@@ -169,7 +248,7 @@ if (toolbar) {
     return s;
   };
   const opt = (s: HTMLSelectElement, value: string, label: string): void => {
-    const o = document.createElement("option");
+    const o = el("option");
     o.value = value;
     o.textContent = label;
     s.appendChild(o);
@@ -178,9 +257,61 @@ if (toolbar) {
   // Toggle buttons paint a pressed state from the caret's format (Word). Each
   // registers a predicate; syncToolbar re-evaluates them on every change.
   const toggleButtons: { el: HTMLButtonElement; active: (f: CurrentFormat) => boolean }[] = [];
-  const toggle = (el: HTMLButtonElement, active: (f: CurrentFormat) => boolean): HTMLButtonElement => {
-    toggleButtons.push({ el, active });
-    return el;
+  const toggle = (b: HTMLButtonElement, active: (f: CurrentFormat) => boolean): HTMLButtonElement => {
+    toggleButtons.push({ el: b, active });
+    return b;
+  };
+
+  // One shared native colour picker, reused by the font-colour / highlight
+  // swatches. We apply on `change` only (not `input`) so a drag is one undo step.
+  const colorPicker = el("input");
+  colorPicker.type = "color";
+  colorPicker.style.cssText = "position:fixed;left:-9999px;width:0;height:0;";
+  document.body.appendChild(colorPicker);
+  const pickColor = (initial: string, onPick: (c: string) => void): void => {
+    colorPicker.value = initial;
+    colorPicker.oninput = null;
+    colorPicker.onchange = () => onPick(colorPicker.value);
+    colorPicker.click();
+  };
+  /** Word's split colour button: the face applies the last colour, the caret
+   *  opens the picker. `active` (optional) wires the face into the pressed-state
+   *  sync (used by highlight, which toggles). */
+  const swatch = (
+    face: string,
+    initial: string,
+    title: string,
+    apply: (color: string) => void,
+    active?: (f: CurrentFormat) => boolean,
+  ): void => {
+    let last = initial;
+    const wrap = el("div");
+    wrap.style.cssText = "display:flex;align-items:stretch;";
+    const main = el("button", "rib-btn rib-swatch");
+    main.title = title;
+    main.innerHTML = `<span class="row">${face}</span><span class="bar" style="background:${last}"></span>`;
+    const bar = main.querySelector(".bar") as HTMLElement;
+    main.addEventListener("mousedown", (e) => e.preventDefault());
+    main.addEventListener("click", () => {
+      apply(last);
+      editor.focus();
+    });
+    const more = el("button", "rib-btn");
+    more.title = `${title} — choose colour`;
+    more.style.cssText = "min-width:14px;padding:0;";
+    more.innerHTML = CARET;
+    more.addEventListener("mousedown", (e) => e.preventDefault());
+    more.addEventListener("click", () =>
+      pickColor(last, (c) => {
+        last = c;
+        bar.style.background = c;
+        apply(c);
+        editor.focus();
+      }),
+    );
+    wrap.append(main, more);
+    controls.appendChild(wrap);
+    if (active) toggleButtons.push({ el: main, active });
   };
 
   const exportAs = async (format: ExportFormat): Promise<void> => {
@@ -191,7 +322,7 @@ if (toolbar) {
           ? "application/pdf"
           : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
       const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime }));
-      const a = document.createElement("a");
+      const a = el("a");
       a.href = url;
       a.download = `document.${format}`;
       a.click();
@@ -201,11 +332,14 @@ if (toolbar) {
       console.error(`[export-${format}] failed`, err);
     }
   };
+  const stylesheet = (): ReturnType<typeof defaultStylesheet> =>
+    editor.getDocument().stylesheet ?? defaultStylesheet();
 
-  // ---- File ----
-  group("File");
-  btn(ICONS.open, "Open .docx", () => {
-    const input = document.createElement("input");
+  // ===== File tab (simplified backstage: open / export / undo) =============
+  const fileTab = tab("file", "File", "file");
+  group(fileTab, "Open");
+  bigBtn(ICONS.open, "Open<br>.docx", "Open a Word document", () => {
+    const input = el("input");
     input.type = "file";
     input.accept = ".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     input.addEventListener("change", () => {
@@ -214,20 +348,34 @@ if (toolbar) {
     });
     input.click();
   });
-  txtBtn("PDF", "Export to PDF", () => void exportAs("pdf"), "font-size:10px;font-weight:600;");
-  txtBtn("DOCX", "Export to .docx", () => void exportAs("docx"), "font-size:10px;font-weight:600;");
-
-  // ---- Undo ----
-  group("Undo");
+  group(fileTab, "Export");
+  txtBtn("PDF", "Export to PDF", () => void exportAs("pdf"), "font-size:11px;font-weight:600;");
+  txtBtn("DOCX", "Export to .docx", () => void exportAs("docx"), "font-size:11px;font-weight:600;");
+  group(fileTab, "Undo");
   btn(ICONS.undo, "Undo (Ctrl+Z)", () => editor.undo());
   btn(ICONS.redo, "Redo (Ctrl+Y)", () => editor.redo());
 
+  // ===== Home tab ==========================================================
+  const home = tab("home", "Home");
+
   // ---- Clipboard ----
-  group("Clipboard");
-  btn(ICONS.painter, "Format painter (double-click = sticky)", () => editor.armFormatPainter(false));
+  group(home, "Clipboard");
+  bigBtn(ICONS.paste, "Paste", "Paste (Ctrl+V)", () => editor.paste(), true);
+  {
+    const stack = el("div");
+    stack.style.cssText = "display:flex;flex-direction:column;gap:1px;";
+    const prev = controls;
+    controls = stack;
+    btn(ICONS.cut, "Cut (Ctrl+X)", () => editor.cut());
+    btn(ICONS.copy, "Copy (Ctrl+C)", () => editor.copy());
+    btn(ICONS.painter, "Format painter (double-click = sticky)", () => editor.armFormatPainter(false));
+    controls = prev;
+    controls.appendChild(stack);
+  }
 
   // ---- Font ----
-  group("Font");
+  const fontRow = groupRows(home, "Font");
+  fontRow();
   const fontSelect = select("Font family", 150);
   // Labels show the bundled clone we actually render — e.g. "Calibri (Carlito)".
   for (const f of TOOLBAR_FONTS) opt(fontSelect, f.value, f.label);
@@ -235,115 +383,184 @@ if (toolbar) {
     editor.setCharStyle({ fontFamily: fontSelect.value });
     editor.focus();
   });
-  const sizeInput = document.createElement("input");
+  // The model is px-native; Word shows POINTS. Convert on read/write (96dpi:
+  // 1pt = 4/3 px). The displayed value snaps to the nearest half-point.
+  const pxToPt = (px: number): number => Math.round(px * 0.75 * 2) / 2;
+  const ptToPx = (pt: number): number => (pt * 4) / 3;
+  const sizeInput = el("input");
   sizeInput.type = "number";
-  sizeInput.min = "6";
-  sizeInput.max = "96";
-  sizeInput.title = "Font size (px)";
+  sizeInput.min = "1";
+  sizeInput.max = "72";
+  sizeInput.step = "0.5";
+  sizeInput.title = "Font size (pt)";
   sizeInput.style.cssText = "width:46px;padding:0 4px;";
   sizeInput.addEventListener("mousedown", (e) => e.stopPropagation());
-  sizeInput.addEventListener("change", () => {
-    const v = Number(sizeInput.value);
-    if (Number.isFinite(v) && v >= 6 && v <= 96) {
-      editor.setCharStyle({ fontSizePx: v });
+  /** Apply a size given in POINTS (clamped to the model's 6–96px range). */
+  const setSizePt = (pt: number): void => {
+    if (!Number.isFinite(pt)) return;
+    const px = Math.min(96, Math.max(6, ptToPx(pt)));
+    editor.setCharStyle({ fontSizePx: px });
+    editor.focus();
+  };
+  sizeInput.addEventListener("change", () => setSizePt(Number(sizeInput.value)));
+  controls.appendChild(sizeInput);
+  const curPt = (): number => pxToPt(editor.currentFormat().fontSizePx ?? 16);
+  txtBtn("A", "Grow font", () => setSizePt(curPt() + 1), "font-size:15px;font-weight:600;");
+  txtBtn("A", "Shrink font", () => setSizePt(curPt() - 1), "font-size:10px;font-weight:600;");
+  const CASES: { label: string; mode: CaseMode }[] = [
+    { label: "Sentence case", mode: "sentence" },
+    { label: "lowercase", mode: "lower" },
+    { label: "UPPERCASE", mode: "upper" },
+    { label: "Capitalize Each Word", mode: "title" },
+    { label: "tOGGLE cASE", mode: "toggle" },
+  ];
+  txtBtn("Aa", "Change case", () => {
+    const idx = prompt(
+      "Change case to:\n" + CASES.map((c, i) => `${i + 1}. ${c.label}`).join("\n"),
+      "3",
+    );
+    if (idx === null) return;
+    const mode = CASES[Number(idx) - 1]?.mode;
+    if (mode) {
+      editor.dispatch(changeCaseCmd(mode));
       editor.focus();
     }
+  }, "font-weight:600;", true);
+  btn(ICONS.clearFormat, "Clear all formatting", () => {
+    editor.dispatch(clearCharFormatting());
+    editor.dispatch(applyNamedStyle("Normal"));
+    editor.focus();
   });
-  controls.appendChild(sizeInput);
+
+  fontRow();
   toggle(txtBtn("B", "Bold (Ctrl+B)", () => editor.toggleStyle("bold"), "font-weight:700;"), (f) => f.bold);
   toggle(txtBtn("I", "Italic (Ctrl+I)", () => editor.toggleStyle("italic"), "font-style:italic;font-family:Georgia,serif;"), (f) => f.italic);
   toggle(txtBtn("U", "Underline (Ctrl+U)", () => editor.toggleStyle("underline"), "text-decoration:underline;"), (f) => f.underline);
   toggle(txtBtn("ab", "Strikethrough", () => editor.toggleStyle("strikethrough"), "text-decoration:line-through;"), (f) => f.strikethrough);
   toggle(txtBtn("x²", "Superscript", () => editor.dispatch(toggleVerticalAlign("super"))), (f) => f.superscript);
   toggle(txtBtn("x₂", "Subscript", () => editor.dispatch(toggleVerticalAlign("sub"))), (f) => f.subscript);
-  toggle(btn(ICONS.highlight, "Highlight (yellow)", () => editor.dispatch(toggleHighlight())), (f) => f.highlight);
-  btn(ICONS.link, "Insert/remove hyperlink", () => {
+  sep();
+  stub(`<span style="color:#2b579a;font-weight:700;">A</span>`, "Text effects (glow / shadow / outline)");
+  // Highlight: face toggles the last colour (re-click clears); caret picks one.
+  swatch(
+    ICONS.highlight,
+    "#ffeb3b",
+    "Text highlight colour",
+    (c) => editor.dispatch(toggleHighlight(c)),
+    (f) => f.highlight,
+  );
+  // Font colour: face applies the last colour to the selection / pending style.
+  swatch(
+    `<span style="font-weight:700;">A</span>`,
+    "#e00000",
+    "Font colour",
+    (c) => editor.setCharStyle({ color: c }),
+  );
+  txtBtn("🔗", "Insert/remove hyperlink", () => {
     const url = prompt("Link URL (empty to remove):");
     if (url !== null) editor.dispatch(setLinkCmd(url.trim() === "" ? null : url.trim()));
-  });
+  }, "font-size:12px;");
 
   // ---- Paragraph ----
-  group("Paragraph");
-  toggle(btn(ICONS.bullets, "Bulleted list", () => editor.dispatch(toggleList("bullet"))), (f) => f.listKind === "bullet");
-  toggle(btn(ICONS.numbering, "Numbered list (Tab/Shift+Tab change level)", () => editor.dispatch(toggleList("decimal"))), (f) => f.listKind === "number");
+  const paraRow = groupRows(home, "Paragraph");
+  paraRow();
+  toggle(btn(ICONS.bullets, "Bulleted list", () => editor.dispatch(toggleList("bullet")), true), (f) => f.listKind === "bullet");
+  toggle(btn(ICONS.numbering, "Numbered list (Tab/Shift+Tab change level)", () => editor.dispatch(toggleList("decimal")), true), (f) => f.listKind === "number");
+  stub(ICONS.multilevel + CARET, "Multilevel list");
+  sep();
+  btn(ICONS.indentDecrease, "Decrease indent", () => editor.dispatch(adjustIndentCmd(-36)));
+  btn(ICONS.indentIncrease, "Increase indent", () => editor.dispatch(adjustIndentCmd(36)));
+  stub(ICONS.sort, "Sort");
+  stub(ICONS.marks, "Show/hide formatting marks");
+
+  paraRow();
   toggle(btn(ICONS.alignLeft, "Align left", () => editor.align("left")), (f) => f.align === "left");
   toggle(btn(ICONS.alignCenter, "Center", () => editor.align("center")), (f) => f.align === "center");
   toggle(btn(ICONS.alignRight, "Align right", () => editor.align("right")), (f) => f.align === "right");
   toggle(btn(ICONS.alignJustify, "Justify", () => editor.align("justify")), (f) => f.align === "justify");
-  const spacingSelect = select("Line spacing", 56);
+  sep();
+  const spacingSelect = select("Line spacing", 58);
   for (const v of ["1", "1.15", "1.35", "1.5", "2"]) opt(spacingSelect, v, `${v}×`);
   spacingSelect.addEventListener("change", () => {
     editor.dispatch(setParaProps({ lineHeight: Number(spacingSelect.value) }));
     editor.focus();
   });
+  stub(ICONS.shading + CARET, "Paragraph shading");
+  stub(ICONS.borders + CARET, "Paragraph borders");
 
-  // ---- Styles ----
-  group("Styles");
-  const styleSelect = select("Paragraph style", 128);
-  const stylesheet = (): ReturnType<typeof defaultStylesheet> =>
-    editor.getDocument().stylesheet ?? defaultStylesheet();
-  const rebuildStyleOptions = (): void => {
-    styleSelect.textContent = "";
-    for (const s of stylesheet().styles) opt(styleSelect, s.id, s.name);
+  // ---- Styles (visual gallery) ----
+  group(home, "Styles");
+  const styleGallery = el("div", "rib-gallery");
+  const styleCards = new Map<string, HTMLButtonElement>();
+  const addStyleCard = (id: string, name: string): HTMLButtonElement => {
+    const c = el("button", "style-card");
+    c.title = name;
+    c.innerHTML = `<span class="preview">AaBbCc</span><span class="name"></span>`;
+    (c.querySelector(".name") as HTMLElement).textContent = name;
+    // Render the preview in the style's resolved character formatting (Word's
+    // gallery). Font size is damped to fit the card while still reading larger
+    // for headings/title.
+    const prev = c.querySelector(".preview") as HTMLElement;
+    const ch = resolveStyle(stylesheet(), id).char;
+    if (ch.fontFamily) prev.style.fontFamily = ch.fontFamily;
+    prev.style.fontWeight = ch.bold ? "700" : "400";
+    prev.style.fontStyle = ch.italic ? "italic" : "normal";
+    const deco = `${ch.underline ? "underline " : ""}${ch.strikethrough ? "line-through" : ""}`.trim();
+    if (deco) prev.style.textDecoration = deco;
+    if (ch.color) prev.style.color = ch.color;
+    if (ch.fontSizePx) prev.style.fontSize = `${Math.min(16, Math.max(11, ch.fontSizePx * 0.55))}px`;
+    c.addEventListener("mousedown", (e) => e.preventDefault());
+    c.addEventListener("click", () => {
+      editor.dispatch(applyNamedStyle(id));
+      editor.focus();
+    });
+    styleCards.set(id, c);
+    styleGallery.appendChild(c);
+    return c;
   };
-  rebuildStyleOptions();
-  styleSelect.addEventListener("change", () => {
-    editor.dispatch(applyNamedStyle(styleSelect.value));
-    editor.focus();
-  });
+  const rebuildStyleGallery = (): void => {
+    styleGallery.textContent = "";
+    styleCards.clear();
+    for (const s of stylesheet().styles) addStyleCard(s.id, s.name);
+  };
+  rebuildStyleGallery();
+  controls.appendChild(styleGallery);
   btn(ICONS.stylePencil, "Update current style to match selection", () => {
-    editor.dispatch(updateStyleToSelection(styleSelect.value));
+    const id = editor.currentFormat().styleId;
+    if (id) editor.dispatch(updateStyleToSelection(id));
   });
   btn(ICONS.styleNew, "New style from selection…", () => {
     const name = prompt("New style name:");
     if (name) {
       editor.dispatch(createStyleFromSelection(name));
-      rebuildStyleOptions();
+      rebuildStyleGallery();
       syncToolbar();
     }
   });
 
-  // toolbar controls mirror the caret formatting
-  let lastStylesheet = editor.getDocument().stylesheet ?? null;
-  syncToolbar = (): void => {
-    // A .docx import swaps the whole stylesheet — rebuild the gallery so
-    // imported style ids (Heading 1, …) resolve instead of sticking on Normal.
-    const sheet = editor.getDocument().stylesheet ?? null;
-    if (sheet !== lastStylesheet) {
-      lastStylesheet = sheet;
-      rebuildStyleOptions();
-    }
-    const f = editor.currentFormat();
-    if (f.styleId) {
-      if (![...styleSelect.options].some((o) => o.value === f.styleId)) {
-        // Paragraph references a style the gallery doesn't list (importer kept
-        // the ref but the sheet lacks it) — surface it rather than lying.
-        opt(styleSelect, f.styleId, f.styleId);
-      }
-      styleSelect.value = f.styleId;
-    }
-    if (f.fontFamily) {
-      const match = TOOLBAR_FONTS.find((x) => x.value.toLowerCase() === f.fontFamily!.toLowerCase());
-      if (match) fontSelect.value = match.value;
-    }
-    if (f.fontSizePx !== null && document.activeElement !== sizeInput) {
-      sizeInput.value = String(f.fontSizePx);
-    }
-    if (f.lineHeight !== null) {
-      const v = String(f.lineHeight);
-      if ([...spacingSelect.options].some((o) => o.value === v)) spacingSelect.value = v;
-    }
-    // Pressed state for B/I/U/S, highlight, sub/super, lists, alignment.
-    for (const t of toggleButtons) t.el.classList.toggle("active", t.active(f));
-  };
+  // ---- Editing ----
+  group(home, "Editing");
+  {
+    const col = el("div");
+    col.style.cssText = "display:flex;flex-direction:column;gap:1px;";
+    const prev = controls;
+    controls = col;
+    const wide = "width:100%;justify-content:flex-start;gap:4px;";
+    const ed = (icon: string, label: string, title: string, onClick: () => void): void => {
+      const b = btn(icon + `<span>${label}</span>`, title, onClick);
+      b.style.cssText = wide;
+    };
+    ed(ICONS.find, "Find", "Find & replace (Ctrl+F)", () => openFind());
+    ed(ICONS.replace, "Replace", "Replace (Ctrl+F)", () => openFind());
+    const selBtn = stub(ICONS.select + `<span>Select</span>`, "Select");
+    selBtn.style.cssText = wide;
+    controls = prev;
+    controls.appendChild(col);
+  }
 
-  // ---- Insert ----
-  group("Insert");
-  btn(ICONS.image, "Insert image", () => {
-    editor.dispatch(insertImage(TOOLBAR_SVG, 280, 100)); // top-level caret
-    editor.dispatch(insertImageInCell(TOOLBAR_SVG, 280, 100)); // table-cell caret
-  });
-  btn(ICONS.table, "Insert 3×3 table", () => editor.dispatch(insertTable(3, 3)));
+  // ===== Insert tab ========================================================
+  const insert = tab("insert", "Insert");
+  group(insert, "Pages");
   btn(ICONS.pageBreak, "Page break (Ctrl+Enter)", () => {
     editor.dispatch(insertPageBreak());
     editor.focus();
@@ -352,6 +569,28 @@ if (toolbar) {
     editor.dispatch(insertSectionBreak());
     editor.focus();
   });
+  group(insert, "Tables");
+  btn(ICONS.table, "Insert 3×3 table", () => editor.dispatch(insertTable(3, 3)));
+  group(insert, "Illustrations");
+  btn(ICONS.image, "Insert image", () => {
+    editor.dispatch(insertImage(TOOLBAR_SVG, 280, 100)); // top-level caret
+    editor.dispatch(insertImageInCell(TOOLBAR_SVG, 280, 100)); // table-cell caret
+  });
+  group(insert, "Picture"); // acts on the selected image
+  btn(ICONS.wrapSquare, "Wrap text around image (square)", () => {
+    const id = editor.getSelectedObject();
+    if (id) editor.dispatch(setImageProps(id, { wrap: "square", align: "left" }));
+  });
+  btn(ICONS.wrapInline, "Image in line with text (block)", () => {
+    const id = editor.getSelectedObject();
+    if (id) editor.dispatch(setImageProps(id, { wrap: "block", align: "center" }));
+  });
+  group(insert, "Links");
+  btn(ICONS.link, "Insert/remove hyperlink", () => {
+    const url = prompt("Link URL (empty to remove):");
+    if (url !== null) editor.dispatch(setLinkCmd(url.trim() === "" ? null : url.trim()));
+  });
+  group(insert, "References");
   btn(ICONS.toc, "Insert / update table of contents (Ctrl+click an entry jumps to it)", () => {
     editor.dispatch(insertTocCmd());
     editor.focus();
@@ -365,9 +604,7 @@ if (toolbar) {
     editor.dispatch(insertFootnoteCmd());
     editor.focus();
   }, "font-size:11px;");
-
-  // ---- Controls (content controls / w:sdt) ----
-  group("Controls");
+  group(insert, "Controls");
   btn(ICONS.sdtText, "Rich text content control (wraps the selection)", () => {
     editor.dispatch(insertContentControl("richText", { alias: "Text" }));
     editor.focus();
@@ -401,14 +638,16 @@ if (toolbar) {
     editor.focus();
   });
 
-  // ---- Layout ----
-  group("Layout");
-  btn(ICONS.pageSetup, "Page setup (applies to the caret's section)", () => {
+  // ===== Layout tab ========================================================
+  const layout = tab("layout", "Layout");
+  group(layout, "Page Setup");
+  btn(ICONS.pageSetup, "Page setup (size, orientation, margins, columns — applies to the caret's section)", () => {
     pageSetupPanel.toggle();
   });
 
-  // ---- Table (acts on the cell containing the caret; no-op outside tables) ----
-  group("Table");
+  // ===== Table tab (acts on the cell containing the caret) =================
+  const tableTab = tab("table", "Table");
+  group(tableTab, "Rows & Columns");
   btn(ICONS.rowAbove, "Insert row above", () => editor.dispatch(insertTableRowCmd("above")));
   btn(ICONS.rowBelow, "Insert row below", () => editor.dispatch(insertTableRowCmd("below")));
   btn(ICONS.colLeft, "Insert column left", () => editor.dispatch(insertTableColumnCmd("left")));
@@ -416,32 +655,56 @@ if (toolbar) {
   btn(ICONS.deleteRow, "Delete row", () => editor.dispatch(deleteTableRowCmd()));
   btn(ICONS.deleteCol, "Delete column", () => editor.dispatch(deleteTableColumnCmd()));
   btn(ICONS.deleteTable, "Delete table", () => editor.dispatch(deleteTableCmd()));
+  group(tableTab, "Merge");
   btn(ICONS.mergeCells, "Merge cells (select across cells in one row)", () => editor.dispatch(mergeCellsCmd()));
   btn(ICONS.unmergeCells, "Unmerge cell", () => editor.dispatch(unmergeCellCmd()));
 
-  // ---- Picture (acts on the selected image) ----
-  group("Picture");
-  btn(ICONS.wrapSquare, "Wrap text around image (square)", () => {
-    const id = editor.getSelectedObject();
-    if (id) editor.dispatch(setImageProps(id, { wrap: "square", align: "left" }));
-  });
-  btn(ICONS.wrapInline, "Image in line with text (block)", () => {
-    const id = editor.getSelectedObject();
-    if (id) editor.dispatch(setImageProps(id, { wrap: "block", align: "center" }));
-  });
-
-  // ---- Editing ----
-  group("Editing");
-  btn(ICONS.find, "Find & replace (Ctrl+F)", () => openFind());
-
-  // ---- Zoom (presentational; Ctrl+wheel also zooms) ----
-  group("Zoom");
-  txtBtn("−", "Zoom out", () => editor.setZoom(editor.getZoom() / 1.1), "font-size:15px;width:26px;");
+  // ===== View tab ==========================================================
+  const view = tab("view", "View");
+  group(view, "Show");
+  stub(ICONS.marks, "Show/hide formatting marks");
+  group(view, "Zoom");
+  txtBtn("−", "Zoom out", () => editor.setZoom(editor.getZoom() / 1.1), "font-size:15px;");
   const zoomSel = select("Zoom level", 66);
   for (const z of [0.5, 0.75, 1, 1.25, 1.5, 2, 3]) opt(zoomSel, String(z), `${Math.round(z * 100)}%`);
   zoomSel.value = "1";
   zoomSel.addEventListener("change", () => editor.setZoom(parseFloat(zoomSel.value)));
-  txtBtn("+", "Zoom in", () => editor.setZoom(editor.getZoom() * 1.1), "font-size:15px;width:26px;");
+  txtBtn("+", "Zoom in", () => editor.setZoom(editor.getZoom() * 1.1), "font-size:15px;");
+
+  showTab("home");
+
+  // ---- toolbar controls mirror the caret formatting -----------------------
+  let lastStylesheet = editor.getDocument().stylesheet ?? null;
+  syncToolbar = (): void => {
+    // A .docx import swaps the whole stylesheet — rebuild the gallery so
+    // imported style ids (Heading 1, …) resolve instead of sticking on Normal.
+    const sheet = editor.getDocument().stylesheet ?? null;
+    if (sheet !== lastStylesheet) {
+      lastStylesheet = sheet;
+      rebuildStyleGallery();
+    }
+    const f = editor.currentFormat();
+    if (f.styleId) {
+      // Paragraph references a style the gallery doesn't list (importer kept the
+      // ref but the sheet lacks it) — surface it rather than lying.
+      if (!styleCards.has(f.styleId)) addStyleCard(f.styleId, f.styleId);
+      for (const [id, c] of styleCards) c.classList.toggle("active", id === f.styleId);
+    }
+    if (f.fontFamily) {
+      const match = TOOLBAR_FONTS.find((x) => x.value.toLowerCase() === f.fontFamily!.toLowerCase());
+      if (match) fontSelect.value = match.value;
+    }
+    if (f.fontSizePx !== null && document.activeElement !== sizeInput) {
+      sizeInput.value = String(pxToPt(f.fontSizePx));
+    }
+    if (f.lineHeight !== null) {
+      const v = String(f.lineHeight);
+      if ([...spacingSelect.options].some((o) => o.value === v)) spacingSelect.value = v;
+    }
+    // Pressed state for B/I/U/S, highlight, sub/super, lists, alignment.
+    for (const t of toggleButtons) t.el.classList.toggle("active", t.active(f));
+  };
+
   // Reflect the live zoom (also driven by Ctrl+wheel): snap the select to the
   // nearest preset, or insert a one-off "NN%" option for in-between values.
   syncZoom = (z: number): void => {
@@ -451,7 +714,7 @@ if (toolbar) {
     if (preset) {
       zoomSel.value = preset.value;
     } else {
-      const o = document.createElement("option");
+      const o = el("option");
       o.value = String(z);
       o.textContent = pct;
       o.dataset["custom"] = "1";

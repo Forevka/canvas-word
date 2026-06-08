@@ -6,33 +6,119 @@
     <title>canvas-word</title>
     <style>
       html, body { margin: 0; height: 100%; }
-      body { display: flex; flex-direction: column; font-family: Arial, sans-serif; }
-      /* Word 2024-style ribbon: labeled groups, icon buttons, divider rules. */
+      body {
+        display: flex; flex-direction: column; overflow-x: hidden;
+        font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        color: #323130;
+      }
+
+      /* ===== Word-style ribbon ============================================ */
       #toolbar {
-        flex: 0 0 auto; display: flex; align-items: stretch; flex-wrap: wrap;
-        padding: 4px 8px 2px; background: #f9fafb; border-bottom: 1px solid #d0d4d9;
+        flex: 0 0 auto; display: flex; flex-direction: column;
+        background: #f3f2f1; border-bottom: 1px solid #e1dfdd; user-select: none;
       }
-      .rib-group { display: flex; flex-direction: column; align-items: center; padding: 0 7px; position: relative; }
+
+      /* --- tab strip --- */
+      .rib-tabs {
+        display: flex; align-items: flex-end; gap: 1px; height: 32px;
+        padding: 4px 8px 0; background: #f3f2f1;
+      }
+      .rib-tab {
+        border: none; background: transparent; cursor: pointer;
+        font: inherit; font-size: 13px; color: #323130;
+        padding: 5px 11px 6px; border-radius: 4px 4px 0 0; position: relative;
+      }
+      .rib-tab:hover { background: #eceae9; }
+      .rib-tab.active {
+        background: #fff; color: #2b579a; font-weight: 600;
+        box-shadow: 0 -1px 2px rgba(0,0,0,0.05);
+      }
+      .rib-tab.active::after {
+        content: ""; position: absolute; left: 8px; right: 8px; bottom: 0;
+        height: 2px; background: #2b579a;
+      }
+      .rib-tab.file { background: #2b579a; color: #fff; font-weight: 600; }
+      .rib-tab.file:hover { background: #21457e; }
+
+      /* --- ribbon body: one panel visible at a time --- */
+      .rib-bodies {
+        background: #fff; border-top: 1px solid #e1dfdd; border-bottom: 1px solid #e1dfdd;
+      }
+      .rib-panel { display: none; align-items: stretch; min-height: 94px; padding: 0 2px; }
+      .rib-panel.active { display: flex; }
+
+      /* --- group: stacked controls + caption, divider on the right --- */
+      .rib-group {
+        display: flex; flex-direction: column; align-items: center;
+        padding: 5px 7px 3px; position: relative;
+      }
       .rib-group + .rib-group::before {
-        content: ""; position: absolute; left: 0; top: 4px; bottom: 4px; width: 1px; background: #e2e5e9;
+        content: ""; position: absolute; left: 0; top: 8px; bottom: 8px;
+        width: 1px; background: #e1dfdd;
       }
-      .rib-controls { display: flex; align-items: center; gap: 2px; height: 34px; }
-      .rib-label { font-size: 10px; color: #6b7280; padding: 0 2px 2px; white-space: nowrap; user-select: none; }
-      #toolbar button {
+      .rib-controls { display: flex; align-items: center; gap: 2px; flex: 1; }
+      /* two stacked rows (Font, Paragraph) */
+      .rib-rows { display: flex; flex-direction: column; gap: 3px; flex: 1; justify-content: center; }
+      .rib-row { display: flex; align-items: center; gap: 2px; }
+      .rib-label {
+        font-size: 11px; color: #605e5c; padding-top: 3px; white-space: nowrap;
+      }
+
+      /* --- buttons --- */
+      #toolbar button.rib-btn {
         min-width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
         border: 1px solid transparent; border-radius: 4px; background: transparent; cursor: pointer;
-        color: #3b3f44; font-size: 13px; padding: 0 4px;
+        color: #323130; font-size: 13px; padding: 0 4px; gap: 1px;
       }
-      #toolbar button:hover { background: #e4e7eb; }
-      #toolbar button:active { background: #d8dce1; }
-      /* Pressed (active) toggle state — Word's tinted highlight. */
-      #toolbar button.active { background: #cfe3fb; color: #0b57d0; }
-      #toolbar button.active:hover { background: #bcd8fa; }
-      #toolbar button.active svg { color: #0b57d0; }
-      #toolbar button svg { width: 16px; height: 16px; display: block; }
+      #toolbar button.rib-btn:hover { background: #e1dfdd; }
+      #toolbar button.rib-btn:active { background: #d2d0ce; }
+      #toolbar button.rib-btn.active { background: #cfe3fb; color: #0b57d0; border-color: #b3d3f5; }
+      #toolbar button.rib-btn.active:hover { background: #bcd8fa; }
+      #toolbar button.rib-btn.active svg { color: #0b57d0; }
+      #toolbar button.rib-btn svg { width: 16px; height: 16px; display: block; }
+      #toolbar button.rib-btn .caret { width: 8px; height: 8px; }
+
+      /* large button (Paste): icon over caption */
+      #toolbar button.rib-big {
+        flex-direction: column; height: 100%; min-width: 48px; padding: 4px 6px; gap: 2px; justify-content: center;
+      }
+      #toolbar button.rib-big svg { width: 26px; height: 26px; }
+      #toolbar button.rib-big .big-cap { font-size: 11px; display: flex; align-items: center; gap: 1px; }
+
+      /* swatch button: icon row + colour underline */
+      #toolbar button.rib-swatch { flex-direction: column; gap: 0; padding: 2px 3px; }
+      #toolbar button.rib-swatch .row { display: flex; align-items: center; gap: 1px; }
+      #toolbar button.rib-swatch .bar { width: 18px; height: 3px; margin-top: 1px; border-radius: 1px; }
+
+      /* disabled stub (feature not supported by the engine yet) */
+      #toolbar button.rib-btn:disabled { opacity: 0.38; cursor: default; }
+      #toolbar button.rib-btn:disabled:hover { background: transparent; }
+
+      /* form controls */
       #toolbar select, #toolbar input[type="number"] {
-        height: 26px; border: 1px solid #d0d4d9; border-radius: 4px; background: #fff; font-size: 13px;
+        height: 24px; border: 1px solid #c8c6c4; border-radius: 3px; background: #fff;
+        font: inherit; font-size: 13px; color: #323130;
       }
+      #toolbar select:hover, #toolbar input[type="number"]:hover { border-color: #8a8886; }
+
+      /* styles gallery */
+      .rib-gallery {
+        display: flex; align-items: center; gap: 4px; height: 64px; padding: 0 4px;
+        border: 1px solid #c8c6c4; border-radius: 4px; background: #fff;
+        overflow-x: auto; max-width: 340px;
+      }
+      .rib-gallery::-webkit-scrollbar { height: 8px; }
+      .rib-gallery::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+      .style-card {
+        flex: 0 0 auto; width: 76px; height: 50px; border: 1px solid #e1dfdd; border-radius: 2px;
+        background: #fff; cursor: pointer; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 3px; padding: 2px;
+      }
+      .style-card:hover { border-color: #2b579a; }
+      .style-card.active { border-color: #2b579a; box-shadow: inset 0 0 0 1px #2b579a; background: #eef3fb; }
+      .style-card .preview { font-size: 13px; line-height: 1; color: #323130; }
+      .style-card .name { font-size: 10px; color: #605e5c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 72px; }
+
       #app { flex: 1 1 auto; min-height: 0; overflow: auto; background: #e8eaed; position: relative; }
     </style>
   </head>

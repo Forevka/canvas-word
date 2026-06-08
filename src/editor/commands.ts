@@ -5,7 +5,7 @@ import type { Block, CharStyle, ImageBlock, ParaStyle, Paragraph, Run, SdtProps,
 import type { DocPosition, DocSelection } from "../model/position";
 import { isCollapsed } from "../model/position";
 import type { Op, SectionGeometry } from "../model/ops";
-import { sliceRuns, applyStylePatchToRuns, containerOf, containerBlocks, locateImage } from "../model/ops";
+import { sliceRuns, applyStylePatchToRuns, mapTextInRuns, containerOf, containerBlocks, locateImage } from "../model/ops";
 import {
   blockById,
   blockIndexOf,
@@ -1513,6 +1513,78 @@ export function setCharStyle(patch: Partial<CharStyle>): Command {
       runs: applyStylePatchToRuns(s.block.runs, s.start, s.end, patch),
     }));
     return tr(ops, sel, "command");
+  };
+}
+
+/** Reset character formatting over the selection to plain text: drop the
+ *  toggleable runs of style (bold/italic/…), colour and highlight, baseline
+ *  shift, letter spacing and link. Font family/size are left alone — Word's
+ *  "Clear All Formatting" also reverts the paragraph to Normal, which the caller
+ *  pairs with applyNamedStyle("Normal"). No-op on a collapsed caret. */
+export function clearCharFormatting(): Command {
+  return setCharStyle({
+    bold: false,
+    italic: false,
+    underline: false,
+    strikethrough: false,
+    color: "#202124",
+    highlightColor: undefined,
+    verticalAlign: undefined,
+    letterSpacingPx: 0,
+    link: undefined,
+  });
+}
+
+export type CaseMode = "upper" | "lower" | "sentence" | "title" | "toggle";
+
+const applyCase = (s: string, mode: CaseMode): string => {
+  switch (mode) {
+    case "upper":
+      return s.toUpperCase();
+    case "lower":
+      return s.toLowerCase();
+    case "toggle":
+      return [...s]
+        .map((c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()))
+        .join("");
+    case "title":
+      return s.replace(/\p{L}[\p{L}'’]*/gu, (w) => w[0]!.toUpperCase() + w.slice(1).toLowerCase());
+    case "sentence": {
+      const lower = s.toLowerCase();
+      // Capitalise the first letter, and the first letter after . ! ? …
+      return lower.replace(/(^|[.!?…]\s+)(\p{L})/gu, (_, lead: string, ch: string) => lead + ch.toUpperCase());
+    }
+  }
+};
+
+/** Transform the case of the selected text, preserving every run's style. */
+export function changeCaseCmd(mode: CaseMode): Command {
+  return (state) => {
+    const sel = state.selection;
+    if (!sel || isCollapsed(sel)) return null;
+    const segments = selectedSegments(state).filter((s) => s.end > s.start);
+    if (segments.length === 0) return null;
+    const ops: Op[] = segments.map((s) => ({
+      type: "setRuns",
+      blockId: s.block.id,
+      runs: mapTextInRuns(s.block.runs, s.start, s.end, (t) => applyCase(t, mode)),
+    }));
+    return tr(ops, sel, "command");
+  };
+}
+
+/** Add (or remove, with a negative delta) left indent on every covered
+ *  paragraph, clamped at zero. Mirrors Word's Increase/Decrease Indent. */
+export function adjustIndentCmd(deltaPx: number): Command {
+  return (state) => {
+    const sel = state.selection;
+    if (!sel) return null;
+    const ops: Op[] = selectedSegments(state).map((s) => ({
+      type: "setParaStyle",
+      blockId: s.block.id,
+      patch: { indentLeftPx: Math.max(0, (s.block.style.indentLeftPx ?? 0) + deltaPx) },
+    }));
+    return ops.length ? tr(ops, sel, "command") : null;
   };
 }
 

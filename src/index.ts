@@ -120,6 +120,10 @@ export interface Editor {
   /** Format painter: capture caret formatting, apply on the next selection. */
   armFormatPainter(sticky: boolean): void;
   cancelFormatPainter(): void;
+  /** Clipboard, mirroring the Ctrl+C/X/V handlers for ribbon buttons. */
+  copy(): void;
+  cut(): void;
+  paste(): void;
   /** Find & replace. search() highlights all matches and returns state. */
   search(query: string, opts?: { matchCase?: boolean; wholeWord?: boolean }): SearchState;
   searchNav(dir: 1 | -1): SearchState;
@@ -1726,6 +1730,18 @@ export function createEditor(
     getZoom: () => paint.getZoom(),
     armFormatPainter,
     cancelFormatPainter,
+    copy: (): void => {
+      // extractFragment runs synchronously inside copySelection, so the
+      // clipboard write captures the selection before any later edit.
+      void copySelection();
+    },
+    cut: (): void => {
+      void copySelection();
+      dispatch(deleteBackward());
+    },
+    paste: (): void => {
+      void pasteFromClipboard();
+    },
     search,
     searchNav,
     searchReplaceCurrent,
