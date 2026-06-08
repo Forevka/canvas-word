@@ -333,6 +333,19 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
     }
     for (const line of block.lines) {
       const baselineY = block.y + line.y + line.ascent;
+      if (line.leaders) {
+        for (const ld of line.leaders) {
+          ctx.save();
+          ctx.strokeStyle = ld.color;
+          ctx.lineWidth = Math.max(1, ld.fontSizePx / 14);
+          ctx.setLineDash(ld.kind === "dot" ? [1, 3] : ld.kind === "dash" ? [4, 3] : []);
+          ctx.beginPath();
+          ctx.moveTo(block.x + ld.x1, baselineY);
+          ctx.lineTo(block.x + ld.x2, baselineY);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
       for (const frag of line.fragments) {
         const s = frag.style;
         const x = block.x + frag.x;

@@ -79,6 +79,22 @@ export interface ParaStyle {
    *  is PAINT-ONLY (engine post-pass) so it can never go stale; Ctrl+click
    *  jumps to the target. `| undefined` so regeneration can clear it. */
   tocEntry?: { targetId: string; level: number } | undefined;
+  /** Explicit tab stops (docx w:tabs), sorted by `posPx`. A `\t` in run text
+   *  advances to the next stop past the current x; past the last explicit stop
+   *  (or with none) the layout falls back to a fixed default interval. */
+  tabStops?: TabStop[];
+}
+
+export type TabAlign = "left" | "center" | "right" | "decimal";
+export type TabLeader = "none" | "dot" | "dash" | "underscore";
+
+export interface TabStop {
+  /** Position from the left content edge (after the paragraph's left indent). */
+  posPx: number;
+  /** Text alignment at the stop (default "left"). */
+  align?: TabAlign;
+  /** Filler drawn from the previous content to the stop (default "none"). */
+  leader?: TabLeader;
 }
 
 /** Style-homogeneous span of text. Adjacent equal-styled runs are merged on every edit. */

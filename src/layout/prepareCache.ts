@@ -66,6 +66,12 @@ function toItems(runs: Run[]): RichInlineItem[] {
   });
 }
 
+/** Prepare an arbitrary run list (used for tab-stop pieces, which are laid out
+ *  outside the per-paragraph segment cache). */
+export function prepareRuns(runs: Run[]): PreparedRichInline {
+  return prepareRichInline(toItems(runs));
+}
+
 export class PrepareCache {
   private map = new Map<string, Entry>();
 

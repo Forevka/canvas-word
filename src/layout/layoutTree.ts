@@ -1,7 +1,7 @@
 // Layer 2 output: the LayoutTree — absolutely-positioned geometry the paint and
 // input layers consume. Coordinates are CSS px, page-relative.
 
-import type { BandContainer, CellBorders, CharStyle } from "../model/document";
+import type { BandContainer, CellBorders, CharStyle, TabLeader } from "../model/document";
 
 /** A same-styled slice of text placed on a line. One ctx.fillText call each.
  *  Per-cluster advances for caret math are computed lazily by geometry.ts and
@@ -31,6 +31,9 @@ export interface LineBox {
   /** Caret offset a fragment-less line represents (empty paragraph: 0; empty
    *  soft-break segment: the segment's start offset). Geometry indexes it. */
   emptyOffset?: number;
+  /** Tab leaders (dot/dash/underscore fills) to paint in the gap a tab opened.
+   *  x is block-relative (alignment already applied); paint draws on the baseline. */
+  leaders?: { x1: number; x2: number; kind: TabLeader; color: string; fontSizePx: number }[];
 }
 
 export interface PlacedImage {

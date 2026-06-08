@@ -9,12 +9,16 @@ import {
   materializeRichInlineLineRange,
   type RichInlineCursor,
 } from "@chenglou/pretext/rich-inline";
-import type { Block, CharStyle, Document, ImageBlock, Paragraph, Run, SectionPatch, SectionProps, TableBlock, TableCell } from "../model/document";
+import type { Block, CharStyle, Document, ImageBlock, Paragraph, Run, SectionPatch, SectionProps, TableBlock, TableCell, TabStop } from "../model/document";
 import { effectiveFractions } from "../model/ops";
 import { formatListNumber, markerText, type ListDefinition, type ListLevel } from "../model/lists";
 import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock } from "./layoutTree";
-import { PrepareCache, type PreparedSegment } from "./prepareCache";
+import { PrepareCache, prepareRuns, type PreparedSegment } from "./prepareCache";
 import { charStyleToFont, fontMetrics, measureTextWidth } from "./metrics";
+
+/** Word's default tab interval when a `\t` runs past the last explicit stop
+ *  (0.5 inch at 96 dpi). */
+const DEFAULT_TAB_STOP_PX = 48;
 
 export interface LayoutOptions {
   /** Band being story-edited: rendered RAW ({page} tokens literal, real block
@@ -206,6 +210,131 @@ function breakNextLine(
   return { frags, width: line.width, height, ascent: leading + maxAscent, end: line.end };
 }
 
+interface RawLine {
+  frags: RawFrag[];
+  width: number;
+  indent: number;
+  lineMaxWidth: number;
+  height: number;
+  ascent: number;
+  lastOfSegment: boolean;
+  emptyOffset?: number;
+  leaders?: LineBox["leaders"];
+}
+
+/** Next tab stop strictly past `curX`: the first explicit stop, else the next
+ *  default-interval multiple. */
+function resolveTabStop(curX: number, stops: TabStop[], contentWidth: number): TabStop {
+  for (const s of stops) if (s.posPx > curX + 0.5) return s;
+  let pos = (Math.floor(curX / DEFAULT_TAB_STOP_PX) + 1) * DEFAULT_TAB_STOP_PX;
+  if (pos <= curX) pos = curX + DEFAULT_TAB_STOP_PX;
+  return { posPx: Math.min(pos, Math.max(curX + 1, contentWidth)), align: "left", leader: "none" };
+}
+
+/** Width of a piece's text up to (and including) its decimal separator — for
+ *  decimal-aligned tab stops. Measured with the piece's leading run font. */
+function decimalPrefixWidth(runs: Run[]): number {
+  const text = runs.map((r) => r.text).join("");
+  const font = charStyleToFont(runs[0]?.style ?? DEFAULT_DECIMAL_STYLE);
+  // The decimal separator is "." (en-US); fall back to "," only if there's no
+  // period, so a thousands comma in "$1,234.50" doesn't hijack the alignment.
+  let m = text.indexOf(".");
+  if (m < 0) m = text.indexOf(",");
+  return measureTextWidth(m < 0 ? text : text.slice(0, m + 1), font);
+}
+const DEFAULT_DECIMAL_STYLE = { fontFamily: "Georgia, serif", fontSizePx: 16 } as CharStyle;
+
+/** Lay out a `\t`-containing segment as ONE line: each tab-delimited piece is
+ *  shaped independently and positioned at the next tab stop (left/center/right/
+ *  decimal), with optional leaders. Wrapping is out of scope — a piece that
+ *  overruns the content width overflows rather than wrapping. */
+function layoutTabbedSegment(
+  p: Paragraph,
+  segRuns: Run[],
+  segStart: number,
+  contentWidth: number,
+  firstIndent: number,
+): RawLine {
+  // Split runs at "\t" into pieces, tracking each piece's global start offset
+  // (the "\t" itself occupies one offset — caret can land between pieces).
+  const pieces: { runs: Run[]; start: number }[] = [];
+  let cur: Run[] = [];
+  let pieceStart = segStart;
+  let pos = segStart;
+  for (const r of segRuns) {
+    let local = 0;
+    for (;;) {
+      const idx = r.text.indexOf("\t", local);
+      if (idx < 0) break;
+      const piece = r.text.slice(local, idx);
+      if (piece.length > 0) cur.push({ text: piece, style: r.style });
+      pos += idx - local;
+      pieces.push({ runs: cur, start: pieceStart });
+      pos += 1;
+      pieceStart = pos;
+      cur = [];
+      local = idx + 1;
+    }
+    const rest = r.text.slice(local);
+    if (rest.length > 0) cur.push({ text: rest, style: r.style });
+    pos += rest.length;
+  }
+  pieces.push({ runs: cur, start: pieceStart });
+
+  const laid = pieces.map((pc) => {
+    if (pc.runs.length === 0) return { frags: [] as RawFrag[], width: 0, height: 0, ascent: 0 };
+    const pseg: PreparedSegment = { prepared: prepareRuns(pc.runs), runs: pc.runs, startOffset: pc.start };
+    const bl = breakNextLine(p, pseg, 1e6, undefined, segRunOffsets(pc.runs, pc.start), pc.runs.map(() => 0));
+    return bl ? { frags: bl.frags, width: bl.width, height: bl.height, ascent: bl.ascent } : { frags: [] as RawFrag[], width: 0, height: 0, ascent: 0 };
+  });
+
+  const stops = (p.style.tabStops ?? []).slice().sort((a, b) => a.posPx - b.posPx);
+  const baseStyle = segRuns.find((r) => r.text.length > 0)?.style ?? p.runs[0]?.style;
+  const frags: RawFrag[] = [];
+  const leaders: NonNullable<RawLine["leaders"]> = [];
+  let curX = 0;
+  let maxH = 0;
+  let maxA = 0;
+  laid.forEach((pc, i) => {
+    maxH = Math.max(maxH, pc.height);
+    maxA = Math.max(maxA, pc.ascent);
+    let targetX = curX;
+    if (i > 0) {
+      const stop = resolveTabStop(curX, stops, contentWidth);
+      const align = stop.align ?? "left";
+      if (align === "right") targetX = stop.posPx - pc.width;
+      else if (align === "center") targetX = stop.posPx - pc.width / 2;
+      else if (align === "decimal") targetX = stop.posPx - decimalPrefixWidth(pieces[i]!.runs);
+      else targetX = stop.posPx;
+      if (targetX < curX) targetX = curX; // never overlap the previous piece
+      if ((stop.leader ?? "none") !== "none" && targetX > curX + 1 && baseStyle) {
+        leaders.push({ x1: curX, x2: targetX, kind: stop.leader ?? "none", color: baseStyle.color, fontSizePx: baseStyle.fontSizePx });
+      }
+    }
+    for (const rf of pc.frags) {
+      rf.frag.x += targetX;
+      frags.push(rf);
+    }
+    curX = targetX + pc.width;
+  });
+
+  if (maxH === 0 && baseStyle) {
+    const fm = fontMetrics(charStyleToFont(baseStyle));
+    maxH = Math.max(fm.ascent + fm.descent, p.style.lineHeight * baseStyle.fontSizePx);
+    maxA = (maxH - (fm.ascent + fm.descent)) / 2 + fm.ascent;
+  }
+  return {
+    frags,
+    width: curX,
+    indent: firstIndent,
+    lineMaxWidth: contentWidth - firstIndent,
+    height: maxH,
+    ascent: maxA,
+    lastOfSegment: true,
+    leaders,
+  };
+}
+
 function paragraphLines(p: Paragraph, contentWidth: number, cache: PrepareCache): LineBox[] {
   const segments = cache.get(p);
   const lines: LineBox[] = [];
@@ -214,20 +343,19 @@ function paragraphLines(p: Paragraph, contentWidth: number, cache: PrepareCache)
   // Fragments are line-LOCAL; justification needs to know each segment's last
   // line (it stays ragged, like a paragraph's final line), so alignment is a
   // second pass.
-  interface RawLine {
-    frags: RawFrag[];
-    width: number;
-    indent: number;
-    lineMaxWidth: number;
-    height: number;
-    ascent: number;
-    lastOfSegment: boolean;
-    emptyOffset?: number;
-  }
   const raw: RawLine[] = [];
 
   let first = true; // first line of the PARAGRAPH (first-line indent)
   for (const seg of segments) {
+    // Tab path: a segment with hard tabs lays out as one tab-stopped line (the
+    // pretext collapse path would otherwise eat the tabs). Dormant unless run
+    // text actually carries "\t".
+    if (seg.runs.some((r) => r.text.includes("\t"))) {
+      raw.push(layoutTabbedSegment(p, seg.runs, seg.startOffset, contentWidth, first ? p.style.indentFirstLinePx : 0));
+      first = false;
+      continue;
+    }
+
     const runStarts = segRunOffsets(seg.runs, seg.startOffset);
     const runCursors: number[] = seg.runs.map(() => 0);
     let cursor: RichInlineCursor | undefined = undefined;
@@ -300,6 +428,9 @@ function paragraphLines(p: Paragraph, contentWidth: number, cache: PrepareCache)
     for (const rf of rl.frags) rf.frag.x += startX;
     const box: LineBox = { y, height: rl.height, ascent: rl.ascent, fragments: rl.frags.map((rf) => rf.frag) };
     if (rl.emptyOffset !== undefined) box.emptyOffset = rl.emptyOffset;
+    if (rl.leaders && rl.leaders.length > 0) {
+      box.leaders = rl.leaders.map((l) => ({ ...l, x1: l.x1 + startX, x2: l.x2 + startX }));
+    }
     lines.push(box);
     y += rl.height;
   }
