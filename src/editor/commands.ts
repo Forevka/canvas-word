@@ -318,8 +318,11 @@ export function splitParagraph(): Command {
 
 import {
   defaultListDefinition,
+  multilevelListDefinition,
   DEFAULT_BULLET_LIST_ID,
   DEFAULT_NUMBER_LIST_ID,
+  DEFAULT_MULTILEVEL_LIST_ID,
+  type ListDefinition,
 } from "../model/lists";
 
 /** Top-level paragraphs covered by the selection (lists are body-only for now). */
@@ -334,17 +337,18 @@ function selectedTopLevelParagraphs(state: EditorState): Paragraph[] {
   return out;
 }
 
-export function toggleList(kind: "bullet" | "decimal"): Command {
+/** Toggle the covered paragraphs into (or out of) the list `listId`, materializing
+ *  its definition on first use. Shared by the bullet / numbered / multilevel buttons. */
+function toggleListById(listId: string, makeDef: () => ListDefinition): Command {
   return (state) => {
     const sel = state.selection;
     if (!sel) return null;
     const paragraphs = selectedTopLevelParagraphs(state);
     if (paragraphs.length === 0) return null;
-    const listId = kind === "bullet" ? DEFAULT_BULLET_LIST_ID : DEFAULT_NUMBER_LIST_ID;
     const allIn = paragraphs.every((p) => p.style.list?.listId === listId);
     const ops: Op[] = [];
     if (!allIn && !state.doc.lists?.[listId]) {
-      ops.push({ type: "setListDefinition", listId, def: defaultListDefinition(kind) });
+      ops.push({ type: "setListDefinition", listId, def: makeDef() });
     }
     for (const p of paragraphs) {
       ops.push({
@@ -357,6 +361,16 @@ export function toggleList(kind: "bullet" | "decimal"): Command {
     }
     return tr(ops, sel, "command");
   };
+}
+
+export function toggleList(kind: "bullet" | "decimal"): Command {
+  const listId = kind === "bullet" ? DEFAULT_BULLET_LIST_ID : DEFAULT_NUMBER_LIST_ID;
+  return toggleListById(listId, () => defaultListDefinition(kind));
+}
+
+/** Apply (or remove) a legal-style multilevel numbered list (1 / 1.1 / 1.1.1). */
+export function toggleMultilevelList(): Command {
+  return toggleListById(DEFAULT_MULTILEVEL_LIST_ID, multilevelListDefinition);
 }
 
 /** Tab / Shift+Tab at the start of a list paragraph: demote / promote. */

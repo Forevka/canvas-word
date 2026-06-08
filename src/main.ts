@@ -103,6 +103,7 @@ import {
   createStyleFromSelection,
   setParaProps,
   toggleList,
+  toggleMultilevelList,
   toggleHighlight,
   toggleVerticalAlign,
   changeCaseCmd,
@@ -475,7 +476,7 @@ if (toolbar) {
   paraRow();
   toggle(btn(ICONS.bullets, "Bulleted list", () => editor.dispatch(toggleList("bullet")), true), (f) => f.listKind === "bullet");
   toggle(btn(ICONS.numbering, "Numbered list (Tab/Shift+Tab change level)", () => editor.dispatch(toggleList("decimal")), true), (f) => f.listKind === "number");
-  stub(ICONS.multilevel + CARET, "Multilevel list");
+  btn(ICONS.multilevel, "Multilevel list (1, 1.1, 1.1.1 — Tab / Shift+Tab change level)", () => editor.dispatch(toggleMultilevelList()));
   sep();
   btn(ICONS.indentDecrease, "Decrease indent", () => editor.dispatch(adjustIndentCmd(-36)));
   btn(ICONS.indentIncrease, "Increase indent", () => editor.dispatch(adjustIndentCmd(36)));

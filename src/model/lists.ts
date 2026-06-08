@@ -93,6 +93,7 @@ export function markerText(def: ListDefinition, level: number, counters: number[
 
 export const DEFAULT_BULLET_LIST_ID = "bullets";
 export const DEFAULT_NUMBER_LIST_ID = "numbers";
+export const DEFAULT_MULTILEVEL_LIST_ID = "multilevel";
 
 const BULLETS = ["•", "◦", "▪"];
 const NUMBER_FORMATS: ListNumberFormat[] = ["decimal", "lowerLetter", "lowerRoman"];
@@ -120,4 +121,22 @@ export function defaultListDefinition(kind: "bullet" | "decimal"): ListDefinitio
     }
   }
   return { id: kind === "bullet" ? DEFAULT_BULLET_LIST_ID : DEFAULT_NUMBER_LIST_ID, levels };
+}
+
+/** Legal-style multilevel list: every level is decimal and its marker compounds
+ *  all ancestors — level 0 "1.", level 1 "1.1.", level 2 "1.1.1.", … (Word's
+ *  default Multilevel List). Tab/Shift+Tab walk the levels. */
+export function multilevelListDefinition(): ListDefinition {
+  const levels: ListLevel[] = [];
+  for (let i = 0; i < 9; i++) {
+    const text = Array.from({ length: i + 1 }, (_, k) => `%${k + 1}`).join(".") + ".";
+    levels.push({
+      format: "decimal",
+      text, // "%1.", "%1.%2.", "%1.%2.%3.", …
+      indentLeftPx: 24 + i * 24,
+      hangingPx: 24 + i * 8, // compound markers widen with depth
+      start: 1,
+    });
+  }
+  return { id: DEFAULT_MULTILEVEL_LIST_ID, levels };
 }
