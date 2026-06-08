@@ -234,6 +234,16 @@ export function createMapper(
     // those FLOW — unless the next section opens with a heading (a real chapter
     // boundary), which page-breaks. "continuous" never breaks.
     let pending = false;
+    // The first page-type section break ends the title/cover page, which always
+    // stands alone — force it even though its new section (the Letter of
+    // Transmittal) opens with an address rather than a heading. Gated on the cover
+    // actually holding content (its title image/text), so a leading bare section
+    // break with nothing before it still flows.
+    let pendingForce = false;
+    let seenPageSection = false;
+    let coverHasContent = false;
+    const hasRealContent = (bs: Block[]): boolean =>
+      bs.some((b) => b.kind !== "paragraph" || b.runs.some((r) => r.text.trim().length > 0));
     for (const irBlock of blocks) {
       const mapped =
         irBlock.kind === "paragraph"
@@ -245,10 +255,11 @@ export function createMapper(
         const first = mapped[0]!;
         const heading = irBlock.kind === "paragraph" && resolver.isHeading(irBlock.props.styleId);
         const empty = first.kind === "paragraph" && first.runs.every((r) => r.text.length === 0);
-        if (heading) {
+        if (heading || pendingForce) {
           if (first.kind === "paragraph") first.style.pageBreakBefore = true;
           else mapped.unshift({ ...emptyParagraph(), style: { ...documentPara, pageBreakBefore: true } });
           pending = false;
+          pendingForce = false;
         } else if (!empty) {
           pending = false; // reached the section's first real content → it flows
         }
@@ -276,9 +287,12 @@ export function createMapper(
             );
           }
           pending = true;
+          pendingForce = !seenPageSection && coverHasContent; // cover→body boundary breaks
         }
+        seenPageSection = true;
       }
       out.push(...mapped);
+      if (!seenPageSection) coverHasContent ||= hasRealContent(mapped);
     }
     return out;
   };

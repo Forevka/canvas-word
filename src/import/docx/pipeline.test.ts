@@ -143,6 +143,20 @@ describe("docx pipeline — lossy policies emit warnings", () => {
     expect(para(r.doc.blocks[1]).style.pageBreakBefore).toBeUndefined();
   });
 
+  it("forces a page break out of the cover/title page even when the next section is not a heading", () => {
+    // A title page (real content) ending in a Next Page section break, followed by
+    // a non-heading section (e.g. a Letter of Transmittal address). The cover
+    // stands alone, so its first body content page-breaks despite the same
+    // geometry and no heading.
+    const r = importBody(
+      `<w:p><w:r><w:t>COVER TITLE</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:pPr></w:p>` +
+        `<w:p><w:r><w:t>Arrow Adhesives Company</w:t></w:r></w:p>`,
+    );
+    // blocks: 0 = "COVER TITLE", 1 = empty section-ending para, 2 = the address.
+    expect(para(r.doc.blocks[2]).style.pageBreakBefore).toBe(true);
+  });
+
   it("warns when a flowed section break carries its own header/footer", () => {
     const r = importBody(
       `<w:p><w:pPr><w:sectPr><w:footerReference w:type="default" r:id="rF"/>` +
