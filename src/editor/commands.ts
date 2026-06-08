@@ -784,6 +784,42 @@ export function toggleSdtCheckbox(id: string): Command {
   };
 }
 
+/** Replace a control's whole content with an edited fragment (the inspector's
+ *  Save). Reuses insertFragment over the control's span so single- and
+ *  multi-paragraph (body) controls both work; every inserted run is re-tagged
+ *  with the sdtId so the control's membership survives. Returns null when the
+ *  span can't be structurally replaced (e.g. multi-paragraph inside a cell). */
+export function replaceSdtContent(id: string, fragment: DocFragment): Command {
+  return (state) => {
+    const props = state.doc.sdts?.[id];
+    const ranges = findSdtRanges(state.doc, id);
+    if (!props || ranges.length === 0) return null;
+    const first = ranges[0]!;
+    const last = ranges[ranges.length - 1]!;
+    const tagged: DocFragment = {
+      inline: fragment.inline,
+      blocks: fragment.blocks.map((b) => ({
+        style: b.style,
+        runs: b.runs.map((r) => ({ text: r.text, style: { ...r.style, sdtId: id } })),
+      })),
+    };
+    const spanState: EditorState = {
+      ...state,
+      selection: {
+        anchor: { blockId: first.blockId, offset: first.start },
+        focus: { blockId: last.blockId, offset: last.end },
+      },
+    };
+    const inner = insertFragment(tagged)(spanState);
+    if (!inner) return null;
+    // Editing real content clears the gray placeholder flag.
+    const ops = props.placeholder
+      ? [...inner.ops, { type: "setSdtProps" as const, id, props: { ...props, placeholder: false } }]
+      : inner.ops;
+    return { ops, selectionAfter: inner.selectionAfter, origin: "command" };
+  };
+}
+
 /** Remove the control: strip the run markers; optionally delete its content. */
 export function removeContentControl(id: string, deleteContents: boolean): Command {
   return (state) => {

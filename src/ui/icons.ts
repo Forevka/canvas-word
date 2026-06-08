@@ -112,6 +112,9 @@ export const ICONS = {
   sdtRemove: svg(
     `<rect x="1.5" y="3.5" width="13" height="9" rx="1.5" stroke-dasharray="2.5 1.8"/><path d="M6 6l4 4M10 6l-4 4"/>`,
   ),
+  sdtProps: svg(
+    `<rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M8 6.2v.2"/><path d="M8 8v2.3"/>`,
+  ),
   find: svg(`<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/>`),
   stylePencil: svg(`<path d="M3 13l.8-3L10.5 3.3a1.5 1.5 0 0 1 2.2 2.2L6 12.2 3 13z"/><path d="M9.5 4.5l2 2"/>`),
   styleNew: svg(`<path d="M8 3v10M3 8h10"/>`),

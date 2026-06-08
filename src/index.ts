@@ -6,7 +6,7 @@ import type { CharStyle, Document, ParaStyle, TableBlock } from "./model/documen
 import { BAND_CONTAINERS } from "./model/document";
 import type { DocPosition, DocSelection } from "./model/position";
 import { isCollapsed } from "./model/position";
-import { applyOp, effectiveFractions, locateImage, type Op } from "./model/ops";
+import { applyOp, effectiveFractions, locateImage, sliceRuns, type Op } from "./model/ops";
 import { bandParagraphs, blockById, containerListOf, locateParagraph, paragraphsOf, styleAtRuns, textOfRuns } from "./model/text";
 import { createLayoutEngine, type LayoutEngine } from "./layout/engine";
 import {
@@ -26,8 +26,9 @@ import { createSelectionController } from "./input/selectionController";
 import { createObjectFrame } from "./input/objectController";
 import { createImeProxy } from "./input/imeProxy";
 import { createKeymapHandler, type StyleKey } from "./input/keymap";
-import { extractFragment, fragmentToHtml, fragmentToPlainText, htmlToFragment } from "./input/clipboard";
+import { extractFragment, fragmentToHtml, fragmentToPlainText, htmlToFragment, type DocFragment } from "./input/clipboard";
 import { showContextMenu, type ContextMenuHandle, type MenuEntry } from "./ui/contextMenu";
+import { showSdtInspector, type SdtInspectorData, type SdtInspectorHandle } from "./ui/sdtInspector";
 import { createA11yMirror } from "./a11y/mirror";
 import {
   changeListLevel,
@@ -46,6 +47,7 @@ import {
   mergeCellsCmd,
   removeContentControl,
   replaceBackAndInsert,
+  replaceSdtContent,
   sdtAtPosition,
   setAlignment,
   setCharStyle as setCharStyleCmd,
@@ -102,6 +104,9 @@ export interface Editor {
   align(align: ParaStyle["align"]): void;
   /** Formatting at the caret — drives toolbar control state. */
   currentFormat(): CurrentFormat;
+  /** Open the content-control inspector for the control at the caret (ribbon
+   *  button). Returns false when the caret isn't inside a content control. */
+  inspectContentControl(): boolean;
   /** Format painter: capture caret formatting, apply on the next selection. */
   armFormatPainter(sticky: boolean): void;
   cancelFormatPainter(): void;
@@ -990,6 +995,70 @@ export function createEditor(
     contextMenu = null;
   };
 
+  // Content-control inspector: gather an SDT's content (from its run ranges,
+  // partial inline or whole block-level) and show its properties + a preview.
+  let sdtInspector: SdtInspectorHandle | null = null;
+  const sdtInspectorData = (id: string): SdtInspectorData | null => {
+    const props = doc.sdts?.[id];
+    if (!props) return null;
+    const ranges = findSdtRanges(doc, id);
+    const blocks = ranges
+      .map((r) => {
+        const block = blockById(doc, r.blockId);
+        return block ? { runs: sliceRuns(block.runs, r.start, r.end), style: { ...block.style } } : null;
+      })
+      .filter((b): b is { runs: import("./model/document").Run[]; style: ParaStyle } => b !== null);
+    const fragment: DocFragment = { blocks, inline: blocks.length === 1 };
+    const text = fragmentToPlainText(fragment);
+    return { id, props, html: fragmentToHtml(fragment), text, paragraphCount: ranges.length, charCount: text.length };
+  };
+  const openSdtInspector = (id: string): void => {
+    const data = sdtInspectorData(id);
+    if (!data) return;
+    const props = data.props;
+    // Content is editable for unlocked controls whose span the replace command
+    // can restructure (body paragraphs, single cell/band paragraph). Locked or
+    // checkbox/dropdown controls (value-driven) stay read-only here.
+    const editable = !props.lockContent && props.type !== "checkbox" && props.type !== "dropDown";
+    sdtInspector?.close();
+    sdtInspector = showSdtInspector(data, {
+      editable,
+      onSave: (html: string): boolean => {
+        const fragment = htmlToFragment(html) ?? emptyFragmentLike(id);
+        const before = doc;
+        dispatch(replaceSdtContent(id, fragment));
+        return doc !== before; // dispatch swapped doc iff the edit applied
+      },
+    });
+  };
+  /** A one-empty-run fragment carrying the control's base style — used when the
+   *  user clears the editable content entirely (htmlToFragment returns null). */
+  const emptyFragmentLike = (id: string): DocFragment => {
+    const r = findSdtRanges(doc, id)[0];
+    const block = r ? blockById(doc, r.blockId) : undefined;
+    const style = block ? (styleAtRuns(block.runs, r!.start + 1) ?? block.runs[0]?.style) : undefined;
+    const para: ParaStyle = block?.style ?? {
+      align: "left", lineHeight: 1.5, spaceBeforePx: 0, spaceAfterPx: 0,
+      indentFirstLinePx: 0, indentLeftPx: 0,
+    };
+    const fallbackChar: CharStyle = {
+      fontFamily: "Georgia, serif", fontSizePx: 16, bold: false, italic: false,
+      underline: false, strikethrough: false, color: "#202124",
+    };
+    return {
+      inline: true,
+      blocks: [{ runs: [{ text: "", style: style ?? fallbackChar }], style: para }],
+    };
+  };
+  /** Inspect the control at the caret (ribbon button). Returns false if none. */
+  const inspectSdtAtCaret = (): boolean => {
+    const focus = selection?.focus;
+    const id = focus ? sdtAtPosition(doc, focus) : null;
+    if (!id || !doc.sdts?.[id]) return false;
+    openSdtInspector(id);
+    return true;
+  };
+
   const positionWithinSelection = (pos: DocPosition): boolean => {
     if (!selection || isCollapsed(selection)) return false;
     const cmp = comparePositions(tree, selection.anchor, selection.focus, scope());
@@ -1118,6 +1187,9 @@ export function createEditor(
             items: props.listItems!.map((li) => ({ kind: "item", label: li.display, onClick: () => dispatch(setSdtContent(sdtId, li.display)) })),
           });
         }
+        entries.push(
+          item("Properties & Edit Content…", () => openSdtInspector(sdtId), { icon: ICONS.sdtText }),
+        );
         if (!props.lockControl) {
           entries.push(item("Remove Content Control", () => dispatch(removeContentControl(sdtId, false)), { icon: ICONS.sdtRemove, danger: true }));
         }
@@ -1310,6 +1382,7 @@ export function createEditor(
       }
       dispatch(setAlignment(align));
     },
+    inspectContentControl: inspectSdtAtCaret,
     armFormatPainter,
     cancelFormatPainter,
     search,
@@ -1323,6 +1396,7 @@ export function createEditor(
       cancelFormatPainter();
       searchClear();
       closeContextMenu();
+      sdtInspector?.close();
       container.removeEventListener("keydown", keymapHandler);
       container.removeEventListener("contextmenu", onContextMenu);
       controller.destroy();

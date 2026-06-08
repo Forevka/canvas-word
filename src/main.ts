@@ -365,6 +365,9 @@ if (toolbar) {
     editor.dispatch(insertContentControl("date", { alias: "Date", dateFormat: "M/d/yyyy" }));
     editor.focus();
   });
+  btn(ICONS.sdtProps, "Content control properties & content (inspect the control at the caret)", () => {
+    if (!editor.inspectContentControl()) alert("Place the caret inside a content control first.");
+  });
   btn(ICONS.sdtRemove, "Remove the content control at the caret (keeps its text)", () => {
     const sel = editor.getSelection();
     const id = sel ? sdtAtPosition(editor.getDocument(), sel.focus) : null;
