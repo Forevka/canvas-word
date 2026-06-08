@@ -1340,7 +1340,15 @@ function placeTable(
           py += it.height + CELL_BLOCK_GAP;
         }
       }
-      cells.push({ x: cx, y: ry, width: mc.width, height: row.height, blocks });
+      cells.push({
+        x: cx,
+        y: ry,
+        width: mc.width,
+        height: row.height,
+        blocks,
+        ...(mc.cell.shading !== undefined ? { shading: mc.cell.shading } : {}),
+        ...(mc.cell.borders !== undefined ? { borders: mc.cell.borders } : {}),
+      });
       cx += mc.width;
     }
     placedRows.push({ y: ry, height: row.height, cells });

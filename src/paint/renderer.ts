@@ -10,8 +10,9 @@
 // The caret is a DOM overlay div inside the page placeholder — blinking via CSS
 // animation, so it never triggers a canvas repaint.
 
-import type { LayoutTree, Page, PlacedBlock } from "../layout/layoutTree";
+import type { LayoutTree, Page, PlacedBlock, PlacedTableCell } from "../layout/layoutTree";
 import type { CaretRect, Rect } from "../layout/geometry";
+import type { CellBorder } from "../model/document";
 import { charStyleToFont } from "../layout/metrics";
 
 export interface PagePoint {
@@ -271,14 +272,26 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
       return;
     }
     if (block.table) {
-      ctx.strokeStyle = "#c0c4c9";
-      ctx.lineWidth = 1;
-      for (const row of block.table.rows) {
+      const rows = block.table.rows;
+      // 1) cell fills (under everything), 2) cell contents, 3) borders on top —
+      // so a neighbour's fill never clips an already-drawn shared edge.
+      for (const row of rows) {
         for (const cell of row.cells) {
-          ctx.strokeRect(cell.x + 0.5, cell.y + 0.5, cell.width, cell.height);
+          if (cell.shading) {
+            ctx.fillStyle = cell.shading;
+            ctx.fillRect(cell.x, cell.y, cell.width, cell.height);
+          }
+        }
+      }
+      for (const row of rows) {
+        for (const cell of row.cells) {
           for (const cb of cell.blocks) paintBlock(ctx, cb, pageIndex);
         }
       }
+      for (const row of rows) {
+        for (const cell of row.cells) paintCellBorders(ctx, cell);
+      }
+      ctx.setLineDash([]);
       return;
     }
     // List marker — paint-only, on the first line's baseline in the hanging indent.
@@ -487,4 +500,63 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
       pagesWrap.remove();
     },
   };
+}
+
+const DEFAULT_GRID_COLOR = "#c0c4c9";
+
+/** Paint a placed cell's borders. No `borders` field → the legacy uniform light
+ *  grid (keeps native/unstyled tables visibly gridded). Otherwise draw exactly
+ *  the edges present; an omitted edge means no line on that side. */
+function paintCellBorders(ctx: CanvasRenderingContext2D, cell: PlacedTableCell): void {
+  const { x, y, width: w, height: h } = cell;
+  if (cell.borders === undefined) {
+    ctx.setLineDash([]);
+    ctx.strokeStyle = DEFAULT_GRID_COLOR;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, w, h);
+    return;
+  }
+  const b = cell.borders;
+  strokeCellEdge(ctx, b.top, x, y, x + w, y, 0, 1);
+  strokeCellEdge(ctx, b.bottom, x, y + h, x + w, y + h, 0, -1);
+  strokeCellEdge(ctx, b.left, x, y, x, y + h, 1, 0);
+  strokeCellEdge(ctx, b.right, x + w, y, x + w, y + h, -1, 0);
+}
+
+/** One cell edge from (x1,y1) to (x2,y2). (ix,iy) points into the cell interior
+ *  and positions the inner stroke of a "double" border. */
+function strokeCellEdge(
+  ctx: CanvasRenderingContext2D,
+  spec: CellBorder | undefined,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  ix: number,
+  iy: number,
+): void {
+  if (!spec) return;
+  const w = Math.max(0.5, spec.widthPx);
+  ctx.strokeStyle = spec.color;
+  ctx.lineWidth = w;
+  ctx.setLineDash(
+    spec.style === "dashed" ? [w * 3, w * 2] : spec.style === "dotted" ? [w, w * 1.5] : [],
+  );
+  // Half-pixel align odd-width lines on the perpendicular axis for crisp edges.
+  const horizontal = y1 === y2;
+  const off = Math.round(w) % 2 ? 0.5 : 0;
+  const ox = horizontal ? 0 : off;
+  const oy = horizontal ? off : 0;
+  const line = (dx: number, dy: number): void => {
+    ctx.beginPath();
+    ctx.moveTo(x1 + ox + dx, y1 + oy + dy);
+    ctx.lineTo(x2 + ox + dx, y2 + oy + dy);
+    ctx.stroke();
+  };
+  line(0, 0);
+  if (spec.style === "double") {
+    const g = w + 1;
+    line(ix * g, iy * g);
+  }
+  ctx.setLineDash([]);
 }

@@ -1,7 +1,7 @@
 // Layer 2 output: the LayoutTree — absolutely-positioned geometry the paint and
 // input layers consume. Coordinates are CSS px, page-relative.
 
-import type { BandContainer, CharStyle } from "../model/document";
+import type { BandContainer, CellBorders, CharStyle } from "../model/document";
 
 /** A same-styled slice of text placed on a line. One ctx.fillText call each.
  *  Per-cluster advances for caret math are computed lazily by geometry.ts and
@@ -47,6 +47,10 @@ export interface PlacedTableCell {
   /** Cell paragraphs as regular PlacedBlocks — geometry indexes them, so
    *  click/caret/selection/typing work inside cells with zero special cases. */
   blocks: PlacedBlock[];
+  /** Resolved fill (CSS color) carried from the model cell. Absent = no fill. */
+  shading?: string;
+  /** Resolved per-edge borders; absent = renderer's default light grid. */
+  borders?: CellBorders;
 }
 
 export interface PlacedTableRow {

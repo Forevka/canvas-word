@@ -112,11 +112,37 @@ export interface ImageBlock {
 /** Cells hold Blocks: paragraphs (first-class editing targets, located through
  *  model/text.ts), images, and nested tables (rendered; their inner cells are
  *  read-only — the paragraph locator goes one level deep). */
+/** One resolved cell-edge border. The importer collapses the OOXML cascade
+ *  (table style → w:tblBorders → w:tcBorders, plus inside/outside selection)
+ *  down to a concrete per-edge spec, so paint just draws what it's given. */
+export interface CellBorder {
+  /** CSS color, e.g. "#000000". */
+  color: string;
+  /** Line width in px (OOXML w:sz is eighths of a point → px). */
+  widthPx: number;
+  /** Default "single". "none" is expressed by omitting the edge entirely. */
+  style?: "single" | "double" | "dashed" | "dotted";
+}
+
+/** Resolved per-edge borders for a cell. An omitted edge draws no line. */
+export interface CellBorders {
+  top?: CellBorder;
+  right?: CellBorder;
+  bottom?: CellBorder;
+  left?: CellBorder;
+}
+
 export interface TableCell {
   id: string;
   blocks: Block[];
   /** Horizontal merge: this cell covers N columns (default 1). */
   colSpan?: number;
+  /** Resolved background fill (CSS color) from w:shd. Absent = no fill. */
+  shading?: string;
+  /** Resolved per-edge borders. Absent = renderer's default light grid (so
+   *  native/unstyled tables keep a visible grid); present = draw exactly these
+   *  edges, where an omitted edge means "no border on that side". */
+  borders?: CellBorders;
 }
 
 export interface TableRow {
