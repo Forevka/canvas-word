@@ -50,6 +50,7 @@ export const REL_TYPES = {
   styles: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles",
   numbering: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering",
   hyperlink: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
+  footnotes: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes",
 } as const;
 
 export function relsXml(rels: Array<{ id: string; type: string; target: string; external?: boolean }>): string {

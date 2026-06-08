@@ -2,9 +2,9 @@
 // footer parts) → IR → Document. Pure (no worker/DOM references) so the whole
 // pipeline runs under vitest in Node; worker.ts is just transport around this.
 
-import type { Block, SectionProps } from "../../model/document";
+import type { Block, Paragraph, SectionProps } from "../../model/document";
 import { findMainDocumentPart } from "./contentTypes";
-import { parseDocumentXml, parseHeaderFooterXml } from "./documentParser";
+import { parseDocumentXml, parseFootnotesXml, parseHeaderFooterXml } from "./documentParser";
 import { buildStylesheet, collectUsedStyleIds, createMapper, mapSdts, type LinkResolver, type Mapper } from "./mapToModel";
 import { createMediaStore, type MediaStore } from "./media";
 import { parseNumberingXml, EMPTY_NUMBERING } from "./numbering";
@@ -71,9 +71,35 @@ export function runImport(
   if (header) section.header = header;
   const footer = mapStory(archive, rels, ir.section?.footerRelId, mapper, mediaFor, warnings, ir.sdts);
   if (footer) section.footer = footer;
+
+  // Footnotes: map the bodies of the notes actually referenced (in document
+  // order, so numbering matches). Each note's own rels resolve its media/links.
+  const footnotePart = partNameByRelType(rels, "footnotes") ?? "word/footnotes.xml";
+  const footnoteXml = archive.text(footnotePart);
+  const footnoteIR = footnoteXml !== undefined ? parseFootnotesXml(footnoteXml, footnotePart, warnings, ir.sdts) : new Map();
+  const footnotes: Record<string, Paragraph[]> = {};
+  if (footnoteIR.size > 0) {
+    const footRels = relsOf(archive, footnotePart);
+    const footMedia = mediaFor(footRels);
+    const footLink = linkResolverFor(footRels);
+    for (const { docxId, noteId } of mapper.footnoteRefs()) {
+      const bodyIR = footnoteIR.get(docxId);
+      if (!bodyIR) {
+        warnings.add("footnote-missing", "A footnote reference had no matching note body.");
+        continue;
+      }
+      const noteBlocks = mapper.mapBlocks(bodyIR, footMedia, footLink);
+      const paras = noteBlocks.filter((b): b is Paragraph => b.kind === "paragraph");
+      if (paras.length < noteBlocks.length) {
+        warnings.add("footnote-tables", "Tables inside footnotes were dropped (footnotes hold paragraphs only).");
+      }
+      if (paras.length > 0) footnotes[noteId] = paras;
+    }
+  }
   progress("map", 1);
 
   const doc: ImportResult["doc"] = { section, blocks };
+  if (Object.keys(footnotes).length > 0) doc.footnotes = footnotes;
   const sdts = mapSdts(ir.sdts);
   if (Object.keys(sdts).length > 0) doc.sdts = sdts;
   const lists = mapper.lists();
@@ -129,4 +155,10 @@ function linkResolverFor(rels: Relationships): LinkResolver {
 function partByRelType(archive: Archive, rels: Relationships, kind: string): string | undefined {
   const rel = findByType(rels, kind);
   return rel && !rel.external ? archive.text(rel.target) : undefined;
+}
+
+/** Part NAME for a relationship type (footnotes need their rels resolved separately). */
+function partNameByRelType(rels: Relationships, kind: string): string | undefined {
+  const rel = findByType(rels, kind);
+  return rel && !rel.external ? rel.target : undefined;
 }

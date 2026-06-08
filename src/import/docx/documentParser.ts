@@ -298,8 +298,19 @@ function parseRun(r: XmlNode, out: IRInline[], ctx: ParseCtx, field: FieldState)
           if (choice) walkContent(children(choice));
           break;
         }
+        case "w:footnoteReference": {
+          // The marker run: text becomes the note number in mapToModel.
+          const fnId = attr(node, "w:id");
+          if (fnId !== undefined) {
+            flush();
+            out.push({ kind: "run", text: "", props: { ...props, footnoteId: fnId } });
+          }
+          break;
+        }
+        case "w:footnoteRef":
+          break; // the auto-number placeholder inside a footnote BODY — engine paints it
         default:
-          break; // w:rPr, w:lastRenderedPageBreak, …
+          break; // w:rPr, w:lastRenderedPageBreak, w:endnoteReference, …
       }
     }
   };
@@ -528,6 +539,18 @@ function parseSection(sectPr: XmlNode, warnings: WarningSink): IRSection {
   if (headerRelId) section.headerRelId = headerRelId;
   const footerRelId = pickHeaderFooterRef(els(sectPr, "w:footerReference"), warnings);
   if (footerRelId) section.footerRelId = footerRelId;
+
+  const cols = el(sectPr, "w:cols");
+  if (cols) {
+    const count = numAttr(cols, "w:num") ?? 1;
+    if (count > 1) {
+      section.columns = { count };
+      const space = numAttr(cols, "w:space");
+      if (space !== undefined) section.columns.spaceTwips = space;
+    }
+  }
+  const pgNumStart = numAttr(el(sectPr, "w:pgNumType"), "w:start");
+  if (pgNumStart !== undefined) section.pageNumberStart = pgNumStart;
   return section;
 }
 
@@ -548,4 +571,40 @@ function pickHeaderFooterRef(refs: XmlNode[], warnings: WarningSink): string | u
   }
   warnings.add("header-variants", "No default header/footer — using the first/even variant for all pages.");
   return attr(refs[0]!, "r:id");
+}
+
+// ---------------------------------------------------------------------------
+// Footnotes (footnotes.xml)
+
+/** footnotes.xml → IR block stories keyed by footnote id. The standard
+ *  separator/continuation pseudo-notes (negative ids / type attrs) are skipped;
+ *  only real notes are returned. Each note's leading w:footnoteRef placeholder
+ *  is dropped (parseRun ignores it) — the engine paints the number. */
+export function parseFootnotesXml(
+  xmlText: string,
+  partName: string,
+  warnings: WarningSink,
+  sdts: Record<string, IRSdtProps> = {},
+): Map<string, IRBlock[]> {
+  const out = new Map<string, IRBlock[]>();
+  const root = rootEl(parseXml(xmlText, partName), "w:footnotes");
+  if (!root) return out;
+  const ctx: ParseCtx = {
+    warnings,
+    fieldTokens: false,
+    sdts,
+    nextSdt: { n: Object.keys(sdts).length },
+    pendingBookmarks: [],
+    currentBookmarks: null,
+  };
+  for (const note of els(root, "w:footnote")) {
+    const fnId = attr(note, "w:id");
+    if (fnId === undefined) continue;
+    const type = attr(note, "w:type"); // "separator" | "continuationSeparator" | …
+    if (type) continue; // pseudo-notes, not real footnotes
+    const blocks: IRBlock[] = [];
+    walkBlocks(children(note), blocks, ctx);
+    out.set(fnId, blocks);
+  }
+  return out;
 }

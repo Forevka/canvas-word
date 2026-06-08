@@ -92,6 +92,9 @@ export interface IRRunProps {
    *  an in-document bookmark (kept as "#name"). */
   linkRelId?: string;
   linkAnchor?: string;
+  /** w:footnoteReference w:id — this run is a footnote marker. mapToModel sets
+   *  the run text to the sequential note number and CharStyle.footnoteRef. */
+  footnoteId?: string;
 }
 
 /** w:sdtPr — content-control properties, decoded faithfully (mapToModel turns
@@ -142,6 +145,8 @@ export interface IRParaProps {
   indentFirstLineTwips?: number;
   /** w:keepNext — maps onto ParaStyle.keepWithNext. */
   keepWithNext?: boolean;
+  /** w:keepLines — maps onto ParaStyle.keepLinesTogether. */
+  keepLinesTogether?: boolean;
   /** w:pageBreakBefore — this paragraph starts a new page. */
   pageBreakBefore?: boolean;
   /** w:numPr — list membership. numId "0" / null = explicitly NOT a list
@@ -214,6 +219,10 @@ export interface IRSection {
    *  document part's rels; the referenced parts are parsed separately. */
   headerRelId?: string;
   footerRelId?: string;
+  /** w:cols — newspaper columns (only count > 1 is meaningful). */
+  columns?: { count: number; spaceTwips?: number };
+  /** w:pgNumType w:start — restart page numbering at this value. */
+  pageNumberStart?: number;
 }
 
 export interface IRDocument {

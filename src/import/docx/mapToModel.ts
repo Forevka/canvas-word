@@ -89,6 +89,9 @@ export interface Mapper {
   lists(): Record<string, ListDefinition>;
   /** Bookmark name → model block id, collected across all mapped stories. */
   bookmarks(): Record<string, string>;
+  /** Footnotes referenced (in document order) — the pipeline maps their bodies
+   *  into Document.footnotes. `noteId` is the model key, `docxId` the source id. */
+  footnoteRefs(): { docxId: string; noteId: string }[];
 }
 
 export function createMapper(
@@ -103,6 +106,21 @@ export function createMapper(
 
   // Bookmark name → the id of the first model paragraph it anchors.
   const bookmarkMap: Record<string, string> = {};
+
+  // Footnote markers numbered sequentially in document order (docx id → number),
+  // matching the editor's renumber convention. The pipeline maps the referenced
+  // bodies into Document.footnotes keyed by `fn<docxId>`.
+  const footnoteNum = new Map<string, string>();
+  const footnoteOrder: string[] = [];
+  const footnoteNumber = (docxId: string): string => {
+    let num = footnoteNum.get(docxId);
+    if (num === undefined) {
+      num = String(footnoteNum.size + 1);
+      footnoteNum.set(docxId, num);
+      footnoteOrder.push(docxId);
+    }
+    return num;
+  };
 
   // Model list definitions, built lazily for referenced numIds only (a report
   // carries far more definitions than it uses).
@@ -320,6 +338,13 @@ export function createMapper(
     } else if (effective.linkAnchor) {
       style.link = `#${effective.linkAnchor}`; // in-document bookmark
     }
+    if (effective.footnoteId !== undefined) {
+      // The ref run's TEXT is its number (the engine paints it at page bottom);
+      // numbers are sequential in document order, matching the editor's convention.
+      text = footnoteNumber(effective.footnoteId);
+      style.footnoteRef = `fn${effective.footnoteId}`;
+      style.verticalAlign = "super";
+    }
     if (sdtId) {
       style.sdtId = sdtId;
       const sdt = sdts[sdtId];
@@ -385,7 +410,7 @@ export function createMapper(
 
   function mapSection(ir: IRSection | null): SectionProps {
     if (!ir) return { ...DEFAULT_SECTION, marginPx: { ...DEFAULT_SECTION.marginPx } };
-    return {
+    const section: SectionProps = {
       pageWidthPx:
         ir.pageWidthTwips !== undefined ? round2(twipsToPx(ir.pageWidthTwips)) : DEFAULT_SECTION.pageWidthPx,
       pageHeightPx:
@@ -399,6 +424,12 @@ export function createMapper(
           }
         : { ...DEFAULT_SECTION.marginPx },
     };
+    if (ir.columns) {
+      // OOXML default column gap is 720 twips (0.5") when w:space is absent.
+      section.columns = { count: ir.columns.count, gapPx: round2(twipsToPx(ir.columns.spaceTwips ?? 720)) };
+    }
+    if (ir.pageNumberStart !== undefined) section.pageNumberStart = ir.pageNumberStart;
+    return section;
   }
 
   return {
@@ -407,6 +438,7 @@ export function createMapper(
     emptyParagraph,
     lists: () => Object.fromEntries(usedLists),
     bookmarks: () => bookmarkMap,
+    footnoteRefs: () => footnoteOrder.map((docxId) => ({ docxId, noteId: `fn${docxId}` })),
   };
 }
 
@@ -559,6 +591,7 @@ function mapParaPatch(props: IRParaProps): Partial<ParaStyle> {
   if (props.indentFirstLineTwips !== undefined)
     out.indentFirstLinePx = round2(twipsToPx(props.indentFirstLineTwips));
   if (props.keepWithNext) out.keepWithNext = true;
+  if (props.keepLinesTogether) out.keepLinesTogether = true;
   return out;
 }
 
@@ -607,6 +640,7 @@ function mapParaStyle(props: IRParaProps): ParaStyle {
   if (props.indentFirstLineTwips !== undefined)
     style.indentFirstLinePx = round2(twipsToPx(props.indentFirstLineTwips));
   if (props.keepWithNext) style.keepWithNext = true;
+  if (props.keepLinesTogether) style.keepLinesTogether = true;
   if (props.pageBreakBefore) style.pageBreakBefore = true;
   if (props.styleId) style.namedStyle = props.styleId;
   return style;

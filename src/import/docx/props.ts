@@ -90,6 +90,9 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
   const keepNext = onOff(el(pPr, "w:keepNext"));
   if (keepNext !== undefined) props.keepWithNext = keepNext;
 
+  const keepLines = onOff(el(pPr, "w:keepLines"));
+  if (keepLines !== undefined) props.keepLinesTogether = keepLines;
+
   const pageBreakBefore = onOff(el(pPr, "w:pageBreakBefore"));
   if (pageBreakBefore !== undefined) props.pageBreakBefore = pageBreakBefore;
 

@@ -158,6 +158,10 @@ than a silent drop:
 | Hyperlinks | `CharStyle.link` | Faithful: external `r:id` → URL (via the part's rels), `w:anchor` → `#bookmark`; warns if a target rel is missing |
 | Highlight | `CharStyle.highlightColor` | Faithful: 16 named colors → hex |
 | Super/subscript | `CharStyle.verticalAlign` | Faithful: `w:vertAlign` → `"super"`/`"sub"` |
+| Footnotes | `Document.footnotes` + `CharStyle.footnoteRef` | Faithful: `footnotes.xml` bodies (own rels) keyed `fn<id>`; ref runs numbered sequentially in document order; separator/continuation pseudo-notes skipped; tables-in-notes dropped (warning) |
+| `w:keepLines` | `ParaStyle.keepLinesTogether` | Faithful |
+| Newspaper columns | `SectionProps.columns` | Faithful: `w:cols` (count > 1) with px gap (0.5in default) |
+| Page-number restart | `SectionProps.pageNumberStart` | Faithful: `w:pgNumType/@w:start` |
 | `w:br` (soft line break) | no soft breaks | Split into a new paragraph with `spaceBefore/After: 0` |
 | `w:tab` | no tab stops | Replace with fixed spaces (warning) |
 | `gridSpan` | — | Faithful: maps to `TableCell.colSpan` (and `w:tblGrid` → `colFractions`) |
