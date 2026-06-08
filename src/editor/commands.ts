@@ -820,6 +820,60 @@ export function replaceSdtContent(id: string, fragment: DocFragment): Command {
   };
 }
 
+/** Replace a BLOCK-LEVEL control's whole block span (paragraphs, images,
+ *  tables, blank lines) with a new block list — the inspector's Save for
+ *  controls whose content holds objects that insertFragment can't round-trip.
+ *  Paragraph runs are re-tagged with the sdtId (so the control survives) and
+ *  given fresh ids; image/table blocks are inserted verbatim. The span is
+ *  forced to begin and end with a tagged paragraph so findSdtRanges recovers
+ *  the full extent next time (objects at the very edges would otherwise be
+ *  clipped out of the control). */
+export function replaceSdtBlockSpan(id: string, blocks: Block[]): Command {
+  return (state) => {
+    const props = state.doc.sdts?.[id];
+    const ranges = findSdtRanges(state.doc, id);
+    if (!props || ranges.length === 0) return null;
+    const first = containerOf(state.doc, ranges[0]!.blockId);
+    const last = containerOf(state.doc, ranges[ranges.length - 1]!.blockId);
+    if (!first || !last || first.where !== last.where) return null;
+    const where = first.where;
+    const span = containerBlocks(state.doc, where);
+    const lo = first.index;
+    const hi = last.index;
+    if (lo > hi || lo < 0 || hi >= span.length) return null;
+
+    const baseStyle: CharStyle =
+      styleAtRuns((span[lo] as Paragraph).runs ?? [], ranges[0]!.start + 1) ?? DEFAULT_CELL_CHAR;
+    const taggedPara = (p: Paragraph): Paragraph => ({
+      kind: "paragraph",
+      id: freshBlockId(),
+      revision: 0,
+      style: p.style,
+      runs: (p.runs.length > 0 ? p.runs : [{ text: "", style: baseStyle }]).map((r) => ({
+        text: r.text,
+        style: { ...r.style, sdtId: id },
+      })),
+    });
+    const emptyTagged = (): Paragraph =>
+      taggedPara({ kind: "paragraph", id: "", revision: 0, runs: [], style: (span[lo] as Paragraph).style });
+
+    const fresh: Block[] = blocks.map((b) =>
+      b.kind === "paragraph" ? taggedPara(b) : b,
+    );
+    // Guarantee tagged-paragraph bookends.
+    if (fresh.length === 0 || fresh[0]!.kind !== "paragraph") fresh.unshift(emptyTagged());
+    if (fresh[fresh.length - 1]!.kind !== "paragraph") fresh.push(emptyTagged());
+
+    const ops: Op[] = [];
+    for (let i = hi; i >= lo; i--) ops.push({ type: "removeBlock", blockId: span[i]!.id });
+    fresh.forEach((b, k) => ops.push({ type: "insertBlock", index: lo + k, block: b, where }));
+    if (props.placeholder) ops.push({ type: "setSdtProps", id, props: { ...props, placeholder: false } });
+
+    const firstPara = fresh.find((b) => b.kind === "paragraph")!;
+    return { ops, selectionAfter: caret(firstPara.id, 0), origin: "command" };
+  };
+}
+
 /** Remove the control: strip the run markers; optionally delete its content. */
 export function removeContentControl(id: string, deleteContents: boolean): Command {
   return (state) => {

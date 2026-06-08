@@ -48,6 +48,7 @@ import {
   removeContentControl,
   replaceBackAndInsert,
   replaceSdtContent,
+  replaceSdtBlockSpan,
   sdtAtPosition,
   setAlignment,
   setCharStyle as setCharStyleCmd,
@@ -1010,14 +1011,26 @@ export function createEditor(
 
   /** Render a block list to preview HTML that mirrors the document — runs with
    *  their styles, images as <img>, tables as <table>, empty paragraphs kept. */
+  // When `objRefs` is supplied (top-level editable render), each image/table is
+  // captured into it and emitted wrapped in a contenteditable=false div carrying
+  // its ref index — so the Save round-trip restores the object verbatim instead
+  // of dropping it. Nested (cell) renders pass no collector: their objects ride
+  // along inside the parent table's single ref.
   const renderBlocksHtml = (
     blocks: Block[],
+    objRefs?: Block[],
   ): { html: string; text: string; paraCount: number; charCount: number; hasObjects: boolean } => {
     let html = "";
     let text = "";
     let paraCount = 0;
     let charCount = 0;
     let hasObjects = false;
+    const objHtml = (inner: string): string => {
+      if (!objRefs) return inner;
+      const k = objRefs.length;
+      // The referenced block is pushed by the caller; here we only know its slot.
+      return `<div data-cw-ref="${k}" contenteditable="false" style="position:relative;">${inner}</div>`;
+    };
     for (const b of blocks) {
       if (b.kind === "paragraph") {
         paraCount++;
@@ -1030,32 +1043,82 @@ export function createEditor(
       } else if (b.kind === "image") {
         hasObjects = true;
         const src = b.src.replace(/"/g, "&quot;");
-        html += `<img src="${src}" style="display:block;margin:6px auto;max-width:100%;width:${Math.round(b.widthPx)}px;height:auto;">`;
+        const img = `<img src="${src}" style="display:block;margin:6px auto;max-width:100%;width:${Math.round(b.widthPx)}px;height:auto;">`;
+        html += objHtml(img);
+        if (objRefs) objRefs.push(b);
         text += "[image]\n";
       } else {
         hasObjects = true;
-        html += `<table style="border-collapse:collapse;width:100%;margin:6px 0;">`;
+        let tbl = `<table style="border-collapse:collapse;width:100%;margin:6px 0;">`;
         for (const row of b.rows) {
-          html += "<tr>";
+          tbl += "<tr>";
           for (const cell of row.cells) {
             const span = cell.colSpan && cell.colSpan > 1 ? ` colspan="${cell.colSpan}"` : "";
-            html += `<td${span} style="border:1px solid #d0d4d9;padding:3px 6px;vertical-align:top;">${renderBlocksHtml(cell.blocks).html}</td>`;
+            tbl += `<td${span} style="border:1px solid #d0d4d9;padding:3px 6px;vertical-align:top;">${renderBlocksHtml(cell.blocks).html}</td>`;
           }
-          html += "</tr>";
+          tbl += "</tr>";
         }
-        html += "</table>";
+        tbl += "</table>";
+        html += objHtml(tbl);
+        if (objRefs) objRefs.push(b);
         text += "[table]\n";
       }
     }
     return { html, text: text.replace(/\n+$/, ""), paraCount, charCount, hasObjects };
   };
 
-  const sdtInspectorData = (id: string): (SdtInspectorData & { hasObjects: boolean }) | null => {
+  /** Parse the inspector's edited HTML back into model blocks, restoring the
+   *  preserved objects: a node carrying data-cw-ref re-injects objRefs[k]
+   *  verbatim; everything between objects is parsed as paragraph runs. Block ids
+   *  are left empty — replaceSdtBlockSpan assigns fresh ones and re-tags runs. */
+  const htmlToBlocksPreserving = (html: string, objRefs: Block[]): Block[] => {
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    const out: Block[] = [];
+    let buffer = "";
+    const flushText = (): void => {
+      const frag = buffer.trim() === "" && !/&nbsp;|<br/i.test(buffer) ? null : htmlToFragment(buffer);
+      buffer = "";
+      if (!frag) return;
+      for (const fb of frag.blocks) {
+        out.push({ kind: "paragraph", id: "", revision: 0, runs: fb.runs, style: fb.style });
+      }
+    };
+    const refOf = (el: HTMLElement): number | null => {
+      const direct = el.getAttribute("data-cw-ref");
+      if (direct !== null) return Number(direct);
+      // contenteditable can wrap the marked div; honor a descendant ref too.
+      const inner = el.querySelector?.("[data-cw-ref]")?.getAttribute("data-cw-ref");
+      return inner != null ? Number(inner) : null;
+    };
+    for (const node of Array.from(parsed.body.childNodes)) {
+      const el = node instanceof HTMLElement ? node : null;
+      const k = el ? refOf(el) : null;
+      if (k !== null && objRefs[k]) {
+        flushText();
+        out.push(objRefs[k]!);
+      } else {
+        buffer += el ? el.outerHTML : escapeForBuffer(node.textContent ?? "");
+      }
+    }
+    flushText();
+    return out;
+  };
+  const escapeForBuffer = (s: string): string => {
+    const d = document.createElement("span");
+    d.textContent = s;
+    return d.innerHTML;
+  };
+
+  /** `blockLevel` controls round-trip through whole-block replacement (objects
+   *  preserved by ref); inline controls round-trip through a paragraph fragment.
+   *  `objRefs` holds the block-level span's images/tables in data-cw-ref order. */
+  type SdtData = SdtInspectorData & { hasObjects: boolean; blockLevel: boolean; objRefs: Block[] };
+  const sdtInspectorData = (id: string): SdtData | null => {
     const props = doc.sdts?.[id];
     if (!props) return null;
     const ranges = findSdtRanges(doc, id);
     if (ranges.length === 0) {
-      return { id, props, html: "", text: "", paragraphCount: 0, charCount: 0, hasObjects: false };
+      return { id, props, html: "", text: "", paragraphCount: 0, charCount: 0, hasObjects: false, blockLevel: false, objRefs: [] };
     }
     const first = ranges[0]!;
     const last = ranges[ranges.length - 1]!;
@@ -1065,14 +1128,16 @@ export function createEditor(
       firstBlock !== undefined &&
       (first.start > 0 || first.end < textOfRuns(firstBlock.runs).length);
     // Block-level control: render its whole top-level block span (so images and
-    // blank lines between tagged paragraphs survive).
+    // blank lines between tagged paragraphs survive). Capture objects into
+    // objRefs so an edit can restore them verbatim.
     if (!inlinePartial) {
       const fc = containerOf(doc, first.blockId);
       const lc = containerOf(doc, last.blockId);
       if (fc && lc && fc.where === lc.where) {
         const span = containerBlocks(doc, fc.where).slice(fc.index, lc.index + 1);
-        const r = renderBlocksHtml(span);
-        return { id, props, html: r.html, text: r.text, paragraphCount: r.paraCount, charCount: r.charCount, hasObjects: r.hasObjects };
+        const objRefs: Block[] = [];
+        const r = renderBlocksHtml(span, objRefs);
+        return { id, props, html: r.html, text: r.text, paragraphCount: r.paraCount, charCount: r.charCount, hasObjects: r.hasObjects, blockLevel: true, objRefs };
       }
     }
     // Inline / cell-hosted: per-range run slices (text only).
@@ -1084,26 +1149,31 @@ export function createEditor(
       .filter((b): b is { runs: import("./model/document").Run[]; style: ParaStyle } => b !== null);
     const fragment: DocFragment = { blocks, inline: blocks.length === 1 };
     const text = fragmentToPlainText(fragment);
-    return { id, props, html: fragmentToHtml(fragment), text, paragraphCount: blocks.length, charCount: text.length, hasObjects: false };
+    return { id, props, html: fragmentToHtml(fragment), text, paragraphCount: blocks.length, charCount: text.length, hasObjects: false, blockLevel: false, objRefs: [] };
   };
   const openSdtInspector = (id: string): void => {
     const data = sdtInspectorData(id);
     if (!data) return;
     const props = data.props;
-    // Editable for unlocked, text-only controls (no images/tables to lose on a
-    // round-trip). Value-driven types and locked controls stay read-only.
+    // Editable for unlocked text controls. Block-level controls (incl. ones with
+    // images/tables) round-trip through whole-block replacement that preserves
+    // objects by ref, so they no longer need the read-only guard. Value-driven
+    // and locked controls stay read-only.
     const editable =
       !props.lockContent &&
-      !data.hasObjects &&
       props.type !== "checkbox" &&
       props.type !== "dropDown";
     sdtInspector?.close();
     sdtInspector = showSdtInspector(data, {
       editable,
       onSave: (html: string): boolean => {
-        const fragment = htmlToFragment(html) ?? emptyFragmentLike(id);
         const before = doc;
-        dispatch(replaceSdtContent(id, fragment));
+        if (data.blockLevel) {
+          dispatch(replaceSdtBlockSpan(id, htmlToBlocksPreserving(html, data.objRefs)));
+        } else {
+          const fragment = htmlToFragment(html) ?? emptyFragmentLike(id);
+          dispatch(replaceSdtContent(id, fragment));
+        }
         return doc !== before; // dispatch swapped doc iff the edit applied
       },
     });
