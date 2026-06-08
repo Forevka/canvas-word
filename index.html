@@ -150,6 +150,26 @@
       .outline-item:hover { background: #f3f2f1; }
       .outline-item.active { background: #eef3fb; border-left-color: #2b579a; color: #2b579a; font-weight: 600; }
       .outline-empty { padding: 14px; color: #80868b; font-size: 12px; line-height: 1.4; }
+
+      /* collapsed ribbon: keep the tab strip, hide the body */
+      #toolbar.collapsed .rib-bodies { display: none; }
+
+      /* ===== Status bar ================================================== */
+      #statusbar {
+        flex: 0 0 auto; height: 24px; display: flex; align-items: center; justify-content: space-between;
+        background: #2b579a; color: #fff; font-size: 12px; padding: 0 10px; user-select: none;
+      }
+      #statusbar .sb-left, #statusbar .sb-right { display: flex; align-items: center; gap: 16px; }
+      #statusbar .sb-right { gap: 8px; }
+      #statusbar .sb-item { white-space: nowrap; }
+      #statusbar .sb-sep { width: 1px; height: 14px; background: rgba(255,255,255,0.35); }
+      #statusbar button.sb-btn {
+        background: transparent; border: none; color: #fff; cursor: pointer; font-size: 15px;
+        width: 22px; height: 20px; border-radius: 3px; line-height: 1; padding: 0;
+      }
+      #statusbar button.sb-btn:hover { background: rgba(255,255,255,0.18); }
+      #statusbar input[type="range"] { width: 120px; cursor: pointer; accent-color: #fff; }
+      #statusbar .sb-zoom { min-width: 38px; text-align: right; }
     </style>
   </head>
   <body>
@@ -158,6 +178,7 @@
       <aside id="outline"></aside>
       <div id="app"></div>
     </div>
+    <div id="statusbar"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

@@ -53,13 +53,18 @@ console.log(
 let syncToolbar: () => void = () => {};
 let syncZoom: (zoom: number) => void = () => {};
 let refreshOutline: () => void = () => {};
+let refreshStatus: () => void = () => {};
 const editorOpts = {
   engine,
   onChange: () => {
     syncToolbar();
     refreshOutline();
+    refreshStatus();
   },
-  onZoomChange: (z: number) => syncZoom(z),
+  onZoomChange: (z: number) => {
+    syncZoom(z);
+    refreshStatus();
+  },
 };
 let editor = createEditor(app, doc, editorOpts);
 
@@ -70,6 +75,7 @@ const replaceDocument = (next: typeof doc): void => {
   doc = next;
   editor = createEditor(app, doc, editorOpts);
   refreshOutline();
+  refreshStatus();
   window.__cw = { doc, tree: undefined, engine, editor, createLayoutEngine, sampleDoc, stressDoc };
 };
 
@@ -123,6 +129,7 @@ import {
   sdtAtPosition,
 } from "./editor/commands";
 import { defaultStylesheet, resolveStyle, styleById } from "./model/stylesheet";
+import { paragraphsOf, textOfRuns } from "./model/text";
 import { ICONS } from "./ui/icons";
 
 const TOOLBAR_SVG =
@@ -148,6 +155,9 @@ if (toolbar) {
   const CARET =
     `<svg class="caret" viewBox="0 0 8 8" fill="none" stroke="currentColor" ` +
     `stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 3 4 5.5 6.5 3"/></svg>`;
+  const chevron = (up: boolean): string =>
+    `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" ` +
+    `stroke-linecap="round" stroke-linejoin="round"><path d="${up ? "M3 7.5 6 4.5 9 7.5" : "M3 4.5 6 7.5 9 4.5"}"/></svg>`;
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string): HTMLElementTagNameMap[K] => {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -162,6 +172,7 @@ if (toolbar) {
   const showTab = (id: string): void => {
     for (const [tid, b] of tabButtons) b.classList.toggle("active", tid === id);
     for (const [tid, p] of tabPanels) p.classList.toggle("active", tid === id);
+    setCollapsed(false); // clicking a tab re-pins a collapsed ribbon (Word)
   };
   const tab = (id: string, label: string, kind?: "file"): HTMLDivElement => {
     const t = el("button", "rib-tab" + (kind === "file" ? " file" : ""));
@@ -405,6 +416,16 @@ if (toolbar) {
   sizeInput.title = "Font size (pt)";
   sizeInput.style.cssText = "width:46px;padding:0 4px;";
   sizeInput.addEventListener("mousedown", (e) => e.stopPropagation());
+  // Editable combo: type any size, or pick a Word preset from the dropdown.
+  const sizeList = el("datalist");
+  sizeList.id = "cw-font-sizes";
+  for (const p of [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 72]) {
+    const o = el("option");
+    o.value = String(p);
+    sizeList.appendChild(o);
+  }
+  document.body.appendChild(sizeList);
+  sizeInput.setAttribute("list", sizeList.id);
   /** Apply a size given in POINTS (clamped to the model's 6–96px range). */
   const setSizePt = (pt: number): void => {
     if (!Number.isFinite(pt)) return;
@@ -562,8 +583,7 @@ if (toolbar) {
     };
     ed(ICONS.find, "Find", "Find & replace (Ctrl+F)", () => openFind());
     ed(ICONS.replace, "Replace", "Replace (Ctrl+F)", () => openFind());
-    const selBtn = stub(ICONS.select + `<span>Select</span>`, "Select");
-    selBtn.style.cssText = wide;
+    ed(ICONS.select, "Select All", "Select all (Ctrl+A)", () => editor.selectAll());
     controls = prev;
     controls.appendChild(col);
   }
@@ -793,6 +813,26 @@ if (toolbar) {
     setOpen(true); // visible by default (Word opens the navigation pane on demand; we lead with it)
   }
 
+  // Collapse / expand the ribbon body (keeps the tab strip). A pinned chevron
+  // on the right of the tab strip toggles it; clicking any tab re-pins.
+  const collapseBtn = el("button", "rib-tab");
+  collapseBtn.style.marginLeft = "auto";
+  collapseBtn.innerHTML = chevron(true);
+  const setCollapsed = (v: boolean): void => {
+    toolbar.classList.toggle("collapsed", v);
+    collapseBtn.innerHTML = chevron(!v);
+    collapseBtn.title = v ? "Pin the ribbon" : "Collapse the ribbon (Ctrl+F1)";
+  };
+  collapseBtn.addEventListener("click", () => setCollapsed(!toolbar.classList.contains("collapsed")));
+  window.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "F1") {
+      e.preventDefault();
+      setCollapsed(!toolbar.classList.contains("collapsed"));
+    }
+  });
+  setCollapsed(false);
+  tabsBar.appendChild(collapseBtn);
+
   showTab("home");
 
   // ---- toolbar controls mirror the caret formatting -----------------------
@@ -844,6 +884,66 @@ if (toolbar) {
       zoomSel.value = String(z);
     }
   };
+}
+
+// ---- status bar (page count, word/character count, zoom slider) -------------
+{
+  const sb = document.getElementById("statusbar");
+  if (sb) {
+    const left = document.createElement("div");
+    left.className = "sb-left";
+    const right = document.createElement("div");
+    right.className = "sb-right";
+    sb.append(left, right);
+    const item = (parent: HTMLElement): HTMLSpanElement => {
+      const s = document.createElement("span");
+      s.className = "sb-item";
+      parent.appendChild(s);
+      return s;
+    };
+    const pageItem = item(left);
+    const wordItem = item(left);
+
+    const zBtn = (label: string, title: string, onClick: () => void): void => {
+      const b = document.createElement("button");
+      b.className = "sb-btn";
+      b.textContent = label;
+      b.title = title;
+      b.addEventListener("click", onClick);
+      right.appendChild(b);
+    };
+    zBtn("−", "Zoom out", () => editor.setZoom(editor.getZoom() / 1.1));
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = "50";
+    slider.max = "300";
+    slider.step = "10";
+    slider.title = "Zoom";
+    slider.addEventListener("input", () => editor.setZoom(Number(slider.value) / 100));
+    right.appendChild(slider);
+    zBtn("+", "Zoom in", () => editor.setZoom(editor.getZoom() * 1.1));
+    const zLabel = document.createElement("span");
+    zLabel.className = "sb-item sb-zoom";
+    right.appendChild(zLabel);
+
+    refreshStatus = (): void => {
+      const { pageCount, currentPage } = editor.getLayoutInfo();
+      pageItem.textContent = `Page ${currentPage} of ${pageCount}`;
+      let chars = 0;
+      let words = 0;
+      for (const p of paragraphsOf(editor.getDocument())) {
+        const t = textOfRuns(p.runs);
+        chars += t.length;
+        const m = t.match(/\S+/g);
+        if (m) words += m.length;
+      }
+      wordItem.textContent = `${words} word${words === 1 ? "" : "s"} · ${chars} character${chars === 1 ? "" : "s"}`;
+      const pct = Math.round(editor.getZoom() * 100);
+      slider.value = String(Math.min(300, Math.max(50, pct)));
+      zLabel.textContent = `${pct}%`;
+    };
+    refreshStatus();
+  }
 }
 
 // ---- page setup panel (📐) ---------------------------------------------------
@@ -999,13 +1099,41 @@ const pageSetupPanel = (() => {
   const update = (s: { index: number; total: number }): void => {
     counter.textContent = s.total > 0 ? `${s.index}/${s.total}` : findInput.value ? "0/0" : "";
   };
+  // Match-case / whole-word toggles (editor.search already accepts these).
+  let matchCase = false;
+  let wholeWord = false;
+  const reSearch = (): void => {
+    update(findInput.value ? editor.search(findInput.value, { matchCase, wholeWord }) : { index: 0, total: 0 });
+  };
+  const optBtn = (label: string, title: string, get: () => boolean, set: (v: boolean) => void): void => {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.title = title;
+    b.style.cssText = "height:24px;min-width:26px;border:1px solid transparent;border-radius:4px;background:transparent;cursor:pointer;font-size:13px;font-weight:600;";
+    const paint = (): void => {
+      const on = get();
+      b.style.background = on ? "#cfe3fb" : "transparent";
+      b.style.borderColor = on ? "#b3d3f5" : "transparent";
+      b.style.color = on ? "#0b57d0" : "#3c4043";
+    };
+    b.addEventListener("click", () => {
+      set(!get());
+      paint();
+      reSearch();
+      findInput.focus();
+    });
+    paint();
+    bar.appendChild(b);
+  };
+  optBtn("Aa", "Match case", () => matchCase, (v) => (matchCase = v));
+  optBtn("⌈W⌋", "Match whole word only", () => wholeWord, (v) => (wholeWord = v));
   mkBtn("‹", "Previous (Shift+Enter)", () => update(editor.searchNav(-1)));
   mkBtn("›", "Next (Enter)", () => update(editor.searchNav(1)));
   const replaceInput = mkInput("Replace", 120);
   mkBtn("Replace", "Replace current", () => update(editor.searchReplaceCurrent(replaceInput.value)));
   mkBtn("All", "Replace all", () => {
     const n = editor.searchReplaceAll(replaceInput.value);
-    update(editor.search(findInput.value));
+    update(editor.search(findInput.value, { matchCase, wholeWord }));
     counter.textContent += ` (${n} replaced)`;
   });
   const close = (): void => {
@@ -1020,10 +1148,10 @@ const pageSetupPanel = (() => {
     bar.style.display = "flex";
     findInput.select();
     findInput.focus();
-    if (findInput.value) update(editor.search(findInput.value));
+    reSearch();
   };
 
-  findInput.addEventListener("input", () => update(editor.search(findInput.value)));
+  findInput.addEventListener("input", reSearch);
   bar.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter") {
       update(editor.searchNav(ev.shiftKey ? -1 : 1));

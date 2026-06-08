@@ -127,6 +127,10 @@ export interface Editor {
   /** Move the caret to a block's start and scroll it into view (outline pane,
    *  navigation). No-op if the block id isn't in the current document. */
   revealBlock(blockId: string): void;
+  /** Select the whole document body (Select All button / Ctrl+A). */
+  selectAll(): void;
+  /** Layout summary for the status bar: total pages and the caret's 1-based page. */
+  getLayoutInfo(): { pageCount: number; currentPage: number };
   /** Find & replace. search() highlights all matches and returns state. */
   search(query: string, opts?: { matchCase?: boolean; wholeWord?: boolean }): SearchState;
   searchNav(dir: 1 | -1): SearchState;
@@ -1750,6 +1754,26 @@ export function createEditor(
       setSelection({ anchor: { blockId, offset: 0 }, focus: { blockId, offset: 0 } });
       const rect = caretRect(tree, { blockId, offset: 0 });
       if (rect) paint.ensureVisible(rect, "center");
+    },
+    selectAll: (): void => {
+      const paras = doc.blocks.filter((b): b is import("./model/document").Paragraph => b.kind === "paragraph");
+      const first = paras[0];
+      const last = paras[paras.length - 1];
+      if (!first || !last) return;
+      setSelection({
+        anchor: { blockId: first.id, offset: 0 },
+        focus: { blockId: last.id, offset: textOfRuns(last.runs).length },
+      });
+      proxy.focus();
+    },
+    getLayoutInfo: (): { pageCount: number; currentPage: number } => {
+      const pageCount = tree.pages.length;
+      let currentPage = 1;
+      if (selection) {
+        const r = caretRect(tree, selection.focus, scope());
+        if (r) currentPage = r.pageIndex + 1;
+      }
+      return { pageCount, currentPage };
     },
     search,
     searchNav,
