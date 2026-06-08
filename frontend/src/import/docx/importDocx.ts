@@ -8,6 +8,7 @@
 
 import { ImportError, type FromWorker, type ImportPhase, type ImportResult, type ToWorker } from "./types";
 import { BAND_CONTAINERS, type Block } from "@cw/shared";
+import { bindMediaUrl, registerMediaBytes } from "../../media/store";
 
 export type { ImportPhase, ImportResult, ImportWarning } from "./types";
 export { ImportError } from "./types";
@@ -90,12 +91,24 @@ function scheduleIdleTerminate(): void {
  *  while the worker is still alive, so its URLs are still fetchable. */
 async function rehomeMedia(result: ImportResult): Promise<void> {
   if (result.mediaUrls.length === 0) return;
-  const remap = new Map<string, string>();
+  // oldWorkerUrl -> { url: main-thread blob URL, mediaId: content address }.
+  const remap = new Map<string, { url: string; mediaId: string | undefined }>();
   await Promise.all(
     result.mediaUrls.map(async (oldUrl) => {
       try {
         const blob = await (await fetch(oldUrl)).blob();
-        remap.set(oldUrl, URL.createObjectURL(blob));
+        const url = URL.createObjectURL(blob);
+        let mediaId: string | undefined;
+        try {
+          // Content-address the bytes and register them so the image survives a
+          // serialize → reload round-trip (and, later, replication to the server).
+          const bytes = new Uint8Array(await blob.arrayBuffer());
+          mediaId = await registerMediaBytes(bytes, blob.type || "image/png");
+          bindMediaUrl(mediaId, url);
+        } catch {
+          // Hashing unavailable (no Web Crypto) — keep the live URL, skip mediaId.
+        }
+        remap.set(oldUrl, { url, mediaId });
       } catch {
         // Worker URL already gone / unreachable — leave the original src as-is.
       }
@@ -106,7 +119,10 @@ async function rehomeMedia(result: ImportResult): Promise<void> {
     for (const b of blocks ?? []) {
       if (b.kind === "image") {
         const next = remap.get(b.src);
-        if (next) b.src = next;
+        if (next) {
+          b.src = next.url;
+          if (next.mediaId) b.mediaId = next.mediaId;
+        }
       } else if (b.kind === "table") {
         for (const row of b.rows) for (const cell of row.cells) rewrite(cell.blocks);
       }
@@ -116,7 +132,7 @@ async function rehomeMedia(result: ImportResult): Promise<void> {
   for (const band of BAND_CONTAINERS) rewrite(result.doc.section[band]);
   // The app now references the main-thread URLs; the worker's originals die with
   // it. Hand back the live set so the caller revokes the right ones on discard.
-  result.mediaUrls = [...remap.values()];
+  result.mediaUrls = [...new Set([...remap.values()].map((v) => v.url))];
 }
 
 export async function importDocx(file: File | Blob | ArrayBuffer, opts: ImportOptions = {}): Promise<ImportResult> {
