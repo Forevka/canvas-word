@@ -2,11 +2,11 @@
 // One-way data flow: input -> command -> transaction -> applyOp* -> new state
 // -> incremental layout -> paint + caret + proxy reposition (same frame).
 
-import type { CharStyle, Document, ParaStyle, TableBlock } from "./model/document";
+import type { Block, CharStyle, Document, ParaStyle, TableBlock } from "./model/document";
 import { BAND_CONTAINERS } from "./model/document";
 import type { DocPosition, DocSelection } from "./model/position";
 import { isCollapsed } from "./model/position";
-import { applyOp, effectiveFractions, locateImage, sliceRuns, type Op } from "./model/ops";
+import { applyOp, containerBlocks, containerOf, effectiveFractions, locateImage, sliceRuns, type Op } from "./model/ops";
 import { bandParagraphs, blockById, containerListOf, locateParagraph, paragraphsOf, styleAtRuns, textOfRuns } from "./model/text";
 import { createLayoutEngine, type LayoutEngine } from "./layout/engine";
 import {
@@ -1002,31 +1002,101 @@ export function createEditor(
     contextMenu = null;
   };
 
-  // Content-control inspector: gather an SDT's content (from its run ranges,
-  // partial inline or whole block-level) and show its properties + a preview.
+  // Content-control inspector: gather an SDT's content and show its properties
+  // + a faithful preview. Block-level controls render their whole block range
+  // (paragraphs, images, tables, blank lines) so the preview mirrors the page;
+  // inline controls render just their run slice.
   let sdtInspector: SdtInspectorHandle | null = null;
-  const sdtInspectorData = (id: string): SdtInspectorData | null => {
+
+  /** Render a block list to preview HTML that mirrors the document — runs with
+   *  their styles, images as <img>, tables as <table>, empty paragraphs kept. */
+  const renderBlocksHtml = (
+    blocks: Block[],
+  ): { html: string; text: string; paraCount: number; charCount: number; hasObjects: boolean } => {
+    let html = "";
+    let text = "";
+    let paraCount = 0;
+    let charCount = 0;
+    let hasObjects = false;
+    for (const b of blocks) {
+      if (b.kind === "paragraph") {
+        paraCount++;
+        const t = textOfRuns(b.runs);
+        charCount += t.length;
+        text += t + "\n";
+        html += t.length === 0
+          ? "<p>&nbsp;</p>"
+          : fragmentToHtml({ blocks: [{ runs: b.runs, style: b.style }], inline: false });
+      } else if (b.kind === "image") {
+        hasObjects = true;
+        const src = b.src.replace(/"/g, "&quot;");
+        html += `<img src="${src}" style="display:block;margin:6px auto;max-width:100%;width:${Math.round(b.widthPx)}px;height:auto;">`;
+        text += "[image]\n";
+      } else {
+        hasObjects = true;
+        html += `<table style="border-collapse:collapse;width:100%;margin:6px 0;">`;
+        for (const row of b.rows) {
+          html += "<tr>";
+          for (const cell of row.cells) {
+            const span = cell.colSpan && cell.colSpan > 1 ? ` colspan="${cell.colSpan}"` : "";
+            html += `<td${span} style="border:1px solid #d0d4d9;padding:3px 6px;vertical-align:top;">${renderBlocksHtml(cell.blocks).html}</td>`;
+          }
+          html += "</tr>";
+        }
+        html += "</table>";
+        text += "[table]\n";
+      }
+    }
+    return { html, text: text.replace(/\n+$/, ""), paraCount, charCount, hasObjects };
+  };
+
+  const sdtInspectorData = (id: string): (SdtInspectorData & { hasObjects: boolean }) | null => {
     const props = doc.sdts?.[id];
     if (!props) return null;
     const ranges = findSdtRanges(doc, id);
+    if (ranges.length === 0) {
+      return { id, props, html: "", text: "", paragraphCount: 0, charCount: 0, hasObjects: false };
+    }
+    const first = ranges[0]!;
+    const last = ranges[ranges.length - 1]!;
+    const firstBlock = blockById(doc, first.blockId);
+    const inlinePartial =
+      ranges.length === 1 &&
+      firstBlock !== undefined &&
+      (first.start > 0 || first.end < textOfRuns(firstBlock.runs).length);
+    // Block-level control: render its whole top-level block span (so images and
+    // blank lines between tagged paragraphs survive).
+    if (!inlinePartial) {
+      const fc = containerOf(doc, first.blockId);
+      const lc = containerOf(doc, last.blockId);
+      if (fc && lc && fc.where === lc.where) {
+        const span = containerBlocks(doc, fc.where).slice(fc.index, lc.index + 1);
+        const r = renderBlocksHtml(span);
+        return { id, props, html: r.html, text: r.text, paragraphCount: r.paraCount, charCount: r.charCount, hasObjects: r.hasObjects };
+      }
+    }
+    // Inline / cell-hosted: per-range run slices (text only).
     const blocks = ranges
-      .map((r) => {
-        const block = blockById(doc, r.blockId);
-        return block ? { runs: sliceRuns(block.runs, r.start, r.end), style: { ...block.style } } : null;
+      .map((rr) => {
+        const block = blockById(doc, rr.blockId);
+        return block ? { runs: sliceRuns(block.runs, rr.start, rr.end), style: { ...block.style } } : null;
       })
       .filter((b): b is { runs: import("./model/document").Run[]; style: ParaStyle } => b !== null);
     const fragment: DocFragment = { blocks, inline: blocks.length === 1 };
     const text = fragmentToPlainText(fragment);
-    return { id, props, html: fragmentToHtml(fragment), text, paragraphCount: ranges.length, charCount: text.length };
+    return { id, props, html: fragmentToHtml(fragment), text, paragraphCount: blocks.length, charCount: text.length, hasObjects: false };
   };
   const openSdtInspector = (id: string): void => {
     const data = sdtInspectorData(id);
     if (!data) return;
     const props = data.props;
-    // Content is editable for unlocked controls whose span the replace command
-    // can restructure (body paragraphs, single cell/band paragraph). Locked or
-    // checkbox/dropdown controls (value-driven) stay read-only here.
-    const editable = !props.lockContent && props.type !== "checkbox" && props.type !== "dropDown";
+    // Editable for unlocked, text-only controls (no images/tables to lose on a
+    // round-trip). Value-driven types and locked controls stay read-only.
+    const editable =
+      !props.lockContent &&
+      !data.hasObjects &&
+      props.type !== "checkbox" &&
+      props.type !== "dropDown";
     sdtInspector?.close();
     sdtInspector = showSdtInspector(data, {
       editable,
