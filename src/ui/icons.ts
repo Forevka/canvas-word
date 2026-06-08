@@ -135,6 +135,7 @@ export const ICONS = {
   multilevel: filled(`<path d="M2 3.4h2v1.2H2zM5.5 3.4h8.5v1.2H5.5zM4 7.4h2v1.2H4zM7.5 7.4h6.5v1.2H7.5zM6 11.4h2v1.2H6zM9.5 11.4h4.5v1.2H9.5z" stroke="none"/>`),
   marks: svg(`<path d="M11.5 3.5H7a2.5 2.5 0 0 0 0 5h1.5"/><path d="M9 3.5v9M11.5 3.5v9"/>`),
   textEffects: svg(`<path d="M4 12.5 7 4l3 8.5M5 9.5h4"/><path d="M11.5 4.5l.7 1.4 1.4.2-1 1 .2 1.4-1.3-.7-1.3.7.2-1.4-1-1 1.4-.2z" fill="currentColor" stroke="none"/>`),
+  outline: svg(`<rect x="2" y="2.5" width="12" height="11" rx="1"/><path d="M6 2.5v11"/><path d="M8 5.5h4M8 8h4M8 10.5h3"/>`),
 } as const;
 
 export type IconName = keyof typeof ICONS;

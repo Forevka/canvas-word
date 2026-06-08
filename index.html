@@ -119,12 +119,45 @@
       .style-card .preview { font-size: 13px; line-height: 1; color: #323130; }
       .style-card .name { font-size: 10px; color: #605e5c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 72px; }
 
-      #app { flex: 1 1 auto; min-height: 0; overflow: auto; background: #e8eaed; position: relative; }
+      /* work area: optional outline drawer + the scrolling page canvas */
+      #workarea { flex: 1 1 auto; min-height: 0; display: flex; }
+      #app { flex: 1 1 auto; min-height: 0; min-width: 0; overflow: auto; background: #e8eaed; position: relative; }
+
+      /* ===== Outline / Navigation drawer ================================== */
+      #outline {
+        flex: 0 0 264px; width: 264px; min-height: 0; overflow-y: auto;
+        background: #fff; border-right: 1px solid #e1dfdd; display: none;
+      }
+      #outline.open { display: block; }
+      #outline .outline-head {
+        position: sticky; top: 0; background: #fff; z-index: 1;
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 9px 8px 9px 14px; border-bottom: 1px solid #e1dfdd;
+        font-size: 13px; font-weight: 600; color: #323130;
+      }
+      #outline .outline-head button {
+        border: none; background: transparent; cursor: pointer; color: #605e5c;
+        width: 24px; height: 24px; border-radius: 4px; font-size: 17px; line-height: 1;
+      }
+      #outline .outline-head button:hover { background: #f3f2f1; }
+      #outline-list { padding: 4px 0 12px; }
+      .outline-item {
+        display: block; width: 100%; box-sizing: border-box; text-align: left;
+        border: none; border-left: 3px solid transparent; background: transparent; cursor: pointer;
+        padding: 4px 12px; color: #323130; font-size: 13px; line-height: 1.35;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .outline-item:hover { background: #f3f2f1; }
+      .outline-item.active { background: #eef3fb; border-left-color: #2b579a; color: #2b579a; font-weight: 600; }
+      .outline-empty { padding: 14px; color: #80868b; font-size: 12px; line-height: 1.4; }
     </style>
   </head>
   <body>
     <div id="toolbar"></div>
-    <div id="app"></div>
+    <div id="workarea">
+      <aside id="outline"></aside>
+      <div id="app"></div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

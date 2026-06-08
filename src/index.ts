@@ -124,6 +124,9 @@ export interface Editor {
   copy(): void;
   cut(): void;
   paste(): void;
+  /** Move the caret to a block's start and scroll it into view (outline pane,
+   *  navigation). No-op if the block id isn't in the current document. */
+  revealBlock(blockId: string): void;
   /** Find & replace. search() highlights all matches and returns state. */
   search(query: string, opts?: { matchCase?: boolean; wholeWord?: boolean }): SearchState;
   searchNav(dir: 1 | -1): SearchState;
@@ -1741,6 +1744,12 @@ export function createEditor(
     },
     paste: (): void => {
       void pasteFromClipboard();
+    },
+    revealBlock: (blockId: string): void => {
+      if (!blockById(doc, blockId)) return;
+      setSelection({ anchor: { blockId, offset: 0 }, focus: { blockId, offset: 0 } });
+      const rect = caretRect(tree, { blockId, offset: 0 });
+      if (rect) paint.ensureVisible(rect);
     },
     search,
     searchNav,

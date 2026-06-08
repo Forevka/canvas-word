@@ -52,7 +52,15 @@ console.log(
 
 let syncToolbar: () => void = () => {};
 let syncZoom: (zoom: number) => void = () => {};
-const editorOpts = { engine, onChange: () => syncToolbar(), onZoomChange: (z: number) => syncZoom(z) };
+let refreshOutline: () => void = () => {};
+const editorOpts = {
+  engine,
+  onChange: () => {
+    syncToolbar();
+    refreshOutline();
+  },
+  onZoomChange: (z: number) => syncZoom(z),
+};
 let editor = createEditor(app, doc, editorOpts);
 
 // Replace the open document (docx import): tear down and rebuild the editor —
@@ -61,6 +69,7 @@ const replaceDocument = (next: typeof doc): void => {
   editor.destroy();
   doc = next;
   editor = createEditor(app, doc, editorOpts);
+  refreshOutline();
   window.__cw = { doc, tree: undefined, engine, editor, createLayoutEngine, sampleDoc, stressDoc };
 };
 
@@ -112,7 +121,7 @@ import {
   removeContentControl,
   sdtAtPosition,
 } from "./editor/commands";
-import { defaultStylesheet, resolveStyle } from "./model/stylesheet";
+import { defaultStylesheet, resolveStyle, styleById } from "./model/stylesheet";
 import { ICONS } from "./ui/icons";
 
 const TOOLBAR_SVG =
@@ -662,6 +671,8 @@ if (toolbar) {
   // ===== View tab ==========================================================
   const view = tab("view", "View");
   group(view, "Show");
+  let outlineToggle = (): void => {};
+  const outlineBtn = btn(ICONS.outline, "Outline / navigation pane (jump to any heading)", () => outlineToggle());
   stub(ICONS.marks, "Show/hide formatting marks");
   group(view, "Zoom");
   txtBtn("−", "Zoom out", () => editor.setZoom(editor.getZoom() / 1.1), "font-size:15px;");
@@ -670,6 +681,114 @@ if (toolbar) {
   zoomSel.value = "1";
   zoomSel.addEventListener("change", () => editor.setZoom(parseFloat(zoomSel.value)));
   txtBtn("+", "Zoom in", () => editor.setZoom(editor.getZoom() * 1.1), "font-size:15px;");
+
+  // ---- Outline drawer (left navigation pane) ------------------------------
+  // Lists every Heading-styled paragraph; clicking one moves the caret there
+  // and scrolls it into view. The DOM list is rebuilt only when the set of
+  // headings actually changes (so typing doesn't reset the drawer's scroll);
+  // the active highlight follows the caret on every change.
+  const outlineEl = document.getElementById("outline");
+  if (outlineEl) {
+    const head = el("div", "outline-head");
+    const title = el("span");
+    title.textContent = "Outline";
+    const closeBtn = el("button");
+    closeBtn.innerHTML = "×";
+    closeBtn.title = "Close";
+    head.append(title, closeBtn);
+    const list = el("div");
+    list.id = "outline-list";
+    outlineEl.append(head, list);
+
+    // Detect a heading + its outline level. Real .docx files name their styles
+    // "Heading 1" but keep an OPAQUE styleId (e.g. "Style27"), so we resolve the
+    // level through the stylesheet's name/basedOn chain — mirroring the
+    // importer's isHeading(). Built-in ids like "Heading1"/"Title" still match
+    // directly (the sample document has no separate stylesheet entry for them).
+    const labelLevel = (label: string | undefined): number | null => {
+      if (!label) return null;
+      const m = /(?:^|\s)heading\s*([1-9])/i.exec(label);
+      if (m) return Number(m[1]);
+      if (/^\s*title\s*$/i.test(label)) return 0;
+      if (/(?:^|\s)heading(?:\s|$)/i.test(label)) return 1; // "Heading" with no number
+      return null;
+    };
+    const headingLevel = (styleId: string | undefined): number | null => {
+      if (!styleId) return null;
+      const sheet = editor.getDocument().stylesheet ?? defaultStylesheet();
+      let level = labelLevel(styleId);
+      const seen = new Set<string>();
+      for (
+        let cur = styleById(sheet, styleId);
+        cur && level === null && !seen.has(cur.id);
+        cur = cur.basedOn ? styleById(sheet, cur.basedOn) : undefined
+      ) {
+        seen.add(cur.id);
+        level = labelLevel(cur.name) ?? labelLevel(cur.id);
+      }
+      return level;
+    };
+    type Entry = { id: string; index: number; level: number };
+    let entries: Entry[] = [];
+    const buttons = new Map<string, HTMLButtonElement>();
+    let lastSig = "\0"; // sentinel — guarantees the first build runs
+
+    const updateActive = (): void => {
+      const caret = editor.getSelection()?.focus.blockId ?? null;
+      const ci = caret ? editor.getDocument().blocks.findIndex((b) => b.id === caret) : -1;
+      let activeId: string | null = null;
+      for (const e of entries) if (ci >= 0 && e.index <= ci) activeId = e.id; // nearest heading at/above caret
+      for (const [id, b] of buttons) b.classList.toggle("active", id === activeId);
+    };
+
+    const build = (): void => {
+      const collected: { entry: Entry; text: string }[] = [];
+      editor.getDocument().blocks.forEach((b, index) => {
+        if (b.kind !== "paragraph") return;
+        const level = headingLevel(b.style.namedStyle);
+        if (level === null) return;
+        collected.push({ entry: { id: b.id, index, level }, text: b.runs.map((r) => r.text).join("").trim() });
+      });
+      const sig = collected.map((c) => `${c.entry.id}|${c.entry.level}|${c.text}`).join("\n");
+      if (sig !== lastSig) {
+        lastSig = sig;
+        entries = collected.map((c) => c.entry);
+        list.textContent = "";
+        buttons.clear();
+        if (collected.length === 0) {
+          const empty = el("div", "outline-empty");
+          empty.textContent = "No headings yet. Apply a Heading style (Heading 1–9) to build an outline.";
+          list.appendChild(empty);
+        } else {
+          for (const c of collected) {
+            const item = el("button", "outline-item");
+            item.style.paddingLeft = `${12 + c.entry.level * 14}px`;
+            item.textContent = c.text || "(untitled heading)";
+            item.title = c.text;
+            item.addEventListener("mousedown", (e) => e.preventDefault());
+            item.addEventListener("click", () => editor.revealBlock(c.entry.id));
+            buttons.set(c.entry.id, item);
+            list.appendChild(item);
+          }
+        }
+      }
+      updateActive();
+    };
+
+    let open = false;
+    const setOpen = (v: boolean): void => {
+      open = v;
+      outlineEl.classList.toggle("open", v);
+      outlineBtn.classList.toggle("active", v);
+      if (v) build();
+    };
+    closeBtn.addEventListener("click", () => setOpen(false));
+    outlineToggle = (): void => setOpen(!open);
+    refreshOutline = (): void => {
+      if (open) build();
+    };
+    setOpen(true); // visible by default (Word opens the navigation pane on demand; we lead with it)
+  }
 
   showTab("home");
 
