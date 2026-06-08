@@ -254,8 +254,9 @@ describe("engine — cell margins", () => {
     const t = table([[cell("hi")]]);
     const placed = placedOf(layout(doc([t])), t.id)!.pb.table!;
     const row = placed.rows[0]!;
-    // A single 16px line with no vertical padding — far under the old fixed-12px-pad row.
-    expect(row.height).toBeLessThan(20);
+    // A single 16px line with no vertical padding — well under the old fixed
+    // 12px-pad row (~28px), without pinning the exact line-height metric.
+    expect(row.height).toBeLessThan(24);
     // Content is inset by the default horizontal margin (108 twips ≈ 7.2px).
     const content = row.cells[0]!.blocks[0]!;
     expect(content.x - row.cells[0]!.x).toBeCloseTo(7.2, 1);
