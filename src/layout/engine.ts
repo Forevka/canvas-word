@@ -1074,16 +1074,23 @@ function layoutDocument(
     }
     const m = measured[bi]!;
 
+    // Two directly-adjacent atomics (a title-bar table stacked on its data grid,
+    // back-to-back images) sit FLUSH — the gap belongs between an atomic and
+    // surrounding text, not between atomics, so don't double it into an empty line.
+    const atomicKind = (x: Measured | undefined): boolean => x?.kind === "table" || x?.kind === "image";
+    const prevAtomic = atomicKind(measured[bi - 1]);
+    const nextAtomic = atomicKind(measured[bi + 1]);
+
     if (m.kind === "image") {
-      y += ATOMIC_GAP;
+      if (!prevAtomic) y += ATOMIC_GAP;
       placeImage(m.block);
-      if (m.block.wrap !== "square" || m.block.align === "center") y += ATOMIC_GAP;
+      if (!nextAtomic && (m.block.wrap !== "square" || m.block.align === "center")) y += ATOMIC_GAP;
       continue;
     }
     if (m.kind === "table") {
-      y += ATOMIC_GAP;
+      if (!prevAtomic) y += ATOMIC_GAP;
       placeTableChunked(m);
-      y += ATOMIC_GAP;
+      if (!nextAtomic) y += ATOMIC_GAP;
       continue;
     }
 
