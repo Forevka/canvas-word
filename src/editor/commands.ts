@@ -665,7 +665,10 @@ export function findSdtRanges(doc: EditorState["doc"], id: string): SdtRange[] {
   return out;
 }
 
-/** The control containing a position (the run at the caret, either side). */
+/** The control containing a position (the run at the caret, either side). An
+ *  untagged spot inside a table a block-level control wraps — an empty cell, or a
+ *  blank line in a cell, neither of which carries the sdtId on a run — still
+ *  belongs to that control, so fall back to the table's wrapping control. */
 export function sdtAtPosition(doc: EditorState["doc"], pos: DocPosition): string | null {
   const block = blockById(doc, pos.blockId);
   if (!block) return null;
@@ -678,7 +681,36 @@ export function sdtAtPosition(doc: EditorState["doc"], pos: DocPosition): string
     if (pos.offset >= off && pos.offset < end) after = r.style.sdtId ?? null;
     off = end;
   }
-  return after ?? before;
+  const direct = after ?? before;
+  if (direct) return direct;
+  const loc = locateParagraph(doc, pos.blockId);
+  if (loc?.kind !== "cell") return null;
+  const table = containerBlocks(doc, loc.where)[loc.bi];
+  return table && table.kind === "table" ? dominantCellSdt(table) : null;
+}
+
+/** The control wrapping the most cells of a table — the block-level container,
+ *  distinguished from a stray inline field that tags a single cell. */
+function dominantCellSdt(table: TableBlock): string | null {
+  const cellsWith = new Map<string, number>();
+  for (const row of table.rows) {
+    for (const cell of row.cells) {
+      const ids = new Set<string>();
+      for (const b of cell.blocks) {
+        if (b.kind === "paragraph") for (const r of b.runs) if (r.style.sdtId) ids.add(r.style.sdtId);
+      }
+      for (const id of ids) cellsWith.set(id, (cellsWith.get(id) ?? 0) + 1);
+    }
+  }
+  let best: string | null = null;
+  let bestN = 0;
+  for (const [id, n] of cellsWith) {
+    if (n > bestN) {
+      best = id;
+      bestN = n;
+    }
+  }
+  return best;
 }
 
 const PLACEHOLDER_TEXT: Record<SdtType, string> = {
