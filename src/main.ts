@@ -3,9 +3,15 @@ import { createLayoutEngine } from "./layout/engine";
 import { sampleDoc } from "./model/sampleDoc";
 import { stressDoc } from "./model/stressDoc";
 import { importDocx, type ImportResult } from "./import/docx/importDocx";
+import { exportDocument, type ExportFormat } from "./export/exportDocument";
+import { loadEditorFonts } from "./export/shared/editorFonts";
+import { TOOLBAR_FONTS } from "./fonts/clones";
 
 // Fonts must be resolved before the first layout — pretext measures with the same
 // font strings the paint layer draws with, so a late font swap would desync them.
+// The editor renders the bundled metric clones (Calibri→Carlito, …) so layout
+// matches the PDF/DOCX exporters exactly, with no dependency on system fonts.
+await loadEditorFonts();
 await document.fonts.ready;
 
 const app = document.getElementById("app");
@@ -177,6 +183,25 @@ if (toolbar) {
     return el;
   };
 
+  const exportAs = async (format: ExportFormat): Promise<void> => {
+    try {
+      const { bytes, warnings } = await exportDocument(editor.getDocument(), format);
+      const mime =
+        format === "pdf"
+          ? "application/pdf"
+          : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `document.${format}`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      if (warnings.length > 0) console.warn(`[export-${format}] warnings`, warnings);
+    } catch (err) {
+      console.error(`[export-${format}] failed`, err);
+    }
+  };
+
   // ---- File ----
   group("File");
   btn(ICONS.open, "Open .docx", () => {
@@ -189,6 +214,8 @@ if (toolbar) {
     });
     input.click();
   });
+  txtBtn("PDF", "Export to PDF", () => void exportAs("pdf"), "font-size:10px;font-weight:600;");
+  txtBtn("DOCX", "Export to .docx", () => void exportAs("docx"), "font-size:10px;font-weight:600;");
 
   // ---- Undo ----
   group("Undo");
@@ -201,17 +228,9 @@ if (toolbar) {
 
   // ---- Font ----
   group("Font");
-  const fontSelect = select("Font family", 124);
-  const FONTS = [
-    "Georgia, serif",
-    "Arial, sans-serif",
-    "Times New Roman, serif",
-    "Verdana, sans-serif",
-    "Trebuchet MS, sans-serif",
-    "Consolas, monospace",
-    "Courier New, monospace",
-  ];
-  for (const f of FONTS) opt(fontSelect, f, f.split(",")[0]!);
+  const fontSelect = select("Font family", 150);
+  // Labels show the bundled clone we actually render — e.g. "Calibri (Carlito)".
+  for (const f of TOOLBAR_FONTS) opt(fontSelect, f.value, f.label);
   fontSelect.addEventListener("change", () => {
     editor.setCharStyle({ fontFamily: fontSelect.value });
     editor.focus();
@@ -304,8 +323,8 @@ if (toolbar) {
       styleSelect.value = f.styleId;
     }
     if (f.fontFamily) {
-      const match = FONTS.find((x) => x.toLowerCase() === f.fontFamily!.toLowerCase());
-      if (match) fontSelect.value = match;
+      const match = TOOLBAR_FONTS.find((x) => x.value.toLowerCase() === f.fontFamily!.toLowerCase());
+      if (match) fontSelect.value = match.value;
     }
     if (f.fontSizePx !== null && document.activeElement !== sizeInput) {
       sizeInput.value = String(f.fontSizePx);
