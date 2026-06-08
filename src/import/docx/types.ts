@@ -206,6 +206,15 @@ export interface IRBorders {
   insideV?: IRRawBorder;
 }
 
+/** Cell margins in twips, per side. Any side may be absent (inherits the next
+ *  level of the cascade: cell → table → Word default). w:tcMar / w:tblCellMar. */
+export interface IRCellMargin {
+  top?: number;
+  right?: number;
+  bottom?: number;
+  left?: number;
+}
+
 export interface IRTableCell {
   /** Full block content: paragraphs, images (inside paragraphs), nested tables. */
   blocks: IRBlock[];
@@ -217,6 +226,8 @@ export interface IRTableCell {
   borders?: IRBorders;
   /** w:tcPr/w:shd → CSS fill. */
   shd?: string;
+  /** w:tcPr/w:tcMar — per-side inner padding override (twips). */
+  marginTwips?: IRCellMargin;
 }
 
 export interface IRTableRow {
@@ -234,6 +245,9 @@ export interface IRTable {
   borders?: IRBorders;
   /** w:tblPr/w:shd → CSS fill applied to every cell unless overridden. */
   shd?: string;
+  /** w:tblPr/w:tblCellMar — table-wide cell-margin default (twips), the base each
+   *  cell's own w:tcMar overrides per side. */
+  cellMarginTwips?: IRCellMargin;
 }
 
 export type IRBlock = IRParagraph | IRTable;

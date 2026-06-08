@@ -1408,7 +1408,15 @@ function shiftPlaced(p: PlacedBlock, dy: number): PlacedBlock {
 // the page. TODO: row-level page breaking for long tables.
 
 const ATOMIC_GAP = 12; // vertical breathing room around images/tables
-const CELL_PAD = 6;
+
+// Cell inner padding. Word's default cell margins (TableNormal) are 0 top/bottom
+// and 108 twips (~7.2px) left/right — vertical is NOT symmetric with horizontal,
+// so a single-line row is only as tall as its line, not line + fixed pad. The
+// importer resolves the w:tcMar/w:tblCellMar cascade onto cell.margin; cells
+// without one (native/programmatic tables) fall back to these Word defaults.
+const DEFAULT_CELL_MARGIN = { top: 0, right: 7.2, bottom: 0, left: 7.2 } as const;
+const cellMargin = (c: TableCell): { top: number; right: number; bottom: number; left: number } =>
+  c.margin ?? DEFAULT_CELL_MARGIN;
 
 type MeasuredCellItem =
   | { kind: "para"; block: Paragraph; lines: LineBox[] }
@@ -1458,7 +1466,8 @@ function measureTable(
       for (let k = 0; k < span; k++) width += colWidths[col + k] ?? colWidths[ncols - 1] ?? 40;
       if (rowSpan > 1) for (let k = 0; k < span && col + k < ncols; k++) rowsRemaining[col + k] = rowSpan;
       col += span;
-      const innerWidth = Math.max(8, width - 2 * CELL_PAD);
+      const mgn = cellMargin(cell);
+      const innerWidth = Math.max(8, width - mgn.left - mgn.right);
       let h = 0;
       const items: MeasuredCellItem[] = cell.blocks.map((b) => {
         if (b.kind === "paragraph") {
@@ -1478,7 +1487,7 @@ function measureTable(
         h += m.height + CELL_BLOCK_GAP;
         return { kind: "table", block: b, ...m };
       });
-      return { cell, items, height: h + 2 * CELL_PAD, width, colStart, rowSpan };
+      return { cell, items, height: h + mgn.top + mgn.bottom, width, colStart, rowSpan };
     });
     for (let c = 0; c < ncols; c++) if (rowsRemaining[c]! > 0) rowsRemaining[c]!--;
     return { cells, height: 0 };
@@ -1535,21 +1544,22 @@ function placeTable(
       const endLr = Math.min(rows.length - 1, lr + mc.rowSpan - 1);
       const cellHeight = rowY[endLr + 1]! - ry;
       const blocks: PlacedBlock[] = [];
-      const innerWidth = mc.width - 2 * CELL_PAD;
-      let py = ry + CELL_PAD;
+      const mgn = cellMargin(mc.cell);
+      const innerWidth = mc.width - mgn.left - mgn.right;
+      let py = ry + mgn.top;
       for (const it of mc.items) {
         if (it.kind === "para") {
           py += it.block.style.spaceBeforePx;
           blocks.push({
             blockId: it.block.id,
-            x: cx + CELL_PAD + it.block.style.indentLeftPx,
+            x: cx + mgn.left + it.block.style.indentLeftPx,
             y: py,
             firstLineIndex: 0,
             lines: it.lines, // line.y is already block-relative; coords stay consistent
           });
           py += totalLinesHeight(it.lines) + it.block.style.spaceAfterPx;
         } else if (it.kind === "image") {
-          const innerH = cellHeight - 2 * CELL_PAD;
+          const innerH = cellHeight - mgn.top - mgn.bottom;
           // A lone photo in a cell taller than it fits (e.g. a rowSpan comp-photo
           // column) is filled object-fit:cover — scaled to cover the cell box,
           // centered, and clipped — instead of sitting at the top over blank space.
@@ -1557,8 +1567,8 @@ function placeTable(
             const scale = Math.max(innerWidth / it.block.widthPx, innerH / it.block.heightPx);
             const w = it.block.widthPx * scale;
             const h = it.block.heightPx * scale;
-            const ix0 = cx + CELL_PAD;
-            const iy0 = ry + CELL_PAD;
+            const ix0 = cx + mgn.left;
+            const iy0 = ry + mgn.top;
             blocks.push({
               blockId: it.block.id,
               x: ix0 + (innerWidth - w) / 2,
@@ -1571,7 +1581,7 @@ function placeTable(
           } else {
             const slack = innerWidth - it.width;
             const ix =
-              cx + CELL_PAD +
+              cx + mgn.left +
               (it.block.align === "center" ? slack / 2 : it.block.align === "right" ? slack : 0);
             blocks.push({
               blockId: it.block.id,
@@ -1585,7 +1595,7 @@ function placeTable(
           }
         } else {
           // nested table — placed recursively, read-only inner cells
-          blocks.push(placeTable(it.block, it.rows, it.colWidths, cx + CELL_PAD, py, innerWidth));
+          blocks.push(placeTable(it.block, it.rows, it.colWidths, cx + mgn.left, py, innerWidth));
           py += it.height + CELL_BLOCK_GAP;
         }
       }

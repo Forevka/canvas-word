@@ -131,3 +131,31 @@ describe("table borders — table style cascade", () => {
 });
 
 const round = (v: number): number => Math.round(v * 100) / 100;
+
+describe("table cell margins — w:tcMar / w:tblCellMar cascade", () => {
+  const mar = (sides: Record<string, number>): string =>
+    `<w:tcMar>${Object.entries(sides).map(([s, w]) => `<w:${s} w:w="${w}" w:type="dxa"/>`).join("")}</w:tcMar>`;
+
+  it("falls back to Word defaults (0 vertical, ~7.2px horizontal) when nothing is set", () => {
+    const r = runImport(simpleDocx(`<w:tbl>${grid2}</w:tbl>`));
+    expect(cell(table(r), 0, 0).margin).toEqual({ top: 0, right: 7.2, bottom: 0, left: 7.2 });
+  });
+
+  it("resolves a cell's w:tcMar per side, defaulting the sides it omits", () => {
+    // The report's tables specify only top/bottom = 40 twips (≈2.67px).
+    const body = `<w:tr>${C("a", `<w:tcPr>${mar({ top: 40, bottom: 40 })}</w:tcPr>`)}${C("b")}</w:tr>`;
+    const r = runImport(simpleDocx(`<w:tbl>${body}</w:tbl>`));
+    expect(cell(table(r), 0, 0).margin).toEqual({ top: 2.67, right: 7.2, bottom: 2.67, left: 7.2 });
+  });
+
+  it("cascades cell w:tcMar over table w:tblCellMar over the default, per side", () => {
+    const tblPr = `<w:tblCellMar><w:top w:w="120" w:type="dxa"/><w:bottom w:w="120" w:type="dxa"/><w:left w:w="200" w:type="dxa"/><w:right w:w="200" w:type="dxa"/></w:tblCellMar>`;
+    const body = `<w:tr>${C("a", `<w:tcPr>${mar({ top: 40 })}</w:tcPr>`)}${C("b")}</w:tr>`;
+    const r = runImport(simpleDocx(tbl(tblPr, body)));
+    const t = table(r);
+    // Cell overrides only top (40→2.67); bottom/left/right inherit the table's tblCellMar.
+    expect(cell(t, 0, 0).margin).toEqual({ top: 2.67, right: 13.33, bottom: 8, left: 13.33 });
+    // The sibling cell with no tcMar takes the table's tblCellMar on every side.
+    expect(cell(t, 0, 1).margin).toEqual({ top: 8, right: 13.33, bottom: 8, left: 13.33 });
+  });
+});

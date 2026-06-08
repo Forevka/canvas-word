@@ -148,6 +148,18 @@ export interface CellBorders {
   left?: CellBorder;
 }
 
+/** Inner cell padding in px, resolved from the OOXML cell-margin cascade
+ *  (w:tcMar over the table's w:tblCellMar over Word's defaults). Word's default
+ *  is 0 top/bottom and ~7.2px (108 twips) left/right — vertical padding is NOT
+ *  symmetric with horizontal, which is why a fixed all-sides pad makes rows too
+ *  tall. Absent = the engine's Word-matching default. */
+export interface CellMargin {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
 export interface TableCell {
   id: string;
   blocks: Block[];
@@ -164,6 +176,9 @@ export interface TableCell {
    *  native/unstyled tables keep a visible grid); present = draw exactly these
    *  edges, where an omitted edge means "no border on that side". */
   borders?: CellBorders;
+  /** Resolved inner padding (px) from the w:tcMar/w:tblCellMar cascade. Absent =
+   *  engine default (Word's 0 vertical, ~7.2px horizontal). */
+  margin?: CellMargin;
 }
 
 export interface TableRow {

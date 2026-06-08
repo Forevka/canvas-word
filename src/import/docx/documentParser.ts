@@ -9,6 +9,7 @@ import { ImportError, WarningSink } from "./types";
 import type {
   BandRefs,
   IRBlock,
+  IRCellMargin,
   IRDocument,
   IRInline,
   IRParagraph,
@@ -428,6 +429,23 @@ function parseVmlPict(pict: XmlNode, ctx: ParseCtx): IRInline | undefined {
 // ---------------------------------------------------------------------------
 // Tables
 
+/** w:tcMar / w:tblCellMar → per-side twips. Each side is a <w:top w:w=".."/> etc.
+ *  Returns undefined when no side is present so the cascade can fall through. */
+function decodeCellMargin(node: XmlNode | undefined): IRCellMargin | undefined {
+  if (!node) return undefined;
+  const side = (name: string): number | undefined => numAttr(el(node, name), "w:w");
+  const m: IRCellMargin = {};
+  const top = side("w:top");
+  if (top !== undefined) m.top = top;
+  const right = side("w:right");
+  if (right !== undefined) m.right = right;
+  const bottom = side("w:bottom");
+  if (bottom !== undefined) m.bottom = bottom;
+  const left = side("w:left");
+  if (left !== undefined) m.left = left;
+  return Object.keys(m).length > 0 ? m : undefined;
+}
+
 function parseTable(tbl: XmlNode, ctx: ParseCtx): IRTable {
   const rows: IRTableRow[] = [];
   for (const tr of els(tbl, "w:tr")) {
@@ -453,6 +471,8 @@ function parseTable(tbl: XmlNode, ctx: ParseCtx): IRTable {
     if (borders) table.borders = borders;
     const shd = decodeShdFill(el(tblPr, "w:shd"));
     if (shd) table.shd = shd;
+    const cellMar = decodeCellMargin(el(tblPr, "w:tblCellMar"));
+    if (cellMar) table.cellMarginTwips = cellMar;
   }
   return table;
 }
@@ -473,6 +493,8 @@ function parseCell(tc: XmlNode, ctx: ParseCtx): IRTableCell {
     if (borders) cell.borders = borders;
     const shd = decodeShdFill(el(tcPr, "w:shd"));
     if (shd) cell.shd = shd;
+    const cellMar = decodeCellMargin(el(tcPr, "w:tcMar"));
+    if (cellMar) cell.marginTwips = cellMar;
   }
   return cell;
 }

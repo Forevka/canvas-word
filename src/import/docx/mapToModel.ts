@@ -75,6 +75,12 @@ const DEFAULT_PARA: ParaStyle = {
   indentLeftPx: 0,
 };
 
+/** Word's default cell margins (TableNormal): 0 top/bottom, 108 twips (~7.2px)
+ *  left/right. The base each table's w:tblCellMar and each cell's w:tcMar
+ *  override per side. Vertical is intentionally 0 — a single-line row is only as
+ *  tall as its line, which is why a symmetric pad makes Word tables too tall. */
+const WORD_CELL_MARGIN_TWIPS = { top: 0, right: 108, bottom: 0, left: 108 } as const;
+
 /** US Letter at 96dpi, 1in margins — matches sampleDoc. */
 const DEFAULT_SECTION: SectionProps = {
   pageWidthPx: 816,
@@ -495,6 +501,16 @@ export function createMapper(
       }
       const cell: TableCell = { id: id(), blocks: blocks.length > 0 ? blocks : [emptyParagraph()] };
       if (irCell.gridSpan > 1) cell.colSpan = irCell.gridSpan;
+      // Cell-margin cascade: this cell's w:tcMar over the table's w:tblCellMar
+      // over Word's defaults, resolved per side (a cell may set only top/bottom).
+      const side = (s: "top" | "right" | "bottom" | "left"): number =>
+        irCell.marginTwips?.[s] ?? ir.cellMarginTwips?.[s] ?? WORD_CELL_MARGIN_TWIPS[s];
+      cell.margin = {
+        top: round2(twipsToPx(side("top"))),
+        right: round2(twipsToPx(side("right"))),
+        bottom: round2(twipsToPx(side("bottom"))),
+        left: round2(twipsToPx(side("left"))),
+      };
       return cell;
     };
 

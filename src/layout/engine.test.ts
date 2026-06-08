@@ -232,6 +232,32 @@ describe("engine — cell shading and borders", () => {
   });
 });
 
+// --- cell margins (inner padding) -----------------------------------------
+
+describe("engine — cell margins", () => {
+  it("defaults to Word's 0 vertical padding (row ≈ one line) and ~7.2px horizontal", () => {
+    const t = table([[cell("hi")]]);
+    const placed = placedOf(layout(doc([t])), t.id)!.pb.table!;
+    const row = placed.rows[0]!;
+    // A single 16px line with no vertical padding — far under the old fixed-12px-pad row.
+    expect(row.height).toBeLessThan(20);
+    // Content is inset by the default horizontal margin (108 twips ≈ 7.2px).
+    const content = row.cells[0]!.blocks[0]!;
+    expect(content.x - row.cells[0]!.x).toBeCloseTo(7.2, 1);
+  });
+
+  it("honors an explicit cell.margin, adding it to the row height and content offset", () => {
+    const plain = table([[cell("hi")]]);
+    const padded = table([[cell("hi", { margin: { top: 10, right: 20, bottom: 10, left: 20 } })]]);
+    const plainRow = placedOf(layout(doc([plain])), plain.id)!.pb.table!.rows[0]!.height;
+    const padRow = placedOf(layout(doc([padded])), padded.id)!.pb.table!.rows[0]!;
+    expect(padRow.height).toBeCloseTo(plainRow + 20, 0); // +10 top +10 bottom
+    const content = padRow.cells[0]!.blocks[0]!;
+    expect(content.x - padRow.cells[0]!.x).toBeCloseTo(20, 1);
+    expect(content.y - padRow.y).toBeCloseTo(10, 1);
+  });
+});
+
 // --- lone-image cover fill -------------------------------------------------
 
 describe("engine — image cover fill", () => {
