@@ -157,6 +157,12 @@ export interface IRParaProps {
   /** w:pPr/w:sectPr — this paragraph ENDS a section. "page" (nextPage/odd/even)
    *  implies the following content starts a new page; "continuous" doesn't. */
   sectionBreak?: "page" | "continuous";
+  /** The ending section's page size (twips), when its w:sectPr declares pgSz.
+   *  A "page" break only forces a new page when this differs from the document's
+   *  page size — geometry-preserving breaks (footer/header switches, which these
+   *  generated reports emit by the dozen) flow instead of leaving half-empty
+   *  pages, matching Word. */
+  sectionPgSize?: { w: number; h: number };
   /** w:pPr/w:rPr — the paragraph MARK's run formatting. Word styles empty
    *  paragraphs (and the ¶ itself) with this; we use it for empty-run style. */
   markRunProps?: IRRunProps;

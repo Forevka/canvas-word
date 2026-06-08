@@ -52,8 +52,20 @@ export function runImport(
   progress("parse", 1);
 
   progress("map", 0);
-  const mapper = createMapper(warnings, resolver, ir.sdts, numbering, (styleId) =>
-    resolveTableStyle(styles, styleId),
+  // Reference page size for section-break geometry comparison: the document's
+  // own section, falling back to Letter (so an explicit-size mid-doc section
+  // still compares against the implied default).
+  const refPgSize = {
+    w: ir.section?.pageWidthTwips ?? 12240,
+    h: ir.section?.pageHeightTwips ?? 15840,
+  };
+  const mapper = createMapper(
+    warnings,
+    resolver,
+    ir.sdts,
+    numbering,
+    (styleId) => resolveTableStyle(styles, styleId),
+    refPgSize,
   );
   const mediaStores: MediaStore[] = [];
   const mediaFor = (partRels: Relationships): MediaStore => {

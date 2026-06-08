@@ -132,13 +132,24 @@ describe("docx pipeline — lossy policies emit warnings", () => {
     expect(last.style.pageBreakBefore).toBe(true);
   });
 
-  it("treats a mid-document section break as a page boundary", () => {
+  it("flows a geometry-preserving mid-document section break (footer-only)", () => {
+    // Same page size as the document → only the footer/header could differ, which
+    // we don't model, so a page break would just strand the rest of the page.
     const r = importBody(
       `<w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:pPr></w:p>` +
         `<w:p><w:r><w:t>second section</w:t></w:r></w:p>`,
     );
+    expect(para(r.doc.blocks[1]).style.pageBreakBefore).toBeUndefined();
+    expect(warningCodes(r)).toContain("multiple-sections");
+  });
+
+  it("page-breaks a mid-document section break that changes page geometry", () => {
+    // Landscape mid-doc section vs the default portrait → a real new-page boundary.
+    const r = importBody(
+      `<w:p><w:pPr><w:sectPr><w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/></w:sectPr></w:pPr></w:p>` +
+        `<w:p><w:r><w:t>second section</w:t></w:r></w:p>`,
+    );
     expect(para(r.doc.blocks[1]).style.pageBreakBefore).toBe(true);
-    expect(warningCodes(r)).toContain("multiple-sections"); // geometry is still last-wins
   });
 
   it("does NOT page-break on continuous section breaks", () => {

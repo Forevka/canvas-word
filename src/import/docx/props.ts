@@ -128,9 +128,14 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
   const sectPr = el(pPr, "w:sectPr");
   if (sectPr) {
     // Page geometry of non-last sections is still lossy (last wins), but the
-    // page boundary the break implies IS respected via pageBreakBefore.
+    // page boundary the break implies IS respected via pageBreakBefore — when
+    // the geometry actually changes (mapToModel compares sectionPgSize).
     warnings.add("multiple-sections", "Multiple sections found — only the last section's page setup is used.");
     props.sectionBreak = val(sectPr, "w:type") === "continuous" ? "continuous" : "page";
+    const pgSz = el(sectPr, "w:pgSz");
+    const w = numAttr(pgSz, "w:w");
+    const h = numAttr(pgSz, "w:h");
+    if (w !== undefined && h !== undefined) props.sectionPgSize = { w, h };
   }
   return props;
 }

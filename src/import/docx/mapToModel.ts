@@ -103,6 +103,9 @@ export function createMapper(
   sdts: Record<string, IRSdtProps> = {},
   numbering: NumberingData = new Map(),
   tableStyle: (styleId: string) => ResolvedTableStyle = () => ({}),
+  /** The document (body) section's page size in twips — section breaks that
+   *  match it are geometry-preserving and flow rather than forcing a page. */
+  refPgSize?: { w: number; h: number },
 ): Mapper {
   // Import-distinct id prefix: commands.ts mints `n…`, sampleDoc `b…`.
   let nextId = 0;
@@ -176,8 +179,17 @@ export function createMapper(
 
   const mapBlocks = (blocks: IRBlock[], media: MediaStore, resolveLink: LinkResolver = NO_LINKS): Block[] => {
     const out: Block[] = [];
-    // A paragraph carrying w:sectPr ends a section; unless the break is
-    // "continuous", whatever follows starts a new page.
+    // A paragraph carrying w:sectPr ends a section. We collapse the document to a
+    // single page setup, so a "page" break only forces a new page when its
+    // section's geometry actually differs from the document's — a footer/header-
+    // only break (these reports emit dozens) flows instead of stranding the rest
+    // of the page, matching Word. "continuous" never breaks.
+    const breaksPage = (props: IRParaProps): boolean => {
+      if (props.sectionBreak !== "page") return false;
+      const sz = props.sectionPgSize;
+      if (!sz || !refPgSize) return false; // no geometry change to honor → flow
+      return sz.w !== refPgSize.w || sz.h !== refPgSize.h;
+    };
     let sectionPageBreak = false;
     for (const irBlock of blocks) {
       const mapped =
@@ -191,7 +203,7 @@ export function createMapper(
         sectionPageBreak = false;
       }
       out.push(...mapped);
-      if (irBlock.kind === "paragraph" && irBlock.props.sectionBreak === "page") sectionPageBreak = true;
+      if (irBlock.kind === "paragraph" && breaksPage(irBlock.props)) sectionPageBreak = true;
     }
     return out;
   };
