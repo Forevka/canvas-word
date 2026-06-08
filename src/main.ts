@@ -54,16 +54,20 @@ let syncToolbar: () => void = () => {};
 let syncZoom: (zoom: number) => void = () => {};
 let refreshOutline: () => void = () => {};
 let refreshStatus: () => void = () => {};
+let refreshRuler: () => void = () => {};
+let toggleRuler: () => boolean = () => false;
 const editorOpts = {
   engine,
   onChange: () => {
     syncToolbar();
     refreshOutline();
     refreshStatus();
+    refreshRuler();
   },
   onZoomChange: (z: number) => {
     syncZoom(z);
     refreshStatus();
+    refreshRuler();
   },
 };
 let editor = createEditor(app, doc, editorOpts);
@@ -76,6 +80,7 @@ const replaceDocument = (next: typeof doc): void => {
   editor = createEditor(app, doc, editorOpts);
   refreshOutline();
   refreshStatus();
+  refreshRuler();
   window.__cw = { doc, tree: undefined, engine, editor, createLayoutEngine, sampleDoc, stressDoc };
 };
 
@@ -884,6 +889,8 @@ if (toolbar) {
   group(view, "Show");
   let outlineToggle = (): void => {};
   const outlineBtn = btn(ICONS.outline, "Outline / navigation pane (jump to any heading)", () => outlineToggle());
+  const rulerBtn = btn(ICONS.ruler, "Ruler", () => rulerBtn.classList.toggle("active", toggleRuler()));
+  rulerBtn.classList.add("active"); // ruler shows by default
   stub(ICONS.marks, "Show/hide formatting marks");
   group(view, "Zoom");
   txtBtn("−", "Zoom out", () => editor.setZoom(editor.getZoom() / 1.1), "font-size:15px;");
@@ -1133,6 +1140,138 @@ if (toolbar) {
       zLabel.textContent = `${pct}%`;
     };
     refreshStatus();
+  }
+}
+
+// ---- horizontal ruler (inch ticks, margin shading, draggable indents) -------
+{
+  const ruler = document.getElementById("ruler");
+  if (ruler) {
+    const canvas = document.createElement("canvas");
+    const leftMarker = document.createElement("div");
+    leftMarker.className = "ruler-marker ruler-left";
+    leftMarker.title = "Left indent — drag to set";
+    const firstMarker = document.createElement("div");
+    firstMarker.className = "ruler-marker ruler-first";
+    firstMarker.title = "First-line indent — drag to set";
+    ruler.append(canvas, leftMarker, firstMarker);
+
+    // Geometry captured each refresh, read by the drag handlers.
+    let geom: { contentLeft: number; zoom: number; paraId: string | null; li: number; fi: number } | null = null;
+
+    const draw = (W: number, H: number, pageLeft: number, pageW: number, cL: number, cR: number, zoom: number): void => {
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.round(W * dpr);
+      canvas.height = Math.round(H * dpr);
+      canvas.style.width = `${W}px`;
+      canvas.style.height = `${H}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      // page band (margins greyed, content white)
+      ctx.fillStyle = "#c7cdd6";
+      ctx.fillRect(pageLeft, 4, pageW, H - 8);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(cL, 4, cR - cL, H - 8);
+      // inch ticks + numbers, measured from the left content edge (Word's 0)
+      const inch = 96 * zoom;
+      ctx.strokeStyle = "#8a8f98";
+      ctx.fillStyle = "#605e5c";
+      ctx.font = "9px 'Segoe UI', sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.lineWidth = 1;
+      for (let i = 1; cL + i * inch < cR - 2; i++) {
+        const x = Math.round(cL + i * inch) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x, H / 2 - 3);
+        ctx.lineTo(x, H / 2 + 3);
+        ctx.stroke();
+        ctx.fillText(String(i), x, H / 2);
+        // mid tick at the half-inch
+        const hx = Math.round(cL + (i - 0.5) * inch) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(hx, H / 2 - 1.5);
+        ctx.lineTo(hx, H / 2 + 1.5);
+        ctx.stroke();
+      }
+    };
+
+    refreshRuler = (): void => {
+      if (ruler.classList.contains("hidden")) return;
+      const ph = app.querySelector<HTMLElement>("[data-page]");
+      if (!ph) {
+        leftMarker.style.display = firstMarker.style.display = "none";
+        return;
+      }
+      const appRect = app.getBoundingClientRect();
+      const phRect = ph.getBoundingClientRect();
+      const zoom = editor.getZoom();
+      const sec = editor.getDocument().section;
+      const pageLeft = phRect.left - appRect.left;
+      const pageW = phRect.width;
+      const cL = pageLeft + sec.marginPx.left * zoom;
+      const cR = pageLeft + pageW - sec.marginPx.right * zoom;
+      draw(ruler.clientWidth, ruler.clientHeight, pageLeft, pageW, cL, cR, zoom);
+      // indent markers for the caret paragraph
+      const sel = editor.getSelection();
+      const para = sel ? paragraphsOf(editor.getDocument()).find((p) => p.id === sel.focus.blockId) : null;
+      if (para) {
+        const li = para.style.indentLeftPx ?? 0;
+        const fi = para.style.indentFirstLinePx ?? 0;
+        leftMarker.style.left = `${cL + li * zoom - 5}px`;
+        firstMarker.style.left = `${cL + (li + fi) * zoom - 5}px`;
+        leftMarker.style.display = firstMarker.style.display = "block";
+        geom = { contentLeft: cL, zoom, paraId: para.id, li, fi };
+      } else {
+        leftMarker.style.display = firstMarker.style.display = "none";
+        geom = null;
+      }
+    };
+
+    const startDrag = (which: "left" | "first") => (e: PointerEvent): void => {
+      const g = geom;
+      if (!g || !g.paraId) return;
+      e.preventDefault();
+      let liNext = g.li;
+      let fiNext = g.fi;
+      const onMove = (ev: PointerEvent): void => {
+        const x = ev.clientX - app.getBoundingClientRect().left;
+        const px = Math.max(0, (x - g.contentLeft) / g.zoom);
+        if (which === "left") {
+          liNext = px;
+          leftMarker.style.left = `${g.contentLeft + liNext * g.zoom - 5}px`;
+          firstMarker.style.left = `${g.contentLeft + (liNext + fiNext) * g.zoom - 5}px`;
+        } else {
+          fiNext = px - liNext; // first line sits at left-indent + first-line-indent
+          firstMarker.style.left = `${g.contentLeft + px * g.zoom - 5}px`;
+        }
+      };
+      const onUp = (): void => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        editor.dispatch(
+          setParaProps(which === "left" ? { indentLeftPx: Math.round(liNext) } : { indentFirstLinePx: Math.round(fiNext) }),
+        );
+        editor.focus();
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    };
+    leftMarker.addEventListener("pointerdown", startDrag("left"));
+    firstMarker.addEventListener("pointerdown", startDrag("first"));
+
+    app.addEventListener("scroll", () => refreshRuler());
+    window.addEventListener("resize", () => refreshRuler());
+    // expose a toggle for the View-tab button
+    toggleRuler = (): boolean => {
+      ruler.classList.toggle("hidden");
+      const shown = !ruler.classList.contains("hidden");
+      if (shown) refreshRuler();
+      return shown;
+    };
+    refreshRuler();
   }
 }
 

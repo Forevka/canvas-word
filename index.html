@@ -119,9 +119,20 @@
       .style-card .preview { font-size: 13px; line-height: 1; color: #323130; }
       .style-card .name { font-size: 10px; color: #605e5c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 72px; }
 
-      /* work area: optional outline drawer + the scrolling page canvas */
+      /* work area: optional outline drawer + ruler + the scrolling page canvas */
       #workarea { flex: 1 1 auto; min-height: 0; display: flex; }
+      #editorpane { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
       #app { flex: 1 1 auto; min-height: 0; min-width: 0; overflow: auto; background: #e8eaed; position: relative; }
+
+      /* horizontal ruler (inch ticks, margin shading, draggable indent markers) */
+      #ruler { flex: 0 0 22px; height: 22px; position: relative; background: #e8eaed; border-bottom: 1px solid #d2d0ce; overflow: hidden; }
+      #ruler.hidden { display: none; }
+      #ruler canvas { position: absolute; inset: 0; }
+      #ruler .ruler-marker { position: absolute; width: 0; height: 0; cursor: ew-resize; z-index: 2; }
+      /* left-indent: bottom-pointing triangle sitting on the baseline */
+      #ruler .ruler-left { bottom: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 7px solid #5b6b8c; }
+      /* first-line-indent: top-pointing triangle */
+      #ruler .ruler-first { top: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid #5b6b8c; }
 
       /* ===== Outline / Navigation drawer ================================== */
       #outline {
@@ -212,7 +223,10 @@
     <div id="toolbar"></div>
     <div id="workarea">
       <aside id="outline"></aside>
-      <div id="app"></div>
+      <div id="editorpane">
+        <div id="ruler"></div>
+        <div id="app"></div>
+      </div>
     </div>
     <div id="statusbar"></div>
     <script type="module" src="/src/main.ts"></script>
