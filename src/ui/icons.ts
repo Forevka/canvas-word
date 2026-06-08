@@ -64,6 +64,9 @@ export const ICONS = {
   pageSetup: svg(
     `<rect x="3" y="2" width="10" height="12" rx="1"/><path d="M3 5h10"/><path d="M5.5 8h5M5.5 10.5h5"/>`,
   ),
+  tocRefresh: svg(
+    `<path d="M13 8a5 5 0 1 1-1.6-3.7"/><path d="M13 2.2V5h-2.8"/>`,
+  ),
   rowAbove: svg(
     `<rect x="2" y="8" width="12" height="6" rx="1"/><path d="M8 8v6M2 11h12"/><path d="M8 5.5V1.5"/><path d="M6 3.5 8 1.5l2 2"/>`,
   ),

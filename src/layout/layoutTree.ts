@@ -97,6 +97,10 @@ export interface PlacedBlock {
 
 export interface Page {
   index: number;
+  /** Displayed page number (honors section pageNumberStart) — what {page} shows
+   *  in the footer and what "recalculate TOC" reads. Differs from `index` when a
+   *  section restarts numbering. */
+  number: number;
   blocks: PlacedBlock[];
   /** Per-page dimensions — sections can change page size/margins mid-document,
    *  so paint and hit-testing must read THESE, not the tree-level defaults. */

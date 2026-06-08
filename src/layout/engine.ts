@@ -674,6 +674,7 @@ function layoutDocument(
     pageSections.push(sec);
     return {
       index: pageSections.length - 1,
+      number: pageSections.length, // provisional; the post-pass sets the real value
       blocks: [],
       widthPx: sec.pageWidthPx,
       heightPx: sec.pageHeightPx,
@@ -1210,6 +1211,7 @@ function layoutDocument(
       if (firstOfSection && s.pageNumberStart !== undefined) n = s.pageNumberStart;
       else n++;
       pageNumbers.push(n);
+      pages[i]!.number = n;
     }
   }
 

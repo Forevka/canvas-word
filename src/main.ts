@@ -2,7 +2,6 @@ import { createEditor, type CurrentFormat } from "./index";
 import { createLayoutEngine } from "./layout/engine";
 import { sampleDoc } from "./model/sampleDoc";
 import { stressDoc } from "./model/stressDoc";
-import { recognizeImportedToc } from "./model/tocRecognition";
 import { importDocx, type ImportResult } from "./import/docx/importDocx";
 
 // Fonts must be resolved before the first layout — pretext measures with the same
@@ -30,7 +29,7 @@ let doc =
         onProgress: (phase, pct) => console.log(`[docx-import] ${phase} ${(pct * 100).toFixed(0)}%`),
       });
       reportImport(result, performance.now() - i0);
-      return recognizeImportedToc(result.doc);
+      return result.doc;
     })()
   : sampleDoc();
 
@@ -62,7 +61,7 @@ const openDocxFile = async (file: File): Promise<void> => {
   try {
     const result = await importDocx(file);
     reportImport(result, performance.now() - i0);
-    replaceDocument(recognizeImportedToc(result.doc));
+    replaceDocument(result.doc);
   } catch (e) {
     console.error("[docx-import]", e);
     alert(`Could not open "${file.name}": ${e instanceof Error ? e.message : String(e)}`);
@@ -334,6 +333,11 @@ if (toolbar) {
   });
   btn(ICONS.toc, "Insert / update table of contents (Ctrl+click an entry jumps to it)", () => {
     editor.dispatch(insertTocCmd());
+    editor.focus();
+  });
+  btn(ICONS.tocRefresh, "Recalculate TOC page numbers from the current layout", () => {
+    const n = editor.recalculateToc();
+    console.log(n > 0 ? `[toc] updated ${n} page number${n === 1 ? "" : "s"}` : "[toc] page numbers already current");
     editor.focus();
   });
   txtBtn("ab¹", "Insert footnote", () => {

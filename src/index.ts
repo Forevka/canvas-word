@@ -109,6 +109,10 @@ export interface Editor {
   /** Open the content-control inspector for the control at the caret (ribbon
    *  button). Returns false when the caret isn't inside a content control. */
   inspectContentControl(): boolean;
+  /** Update every TOC entry's page number to its target's current page (the
+   *  imported pre-calculated numbers are shown until the user asks for this).
+   *  Returns the count of entries whose number changed. */
+  recalculateToc(): number;
   /** Format painter: capture caret formatting, apply on the next selection. */
   armFormatPainter(sticky: boolean): void;
   cancelFormatPainter(): void;
@@ -1477,6 +1481,52 @@ export function createEditor(
     return target && blockById(doc, target) ? target : null;
   };
 
+  /** Imported TOC entries keep their pre-calculated page numbers; this rewrites
+   *  each to the target heading's CURRENT page (from the live layout). An entry
+   *  is "label <tab> number" with an in-document anchor link to its heading. */
+  const recalculateToc = (): number => {
+    // blockId → displayed page number of the FIRST page it appears on (body only).
+    const pageOfBlock = new Map<string, number>();
+    const scan = (blocks: import("./layout/layoutTree").PlacedBlock[], pageNum: number): void => {
+      for (const pb of blocks) {
+        if (!pageOfBlock.has(pb.blockId)) pageOfBlock.set(pb.blockId, pageNum);
+        if (pb.table) for (const row of pb.table.rows) for (const cell of row.cells) scan(cell.blocks, pageNum);
+      }
+    };
+    for (const pg of tree.pages) scan(pg.blocks, pg.number);
+
+    const edits: { blockId: string; start: number; end: number; text: string }[] = [];
+    for (const b of doc.blocks) {
+      if (b.kind !== "paragraph") continue;
+      const anchor = b.runs.find((r) => r.style.link?.startsWith("#"))?.style.link?.slice(1);
+      if (!anchor) continue;
+      const targetId = doc.bookmarks?.[anchor];
+      if (!targetId) continue;
+      const num = pageOfBlock.get(targetId);
+      if (num === undefined) continue;
+      const full = textOfRuns(b.runs);
+      const m = full.match(/\t(\d+)(\s*)$/); // trailing tab + page number
+      if (!m) continue;
+      if (m[1] === String(num)) continue; // already current
+      const numStart = full.length - m[2]!.length - m[1]!.length;
+      edits.push({ blockId: b.id, start: numStart, end: numStart + m[1]!.length, text: String(num) });
+    }
+    if (edits.length === 0) return 0;
+
+    dispatch((state) => {
+      const ops: import("./model/ops").Op[] = [];
+      for (const e of edits) {
+        const block = blockById(state.doc, e.blockId);
+        if (!block) continue;
+        const style = styleAtRuns(block.runs, e.start) ?? block.runs[0]?.style;
+        ops.push({ type: "deleteRange", blockId: e.blockId, start: e.start, end: e.end });
+        ops.push({ type: "insertText", at: { blockId: e.blockId, offset: e.start }, text: e.text, ...(style ? { style } : {}) });
+      }
+      return { ops, selectionAfter: state.selection, origin: "command" };
+    });
+    return edits.length;
+  };
+
   const onContextMenu = (ev: MouseEvent): void => {
     const pt = paint.clientToPage(ev.clientX, ev.clientY);
     if (!pt) return;
@@ -1562,6 +1612,7 @@ export function createEditor(
       dispatch(setAlignment(align));
     },
     inspectContentControl: inspectSdtAtCaret,
+    recalculateToc,
     armFormatPainter,
     cancelFormatPainter,
     search,
