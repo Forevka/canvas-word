@@ -53,6 +53,18 @@ export interface CurrentFormat {
   fontFamily: string | null;
   fontSizePx: number | null;
   lineHeight: number | null;
+  /** Character toggles at the caret (incl. the pending style) — drive the
+   *  ribbon's pressed-button state. */
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  strikethrough: boolean;
+  highlight: boolean;
+  superscript: boolean;
+  subscript: boolean;
+  /** Paragraph alignment, and which list (if any) the caret paragraph is in. */
+  align: ParaStyle["align"] | null;
+  listKind: "bullet" | "number" | null;
 }
 
 export interface SearchState {
@@ -362,6 +374,7 @@ export function createEditor(
     const effective = { ...(inherited ?? {}), ...(pendingStyle ?? {}) } as Partial<CharStyle>;
     pendingStyle = { ...(pendingStyle ?? {}), [key]: !effective[key] };
     mirror.announce(`${key} ${pendingStyle[key] ? "on" : "off"}`);
+    notifyChange(); // pending toggle drives the ribbon's pressed state
   };
 
   // ---- transaction pipeline ------------------------------------------------
@@ -896,17 +909,34 @@ export function createEditor(
       if (!selection) return;
       pendingStyle = { ...(pendingStyle ?? {}), ...patch }; // applies to next typed text
       mirror.announce("formatting set for next text");
+      notifyChange(); // keep the ribbon's font/size controls in sync
     },
     currentFormat(): CurrentFormat {
       const focus = selection?.focus;
       const block = focus ? blockById(doc, focus.blockId) : undefined;
       const char = block && focus ? styleAtRuns(block.runs, focus.offset) : undefined;
       const effective = { ...(char ?? {}), ...(pendingStyle ?? {}) };
+      const list = block?.style.list;
+      let listKind: CurrentFormat["listKind"] = null;
+      if (list) {
+        const def = doc.lists?.[list.listId];
+        const level = def?.levels[Math.min(list.level, def.levels.length - 1)];
+        if (level) listKind = level.format === "bullet" ? "bullet" : "number";
+      }
       return {
         styleId: block?.style.namedStyle ?? (block ? "Normal" : null),
         fontFamily: effective.fontFamily ?? null,
         fontSizePx: effective.fontSizePx ?? null,
         lineHeight: block?.style.lineHeight ?? null,
+        bold: effective.bold === true,
+        italic: effective.italic === true,
+        underline: effective.underline === true,
+        strikethrough: effective.strikethrough === true,
+        highlight: effective.highlightColor !== undefined && effective.highlightColor !== null,
+        superscript: effective.verticalAlign === "super",
+        subscript: effective.verticalAlign === "sub",
+        align: block?.style.align ?? null,
+        listKind,
       };
     },
     align(align: ParaStyle["align"]): void {

@@ -1,4 +1,4 @@
-import { createEditor } from "./index";
+import { createEditor, type CurrentFormat } from "./index";
 import { createLayoutEngine } from "./layout/engine";
 import { sampleDoc } from "./model/sampleDoc";
 import { stressDoc } from "./model/stressDoc";
@@ -167,6 +167,14 @@ if (toolbar) {
     s.appendChild(o);
   };
 
+  // Toggle buttons paint a pressed state from the caret's format (Word). Each
+  // registers a predicate; syncToolbar re-evaluates them on every change.
+  const toggleButtons: { el: HTMLButtonElement; active: (f: CurrentFormat) => boolean }[] = [];
+  const toggle = (el: HTMLButtonElement, active: (f: CurrentFormat) => boolean): HTMLButtonElement => {
+    toggleButtons.push({ el, active });
+    return el;
+  };
+
   // ---- File ----
   group("File");
   btn(ICONS.open, "Open .docx", () => {
@@ -221,13 +229,13 @@ if (toolbar) {
     }
   });
   controls.appendChild(sizeInput);
-  txtBtn("B", "Bold (Ctrl+B)", () => editor.toggleStyle("bold"), "font-weight:700;");
-  txtBtn("I", "Italic (Ctrl+I)", () => editor.toggleStyle("italic"), "font-style:italic;font-family:Georgia,serif;");
-  txtBtn("U", "Underline (Ctrl+U)", () => editor.toggleStyle("underline"), "text-decoration:underline;");
-  txtBtn("ab", "Strikethrough", () => editor.toggleStyle("strikethrough"), "text-decoration:line-through;");
-  txtBtn("x²", "Superscript", () => editor.dispatch(toggleVerticalAlign("super")));
-  txtBtn("x₂", "Subscript", () => editor.dispatch(toggleVerticalAlign("sub")));
-  btn(ICONS.highlight, "Highlight (yellow)", () => editor.dispatch(toggleHighlight()));
+  toggle(txtBtn("B", "Bold (Ctrl+B)", () => editor.toggleStyle("bold"), "font-weight:700;"), (f) => f.bold);
+  toggle(txtBtn("I", "Italic (Ctrl+I)", () => editor.toggleStyle("italic"), "font-style:italic;font-family:Georgia,serif;"), (f) => f.italic);
+  toggle(txtBtn("U", "Underline (Ctrl+U)", () => editor.toggleStyle("underline"), "text-decoration:underline;"), (f) => f.underline);
+  toggle(txtBtn("ab", "Strikethrough", () => editor.toggleStyle("strikethrough"), "text-decoration:line-through;"), (f) => f.strikethrough);
+  toggle(txtBtn("x²", "Superscript", () => editor.dispatch(toggleVerticalAlign("super"))), (f) => f.superscript);
+  toggle(txtBtn("x₂", "Subscript", () => editor.dispatch(toggleVerticalAlign("sub"))), (f) => f.subscript);
+  toggle(btn(ICONS.highlight, "Highlight (yellow)", () => editor.dispatch(toggleHighlight())), (f) => f.highlight);
   btn(ICONS.link, "Insert/remove hyperlink", () => {
     const url = prompt("Link URL (empty to remove):");
     if (url !== null) editor.dispatch(setLinkCmd(url.trim() === "" ? null : url.trim()));
@@ -235,12 +243,12 @@ if (toolbar) {
 
   // ---- Paragraph ----
   group("Paragraph");
-  btn(ICONS.bullets, "Bulleted list", () => editor.dispatch(toggleList("bullet")));
-  btn(ICONS.numbering, "Numbered list (Tab/Shift+Tab change level)", () => editor.dispatch(toggleList("decimal")));
-  btn(ICONS.alignLeft, "Align left", () => editor.align("left"));
-  btn(ICONS.alignCenter, "Center", () => editor.align("center"));
-  btn(ICONS.alignRight, "Align right", () => editor.align("right"));
-  btn(ICONS.alignJustify, "Justify", () => editor.align("justify"));
+  toggle(btn(ICONS.bullets, "Bulleted list", () => editor.dispatch(toggleList("bullet"))), (f) => f.listKind === "bullet");
+  toggle(btn(ICONS.numbering, "Numbered list (Tab/Shift+Tab change level)", () => editor.dispatch(toggleList("decimal"))), (f) => f.listKind === "number");
+  toggle(btn(ICONS.alignLeft, "Align left", () => editor.align("left")), (f) => f.align === "left");
+  toggle(btn(ICONS.alignCenter, "Center", () => editor.align("center")), (f) => f.align === "center");
+  toggle(btn(ICONS.alignRight, "Align right", () => editor.align("right")), (f) => f.align === "right");
+  toggle(btn(ICONS.alignJustify, "Justify", () => editor.align("justify")), (f) => f.align === "justify");
   const spacingSelect = select("Line spacing", 56);
   for (const v of ["1", "1.15", "1.35", "1.5", "2"]) opt(spacingSelect, v, `${v}×`);
   spacingSelect.addEventListener("change", () => {
@@ -304,6 +312,8 @@ if (toolbar) {
       const v = String(f.lineHeight);
       if ([...spacingSelect.options].some((o) => o.value === v)) spacingSelect.value = v;
     }
+    // Pressed state for B/I/U/S, highlight, sub/super, lists, alignment.
+    for (const t of toggleButtons) t.el.classList.toggle("active", t.active(f));
   };
 
   // ---- Insert ----
