@@ -19,8 +19,9 @@ import {
   selectionRects,
   type ColumnBoundaryHit,
   type GeoScope,
+  type Rect,
 } from "./layout/geometry";
-import type { LayoutTree } from "./layout/layoutTree";
+import type { LayoutTree, Page, PlacedBlock } from "./layout/layoutTree";
 import { createPaintLayer } from "./paint/renderer";
 import { createSelectionController } from "./input/selectionController";
 import { createObjectFrame } from "./input/objectController";
@@ -170,6 +171,68 @@ export function createEditor(
     date: "Date",
   };
 
+  /** Vertical extent (top, bottom) a placed block occupies on its page —
+   *  paragraphs measure their line stack, images/tables their box. */
+  const placedBlockVBounds = (pb: PlacedBlock): [number, number] => {
+    if (pb.table) return [pb.table.y, pb.table.y + pb.table.height];
+    if (pb.image) return [pb.y, pb.y + pb.image.height];
+    let top = pb.y;
+    let bot = pb.y;
+    for (const l of pb.lines) {
+      const ly = pb.y + l.y;
+      if (ly < top) top = ly;
+      if (ly + l.height > bot) bot = ly + l.height;
+    }
+    return [top, bot];
+  };
+
+  /** Body block-level controls (those wrapping WHOLE paragraphs/tables, like
+   *  Word's boundingBox appearance) draw ONE frame per page spanning the full
+   *  content column from the first block's top to the last block's bottom — not
+   *  ragged per-line rects. Returns null for inline / cell-hosted controls, which
+   *  keep the text-shaped highlight. */
+  const blockLevelSdtRects = (id: string): Rect[] | null => {
+    const ranges = findSdtRanges(doc, id);
+    if (ranges.length === 0) return null;
+    const first = ranges[0]!;
+    const last = ranges[ranges.length - 1]!;
+    const firstBlock = blockById(doc, first.blockId);
+    const inlinePartial =
+      ranges.length === 1 &&
+      firstBlock !== undefined &&
+      (first.start > 0 || first.end < textOfRuns(firstBlock.runs).length);
+    if (inlinePartial) return null;
+    const fc = containerOf(doc, first.blockId);
+    const lc = containerOf(doc, last.blockId);
+    if (!fc || !lc || fc.where !== lc.where || fc.where !== "body") return null;
+    const ids = new Set(containerBlocks(doc, fc.where).slice(fc.index, lc.index + 1).map((b) => b.id));
+    // Union the span's blocks' vertical extent per page (a span can break pages).
+    const byPage = new Map<number, { top: number; bot: number; page: Page }>();
+    for (const page of tree.pages) {
+      for (const pb of page.blocks) {
+        if (!ids.has(pb.blockId)) continue;
+        const [t, b] = placedBlockVBounds(pb);
+        const cur = byPage.get(page.index);
+        if (cur) {
+          cur.top = Math.min(cur.top, t);
+          cur.bot = Math.max(cur.bot, b);
+        } else byPage.set(page.index, { top: t, bot: b, page });
+      }
+    }
+    if (byPage.size === 0) return null;
+    const rects: Rect[] = [];
+    for (const { top, bot, page } of byPage.values()) {
+      rects.push({
+        pageIndex: page.index,
+        x: page.marginPx.left,
+        y: top,
+        width: page.widthPx - page.marginPx.left - page.marginPx.right,
+        height: bot - top,
+      });
+    }
+    return rects;
+  };
+
   /** Word's active-control chrome: gray frame + title tab around the control
    *  containing the caret. Cleared when the caret leaves. */
   const updateSdtAdornment = (): void => {
@@ -180,13 +243,17 @@ export function createEditor(
       paint.setSdtAdornment(null);
       return;
     }
-    const rects = findSdtRanges(doc, id).flatMap((r) =>
-      selectionRects(
-        tree,
-        { anchor: { blockId: r.blockId, offset: r.start }, focus: { blockId: r.blockId, offset: r.end } },
-        scope(),
-      ),
-    );
+    // Block-level controls get a single bounding box (Word's boundingBox chrome);
+    // inline ones fall back to the text-shaped per-line rects.
+    const rects =
+      blockLevelSdtRects(id) ??
+      findSdtRanges(doc, id).flatMap((r) =>
+        selectionRects(
+          tree,
+          { anchor: { blockId: r.blockId, offset: r.start }, focus: { blockId: r.blockId, offset: r.end } },
+          scope(),
+        ),
+      );
     paint.setSdtAdornment({ rects, label: props.alias ?? SDT_LABELS[props.type] ?? "Content control" });
   };
 
