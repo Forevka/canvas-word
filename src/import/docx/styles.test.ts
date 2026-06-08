@@ -178,4 +178,28 @@ describe("StyleResolver — robustness", () => {
   });
 });
 
+describe("StyleResolver — heading-led section breaks", () => {
+  // A geometry-preserving "page" section break breaks only when the new section
+  // opens with a heading (a real chapter boundary), else it flows — past the
+  // empty/hidden paragraphs the generator inserts ahead of the heading.
+  it("page-breaks a section break that starts a heading section", () => {
+    const r = importStyled(
+      `<w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:pPr></w:p>` +
+        `<w:p><w:pPr><w:rPr><w:vanish/></w:rPr></w:pPr><w:r><w:rPr><w:vanish/></w:rPr><w:t>hidden</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>CHAPTER TWO</w:t></w:r></w:p>`,
+    );
+    const heading = r.doc.blocks.find((b) => para(b).runs.some((run) => run.text === "CHAPTER TWO"))!;
+    expect(para(heading).style.pageBreakBefore).toBe(true);
+  });
+
+  it("flows a section break followed by ordinary content", () => {
+    const r = importStyled(
+      `<w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:pPr></w:p>` +
+        `<w:p><w:r><w:t>just more body text</w:t></w:r></w:p>`,
+    );
+    const body = r.doc.blocks.find((b) => para(b).runs.some((run) => run.text === "just more body text"))!;
+    expect(para(body).style.pageBreakBefore).toBeUndefined();
+  });
+});
+
 const round = (v: number): number => Math.round(v * 100) / 100;

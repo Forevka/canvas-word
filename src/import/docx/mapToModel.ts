@@ -177,33 +177,44 @@ export function createMapper(
     return levelIndentPx;
   };
 
+  const sectionChangesGeometry = (props: IRParaProps): boolean => {
+    const sz = props.sectionPgSize;
+    return !!sz && !!refPgSize && (sz.w !== refPgSize.w || sz.h !== refPgSize.h);
+  };
+
   const mapBlocks = (blocks: IRBlock[], media: MediaStore, resolveLink: LinkResolver = NO_LINKS): Block[] => {
     const out: Block[] = [];
-    // A paragraph carrying w:sectPr ends a section. We collapse the document to a
-    // single page setup, so a "page" break only forces a new page when its
-    // section's geometry actually differs from the document's — a footer/header-
-    // only break (these reports emit dozens) flows instead of stranding the rest
-    // of the page, matching Word. "continuous" never breaks.
-    const breaksPage = (props: IRParaProps): boolean => {
-      if (props.sectionBreak !== "page") return false;
-      const sz = props.sectionPgSize;
-      if (!sz || !refPgSize) return false; // no geometry change to honor → flow
-      return sz.w !== refPgSize.w || sz.h !== refPgSize.h;
-    };
-    let sectionPageBreak = false;
+    // A paragraph carrying w:sectPr ends a section. These generated reports emit a
+    // Next Page break wherever the footer changes (dozens, identical geometry), so
+    // a spec-literal page break would strand half of every page. We page-break a
+    // "page" break only when it actually starts a NEW page-worthy section:
+    //   • the geometry changes (a landscape section, etc.), or
+    //   • the new section opens with a heading — skipping the empty/hidden
+    //     paragraphs the generator inserts — i.e. a real chapter boundary.
+    // Otherwise it flows, matching Word. "continuous" never breaks.
+    let pending: { geometryChanged: boolean } | null = null;
     for (const irBlock of blocks) {
       const mapped =
         irBlock.kind === "paragraph"
           ? mapParagraph(irBlock, media, resolveLink)
           : [mapTable(irBlock, media, resolveLink)];
-      if (sectionPageBreak && mapped.length > 0) {
+      if (pending && mapped.length > 0) {
         const first = mapped[0]!;
-        if (first.kind === "paragraph") first.style.pageBreakBefore = true;
-        else mapped.unshift({ ...emptyParagraph(), style: { ...documentPara, pageBreakBefore: true } });
-        sectionPageBreak = false;
+        const heading = irBlock.kind === "paragraph" && resolver.isHeading(irBlock.props.styleId);
+        const empty = first.kind === "paragraph" && first.runs.every((r) => r.text.length === 0);
+        if (pending.geometryChanged || heading) {
+          if (first.kind === "paragraph") first.style.pageBreakBefore = true;
+          else mapped.unshift({ ...emptyParagraph(), style: { ...documentPara, pageBreakBefore: true } });
+          pending = null;
+        } else if (!empty) {
+          pending = null; // reached the section's first real content → it flows
+        }
+        // empty paragraph: keep pending and look past it for the real section start
       }
       out.push(...mapped);
-      if (irBlock.kind === "paragraph" && breaksPage(irBlock.props)) sectionPageBreak = true;
+      if (irBlock.kind === "paragraph" && irBlock.props.sectionBreak === "page") {
+        pending = { geometryChanged: sectionChangesGeometry(irBlock.props) };
+      }
     }
     return out;
   };

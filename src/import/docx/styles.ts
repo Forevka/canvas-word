@@ -135,6 +135,10 @@ export interface StyleResolver {
   run(pStyleId: string | undefined, direct: IRRunProps): IRRunProps;
   /** Effective paragraph props: cascade + direct formatting. */
   para(direct: IRParaProps): IRParaProps;
+  /** True when this style (or a basedOn ancestor) is a built-in heading — its
+   *  w:name is "Heading 1".."Heading 9". Used to decide whether a section break
+   *  starts a real new (heading-led) section, which page-breaks, vs flows. */
+  isHeading(pStyleId: string | undefined): boolean;
 }
 
 /** Toggle properties per §17.7.3 — XOR across hierarchy levels.
@@ -211,6 +215,13 @@ export function createStyleResolver(data: StylesData, theme: Theme): StyleResolv
       if (direct.styleId) eff.styleId = direct.styleId;
       else delete eff.styleId;
       return eff;
+    },
+    isHeading(pStyleId) {
+      if (!pStyleId) return false;
+      // Match the display name ("Heading 1") or the styleId ("Heading1") — Word's
+      // built-in headings use either; generated docs keep the name on an opaque id.
+      const isHeadingName = (s: string | undefined): boolean => s !== undefined && /^heading\s*[1-9]/i.test(s);
+      return chainOf(pStyleId).some((def) => isHeadingName(def.name) || isHeadingName(def.id));
     },
   };
 
