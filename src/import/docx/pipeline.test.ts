@@ -133,23 +133,37 @@ describe("docx pipeline — lossy policies emit warnings", () => {
   });
 
   it("flows a geometry-preserving mid-document section break (footer-only)", () => {
-    // Same page size as the document → only the footer/header could differ, which
-    // we don't model, so a page break would just strand the rest of the page.
+    // Same page size as the document and no own bands → nothing to apply, so it
+    // flows (a page break would just strand the rest of the page) — silently.
     const r = importBody(
       `<w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:pPr></w:p>` +
         `<w:p><w:r><w:t>second section</w:t></w:r></w:p>`,
     );
+    expect(para(r.doc.blocks[0]).style.sectionBreak).toBeUndefined();
     expect(para(r.doc.blocks[1]).style.pageBreakBefore).toBeUndefined();
-    expect(warningCodes(r)).toContain("multiple-sections");
   });
 
-  it("page-breaks a mid-document section break that changes page geometry", () => {
-    // Landscape mid-doc section vs the default portrait → a real new-page boundary.
+  it("warns when a flowed section break carries its own header/footer", () => {
+    const r = importBody(
+      `<w:p><w:pPr><w:sectPr><w:footerReference w:type="default" r:id="rF"/>` +
+        `<w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:pPr></w:p>` +
+        `<w:p><w:r><w:t>next</w:t></w:r></w:p>`,
+    );
+    expect(warningCodes(r)).toContain("section-bands-flattened");
+  });
+
+  it("applies geometry via a sectionBreak on the section's last paragraph", () => {
+    // Landscape mid-doc section vs the default portrait → a real new-page boundary;
+    // the patch rides the paragraph that ENDS the section (OOXML semantics).
     const r = importBody(
       `<w:p><w:pPr><w:sectPr><w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/></w:sectPr></w:pPr></w:p>` +
         `<w:p><w:r><w:t>second section</w:t></w:r></w:p>`,
     );
-    expect(para(r.doc.blocks[1]).style.pageBreakBefore).toBe(true);
+    const sb = para(r.doc.blocks[0]).style.sectionBreak;
+    expect(sb?.type).toBe("nextPage");
+    expect(sb?.props.pageWidthPx).toBe(1056); // 15840 twips landscape
+    expect(sb?.props.pageHeightPx).toBe(816);
+    expect(para(r.doc.blocks[1]).style.pageBreakBefore).toBeUndefined(); // engine pages via the section
   });
 
   it("does NOT page-break on continuous section breaks", () => {

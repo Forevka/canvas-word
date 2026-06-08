@@ -115,9 +115,9 @@ export interface IRSdtProps {
 export type IRInline =
   | { kind: "run"; text: string; props: IRRunProps; sdtId?: string }
   /** w:br / w:cr — soft line break (model has none; mapToModel splits the
-   *  paragraph). page=true for w:br w:type="page": the following content
-   *  starts a new page (maps to ParaStyle.pageBreakBefore). */
-  | { kind: "break"; page?: boolean }
+   *  paragraph). page=true for w:br w:type="page" (→ pageBreakBefore on the
+   *  follower); column=true for w:br w:type="column" (→ columnBreakBefore). */
+  | { kind: "break"; page?: boolean; column?: boolean }
   /** w:drawing / w:pict — becomes a block-level ImageBlock (model has no inline images). */
   | {
       kind: "image";
@@ -163,6 +163,15 @@ export interface IRParaProps {
    *  generated reports emit by the dozen) flow instead of leaving half-empty
    *  pages, matching Word. */
   sectionPgSize?: { w: number; h: number };
+  /** The ending section's margins (twips) — for a SectionPatch when geometry differs. */
+  sectionMarginTwips?: { top: number; right: number; bottom: number; left: number };
+  /** The ending section's newspaper columns (count > 1). */
+  sectionColumns?: { count: number; spaceTwips?: number };
+  /** The ending section's w:pgNumType w:start (page-number restart). */
+  sectionPageNumberStart?: number;
+  /** The ending section's sectPr declares its own header/footer references —
+   *  when such a section is flowed (not page-broken) its bands aren't applied. */
+  sectionHasBands?: boolean;
   /** w:pPr/w:rPr — the paragraph MARK's run formatting. Word styles empty
    *  paragraphs (and the ¶ itself) with this; we use it for empty-run style. */
   markRunProps?: IRRunProps;
@@ -254,14 +263,24 @@ export interface IRSection {
   pageWidthTwips?: number;
   pageHeightTwips?: number;
   marginTwips?: { top: number; right: number; bottom: number; left: number };
-  /** w:headerReference / w:footerReference (default type) — r:id into the
-   *  document part's rels; the referenced parts are parsed separately. */
-  headerRelId?: string;
-  footerRelId?: string;
+  /** w:headerReference / w:footerReference by type — r:id into the document
+   *  part's rels; the referenced parts are parsed separately. Variants are
+   *  gated downstream (first by w:titlePg, even by settings evenAndOdd). */
+  headerRefs?: BandRefs;
+  footerRefs?: BandRefs;
+  /** w:titlePg — this section has a distinct first-page header/footer. */
+  titlePg?: boolean;
   /** w:cols — newspaper columns (only count > 1 is meaningful). */
   columns?: { count: number; spaceTwips?: number };
   /** w:pgNumType w:start — restart page numbering at this value. */
   pageNumberStart?: number;
+}
+
+/** Header/footer relationship ids by Word variant. */
+export interface BandRefs {
+  default?: string;
+  first?: string;
+  even?: string;
 }
 
 export interface IRDocument {

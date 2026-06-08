@@ -7,6 +7,7 @@
 
 import { ImportError, WarningSink } from "./types";
 import type {
+  BandRefs,
   IRBlock,
   IRDocument,
   IRInline,
@@ -259,11 +260,14 @@ function parseRun(r: XmlNode, out: IRInline[], ctx: ParseCtx, field: FieldState)
         case "w:tab":
           if (!field.suppressResult) text += "\t"; // policy (fixed spaces) applied in mapToModel
           break;
-        case "w:br":
+        case "w:br": {
           flush();
-          if (attr(node, "w:type") === "page") out.push({ kind: "break", page: true });
+          const brType = attr(node, "w:type");
+          if (brType === "page") out.push({ kind: "break", page: true });
+          else if (brType === "column") out.push({ kind: "break", column: true });
           else out.push({ kind: "break" });
           break;
+        }
         case "w:cr":
           flush();
           out.push({ kind: "break" });
@@ -552,10 +556,11 @@ function parseSection(sectPr: XmlNode, warnings: WarningSink): IRSection {
       section.marginTwips = { top, right, bottom, left };
     }
   }
-  const headerRelId = pickHeaderFooterRef(els(sectPr, "w:headerReference"), warnings);
-  if (headerRelId) section.headerRelId = headerRelId;
-  const footerRelId = pickHeaderFooterRef(els(sectPr, "w:footerReference"), warnings);
-  if (footerRelId) section.footerRelId = footerRelId;
+  const headerRefs = bandRefs(els(sectPr, "w:headerReference"));
+  if (headerRefs) section.headerRefs = headerRefs;
+  const footerRefs = bandRefs(els(sectPr, "w:footerReference"));
+  if (footerRefs) section.footerRefs = footerRefs;
+  if (el(sectPr, "w:titlePg")) section.titlePg = true;
 
   const cols = el(sectPr, "w:cols");
   if (cols) {
@@ -571,23 +576,19 @@ function parseSection(sectPr: XmlNode, warnings: WarningSink): IRSection {
   return section;
 }
 
-/** The model has ONE header/footer story; Word allows default/first/even
- *  variants. Use default; fall back to whatever exists with a warning. */
-function pickHeaderFooterRef(refs: XmlNode[], warnings: WarningSink): string | undefined {
+/** Collect w:headerReference / w:footerReference by w:type (default/first/even). */
+function bandRefs(refs: XmlNode[]): BandRefs | undefined {
   if (refs.length === 0) return undefined;
-  const byType = (t: string): string | undefined => {
-    const ref = refs.find((r) => attr(r, "w:type") === t);
-    return ref ? attr(ref, "r:id") : undefined;
-  };
-  const def = byType("default");
-  if (def) {
-    if (refs.length > 1) {
-      warnings.add("header-variants", "First/even-page header/footer variants were ignored (default used).");
-    }
-    return def;
+  const out: BandRefs = {};
+  for (const ref of refs) {
+    const id = attr(ref, "r:id");
+    if (!id) continue;
+    const type = attr(ref, "w:type") ?? "default";
+    if (type === "first") out.first = id;
+    else if (type === "even") out.even = id;
+    else out.default = id;
   }
-  warnings.add("header-variants", "No default header/footer — using the first/even variant for all pages.");
-  return attr(refs[0]!, "r:id");
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 // ---------------------------------------------------------------------------

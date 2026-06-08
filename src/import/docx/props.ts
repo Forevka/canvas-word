@@ -130,12 +130,33 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
     // Page geometry of non-last sections is still lossy (last wins), but the
     // page boundary the break implies IS respected via pageBreakBefore — when
     // the geometry actually changes (mapToModel compares sectionPgSize).
-    warnings.add("multiple-sections", "Multiple sections found — only the last section's page setup is used.");
     props.sectionBreak = val(sectPr, "w:type") === "continuous" ? "continuous" : "page";
     const pgSz = el(sectPr, "w:pgSz");
     const w = numAttr(pgSz, "w:w");
     const h = numAttr(pgSz, "w:h");
     if (w !== undefined && h !== undefined) props.sectionPgSize = { w, h };
+    const pgMar = el(sectPr, "w:pgMar");
+    if (pgMar) {
+      const top = numAttr(pgMar, "w:top");
+      const right = numAttr(pgMar, "w:right");
+      const bottom = numAttr(pgMar, "w:bottom");
+      const left = numAttr(pgMar, "w:left");
+      if (top !== undefined && right !== undefined && bottom !== undefined && left !== undefined) {
+        props.sectionMarginTwips = { top, right, bottom, left };
+      }
+    }
+    const cols = el(sectPr, "w:cols");
+    const colCount = numAttr(cols, "w:num");
+    if (colCount !== undefined && colCount > 1) {
+      props.sectionColumns = { count: colCount };
+      const space = numAttr(cols, "w:space");
+      if (space !== undefined) props.sectionColumns.spaceTwips = space;
+    }
+    const pgNumStart = numAttr(el(sectPr, "w:pgNumType"), "w:start");
+    if (pgNumStart !== undefined) props.sectionPageNumberStart = pgNumStart;
+    if (els(sectPr, "w:headerReference").length > 0 || els(sectPr, "w:footerReference").length > 0) {
+      props.sectionHasBands = true;
+    }
   }
   return props;
 }

@@ -268,7 +268,7 @@ describe("headers and footers", () => {
     expect(r.mediaUrls).toContain(img.src);
   });
 
-  it("prefers the default variant and warns about first/even", () => {
+  it("maps the default header and ignores a first variant without w:titlePg", () => {
     const r = runImport(
       docxWithHeaderFooter({
         headerXml: headerPartXml(`<w:p><w:r><w:t>default</w:t></w:r></w:p>`),
@@ -276,7 +276,8 @@ describe("headers and footers", () => {
       }),
     );
     expect(text(para(r.doc.section.header![0]))).toBe("default");
-    expect(codes(r)).toContain("header-variants");
+    expect(r.doc.section.headerFirst).toBeUndefined(); // no titlePg → first not used
+    expect(codes(r)).not.toContain("header-variants");
   });
 
   it("warns when a referenced header part is missing", () => {

@@ -2,7 +2,7 @@
 // footer parts) → IR → Document. Pure (no worker/DOM references) so the whole
 // pipeline runs under vitest in Node; worker.ts is just transport around this.
 
-import type { Block, Paragraph, SectionProps } from "../../model/document";
+import type { Block, BandContainer, Paragraph, SectionProps } from "../../model/document";
 import { findMainDocumentPart } from "./contentTypes";
 import { parseDocumentXml, parseFootnotesXml, parseHeaderFooterXml } from "./documentParser";
 import { buildStylesheet, collectUsedStyleIds, createMapper, mapSdts, type LinkResolver, type Mapper } from "./mapToModel";
@@ -11,8 +11,9 @@ import { parseNumberingXml, EMPTY_NUMBERING } from "./numbering";
 import { findByType, parseRelationships, relsPartFor, type Relationships } from "./relationships";
 import { createStyleResolver, parseStylesXml, resolveTableStyle, EMPTY_STYLES } from "./styles";
 import { parseThemeXml, EMPTY_THEME } from "./theme";
+import { el, parseXml, rootEl } from "./xml";
 import { openArchive, type Archive } from "./zip";
-import { ImportError, WarningSink, type ImportPhase, type ImportResult, type IRSdtProps } from "./types";
+import { ImportError, WarningSink, type BandRefs, type ImportPhase, type ImportResult, type IRSdtProps } from "./types";
 
 export function runImport(
   bytes: Uint8Array,
@@ -80,11 +81,12 @@ export function runImport(
 
   // Header/footer parts are full block stories with their OWN rels (images and
   // hyperlinks in a header resolve through header1.xml.rels, not the document's).
-  // Their content controls join the document's sdt registry.
-  const header = mapStory(archive, rels, ir.section?.headerRelId, mapper, mediaFor, warnings, ir.sdts);
-  if (header) section.header = header;
-  const footer = mapStory(archive, rels, ir.section?.footerRelId, mapper, mediaFor, warnings, ir.sdts);
-  if (footer) section.footer = footer;
+  // Their content controls join the document's sdt registry. The first/even
+  // variants only apply when Word would use them (w:titlePg / settings evenAndOdd).
+  const settingsXml = partByRelType(archive, rels, "settings") ?? archive.text("word/settings.xml");
+  const evenAndOdd = settingsXml !== undefined && hasEvenAndOdd(settingsXml);
+  mapBands(section, "header", ir.section?.headerRefs, ir.section?.titlePg ?? false, evenAndOdd, archive, rels, mapper, mediaFor, warnings, ir.sdts);
+  mapBands(section, "footer", ir.section?.footerRefs, ir.section?.titlePg ?? false, evenAndOdd, archive, rels, mapper, mediaFor, warnings, ir.sdts);
 
   // Footnotes: map the bodies of the notes actually referenced (in document
   // order, so numbering matches). Each note's own rels resolve its media/links.
@@ -151,6 +153,39 @@ function mapStory(
   const ir = parseHeaderFooterXml(xml, rel.target, warnings, sdts);
   const blocks = mapper.mapBlocks(ir, mediaFor(partRels), linkResolverFor(partRels));
   return blocks.length > 0 ? blocks : undefined;
+}
+
+/** Map a band's default/first/even references onto the section's slots. First
+ *  applies only with w:titlePg; even only with settings evenAndOdd — matching
+ *  when Word actually renders them. */
+function mapBands(
+  section: SectionProps,
+  kind: "header" | "footer",
+  refs: BandRefs | undefined,
+  titlePg: boolean,
+  evenAndOdd: boolean,
+  archive: Archive,
+  rels: Relationships,
+  mapper: Mapper,
+  mediaFor: (rels: Relationships) => MediaStore,
+  warnings: WarningSink,
+  sdts: Record<string, IRSdtProps>,
+): void {
+  if (!refs) return;
+  const slot = (variant: "" | "First" | "Even"): BandContainer => `${kind}${variant}` as BandContainer;
+  const set = (container: BandContainer, relId: string | undefined): void => {
+    const story = mapStory(archive, rels, relId, mapper, mediaFor, warnings, sdts);
+    if (story) section[container] = story;
+  };
+  set(slot(""), refs.default);
+  if (titlePg) set(slot("First"), refs.first);
+  if (evenAndOdd) set(slot("Even"), refs.even);
+}
+
+/** settings.xml w:evenAndOddHeadersAndFooters — even-page bands only apply when on. */
+function hasEvenAndOdd(settingsXml: string): boolean {
+  const root = rootEl(parseXml(settingsXml, "settings.xml"), "w:settings");
+  return !!root && !!el(root, "w:evenAndOddHeadersAndFooters");
 }
 
 function relsOf(archive: Archive, partName: string): Relationships {

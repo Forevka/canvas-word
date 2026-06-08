@@ -17,6 +17,7 @@ import type {
   Paragraph,
   Run,
   SdtProps,
+  SectionPatch,
   SectionProps,
   TabAlign,
   TableBlock,
@@ -182,39 +183,96 @@ export function createMapper(
     return !!sz && !!refPgSize && (sz.w !== refPgSize.w || sz.h !== refPgSize.h);
   };
 
+  /** A section worth its own page+geometry: different page size, newspaper
+   *  columns, or a page-number restart. (A bare footer/header switch with the
+   *  same geometry flows instead — see mapBlocks.) */
+  const sectionIsDistinct = (props: IRParaProps): boolean =>
+    sectionChangesGeometry(props) || !!props.sectionColumns || props.sectionPageNumberStart !== undefined;
+
+  /** Build a SectionPatch from a section-ending paragraph's geometry/columns. */
+  const buildSectionPatch = (props: IRParaProps): SectionPatch => {
+    const patch: SectionPatch = {};
+    if (props.sectionPgSize) {
+      patch.pageWidthPx = round2(twipsToPx(props.sectionPgSize.w));
+      patch.pageHeightPx = round2(twipsToPx(props.sectionPgSize.h));
+    }
+    if (props.sectionMarginTwips) {
+      const m = props.sectionMarginTwips;
+      patch.marginPx = {
+        top: round2(twipsToPx(m.top)),
+        right: round2(twipsToPx(m.right)),
+        bottom: round2(twipsToPx(m.bottom)),
+        left: round2(twipsToPx(m.left)),
+      };
+    }
+    if (props.sectionColumns) {
+      patch.columns = { count: props.sectionColumns.count, gapPx: round2(twipsToPx(props.sectionColumns.spaceTwips ?? 720)) };
+    }
+    if (props.sectionPageNumberStart !== undefined) patch.pageNumberStart = props.sectionPageNumberStart;
+    return patch;
+  };
+
+  const lastParagraphOf = (mapped: Block[]): Paragraph | undefined => {
+    for (let i = mapped.length - 1; i >= 0; i--) if (mapped[i]!.kind === "paragraph") return mapped[i] as Paragraph;
+    return undefined;
+  };
+
   const mapBlocks = (blocks: IRBlock[], media: MediaStore, resolveLink: LinkResolver = NO_LINKS): Block[] => {
     const out: Block[] = [];
-    // A paragraph carrying w:sectPr ends a section. These generated reports emit a
-    // Next Page break wherever the footer changes (dozens, identical geometry), so
-    // a spec-literal page break would strand half of every page. We page-break a
-    // "page" break only when it actually starts a NEW page-worthy section:
-    //   • the geometry changes (a landscape section, etc.), or
-    //   • the new section opens with a heading — skipping the empty/hidden
-    //     paragraphs the generator inserts — i.e. a real chapter boundary.
-    // Otherwise it flows, matching Word. "continuous" never breaks.
-    let pending: { geometryChanged: boolean } | null = null;
+    // A paragraph carrying w:sectPr ends a section (OOXML: its props describe the
+    // section ending there). A *distinct* section (different geometry/columns/page
+    // numbering) becomes a real ParaStyle.sectionBreak on that paragraph — the
+    // engine pages and applies the geometry. But these generated reports emit a
+    // Next Page break wherever only the footer changes (dozens, identical
+    // geometry); a spec-literal page break would strand half of every page, so
+    // those FLOW — unless the next section opens with a heading (a real chapter
+    // boundary), which page-breaks. "continuous" never breaks.
+    let pending = false;
     for (const irBlock of blocks) {
       const mapped =
         irBlock.kind === "paragraph"
           ? mapParagraph(irBlock, media, resolveLink)
           : [mapTable(irBlock, media, resolveLink)];
+
+      // Resolve a pending (same-geometry) section break against this block.
       if (pending && mapped.length > 0) {
         const first = mapped[0]!;
         const heading = irBlock.kind === "paragraph" && resolver.isHeading(irBlock.props.styleId);
         const empty = first.kind === "paragraph" && first.runs.every((r) => r.text.length === 0);
-        if (pending.geometryChanged || heading) {
+        if (heading) {
           if (first.kind === "paragraph") first.style.pageBreakBefore = true;
           else mapped.unshift({ ...emptyParagraph(), style: { ...documentPara, pageBreakBefore: true } });
-          pending = null;
+          pending = false;
         } else if (!empty) {
-          pending = null; // reached the section's first real content → it flows
+          pending = false; // reached the section's first real content → it flows
         }
         // empty paragraph: keep pending and look past it for the real section start
       }
-      out.push(...mapped);
+
+      // Does THIS paragraph end a (page-type) section?
       if (irBlock.kind === "paragraph" && irBlock.props.sectionBreak === "page") {
-        pending = { geometryChanged: sectionChangesGeometry(irBlock.props) };
+        const props = irBlock.props;
+        if (sectionIsDistinct(props)) {
+          // Apply the section's geometry: sectionBreak sits on the paragraph that
+          // ENDS the section (engine pages at the next block).
+          let carrier = lastParagraphOf(mapped);
+          if (!carrier) {
+            carrier = emptyParagraph();
+            mapped.push(carrier);
+          }
+          carrier.style.sectionBreak = { type: "nextPage", props: buildSectionPatch(props) };
+          pending = false;
+        } else {
+          if (props.sectionHasBands) {
+            warnings.add(
+              "section-bands-flattened",
+              "Per-section headers/footers on geometry-preserving section breaks were not applied (the document section's are used).",
+            );
+          }
+          pending = true;
+        }
       }
+      out.push(...mapped);
     }
     return out;
   };
@@ -235,15 +293,20 @@ export function createMapper(
     const blocks: Block[] = [];
     let runs: Run[] = [];
     let trailingBreak = false;
-    // Set by a page break; consumed by the NEXT emitted paragraph — what
-    // follows the break starts a new page.
+    // Set by a page/column break; consumed by the NEXT emitted paragraph — what
+    // follows the break starts a new page (or newspaper column).
     let pendingPageBreak = false;
+    let pendingColumnBreak = false;
 
     const paraOf = (paraRuns: Run[]): Paragraph => {
       const paraStyle = { ...style };
       if (pendingPageBreak) {
         paraStyle.pageBreakBefore = true;
         pendingPageBreak = false;
+      }
+      if (pendingColumnBreak) {
+        paraStyle.columnBreakBefore = true;
+        pendingColumnBreak = false;
       }
       return {
         kind: "paragraph",
@@ -262,21 +325,22 @@ export function createMapper(
     for (const inline of ir.inlines) {
       switch (inline.kind) {
         case "break":
-          if (!inline.page) {
+          if (!inline.page && !inline.column) {
             warnings.add("soft-breaks", "Soft line breaks (Shift+Enter) became paragraph breaks.");
           }
           // A break with nothing pending is an empty visual line ("a\n\nb").
           if (runs.length > 0) flushPara();
           else blocks.push(paraOf([]));
           if (inline.page) pendingPageBreak = true;
+          if (inline.column) pendingColumnBreak = true;
           trailingBreak = true;
           break;
         case "image": {
           const image = mapImage(inline, media, style.align);
           if (image) {
             flushPara();
-            // An image can't carry pageBreakBefore — give the break a carrier.
-            if (pendingPageBreak) blocks.push(paraOf([]));
+            // An image can't carry a page/column break — give the break a carrier.
+            if (pendingPageBreak || pendingColumnBreak) blocks.push(paraOf([]));
             blocks.push(image);
             trailingBreak = false;
           }

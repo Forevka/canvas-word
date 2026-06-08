@@ -160,8 +160,10 @@ than a silent drop:
 | Super/subscript | `CharStyle.verticalAlign` | Faithful: `w:vertAlign` → `"super"`/`"sub"` |
 | Footnotes | `Document.footnotes` + `CharStyle.footnoteRef` | Faithful: `footnotes.xml` bodies (own rels) keyed `fn<id>`; ref runs numbered sequentially in document order; separator/continuation pseudo-notes skipped; tables-in-notes dropped (warning) |
 | `w:keepLines` | `ParaStyle.keepLinesTogether` | Faithful |
-| Newspaper columns | `SectionProps.columns` | Faithful: `w:cols` (count > 1) with px gap (0.5in default) |
-| Page-number restart | `SectionProps.pageNumberStart` | Faithful: `w:pgNumType/@w:start` |
+| Newspaper columns | `SectionProps.columns` / `SectionPatch.columns` | Faithful: `w:cols` (count > 1) with px gap (0.5in default), per section |
+| Page-number restart | `SectionProps.pageNumberStart` / `SectionPatch` | Faithful: `w:pgNumType/@w:start`, per section |
+| Header/footer variants | `SectionProps.headerFirst/headerEven/footerFirst/footerEven` | Faithful: `first` gated by `w:titlePg`, `even` by settings `w:evenAndOddHeadersAndFooters` |
+| Column breaks | `ParaStyle.columnBreakBefore` | Faithful: `w:br type="column"` |
 | `w:br` (soft line break) | no soft breaks | Split into a new paragraph with `spaceBefore/After: 0` |
 | `w:tab` / `w:tabs` | `ParaStyle.tabStops` | Faithful: `\t` preserved (laid out at stops); `w:tabs` → per-stop posPx/align/leader (clear/bar skipped) |
 | `gridSpan` | — | Faithful: maps to `TableCell.colSpan` (and `w:tblGrid` → `colFractions`) |
@@ -169,7 +171,7 @@ than a silent drop:
 | Table/cell shading | `TableCell.shading` | Faithful: `w:shd[@w:fill]` (cell over table over style); pattern shading approximated by its color |
 | `vMerge` | `TableCell.rowSpan` | Faithful: continuation cells dropped, the restart cell's `rowSpan` bumped (HTML semantics); `colFractions` always emitted so the layout keeps the column count |
 | Explicit page breaks (`w:br type="page"`, `w:pageBreakBefore`) | — | Faithful: map to `ParaStyle.pageBreakBefore` (inline breaks split the paragraph; the follower carries the break) |
-| Multiple sections | single `SectionProps` | Page *geometry*: body-level `sectPr` wins (last section), with warning. Page *boundaries*: non-continuous section breaks set `pageBreakBefore` on the following block |
+| Multiple sections | `ParaStyle.sectionBreak` (`SectionPatch`) | A section with distinct page size / columns / page-numbering becomes a real `sectionBreak` on the paragraph that ends it (engine pages + applies the geometry). Geometry-preserving footer/header-only breaks **flow** (these reports emit dozens; a literal break strands half-pages), unless the next section opens with a heading. Per-section *bands* on a flowed section aren't applied (`section-bands-flattened` warning) — the document section's are used |
 
 This table doubles as the **model-evolution backlog** — when the model later gains lists
 or rich headers, the importer seam already collects the data (the IR keeps it; only
@@ -215,5 +217,5 @@ or rich headers, the importer seam already collects the data (the IR keeps it; o
    `pageNumberStart`; table border/shading cascade → `TableCell.borders`/`shading`.
 
 Still on the backlog: table-style *conditional* formatting (firstRow/banding via
-`w:tblStylePr`), first/even header variants, east-asian/complex-script fonts, OMML math,
-a warnings-summary UI toast.
+`w:tblStylePr`), per-section header/footer **bands** on geometry-preserving flowed
+section breaks, east-asian/complex-script fonts, OMML math, a warnings-summary UI toast.
