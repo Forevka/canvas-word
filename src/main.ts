@@ -747,7 +747,9 @@ if (toolbar) {
         if (b.kind !== "paragraph") return;
         const level = headingLevel(b.style.namedStyle);
         if (level === null) return;
-        collected.push({ entry: { id: b.id, index, level }, text: b.runs.map((r) => r.text).join("").trim() });
+        const text = b.runs.map((r) => r.text).join("").trim();
+        if (text === "") return; // skip empty heading-styled paragraphs (structural artifacts)
+        collected.push({ entry: { id: b.id, index, level }, text });
       });
       const sig = collected.map((c) => `${c.entry.id}|${c.entry.level}|${c.text}`).join("\n");
       if (sig !== lastSig) {
@@ -763,7 +765,7 @@ if (toolbar) {
           for (const c of collected) {
             const item = el("button", "outline-item");
             item.style.paddingLeft = `${12 + c.entry.level * 14}px`;
-            item.textContent = c.text || "(untitled heading)";
+            item.textContent = c.text;
             item.title = c.text;
             item.addEventListener("mousedown", (e) => e.preventDefault());
             item.addEventListener("click", () => editor.revealBlock(c.entry.id));
