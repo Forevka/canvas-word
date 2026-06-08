@@ -1,4 +1,5 @@
-import { configureIds } from "@cw/shared";
+import { configureIds, deserializeDocument, reconstruct, serializeDocument } from "@cw/shared";
+import { mediaStore, rehydrateDocMedia } from "./media/store";
 import { createEditor, type CurrentFormat } from "./index";
 import { createLayoutEngine } from "./layout/engine";
 import { sampleDoc } from "./model/sampleDoc";
@@ -90,7 +91,7 @@ const replaceDocument = (next: typeof doc): void => {
   refreshOutline();
   refreshStatus();
   refreshRuler();
-  window.__cw = { doc, tree: undefined, engine, editor, createLayoutEngine, sampleDoc, stressDoc };
+  window.__cw = { doc, tree: undefined, engine, editor, createLayoutEngine, sampleDoc, stressDoc, persist };
 };
 
 const openDocxFile = async (file: File): Promise<void> => {
@@ -1600,10 +1601,13 @@ const pageSetupPanel = (() => {
   });
 }
 
-// Dev hook for in-browser verification (break-rule scans, perf probes).
+// Dev hook for in-browser verification (break-rule scans, perf probes, and the
+// snapshot/replay round-trip: serialize the doc at load, reconstruct from the
+// editor's change log, compare).
 declare global {
   interface Window {
     __cw?: unknown;
   }
 }
-window.__cw = { doc, tree, engine, editor, createLayoutEngine, sampleDoc, stressDoc };
+const persist = { serializeDocument, deserializeDocument, reconstruct, rehydrateDocMedia, mediaStore };
+window.__cw = { doc, tree, engine, editor, createLayoutEngine, sampleDoc, stressDoc, persist };

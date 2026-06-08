@@ -18,6 +18,7 @@ const insert = (blockId: string, offset: number, text: string, seq: number): Cha
   baseVersion: seq,
   seq,
   siteId: "siteA",
+  origin: "typing",
   ts: 0,
   ops: [{ type: "insertText", at: { blockId, offset }, text } as Op],
 });
@@ -61,6 +62,7 @@ describe("reconstruct (base snapshot + ordered change log)", () => {
       baseVersion: 0,
       seq: 0,
       siteId: "siteA",
+      origin: "command",
       ts: 0,
       ops: [{ type: "splitParagraph", at: { blockId: "p1", offset: 3 }, newBlockId: "siteA-1" } as Op],
     };

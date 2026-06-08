@@ -29,6 +29,7 @@ export class ChangeRecorder {
       baseVersion: this.version,
       seq: this.version,
       siteId: currentSiteId(),
+      origin,
       ts,
       ops,
       selectionAfter,

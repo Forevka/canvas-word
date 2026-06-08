@@ -29,6 +29,10 @@ export interface Change {
   seq?: number;
   /** The session that authored the change (see shared/ids). */
   siteId: string;
+  /** What kind of edit produced this change (audit/filtering; undo and redo are
+   *  recorded as literal forward ops, so this is how they're recognized). Does
+   *  not affect replay. */
+  origin: ChangeOrigin;
   /** Author wall-clock time (ms since epoch); for display/audit only, never for
    *  ordering — seq is the source of truth. */
   ts: number;

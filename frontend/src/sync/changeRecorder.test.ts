@@ -17,6 +17,8 @@ describe("ChangeRecorder", () => {
     expect(c0.siteId).toBe("siteX");
     expect(c0.seq).toBe(0);
     expect(c0.baseVersion).toBe(0);
+    expect(c0.origin).toBe("typing");
+    expect(c1.origin).toBe("command");
     expect(c1.seq).toBe(1);
     expect(c1.baseVersion).toBe(1);
     expect(c0.id).not.toBe(c1.id); // unique idempotency keys
