@@ -1142,9 +1142,24 @@ if (toolbar) {
     zLabel.className = "sb-item sb-zoom";
     right.appendChild(zLabel);
 
+    // Page shown is the one the user is LOOKING AT (scroll), not where the caret
+    // is: the deepest page whose top has scrolled above a line in the upper view.
+    let pageCount = 1;
+    const setPageItem = (): void => {
+      const phs = app.querySelectorAll<HTMLElement>("[data-page]");
+      let current = 1;
+      if (phs.length) {
+        const appRect = app.getBoundingClientRect();
+        const refLine = appRect.top + appRect.height * 0.3;
+        phs.forEach((ph) => {
+          if (ph.getBoundingClientRect().top <= refLine) current = Number(ph.dataset["page"]) + 1;
+        });
+      }
+      pageItem.textContent = `Page ${Math.min(current, pageCount)} of ${pageCount}`;
+    };
+
     refreshStatus = (): void => {
-      const { pageCount, currentPage } = editor.getLayoutInfo();
-      pageItem.textContent = `Page ${currentPage} of ${pageCount}`;
+      pageCount = editor.getLayoutInfo().pageCount;
       let chars = 0;
       let words = 0;
       for (const p of paragraphsOf(editor.getDocument())) {
@@ -1157,7 +1172,11 @@ if (toolbar) {
       const pct = Math.round(editor.getZoom() * 100);
       slider.value = String(Math.min(300, Math.max(50, pct)));
       zLabel.textContent = `${pct}%`;
+      setPageItem();
     };
+    // Scrolling only re-evaluates the visible page (cheap) — not the word count.
+    app.addEventListener("scroll", setPageItem, { passive: true });
+    window.addEventListener("resize", setPageItem);
     refreshStatus();
   }
 }
