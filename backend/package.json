@@ -4,9 +4,21 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
-    "@cw/shared": "*"
+    "@cw/shared": "*",
+    "pg": "^8.13.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "vitest": "^3.0.0"
   }
 }

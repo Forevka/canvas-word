@@ -12,7 +12,9 @@
     "dev": "npm run dev --workspace @cw/frontend",
     "build": "npm run build --workspace @cw/frontend",
     "typecheck": "npm run typecheck --workspace @cw/shared && npm run typecheck --workspace @cw/frontend && npm run typecheck --workspace @cw/backend",
-    "test": "npm run test --workspace @cw/frontend"
+    "test": "npm run test --workspace @cw/shared && npm run test --workspace @cw/frontend && npm run test --workspace @cw/backend",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down"
   },
   "devDependencies": {
     "typescript": "^5.6.0"

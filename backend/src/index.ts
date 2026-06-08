@@ -1,9 +1,6 @@
-// @cw/backend — collaboration server (HTTP + WebSocket) over a Postgres-backed
-// change log. Filled in during Phase 3 (ChangeStore + server) and Phase 4 (OT
-// ordering/broadcast). For now it just proves the shared-core wiring compiles.
+// @cw/backend — collaboration server over a Postgres-backed change log.
+// Public surface for embedders/tests.
 
-import { applyOp } from "@cw/shared";
-
-// Placeholder so the package typechecks before the server lands. Referencing a
-// shared export keeps the @cw/shared resolution path exercised from the backend.
-export const _wiringCheck = typeof applyOp === "function";
+export { createPool, DATABASE_URL } from "./db";
+export { PgChangeStore, type ChangeStore, type DocSnapshotRecord, type MediaRecord } from "./store/ChangeStore";
+export { createApp } from "./server";

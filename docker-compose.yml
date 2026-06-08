@@ -1,0 +1,48 @@
+# Local collaboration backend infra: Postgres + Flyway migrations.
+# Mirrors the conventions in C:\repos\lotane\cortex (postgres + flyway service,
+# bind-mounted migrations, pg_isready healthcheck) but trimmed to a plain
+# postgres image — this store needs no custom extensions.
+#
+#   cp env.example .env        # optional; defaults below work out of the box
+#   docker compose up -d       # postgres comes up, flyway applies migrations
+#
+# Data persists in ./local-db-data (gitignored) across restarts.
+#
+# Vars are CW_-prefixed and the host port defaults to 5544 so this stack never
+# collides with another project's Postgres (e.g. cortex on 5433) or a leaked
+# generic POSTGRES_* env var.
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${CW_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${CW_DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${CW_DB_NAME:-canvasword}
+    volumes:
+      - ./local-db-data:/var/lib/postgresql/data
+    ports:
+      - "${CW_DB_PORT:-5544}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CW_DB_USER:-postgres} -d ${CW_DB_NAME:-canvasword}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  flyway:
+    image: flyway/flyway:11
+    command:
+      - -connectRetries=60
+      - -locations=filesystem:/flyway/sql
+      - repair
+      - migrate
+    volumes:
+      - ./backend/sql/migrations:/flyway/sql:ro
+    environment:
+      FLYWAY_URL: "jdbc:postgresql://postgres:5432/${CW_DB_NAME:-canvasword}"
+      FLYWAY_USER: "${CW_DB_USER:-postgres}"
+      FLYWAY_PASSWORD: "${CW_DB_PASSWORD:-postgres}"
+    depends_on:
+      postgres:
+        condition: service_healthy
