@@ -263,12 +263,20 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
   function paintBlock(ctx: CanvasRenderingContext2D, block: PlacedBlock, pageIndex: number): void {
     if (block.image) {
       const img = getImage(block.image.src, pageIndex);
+      const clip = block.image.clip;
+      if (clip) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(clip.x, clip.y, clip.width, clip.height);
+        ctx.clip();
+      }
       if (img.complete && img.naturalWidth > 0) {
         ctx.drawImage(img, block.x, block.y, block.image.width, block.image.height);
       } else {
         ctx.fillStyle = "#f1f3f4";
         ctx.fillRect(block.x, block.y, block.image.width, block.image.height);
       }
+      if (clip) ctx.restore();
       return;
     }
     if (block.table) {

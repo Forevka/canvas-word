@@ -40,6 +40,9 @@ export interface PlacedImage {
   src: string;
   width: number;
   height: number;
+  /** Clip rect (block-absolute) for object-fit:cover — a sole image filling a
+   *  tall cell is scaled to cover and clipped to the cell box. Absent = no clip. */
+  clip?: { x: number; y: number; width: number; height: number };
 }
 
 export interface PlacedTableCell {

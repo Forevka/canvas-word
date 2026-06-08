@@ -1540,19 +1540,40 @@ function placeTable(
           });
           py += totalLinesHeight(it.lines) + it.block.style.spaceAfterPx;
         } else if (it.kind === "image") {
-          const slack = innerWidth - it.width;
-          const ix =
-            cx + CELL_PAD +
-            (it.block.align === "center" ? slack / 2 : it.block.align === "right" ? slack : 0);
-          blocks.push({
-            blockId: it.block.id,
-            x: ix,
-            y: py,
-            firstLineIndex: 0,
-            lines: [],
-            image: { src: it.block.src, width: it.width, height: it.height },
-          });
-          py += it.height + CELL_BLOCK_GAP;
+          const innerH = cellHeight - 2 * CELL_PAD;
+          // A lone photo in a cell taller than it fits (e.g. a rowSpan comp-photo
+          // column) is filled object-fit:cover — scaled to cover the cell box,
+          // centered, and clipped — instead of sitting at the top over blank space.
+          if (mc.items.length === 1 && innerH > it.height + 8) {
+            const scale = Math.max(innerWidth / it.block.widthPx, innerH / it.block.heightPx);
+            const w = it.block.widthPx * scale;
+            const h = it.block.heightPx * scale;
+            const ix0 = cx + CELL_PAD;
+            const iy0 = ry + CELL_PAD;
+            blocks.push({
+              blockId: it.block.id,
+              x: ix0 + (innerWidth - w) / 2,
+              y: iy0 + (innerH - h) / 2,
+              firstLineIndex: 0,
+              lines: [],
+              image: { src: it.block.src, width: w, height: h, clip: { x: ix0, y: iy0, width: innerWidth, height: innerH } },
+            });
+            py += it.height + CELL_BLOCK_GAP;
+          } else {
+            const slack = innerWidth - it.width;
+            const ix =
+              cx + CELL_PAD +
+              (it.block.align === "center" ? slack / 2 : it.block.align === "right" ? slack : 0);
+            blocks.push({
+              blockId: it.block.id,
+              x: ix,
+              y: py,
+              firstLineIndex: 0,
+              lines: [],
+              image: { src: it.block.src, width: it.width, height: it.height },
+            });
+            py += it.height + CELL_BLOCK_GAP;
+          }
         } else {
           // nested table — placed recursively, read-only inner cells
           blocks.push(placeTable(it.block, it.rows, it.colWidths, cx + CELL_PAD, py, innerWidth));
