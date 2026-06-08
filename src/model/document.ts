@@ -137,6 +137,11 @@ export interface TableCell {
   blocks: Block[];
   /** Horizontal merge: this cell covers N columns (default 1). */
   colSpan?: number;
+  /** Vertical merge: this cell covers N rows (default 1). The cell lives in its
+   *  TOP row; the rows it spans into simply omit a cell for that grid column
+   *  (HTML rowspan semantics), so the importer must drop w:vMerge="continue"
+   *  cells and bump this on the "restart" cell. */
+  rowSpan?: number;
   /** Resolved background fill (CSS color) from w:shd. Absent = no fill. */
   shading?: string;
   /** Resolved per-edge borders. Absent = renderer's default light grid (so

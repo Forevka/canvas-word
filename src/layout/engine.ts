@@ -1234,6 +1234,10 @@ interface MeasuredCell {
   height: number;
   /** Rendered width — colSpan cells cover several columns. */
   width: number;
+  /** First grid column this cell occupies (accounts for rowspan holes above). */
+  colStart: number;
+  /** Vertical merge: rows this cell covers (1 = normal). */
+  rowSpan: number;
 }
 interface MeasuredRow {
   cells: MeasuredCell[];
@@ -1249,13 +1253,23 @@ function measureTable(
 ): { rows: MeasuredRow[]; colWidths: number[]; height: number } {
   const fractions = effectiveFractions(t);
   const colWidths = fractions.map((f) => f * contentWidth);
+  const ncols = colWidths.length;
 
+  // Grid walk: rowsRemaining[c] > 0 means column c is still covered by a rowspan
+  // started in an earlier row, so this row has a "hole" there and its cells shift
+  // right past it (HTML-table column assignment). With no rowSpan anywhere this
+  // reduces exactly to the old left-to-right placement.
+  const rowsRemaining = new Array<number>(ncols).fill(0);
   const rows: MeasuredRow[] = t.rows.map((row) => {
     let col = 0;
     const cells: MeasuredCell[] = row.cells.map((cell) => {
-      const span = cell.colSpan ?? 1;
+      while (col < ncols && rowsRemaining[col]! > 0) col++;
+      const span = Math.max(1, cell.colSpan ?? 1);
+      const rowSpan = Math.max(1, cell.rowSpan ?? 1);
+      const colStart = col;
       let width = 0;
-      for (let k = 0; k < span; k++) width += colWidths[col + k] ?? colWidths[colWidths.length - 1] ?? 40;
+      for (let k = 0; k < span; k++) width += colWidths[col + k] ?? colWidths[ncols - 1] ?? 40;
+      if (rowSpan > 1) for (let k = 0; k < span && col + k < ncols; k++) rowsRemaining[col + k] = rowSpan;
       col += span;
       const innerWidth = Math.max(8, width - 2 * CELL_PAD);
       let h = 0;
@@ -1277,12 +1291,27 @@ function measureTable(
         h += m.height + CELL_BLOCK_GAP;
         return { kind: "table", block: b, ...m };
       });
-      return { cell, items, height: h + 2 * CELL_PAD, width };
+      return { cell, items, height: h + 2 * CELL_PAD, width, colStart, rowSpan };
     });
-    return { cells, height: Math.max(0, ...cells.map((c) => c.height)) };
+    for (let c = 0; c < ncols; c++) if (rowsRemaining[c]! > 0) rowsRemaining[c]!--;
+    return { cells, height: 0 };
   });
 
-  return { rows, colWidths, height: rows.reduce((s, r) => s + r.height, 0) };
+  // Row heights: single-row cells fix their row; a rowspan cell only forces extra
+  // height (added to its last row) when its content exceeds the rows it covers.
+  const rowHeight = rows.map((r) => Math.max(0, ...r.cells.filter((c) => c.rowSpan === 1).map((c) => c.height)));
+  rows.forEach((r, ri) => {
+    for (const mc of r.cells) {
+      if (mc.rowSpan <= 1) continue;
+      const endR = Math.min(rows.length - 1, ri + mc.rowSpan - 1);
+      let span = 0;
+      for (let rr = ri; rr <= endR; rr++) span += rowHeight[rr]!;
+      if (mc.height > span) rowHeight[endR]! += mc.height - span;
+    }
+  });
+  rows.forEach((r, ri) => (r.height = rowHeight[ri]!));
+
+  return { rows, colWidths, height: rowHeight.reduce((s, h) => s + h, 0) };
 }
 
 function totalLinesHeight(lines: LineBox[]): number {
@@ -1300,12 +1329,24 @@ function placeTable(
   width: number,
   firstRowIndex = 0,
 ): PlacedBlock {
+  // Cumulative grid-column x offsets, so a cell lands at its colStart regardless
+  // of rowspan holes in this row; and cumulative row y within the chunk, so a
+  // rowspan cell's height = the sum of the rows it covers (clamped to the chunk
+  // if a vertical merge straddles a page break).
+  const colX = [0];
+  for (const w of colWidths) colX.push(colX[colX.length - 1]! + w);
+  const rowY = [y];
+  for (const row of rows) rowY.push(rowY[rowY.length - 1]! + row.height);
+
   const placedRows = [];
-  let ry = y;
-  for (const row of rows) {
+  for (let lr = 0; lr < rows.length; lr++) {
+    const row = rows[lr]!;
+    const ry = rowY[lr]!;
     const cells = [];
-    let cx = x;
     for (const mc of row.cells) {
+      const cx = x + (colX[mc.colStart] ?? colX[colX.length - 1]!);
+      const endLr = Math.min(rows.length - 1, lr + mc.rowSpan - 1);
+      const cellHeight = rowY[endLr + 1]! - ry;
       const blocks: PlacedBlock[] = [];
       const innerWidth = mc.width - 2 * CELL_PAD;
       let py = ry + CELL_PAD;
@@ -1344,15 +1385,13 @@ function placeTable(
         x: cx,
         y: ry,
         width: mc.width,
-        height: row.height,
+        height: cellHeight,
         blocks,
         ...(mc.cell.shading !== undefined ? { shading: mc.cell.shading } : {}),
         ...(mc.cell.borders !== undefined ? { borders: mc.cell.borders } : {}),
       });
-      cx += mc.width;
     }
     placedRows.push({ y: ry, height: row.height, cells });
-    ry += row.height;
   }
   const height = rows.reduce((s, r) => s + r.height, 0);
   return {
