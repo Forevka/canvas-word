@@ -1,3 +1,4 @@
+import { configureIds } from "@cw/shared";
 import { createEditor, type CurrentFormat } from "./index";
 import { createLayoutEngine } from "./layout/engine";
 import { sampleDoc } from "./model/sampleDoc";
@@ -13,6 +14,11 @@ import { TOOLBAR_FONTS } from "./fonts/clones";
 // matches the PDF/DOCX exporters exactly, with no dependency on system fonts.
 await loadEditorFonts();
 await document.fonts.ready;
+
+// Give this editor session a unique siteId so every block/cell id it mints is
+// disjoint from other collaborating clients' ids (see shared/ids). A short
+// random token is enough; the server later assigns the authoritative ordering.
+configureIds(crypto.randomUUID().slice(0, 8));
 
 const app = document.getElementById("app");
 if (!app) throw new Error("#app not found");

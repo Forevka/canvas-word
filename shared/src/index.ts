@@ -10,3 +10,9 @@ export * from "./model/text";
 export * from "./model/stylesheet";
 export * from "./model/lists";
 export * from "./model/ops";
+
+// Collaboration foundations: unique ids, content-addressed media, and
+// document <-> snapshot serialization.
+export * from "./ids";
+export * from "./persist/media";
+export * from "./persist/serialize";

@@ -5,7 +5,7 @@ import type { Block, CharStyle, ImageBlock, ParaStyle, Paragraph, Run, SdtProps,
 import type { DocPosition, DocSelection } from "@cw/shared";
 import { isCollapsed } from "@cw/shared";
 import type { Op, SectionGeometry } from "@cw/shared";
-import { sliceRuns, applyStylePatchToRuns, mapTextInRuns, containerOf, containerBlocks, locateImage } from "@cw/shared";
+import { sliceRuns, applyStylePatchToRuns, mapTextInRuns, containerOf, containerBlocks, locateImage, freshId } from "@cw/shared";
 import {
   blockById,
   blockIndexOf,
@@ -27,8 +27,10 @@ const caret = (blockId: string, offset: number): DocSelection => ({
   focus: { blockId, offset },
 });
 
-let blockIdCounter = 0;
-const freshBlockId = (): string => `n${Date.now().toString(36)}_${blockIdCounter++}`;
+// Block/cell ids come from the shared, siteId-namespaced generator so two
+// collaborating clients never mint the same id (see shared/ids). The frontend
+// configures the siteId at startup (configureIds in main.ts).
+const freshBlockId = (): string => freshId();
 
 /** Order a selection by document position (model order, no layout needed). */
 function orderedRange(state: EditorState, sel: DocSelection): [DocPosition, DocPosition] {

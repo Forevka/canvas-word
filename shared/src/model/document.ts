@@ -118,7 +118,16 @@ export interface ImageBlock {
   kind: "image";
   id: string;
   revision: number;
+  /** Runtime image URL (a session-local `blob:` or an inline `data:` URL). NOT
+   *  portable — a `blob:` URL dies with the tab and means nothing to the server.
+   *  Persistence/replication addresses the bytes by `mediaId` instead and
+   *  rehydrates `src` on load (see shared/persist/media + serialize). */
   src: string;
+  /** Content address of the image bytes (`sha256(bytes)` hex). The portable,
+   *  stable handle stored in snapshots and ops; absent only for legacy images
+   *  not yet registered in a MediaStore (then `src` may carry an inline data:
+   *  URL as a fallback). */
+  mediaId?: string;
   widthPx: number;
   heightPx: number;
   align: "left" | "center" | "right";
