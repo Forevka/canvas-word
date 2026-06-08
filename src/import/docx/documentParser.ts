@@ -31,6 +31,11 @@ interface ParseCtx {
    *  across body and band parts so ids never collide. */
   sdts: Record<string, IRSdtProps>;
   nextSdt: { n: number };
+  /** Bookmark names seen between paragraphs (block-level w:bookmarkStart),
+   *  attached to the NEXT paragraph. */
+  pendingBookmarks: string[];
+  /** Bookmark names collected inside the paragraph currently being walked. */
+  currentBookmarks: string[] | null;
 }
 
 export function parseDocumentXml(xmlText: string, partName: string, warnings: WarningSink): IRDocument {
@@ -40,7 +45,7 @@ export function parseDocumentXml(xmlText: string, partName: string, warnings: Wa
     throw new ImportError("MALFORMED_XML", `${partName} has no w:document/w:body root.`);
   }
   const sdts: Record<string, IRSdtProps> = {};
-  const ctx: ParseCtx = { warnings, fieldTokens: false, sdts, nextSdt: { n: 0 } };
+  const ctx: ParseCtx = { warnings, fieldTokens: false, sdts, nextSdt: { n: 0 }, pendingBookmarks: [], currentBookmarks: null };
 
   const blocks: IRBlock[] = [];
   walkBlocks(children(body), blocks, ctx);
@@ -64,10 +69,16 @@ export function parseHeaderFooterXml(
   if (!root) {
     throw new ImportError("MALFORMED_XML", `${partName} has no w:hdr/w:ftr root.`);
   }
-  const ctx: ParseCtx = { warnings, fieldTokens: true, sdts, nextSdt: { n: Object.keys(sdts).length } };
+  const ctx: ParseCtx = { warnings, fieldTokens: true, sdts, nextSdt: { n: Object.keys(sdts).length }, pendingBookmarks: [], currentBookmarks: null };
   const blocks: IRBlock[] = [];
   walkBlocks(children(root), blocks, ctx);
   return blocks;
+}
+
+const BOOKMARK_IGNORE = new Set(["_GoBack", "_Toc_Placeholder"]);
+function bookmarkName(node: XmlNode): string | null {
+  const name = attr(node, "w:name");
+  return name && !BOOKMARK_IGNORE.has(name) ? name : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -100,10 +111,16 @@ function walkBlocks(nodes: XmlNode[], out: IRBlock[], ctx: ParseCtx): void {
         out.push(...inner);
         break;
       }
+      case "w:bookmarkStart": {
+        // Block-level bookmark — attach to the next paragraph.
+        const name = bookmarkName(node);
+        if (name) ctx.pendingBookmarks.push(name);
+        break;
+      }
       case "w:sectPr":
         break; // handled by the caller
       default:
-        break; // bookmarks, proofing marks, etc.
+        break; // proofing marks, etc.
     }
   }
 }
@@ -115,11 +132,19 @@ function parseParagraph(p: XmlNode, ctx: ParseCtx): IRParagraph {
   const pPr = el(p, "w:pPr");
   const props = pPr ? decodeParaProps(pPr, ctx.warnings) : {};
   const inlines: IRInline[] = [];
+  // Bookmarks: block-level ones that preceded this paragraph, plus any
+  // w:bookmarkStart found inside it (collected during walkInlines).
+  const bookmarks = ctx.pendingBookmarks;
+  ctx.pendingBookmarks = [];
+  ctx.currentBookmarks = bookmarks;
   // Complex fields (w:fldChar begin → instr → separate → result → end) span
   // multiple runs; the state lives at paragraph scope.
   const field: FieldState = { depth: 0, instr: "", suppressResult: false };
   walkInlines(children(p), inlines, ctx, field);
-  return { kind: "paragraph", props, inlines };
+  ctx.currentBookmarks = null;
+  const para: IRParagraph = { kind: "paragraph", props, inlines };
+  if (bookmarks.length > 0) para.bookmarks = bookmarks;
+  return para;
 }
 
 interface FieldState {
@@ -195,8 +220,13 @@ function walkInlines(nodes: XmlNode[], out: IRInline[], ctx: ParseCtx, field: Fi
         break;
       case "w:del": // tracked deletion — content is already "deleted"
         break;
+      case "w:bookmarkStart": {
+        const name = bookmarkName(node);
+        if (name && ctx.currentBookmarks) ctx.currentBookmarks.push(name);
+        break;
+      }
       default:
-        break; // w:pPr, w:proofErr, w:bookmarkStart/End, comment ranges, …
+        break; // w:pPr, w:proofErr, w:bookmarkEnd, comment ranges, …
     }
   }
 }

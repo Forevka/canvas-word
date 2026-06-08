@@ -210,4 +210,7 @@ export interface Document {
   footnotes?: Record<string, Paragraph[]>;
   /** Content-control properties keyed by sdtId (runs carry the membership). */
   sdts?: Record<string, SdtProps>;
+  /** Bookmark name → id of the block it sits in (docx w:bookmarkStart). Targets
+   *  for in-document anchor links ("#name" — TOC entries, cross-references). */
+  bookmarks?: Record<string, string>;
 }

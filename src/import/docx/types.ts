@@ -159,6 +159,8 @@ export interface IRParagraph {
   kind: "paragraph";
   props: IRParaProps;
   inlines: IRInline[];
+  /** w:bookmarkStart names anchored in this paragraph (TOC/cross-ref targets). */
+  bookmarks?: string[];
 }
 
 export interface IRTableCell {

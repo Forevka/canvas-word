@@ -65,6 +65,10 @@ export interface SelectionControllerDeps {
   onTab(backward: boolean): boolean;
   /** Move the caret to a block's start and scroll it into view (TOC jump). */
   jumpToBlock(blockId: string): void;
+  /** Ctrl+click on an in-document anchor link (#bookmark). `fromBlockId` is the
+   *  clicked paragraph (used to resolve the target by text when the bookmark
+   *  isn't modeled). The wiring scrolls to the resolved heading. */
+  onAnchorJump(anchorName: string, fromBlockId: string | null): void;
   /** Single click landed on a content control. Return true to CONSUME the
    *  press (checkbox toggle); false lets the caret place normally (dropdown /
    *  date popups open beside the caret). */
@@ -202,7 +206,15 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
       const href = linkAt(deps.getTree(), pt.pageIndex, pt.x, pt.y, scope());
       if (href) {
         ev.preventDefault();
-        window.open(href, "_blank", "noopener");
+        if (href.startsWith("#")) {
+          // In-document anchor (TOC entry, cross-reference): scroll to the
+          // target instead of opening a tab. The clicked paragraph's text is
+          // used to resolve the heading when bookmarks aren't modeled.
+          const pos = hitTest(deps.getTree(), pt.pageIndex, pt.x, pt.y, scope());
+          deps.onAnchorJump(href.slice(1), pos?.blockId ?? null);
+        } else {
+          window.open(href, "_blank", "noopener");
+        }
         return;
       }
       const pos = hitTest(deps.getTree(), pt.pageIndex, pt.x, pt.y, scope());

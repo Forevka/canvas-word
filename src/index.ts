@@ -903,6 +903,13 @@ export function createEditor(
       const rect = caretRect(tree, { blockId, offset: 0 });
       if (rect) paint.ensureVisible(rect);
     },
+    onAnchorJump: (anchorName: string, fromBlockId: string | null): void => {
+      const target = resolveAnchorTarget(anchorName, fromBlockId);
+      if (!target) return;
+      setSelection({ anchor: { blockId: target, offset: 0 }, focus: { blockId: target, offset: 0 } });
+      const rect = caretRect(tree, { blockId: target, offset: 0 });
+      if (rect) paint.ensureVisible(rect);
+    },
   });
 
   const keymapHandler = createKeymapHandler({ dispatch, undo, redo, toggleStyle });
@@ -1296,6 +1303,13 @@ export function createEditor(
     }
 
     return entries;
+  };
+
+  /** Resolve an in-document anchor (TOC entry / cross-ref) to a target block
+   *  via the modeled bookmarks (docx w:bookmarkStart). */
+  const resolveAnchorTarget = (anchorName: string, _fromBlockId: string | null): string | null => {
+    const target = doc.bookmarks?.[anchorName];
+    return target && blockById(doc, target) ? target : null;
   };
 
   const onContextMenu = (ev: MouseEvent): void => {

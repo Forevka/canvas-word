@@ -87,6 +87,8 @@ export interface Mapper {
   emptyParagraph(): Paragraph;
   /** Model list definitions for the lists actually referenced — for Document.lists. */
   lists(): Record<string, ListDefinition>;
+  /** Bookmark name → model block id, collected across all mapped stories. */
+  bookmarks(): Record<string, string>;
 }
 
 export function createMapper(
@@ -98,6 +100,9 @@ export function createMapper(
   // Import-distinct id prefix: commands.ts mints `n…`, sampleDoc `b…`.
   let nextId = 0;
   const id = (): string => `i${nextId++}`;
+
+  // Bookmark name → the id of the first model paragraph it anchors.
+  const bookmarkMap: Record<string, string> = {};
 
   // Model list definitions, built lazily for referenced numIds only (a report
   // carries far more definitions than it uses).
@@ -268,6 +273,10 @@ export function createMapper(
         p.style.indentLeftPx = round2(p.style.indentLeftPx + listLevelIndentPx);
       }
     });
+    // Bookmarks anchored in this paragraph point at its first emitted block.
+    if (ir.bookmarks && ir.bookmarks.length > 0 && blocks[0]) {
+      for (const name of ir.bookmarks) bookmarkMap[name] = blocks[0]!.id;
+    }
     return blocks;
   }
 
@@ -392,7 +401,13 @@ export function createMapper(
     };
   }
 
-  return { mapBlocks, mapSection, emptyParagraph, lists: () => Object.fromEntries(usedLists) };
+  return {
+    mapBlocks,
+    mapSection,
+    emptyParagraph,
+    lists: () => Object.fromEntries(usedLists),
+    bookmarks: () => bookmarkMap,
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -78,6 +78,8 @@ export function runImport(
   if (Object.keys(sdts).length > 0) doc.sdts = sdts;
   const lists = mapper.lists();
   if (Object.keys(lists).length > 0) doc.lists = lists;
+  const bookmarks = mapper.bookmarks();
+  if (Object.keys(bookmarks).length > 0) doc.bookmarks = bookmarks;
   // Style gallery: used paragraph styles (+ basedOn closure) with w:name labels.
   const stylesheet = buildStylesheet(styles, collectUsedStyleIds(ir.blocks));
   if (stylesheet) doc.stylesheet = stylesheet;

@@ -49,6 +49,9 @@ export interface PaintScheduler {
 
 const PAGE_GAP_PX = 24;
 const SELECTION_COLOR = "rgba(38, 111, 219, 0.28)";
+// Office "Hyperlink" character-style blues — normalized to text color when they
+// arrive on an in-document anchor (TOC/cross-ref), so those read as plain text.
+const HYPERLINK_BLUES = new Set(["#0563c1", "#0000ff", "#0000ee", "#0b57d0", "#0066cc", "#1155cc"]);
 
 let caretCssInjected = false;
 function injectCaretCss(): void {
@@ -326,14 +329,21 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
           ctx.fillRect(x, block.y + line.y, frag.width, line.height);
         }
         ctx.font = charStyleToFont(s);
-        // hyperlinks paint blue+underlined at render time (model keeps the
-        // user's own color so removing the link restores it)
-        ctx.fillStyle = s.link ? "#0b57d0" : s.color;
+        // EXTERNAL hyperlinks paint blue+underlined as an affordance. In-document
+        // anchors ("#bookmark" — TOC entries, cross-references) read as normal
+        // paragraph text like Word: drop the underline, and normalize the
+        // imported Hyperlink-style blue to text color (other colors kept).
+        const anchorLink = s.link !== undefined && s.link.startsWith("#");
+        const externalLink = s.link !== undefined && !anchorLink;
+        let color = s.color;
+        if (externalLink) color = "#0b57d0";
+        else if (anchorLink && HYPERLINK_BLUES.has(s.color.toLowerCase())) color = "#202124";
+        ctx.fillStyle = color;
         (ctx as CanvasRenderingContext2D & { wordSpacing: string }).wordSpacing =
           `${frag.wordSpacingPx ?? 0}px`;
         ctx.fillText(frag.text, x, baselineY + vShift);
 
-        if (s.underline || s.link) {
+        if (externalLink || (s.underline && !anchorLink)) {
           ctx.fillRect(x, baselineY + vShift + 1.5, frag.width, Math.max(1, s.fontSizePx / 14));
         }
         if (s.strikethrough) {
