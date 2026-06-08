@@ -603,6 +603,8 @@ export function createMapper(
       section.columns = { count: ir.columns.count, gapPx: round2(twipsToPx(ir.columns.spaceTwips ?? 720)) };
     }
     if (ir.pageNumberStart !== undefined) section.pageNumberStart = ir.pageNumberStart;
+    if (ir.headerDistTwips !== undefined) section.headerDistancePx = round2(twipsToPx(ir.headerDistTwips));
+    if (ir.footerDistTwips !== undefined) section.footerDistancePx = round2(twipsToPx(ir.footerDistTwips));
     return section;
   }
 

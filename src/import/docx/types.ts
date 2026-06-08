@@ -277,6 +277,9 @@ export interface IRSection {
   pageWidthTwips?: number;
   pageHeightTwips?: number;
   marginTwips?: { top: number; right: number; bottom: number; left: number };
+  /** w:pgMar/@w:header and @w:footer — band distances from the page edges (twips). */
+  headerDistTwips?: number;
+  footerDistTwips?: number;
   /** w:headerReference / w:footerReference by type — r:id into the document
    *  part's rels; the referenced parts are parsed separately. Variants are
    *  gated downstream (first by w:titlePg, even by settings evenAndOdd). */

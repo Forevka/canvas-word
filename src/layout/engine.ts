@@ -503,11 +503,31 @@ export function effectiveSection(base: SectionProps, patch: SectionPatch): Secti
   if (columns) out.columns = columns;
   // page-number restart is a section's OWN property — never inherited
   if (patch.pageNumberStart !== undefined) out.pageNumberStart = patch.pageNumberStart;
+  // Band distances inherit from the document section (the report sets them once).
+  const headerDist = patch.headerDistancePx ?? base.headerDistancePx;
+  if (headerDist !== undefined) out.headerDistancePx = headerDist;
+  const footerDist = patch.footerDistancePx ?? base.footerDistancePx;
+  if (footerDist !== undefined) out.footerDistancePx = footerDist;
   for (const key of BAND_KEYS) {
     const blocks = patch[key] ?? base[key];
     if (blocks) out[key] = blocks;
   }
   return out;
+}
+
+/** Top Y of the header band. Word anchors the header's TOP edge at w:header from
+ *  the page top (the band grows down); absent that, center it in the top margin. */
+function headerBandTop(s: SectionProps, bandHeight: number): number {
+  if (s.headerDistancePx !== undefined) return s.headerDistancePx;
+  return Math.max(8, (s.marginPx.top - bandHeight) / 2);
+}
+
+/** Top Y of the footer band. Word anchors the footer's BOTTOM edge at w:footer
+ *  from the page bottom (the band grows up), so a tall footer sits higher than a
+ *  bottom-flush one; absent that, center it in the bottom margin. */
+function footerBandTop(s: SectionProps, bandHeight: number): number {
+  if (s.footerDistancePx !== undefined) return s.pageHeightPx - s.footerDistancePx - bandHeight;
+  return s.pageHeightPx - Math.max(8, (s.marginPx.bottom - bandHeight) / 2) - bandHeight;
 }
 
 interface ResolvedSection {
@@ -555,15 +575,33 @@ function layoutDocument(
       const cx = s.marginPx.left;
       const heightOf = (blocks: Block[]): number =>
         layoutBand(blocks, cw, cx, 999, 999, bandProbeCache!, false).height;
+      // Height from the band's FIRST visible row to its bottom — leading blank
+      // lines don't need exclusive body space (they overlap the body's blank tail).
+      const bandVisibleHeight = (blocks: Block[]): number => {
+        const band = layoutBand(blocks, cw, cx, 999, 999, bandProbeCache!, false);
+        for (const pb of band.placed) {
+          const visible = !!pb.table || !!pb.image || pb.lines.some((l) => l.fragments.some((f) => f.text.trim().length > 0));
+          if (visible) return band.height - pb.y;
+        }
+        return 0;
+      };
       const headerH = headers.reduce((m, b) => Math.max(m, heightOf(b)), 0);
       if (headerH > 0) {
-        const y0 = Math.max(8, (s.marginPx.top - headerH) / 2);
+        const y0 = headerBandTop(s, headerH);
         top = Math.max(top, y0 + headerH + BAND_GAP);
       }
       const footerH = footers.reduce((m, b) => Math.max(m, heightOf(b)), 0);
       if (footerH > 0) {
-        const y0 = s.pageHeightPx - Math.max(8, (s.marginPx.bottom - footerH) / 2) - footerH;
-        bottom = Math.min(bottom, y0 - BAND_GAP);
+        if (s.footerDistancePx !== undefined) {
+          // Anchored footer: reserve down to its first VISIBLE row, not the band
+          // top. Leading blank footer lines may overlap the body's (also blank)
+          // tail — reserving them would strand a trailing blank line on a new page.
+          const footerBottom = s.pageHeightPx - s.footerDistancePx;
+          const visibleH = footers.reduce((m, b) => Math.max(m, bandVisibleHeight(b)), 0);
+          bottom = Math.min(bottom, footerBottom - visibleH);
+        } else {
+          bottom = Math.min(bottom, footerBandTop(s, footerH) - BAND_GAP);
+        }
       }
       bottom = Math.max(bottom, top + 24); // degenerate giant bands: keep a sliver
     }
@@ -1287,7 +1325,7 @@ function layoutDocument(
       if (header) {
         const raw = rawBand === "header";
         const band = layoutBand(header.blocks, cw, cx, pageNum, pages.length, bandCache, raw);
-        const y0 = Math.max(8, (ps.marginPx.top - band.height) / 2);
+        const y0 = headerBandTop(ps, band.height);
         pg.header = band.placed.map((b) => shiftPlaced(b, y0));
         pg.headerSource = header.source;
       }
@@ -1295,7 +1333,7 @@ function layoutDocument(
       if (footer) {
         const raw = rawBand === "footer";
         const band = layoutBand(footer.blocks, cw, cx, pageNum, pages.length, bandCache, raw);
-        const y0 = ps.pageHeightPx - Math.max(8, (ps.marginPx.bottom - band.height) / 2) - band.height;
+        const y0 = footerBandTop(ps, band.height);
         pg.footer = band.placed.map((b) => shiftPlaced(b, y0));
         pg.footerSource = footer.source;
       }

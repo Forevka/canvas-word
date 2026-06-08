@@ -577,6 +577,10 @@ function parseSection(sectPr: XmlNode, warnings: WarningSink): IRSection {
     if (top !== undefined && right !== undefined && bottom !== undefined && left !== undefined) {
       section.marginTwips = { top, right, bottom, left };
     }
+    const headerDist = numAttr(pgMar, "w:header");
+    if (headerDist !== undefined) section.headerDistTwips = headerDist;
+    const footerDist = numAttr(pgMar, "w:footer");
+    if (footerDist !== undefined) section.footerDistTwips = footerDist;
   }
   const headerRefs = bandRefs(els(sectPr, "w:headerReference"));
   if (headerRefs) section.headerRefs = headerRefs;

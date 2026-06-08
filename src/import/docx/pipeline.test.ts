@@ -338,6 +338,16 @@ describe("docx pipeline — section and container", () => {
     expect(r.doc.section.pageWidthPx).toBe(816);
   });
 
+  it("maps the w:header / w:footer band distances to px", () => {
+    const r = importBody(
+      `<w:p><w:r><w:t>x</w:t></w:r></w:p>` +
+        `<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>` +
+        `<w:pgMar w:top="1440" w:right="1440" w:bottom="720" w:left="1440" w:header="720" w:footer="360"/></w:sectPr>`,
+    );
+    expect(r.doc.section.headerDistancePx).toBe(48); // 720 twips
+    expect(r.doc.section.footerDistancePx).toBe(24); // 360 twips
+  });
+
   it("yields one empty paragraph for an empty body (caret needs a home)", () => {
     const r = importBody(``);
     expect(r.doc.blocks).toHaveLength(1);

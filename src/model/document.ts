@@ -227,6 +227,11 @@ export interface SectionPatch {
   columns?: { count: number; gapPx: number } | null;
   /** Restart page numbering at this section (absent = continue counting). */
   pageNumberStart?: number;
+  /** w:pgMar/@w:header — distance (px) from the page TOP to the header's top edge. */
+  headerDistancePx?: number;
+  /** w:pgMar/@w:footer — distance (px) from the page BOTTOM to the footer's bottom
+   *  edge (ECMA-376). The footer grows upward from there. */
+  footerDistancePx?: number;
   header?: Block[];
   footer?: Block[];
   headerFirst?: Block[];
@@ -246,6 +251,12 @@ export interface SectionProps {
   /** Restart page numbering at this section's first page ({page} tokens).
    *  Absent = continue counting from the previous page. */
   pageNumberStart?: number;
+  /** w:pgMar/@w:header — distance (px) from the page TOP to the header's top edge
+   *  (header grows down). Absent = center the band in the top margin. */
+  headerDistancePx?: number;
+  /** w:pgMar/@w:footer — distance (px) from the page BOTTOM to the footer's bottom
+   *  edge (footer grows up). Absent = center the band in the bottom margin. */
+  footerDistancePx?: number;
   /** Header/footer are full block stories (paragraphs, images, tables) laid out
    *  by the same engine into the margin bands. {page}/{pages} tokens in run text
    *  are substituted per page ({page:roman|Roman|alpha|Alpha} formats). The

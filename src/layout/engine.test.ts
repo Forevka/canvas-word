@@ -419,3 +419,21 @@ describe("engine — tall header pushes the body", () => {
     expect(tree.pages[0]!.contentTopPx).toBeGreaterThan(SECTION.marginPx.top);
   });
 });
+
+describe("engine — footer band distance", () => {
+  const footerBottom = (tree: ReturnType<typeof layout>): number =>
+    Math.max(...tree.pages[0]!.footer!.flatMap((b) => b.lines.map((l) => b.y + l.y + l.height)));
+
+  it("anchors the footer's bottom edge at the footer distance from the page bottom", () => {
+    const tree = layout(doc([para("body")], { footer: [para("F")], footerDistancePx: 30 }));
+    expect(footerBottom(tree)).toBeCloseTo(SECTION.pageHeightPx - 30, 0);
+  });
+
+  it("centers the footer in the bottom margin when no distance is set", () => {
+    const tree = layout(doc([para("body")], { footer: [para("F")] }));
+    // sits inside the bottom margin, not pinned to a fixed distance.
+    const bottom = footerBottom(tree);
+    expect(bottom).toBeLessThan(SECTION.pageHeightPx);
+    expect(bottom).toBeGreaterThan(SECTION.pageHeightPx - SECTION.marginPx.bottom);
+  });
+});
