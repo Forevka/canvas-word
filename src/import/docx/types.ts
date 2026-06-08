@@ -168,6 +168,27 @@ export interface IRParagraph {
   bookmarks?: string[];
 }
 
+/** One raw border edge (w:top/w:left/… inside w:tblBorders or w:tcBorders).
+ *  Kept raw (OOXML units) until mapToModel collapses the cascade to px. */
+export interface IRRawBorder {
+  /** w:val — "single", "double", "dashed", "nil"/"none", … */
+  val: string;
+  /** w:sz — eighths of a point. */
+  sizeEighthPt?: number;
+  /** w:color — hex without '#', or "auto". */
+  color?: string;
+}
+
+export interface IRBorders {
+  top?: IRRawBorder;
+  left?: IRRawBorder;
+  bottom?: IRRawBorder;
+  right?: IRRawBorder;
+  /** Interior horizontal/vertical edges (w:tblBorders only). */
+  insideH?: IRRawBorder;
+  insideV?: IRRawBorder;
+}
+
 export interface IRTableCell {
   /** Full block content: paragraphs, images (inside paragraphs), nested tables. */
   blocks: IRBlock[];
@@ -175,6 +196,10 @@ export interface IRTableCell {
   gridSpan: number;
   /** w:vMerge continuation — this cell is swallowed by the cell above. */
   vMergeContinue: boolean;
+  /** w:tcPr/w:tcBorders. */
+  borders?: IRBorders;
+  /** w:tcPr/w:shd → CSS fill. */
+  shd?: string;
 }
 
 export interface IRTableRow {
@@ -186,6 +211,12 @@ export interface IRTable {
   rows: IRTableRow[];
   /** w:tblGrid/w:gridCol widths — become TableBlock.colFractions. */
   colWidthsTwips?: number[];
+  /** w:tblPr/w:tblStyle — table style id (its borders/shd are the cascade base). */
+  styleId?: string;
+  /** w:tblPr/w:tblBorders. */
+  borders?: IRBorders;
+  /** w:tblPr/w:shd → CSS fill applied to every cell unless overridden. */
+  shd?: string;
 }
 
 export type IRBlock = IRParagraph | IRTable;

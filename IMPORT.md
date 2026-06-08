@@ -165,6 +165,8 @@ than a silent drop:
 | `w:br` (soft line break) | no soft breaks | Split into a new paragraph with `spaceBefore/After: 0` |
 | `w:tab` | no tab stops | Replace with fixed spaces (warning) |
 | `gridSpan` | — | Faithful: maps to `TableCell.colSpan` (and `w:tblGrid` → `colFractions`) |
+| Table borders | `TableCell.borders` | Faithful: cascade table style → `w:tblBorders` → `w:tcBorders` collapsed per-edge (inside/outside selection; first-definition-wins, `nil` suppresses). Unstyled tables keep the renderer's default grid |
+| Table/cell shading | `TableCell.shading` | Faithful: `w:shd[@w:fill]` (cell over table over style); pattern shading approximated by its color |
 | `vMerge` | no row spans | Continuation cells stay as separate (empty) cells; warning |
 | Explicit page breaks (`w:br type="page"`, `w:pageBreakBefore`) | — | Faithful: map to `ParaStyle.pageBreakBefore` (inline breaks split the paragraph; the follower carries the break) |
 | Multiple sections | single `SectionProps` | Page *geometry*: body-level `sectPr` wins (last section), with warning. Page *boundaries*: non-continuous section breaks set `pageBreakBefore` on the following block |
@@ -207,8 +209,12 @@ or rich headers, the importer seam already collects the data (the IR keeps it; o
    de-duplication, Symbol/Wingdings bullet normalization); external/anchor hyperlinks →
    `CharStyle.link` (resolved through each part's rels); `w:highlight` →
    `highlightColor`; `w:vertAlign` → `verticalAlign`.
+5. ✅ **Footnotes, keepLines, columns, page-number restart, table borders & shading** —
+   `footnotes.xml` → `Document.footnotes` + `footnoteRef`; `w:keepLines` →
+   `keepLinesTogether`; `w:cols` → `SectionProps.columns`; `w:pgNumType` →
+   `pageNumberStart`; table border/shading cascade → `TableCell.borders`/`shading`.
 
-Still on the backlog (lower impact / need model or layout support): table borders &
-shading, cell vertical-merge row spans, footnotes (`footnotes.xml` → `Document.footnotes`),
-tab-stop positions, first/even header variants, east-asian/complex-script fonts, a
-warnings-summary UI toast.
+Still on the backlog (need model or layout support): cell vertical-merge row spans,
+tab-stop positions, table-style *conditional* formatting (firstRow/banding via
+`w:tblStylePr`), first/even header variants, east-asian/complex-script fonts, OMML math,
+a warnings-summary UI toast.

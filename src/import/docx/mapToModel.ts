@@ -24,9 +24,10 @@ import type {
 import type { NamedStyle, Stylesheet } from "../../model/stylesheet";
 import type { ListDefinition, ListLevel, ListNumberFormat } from "../../model/lists";
 import { normalizeRuns } from "../../model/ops";
+import { resolveCellBorders, type BorderSources, type CellPosition } from "./borders";
 import type { MediaStore } from "./media";
 import type { NumberingData } from "./numbering";
-import type { StyleResolver, StylesData } from "./styles";
+import type { ResolvedTableStyle, StyleResolver, StylesData } from "./styles";
 import type {
   IRBlock,
   IRInline,
@@ -37,6 +38,7 @@ import type {
   IRSdtProps,
   IRSection,
   IRTable,
+  IRTableCell,
 } from "./types";
 import { WarningSink } from "./types";
 import { emuToPx, halfPointsToPx, round2, twipsToPx } from "./units";
@@ -99,6 +101,7 @@ export function createMapper(
   resolver: StyleResolver,
   sdts: Record<string, IRSdtProps> = {},
   numbering: NumberingData = new Map(),
+  tableStyle: (styleId: string) => ResolvedTableStyle = () => ({}),
 ): Mapper {
   // Import-distinct id prefix: commands.ts mints `n…`, sampleDoc `b…`.
   let nextId = 0;
@@ -361,12 +364,54 @@ export function createMapper(
   // -------------------------------------------------------------------------
   // Tables — cells are full block stories; gridSpan maps to colSpan.
 
-  function mapTable(ir: IRTable, media: MediaStore, resolveLink: LinkResolver): TableBlock {
-    const emptyCell = (): TableCell => ({ id: id(), blocks: [emptyParagraph()] });
-    const spanSum = (cells: TableCell[]): number => cells.reduce((s, c) => s + (c.colSpan ?? 1), 0);
+  /** Collapse the OOXML border/shading cascade onto every cell of a squared-off
+   *  grid. Borders are set only when the table carries border info at SOME layer
+   *  (style, table, or any cell) — otherwise they're left absent so the renderer
+   *  draws its default light grid for native/unstyled tables. */
+  function resolveTableStyling(
+    ir: IRTable,
+    grid: { cell: TableCell; ir: IRTableCell | null }[][],
+    width: number,
+  ): void {
+    const styled = ir.styleId ? tableStyle(ir.styleId) : {};
+    const hasBorderInfo =
+      !!styled.borders || !!ir.borders || ir.rows.some((r) => r.cells.some((c) => c.borders));
+    const lastRow = grid.length - 1;
 
-    const rows = ir.rows.map((irRow) => {
-      const cells: TableCell[] = [];
+    grid.forEach((row, ri) => {
+      let col = 0;
+      for (const { cell, ir: irCell } of row) {
+        const span = cell.colSpan ?? 1;
+        const pos: CellPosition = {
+          top: ri === 0,
+          bottom: ri === lastRow,
+          left: col === 0,
+          right: col + span - 1 === width - 1,
+        };
+        // Cell shading wins over table, table over style.
+        const shd = irCell?.shd ?? ir.shd ?? styled.shd;
+        if (shd) cell.shading = shd;
+        if (hasBorderInfo) {
+          const src: BorderSources = { cell: irCell?.borders, table: ir.borders, style: styled.borders };
+          cell.borders = resolveCellBorders(src, pos);
+        }
+        col += span;
+      }
+    });
+  }
+
+  function mapTable(ir: IRTable, media: MediaStore, resolveLink: LinkResolver): TableBlock {
+    // Cell paired with its source IR (null for padding cells) so the border /
+    // shading pass can read direct formatting after the grid is squared off.
+    interface Built {
+      cell: TableCell;
+      ir: IRTableCell | null;
+    }
+    const padCell = (): Built => ({ cell: { id: id(), blocks: [emptyParagraph()] }, ir: null });
+    const spanSum = (row: Built[]): number => row.reduce((s, b) => s + (b.cell.colSpan ?? 1), 0);
+
+    const built: Built[][] = ir.rows.map((irRow) => {
+      const row: Built[] = [];
       for (const irCell of irRow.cells) {
         if (irCell.vMergeContinue) {
           // No vertical spans in the model — the continuation stays as its own
@@ -380,17 +425,20 @@ export function createMapper(
         }
         const cell: TableCell = { id: id(), blocks: blocks.length > 0 ? blocks : [emptyParagraph()] };
         if (irCell.gridSpan > 1) cell.colSpan = irCell.gridSpan;
-        cells.push(cell);
+        row.push({ cell, ir: irCell });
       }
-      return { cells };
+      return row;
     });
 
     // Keep every row's span total equal (ragged rows exist in real files).
-    const width = Math.max(1, ...rows.map((r) => spanSum(r.cells)));
-    for (const row of rows) {
-      for (let w = spanSum(row.cells); w < width; w++) row.cells.push(emptyCell());
+    const width = Math.max(1, ...built.map(spanSum));
+    for (const row of built) {
+      for (let w = spanSum(row); w < width; w++) row.push(padCell());
     }
 
+    resolveTableStyling(ir, built, width);
+
+    const rows = built.map((row) => ({ cells: row.map((b) => b.cell) }));
     const table: TableBlock = { kind: "table", id: id(), revision: 0, rows };
     // w:tblGrid column widths → fractions of content width (when consistent).
     if (ir.colWidthsTwips && ir.colWidthsTwips.length === width) {

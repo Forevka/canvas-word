@@ -14,9 +14,10 @@
 // Theme indirections (w:asciiTheme, w:themeColor) are translated to concrete
 // values here, after merging — any layer may carry the reference.
 
+import { decodeBorders, decodeShdFill, mergeBorders } from "./borders";
 import { decodeParaProps, decodeRunProps } from "./props";
 import { themeColor, themeFont, type Theme } from "./theme";
-import type { IRParaProps, IRRunProps } from "./types";
+import type { IRBorders, IRParaProps, IRRunProps } from "./types";
 import { WarningSink } from "./types";
 import { attr, el, els, parseXml, rootEl, val } from "./xml";
 
@@ -29,6 +30,16 @@ export interface StyleDef {
   basedOnId?: string;
   rPr: IRRunProps;
   pPr: IRParaProps;
+  /** Table styles only: w:tblPr/w:tblBorders. */
+  tblBorders?: IRBorders;
+  /** Table styles only: w:tblPr/w:shd → CSS fill. */
+  tblShd?: string;
+}
+
+/** A table style's borders/shd, with its basedOn chain already collapsed. */
+export interface ResolvedTableStyle {
+  borders?: IRBorders;
+  shd?: string;
 }
 
 export interface StylesData {
@@ -73,6 +84,15 @@ export function parseStylesXml(xmlText: string, warnings: WarningSink): StylesDa
     if (name) def.name = name;
     const basedOnId = val(style, "w:basedOn");
     if (basedOnId) def.basedOnId = basedOnId;
+    if (type === "table") {
+      const tblPr = el(style, "w:tblPr");
+      if (tblPr) {
+        const borders = decodeBorders(el(tblPr, "w:tblBorders"));
+        if (borders) def.tblBorders = borders;
+        const shd = decodeShdFill(el(tblPr, "w:shd"));
+        if (shd) def.tblShd = shd;
+      }
+    }
     data.styles.set(id, def);
     const isDefault = attr(style, "w:default");
     if (type === "paragraph" && (isDefault === "1" || isDefault === "true")) {
@@ -80,6 +100,31 @@ export function parseStylesXml(xmlText: string, warnings: WarningSink): StylesDa
     }
   }
   return data;
+}
+
+/** Collapse a table style's basedOn chain into one borders/shd spec
+ *  (root → leaf, child overriding per edge). Cycle-guarded. */
+export function resolveTableStyle(data: StylesData, styleId: string): ResolvedTableStyle {
+  let borders: IRBorders | undefined;
+  let shd: string | undefined;
+  const seen = new Set<string>();
+  const chain: StyleDef[] = [];
+  for (
+    let cur = data.styles.get(styleId);
+    cur && !seen.has(cur.id);
+    cur = cur.basedOnId ? data.styles.get(cur.basedOnId) : undefined
+  ) {
+    seen.add(cur.id);
+    chain.unshift(cur); // root first
+  }
+  for (const def of chain) {
+    borders = mergeBorders(borders, def.tblBorders);
+    if (def.tblShd !== undefined) shd = def.tblShd;
+  }
+  const out: ResolvedTableStyle = {};
+  if (borders) out.borders = borders;
+  if (shd !== undefined) out.shd = shd;
+  return out;
 }
 
 // ---------------------------------------------------------------------------

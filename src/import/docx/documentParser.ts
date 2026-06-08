@@ -18,8 +18,9 @@ import type {
   IRTableCell,
   IRTableRow,
 } from "./types";
+import { decodeBorders, decodeShdFill } from "./borders";
 import { decodeParaProps, decodeRunProps } from "./props";
-import { attr, children, el, els, findDeep, numAttr, parseXml, rootEl, textOf, type XmlNode } from "./xml";
+import { attr, children, el, els, findDeep, numAttr, parseXml, rootEl, textOf, val, type XmlNode } from "./xml";
 
 interface ParseCtx {
   warnings: WarningSink;
@@ -440,6 +441,15 @@ function parseTable(tbl: XmlNode, ctx: ParseCtx): IRTable {
       .filter((w): w is number => w !== undefined && w > 0);
     if (widths.length > 0) table.colWidthsTwips = widths;
   }
+  const tblPr = el(tbl, "w:tblPr");
+  if (tblPr) {
+    const styleId = val(tblPr, "w:tblStyle");
+    if (styleId) table.styleId = styleId;
+    const borders = decodeBorders(el(tblPr, "w:tblBorders"));
+    if (borders) table.borders = borders;
+    const shd = decodeShdFill(el(tblPr, "w:shd"));
+    if (shd) table.shd = shd;
+  }
   return table;
 }
 
@@ -453,7 +463,14 @@ function parseCell(tc: XmlNode, ctx: ParseCtx): IRTableCell {
 
   const blocks: IRBlock[] = [];
   walkBlocks(children(tc), blocks, ctx);
-  return { blocks, gridSpan, vMergeContinue };
+  const cell: IRTableCell = { blocks, gridSpan, vMergeContinue };
+  if (tcPr) {
+    const borders = decodeBorders(el(tcPr, "w:tcBorders"));
+    if (borders) cell.borders = borders;
+    const shd = decodeShdFill(el(tcPr, "w:shd"));
+    if (shd) cell.shd = shd;
+  }
+  return cell;
 }
 
 // ---------------------------------------------------------------------------

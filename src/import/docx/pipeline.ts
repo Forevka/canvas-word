@@ -9,7 +9,7 @@ import { buildStylesheet, collectUsedStyleIds, createMapper, mapSdts, type LinkR
 import { createMediaStore, type MediaStore } from "./media";
 import { parseNumberingXml, EMPTY_NUMBERING } from "./numbering";
 import { findByType, parseRelationships, relsPartFor, type Relationships } from "./relationships";
-import { createStyleResolver, parseStylesXml, EMPTY_STYLES } from "./styles";
+import { createStyleResolver, parseStylesXml, resolveTableStyle, EMPTY_STYLES } from "./styles";
 import { parseThemeXml, EMPTY_THEME } from "./theme";
 import { openArchive, type Archive } from "./zip";
 import { ImportError, WarningSink, type ImportPhase, type ImportResult, type IRSdtProps } from "./types";
@@ -52,7 +52,9 @@ export function runImport(
   progress("parse", 1);
 
   progress("map", 0);
-  const mapper = createMapper(warnings, resolver, ir.sdts, numbering);
+  const mapper = createMapper(warnings, resolver, ir.sdts, numbering, (styleId) =>
+    resolveTableStyle(styles, styleId),
+  );
   const mediaStores: MediaStore[] = [];
   const mediaFor = (partRels: Relationships): MediaStore => {
     const store = createMediaStore(archive, partRels, warnings);
