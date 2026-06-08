@@ -14,6 +14,7 @@ import { WarningSink } from "../warnings";
 import { installMeasureHost } from "../shared/measureHost";
 import { resolveFont } from "../shared/fontRegistry";
 import { paintBlock, type PaintCtx } from "./paintBlock";
+import { FOOTNOTE_RULE_COLOR, FOOTNOTE_RULE_WIDTH_FRACTION } from "../../paint/paintStyle";
 
 const PT = 72 / 96; // px -> pt
 
@@ -67,10 +68,10 @@ export async function renderPdf(doc: Document, opts: RenderPdfOptions = {}): Pro
 
     if (page.footnoteRuleY !== undefined) {
       const cw = page.widthPx - page.marginPx.left - page.marginPx.right;
-      pdf.undash().lineWidth(1).strokeColor("#80868b");
+      pdf.undash().lineWidth(1).strokeColor(FOOTNOTE_RULE_COLOR);
       pdf
         .moveTo(page.marginPx.left, page.footnoteRuleY + 0.5)
-        .lineTo(page.marginPx.left + cw / 3, page.footnoteRuleY + 0.5)
+        .lineTo(page.marginPx.left + cw * FOOTNOTE_RULE_WIDTH_FRACTION, page.footnoteRuleY + 0.5)
         .stroke();
     }
 

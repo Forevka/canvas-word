@@ -14,6 +14,26 @@ import type { LayoutTree, Page, PlacedBlock, PlacedTableCell } from "../layout/l
 import type { CaretRect, Rect } from "../layout/geometry";
 import type { CellBorder } from "../model/document";
 import { charStyleToFont } from "../layout/metrics";
+import {
+  cellBorderDash,
+  cellBorderWidth,
+  decorationThickness,
+  DEFAULT_GRID_COLOR,
+  doubleBorderGap,
+  FOOTNOTE_RULE_COLOR,
+  FOOTNOTE_RULE_WIDTH_FRACTION,
+  IMAGE_PLACEHOLDER_COLOR,
+  leaderDash,
+  leaderWidth,
+  normalizeLinkBlue,
+  runPaint,
+  strikeOffset,
+  TOC_LEADER_COLOR,
+  TOC_LEADER_DASH,
+  TOC_LEADER_GAP_PX,
+  UNDERLINE_OFFSET_PX,
+  verticalShift,
+} from "./paintStyle";
 
 export interface PagePoint {
   pageIndex: number;
@@ -55,9 +75,6 @@ export interface PaintScheduler {
 
 const PAGE_GAP_PX = 24;
 const SELECTION_COLOR = "rgba(38, 111, 219, 0.28)";
-// Office "Hyperlink" character-style blues — normalized to text color when they
-// arrive on an in-document anchor (TOC/cross-ref), so those read as plain text.
-const HYPERLINK_BLUES = new Set(["#0563c1", "#0000ff", "#0000ee", "#0b57d0", "#0066cc", "#1155cc"]);
 
 let caretCssInjected = false;
 function injectCaretCss(): void {
@@ -229,11 +246,11 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
     // 3b. footnote separator rule (1/3 content width, Word style)
     if (page.footnoteRuleY !== undefined) {
       const cw = page.widthPx - page.marginPx.left - page.marginPx.right;
-      ctx.strokeStyle = "#80868b";
+      ctx.strokeStyle = FOOTNOTE_RULE_COLOR;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(page.marginPx.left, page.footnoteRuleY + 0.5);
-      ctx.lineTo(page.marginPx.left + cw / 3, page.footnoteRuleY + 0.5);
+      ctx.lineTo(page.marginPx.left + cw * FOOTNOTE_RULE_WIDTH_FRACTION, page.footnoteRuleY + 0.5);
       ctx.stroke();
     }
 
@@ -297,7 +314,7 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
       if (img.complete && img.naturalWidth > 0) {
         ctx.drawImage(img, block.x, block.y, block.image.width, block.image.height);
       } else {
-        ctx.fillStyle = "#f1f3f4";
+        ctx.fillStyle = IMAGE_PLACEHOLDER_COLOR;
         ctx.fillRect(block.x, block.y, block.image.width, block.image.height);
       }
       if (clip) ctx.restore();
@@ -342,19 +359,17 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
         ctx.font = charStyleToFont(block.toc.style);
         // The number inherits the entry's first-run style; normalize the
         // imported Hyperlink blue so it reads as plain text like the leader.
-        ctx.fillStyle = HYPERLINK_BLUES.has(block.toc.style.color.toLowerCase())
-          ? "#202124"
-          : block.toc.style.color;
+        ctx.fillStyle = normalizeLinkBlue(block.toc.style.color);
         (ctx as CanvasRenderingContext2D & { wordSpacing: string }).wordSpacing = "0px";
         ctx.fillText(block.toc.numText, block.toc.numX, baseline);
         const lastFrag = line.fragments[line.fragments.length - 1];
-        const fromX = block.x + (lastFrag ? lastFrag.x + lastFrag.width : 0) + 8;
-        const toX = block.toc.numX - 8;
+        const fromX = block.x + (lastFrag ? lastFrag.x + lastFrag.width : 0) + TOC_LEADER_GAP_PX;
+        const toX = block.toc.numX - TOC_LEADER_GAP_PX;
         if (toX > fromX) {
           ctx.save();
-          ctx.strokeStyle = "#9aa0a6";
+          ctx.strokeStyle = TOC_LEADER_COLOR;
           ctx.lineWidth = 1;
-          ctx.setLineDash([1, 4]);
+          ctx.setLineDash(TOC_LEADER_DASH);
           ctx.beginPath();
           ctx.moveTo(fromX, baseline);
           ctx.lineTo(toX, baseline);
@@ -370,9 +385,9 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
           ctx.save();
           // Leaders inherit the entry's run color; a TOC entry is a hyperlink, so
           // normalize its blue to plain text (matching the de-linked entry text).
-          ctx.strokeStyle = HYPERLINK_BLUES.has(ld.color.toLowerCase()) ? "#202124" : ld.color;
-          ctx.lineWidth = Math.max(1, ld.fontSizePx / 14);
-          ctx.setLineDash(ld.kind === "dot" ? [1, 3] : ld.kind === "dash" ? [4, 3] : []);
+          ctx.strokeStyle = normalizeLinkBlue(ld.color);
+          ctx.lineWidth = leaderWidth(ld.fontSizePx);
+          ctx.setLineDash(leaderDash(ld.kind));
           ctx.beginPath();
           ctx.moveTo(block.x + ld.x1, baselineY);
           ctx.lineTo(block.x + ld.x2, baselineY);
@@ -384,10 +399,7 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
         const s = frag.style;
         const x = block.x + frag.x;
         // sub/superscript: scaled font (already measured that way) + baseline shift
-        const vShift =
-          s.verticalAlign === "super" ? -0.38 * s.fontSizePx
-          : s.verticalAlign === "sub" ? 0.16 * s.fontSizePx
-          : 0;
+        const vShift = verticalShift(s.verticalAlign, s.fontSizePx);
         if (s.highlightColor) {
           ctx.fillStyle = s.highlightColor;
           ctx.fillRect(x, block.y + line.y, frag.width, line.height);
@@ -395,24 +407,19 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
         ctx.font = charStyleToFont(s);
         // EXTERNAL hyperlinks paint blue+underlined as an affordance. In-document
         // anchors ("#bookmark" — TOC entries, cross-references) read as normal
-        // paragraph text like Word: drop the underline, and normalize the
-        // imported Hyperlink-style blue to text color (other colors kept).
-        const anchorLink = s.link !== undefined && s.link.startsWith("#");
-        const externalLink = s.link !== undefined && !anchorLink;
-        let color = s.color;
-        if (externalLink) color = "#0b57d0";
-        else if (anchorLink && HYPERLINK_BLUES.has(s.color.toLowerCase())) color = "#202124";
-        ctx.fillStyle = color;
+        // paragraph text like Word (handled by runPaint's link normalization).
+        const rp = runPaint(s);
+        ctx.fillStyle = rp.color;
         (ctx as CanvasRenderingContext2D & { wordSpacing: string }).wordSpacing =
           `${frag.wordSpacingPx ?? 0}px`;
         ctx.fillText(frag.text, x, baselineY + vShift);
 
-        if (externalLink || (s.underline && !anchorLink)) {
-          ctx.fillRect(x, baselineY + vShift + 1.5, frag.width, Math.max(1, s.fontSizePx / 14));
+        const th = decorationThickness(s.fontSizePx);
+        if (rp.underline) {
+          ctx.fillRect(x, baselineY + vShift + UNDERLINE_OFFSET_PX, frag.width, th);
         }
-        if (s.strikethrough) {
-          const mid = baselineY + vShift - s.fontSizePx * 0.28;
-          ctx.fillRect(x, mid, frag.width, Math.max(1, s.fontSizePx / 14));
+        if (rp.strike) {
+          ctx.fillRect(x, baselineY + vShift + strikeOffset(s.fontSizePx), frag.width, th);
         }
       }
     }
@@ -588,8 +595,6 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
   };
 }
 
-const DEFAULT_GRID_COLOR = "#c0c4c9";
-
 /** Paint a placed cell's borders. No `borders` field → the legacy uniform light
  *  grid (keeps native/unstyled tables visibly gridded). Otherwise draw exactly
  *  the edges present; an omitted edge means no line on that side. */
@@ -622,12 +627,10 @@ function strokeCellEdge(
   iy: number,
 ): void {
   if (!spec) return;
-  const w = Math.max(0.5, spec.widthPx);
+  const w = cellBorderWidth(spec.widthPx);
   ctx.strokeStyle = spec.color;
   ctx.lineWidth = w;
-  ctx.setLineDash(
-    spec.style === "dashed" ? [w * 3, w * 2] : spec.style === "dotted" ? [w, w * 1.5] : [],
-  );
+  ctx.setLineDash(cellBorderDash(spec.style, w));
   // Half-pixel align odd-width lines on the perpendicular axis for crisp edges.
   const horizontal = y1 === y2;
   const off = Math.round(w) % 2 ? 0.5 : 0;
@@ -641,7 +644,7 @@ function strokeCellEdge(
   };
   line(0, 0);
   if (spec.style === "double") {
-    const g = w + 1;
+    const g = doubleBorderGap(w);
     line(ix * g, iy * g);
   }
   ctx.setLineDash([]);

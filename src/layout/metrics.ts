@@ -3,6 +3,7 @@
 
 import type { CharStyle } from "../model/document";
 import { CLONE_METRICS, cloneFamilyFor, firstFamilyToken } from "../fonts/clones";
+import { SUB_SUPER_SCALE } from "../paint/paintStyle";
 
 export interface FontMetrics {
   ascent: number;
@@ -47,7 +48,7 @@ export function charStyleToFont(s: CharStyle): string {
   const weight = s.bold ? "700" : "400";
   // Sub/superscript runs are MEASURED at the scaled size (paint shifts the
   // baseline) — pretext must measure exactly what paint draws.
-  const size = s.verticalAlign ? Math.round(s.fontSizePx * 0.65) : s.fontSizePx;
+  const size = s.verticalAlign ? Math.round(s.fontSizePx * SUB_SUPER_SCALE) : s.fontSizePx;
   // Render & measure with the bundled metric clone (e.g. Calibri -> Carlito), so
   // the editor, the browser export, and the Node backend all lay out identically
   // — no dependency on system fonts. The model keeps the original family.

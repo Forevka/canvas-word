@@ -6,6 +6,25 @@
 
 import type { CellBorder } from "../../model/document";
 import type { LineBox, PlacedBlock, PlacedTableCell } from "../../layout/layoutTree";
+import {
+  cellBorderDash,
+  cellBorderWidth,
+  decorationThickness,
+  DEFAULT_GRID_COLOR,
+  doubleBorderGap,
+  IMAGE_PLACEHOLDER_COLOR,
+  leaderDash,
+  leaderWidth,
+  normalizeLinkBlue,
+  runPaint,
+  strikeOffset,
+  SUB_SUPER_SCALE,
+  TOC_LEADER_COLOR,
+  TOC_LEADER_DASH,
+  TOC_LEADER_GAP_PX,
+  UNDERLINE_OFFSET_PX,
+  verticalShift,
+} from "../../paint/paintStyle";
 
 export interface PaintCtx {
   doc: PDFKit.PDFDocument;
@@ -16,13 +35,7 @@ export interface PaintCtx {
   warn: (code: string, detail?: string) => void;
 }
 
-const DEFAULT_GRID_COLOR = "#c0c4c9";
-// Mirror renderer.ts: in-document anchor links read as plain text, so normalize
-// these imported "Hyperlink" blues to text color.
-const HYPERLINK_BLUES = new Set(["#0563c1", "#0000ff", "#0000ee", "#0b57d0", "#0066cc", "#1155cc"]);
-
 const firstFamily = (stack: string): string => (stack.split(",")[0] ?? "sans-serif").trim();
-const decoThickness = (sizePx: number): number => Math.max(1, sizePx / 14);
 
 export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
   const { doc } = ctx;
@@ -89,19 +102,19 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
     if (line) {
       const baseline = block.y + line.y + line.ascent;
       const s = block.toc.style;
-      const color = HYPERLINK_BLUES.has(s.color.toLowerCase()) ? "#202124" : s.color;
+      const color = normalizeLinkBlue(s.color);
       const name = ctx.font(firstFamily(s.fontFamily), !!s.bold, !!s.italic);
       doc
         .font(name)
         .fontSize(s.fontSizePx)
-        .fillColor(color as string)
+        .fillColor(color)
         .text(block.toc.numText, block.toc.numX, baseline, { lineBreak: false, baseline: "alphabetic" });
       const lastFrag = line.fragments[line.fragments.length - 1];
-      const fromX = block.x + (lastFrag ? lastFrag.x + lastFrag.width : 0) + 8;
-      const toX = block.toc.numX - 8;
+      const fromX = block.x + (lastFrag ? lastFrag.x + lastFrag.width : 0) + TOC_LEADER_GAP_PX;
+      const toX = block.toc.numX - TOC_LEADER_GAP_PX;
       if (toX > fromX) {
         doc.save();
-        doc.lineWidth(1).strokeColor("#9aa0a6").dash(1, { space: 4 });
+        doc.lineWidth(1).strokeColor(TOC_LEADER_COLOR).dash(TOC_LEADER_DASH[0]!, { space: TOC_LEADER_DASH[1]! });
         doc.moveTo(fromX, baseline).lineTo(toX, baseline).stroke();
         doc.undash().restore();
       }
@@ -112,11 +125,10 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
     const baselineY = block.y + line.y + line.ascent;
     if (line.leaders) {
       for (const ld of line.leaders) {
-        const color = HYPERLINK_BLUES.has(ld.color.toLowerCase()) ? "#202124" : ld.color;
         doc.save();
-        doc.lineWidth(Math.max(1, ld.fontSizePx / 14)).strokeColor(color as string);
-        if (ld.kind === "dot") doc.dash(1, { space: 3 });
-        else if (ld.kind === "dash") doc.dash(4, { space: 3 });
+        doc.lineWidth(leaderWidth(ld.fontSizePx)).strokeColor(normalizeLinkBlue(ld.color));
+        const dash = leaderDash(ld.kind);
+        if (dash.length) doc.dash(dash[0]!, { space: dash[1]! });
         doc.moveTo(block.x + ld.x1, baselineY).lineTo(block.x + ld.x2, baselineY).stroke();
         doc.undash().restore();
       }
@@ -131,42 +143,34 @@ function paintLine(ctx: PaintCtx, block: PlacedBlock, line: LineBox, baselineY: 
     if (frag.text.length === 0) continue;
     const s = frag.style;
     const x = block.x + frag.x;
-    const vShift =
-      s.verticalAlign === "super" ? -0.38 * s.fontSizePx
-      : s.verticalAlign === "sub" ? 0.16 * s.fontSizePx
-      : 0;
+    const vShift = verticalShift(s.verticalAlign, s.fontSizePx);
     // Sub/super are measured (and so must paint) at the scaled size.
-    const sizePx = s.verticalAlign ? Math.round(s.fontSizePx * 0.65) : s.fontSizePx;
+    const sizePx = s.verticalAlign ? Math.round(s.fontSizePx * SUB_SUPER_SCALE) : s.fontSizePx;
 
     if (s.highlightColor) {
       doc.rect(x, block.y + line.y, frag.width, line.height).fill(s.highlightColor as string);
     }
 
-    const anchorLink = s.link !== undefined && s.link.startsWith("#");
-    const externalLink = s.link !== undefined && !anchorLink;
-    let color = s.color;
-    if (externalLink) color = "#0b57d0";
-    else if (anchorLink && HYPERLINK_BLUES.has(s.color.toLowerCase())) color = "#202124";
-
+    const rp = runPaint(s);
     const name = ctx.font(firstFamily(s.fontFamily), !!s.bold, !!s.italic);
     doc
       .font(name)
       .fontSize(sizePx)
-      .fillColor(color as string)
+      .fillColor(rp.color)
       .text(frag.text, x, baselineY + vShift, {
         lineBreak: false,
         baseline: "alphabetic",
         wordSpacing: frag.wordSpacingPx ?? 0,
       });
 
-    const th = decoThickness(s.fontSizePx);
-    if (externalLink || (s.underline && !anchorLink)) {
-      doc.rect(x, baselineY + vShift + 1.5, frag.width, th).fill(color as string);
+    const th = decorationThickness(s.fontSizePx);
+    if (rp.underline) {
+      doc.rect(x, baselineY + vShift + UNDERLINE_OFFSET_PX, frag.width, th).fill(rp.color);
     }
-    if (s.strikethrough) {
-      doc.rect(x, baselineY + vShift - s.fontSizePx * 0.28, frag.width, th).fill(color as string);
+    if (rp.strike) {
+      doc.rect(x, baselineY + vShift + strikeOffset(s.fontSizePx), frag.width, th).fill(rp.color);
     }
-    if (externalLink && s.link) {
+    if (rp.externalLink && s.link) {
       // Clickable annotation over the run's line box.
       doc.link(x, block.y + line.y, frag.width, line.height, s.link);
     }
@@ -174,7 +178,7 @@ function paintLine(ctx: PaintCtx, block: PlacedBlock, line: LineBox, baselineY: 
 }
 
 function placeholderBox(ctx: PaintCtx, x: number, y: number, w: number, h: number): void {
-  ctx.doc.rect(x, y, w, h).fill("#f1f3f4");
+  ctx.doc.rect(x, y, w, h).fill(IMAGE_PLACEHOLDER_COLOR);
 }
 
 interface OpenableImageDoc {
@@ -246,10 +250,10 @@ function strokeCellEdge(
 ): void {
   if (!spec) return;
   const { doc } = ctx;
-  const w = Math.max(0.5, spec.widthPx);
+  const w = cellBorderWidth(spec.widthPx);
   doc.lineWidth(w).strokeColor(spec.color as string);
-  if (spec.style === "dashed") doc.dash(w * 3, { space: w * 2 });
-  else if (spec.style === "dotted") doc.dash(w, { space: w * 1.5 });
+  const dash = cellBorderDash(spec.style, w);
+  if (dash.length) doc.dash(dash[0]!, { space: dash[1]! });
   else doc.undash();
   const horizontal = y1 === y2;
   const off = Math.round(w) % 2 ? 0.5 : 0;
@@ -260,7 +264,7 @@ function strokeCellEdge(
   };
   line(0, 0);
   if (spec.style === "double") {
-    const g = w + 1;
+    const g = doubleBorderGap(w);
     line(ix * g, iy * g);
   }
   doc.undash();
