@@ -134,6 +134,21 @@ describe("engine — pagination", () => {
     const onPage = tree.pages[placed.page]!.blocks.filter((b) => b.blockId === kept.id);
     expect(onPage).toHaveLength(1);
   });
+
+  it("keep-with-next carries a heading to its content's page across a blank spacer", () => {
+    // A heading kept-with-next, a blank spacer paragraph, then a tall block that
+    // can't fit the page tail. The blank line must NOT satisfy the keep — the
+    // heading should travel to the block's page instead of being orphaned.
+    const fillers = Array.from({ length: 51 }, (_, i) => para(`f${i}`));
+    const heading = para("HEADING", { keepWithNext: true });
+    const spacer = para(""); // empty line between the heading and its table
+    const img = image(400, 300); // too tall to share the remaining space
+    const tree = layout(doc([...fillers, heading, spacer, img]));
+    const hp = placedOf(tree, heading.id)!;
+    const ip = placedOf(tree, img.id)!;
+    expect(hp.page).toBeGreaterThan(0); // not orphaned on the filler page
+    expect(hp.page).toBe(ip.page); // travels with its content
+  });
 });
 
 // --- table grid sizing (pure) ---------------------------------------------

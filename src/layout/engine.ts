@@ -1140,6 +1140,19 @@ function layoutDocument(
           if (!inChain) break;
           continue;
         }
+        // An empty spacer paragraph (e.g. a blank line between a "keep with next"
+        // heading and its table) must NOT satisfy the keep — otherwise the heading
+        // sticks to the blank line and orphans from the content it belongs with.
+        // Bridge through it (fit it whole) to the real next block.
+        if (measured[k + 1] !== undefined && m2.block.runs.every((r) => r.text.trim().length === 0)) {
+          const h = totalHeight(m2.lines);
+          if (yy + h > bottomY()) {
+            ok = false;
+            break;
+          }
+          yy += h + m2.block.style.spaceAfterPx;
+          continue;
+        }
         // Chain terminator: needs its orphan/widow-legal first take.
         let fit = 0;
         let fy = yy;
