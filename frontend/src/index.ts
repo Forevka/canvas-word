@@ -69,6 +69,8 @@ import type { SdtType } from "@cw/shared";
 import { ICONS } from "./ui/icons";
 import type { Command, EditorState, Transaction } from "./editor/state";
 import { UndoManager } from "./editor/undo";
+import { ChangeRecorder, type ChangeSink } from "./sync/changeRecorder";
+import type { Change, ChangeOrigin } from "@cw/shared";
 
 export interface CurrentFormat {
   styleId: string | null;
@@ -143,6 +145,11 @@ export interface Editor {
   searchClear(): void;
   undo(): void;
   redo(): void;
+  /** The document-history change log recorded this session (ordered). The base
+   *  snapshot taken at load + this log reconstructs the current document. */
+  getChangeLog(): Change[];
+  /** The local version: number of changes recorded since load. */
+  getChangeHead(): number;
   destroy(): void;
 }
 
@@ -153,6 +160,12 @@ export interface EditorOptions {
   onChange?: () => void;
   /** Fires after the zoom changes (toolbar/wheel), for a zoom indicator. */
   onZoomChange?: (zoom: number) => void;
+  /** Document id this editor session is editing — stamped onto every recorded
+   *  Change. Defaults to "local". */
+  docId?: string;
+  /** Fires for each committed Change (the document-history log entry). The
+   *  SyncClient subscribes here to ship edits to the server. */
+  onChangeRecorded?: ChangeSink;
 }
 
 export function createEditor(
@@ -163,6 +176,10 @@ export function createEditor(
   const engine = options.engine ?? createLayoutEngine();
   const paint = createPaintLayer(container);
   const undoMgr = new UndoManager();
+  // Document history: every committed edit (and undo/redo, as forward ops) is
+  // recorded as a Change. The base snapshot + this ordered log reconstructs any
+  // version (see shared/replay).
+  const recorder = new ChangeRecorder(options.docId ?? "local", options.onChangeRecorded);
 
   let doc = initialDoc;
   let tree: LayoutTree = engine.layout(doc);
@@ -545,6 +562,9 @@ export function createEditor(
         origin: trn.origin,
         time: Date.now(),
       });
+      // Mirror the edit into the document-history log (transient IME previews are
+      // excluded, exactly as for undo). origin is now ChangeOrigin-compatible.
+      recorder.record(trn.ops, trn.origin as ChangeOrigin, trn.selectionAfter, Date.now());
     }
     afterMutation(trn.selectionAfter);
   };
@@ -558,6 +578,9 @@ export function createEditor(
     const entry = undoMgr.popUndo();
     if (!entry) return;
     runOps(entry.inverseOps);
+    // Undo is a real forward edit in history terms — record the inverse ops it
+    // applied so the log faithfully replays the same end state.
+    recorder.record(entry.inverseOps, "undo", entry.selectionBefore, Date.now());
     afterMutation(entry.selectionBefore);
   };
 
@@ -565,6 +588,7 @@ export function createEditor(
     const entry = undoMgr.popRedo();
     if (!entry) return;
     runOps(entry.ops);
+    recorder.record(entry.ops, "redo", entry.selectionAfter, Date.now());
     afterMutation(entry.selectionAfter);
   };
 
@@ -1688,6 +1712,12 @@ export function createEditor(
     },
     getSelectedObject(): string | null {
       return selectedObject;
+    },
+    getChangeLog(): Change[] {
+      return recorder.changes();
+    },
+    getChangeHead(): number {
+      return recorder.head();
     },
     dispatch,
     toggleStyle,

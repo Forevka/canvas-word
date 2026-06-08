@@ -11,8 +11,10 @@ export * from "./model/stylesheet";
 export * from "./model/lists";
 export * from "./model/ops";
 
-// Collaboration foundations: unique ids, content-addressed media, and
-// document <-> snapshot serialization.
+// Collaboration foundations: unique ids, content-addressed media, document <->
+// snapshot serialization, the change log, and replay.
 export * from "./ids";
 export * from "./persist/media";
 export * from "./persist/serialize";
+export * from "./change";
+export * from "./replay";
