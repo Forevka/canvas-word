@@ -44,7 +44,7 @@ describe("DOCX export — round trip", () => {
     const a = runImport(
       simpleDocx(
         `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="240" w:after="120" w:line="360" w:lineRule="auto"/>` +
-          `<w:ind w:left="720" w:firstLine="360"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>`,
+          `<w:ind w:left="720" w:right="480" w:firstLine="360"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>`,
       ),
     ).doc;
     const s = paras(roundTrip(a))[0]!.style;
@@ -53,6 +53,7 @@ describe("DOCX export — round trip", () => {
     expect(s.spaceAfterPx).toBeCloseTo(8, 1);
     expect(s.lineHeight).toBeCloseTo(1.5, 2);
     expect(s.indentLeftPx).toBeCloseTo(48, 1);
+    expect(s.indentRightPx).toBeCloseTo(32, 1); // 480 twips = 32px
     expect(s.indentFirstLinePx).toBeCloseTo(24, 1);
   });
 

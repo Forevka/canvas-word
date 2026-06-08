@@ -185,6 +185,7 @@ function pPrXml(style: ParaStyle, ctx: PartCtx, markRun?: CharStyle): string {
   // indent: hanging is a negative first-line indent.
   const ind: Record<string, number> = {};
   if (style.indentLeftPx) ind["w:left"] = pxToTwips(style.indentLeftPx);
+  if (style.indentRightPx) ind["w:right"] = pxToTwips(style.indentRightPx);
   if (style.indentFirstLinePx > 0) ind["w:firstLine"] = pxToTwips(style.indentFirstLinePx);
   else if (style.indentFirstLinePx < 0) ind["w:hanging"] = pxToTwips(-style.indentFirstLinePx);
   if (Object.keys(ind).length > 0) c.push(el("w:ind", ind));
