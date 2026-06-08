@@ -45,6 +45,10 @@ export interface PaintScheduler {
   getPageElement(pageIndex: number): HTMLElement | null;
   /** Scroll the container the minimum amount to reveal the caret. */
   ensureVisible(caret: CaretRect): void;
+  /** Presentational zoom (1 = 100%). Scales pages, canvases, caret — NOT the
+   *  layout (document coords are unchanged), so no relayout. Clamped to [.25, 5]. */
+  setZoom(zoom: number): void;
+  getZoom(): number;
   destroy(): void;
 }
 
@@ -85,6 +89,8 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
   const liveCanvases = new Map<number, HTMLCanvasElement>();
   const dirty = new Set<number>();
   let rafId: number | null = null;
+  let zoom = 1;
+  let lastCaret: CaretRect | null = null;
 
   const observer = new IntersectionObserver(
     (entries) => {
@@ -107,7 +113,7 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
     for (const page of tree.pages) {
       const ph = document.createElement("div");
       ph.dataset["page"] = String(page.index);
-      ph.style.cssText = `position:relative;width:${page.widthPx}px;height:${page.heightPx}px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25);flex-shrink:0;`;
+      ph.style.cssText = `position:relative;width:${page.widthPx * zoom}px;height:${page.heightPx * zoom}px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25);flex-shrink:0;`;
       pagesWrap.appendChild(ph);
       placeholders.push(ph);
       observer.observe(ph);
@@ -153,15 +159,18 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
   }
 
   function paintPage(canvas: HTMLCanvasElement, page: Page): void {
-    const dpr = window.devicePixelRatio || 1;
-    const w = Math.round(page.widthPx * dpr);
-    const h = Math.round(page.heightPx * dpr);
+    // Backing store scales with zoom so every document px maps to zoom×dpr device
+    // px — crisp at any zoom. The ctx transform folds in zoom too, so the paint
+    // code keeps drawing in document coords (0…page.widthPx), unaware of zoom.
+    const scale = (window.devicePixelRatio || 1) * zoom;
+    const w = Math.round(page.widthPx * scale);
+    const h = Math.round(page.heightPx * scale);
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
       canvas.height = h;
     }
     const ctx = canvas.getContext("2d")!;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
 
     // 1. page background
     ctx.fillStyle = "#fff";
@@ -442,6 +451,7 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
     },
 
     setCaret(caret: CaretRect | null): void {
+      lastCaret = caret;
       if (!caret) {
         caretEl.style.display = "none";
         return;
@@ -450,9 +460,9 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
       if (!ph) return;
       if (caretEl.parentElement !== ph) ph.appendChild(caretEl);
       caretEl.style.display = "block";
-      caretEl.style.left = `${caret.x - 1}px`;
-      caretEl.style.top = `${caret.y}px`;
-      caretEl.style.height = `${caret.height}px`;
+      caretEl.style.left = `${caret.x * zoom - 1}px`;
+      caretEl.style.top = `${caret.y * zoom}px`;
+      caretEl.style.height = `${caret.height * zoom}px`;
       // restart the blink so the caret is solid right after every move (Word behavior)
       caretEl.style.animation = "none";
       void caretEl.offsetWidth;
@@ -468,11 +478,12 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
       if (!tree || placeholders.length === 0) return null;
       const wrapRect = pagesWrap.getBoundingClientRect();
       const yIn = clientY - wrapRect.top - PAGE_GAP_PX;
-      // Pages can have per-section heights — walk the cumulative offsets.
+      // Walk cumulative offsets in DISPLAY px (heights × zoom); pages can have
+      // per-section heights and the gap is unscaled (it's flex layout, not zoomed).
       let pageIndex = tree.pages.length - 1;
       let top = 0;
       for (let i = 0; i < tree.pages.length; i++) {
-        const h = tree.pages[i]!.heightPx;
+        const h = tree.pages[i]!.heightPx * zoom;
         if (yIn < top + h + PAGE_GAP_PX / 2) {
           pageIndex = i;
           break;
@@ -480,11 +491,12 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
         top += h + PAGE_GAP_PX;
       }
       const pg = tree.pages[pageIndex]!;
-      const pageLeft = wrapRect.left + (wrapRect.width - pg.widthPx) / 2;
+      const pageLeft = wrapRect.left + (wrapRect.width - pg.widthPx * zoom) / 2;
+      // Return DOCUMENT coords (÷ zoom) so all hit-testing stays zoom-agnostic.
       return {
         pageIndex,
-        x: Math.min(pg.widthPx, Math.max(0, clientX - pageLeft)),
-        y: Math.min(pg.heightPx, Math.max(0, yIn - top)),
+        x: Math.min(pg.widthPx, Math.max(0, (clientX - pageLeft) / zoom)),
+        y: Math.min(pg.heightPx, Math.max(0, (yIn - top) / zoom)),
       };
     },
 
@@ -498,8 +510,8 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
       const phRect = ph.getBoundingClientRect();
       const cRect = container.getBoundingClientRect();
       return {
-        left: phRect.left - cRect.left + caret.x,
-        top: phRect.top - cRect.top + container.scrollTop + caret.y,
+        left: phRect.left - cRect.left + caret.x * zoom,
+        top: phRect.top - cRect.top + container.scrollTop + caret.y * zoom,
       };
     },
 
@@ -508,13 +520,41 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
       if (!ph) return;
       const phRect = ph.getBoundingClientRect();
       const cRect = container.getBoundingClientRect();
-      const caretTop = phRect.top - cRect.top + caret.y; // viewport-relative
-      const caretBottom = caretTop + caret.height;
+      const caretTop = phRect.top - cRect.top + caret.y * zoom; // viewport-relative
+      const caretBottom = caretTop + caret.height * zoom;
       const margin = 32;
       if (caretTop < margin) container.scrollTop += caretTop - margin;
       else if (caretBottom > cRect.height - margin) {
         container.scrollTop += caretBottom - (cRect.height - margin);
       }
+    },
+
+    setZoom(next: number): void {
+      const z = Math.min(5, Math.max(0.25, next));
+      if (z === zoom) return;
+      zoom = z;
+      // Resize placeholders, repaint live canvases at the new scale, reposition
+      // the caret. The layout tree is untouched — zoom is pure presentation.
+      for (const ph of placeholders) {
+        const page = tree?.pages[Number(ph.dataset["page"])];
+        if (page) {
+          ph.style.width = `${page.widthPx * zoom}px`;
+          ph.style.height = `${page.heightPx * zoom}px`;
+        }
+      }
+      for (const i of liveCanvases.keys()) dirty.add(i);
+      schedule();
+      if (lastCaret) {
+        const ph = placeholders[lastCaret.pageIndex];
+        if (ph) {
+          caretEl.style.left = `${lastCaret.x * zoom - 1}px`;
+          caretEl.style.top = `${lastCaret.y * zoom}px`;
+          caretEl.style.height = `${lastCaret.height * zoom}px`;
+        }
+      }
+    },
+    getZoom(): number {
+      return zoom;
     },
 
     destroy(): void {

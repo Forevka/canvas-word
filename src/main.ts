@@ -45,14 +45,16 @@ console.log(
 );
 
 let syncToolbar: () => void = () => {};
-let editor = createEditor(app, doc, { engine, onChange: () => syncToolbar() });
+let syncZoom: (zoom: number) => void = () => {};
+const editorOpts = { engine, onChange: () => syncToolbar(), onZoomChange: (z: number) => syncZoom(z) };
+let editor = createEditor(app, doc, editorOpts);
 
 // Replace the open document (docx import): tear down and rebuild the editor —
 // the layout engine is reused so its caches survive across documents.
 const replaceDocument = (next: typeof doc): void => {
   editor.destroy();
   doc = next;
-  editor = createEditor(app, doc, { engine, onChange: () => syncToolbar() });
+  editor = createEditor(app, doc, editorOpts);
   window.__cw = { doc, tree: undefined, engine, editor, createLayoutEngine, sampleDoc, stressDoc };
 };
 
@@ -412,6 +414,32 @@ if (toolbar) {
   // ---- Editing ----
   group("Editing");
   btn(ICONS.find, "Find & replace (Ctrl+F)", () => openFind());
+
+  // ---- Zoom (presentational; Ctrl+wheel also zooms) ----
+  group("Zoom");
+  txtBtn("−", "Zoom out", () => editor.setZoom(editor.getZoom() / 1.1), "font-size:15px;width:26px;");
+  const zoomSel = select("Zoom level", 66);
+  for (const z of [0.5, 0.75, 1, 1.25, 1.5, 2, 3]) opt(zoomSel, String(z), `${Math.round(z * 100)}%`);
+  zoomSel.value = "1";
+  zoomSel.addEventListener("change", () => editor.setZoom(parseFloat(zoomSel.value)));
+  txtBtn("+", "Zoom in", () => editor.setZoom(editor.getZoom() * 1.1), "font-size:15px;width:26px;");
+  // Reflect the live zoom (also driven by Ctrl+wheel): snap the select to the
+  // nearest preset, or insert a one-off "NN%" option for in-between values.
+  syncZoom = (z: number): void => {
+    const pct = `${Math.round(z * 100)}%`;
+    const preset = [...zoomSel.options].find((o) => o.textContent === pct);
+    [...zoomSel.options].filter((o) => o.dataset["custom"]).forEach((o) => o.remove());
+    if (preset) {
+      zoomSel.value = preset.value;
+    } else {
+      const o = document.createElement("option");
+      o.value = String(z);
+      o.textContent = pct;
+      o.dataset["custom"] = "1";
+      zoomSel.appendChild(o);
+      zoomSel.value = String(z);
+    }
+  };
 }
 
 // ---- page setup panel (📐) ---------------------------------------------------

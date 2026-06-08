@@ -113,6 +113,9 @@ export interface Editor {
    *  imported pre-calculated numbers are shown until the user asks for this).
    *  Returns the count of entries whose number changed. */
   recalculateToc(): number;
+  /** Presentational zoom (1 = 100%, clamped to [.25, 5]). No relayout. */
+  setZoom(zoom: number): void;
+  getZoom(): number;
   /** Format painter: capture caret formatting, apply on the next selection. */
   armFormatPainter(sticky: boolean): void;
   cancelFormatPainter(): void;
@@ -132,6 +135,8 @@ export interface EditorOptions {
   engine?: LayoutEngine;
   /** Fires after any selection or document change (toolbar sync). */
   onChange?: () => void;
+  /** Fires after the zoom changes (toolbar/wheel), for a zoom indicator. */
+  onZoomChange?: (zoom: number) => void;
 }
 
 export function createEditor(
@@ -269,6 +274,7 @@ export function createEditor(
 
   const objectFrame = createObjectFrame({
     getPageElement: (i) => paint.getPageElement(i),
+    getZoom: () => paint.getZoom(),
     onResizePreview: (w, h) => {
       if (!selectedObject) return;
       const img = doc.blocks.find((b) => b.id === selectedObject);
@@ -1551,6 +1557,32 @@ export function createEditor(
   };
   container.addEventListener("contextmenu", onContextMenu);
 
+  const applyZoom = (next: number, anchorClientY?: number): void => {
+    const before = paint.getZoom();
+    paint.setZoom(next);
+    const after = paint.getZoom();
+    if (after === before) return;
+    refreshObjectFrame(); // the selection frame's geometry is zoom-scaled
+    // Keep the anchored point (cursor, or viewport center) stationary.
+    const rect = container.getBoundingClientRect();
+    const anchorY = anchorClientY ?? rect.top + rect.height / 2;
+    const yInContent = container.scrollTop + (anchorY - rect.top);
+    container.scrollTop = (yInContent * after) / before - (anchorY - rect.top);
+    options.onZoomChange?.(after);
+  };
+
+  // Ctrl/Cmd + wheel zooms (Word/browser convention), anchored on the cursor so
+  // the point under the pointer stays put across the zoom.
+  container.addEventListener(
+    "wheel",
+    (ev: WheelEvent) => {
+      if (!ev.ctrlKey && !ev.metaKey) return;
+      ev.preventDefault();
+      applyZoom(paint.getZoom() * (ev.deltaY < 0 ? 1.1 : 1 / 1.1), ev.clientY);
+    },
+    { passive: false },
+  );
+
   return {
     focus(): void {
       proxy.focus();
@@ -1613,6 +1645,8 @@ export function createEditor(
     },
     inspectContentControl: inspectSdtAtCaret,
     recalculateToc,
+    setZoom: (z: number): void => applyZoom(z),
+    getZoom: () => paint.getZoom(),
     armFormatPainter,
     cancelFormatPainter,
     search,

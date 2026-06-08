@@ -11,6 +11,9 @@ import type { Rect } from "../layout/geometry";
 
 export interface ObjectFrameDeps {
   getPageElement(pageIndex: number): HTMLElement | null;
+  /** Current presentational zoom — the frame lives in zoomed page pixels, but
+   *  sizes are document px, so positions scale up and drag deltas scale down. */
+  getZoom(): number;
   /** Live preview during handle drag (transient). */
   onResizePreview(width: number, height: number): void;
   /** Final size on mouseup (one undoable op). */
@@ -94,8 +97,10 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     // Horizontal handles pull away from the opposite edge; middle handles don't move that axis.
     const sx = d.spec.dx === 0 ? -1 : d.spec.dx === 1 ? 1 : 0;
     const sy = d.spec.dy === 0 ? -1 : d.spec.dy === 1 ? 1 : 0;
-    let w = d.startW + sx * (ev.clientX - d.startX);
-    let h = d.startH + sy * (ev.clientY - d.startY);
+    // Mouse deltas are screen px; convert to document px (÷ zoom) before applying.
+    const z = deps.getZoom();
+    let w = d.startW + (sx * (ev.clientX - d.startX)) / z;
+    let h = d.startH + (sy * (ev.clientY - d.startY)) / z;
     const corner = sx !== 0 && sy !== 0;
     if (corner) {
       // Word behavior: corner handles preserve aspect ratio.
@@ -135,11 +140,12 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
       if (!host) return;
       current = { rect, maxWidth };
       if (frame.parentElement !== host) host.appendChild(frame);
+      const z = deps.getZoom();
       frame.style.display = "block";
-      frame.style.left = `${rect.x - 2}px`;
-      frame.style.top = `${rect.y - 2}px`;
-      frame.style.width = `${rect.width + 4}px`;
-      frame.style.height = `${rect.height + 4}px`;
+      frame.style.left = `${rect.x * z - 2}px`;
+      frame.style.top = `${rect.y * z - 2}px`;
+      frame.style.width = `${rect.width * z + 4}px`;
+      frame.style.height = `${rect.height * z + 4}px`;
     },
     hide(): void {
       current = null;
