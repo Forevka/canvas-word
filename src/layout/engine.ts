@@ -244,17 +244,19 @@ function decimalPrefixWidth(runs: Run[]): number {
 }
 const DEFAULT_DECIMAL_STYLE = { fontFamily: "Georgia, serif", fontSizePx: 16 } as CharStyle;
 
-/** Lay out a `\t`-containing segment as ONE line: each tab-delimited piece is
- *  shaped independently and positioned at the next tab stop (left/center/right/
- *  decimal), with optional leaders. Wrapping is out of scope — a piece that
- *  overruns the content width overflows rather than wrapping. */
+/** Lay out a `\t`-containing segment. Each tab-delimited piece is positioned at
+ *  the next tab stop (left/center/right/decimal, with optional leaders); the
+ *  piece's text then WRAPS normally — its first line continues from the stop and
+ *  any overflow flows to new full-width lines at the left margin (so a common
+ *  leading-tab first-line indent wraps like Word instead of running off the
+ *  page). Returns one RawLine per visual line. */
 function layoutTabbedSegment(
   p: Paragraph,
   segRuns: Run[],
   segStart: number,
   contentWidth: number,
   firstIndent: number,
-): RawLine {
+): RawLine[] {
   // Split runs at "\t" into pieces, tracking each piece's global start offset
   // (the "\t" itself occupies one offset — caret can land between pieces).
   const pieces: { runs: Run[]; start: number }[] = [];
@@ -281,58 +283,93 @@ function layoutTabbedSegment(
   }
   pieces.push({ runs: cur, start: pieceStart });
 
-  const laid = pieces.map((pc) => {
-    if (pc.runs.length === 0) return { frags: [] as RawFrag[], width: 0, height: 0, ascent: 0 };
-    const pseg: PreparedSegment = { prepared: prepareRuns(pc.runs), runs: pc.runs, startOffset: pc.start };
-    const bl = breakNextLine(p, pseg, 1e6, undefined, segRunOffsets(pc.runs, pc.start), pc.runs.map(() => 0));
-    return bl ? { frags: bl.frags, width: bl.width, height: bl.height, ascent: bl.ascent } : { frags: [] as RawFrag[], width: 0, height: 0, ascent: 0 };
-  });
-
   const stops = (p.style.tabStops ?? []).slice().sort((a, b) => a.posPx - b.posPx);
   const baseStyle = segRuns.find((r) => r.text.length > 0)?.style ?? p.runs[0]?.style;
-  const frags: RawFrag[] = [];
-  const leaders: NonNullable<RawLine["leaders"]> = [];
-  let curX = 0;
+  const out: RawLine[] = [];
+
+  // The current visual line being assembled.
+  let curFrags: RawFrag[] = [];
+  let curLeaders: NonNullable<RawLine["leaders"]> = [];
+  let curX = firstIndent;
   let maxH = 0;
   let maxA = 0;
-  laid.forEach((pc, i) => {
-    maxH = Math.max(maxH, pc.height);
-    maxA = Math.max(maxA, pc.ascent);
-    let targetX = curX;
+  let hasTab = false;
+
+  const flush = (isLast: boolean): void => {
+    if (maxH === 0 && baseStyle) {
+      const fm = fontMetrics(charStyleToFont(baseStyle));
+      maxH = Math.max(fm.ascent + fm.descent, p.style.lineHeight * baseStyle.fontSizePx);
+      maxA = (maxH - (fm.ascent + fm.descent)) / 2 + fm.ascent;
+    }
+    out.push({
+      frags: curFrags,
+      width: curX,
+      indent: 0, // fragment x is already absolute (tab/indent baked in)
+      lineMaxWidth: contentWidth,
+      height: maxH,
+      ascent: maxA,
+      // A tab-positioned line stays ragged (its manual x must not be re-justified);
+      // pure wrapped continuation lines justify normally when the paragraph does.
+      lastOfSegment: isLast || hasTab,
+      ...(curLeaders.length > 0 ? { leaders: curLeaders } : {}),
+    });
+    curFrags = [];
+    curLeaders = [];
+    curX = 0;
+    maxH = 0;
+    maxA = 0;
+    hasTab = false;
+  };
+
+  pieces.forEach((pc, i) => {
+    // Position this piece at its tab stop (relative to the running x cursor).
     if (i > 0) {
       const stop = resolveTabStop(curX, stops, contentWidth);
       const align = stop.align ?? "left";
-      if (align === "right") targetX = stop.posPx - pc.width;
-      else if (align === "center") targetX = stop.posPx - pc.width / 2;
-      else if (align === "decimal") targetX = stop.posPx - decimalPrefixWidth(pieces[i]!.runs);
-      else targetX = stop.posPx;
-      if (targetX < curX) targetX = curX; // never overlap the previous piece
+      const fullW = measureTextWidth(pc.runs.map((r) => r.text).join(""), charStyleToFont(pc.runs[0]?.style ?? baseStyle ?? DEFAULT_DECIMAL_STYLE));
+      const fits = curX + fullW <= contentWidth; // right/center/decimal need the piece on one line
+      let targetX = stop.posPx;
+      if (fits && align === "right") targetX = stop.posPx - fullW;
+      else if (fits && align === "center") targetX = stop.posPx - fullW / 2;
+      else if (fits && align === "decimal") targetX = stop.posPx - decimalPrefixWidth(pc.runs);
+      if (targetX < curX) targetX = curX;
       if ((stop.leader ?? "none") !== "none" && targetX > curX + 1 && baseStyle) {
-        leaders.push({ x1: curX, x2: targetX, kind: stop.leader ?? "none", color: baseStyle.color, fontSizePx: baseStyle.fontSizePx });
+        curLeaders.push({ x1: curX, x2: targetX, kind: stop.leader ?? "none", color: baseStyle.color, fontSizePx: baseStyle.fontSizePx });
       }
+      curX = targetX;
+      hasTab = true;
     }
-    for (const rf of pc.frags) {
-      rf.frag.x += targetX;
-      frags.push(rf);
+    if (pc.runs.length === 0) return; // empty piece (e.g. text before a leading tab)
+
+    // Lay the piece out with wrapping: first sub-line continues from curX; any
+    // overflow opens new full-width lines at the left margin.
+    const pseg: PreparedSegment = { prepared: prepareRuns(pc.runs), runs: pc.runs, startOffset: pc.start };
+    const runStarts = segRunOffsets(pc.runs, pc.start);
+    const runCursors = pc.runs.map(() => 0);
+    let cursor: RichInlineCursor | undefined = undefined;
+    let firstSub = true;
+    for (;;) {
+      const maxW = Math.max(24, contentWidth - (firstSub ? curX : 0));
+      const bl = breakNextLine(p, pseg, maxW, cursor, runStarts, runCursors);
+      if (bl === null) break;
+      if (!firstSub) {
+        flush(false); // previous line complete; this piece wrapped to a new line
+      }
+      const shift = firstSub ? curX : 0;
+      for (const rf of bl.frags) {
+        rf.frag.x += shift;
+        curFrags.push(rf);
+      }
+      curX = shift + bl.width;
+      maxH = Math.max(maxH, bl.height);
+      maxA = Math.max(maxA, bl.ascent);
+      cursor = bl.end;
+      firstSub = false;
     }
-    curX = targetX + pc.width;
   });
 
-  if (maxH === 0 && baseStyle) {
-    const fm = fontMetrics(charStyleToFont(baseStyle));
-    maxH = Math.max(fm.ascent + fm.descent, p.style.lineHeight * baseStyle.fontSizePx);
-    maxA = (maxH - (fm.ascent + fm.descent)) / 2 + fm.ascent;
-  }
-  return {
-    frags,
-    width: curX,
-    indent: firstIndent,
-    lineMaxWidth: contentWidth - firstIndent,
-    height: maxH,
-    ascent: maxA,
-    lastOfSegment: true,
-    leaders,
-  };
+  flush(true);
+  return out;
 }
 
 function paragraphLines(p: Paragraph, contentWidth: number, cache: PrepareCache): LineBox[] {
@@ -351,7 +388,7 @@ function paragraphLines(p: Paragraph, contentWidth: number, cache: PrepareCache)
     // pretext collapse path would otherwise eat the tabs). Dormant unless run
     // text actually carries "\t".
     if (seg.runs.some((r) => r.text.includes("\t"))) {
-      raw.push(layoutTabbedSegment(p, seg.runs, seg.startOffset, contentWidth, first ? p.style.indentFirstLinePx : 0));
+      raw.push(...layoutTabbedSegment(p, seg.runs, seg.startOffset, contentWidth, first ? p.style.indentFirstLinePx : 0));
       first = false;
       continue;
     }
@@ -996,6 +1033,16 @@ function layoutDocument(
   /** Tables split at ROW boundaries across pages (Word behavior). At least one
    *  row per chunk; a lone row taller than the page overflows in place. */
   const placeTableChunked = (m: Measured & { kind: "table" }): void => {
+    // A vertical merge can't survive a row-boundary split — the rowSpan cell (and
+    // usually the header row it shares) live only in the first chunk, leaving the
+    // continuation page with an empty column. So a merged table that fits on a
+    // full page moves WHOLE to the next column/page rather than splitting (Word's
+    // effective behavior for these comparable grids). Taller-than-a-page merged
+    // tables still split (unavoidable).
+    const hasRowSpan = m.block.rows.some((r) => r.cells.some((c) => (c.rowSpan ?? 1) > 1));
+    if (hasRowSpan && colHasContent() && y + m.height > bottomY() && m.height <= contentBottom - contentTop) {
+      newPage();
+    }
     let ri = 0;
     while (ri < m.rows.length) {
       let fit = 0;
