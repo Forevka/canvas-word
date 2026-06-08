@@ -143,11 +143,23 @@ function walkInlines(nodes: XmlNode[], out: IRInline[], ctx: ParseCtx, field: Fi
       case "w:r":
         parseRun(node, out, ctx, field);
         break;
-      case "w:hyperlink":
-        // Keep the styled text; the link target needs a model field we don't have.
-        ctx.warnings.add("hyperlinks-flattened", "Hyperlinks were kept as styled text (no link targets).");
+      case "w:hyperlink": {
+        // Tag the contained runs with the link target — r:id is an external
+        // rel (URL, resolved in mapToModel), w:anchor an in-document bookmark.
+        const relId = attr(node, "r:id");
+        const anchor = attr(node, "w:anchor");
+        const start = out.length;
         walkInlines(children(node), out, ctx, field);
+        if (relId || anchor) {
+          for (let i = start; i < out.length; i++) {
+            const inline = out[i]!;
+            if (inline.kind !== "run") continue;
+            if (relId) inline.props.linkRelId = relId;
+            else if (anchor) inline.props.linkAnchor = anchor;
+          }
+        }
         break;
+      }
       case "w:sdt": {
         const content = el(node, "w:sdtContent");
         if (!content) break;

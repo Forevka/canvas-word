@@ -35,6 +35,10 @@ export function decodeRunProps(rPr: XmlNode): IRRunProps {
     const themeFont = attr(rFonts, "w:asciiTheme");
     if (themeFont) props.fontThemeAscii = themeFont;
   }
+  const highlight = val(rPr, "w:highlight");
+  if (highlight && highlight !== "none") props.highlight = highlight;
+  const vertAlign = val(rPr, "w:vertAlign");
+  if (vertAlign) props.vertAlign = vertAlign;
   const vanish = onOff(el(rPr, "w:vanish"));
   if (vanish !== undefined) props.vanish = vanish;
   return props;
@@ -88,6 +92,15 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
 
   const pageBreakBefore = onOff(el(pPr, "w:pageBreakBefore"));
   if (pageBreakBefore !== undefined) props.pageBreakBefore = pageBreakBefore;
+
+  const numPr = el(pPr, "w:numPr");
+  if (numPr) {
+    const numId = val(numPr, "w:numId");
+    if (numId !== undefined) {
+      // numId 0 = Word's "remove numbering" sentinel (overrides an inherited list).
+      props.list = numId === "0" ? null : { numId, level: numAttr(el(numPr, "w:ilvl"), "w:val") ?? 0 };
+    }
+  }
 
   const rPr = el(pPr, "w:rPr");
   if (rPr) props.markRunProps = decodeRunProps(rPr);

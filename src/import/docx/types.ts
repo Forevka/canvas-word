@@ -81,8 +81,17 @@ export interface IRRunProps {
   fontThemeAscii?: string;
   /** w:color w:themeColor — theme color slot ("accent1", "text1", …). */
   colorTheme?: string;
+  /** w:highlight w:val — named highlight color ("yellow", "green", …). */
+  highlight?: string;
+  /** w:vertAlign w:val — "superscript" | "subscript" | "baseline". */
+  vertAlign?: string;
   /** w:vanish — hidden text (Word shows it only with ¶ marks on). */
   vanish?: boolean;
+  /** Hyperlink membership (set on runs inside a w:hyperlink). Resolved to a URL
+   *  in mapToModel: relId via the part's rels (external target), or anchor for
+   *  an in-document bookmark (kept as "#name"). */
+  linkRelId?: string;
+  linkAnchor?: string;
 }
 
 /** w:sdtPr — content-control properties, decoded faithfully (mapToModel turns
@@ -135,6 +144,9 @@ export interface IRParaProps {
   keepWithNext?: boolean;
   /** w:pageBreakBefore — this paragraph starts a new page. */
   pageBreakBefore?: boolean;
+  /** w:numPr — list membership. numId "0" / null = explicitly NOT a list
+   *  (overrides an inherited list from the paragraph style). */
+  list?: { numId: string; level: number } | null;
   /** w:pPr/w:sectPr — this paragraph ENDS a section. "page" (nextPage/odd/even)
    *  implies the following content starts a new page; "continuous" doesn't. */
   sectionBreak?: "page" | "continuous";
@@ -170,6 +182,27 @@ export interface IRTable {
 }
 
 export type IRBlock = IRParagraph | IRTable;
+
+// ---------------------------------------------------------------------------
+// Numbering (numbering.xml) — raw decode; mapToModel converts to model lists.
+
+export interface IRListLevel {
+  /** Raw w:numFmt w:val ("decimal", "bullet", "lowerRoman", "none", …). */
+  format: string;
+  /** Raw w:lvlText w:val — "%1." pattern, or the bullet glyph for bullets. */
+  lvlText: string;
+  start: number;
+  indentLeftTwips?: number;
+  hangingTwips?: number;
+  /** w:lvl/w:rPr — marker glyph styling (esp. the bullet font). */
+  markerRunProps?: IRRunProps;
+}
+
+export interface IRListDefinition {
+  /** numId (the id space paragraphs reference via w:numPr/w:numId). */
+  id: string;
+  levels: IRListLevel[];
+}
 
 export interface IRSection {
   pageWidthTwips?: number;

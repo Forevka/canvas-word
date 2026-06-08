@@ -159,14 +159,35 @@ describe("docx pipeline — lossy policies emit warnings", () => {
     expect(warningCodes(r)).toContain("sdt-unwrapped");
   });
 
-  it("flattens hyperlinks to styled text", () => {
+  it("keeps hyperlink text/style; warns when the target rel is absent", () => {
+    // simpleDocx has no document.xml.rels, so r:id can't resolve.
     const r = importBody(
       `<w:p><w:hyperlink r:id="rId4" xmlns:r="x"><w:r><w:rPr><w:u/></w:rPr><w:t>click me</w:t></w:r></w:hyperlink></w:p>`,
     );
     const run = para(r.doc.blocks[0]).runs[0]!;
     expect(run.text).toBe("click me");
     expect(run.style.underline).toBe(true);
-    expect(warningCodes(r)).toContain("hyperlinks-flattened");
+    expect(run.style.link).toBeUndefined();
+    expect(warningCodes(r)).toContain("links-unresolved");
+  });
+
+  it("maps an in-document hyperlink anchor to #name", () => {
+    const r = importBody(
+      `<w:p><w:hyperlink w:anchor="_Top"><w:r><w:t>go top</w:t></w:r></w:hyperlink></w:p>`,
+    );
+    expect(para(r.doc.blocks[0]).runs[0]!.style.link).toBe("#_Top");
+  });
+
+  it("maps highlight and super/subscript run properties", () => {
+    const r = importBody(
+      `<w:p><w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>hi</w:t></w:r>` +
+        `<w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>2</w:t></w:r>` +
+        `<w:r><w:rPr><w:vertAlign w:val="subscript"/></w:rPr><w:t>n</w:t></w:r></w:p>`,
+    );
+    const runs = para(r.doc.blocks[0]).runs;
+    expect(runs[0]!.style.highlightColor).toBe("#ffff00");
+    expect(runs[1]!.style.verticalAlign).toBe("super");
+    expect(runs[2]!.style.verticalAlign).toBe("sub");
   });
 
   it("keeps cached field results, drops instructions", () => {

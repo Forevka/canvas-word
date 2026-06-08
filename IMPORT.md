@@ -154,12 +154,14 @@ than a silent drop:
 | Images in table cells | — | Faithful: `TableCell.blocks: Block[]` holds images and nested tables |
 | Floating images (`wp:anchor`) | `ImageBlock.wrap` | Square/tight wrap → `wrap: "square"` float with `positionH` alignment; overlap/top-and-bottom wraps demote to block flow with warning |
 | Linked (external) images | — | http(s) targets pass through by URL; `file:` targets skipped with warning |
-| Numbering/lists | none | Synthesize literal prefix run (`"1. "`, `"• "`) from `numbering.xml` level format — visually right, semantically lossy |
+| Numbering/lists | — | Faithful: `numbering.xml` → `Document.lists` (`ListDefinition`) + `ParaStyle.list`; markers render paint-only. Level indent is de-duplicated against the paragraph indent (engine adds them); bullet glyphs normalized from Symbol/Wingdings code points |
+| Hyperlinks | `CharStyle.link` | Faithful: external `r:id` → URL (via the part's rels), `w:anchor` → `#bookmark`; warns if a target rel is missing |
+| Highlight | `CharStyle.highlightColor` | Faithful: 16 named colors → hex |
+| Super/subscript | `CharStyle.verticalAlign` | Faithful: `w:vertAlign` → `"super"`/`"sub"` |
 | `w:br` (soft line break) | no soft breaks | Split into a new paragraph with `spaceBefore/After: 0` |
 | `w:tab` | no tab stops | Replace with fixed spaces (warning) |
 | `gridSpan` | — | Faithful: maps to `TableCell.colSpan` (and `w:tblGrid` → `colFractions`) |
 | `vMerge` | no row spans | Continuation cells stay as separate (empty) cells; warning |
-| Highlight, sub/superscript, links | no fields | Drop; links keep styled text |
 | Explicit page breaks (`w:br type="page"`, `w:pageBreakBefore`) | — | Faithful: map to `ParaStyle.pageBreakBefore` (inline breaks split the paragraph; the follower carries the break) |
 | Multiple sections | single `SectionProps` | Page *geometry*: body-level `sectPr` wins (last section), with warning. Page *boundaries*: non-continuous section breaks set `pageBreakBefore` on the following block |
 
@@ -196,5 +198,13 @@ or rich headers, the importer seam already collects the data (the IR keeps it; o
    http(s) images pass through by URL. Header/footer parts → `Block[]` stories with
    their own rels; complex/simple `PAGE`/`NUMPAGES` fields → `{page}`/`{pages}` tokens
    (header/footer only — body fields keep their cached result text).
-4. **Numbering prefixes, warnings UI** — `numbering.xml` literal prefixes; toast:
-   "Imported with 3 simplifications".
+4. ✅ **Numbering, hyperlinks, highlight, super/subscript** — `numbering.xml` →
+   `Document.lists` + `ParaStyle.list` (real list model, paint-only markers, indent
+   de-duplication, Symbol/Wingdings bullet normalization); external/anchor hyperlinks →
+   `CharStyle.link` (resolved through each part's rels); `w:highlight` →
+   `highlightColor`; `w:vertAlign` → `verticalAlign`.
+
+Still on the backlog (lower impact / need model or layout support): table borders &
+shading, cell vertical-merge row spans, footnotes (`footnotes.xml` → `Document.footnotes`),
+tab-stop positions, first/even header variants, east-asian/complex-script fonts, a
+warnings-summary UI toast.

@@ -22,12 +22,28 @@ import type {
   TableCell,
 } from "../../model/document";
 import type { NamedStyle, Stylesheet } from "../../model/stylesheet";
+import type { ListDefinition, ListLevel, ListNumberFormat } from "../../model/lists";
 import { normalizeRuns } from "../../model/ops";
 import type { MediaStore } from "./media";
+import type { NumberingData } from "./numbering";
 import type { StyleResolver, StylesData } from "./styles";
-import type { IRBlock, IRInline, IRParaProps, IRParagraph, IRRunProps, IRSdtProps, IRSection, IRTable } from "./types";
+import type {
+  IRBlock,
+  IRInline,
+  IRListDefinition,
+  IRParaProps,
+  IRParagraph,
+  IRRunProps,
+  IRSdtProps,
+  IRSection,
+  IRTable,
+} from "./types";
 import { WarningSink } from "./types";
 import { emuToPx, halfPointsToPx, round2, twipsToPx } from "./units";
+
+/** Resolves a hyperlink relationship id to a URL (the part's external rels). */
+export type LinkResolver = (relId: string) => string | undefined;
+const NO_LINKS: LinkResolver = () => undefined;
 
 // Fallbacks for properties NOTHING specifies (no docDefaults, no style, no
 // direct formatting). These mirror what Word itself renders for a bare
@@ -63,21 +79,38 @@ const DEFAULT_SECTION: SectionProps = {
 const TAB_AS_SPACES = "    ";
 
 export interface Mapper {
-  /** Map a block list (document body, header story, footer story). */
-  mapBlocks(blocks: IRBlock[], media: MediaStore): Block[];
+  /** Map a block list (document body, header story, footer story). resolveLink
+   *  resolves that part's hyperlink rels (body and bands have separate rels). */
+  mapBlocks(blocks: IRBlock[], media: MediaStore, resolveLink?: LinkResolver): Block[];
   mapSection(section: IRSection | null): SectionProps;
   /** The editor assumes at least one block (the caret needs a home). */
   emptyParagraph(): Paragraph;
+  /** Model list definitions for the lists actually referenced — for Document.lists. */
+  lists(): Record<string, ListDefinition>;
 }
 
 export function createMapper(
   warnings: WarningSink,
   resolver: StyleResolver,
   sdts: Record<string, IRSdtProps> = {},
+  numbering: NumberingData = new Map(),
 ): Mapper {
   // Import-distinct id prefix: commands.ts mints `n…`, sampleDoc `b…`.
   let nextId = 0;
   const id = (): string => `i${nextId++}`;
+
+  // Model list definitions, built lazily for referenced numIds only (a report
+  // carries far more definitions than it uses).
+  const usedLists = new Map<string, ListDefinition>();
+  const listDefFor = (numId: string): ListDefinition | undefined => {
+    const cached = usedLists.get(numId);
+    if (cached) return cached;
+    const ir = numbering.get(numId);
+    if (!ir) return undefined;
+    const def = buildListDefinition(ir);
+    usedLists.set(numId, def);
+    return def;
+  };
 
   // What a run with no formatting at all resolves to in THIS document
   // (docDefaults + default paragraph style) — empty paragraphs and padded
@@ -93,13 +126,33 @@ export function createMapper(
     style: { ...documentPara },
   });
 
-  const mapBlocks = (blocks: IRBlock[], media: MediaStore): Block[] => {
+  /** Apply list membership to a resolved paragraph style. The engine ADDS the
+   *  list level's indent to the paragraph's own (engine.ts ~L446), so subtract
+   *  the level indent here to avoid double-counting; the marker hang is handled
+   *  by the level's hangingPx, so zero the paragraph's first-line indent. */
+  const applyListMembership = (style: ParaStyle, ref: IRParaProps["list"]): void => {
+    if (!ref) return; // undefined (no list) or null (explicitly removed)
+    const def = listDefFor(ref.numId);
+    if (!def) {
+      warnings.add("list-missing", "A list reference had no matching definition — markers were dropped.");
+      return;
+    }
+    style.list = { listId: ref.numId, level: ref.level };
+    const lvl = def.levels[Math.min(ref.level, def.levels.length - 1)];
+    if (lvl) style.indentLeftPx = Math.max(0, round2(style.indentLeftPx - lvl.indentLeftPx));
+    style.indentFirstLinePx = 0;
+  };
+
+  const mapBlocks = (blocks: IRBlock[], media: MediaStore, resolveLink: LinkResolver = NO_LINKS): Block[] => {
     const out: Block[] = [];
     // A paragraph carrying w:sectPr ends a section; unless the break is
     // "continuous", whatever follows starts a new page.
     let sectionPageBreak = false;
     for (const irBlock of blocks) {
-      const mapped = irBlock.kind === "paragraph" ? mapParagraph(irBlock, media) : [mapTable(irBlock, media)];
+      const mapped =
+        irBlock.kind === "paragraph"
+          ? mapParagraph(irBlock, media, resolveLink)
+          : [mapTable(irBlock, media, resolveLink)];
       if (sectionPageBreak && mapped.length > 0) {
         const first = mapped[0]!;
         if (first.kind === "paragraph") first.style.pageBreakBefore = true;
@@ -118,8 +171,10 @@ export function createMapper(
   /** One IR paragraph maps to 1..N model blocks: soft breaks split it (the
    *  model has no intra-paragraph line break), and inline images surface as
    *  block-level ImageBlocks between the text fragments. */
-  function mapParagraph(ir: IRParagraph, media: MediaStore): Block[] {
-    const style = mapParaStyle(resolver.para(ir.props));
+  function mapParagraph(ir: IRParagraph, media: MediaStore, resolveLink: LinkResolver): Block[] {
+    const effPara = resolver.para(ir.props);
+    const style = mapParaStyle(effPara);
+    applyListMembership(style, effPara.list);
     // Empty paragraphs take the paragraph MARK's formatting (w:pPr/w:rPr over
     // the style cascade) — that's what sizes the empty line in Word.
     const markChar = mapCharStyle(resolver.run(ir.props.styleId, ir.props.markRunProps ?? {}));
@@ -182,7 +237,7 @@ export function createMapper(
             warnings.add("hidden-text", "Hidden text (w:vanish) was dropped.");
             break;
           }
-          runs.push(mapRun(inline.text, effective, inline.sdtId));
+          runs.push(mapRun(inline.text, effective, resolveLink, inline.sdtId));
           trailingBreak = false;
           break;
         }
@@ -231,13 +286,20 @@ export function createMapper(
     return image;
   }
 
-  function mapRun(rawText: string, effective: IRRunProps, sdtId?: string): Run {
+  function mapRun(rawText: string, effective: IRRunProps, resolveLink: LinkResolver, sdtId?: string): Run {
     let text = rawText;
     if (text.includes("\t")) {
       warnings.add("tabs", "Tab stops became fixed spaces (no tab-stop layout).");
       text = text.replaceAll("\t", TAB_AS_SPACES);
     }
     const style = mapCharStyle(effective);
+    if (effective.linkRelId) {
+      const url = resolveLink(effective.linkRelId);
+      if (url) style.link = url;
+      else warnings.add("links-unresolved", "A hyperlink target could not be resolved and was dropped.");
+    } else if (effective.linkAnchor) {
+      style.link = `#${effective.linkAnchor}`; // in-document bookmark
+    }
     if (sdtId) {
       style.sdtId = sdtId;
       const sdt = sdts[sdtId];
@@ -254,7 +316,7 @@ export function createMapper(
   // -------------------------------------------------------------------------
   // Tables — cells are full block stories; gridSpan maps to colSpan.
 
-  function mapTable(ir: IRTable, media: MediaStore): TableBlock {
+  function mapTable(ir: IRTable, media: MediaStore, resolveLink: LinkResolver): TableBlock {
     const emptyCell = (): TableCell => ({ id: id(), blocks: [emptyParagraph()] });
     const spanSum = (cells: TableCell[]): number => cells.reduce((s, c) => s + (c.colSpan ?? 1), 0);
 
@@ -268,8 +330,8 @@ export function createMapper(
         }
         const blocks: Block[] = [];
         for (const b of irCell.blocks) {
-          if (b.kind === "paragraph") blocks.push(...mapParagraph(b, media));
-          else blocks.push(mapTable(b, media)); // nested table — model renders one level
+          if (b.kind === "paragraph") blocks.push(...mapParagraph(b, media, resolveLink));
+          else blocks.push(mapTable(b, media, resolveLink)); // nested table — model renders one level
         }
         const cell: TableCell = { id: id(), blocks: blocks.length > 0 ? blocks : [emptyParagraph()] };
         if (irCell.gridSpan > 1) cell.colSpan = irCell.gridSpan;
@@ -319,14 +381,94 @@ export function createMapper(
     };
   }
 
-  return { mapBlocks, mapSection, emptyParagraph };
+  return { mapBlocks, mapSection, emptyParagraph, lists: () => Object.fromEntries(usedLists) };
+}
+
+// ---------------------------------------------------------------------------
+// Lists (numbering.xml IR → model ListDefinition)
+
+const NUM_FORMAT_MAP: Record<string, ListNumberFormat> = {
+  decimal: "decimal",
+  decimalZero: "decimal",
+  lowerLetter: "lowerLetter",
+  upperLetter: "upperLetter",
+  lowerRoman: "lowerRoman",
+  upperRoman: "upperRoman",
+  bullet: "bullet",
+};
+
+/** Symbol/Wingdings private-use code points Word uses for bullets → Unicode. */
+function bulletGlyph(glyph: string): string {
+  if (glyph.length !== 1) return glyph; // already a real char, or multi-char marker
+  switch (glyph.charCodeAt(0)) {
+    case 0xf0b7: // Symbol  (filled round bullet)
+    case 0x00b7: // middle dot
+      return '•'; // •
+    case 0xf0a7: // Wingdings  (filled square)
+    case 0x00a7:
+      return '▪'; // ▪
+    case 0xf06f: // Wingdings  (open square)
+      return '▫'; // ▫
+    case 0xf0d8: // Wingdings  (arrowhead)
+      return '‣'; // ‣
+    case 0xf0fc: // Wingdings  (check)
+      return '✔'; // ✔
+    default:
+      return glyph;
+  }
+}
+
+function buildListDefinition(ir: IRListDefinition): ListDefinition {
+  const levels: ListLevel[] = [];
+  for (let i = 0; i < 9; i++) {
+    levels.push(buildListLevel(ir.levels[i], i));
+  }
+  return { id: ir.id, levels };
+}
+
+function buildListLevel(ir: IRListDefinition["levels"][number] | undefined, i: number): ListLevel {
+  if (!ir) {
+    // Hole in the definition — synthesize a sane decimal level so the engine's
+    // levels[level] lookup never hits undefined.
+    return { format: "decimal", text: `%${i + 1}.`, indentLeftPx: 24 + i * 24, hangingPx: 18, start: 1 };
+  }
+  const format = NUM_FORMAT_MAP[ir.format] ?? (ir.format === "none" ? "bullet" : "decimal");
+  const level: ListLevel = {
+    format,
+    text: format === "bullet" ? "" : ir.lvlText,
+    indentLeftPx: ir.indentLeftTwips !== undefined ? round2(twipsToPx(ir.indentLeftTwips)) : 24 + i * 24,
+    hangingPx: ir.hangingTwips !== undefined ? round2(twipsToPx(ir.hangingTwips)) : 18,
+    start: ir.start,
+  };
+  if (format === "bullet") {
+    level.bulletChar = ir.format === "none" ? "" : bulletGlyph(ir.lvlText);
+  }
+  if (ir.markerRunProps) {
+    const marker = mapCharPatch(ir.markerRunProps);
+    if (Object.keys(marker).length > 0) level.markerStyle = marker;
+  }
+  return level;
 }
 
 // ---------------------------------------------------------------------------
 // Style mapping (pure)
 
+/** Word's 16 named highlight colors → hex. */
+const HIGHLIGHT_HEX: Record<string, string> = {
+  yellow: "#ffff00", green: "#00ff00", cyan: "#00ffff", magenta: "#ff00ff",
+  blue: "#0000ff", red: "#ff0000", darkBlue: "#000080", darkCyan: "#008080",
+  darkGreen: "#008000", darkMagenta: "#800080", darkRed: "#800000", darkYellow: "#808000",
+  darkGray: "#808080", lightGray: "#c0c0c0", black: "#000000", white: "#ffffff",
+};
+
 function mapCharStyle(props: IRRunProps): CharStyle {
   const style: CharStyle = { ...DEFAULT_CHAR };
+  applyRunProps(style, props);
+  return style;
+}
+
+/** Shared run-property mapping for full CharStyle and partial style-gallery patches. */
+function applyRunProps(style: Partial<CharStyle>, props: IRRunProps): void {
   if (props.fontAscii) style.fontFamily = `${props.fontAscii}, serif`;
   if (props.sizeHalfPoints !== undefined) style.fontSizePx = round2(halfPointsToPx(props.sizeHalfPoints));
   if (props.bold !== undefined) style.bold = props.bold;
@@ -334,7 +476,12 @@ function mapCharStyle(props: IRRunProps): CharStyle {
   if (props.underline !== undefined) style.underline = props.underline;
   if (props.strikethrough !== undefined) style.strikethrough = props.strikethrough;
   if (props.color && props.color !== "auto") style.color = `#${props.color.toLowerCase()}`;
-  return style;
+  if (props.highlight) {
+    const hex = HIGHLIGHT_HEX[props.highlight];
+    if (hex) style.highlightColor = hex;
+  }
+  if (props.vertAlign === "superscript") style.verticalAlign = "super";
+  else if (props.vertAlign === "subscript") style.verticalAlign = "sub";
 }
 
 /** IR content controls → model SdtProps (shapes match; copy defined fields). */
@@ -372,13 +519,7 @@ export function collectUsedStyleIds(blocks: IRBlock[], into: Set<string> = new S
  *  skipped (the resolver already baked them into the runs). */
 function mapCharPatch(props: IRRunProps): Partial<CharStyle> {
   const out: Partial<CharStyle> = {};
-  if (props.fontAscii) out.fontFamily = `${props.fontAscii}, serif`;
-  if (props.sizeHalfPoints !== undefined) out.fontSizePx = round2(halfPointsToPx(props.sizeHalfPoints));
-  if (props.bold !== undefined) out.bold = props.bold;
-  if (props.italic !== undefined) out.italic = props.italic;
-  if (props.underline !== undefined) out.underline = props.underline;
-  if (props.strikethrough !== undefined) out.strikethrough = props.strikethrough;
-  if (props.color && props.color !== "auto") out.color = `#${props.color.toLowerCase()}`;
+  applyRunProps(out, props);
   return out;
 }
 

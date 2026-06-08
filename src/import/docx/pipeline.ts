@@ -5,8 +5,9 @@
 import type { Block, SectionProps } from "../../model/document";
 import { findMainDocumentPart } from "./contentTypes";
 import { parseDocumentXml, parseHeaderFooterXml } from "./documentParser";
-import { buildStylesheet, collectUsedStyleIds, createMapper, mapSdts, type Mapper } from "./mapToModel";
+import { buildStylesheet, collectUsedStyleIds, createMapper, mapSdts, type LinkResolver, type Mapper } from "./mapToModel";
 import { createMediaStore, type MediaStore } from "./media";
+import { parseNumberingXml, EMPTY_NUMBERING } from "./numbering";
 import { findByType, parseRelationships, relsPartFor, type Relationships } from "./relationships";
 import { createStyleResolver, parseStylesXml, EMPTY_STYLES } from "./styles";
 import { parseThemeXml, EMPTY_THEME } from "./theme";
@@ -42,6 +43,8 @@ export function runImport(
   const themeXml = partByRelType(archive, rels, "theme") ?? archive.text("word/theme/theme1.xml");
   const theme = themeXml !== undefined ? parseThemeXml(themeXml) : EMPTY_THEME;
   const resolver = createStyleResolver(styles, theme);
+  const numberingXml = partByRelType(archive, rels, "numbering") ?? archive.text("word/numbering.xml");
+  const numbering = numberingXml !== undefined ? parseNumberingXml(numberingXml) : EMPTY_NUMBERING;
   progress("styles", 1);
 
   progress("parse", 0);
@@ -49,7 +52,7 @@ export function runImport(
   progress("parse", 1);
 
   progress("map", 0);
-  const mapper = createMapper(warnings, resolver, ir.sdts);
+  const mapper = createMapper(warnings, resolver, ir.sdts, numbering);
   const mediaStores: MediaStore[] = [];
   const mediaFor = (partRels: Relationships): MediaStore => {
     const store = createMediaStore(archive, partRels, warnings);
@@ -57,13 +60,13 @@ export function runImport(
     return store;
   };
 
-  const blocks = mapper.mapBlocks(ir.blocks, mediaFor(rels));
+  const blocks = mapper.mapBlocks(ir.blocks, mediaFor(rels), linkResolverFor(rels));
   if (blocks.length === 0) blocks.push(mapper.emptyParagraph()); // caret needs a home
   const section = mapper.mapSection(ir.section);
 
-  // Header/footer parts are full block stories with their OWN rels (images in
-  // a header resolve through header1.xml.rels, not the document's). Their
-  // content controls join the document's sdt registry.
+  // Header/footer parts are full block stories with their OWN rels (images and
+  // hyperlinks in a header resolve through header1.xml.rels, not the document's).
+  // Their content controls join the document's sdt registry.
   const header = mapStory(archive, rels, ir.section?.headerRelId, mapper, mediaFor, warnings, ir.sdts);
   if (header) section.header = header;
   const footer = mapStory(archive, rels, ir.section?.footerRelId, mapper, mediaFor, warnings, ir.sdts);
@@ -73,6 +76,8 @@ export function runImport(
   const doc: ImportResult["doc"] = { section, blocks };
   const sdts = mapSdts(ir.sdts);
   if (Object.keys(sdts).length > 0) doc.sdts = sdts;
+  const lists = mapper.lists();
+  if (Object.keys(lists).length > 0) doc.lists = lists;
   // Style gallery: used paragraph styles (+ basedOn closure) with w:name labels.
   const stylesheet = buildStylesheet(styles, collectUsedStyleIds(ir.blocks));
   if (stylesheet) doc.stylesheet = stylesheet;
@@ -100,14 +105,23 @@ function mapStory(
     warnings.add("header-missing", "A referenced header/footer part was missing from the archive.");
     return undefined;
   }
+  const partRels = relsOf(archive, rel.target);
   const ir = parseHeaderFooterXml(xml, rel.target, warnings, sdts);
-  const blocks = mapper.mapBlocks(ir, mediaFor(relsOf(archive, rel.target)));
+  const blocks = mapper.mapBlocks(ir, mediaFor(partRels), linkResolverFor(partRels));
   return blocks.length > 0 ? blocks : undefined;
 }
 
 function relsOf(archive: Archive, partName: string): Relationships {
   const relsXml = archive.text(relsPartFor(partName));
   return relsXml !== undefined ? parseRelationships(relsXml, partName) : new Map();
+}
+
+/** Hyperlink r:id → URL. External rels carry the raw URL as target. */
+function linkResolverFor(rels: Relationships): LinkResolver {
+  return (relId) => {
+    const rel = rels.get(relId);
+    return rel?.external ? rel.target : undefined;
+  };
 }
 
 function partByRelType(archive: Archive, rels: Relationships, kind: string): string | undefined {
