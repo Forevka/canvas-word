@@ -43,8 +43,9 @@ export interface PaintScheduler {
   caretToContainer(caret: CaretRect): { left: number; top: number } | null;
   /** Page placeholder element — host for DOM overlays (object selection frame). */
   getPageElement(pageIndex: number): HTMLElement | null;
-  /** Scroll the container the minimum amount to reveal the caret. */
-  ensureVisible(caret: CaretRect): void;
+  /** Scroll the container to reveal the caret. "nearest" (default) scrolls the
+   *  minimum amount; "center" vertically centers the target in the viewport. */
+  ensureVisible(caret: CaretRect, align?: "nearest" | "center"): void;
   /** Presentational zoom (1 = 100%). Scales pages, canvases, caret — NOT the
    *  layout (document coords are unchanged), so no relayout. Clamped to [.25, 5]. */
   setZoom(zoom: number): void;
@@ -529,13 +530,20 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
       };
     },
 
-    ensureVisible(caret: CaretRect): void {
+    ensureVisible(caret: CaretRect, align: "nearest" | "center" = "nearest"): void {
       const ph = placeholders[caret.pageIndex];
       if (!ph) return;
       const phRect = ph.getBoundingClientRect();
       const cRect = container.getBoundingClientRect();
       const caretTop = phRect.top - cRect.top + caret.y * zoom; // viewport-relative
-      const caretBottom = caretTop + caret.height * zoom;
+      const caretHeight = caret.height * zoom;
+      const caretBottom = caretTop + caretHeight;
+      if (align === "center") {
+        // Place the target's middle at the viewport's middle (clamped by the
+        // container's own scroll range, so the ends don't overscroll).
+        container.scrollTop += caretTop + caretHeight / 2 - cRect.height / 2;
+        return;
+      }
       const margin = 32;
       if (caretTop < margin) container.scrollTop += caretTop - margin;
       else if (caretBottom > cRect.height - margin) {

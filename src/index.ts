@@ -1749,7 +1749,7 @@ export function createEditor(
       if (!blockById(doc, blockId)) return;
       setSelection({ anchor: { blockId, offset: 0 }, focus: { blockId, offset: 0 } });
       const rect = caretRect(tree, { blockId, offset: 0 });
-      if (rect) paint.ensureVisible(rect);
+      if (rect) paint.ensureVisible(rect, "center");
     },
     search,
     searchNav,
