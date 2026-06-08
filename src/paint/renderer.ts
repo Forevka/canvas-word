@@ -103,6 +103,14 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
     { root: container, rootMargin: "100% 0px" }, // one viewport of overscan
   );
 
+  // A document loaded in a hidden/background tab can paint gray image
+  // placeholders (rAF is throttled) before its bitmaps decode; the load events
+  // fire while throttled. Repaint everything when the tab comes back to the fore.
+  const onVisible = (): void => {
+    if (!document.hidden) repaintAllLive();
+  };
+  document.addEventListener("visibilitychange", onVisible);
+
   function rebuildPlaceholders(): void {
     observer.disconnect();
     liveCanvases.clear();
@@ -254,16 +262,22 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
 
   const imageCache = new Map<string, HTMLImageElement>();
 
-  function getImage(src: string, pageIndex: number): HTMLImageElement {
+  /** Re-dirty and repaint every mounted page. Used when a bitmap arrives late —
+   *  we don't track which pages use which image, and a single captured page index
+   *  is wrong for shared images and stale after a remount. */
+  function repaintAllLive(): void {
+    for (const index of liveCanvases.keys()) dirty.add(index);
+    schedule();
+  }
+
+  function getImage(src: string): HTMLImageElement {
     let img = imageCache.get(src);
     if (!img) {
       img = new Image();
+      // A late bitmap (slow network, or a background-tab load where rAF was
+      // throttled) must clear its gray placeholder once it decodes.
+      img.addEventListener("load", repaintAllLive);
       img.src = src;
-      img.addEventListener("load", () => {
-        // repaint the page once the bitmap arrives
-        if (liveCanvases.has(pageIndex)) dirty.add(pageIndex);
-        schedule();
-      });
       imageCache.set(src, img);
     }
     return img;
@@ -271,7 +285,7 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
 
   function paintBlock(ctx: CanvasRenderingContext2D, block: PlacedBlock, pageIndex: number): void {
     if (block.image) {
-      const img = getImage(block.image.src, pageIndex);
+      const img = getImage(block.image.src);
       const clip = block.image.clip;
       if (clip) {
         ctx.save();
@@ -559,6 +573,7 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
 
     destroy(): void {
       observer.disconnect();
+      document.removeEventListener("visibilitychange", onVisible);
       if (rafId !== null) cancelAnimationFrame(rafId);
       pagesWrap.remove();
     },
