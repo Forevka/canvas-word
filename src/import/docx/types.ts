@@ -226,6 +226,10 @@ export interface IRTableCell {
   vMergeContinue: boolean;
   /** w:tcPr/w:tcBorders. */
   borders?: IRBorders;
+  /** A w:tcBorders element is present — even if empty (all edges nil/absent), the
+   *  author explicitly chose this cell's borders, so it must NOT fall back to the
+   *  renderer's default grid. */
+  bordersSpecified?: boolean;
   /** w:tcPr/w:shd → CSS fill. */
   shd?: string;
   /** w:tcPr/w:tcMar — per-side inner padding override (twips). */
@@ -245,6 +249,9 @@ export interface IRTable {
   styleId?: string;
   /** w:tblPr/w:tblBorders. */
   borders?: IRBorders;
+  /** A w:tblBorders element is present — even if empty, the table explicitly
+   *  declares its borders (e.g. "no borders"), suppressing the default grid. */
+  bordersSpecified?: boolean;
   /** w:tblPr/w:shd → CSS fill applied to every cell unless overridden. */
   shd?: string;
   /** w:tblPr/w:tblCellMar — table-wide cell-margin default (twips), the base each

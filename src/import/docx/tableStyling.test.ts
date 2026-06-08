@@ -23,6 +23,18 @@ describe("table borders — direct w:tblBorders", () => {
     expect(cell(table(r), 0, 0).borders).toBeUndefined();
   });
 
+  it("treats an explicit (empty) w:tblBorders as 'no borders', not the default grid", () => {
+    const r = runImport(simpleDocx(tbl(`<w:tblBorders></w:tblBorders>`, grid2)));
+    // Present-but-empty borders → defined with no edges, so the renderer draws
+    // nothing instead of falling back to its gray grid (matching Word).
+    expect(cell(table(r), 0, 0).borders).toEqual({});
+  });
+
+  it("treats an explicit (empty) w:tcBorders as 'no borders'", () => {
+    const body = `<w:tr>${C("a", `<w:tcPr><w:tcBorders></w:tcBorders></w:tcPr>`)}${C("b")}</w:tr>`;
+    expect(cell(table(runImport(simpleDocx(`<w:tbl>${body}</w:tbl>`))), 0, 0).borders).toEqual({});
+  });
+
   it("applies outer edges from w:tblBorders only on the boundary", () => {
     const borders =
       `<w:tblBorders><w:top w:val="single" w:sz="12" w:color="FF0000"/>` +

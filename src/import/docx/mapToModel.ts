@@ -567,7 +567,14 @@ export function createMapper(
 
     // Borders/shading after all rows so each owner's rowSpan is final.
     const styled = ir.styleId ? tableStyle(ir.styleId) : {};
-    const hasBorderInfo = !!styled.borders || !!ir.borders || ir.rows.some((r) => r.cells.some((c) => c.borders));
+    // An explicitly-declared (even empty) w:tblBorders/w:tcBorders counts as
+    // border info: the author chose "no borders", which must override the
+    // renderer's default grid rather than fall through to it.
+    const hasBorderInfo =
+      !!styled.borders ||
+      !!ir.borders ||
+      !!ir.bordersSpecified ||
+      ir.rows.some((r) => r.cells.some((c) => c.borders || c.bordersSpecified));
     for (const row of placedRows) for (const p of row) styleCell(p, ir, styled, hasBorderInfo, width, ir.rows.length);
 
     const rows = placedRows.map((row) => ({ cells: row.map((p) => p.cell) }));

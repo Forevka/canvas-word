@@ -467,6 +467,7 @@ function parseTable(tbl: XmlNode, ctx: ParseCtx): IRTable {
   if (tblPr) {
     const styleId = val(tblPr, "w:tblStyle");
     if (styleId) table.styleId = styleId;
+    if (el(tblPr, "w:tblBorders")) table.bordersSpecified = true;
     const borders = decodeBorders(el(tblPr, "w:tblBorders"));
     if (borders) table.borders = borders;
     const shd = decodeShdFill(el(tblPr, "w:shd"));
@@ -489,6 +490,7 @@ function parseCell(tc: XmlNode, ctx: ParseCtx): IRTableCell {
   walkBlocks(children(tc), blocks, ctx);
   const cell: IRTableCell = { blocks, gridSpan, vMergeContinue };
   if (tcPr) {
+    if (el(tcPr, "w:tcBorders")) cell.bordersSpecified = true;
     const borders = decodeBorders(el(tcPr, "w:tcBorders"));
     if (borders) cell.borders = borders;
     const shd = decodeShdFill(el(tcPr, "w:shd"));
