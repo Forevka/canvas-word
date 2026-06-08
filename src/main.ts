@@ -2,6 +2,7 @@ import { createEditor, type CurrentFormat } from "./index";
 import { createLayoutEngine } from "./layout/engine";
 import { sampleDoc } from "./model/sampleDoc";
 import { stressDoc } from "./model/stressDoc";
+import { recognizeImportedToc } from "./model/tocRecognition";
 import { importDocx, type ImportResult } from "./import/docx/importDocx";
 
 // Fonts must be resolved before the first layout — pretext measures with the same
@@ -29,7 +30,7 @@ let doc =
         onProgress: (phase, pct) => console.log(`[docx-import] ${phase} ${(pct * 100).toFixed(0)}%`),
       });
       reportImport(result, performance.now() - i0);
-      return result.doc;
+      return recognizeImportedToc(result.doc);
     })()
   : sampleDoc();
 
@@ -61,7 +62,7 @@ const openDocxFile = async (file: File): Promise<void> => {
   try {
     const result = await importDocx(file);
     reportImport(result, performance.now() - i0);
-    replaceDocument(result.doc);
+    replaceDocument(recognizeImportedToc(result.doc));
   } catch (e) {
     console.error("[docx-import]", e);
     alert(`Could not open "${file.name}": ${e instanceof Error ? e.message : String(e)}`);

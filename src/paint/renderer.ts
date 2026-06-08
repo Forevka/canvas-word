@@ -295,7 +295,11 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
       if (line) {
         const baseline = block.y + line.y + line.ascent;
         ctx.font = charStyleToFont(block.toc.style);
-        ctx.fillStyle = block.toc.style.color;
+        // The number inherits the entry's first-run style; normalize the
+        // imported Hyperlink blue so it reads as plain text like the leader.
+        ctx.fillStyle = HYPERLINK_BLUES.has(block.toc.style.color.toLowerCase())
+          ? "#202124"
+          : block.toc.style.color;
         (ctx as CanvasRenderingContext2D & { wordSpacing: string }).wordSpacing = "0px";
         ctx.fillText(block.toc.numText, block.toc.numX, baseline);
         const lastFrag = line.fragments[line.fragments.length - 1];
