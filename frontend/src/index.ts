@@ -478,7 +478,7 @@ export function createEditor(
       return true;
     }
     const cell = table.rows[flat[target]!.ri]!.cells[flat[target]!.ci]!;
-    const paras = cell.blocks.filter((b): b is import("./model/document").Paragraph => b.kind === "paragraph");
+    const paras = cell.blocks.filter((b): b is import("@cw/shared").Paragraph => b.kind === "paragraph");
     const first = paras[0];
     const last = paras[paras.length - 1];
     if (!first || !last) return true; // image-only cell: consume Tab, nowhere to caret
@@ -1216,9 +1216,9 @@ export function createEditor(
   /** Split the inspector's edited HTML into one run-list per top-level block
    *  (paragraph), preserving order and empties — so a cell-hosted control's N
    *  paragraphs map 1:1 back to its N tagged cell ranges. */
-  const editedBlockRuns = (html: string): import("./model/document").Run[][] => {
+  const editedBlockRuns = (html: string): import("@cw/shared").Run[][] => {
     const parsed = new DOMParser().parseFromString(html, "text/html");
-    const out: import("./model/document").Run[][] = [];
+    const out: import("@cw/shared").Run[][] = [];
     for (const node of Array.from(parsed.body.childNodes)) {
       if (node instanceof HTMLElement) {
         out.push(htmlToFragment(node.outerHTML)?.blocks[0]?.runs ?? []);
@@ -1266,7 +1266,7 @@ export function createEditor(
         const block = blockById(doc, rr.blockId);
         return block ? { runs: sliceRuns(block.runs, rr.start, rr.end), style: { ...block.style } } : null;
       })
-      .filter((b): b is { runs: import("./model/document").Run[]; style: ParaStyle } => b !== null);
+      .filter((b): b is { runs: import("@cw/shared").Run[]; style: ParaStyle } => b !== null);
     const fragment: DocFragment = { blocks, inline: blocks.length === 1 };
     const text = fragmentToPlainText(fragment);
     return { id, props, html: fragmentToHtml(fragment), text, paragraphCount: blocks.length, charCount: text.length, hasObjects: false, blockLevel: false, objRefs: [] };
@@ -1364,7 +1364,7 @@ export function createEditor(
     }
   };
 
-  const listKindOf = (p: import("./model/document").Paragraph): "bullet" | "decimal" | null => {
+  const listKindOf = (p: import("@cw/shared").Paragraph): "bullet" | "decimal" | null => {
     const ref = p.style.list;
     if (!ref) return null;
     const def = doc.lists?.[ref.listId];
@@ -1613,7 +1613,7 @@ export function createEditor(
     if (edits.length === 0) return 0;
 
     dispatch((state) => {
-      const ops: import("./model/ops").Op[] = [];
+      const ops: import("@cw/shared").Op[] = [];
       for (const e of edits) {
         const block = blockById(state.doc, e.blockId);
         if (!block) continue;
@@ -1761,7 +1761,7 @@ export function createEditor(
       if (rect) paint.ensureVisible(rect, "center");
     },
     selectAll: (): void => {
-      const paras = doc.blocks.filter((b): b is import("./model/document").Paragraph => b.kind === "paragraph");
+      const paras = doc.blocks.filter((b): b is import("@cw/shared").Paragraph => b.kind === "paragraph");
       const first = paras[0];
       const last = paras[paras.length - 1];
       if (!first || !last) return;

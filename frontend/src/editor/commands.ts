@@ -448,7 +448,7 @@ export function insertSectionBreak(): Command {
     const block = blockById(state.doc, base.at.blockId);
     if (!block) return null;
     const geo = sectionGeometryAt(state.doc, c.index);
-    const props: import("../model/document").SectionPatch = {
+    const props: import("@cw/shared").SectionPatch = {
       pageWidthPx: geo.pageWidthPx,
       pageHeightPx: geo.pageHeightPx,
       marginPx: geo.marginPx,
