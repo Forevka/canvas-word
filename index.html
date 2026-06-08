@@ -217,6 +217,21 @@
       .cw-dialog button { height: 28px; border: 1px solid #c8c6c4; background: #fff; border-radius: 4px; cursor: pointer; padding: 0 12px; font: inherit; font-size: 13px; }
       .cw-dialog button.primary { background: #2b579a; color: #fff; border-color: #2b579a; }
       .cw-dialog button.danger { color: #a4262c; }
+
+      /* floating mini-toolbar shown above a selected image */
+      #img-toolbar {
+        position: fixed; display: none; align-items: center; gap: 2px; z-index: 40;
+        background: #fff; border: 1px solid #c8c6c4; border-radius: 6px; padding: 3px;
+        box-shadow: 0 3px 12px rgba(0,0,0,0.18);
+      }
+      #img-toolbar button {
+        width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+        border: 1px solid transparent; border-radius: 4px; background: transparent; cursor: pointer; color: #323130;
+      }
+      #img-toolbar button:hover { background: #e1dfdd; }
+      #img-toolbar button.danger:hover { background: #fde7e9; color: #a4262c; }
+      #img-toolbar button svg { width: 16px; height: 16px; }
+      #img-toolbar .sep { width: 1px; height: 18px; background: #e1dfdd; margin: 0 2px; }
     </style>
   </head>
   <body>

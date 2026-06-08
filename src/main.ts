@@ -56,6 +56,7 @@ let refreshOutline: () => void = () => {};
 let refreshStatus: () => void = () => {};
 let refreshRuler: () => void = () => {};
 let toggleRuler: () => boolean = () => false;
+let refreshImageBar: () => void = () => {};
 const editorOpts = {
   engine,
   onChange: () => {
@@ -63,11 +64,13 @@ const editorOpts = {
     refreshOutline();
     refreshStatus();
     refreshRuler();
+    refreshImageBar();
   },
   onZoomChange: (z: number) => {
     syncZoom(z);
     refreshStatus();
     refreshRuler();
+    refreshImageBar();
   },
 };
 let editor = createEditor(app, doc, editorOpts);
@@ -706,12 +709,31 @@ if (toolbar) {
   toggle(btn(ICONS.alignRight, "Align right", () => editor.align("right")), (f) => f.align === "right");
   toggle(btn(ICONS.alignJustify, "Justify", () => editor.align("justify")), (f) => f.align === "justify");
   sep();
-  const spacingSelect = select("Line spacing", 58);
-  for (const v of ["1", "1.15", "1.35", "1.5", "2"]) opt(spacingSelect, v, `${v}×`);
-  spacingSelect.addEventListener("change", () => {
-    editor.dispatch(setParaProps({ lineHeight: Number(spacingSelect.value) }));
-    editor.focus();
-  });
+  const SPACINGS = [
+    { v: 1, l: "1.0" },
+    { v: 1.15, l: "1.15" },
+    { v: 1.5, l: "1.5" },
+    { v: 2, l: "2.0" },
+    { v: 2.5, l: "2.5" },
+    { v: 3, l: "3.0" },
+  ];
+  let curLineHeight: number | null = null;
+  const spacingBtn = btn(ICONS.lineSpacing, "Line spacing", () => {}, true);
+  spacingBtn.addEventListener("click", () =>
+    openPop(
+      spacingBtn,
+      menu(
+        SPACINGS.map((s) => ({
+          label: s.l,
+          current: curLineHeight !== null && Math.abs(curLineHeight - s.v) < 1e-6,
+          onClick: () => {
+            editor.dispatch(setParaProps({ lineHeight: s.v }));
+            editor.focus();
+          },
+        })),
+      ),
+    ),
+  );
   stub(ICONS.shading + CARET, "Paragraph shading");
   stub(ICONS.borders + CARET, "Paragraph borders");
 
@@ -1056,10 +1078,7 @@ if (toolbar) {
     if (f.fontSizePx !== null && document.activeElement !== sizeInput) {
       sizeInput.value = String(pxToPt(f.fontSizePx));
     }
-    if (f.lineHeight !== null) {
-      const v = String(f.lineHeight);
-      if ([...spacingSelect.options].some((o) => o.value === v)) spacingSelect.value = v;
-    }
+    curLineHeight = f.lineHeight; // read by the line-spacing menu when opened
     // Pressed state for B/I/U/S, highlight, sub/super, lists, alignment.
     for (const t of toggleButtons) t.el.classList.toggle("active", t.active(f));
   };
@@ -1273,6 +1292,63 @@ if (toolbar) {
     };
     refreshRuler();
   }
+}
+
+// ---- floating image mini-toolbar -------------------------------------------
+// Appears above a selected image (Word's hover bar): wrap, align, delete.
+{
+  const bar = document.createElement("div");
+  bar.id = "img-toolbar";
+  document.body.appendChild(bar);
+  const ibtn = (icon: string, title: string, onClick: () => void, cls = ""): void => {
+    const b = document.createElement("button");
+    if (cls) b.className = cls;
+    b.innerHTML = icon;
+    b.title = title;
+    b.addEventListener("mousedown", (e) => e.preventDefault()); // keep the image selected
+    b.addEventListener("click", () => {
+      onClick();
+      refreshImageBar();
+    });
+    bar.appendChild(b);
+  };
+  const sep = (): void => {
+    const s = document.createElement("div");
+    s.className = "sep";
+    bar.appendChild(s);
+  };
+  const withImg = (fn: (id: string) => void): void => {
+    const id = editor.getSelectedObject();
+    if (id) fn(id);
+  };
+  ibtn(ICONS.wrapInline, "In line with text", () => withImg((id) => editor.dispatch(setImageProps(id, { wrap: "block", align: "center" }))));
+  ibtn(ICONS.wrapSquare, "Wrap text (square)", () => withImg((id) => editor.dispatch(setImageProps(id, { wrap: "square", align: "left" }))));
+  sep();
+  ibtn(ICONS.alignLeft, "Align left", () => editor.align("left"));
+  ibtn(ICONS.alignCenter, "Align center", () => editor.align("center"));
+  ibtn(ICONS.alignRight, "Align right", () => editor.align("right"));
+  sep();
+  ibtn(ICONS.trash, "Delete image (Del)", () => {
+    editor.deleteSelectedObject();
+    editor.focus();
+  }, "danger");
+
+  refreshImageBar = (): void => {
+    const r = editor.getSelectedObject() ? editor.getSelectedObjectRect() : null;
+    if (!r) {
+      bar.style.display = "none";
+      return;
+    }
+    bar.style.display = "flex";
+    const bw = bar.offsetWidth;
+    const bh = bar.offsetHeight;
+    const left = Math.max(8, Math.min(window.innerWidth - bw - 8, r.left + r.width / 2 - bw / 2));
+    const top = r.top - bh - 8 < 56 ? r.top + r.height + 8 : r.top - bh - 8;
+    bar.style.left = `${Math.round(left)}px`;
+    bar.style.top = `${Math.round(top)}px`;
+  };
+  app.addEventListener("scroll", () => refreshImageBar());
+  window.addEventListener("resize", () => refreshImageBar());
 }
 
 // ---- page setup panel (📐) ---------------------------------------------------

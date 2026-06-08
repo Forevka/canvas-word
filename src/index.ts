@@ -131,6 +131,10 @@ export interface Editor {
   selectAll(): void;
   /** Layout summary for the status bar: total pages and the caret's 1-based page. */
   getLayoutInfo(): { pageCount: number; currentPage: number };
+  /** Viewport rect of the selected image (anchor for a floating toolbar), or null. */
+  getSelectedObjectRect(): { left: number; top: number; width: number; height: number } | null;
+  /** Delete the selected image and clear the object selection. */
+  deleteSelectedObject(): void;
   /** Find & replace. search() highlights all matches and returns state. */
   search(query: string, opts?: { matchCase?: boolean; wholeWord?: boolean }): SearchState;
   searchNav(dir: 1 | -1): SearchState;
@@ -408,6 +412,7 @@ export function createEditor(
       refreshSelectionVisuals();
     }
     refreshObjectFrame();
+    notifyChange(); // object selection drives the floating image toolbar
   };
 
   // ---- table column-boundary drag ------------------------------------------
@@ -1774,6 +1779,22 @@ export function createEditor(
         if (r) currentPage = r.pageIndex + 1;
       }
       return { pageCount, currentPage };
+    },
+    getSelectedObjectRect: (): { left: number; top: number; width: number; height: number } | null => {
+      if (!selectedObject) return null;
+      const r = objectRect(tree, selectedObject);
+      if (!r) return null;
+      const ph = paint.getPageElement(r.pageIndex);
+      if (!ph) return null;
+      const z = paint.getZoom();
+      const pr = ph.getBoundingClientRect();
+      return { left: pr.left + r.x * z, top: pr.top + r.y * z, width: r.width * z, height: r.height * z };
+    },
+    deleteSelectedObject: (): void => {
+      if (!selectedObject) return;
+      const id = selectedObject;
+      selectObject(null);
+      dispatch(deleteImage(id));
     },
     search,
     searchNav,
