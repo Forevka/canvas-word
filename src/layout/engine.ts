@@ -650,6 +650,7 @@ function layoutDocument(
   };
   const indentOf = (p: Paragraph): number =>
     p.style.indentLeftPx + (listLevelOf(p)?.indentLeftPx ?? 0);
+  const rightIndentOf = (p: Paragraph): number => p.style.indentRightPx ?? 0;
 
   const counters = new Map<string, number[]>();
   // Marker x is resolved at PLACEMENT time (placed.x - hangingPx) — with
@@ -695,7 +696,11 @@ function layoutDocument(
       // colWidth IS contentWidth in single-column sections. TOC entries reserve
       // a right gutter so their text never collides with the page number.
       const gutter = block.style.tocEntry ? TOC_GUTTER : 0;
-      measured.push({ kind: "para", block, lines: getLines(block, colWidth - indentOf(block) - gutter) });
+      measured.push({
+        kind: "para",
+        block,
+        lines: getLines(block, colWidth - indentOf(block) - rightIndentOf(block) - gutter),
+      });
     } else if (block.kind === "image") {
       measured.push({ kind: "image", block, height: block.heightPx });
     } else {
@@ -1034,7 +1039,7 @@ function layoutDocument(
         const bl = breakNextLine(
           p,
           seg,
-          Math.max(24, box.width - indentOf(p) - indent),
+          Math.max(24, box.width - indentOf(p) - indent - rightIndentOf(p)),
           cursor,
           runStarts,
           runCursors,
@@ -1046,7 +1051,7 @@ function layoutDocument(
           placed = null;
           continue;
         }
-        const slack = box.width - indent - bl.width;
+        const slack = box.width - indent - rightIndentOf(p) - bl.width;
         let startX = box.x0 - colX() + indent;
         if (p.style.align === "center") startX += slack / 2;
         else if (p.style.align === "right") startX += slack;

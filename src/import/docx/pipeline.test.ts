@@ -64,7 +64,7 @@ describe("docx pipeline — paragraphs and runs", () => {
   it("maps paragraph properties: alignment, spacing, indents", () => {
     const r = importBody(
       `<w:p><w:pPr><w:jc w:val="both"/><w:spacing w:before="240" w:after="120" w:line="360"/>` +
-        `<w:ind w:left="720" w:hanging="360"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>`,
+        `<w:ind w:left="720" w:right="1440" w:hanging="360"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>`,
     );
     expect(para(r.doc.blocks[0]).style).toMatchObject({
       align: "justify",
@@ -72,6 +72,7 @@ describe("docx pipeline — paragraphs and runs", () => {
       spaceAfterPx: 8,
       lineHeight: 1.5,
       indentLeftPx: 48,
+      indentRightPx: 96,
       indentFirstLinePx: -24, // hanging
     });
   });

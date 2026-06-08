@@ -437,3 +437,24 @@ describe("engine — footer band distance", () => {
     expect(bottom).toBeGreaterThan(SECTION.pageHeightPx - SECTION.marginPx.bottom);
   });
 });
+
+describe("engine — right indent", () => {
+  it("narrows line wrapping by the right indent", () => {
+    const long = "word ".repeat(40).trim();
+    const wide = para(long);
+    const narrow = para(long, { indentRightPx: 200 });
+    const wideLines = placedOf(layout(doc([wide])), wide.id)!.pb.lines.length;
+    const narrowLines = placedOf(layout(doc([narrow])), narrow.id)!.pb.lines.length;
+    expect(narrowLines).toBeGreaterThan(wideLines);
+  });
+
+  it("pulls the right-aligned edge in by exactly the right indent", () => {
+    const rightEdge = (p: Paragraph): number => {
+      const line = placedOf(layout(doc([p])), p.id)!.pb.lines[0]!;
+      return Math.max(...line.fragments.map((f) => f.x + f.width));
+    };
+    const plain = rightEdge(para("hi", { align: "right" }));
+    const indented = rightEdge(para("hi", { align: "right", indentRightPx: 100 }));
+    expect(plain - indented).toBeCloseTo(100, 0);
+  });
+});

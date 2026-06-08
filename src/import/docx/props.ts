@@ -81,6 +81,8 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
   if (ind) {
     const left = numAttr(ind, "w:left") ?? numAttr(ind, "w:start");
     if (left !== undefined) props.indentLeftTwips = left;
+    const right = numAttr(ind, "w:right") ?? numAttr(ind, "w:end");
+    if (right !== undefined) props.indentRightTwips = right;
     const firstLine = numAttr(ind, "w:firstLine");
     const hanging = numAttr(ind, "w:hanging");
     if (firstLine !== undefined) props.indentFirstLineTwips = firstLine;

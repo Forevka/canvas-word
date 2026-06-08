@@ -56,6 +56,9 @@ export interface ParaStyle {
   spaceAfterPx: number;
   indentFirstLinePx: number;
   indentLeftPx: number;
+  /** Right-edge indent (docx w:ind/@w:right|@w:end): narrows every line from the
+   *  right margin. Absent = 0. Drives the ruler's right-indent marker. */
+  indentRightPx?: number;
   /** Never leave this block as the last on a page (headings). */
   keepWithNext?: boolean;
   /** Never split this paragraph across pages/columns (docx w:keepLines) — it

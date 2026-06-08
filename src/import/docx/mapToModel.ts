@@ -806,6 +806,7 @@ function mapParaPatch(props: IRParaProps): Partial<ParaStyle> {
   if (props.spaceBeforeTwips !== undefined) out.spaceBeforePx = round2(twipsToPx(props.spaceBeforeTwips));
   if (props.spaceAfterTwips !== undefined) out.spaceAfterPx = round2(twipsToPx(props.spaceAfterTwips));
   if (props.indentLeftTwips !== undefined) out.indentLeftPx = round2(twipsToPx(props.indentLeftTwips));
+  if (props.indentRightTwips !== undefined) out.indentRightPx = round2(twipsToPx(props.indentRightTwips));
   if (props.indentFirstLineTwips !== undefined)
     out.indentFirstLinePx = round2(twipsToPx(props.indentFirstLineTwips));
   if (props.keepWithNext) out.keepWithNext = true;
@@ -856,6 +857,7 @@ function mapParaStyle(props: IRParaProps): ParaStyle {
   if (props.spaceBeforeTwips !== undefined) style.spaceBeforePx = round2(twipsToPx(props.spaceBeforeTwips));
   if (props.spaceAfterTwips !== undefined) style.spaceAfterPx = round2(twipsToPx(props.spaceAfterTwips));
   if (props.indentLeftTwips !== undefined) style.indentLeftPx = round2(twipsToPx(props.indentLeftTwips));
+  if (props.indentRightTwips !== undefined) style.indentRightPx = round2(twipsToPx(props.indentRightTwips));
   if (props.indentFirstLineTwips !== undefined)
     style.indentFirstLinePx = round2(twipsToPx(props.indentFirstLineTwips));
   if (props.keepWithNext) style.keepWithNext = true;

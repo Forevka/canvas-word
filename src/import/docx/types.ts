@@ -141,6 +141,8 @@ export interface IRParaProps {
   /** Multiplier — only set when lineRule is "auto" (or absent). */
   lineHeight?: number;
   indentLeftTwips?: number;
+  /** w:ind/@w:right|@w:end — right-edge indent. */
+  indentRightTwips?: number;
   /** Negative = hanging indent (w:hanging). */
   indentFirstLineTwips?: number;
   /** w:keepNext — maps onto ParaStyle.keepWithNext. */

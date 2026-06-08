@@ -54,6 +54,7 @@ export function partialPPrXml(p: Partial<ParaStyle>): string {
   if (Object.keys(sp).length > 0) out.push(el("w:spacing", sp));
   const ind: Record<string, number> = {};
   if (p.indentLeftPx !== undefined) ind["w:left"] = pxToTwips(p.indentLeftPx);
+  if (p.indentRightPx !== undefined) ind["w:right"] = pxToTwips(p.indentRightPx);
   if (p.indentFirstLinePx !== undefined) {
     if (p.indentFirstLinePx >= 0) ind["w:firstLine"] = pxToTwips(p.indentFirstLinePx);
     else ind["w:hanging"] = pxToTwips(-p.indentFirstLinePx);
