@@ -200,6 +200,19 @@ describe("StyleResolver — heading-led section breaks", () => {
     const body = r.doc.blocks.find((b) => para(b).runs.some((run) => run.text === "just more body text"))!;
     expect(para(body).style.pageBreakBefore).toBeUndefined();
   });
+
+  it("treats a heading-NAMED custom style (e.g. \"TOC Heading Custom\") as a heading", () => {
+    const styles = stylesPartXml(
+      `<w:style w:type="paragraph" w:styleId="TocH"><w:name w:val="TOC Heading Custom"/></w:style>
+       <w:style w:type="paragraph" w:styleId="TocE"><w:name w:val="toc 1"/></w:style>`,
+    );
+    const sect = `<w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:pPr></w:p>`;
+    const tocTitle = runImport(styledDocx(`${sect}<w:p><w:pPr><w:pStyle w:val="TocH"/></w:pPr><w:r><w:t>TABLE OF CONTENTS</w:t></w:r></w:p>`, styles));
+    expect(para(tocTitle.doc.blocks.find((b) => para(b).runs.some((r) => r.text === "TABLE OF CONTENTS"))!).style.pageBreakBefore).toBe(true);
+    // the entry style "toc 1" must NOT count as a heading (entries don't break)
+    const tocEntry = runImport(styledDocx(`${sect}<w:p><w:pPr><w:pStyle w:val="TocE"/></w:pPr><w:r><w:t>An entry</w:t></w:r></w:p>`, styles));
+    expect(para(tocEntry.doc.blocks.find((b) => para(b).runs.some((r) => r.text === "An entry"))!).style.pageBreakBefore).toBeUndefined();
+  });
 });
 
 const round = (v: number): number => Math.round(v * 100) / 100;

@@ -344,7 +344,9 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
       if (line.leaders) {
         for (const ld of line.leaders) {
           ctx.save();
-          ctx.strokeStyle = ld.color;
+          // Leaders inherit the entry's run color; a TOC entry is a hyperlink, so
+          // normalize its blue to plain text (matching the de-linked entry text).
+          ctx.strokeStyle = HYPERLINK_BLUES.has(ld.color.toLowerCase()) ? "#202124" : ld.color;
           ctx.lineWidth = Math.max(1, ld.fontSizePx / 14);
           ctx.setLineDash(ld.kind === "dot" ? [1, 3] : ld.kind === "dash" ? [4, 3] : []);
           ctx.beginPath();

@@ -218,10 +218,13 @@ export function createStyleResolver(data: StylesData, theme: Theme): StyleResolv
     },
     isHeading(pStyleId) {
       if (!pStyleId) return false;
-      // Match the display name ("Heading 1") or the styleId ("Heading1") — Word's
-      // built-in headings use either; generated docs keep the name on an opaque id.
-      const isHeadingName = (s: string | undefined): boolean => s !== undefined && /^heading\s*[1-9]/i.test(s);
-      return chainOf(pStyleId).some((def) => isHeadingName(def.name) || isHeadingName(def.id));
+      // "heading" as a whole word, or immediately before a level digit — matches
+      // "Heading 1" / "Heading1" (name or styleId) and named variants like "TOC
+      // Heading Custom" (the TOC's own title style), but NOT "toc 1" (the entry
+      // style) or "Subheading". Word's built-in headings use either name or id;
+      // generated docs keep the human name on an opaque numeric id.
+      const isHeadingLabel = (s: string | undefined): boolean => s !== undefined && /(^|\s)heading(\s|\d|$)/i.test(s);
+      return chainOf(pStyleId).some((def) => isHeadingLabel(def.name) || isHeadingLabel(def.id));
     },
   };
 
