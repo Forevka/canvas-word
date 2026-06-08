@@ -190,22 +190,32 @@ export function createEditor(
    *  Word's boundingBox appearance) draw ONE frame per page spanning the full
    *  content column from the first block's top to the last block's bottom — not
    *  ragged per-line rects. Returns null for inline / cell-hosted controls, which
-   *  keep the text-shaped highlight. */
+   *  keep the text-shaped highlight.
+   *
+   *  The importer's block-level tag (tagBlockSdt) covers EVERY paragraph it
+   *  touches in full — including all cells of a contained table — whereas an
+   *  inline control leaves partial coverage. So "every range is whole-paragraph"
+   *  means block-level; a cell paragraph's range maps back to its top-level table
+   *  via locateParagraph, letting an SDT that wraps a heading + table be framed. */
   const blockLevelSdtRects = (id: string): Rect[] | null => {
     const ranges = findSdtRanges(doc, id);
     if (ranges.length === 0) return null;
-    const first = ranges[0]!;
-    const last = ranges[ranges.length - 1]!;
-    const firstBlock = blockById(doc, first.blockId);
-    const inlinePartial =
-      ranges.length === 1 &&
-      firstBlock !== undefined &&
-      (first.start > 0 || first.end < textOfRuns(firstBlock.runs).length);
-    if (inlinePartial) return null;
-    const fc = containerOf(doc, first.blockId);
-    const lc = containerOf(doc, last.blockId);
-    if (!fc || !lc || fc.where !== lc.where || fc.where !== "body") return null;
-    const ids = new Set(containerBlocks(doc, fc.where).slice(fc.index, lc.index + 1).map((b) => b.id));
+    const paraLen = new Map<string, number>();
+    for (const p of paragraphsOf(doc)) paraLen.set(p.id, textOfRuns(p.runs).length);
+    let minIdx = Infinity;
+    let maxIdx = -Infinity;
+    for (const r of ranges) {
+      const len = paraLen.get(r.blockId);
+      if (len === undefined || r.start > 0 || r.end < len) return null; // partial ⇒ inline
+      const loc = locateParagraph(doc, r.blockId);
+      // Body only: a top-level paragraph, or a cell paragraph whose table is the
+      // top-level block (loc.bi). Bands/footnotes can't hold the caret here.
+      if (!loc || (loc.kind !== "top" && !(loc.kind === "cell" && loc.where === "body"))) return null;
+      minIdx = Math.min(minIdx, loc.bi);
+      maxIdx = Math.max(maxIdx, loc.bi);
+    }
+    if (!Number.isFinite(minIdx)) return null;
+    const ids = new Set(containerBlocks(doc, "body").slice(minIdx, maxIdx + 1).map((b) => b.id));
     // Union the span's blocks' vertical extent per page (a span can break pages).
     const byPage = new Map<number, { top: number; bot: number; page: Page }>();
     for (const page of tree.pages) {
