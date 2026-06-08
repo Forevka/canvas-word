@@ -129,18 +129,22 @@ export function createMapper(
   /** Apply list membership to a resolved paragraph style. The engine ADDS the
    *  list level's indent to the paragraph's own (engine.ts ~L446), so subtract
    *  the level indent here to avoid double-counting; the marker hang is handled
-   *  by the level's hangingPx, so zero the paragraph's first-line indent. */
-  const applyListMembership = (style: ParaStyle, ref: IRParaProps["list"]): void => {
-    if (!ref) return; // undefined (no list) or null (explicitly removed)
+   *  by the level's hangingPx, so zero the paragraph's first-line indent.
+   *  Returns the level indent (px) so soft-break continuation lines — which
+   *  drop list membership — can restore it and stay aligned under the item. */
+  const applyListMembership = (style: ParaStyle, ref: IRParaProps["list"]): number => {
+    if (!ref) return 0; // undefined (no list) or null (explicitly removed)
     const def = listDefFor(ref.numId);
     if (!def) {
       warnings.add("list-missing", "A list reference had no matching definition — markers were dropped.");
-      return;
+      return 0;
     }
     style.list = { listId: ref.numId, level: ref.level };
     const lvl = def.levels[Math.min(ref.level, def.levels.length - 1)];
-    if (lvl) style.indentLeftPx = Math.max(0, round2(style.indentLeftPx - lvl.indentLeftPx));
+    const levelIndentPx = lvl ? lvl.indentLeftPx : 0;
+    style.indentLeftPx = Math.max(0, round2(style.indentLeftPx - levelIndentPx));
     style.indentFirstLinePx = 0;
+    return levelIndentPx;
   };
 
   const mapBlocks = (blocks: IRBlock[], media: MediaStore, resolveLink: LinkResolver = NO_LINKS): Block[] => {
@@ -174,7 +178,7 @@ export function createMapper(
   function mapParagraph(ir: IRParagraph, media: MediaStore, resolveLink: LinkResolver): Block[] {
     const effPara = resolver.para(ir.props);
     const style = mapParaStyle(effPara);
-    applyListMembership(style, effPara.list);
+    const listLevelIndentPx = applyListMembership(style, effPara.list);
     // Empty paragraphs take the paragraph MARK's formatting (w:pPr/w:rPr over
     // the style cascade) — that's what sizes the empty line in Word.
     const markChar = mapCharStyle(resolver.run(ir.props.styleId, ir.props.markRunProps ?? {}));
@@ -256,6 +260,13 @@ export function createMapper(
     paragraphs.forEach((p, i) => {
       if (i > 0) p.style.spaceBeforePx = 0;
       if (i < paragraphs.length - 1) p.style.spaceAfterPx = 0;
+      // A soft break inside a list item is the SAME item: only the first split
+      // is numbered. Continuation lines drop list membership (no marker, no
+      // counter bump) and restore the level indent so they align under the text.
+      if (i > 0 && p.style.list) {
+        delete p.style.list;
+        p.style.indentLeftPx = round2(p.style.indentLeftPx + listLevelIndentPx);
+      }
     });
     return blocks;
   }

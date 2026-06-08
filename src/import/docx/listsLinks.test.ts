@@ -96,6 +96,34 @@ describe("lists — numbering.xml", () => {
     expect(para(r.doc.blocks[0]).style.list).toBeUndefined();
   });
 
+  it("numbers a list item only once when it contains soft breaks", () => {
+    // Word: a Shift+Enter inside a list item is the SAME item — one number, the
+    // wrapped line carries no marker. We split on w:br, so only the first
+    // segment may keep list membership.
+    const body =
+      `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="10"/></w:numPr></w:pPr>` +
+      `<w:r><w:t>line one</w:t><w:br/><w:t>line two</w:t></w:r></w:p>` +
+      listItem("10", 0, "next item");
+    const r = runImport(docxWithNumbering(body));
+    const ps = r.doc.blocks.map(para);
+    expect(ps[0]!.style.list).toEqual({ listId: "10", level: 0 }); // numbered
+    expect(ps[1]!.style.list).toBeUndefined(); // continuation — no marker
+    expect(ps[2]!.style.list).toEqual({ listId: "10", level: 0 }); // next item numbered
+    // Continuation aligns under the item text (level indent restored).
+    expect(ps[1]!.style.indentLeftPx).toBe(r.doc.lists!["10"]!.levels[0]!.indentLeftPx);
+  });
+
+  it("does not number the empty paragraph left by a trailing soft break", () => {
+    const body =
+      `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="10"/></w:numPr></w:pPr>` +
+      `<w:r><w:t>item</w:t><w:br/></w:r></w:p>`;
+    const r = runImport(docxWithNumbering(body));
+    const ps = r.doc.blocks.map(para);
+    expect(ps[0]!.style.list).toEqual({ listId: "10", level: 0 });
+    expect(ps[1]!.runs.map((x) => x.text).join("")).toBe("");
+    expect(ps[1]!.style.list).toBeUndefined(); // empty trailing line not numbered
+  });
+
   it("warns when a list reference has no definition", () => {
     const r = runImport(docxWithNumbering(listItem("99", 0, "x")));
     expect(para(r.doc.blocks[0]).style.list).toBeUndefined();
