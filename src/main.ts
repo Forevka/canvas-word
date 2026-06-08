@@ -283,8 +283,75 @@ if (toolbar) {
     return b;
   };
 
-  // One shared native colour picker, reused by the font-colour / highlight
-  // swatches. We apply on `change` only (not `input`) so a drag is one undo step.
+  // ---- anchored popovers (palettes, menus, pickers, dialogs) --------------
+  let activePop: HTMLElement | null = null;
+  const closePop = (): void => {
+    if (!activePop) return;
+    activePop.remove();
+    activePop = null;
+    document.removeEventListener("mousedown", onDocDown, true);
+    document.removeEventListener("keydown", onPopKey, true);
+  };
+  const onDocDown = (e: MouseEvent): void => {
+    if (activePop && !activePop.contains(e.target as Node)) closePop();
+  };
+  const onPopKey = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") {
+      closePop();
+      editor.focus();
+    }
+  };
+  /** Open `content` in a popover anchored under `anchor`, clamped on-screen. */
+  const openPop = (anchor: HTMLElement, content: HTMLElement): HTMLElement => {
+    closePop();
+    const pop = el("div", "cw-pop");
+    pop.addEventListener("mousedown", (e) => e.preventDefault()); // keep editor focus
+    pop.appendChild(content);
+    document.body.appendChild(pop);
+    const r = anchor.getBoundingClientRect();
+    pop.style.left = `${Math.round(r.left)}px`;
+    pop.style.top = `${Math.round(r.bottom + 3)}px`;
+    const pr = pop.getBoundingClientRect();
+    if (pr.right > window.innerWidth - 6) pop.style.left = `${Math.round(window.innerWidth - pr.width - 6)}px`;
+    if (pr.bottom > window.innerHeight - 6) pop.style.top = `${Math.round(r.top - pr.height - 3)}px`;
+    activePop = pop;
+    setTimeout(() => {
+      document.addEventListener("mousedown", onDocDown, true);
+      document.addEventListener("keydown", onPopKey, true);
+    }, 0);
+    return pop;
+  };
+  /** A simple vertical menu of labelled actions; `current` marks the active row. */
+  const menu = (
+    items: { label: string; sample?: string; current?: boolean; onClick: () => void }[],
+  ): HTMLElement => {
+    const m = el("div", "cw-menu");
+    for (const it of items) {
+      const b = el("button");
+      const check = el("span", "check");
+      check.textContent = it.current ? "✓" : "";
+      const lbl = el("span");
+      lbl.textContent = it.label;
+      if (it.sample) lbl.className = "sample";
+      b.append(check, lbl);
+      b.addEventListener("click", () => {
+        closePop();
+        it.onClick();
+      });
+      m.appendChild(b);
+    }
+    return m;
+  };
+
+  // Word colour palette: greys, then a standard-colour row set.
+  const PALETTE = [
+    "#000000", "#444444", "#666666", "#999999", "#cccccc", "#ffffff",
+    "#c00000", "#ff0000", "#ffc000", "#ffff00", "#92d050", "#00b050",
+    "#00b0f0", "#0070c0", "#002060", "#7030a0", "#e84393", "#a0522d",
+  ];
+
+  // One shared native colour picker, reused for "More colours…". We apply on
+  // `change` only (not `input`) so a drag is one undo step.
   const colorPicker = el("input");
   colorPicker.type = "color";
   colorPicker.style.cssText = "position:fixed;left:-9999px;width:0;height:0;";
@@ -295,44 +362,162 @@ if (toolbar) {
     colorPicker.onchange = () => onPick(colorPicker.value);
     colorPicker.click();
   };
-  /** Word's split colour button: the face applies the last colour, the caret
-   *  opens the picker. `active` (optional) wires the face into the pressed-state
-   *  sync (used by highlight, which toggles). */
-  const swatch = (
-    face: string,
-    initial: string,
-    title: string,
-    apply: (color: string) => void,
-    active?: (f: CurrentFormat) => boolean,
+  /** Colour palette popover: swatch grid + an optional clear row + "More…". */
+  const colorPopover = (
+    anchor: HTMLElement,
+    last: string,
+    clearLabel: string | null,
+    onPick: (c: string) => void,
+    onClear: (() => void) | null,
   ): void => {
-    let last = initial;
+    const wrap = el("div");
+    const grid = el("div", "cw-swatches");
+    for (const c of PALETTE) {
+      const s = el("button");
+      s.style.background = c;
+      s.title = c;
+      s.addEventListener("click", () => {
+        closePop();
+        onPick(c);
+      });
+      grid.appendChild(s);
+    }
+    wrap.appendChild(grid);
+    if (clearLabel && onClear) {
+      const clear = el("button", "pop-action");
+      clear.textContent = clearLabel;
+      clear.addEventListener("click", () => {
+        closePop();
+        onClear();
+      });
+      wrap.appendChild(clear);
+    }
+    const more = el("button", "pop-action");
+    more.textContent = "More colours…";
+    more.addEventListener("click", () => {
+      closePop();
+      pickColor(last, onPick);
+    });
+    wrap.appendChild(more);
+    openPop(anchor, wrap);
+  };
+  /** Word's split colour button: the face applies the last colour, the caret
+   *  opens a palette popover. `clearLabel`/`onClear` add a "No Color"/"Automatic"
+   *  row; `active` wires the face into the pressed-state sync (highlight toggles). */
+  const swatch = (cfg: {
+    face: string;
+    initial: string;
+    title: string;
+    apply: (color: string) => void;
+    clearLabel?: string;
+    onClear?: () => void;
+    active?: (f: CurrentFormat) => boolean;
+  }): void => {
+    let last = cfg.initial;
     const wrap = el("div");
     wrap.style.cssText = "display:flex;align-items:stretch;";
     const main = el("button", "rib-btn rib-swatch");
-    main.title = title;
-    main.innerHTML = `<span class="row">${face}</span><span class="bar" style="background:${last}"></span>`;
+    main.title = cfg.title;
+    main.innerHTML = `<span class="row">${cfg.face}</span><span class="bar" style="background:${last}"></span>`;
     const bar = main.querySelector(".bar") as HTMLElement;
     main.addEventListener("mousedown", (e) => e.preventDefault());
     main.addEventListener("click", () => {
-      apply(last);
+      cfg.apply(last);
       editor.focus();
     });
     const more = el("button", "rib-btn");
-    more.title = `${title} — choose colour`;
+    more.title = `${cfg.title} — choose colour`;
     more.style.cssText = "min-width:14px;padding:0;";
     more.innerHTML = CARET;
     more.addEventListener("mousedown", (e) => e.preventDefault());
+    const pick = (c: string): void => {
+      last = c;
+      bar.style.background = c;
+      cfg.apply(c);
+      editor.focus();
+    };
     more.addEventListener("click", () =>
-      pickColor(last, (c) => {
-        last = c;
-        bar.style.background = c;
-        apply(c);
+      colorPopover(more, last, cfg.clearLabel ?? null, pick, cfg.onClear ? () => {
+        cfg.onClear!();
         editor.focus();
-      }),
+      } : null),
     );
     wrap.append(main, more);
     controls.appendChild(wrap);
-    if (active) toggleButtons.push({ el: main, active });
+    if (cfg.active) toggleButtons.push({ el: main, active: cfg.active });
+  };
+
+  /** Word's table-size grid: hover to size, click to insert. */
+  const tableGridPopover = (anchor: HTMLElement): void => {
+    const ROWS = 8;
+    const COLS = 10;
+    const wrap = el("div");
+    const grid = el("div", "cw-grid");
+    grid.style.gridTemplateColumns = `repeat(${COLS}, 15px)`;
+    const label = el("div", "cw-grid-label");
+    label.textContent = "Insert table";
+    const cells: HTMLElement[][] = [];
+    const highlight = (R: number, C: number): void => {
+      for (let r = 0; r < ROWS; r++)
+        for (let c = 0; c < COLS; c++) cells[r]![c]!.classList.toggle("on", r <= R && c <= C);
+    };
+    for (let r = 0; r < ROWS; r++) {
+      const row: HTMLElement[] = [];
+      for (let c = 0; c < COLS; c++) {
+        const cell = el("div", "cell");
+        cell.addEventListener("mouseenter", () => {
+          highlight(r, c);
+          label.textContent = `${c + 1} × ${r + 1} table`;
+        });
+        cell.addEventListener("click", () => {
+          closePop();
+          editor.dispatch(insertTable(r + 1, c + 1));
+          editor.focus();
+        });
+        row.push(cell);
+        grid.appendChild(cell);
+      }
+      cells.push(row);
+    }
+    wrap.append(grid, label);
+    openPop(anchor, wrap);
+  };
+
+  /** Hyperlink dialog: URL field + Apply / Remove, applied to the selection. */
+  const linkDialog = (anchor: HTMLElement): void => {
+    const wrap = el("div", "cw-dialog");
+    const lab = el("label");
+    lab.textContent = "Address";
+    const input = el("input");
+    input.type = "text";
+    input.placeholder = "https://example.com";
+    input.addEventListener("mousedown", (e) => e.stopPropagation()); // allow focus
+    lab.appendChild(input);
+    const row = el("div", "row");
+    const remove = el("button", "danger");
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => {
+      closePop();
+      editor.dispatch(setLinkCmd(null));
+      editor.focus();
+    });
+    const apply = el("button", "primary");
+    apply.textContent = "Apply";
+    const doApply = (): void => {
+      const u = input.value.trim();
+      closePop();
+      editor.dispatch(setLinkCmd(u === "" ? null : u));
+      editor.focus();
+    };
+    apply.addEventListener("click", doApply);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") doApply();
+      e.stopPropagation();
+    });
+    row.append(remove, apply);
+    wrap.append(lab, row);
+    openPop(anchor, wrap);
+    setTimeout(() => input.focus(), 0);
   };
 
   const exportAs = async (format: ExportFormat): Promise<void> => {
@@ -445,18 +630,21 @@ if (toolbar) {
     { label: "Capitalize Each Word", mode: "title" },
     { label: "tOGGLE cASE", mode: "toggle" },
   ];
-  txtBtn("Aa", "Change case", () => {
-    const idx = prompt(
-      "Change case to:\n" + CASES.map((c, i) => `${i + 1}. ${c.label}`).join("\n"),
-      "3",
-    );
-    if (idx === null) return;
-    const mode = CASES[Number(idx) - 1]?.mode;
-    if (mode) {
-      editor.dispatch(changeCaseCmd(mode));
-      editor.focus();
-    }
-  }, "font-weight:600;", true);
+  const caseBtn = txtBtn("Aa", "Change case", () => {}, "font-weight:600;", true);
+  caseBtn.addEventListener("click", () =>
+    openPop(
+      caseBtn,
+      menu(
+        CASES.map((c) => ({
+          label: c.label,
+          onClick: () => {
+            editor.dispatch(changeCaseCmd(c.mode));
+            editor.focus();
+          },
+        })),
+      ),
+    ),
+  );
   btn(ICONS.clearFormat, "Clear all formatting", () => {
     editor.dispatch(clearCharFormatting());
     editor.dispatch(applyNamedStyle("Normal"));
@@ -472,25 +660,28 @@ if (toolbar) {
   toggle(txtBtn("x₂", "Subscript", () => editor.dispatch(toggleVerticalAlign("sub"))), (f) => f.subscript);
   sep();
   stub(`<span style="color:#2b579a;font-weight:700;">A</span>`, "Text effects (glow / shadow / outline)");
-  // Highlight: face toggles the last colour (re-click clears); caret picks one.
-  swatch(
-    ICONS.highlight,
-    "#ffeb3b",
-    "Text highlight colour",
-    (c) => editor.dispatch(toggleHighlight(c)),
-    (f) => f.highlight,
-  );
-  // Font colour: face applies the last colour to the selection / pending style.
-  swatch(
-    `<span style="font-weight:700;">A</span>`,
-    "#e00000",
-    "Font colour",
-    (c) => editor.setCharStyle({ color: c }),
-  );
-  txtBtn("🔗", "Insert/remove hyperlink", () => {
-    const url = prompt("Link URL (empty to remove):");
-    if (url !== null) editor.dispatch(setLinkCmd(url.trim() === "" ? null : url.trim()));
-  }, "font-size:12px;");
+  // Highlight: face toggles the last colour (re-click clears); caret opens the
+  // palette, where "No Color" strips the highlight.
+  swatch({
+    face: ICONS.highlight,
+    initial: "#ffeb3b",
+    title: "Text highlight colour",
+    apply: (c) => editor.dispatch(toggleHighlight(c)),
+    clearLabel: "No Color",
+    onClear: () => editor.setCharStyle({ highlightColor: undefined }),
+    active: (f) => f.highlight,
+  });
+  // Font colour: face applies the last colour; palette "Automatic" resets it.
+  swatch({
+    face: `<span style="font-weight:700;">A</span>`,
+    initial: "#e00000",
+    title: "Font colour",
+    apply: (c) => editor.setCharStyle({ color: c }),
+    clearLabel: "Automatic",
+    onClear: () => editor.setCharStyle({ color: "#202124" }),
+  });
+  const fontLinkBtn = txtBtn("🔗", "Insert/remove hyperlink", () => {}, "font-size:12px;");
+  fontLinkBtn.addEventListener("click", () => linkDialog(fontLinkBtn));
 
   // ---- Paragraph ----
   const paraRow = groupRows(home, "Paragraph");
@@ -600,7 +791,8 @@ if (toolbar) {
     editor.focus();
   });
   group(insert, "Tables");
-  btn(ICONS.table, "Insert 3×3 table", () => editor.dispatch(insertTable(3, 3)));
+  const insTableBtn = btn(ICONS.table, "Insert table", () => {}, true);
+  insTableBtn.addEventListener("click", () => tableGridPopover(insTableBtn));
   group(insert, "Illustrations");
   btn(ICONS.image, "Insert image", () => {
     editor.dispatch(insertImage(TOOLBAR_SVG, 280, 100)); // top-level caret
@@ -616,10 +808,8 @@ if (toolbar) {
     if (id) editor.dispatch(setImageProps(id, { wrap: "block", align: "center" }));
   });
   group(insert, "Links");
-  btn(ICONS.link, "Insert/remove hyperlink", () => {
-    const url = prompt("Link URL (empty to remove):");
-    if (url !== null) editor.dispatch(setLinkCmd(url.trim() === "" ? null : url.trim()));
-  });
+  const insLinkBtn = btn(ICONS.link, "Insert/remove hyperlink", () => {});
+  insLinkBtn.addEventListener("click", () => linkDialog(insLinkBtn));
   group(insert, "References");
   btn(ICONS.toc, "Insert / update table of contents (Ctrl+click an entry jumps to it)", () => {
     editor.dispatch(insertTocCmd());

@@ -170,6 +170,42 @@
       #statusbar button.sb-btn:hover { background: rgba(255,255,255,0.18); }
       #statusbar input[type="range"] { width: 120px; cursor: pointer; accent-color: #fff; }
       #statusbar .sb-zoom { min-width: 38px; text-align: right; }
+
+      /* ===== Popovers (palettes, menus, pickers, dialogs) ================ */
+      .cw-pop {
+        position: fixed; background: #fff; border: 1px solid #c8c6c4; border-radius: 6px;
+        box-shadow: 0 4px 18px rgba(0,0,0,0.18); z-index: 50; font-size: 13px; padding: 4px;
+      }
+      .cw-menu { display: flex; flex-direction: column; min-width: 168px; }
+      .cw-menu button {
+        display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+        border: none; background: transparent; cursor: pointer; padding: 7px 10px; border-radius: 4px;
+        font: inherit; color: #323130;
+      }
+      .cw-menu button:hover { background: #f3f2f1; }
+      .cw-menu .check { width: 14px; color: #2b579a; }
+      .cw-menu .sample { color: #605e5c; }
+      .cw-pop-title { font-size: 11px; color: #605e5c; padding: 4px 6px 2px; }
+      .cw-swatches { display: grid; grid-template-columns: repeat(6, 22px); gap: 4px; padding: 4px 6px; }
+      .cw-swatches button { width: 22px; height: 22px; border: 1px solid rgba(0,0,0,0.18); border-radius: 3px; cursor: pointer; padding: 0; }
+      .cw-swatches button:hover { outline: 2px solid #2b579a; outline-offset: 1px; }
+      .cw-pop .pop-action {
+        display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: none;
+        background: transparent; cursor: pointer; padding: 7px 8px; border-radius: 4px; font: inherit; color: #323130;
+        border-top: 1px solid #edebe9; margin-top: 4px;
+      }
+      .cw-pop .pop-action:hover { background: #f3f2f1; }
+      .cw-grid { display: grid; gap: 2px; padding: 8px 8px 2px; }
+      .cw-grid .cell { width: 15px; height: 15px; border: 1px solid #c8c6c4; background: #fff; }
+      .cw-grid .cell.on { background: #cfe3fb; border-color: #2b579a; }
+      .cw-grid-label { text-align: center; font-size: 12px; color: #605e5c; padding: 4px 0 6px; }
+      .cw-dialog { display: flex; flex-direction: column; gap: 8px; padding: 10px; min-width: 248px; }
+      .cw-dialog label { font-size: 12px; color: #605e5c; display: flex; flex-direction: column; gap: 3px; }
+      .cw-dialog input { height: 28px; border: 1px solid #c8c6c4; border-radius: 4px; padding: 0 8px; font: inherit; font-size: 13px; }
+      .cw-dialog .row { display: flex; justify-content: flex-end; gap: 6px; margin-top: 2px; }
+      .cw-dialog button { height: 28px; border: 1px solid #c8c6c4; background: #fff; border-radius: 4px; cursor: pointer; padding: 0 12px; font: inherit; font-size: 13px; }
+      .cw-dialog button.primary { background: #2b579a; color: #fff; border-color: #2b579a; }
+      .cw-dialog button.danger { color: #a4262c; }
     </style>
   </head>
   <body>
