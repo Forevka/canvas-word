@@ -1,0 +1,26 @@
+# Keep the build context tiny + reproducible: deps and large artifacts are
+# regenerated inside the image, never copied from the host.
+**/node_modules
+**/dist
+**/dist-lib
+**/*.tsbuildinfo
+
+# Local Postgres volume + secrets — never ship these.
+local-db-data
+.env
+.env.local
+
+# Agent / editor scratch + screenshots
+.git
+.gitignore
+.omc
+.claude
+.playwright-mcp
+shots
+bugs
+
+# Large local fixtures (real fixtures live under src/**/__fixtures__)
+**/RenderedReportsDocx_*
+**/*.docx
+**/*.zip
+~$*

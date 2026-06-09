@@ -10,7 +10,10 @@
 import { showIdentityPopup } from "./app/identityPopup";
 import { WordCanvas } from "./wordcanvas";
 
-const BACKEND_URL = "http://localhost:8787";
+// Dev: hit the local docker-compose backend directly. Production (built): the
+// frontend and backend share one origin behind Caddy, so derive it from the
+// page — `https://doc-editor.example/` ⇒ API there, WS at `wss://…/ws`.
+const BACKEND_URL = import.meta.env.DEV ? "http://localhost:8787" : location.origin;
 
 // Still honor ?collab so a generated share link opens here and joins the session.
 const collab = new URLSearchParams(location.search).get("collab");

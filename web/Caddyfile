@@ -1,0 +1,31 @@
+# Edge inside the compose network: one origin for the whole app.
+#   - API + WebSocket paths  -> the backend collaboration server
+#   - everything else        -> the built static frontend
+# TLS is terminated by the *host* Caddy; this listens on plain :80.
+
+:80 {
+	encode zstd gzip
+
+	# Backend surface (see backend/src/server.ts): document/media CRUD, the
+	# /ws collaboration socket, and the OpenAPI/Swagger docs. reverse_proxy
+	# auto-handles the WebSocket upgrade on /ws.
+	@api path /docs /docs/* /media /media/* /ws /ws/* /openapi.json /swagger /swagger/*
+	handle @api {
+		reverse_proxy backend:8787
+	}
+
+	# The online collab page is built to /srv/live/index.html; serve it for the
+	# clean /live path (and /live?collab=… share links keep their query).
+	@live path /live /live/
+	handle @live {
+		root * /srv
+		rewrite * /live/index.html
+		file_server
+	}
+
+	# Static frontend (default: the offline editor at index.html).
+	handle {
+		root * /srv
+		file_server
+	}
+}

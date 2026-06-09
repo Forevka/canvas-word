@@ -1,16 +1,21 @@
-# Local collaboration backend infra: Postgres + Flyway migrations.
-# Mirrors the conventions in C:\repos\lotane\cortex (postgres + flyway service,
-# bind-mounted migrations, pg_isready healthcheck) but trimmed to a plain
-# postgres image — this store needs no custom extensions.
+# canvas-word full stack.
 #
-#   cp env.example .env        # optional; defaults below work out of the box
-#   docker compose up -d       # postgres comes up, flyway applies migrations
+#   Local dev (DB only — run the app with `npm run dev`):
+#       docker compose up -d                 # postgres + flyway
 #
-# Data persists in ./local-db-data (gitignored) across restarts.
+#   Full app (production / self-hosted, all four services):
+#       docker compose --profile app up -d --build
 #
-# Vars are CW_-prefixed and the host port defaults to 5544 so this stack never
-# collides with another project's Postgres (e.g. cortex on 5433) or a leaked
-# generic POSTGRES_* env var.
+# The backend + web services sit behind the "app" profile so a plain
+# `docker compose up -d` keeps the lightweight dev workflow (just the DB),
+# while the deploy brings the whole stack up with one flag.
+#
+# Networking: only `web` publishes a host port (127.0.0.1:${EDGE_PORT:-3003}),
+# so the host Caddy terminates TLS for doc-editor.<domain> and proxies to it.
+# postgres binds to 127.0.0.1 only; the backend reaches it over the compose
+# network and is never exposed to the host.
+#
+# Vars are CW_-prefixed; copy env.example -> .env to override credentials/ports.
 
 services:
   postgres:
@@ -22,7 +27,8 @@ services:
     volumes:
       - ./local-db-data:/var/lib/postgresql/data
     ports:
-      - "${CW_DB_PORT:-5544}:5432"
+      # Host-bound to localhost so `npm run dev` can reach it; never public.
+      - "127.0.0.1:${CW_DB_PORT:-5544}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${CW_DB_USER:-postgres} -d ${CW_DB_NAME:-canvasword}"]
       interval: 5s
@@ -46,3 +52,43 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  backend:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: canvas-word-backend:latest
+    container_name: canvas-word-backend
+    restart: unless-stopped
+    environment:
+      BACKEND_PORT: "8787"
+      # In-compose connection: service name `postgres`, container port 5432.
+      DATABASE_URL: "postgres://${CW_DB_USER:-postgres}:${CW_DB_PASSWORD:-postgres}@postgres:5432/${CW_DB_NAME:-canvasword}"
+    expose:
+      - "8787"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      flyway:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:8787/openapi.json', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  web:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: canvas-word-web:latest
+    container_name: canvas-word-web
+    restart: unless-stopped
+    # Bind to localhost only — the host Caddy reverse-proxies the subdomain here.
+    ports:
+      - "127.0.0.1:${EDGE_PORT:-3003}:80"
+    depends_on:
+      - backend
