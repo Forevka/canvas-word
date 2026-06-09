@@ -90,4 +90,25 @@ describe.runIf(dbUp)("PgChangeStore (integration)", () => {
     expect([...(got?.bytes ?? [])]).toEqual([1, 2, 3, 4, 250]);
     await pool.query("DELETE FROM media WHERE hash = $1", ["testhash-abc"]);
   });
+
+  it("getActivity returns the creator + attributed entries with names", async () => {
+    await store.upsertUser({ id: "u-alice", firstName: "Alice", lastName: "Smith" });
+    const base = serializeDocument(doc("hi"));
+    const { docId } = await store.createDocument(base, { createdBy: "u-alice" });
+    docIds.push(docId);
+    await store.appendChange(docId, { ...insert(2, "!", "act0"), userId: "u-alice" });
+
+    const activity = await store.getActivity(docId);
+    expect(activity?.createdBy).toBe("u-alice");
+    expect(activity?.creatorFirstName).toBe("Alice");
+    expect(activity?.entries).toHaveLength(1);
+    expect(activity?.entries[0]).toMatchObject({
+      userId: "u-alice",
+      firstName: "Alice",
+      lastName: "Smith",
+      origin: "typing",
+      opCount: 1,
+    });
+    await pool.query("DELETE FROM users WHERE id = $1", ["u-alice"]);
+  });
 });
