@@ -7,6 +7,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { WebSocketServer, type WebSocket } from "ws";
 import { reconstruct, type Change, type SerializedDocument } from "@cw/shared";
 import { createPool } from "./db";
+import { OPENAPI_SPEC, SWAGGER_HTML } from "./openapi";
 import { PgChangeStore, type ChangeStore } from "./store/ChangeStore";
 
 const PORT = Number(process.env.BACKEND_PORT ?? 8787);
@@ -104,6 +105,16 @@ async function handle(
       "access-control-allow-headers": "content-type",
     });
     res.end();
+    return;
+  }
+
+  // API docs (distinct paths so they don't collide with /docs/:id).
+  if (method === "GET" && url.pathname === "/openapi.json") {
+    return sendJson(res, 200, OPENAPI_SPEC);
+  }
+  if (method === "GET" && (url.pathname === "/swagger" || url.pathname === "/swagger/")) {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "access-control-allow-origin": "*" });
+    res.end(SWAGGER_HTML);
     return;
   }
 
