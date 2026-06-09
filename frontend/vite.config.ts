@@ -36,10 +36,31 @@ export default defineConfig(({ mode }) => {
             fileName: "wordcanvas",
           },
         }
-      : { target: "es2022" },
+      : {
+          target: "es2022",
+          // Multi-page app build: the default editor page + the /live online demo.
+          rollupOptions: {
+            input: {
+              main: fileURLToPath(new URL("index.html", import.meta.url)),
+              live: fileURLToPath(new URL("live/index.html", import.meta.url)),
+            },
+          },
+        },
     plugins: underVitest
       ? []
-      : [nodePolyfills({ include: ["buffer", "stream", "zlib", "util", "assert", "events", "process"] })],
+      : [
+          nodePolyfills({ include: ["buffer", "stream", "zlib", "util", "assert", "events", "process"] }),
+          // Serve the /live page at the clean "/live" path (dev), not just "/live/".
+          {
+            name: "live-route",
+            configureServer(server) {
+              server.middlewares.use((req, _res, next) => {
+                if (req.url === "/live" || req.url === "/live/") req.url = "/live/index.html";
+                next();
+              });
+            },
+          },
+        ],
     // ES-format workers so the export worker can code-split shared chunks (the
     // model/layout engine). The default IIFE format forbids code-splitting.
     worker: { format: "es" },
