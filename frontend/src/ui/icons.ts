@@ -19,6 +19,9 @@ export const ICONS = {
   link: svg(
     `<path d="M6.5 9.5 9.5 6.5"/><path d="M7.5 4.5 9 3a2.8 2.8 0 0 1 4 4l-1.5 1.5"/><path d="M8.5 11.5 7 13a2.8 2.8 0 0 1-4-4l1.5-1.5"/>`,
   ),
+  share: svg(
+    `<circle cx="12" cy="3.5" r="1.7"/><circle cx="4" cy="8" r="1.7"/><circle cx="12" cy="12.5" r="1.7"/><path d="M10.5 4.4 5.5 7.1"/><path d="M5.5 8.9l5 2.7"/>`,
+  ),
   highlight: svg(
     `<path d="M3 13.5h4"/><path d="M5.5 11 11 4.5l2 2L7.5 13l-2.5.5z"/><path d="M10 5.5l2 2"/>`,
   ),

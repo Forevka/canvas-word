@@ -1,0 +1,23 @@
+<!doctype html>
+<!-- Verifies the BUILT package embeds in an arbitrary page: imports the lib
+     bundle and mounts WordCanvas into a sized div (not <body>). Offline mode. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>WordCanvas embed test</title>
+    <style>
+      body { margin: 0; font-family: sans-serif; }
+      #host { height: 90vh; border: 3px solid #2b579a; margin: 12px; }
+      h1 { margin: 8px 12px; font-size: 15px; }
+    </style>
+  </head>
+  <body>
+    <h1>Host page — editor embedded in the bordered box below</h1>
+    <div id="host"></div>
+    <script type="module">
+      import { WordCanvas } from "/dist-lib/wordcanvas.js";
+      const ed = new WordCanvas({ container: document.getElementById("host") });
+      window.__embed = ed;
+    </script>
+  </body>
+</html>

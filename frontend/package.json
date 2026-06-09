@@ -3,9 +3,19 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "module": "./dist-lib/wordcanvas.js",
+  "types": "./types/wordcanvas.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/wordcanvas.d.ts",
+      "import": "./dist-lib/wordcanvas.js"
+    }
+  },
+  "files": ["dist-lib", "types"],
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:lib": "vite build --mode lib",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
