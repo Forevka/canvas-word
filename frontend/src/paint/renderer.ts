@@ -79,12 +79,14 @@ export interface PaintScheduler {
 const PAGE_GAP_PX = 24;
 const SELECTION_COLOR = "rgba(38, 111, 219, 0.28)";
 
-/** A remote collaborator's caret to render: page-local rect + their color/name. */
+/** A remote collaborator's presence to render: their caret (focus) + any
+ *  selection highlight rects, in page-local coords, with their color/name. */
 export interface RemoteCaret {
   siteId: string;
   color: string;
   label: string;
-  rect: CaretRect;
+  rect: CaretRect | null;
+  rects?: Rect[];
 }
 
 let caretCssInjected = false;
@@ -97,7 +99,8 @@ function injectCaretCss(): void {
     ".cw-caret{position:absolute;width:2px;background:#1a1a2e;pointer-events:none;animation:cw-caret-blink 1.06s step-end infinite;}" +
     ".cw-rcaret{position:absolute;width:2px;pointer-events:none;z-index:3;}" +
     ".cw-rcaret .flag{position:absolute;top:-13px;left:-1px;height:13px;display:flex;align-items:center;" +
-    "font:600 10px/1 'Segoe UI',Roboto,sans-serif;color:#fff;padding:0 4px;border-radius:3px 3px 3px 0;white-space:nowrap;}";
+    "font:600 10px/1 'Segoe UI',Roboto,sans-serif;color:#fff;padding:0 4px;border-radius:3px 3px 3px 0;white-space:nowrap;}" +
+    ".cw-rsel{position:absolute;pointer-events:none;z-index:2;opacity:0.24;border-radius:1px;}";
   document.head.appendChild(style);
 }
 
@@ -123,9 +126,9 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
   let rafId: number | null = null;
   let zoom = 1;
   let lastCaret: CaretRect | null = null;
-  // Remote collaborators' carets: one DOM overlay per siteId (colored bar + name
-  // flag), kept alongside the local caret and repositioned the same way on zoom.
-  const remoteCaretEls = new Map<string, HTMLDivElement>();
+  // Remote collaborators' presence: per siteId a caret overlay (colored bar +
+  // name flag) plus selection-highlight rect overlays, repositioned on zoom.
+  const remoteCaretEls = new Map<string, { caret: HTMLDivElement; sels: HTMLDivElement[] }>();
   let lastRemoteCarets: RemoteCaret[] = [];
 
   const observer = new IntersectionObserver(
@@ -202,38 +205,58 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
     dirty.clear();
   }
 
-  // Reconcile the remote-caret DOM overlays against the current set (and zoom):
-  // create/move/position one per siteId, drop those no longer present.
+  // Reconcile the remote-presence DOM overlays against the current set (and
+  // zoom): per siteId a caret (focus) + selection-highlight rects; drop absent.
   function applyRemoteCarets(carets: RemoteCaret[]): void {
     const seen = new Set<string>();
     for (const c of carets) {
       seen.add(c.siteId);
-      let el = remoteCaretEls.get(c.siteId);
-      if (!el) {
-        el = document.createElement("div");
-        el.className = "cw-rcaret";
-        el.appendChild(Object.assign(document.createElement("div"), { className: "flag" }));
-        remoteCaretEls.set(c.siteId, el);
+      let entry = remoteCaretEls.get(c.siteId);
+      if (!entry) {
+        const caret = document.createElement("div");
+        caret.className = "cw-rcaret";
+        caret.appendChild(Object.assign(document.createElement("div"), { className: "flag" }));
+        entry = { caret, sels: [] };
+        remoteCaretEls.set(c.siteId, entry);
       }
-      const ph = placeholders[c.rect.pageIndex];
-      if (!ph) {
-        el.style.display = "none";
-        continue;
+      // Caret at the focus position.
+      const caret = entry.caret;
+      const ph = c.rect ? placeholders[c.rect.pageIndex] : undefined;
+      if (c.rect && ph) {
+        if (caret.parentElement !== ph) ph.appendChild(caret);
+        caret.style.display = "block";
+        caret.style.background = c.color;
+        caret.style.left = `${c.rect.x * zoom - 1}px`;
+        caret.style.top = `${c.rect.y * zoom}px`;
+        caret.style.height = `${c.rect.height * zoom}px`;
+        const flag = caret.firstElementChild as HTMLElement;
+        flag.textContent = c.label;
+        flag.style.background = c.color;
+        flag.style.display = c.label ? "flex" : "none";
+      } else {
+        caret.style.display = "none";
       }
-      if (el.parentElement !== ph) ph.appendChild(el);
-      el.style.display = "block";
-      el.style.background = c.color;
-      el.style.left = `${c.rect.x * zoom - 1}px`;
-      el.style.top = `${c.rect.y * zoom}px`;
-      el.style.height = `${c.rect.height * zoom}px`;
-      const flag = el.firstElementChild as HTMLElement;
-      flag.textContent = c.label;
-      flag.style.background = c.color;
-      flag.style.display = c.label ? "flex" : "none";
+      // Selection highlight rects (rebuilt each update — usually a handful).
+      for (const s of entry.sels) s.remove();
+      entry.sels = [];
+      for (const r of c.rects ?? []) {
+        const rph = placeholders[r.pageIndex];
+        if (!rph) continue;
+        const sd = document.createElement("div");
+        sd.className = "cw-rsel";
+        sd.style.background = c.color;
+        sd.style.left = `${r.x * zoom}px`;
+        sd.style.top = `${r.y * zoom}px`;
+        sd.style.width = `${r.width * zoom}px`;
+        sd.style.height = `${r.height * zoom}px`;
+        rph.appendChild(sd);
+        entry.sels.push(sd);
+      }
     }
-    for (const [siteId, el] of remoteCaretEls) {
+    for (const [siteId, entry] of remoteCaretEls) {
       if (!seen.has(siteId)) {
-        el.remove();
+        entry.caret.remove();
+        for (const s of entry.sels) s.remove();
         remoteCaretEls.delete(siteId);
       }
     }

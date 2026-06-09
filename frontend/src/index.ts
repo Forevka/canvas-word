@@ -23,7 +23,7 @@ import {
   type Rect,
 } from "./layout/geometry";
 import type { LayoutTree, Page, PlacedBlock } from "./layout/layoutTree";
-import { createPaintLayer } from "./paint/renderer";
+import { createPaintLayer, type RemoteCaret } from "./paint/renderer";
 import { createSelectionController } from "./input/selectionController";
 import { createObjectFrame } from "./input/objectController";
 import { createImeProxy } from "./input/imeProxy";
@@ -344,13 +344,17 @@ export function createEditor(
   const remotePeers = new Map<string, RemotePeer>();
 
   const paintRemoteCarets = (): void => {
-    const carets: { siteId: string; color: string; label: string; rect: CaretRect }[] = [];
+    const list: RemoteCaret[] = [];
     for (const [siteId, peer] of remotePeers) {
       if (!peer.selection) continue;
+      const label = peer.user ? userDisplayName(peer.user) : "";
       const rect = caretRect(tree, peer.selection.focus, scope());
-      if (rect) carets.push({ siteId, color: peer.color, label: peer.user ? userDisplayName(peer.user) : "", rect });
+      // A range selection also draws translucent highlight rects (text, table
+      // cells, SDT content — anything expressible as a DocSelection).
+      const rects = isCollapsed(peer.selection) ? [] : selectionRects(tree, peer.selection, scope());
+      if (rect || rects.length) list.push({ siteId, color: peer.color, label, rect, rects });
     }
-    paint.setRemoteCarets(carets);
+    paint.setRemoteCarets(list);
   };
 
   // Rebase peer caret positions through an applied op (same mapper as the local
