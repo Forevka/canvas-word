@@ -223,6 +223,26 @@ const CSS = `
 .cw-dialog button.primary { background: #2b579a; color: #fff; border-color: #2b579a; }
 .cw-dialog button.danger { color: #a4262c; }
 
+/* ===== Busy overlay (docx import / join / publish) ================= */
+.cw-loading-overlay {
+  position: fixed; inset: 0; z-index: 70; background: rgba(0,0,0,0.25);
+  display: flex; align-items: center; justify-content: center;
+}
+.cw-loading-card {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  background: #fff; border: 1px solid #c8c6c4; border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.25); padding: 22px 28px; min-width: 200px;
+}
+.cw-spinner {
+  width: 30px; height: 30px; border-radius: 50%;
+  border: 3px solid #e1dfdd; border-top-color: #2b579a;
+  animation: cw-spin 0.8s linear infinite;
+}
+@keyframes cw-spin { to { transform: rotate(360deg); } }
+.cw-loading-label { font-size: 13px; color: #323130; text-align: center; }
+.cw-progress { width: 180px; height: 4px; background: #e1dfdd; border-radius: 2px; overflow: hidden; }
+.cw-progress-bar { height: 100%; width: 0%; background: #2b579a; transition: width 0.15s ease; }
+
 /* floating mini-toolbar shown above a selected image */
 #img-toolbar {
   position: fixed; display: none; align-items: center; gap: 2px; z-index: 40;

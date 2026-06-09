@@ -5,7 +5,7 @@ import { createEditor, type CurrentFormat } from "./index";
 import { createLayoutEngine } from "./layout/engine";
 import { sampleDoc } from "./model/sampleDoc";
 import { stressDoc } from "./model/stressDoc";
-import { importDocx, type ImportResult } from "./import/docx/importDocx";
+import { importDocx, type ImportResult, type ImportPhase } from "./import/docx/importDocx";
 import { exportDocument, type ExportFormat } from "./export/exportDocument";
 import { loadEditorFonts } from "./export/shared/editorFonts";
 import { TOOLBAR_FONTS } from "./fonts/clones";
@@ -13,6 +13,7 @@ import { getRuntime, type EditorHandle } from "./app/runtime";
 import { buildShell } from "./app/shell";
 import { ensureWordCanvasStyles } from "./ui/styles";
 import { loadCollabDocument, publishDocument } from "./sync/collab";
+import { showBusy } from "./app/busyOverlay";
 
 // Fonts must be resolved before the first layout — pretext measures with the same
 // font strings the paint layer draws with, so a late font swap would desync them.
@@ -46,17 +47,48 @@ const reportImport = (r: ImportResult, ms: number): void => {
   for (const w of r.warnings) console.warn(`[docx-import] ${w.code}: ${w.message}`);
 };
 
+// Human labels for the import worker's progress phases (shown in the busy overlay).
+const IMPORT_PHASE_LABEL: Record<ImportPhase, string> = {
+  unzip: "Unzipping",
+  styles: "Reading styles",
+  parse: "Parsing content",
+  map: "Building document",
+};
+
 let collabVersion = 0;
 let sync: SyncClient | null = null;
-let doc =
-  collabId !== null && BACKEND_HTTP
-    ? await (async () => {
-        const loaded = await loadCollabDocument(BACKEND_HTTP, collabId);
-        collabVersion = loaded.version;
-        console.log(`[collab] loaded ${collabId} at v${collabVersion}`);
-        return loaded.doc;
-      })()
-    : sampleDoc();
+let doc: Document;
+if (collabId !== null && BACKEND_HTTP) {
+  const busy = showBusy("Loading shared document…");
+  try {
+    const loaded = await loadCollabDocument(BACKEND_HTTP, collabId);
+    collabVersion = loaded.version;
+    doc = loaded.doc;
+    // We joined an existing session: the URL in the address bar IS the share
+    // link, so the Share button reveals it instead of re-publishing.
+    shareLink = location.href;
+    console.log(`[collab] loaded ${collabId} at v${collabVersion}`);
+  } catch (e) {
+    // Dead/invalid link — don't hang the whole load. Drop collab state, strip
+    // ?collab (so a reload doesn't re-fail), and fall back to a blank editor.
+    console.error("[collab] load failed", e);
+    alert(`Could not open the shared document: ${e instanceof Error ? e.message : String(e)}`);
+    collabId = null;
+    shareLink = null;
+    try {
+      const u = new URL(location.href);
+      u.searchParams.delete("collab");
+      history.replaceState(null, "", u.toString());
+    } catch {
+      /* ignore URL errors */
+    }
+    doc = sampleDoc();
+  } finally {
+    busy.done();
+  }
+} else {
+  doc = sampleDoc();
+}
 
 const engine = createLayoutEngine();
 const t0 = performance.now();
@@ -138,12 +170,34 @@ let showShareDialog: (link: string) => void = () => {};
 // Assigned by the activity panel block; toggles the who/when/what-kind drawer.
 let toggleActivity: () => void = () => {};
 
-// Publish the current document to the backend, switch this editor into a live
-// collab session on the new doc id, reflect it in the URL, and surface a share
-// link. Online only. Used by openDocx (auto) and the Share button.
+// Hand a share link to the embedder's handler, or fall back to the built-in dialog.
+const surfaceShareLink = (link: string, docId: string): void => {
+  if (runtime.onShareLink) runtime.onShareLink(link, docId);
+  else showShareDialog(link);
+};
+
+// Publish the current document ONCE and switch this editor into a live collab
+// session, reflecting it in the URL and surfacing a share link. Online only.
+//
+// Idempotent: once published this session (or joined via a ?collab link, which
+// pre-sets shareLink), later calls just re-surface the cached link — no second
+// POST /docs, no WebSocket teardown. Live edits already converge through the
+// sync socket, so the server snapshot never needs re-posting. Used by the Share
+// button and the public share() API.
 const goOnlineWithCurrentDoc = async (): Promise<string> => {
   if (!BACKEND_HTTP || !BACKEND_WS) throw new Error("cannot share: offline (no backendUrl)");
-  const { docId } = await publishDocument(BACKEND_HTTP, editor.getDocument(), runtime.user);
+  // Already shared — reuse the existing link instead of forking a new document.
+  if (collabId && shareLink) {
+    surfaceShareLink(shareLink, collabId);
+    return shareLink;
+  }
+  const busy = showBusy("Creating share link…");
+  let docId: string;
+  try {
+    ({ docId } = await publishDocument(BACKEND_HTTP, editor.getDocument(), runtime.user));
+  } finally {
+    busy.done();
+  }
   sync?.destroy();
   collabId = docId;
   collabVersion = 0;
@@ -160,8 +214,7 @@ const goOnlineWithCurrentDoc = async (): Promise<string> => {
   }
   console.log(`[collab] published, sharing ${docId}`);
   runtime.onEvent?.({ type: "shared", docId, url: shareLink });
-  if (runtime.onShareLink) runtime.onShareLink(shareLink, docId);
-  else showShareDialog(shareLink);
+  surfaceShareLink(shareLink, docId);
   return shareLink;
 };
 
@@ -179,16 +232,36 @@ const replaceDocument = (next: typeof doc): void => {
 
 const openDocxFile = async (file: File | ArrayBuffer): Promise<void> => {
   const i0 = performance.now();
+  const busy = showBusy("Opening document…");
   try {
-    const result = await importDocx(file);
+    const result = await importDocx(file, {
+      onProgress: (phase, pct) => busy.update(`${IMPORT_PHASE_LABEL[phase]}…`, pct),
+    });
     reportImport(result, performance.now() - i0);
     replaceDocument(result.doc);
-    // Online: opening a document auto-publishes it (new doc id + share link).
-    if (online) await goOnlineWithCurrentDoc();
+    // A freshly opened document is a NEW document: drop any live collab session
+    // so the next Share publishes a fresh doc/link (fork), and clear ?collab.
+    // Publishing is lazy — it happens on the first Share click, not on open.
+    sync?.destroy();
+    sync = null;
+    collabId = null;
+    shareLink = null;
+    collabVersion = 0;
+    try {
+      const u = new URL(location.href);
+      if (u.searchParams.has("collab")) {
+        u.searchParams.delete("collab");
+        history.replaceState(null, "", u.toString());
+      }
+    } catch {
+      /* ignore URL errors */
+    }
   } catch (e) {
     console.error("[docx-import]", e);
     const name = file instanceof File ? file.name : "document";
     alert(`Could not open "${name}": ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    busy.done();
   }
 };
 
