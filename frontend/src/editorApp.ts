@@ -135,6 +135,8 @@ if (collabId !== null && BACKEND_WS) {
 // Assigned by the toolbar block; shows the built-in share dialog (used when the
 // embedder didn't supply onShareLink).
 let showShareDialog: (link: string) => void = () => {};
+// Assigned by the activity panel block; toggles the who/when/what-kind drawer.
+let toggleActivity: () => void = () => {};
 
 // Publish the current document to the backend, switch this editor into a live
 // collab session on the new doc id, reflect it in the URL, and surface a share
@@ -1049,6 +1051,7 @@ if (toolbar) {
   const rulerBtn = btn(ICONS.ruler, "Ruler", () => rulerBtn.classList.toggle("active", toggleRuler()));
   rulerBtn.classList.add("active"); // ruler shows by default
   stub(ICONS.marks, "Show/hide formatting marks");
+  if (online) btn(ICONS.activity, "Activity — who created/edited this document and when", () => toggleActivity());
   group(view, "Zoom");
   txtBtn("−", "Zoom out", () => editor.setZoom(editor.getZoom() / 1.1), "font-size:15px;");
   const zoomSel = select("Zoom level", 66);
@@ -1056,6 +1059,117 @@ if (toolbar) {
   zoomSel.value = "1";
   zoomSel.addEventListener("change", () => editor.setZoom(parseFloat(zoomSel.value)));
   txtBtn("+", "Zoom in", () => editor.setZoom(editor.getZoom() * 1.1), "font-size:15px;");
+
+  // ---- Activity panel (who created/edited, when) — online only ------------
+  if (online) {
+    const panel = el("div");
+    panel.style.cssText =
+      "position:fixed;top:0;right:0;width:300px;height:100%;z-index:45;background:#fff;border-left:1px solid #e1dfdd;" +
+      "box-shadow:-4px 0 16px rgba(0,0,0,0.08);display:none;flex-direction:column;font-size:13px;";
+    const ahead = el("div");
+    ahead.style.cssText =
+      "flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #e1dfdd;font-weight:600;color:#323130;";
+    const atitle = el("span");
+    atitle.textContent = "Activity";
+    const aclose = el("button");
+    aclose.textContent = "×";
+    aclose.style.cssText = "border:none;background:transparent;font-size:18px;cursor:pointer;color:#605e5c;";
+    ahead.append(atitle, aclose);
+    const ameta = el("div");
+    ameta.style.cssText = "flex:0 0 auto;padding:10px 12px;color:#605e5c;border-bottom:1px solid #f0eeee;";
+    const alist = el("div");
+    alist.style.cssText = "flex:1 1 auto;overflow-y:auto;padding:2px 0;";
+    panel.append(ahead, ameta, alist);
+    document.body.appendChild(panel);
+
+    const nameOf = (f: string, l: string): string => `${f} ${l}`.trim() || "Unknown";
+    const kindLabel = (origin: string): string =>
+      origin === "typing" ? "typed"
+      : origin === "paste" ? "pasted"
+      : origin === "undo" ? "undo"
+      : origin === "redo" ? "redo"
+      : "edited";
+    const timeAgo = (ts: number): string => {
+      const s = Math.max(0, (Date.now() - ts) / 1000);
+      if (s < 60) return "just now";
+      if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+      if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+      return new Date(ts).toLocaleDateString();
+    };
+
+    interface ActivityResp {
+      createdBy: string | null;
+      creatorFirstName: string;
+      creatorLastName: string;
+      createdAt: number;
+      entries: Array<{ firstName: string; lastName: string; ts: number; origin: string; opCount: number }>;
+    }
+    const render = (a: ActivityResp): void => {
+      ameta.textContent = a.createdBy
+        ? `Created by ${nameOf(a.creatorFirstName, a.creatorLastName)} · ${timeAgo(a.createdAt)}`
+        : "Created locally";
+      alist.textContent = "";
+      if (a.entries.length === 0) {
+        const e = el("div");
+        e.style.cssText = "padding:12px;color:#80868b;";
+        e.textContent = "No edits yet.";
+        alist.appendChild(e);
+        return;
+      }
+      for (const en of a.entries) {
+        const row = el("div");
+        row.style.cssText = "padding:7px 12px;border-bottom:1px solid #f6f5f5;display:flex;justify-content:space-between;gap:8px;";
+        const who = el("span");
+        who.style.color = "#323130";
+        who.textContent = `${nameOf(en.firstName, en.lastName)} · ${kindLabel(en.origin)}`;
+        const when = el("span");
+        when.style.cssText = "color:#80868b;white-space:nowrap;";
+        when.textContent = timeAgo(en.ts);
+        row.append(who, when);
+        alist.appendChild(row);
+      }
+    };
+
+    const fetchActivity = async (): Promise<void> => {
+      if (!collabId || !BACKEND_HTTP) {
+        ameta.textContent = "Share the document (or open one online) to track activity.";
+        alist.textContent = "";
+        return;
+      }
+      try {
+        const r = await fetch(`${BACKEND_HTTP}/docs/${encodeURIComponent(collabId)}/activity`);
+        if (r.ok) render((await r.json()) as ActivityResp);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    // Live refresh: debounced on remote changes (the author's own edits surface
+    // via the open-panel poll, since the server doesn't echo them back as remote).
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    remoteChangeListeners.push(() => {
+      if (refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        void fetchActivity();
+      }, 400);
+    });
+
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let open = false;
+    toggleActivity = (): void => {
+      open = !open;
+      panel.style.display = open ? "flex" : "none";
+      if (open) {
+        void fetchActivity();
+        pollTimer = setInterval(() => void fetchActivity(), 2500);
+      } else if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    };
+    aclose.addEventListener("click", () => toggleActivity());
+  }
 
   // ---- Outline drawer (left navigation pane) ------------------------------
   // Lists every Heading-styled paragraph; clicking one moves the caret there
