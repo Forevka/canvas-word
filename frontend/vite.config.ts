@@ -55,7 +55,14 @@ export default defineConfig(({ mode }) => {
             name: "live-route",
             configureServer(server) {
               server.middlewares.use((req, _res, next) => {
-                if (req.url === "/live" || req.url === "/live/") req.url = "/live/index.html";
+                const url = req.url ?? "";
+                const q = url.indexOf("?");
+                const path = q === -1 ? url : url.slice(0, q);
+                // Match the PATH only — a share link is /live?collab=… ; keep the
+                // query so live.ts can read ?collab.
+                if (path === "/live" || path === "/live/") {
+                  req.url = "/live/index.html" + (q === -1 ? "" : url.slice(q));
+                }
                 next();
               });
             },
