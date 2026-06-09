@@ -66,6 +66,22 @@ export function createApp(store: ChangeStore): { server: Server; bcast: Broadcas
     const docId = new URL(req.url ?? "", "http://x").searchParams.get("doc");
     if (!docId) return ws.close(1008, "missing ?doc");
     bcast.join(docId, ws);
+    ws.on("message", (data) => {
+      void (async () => {
+        let msg: { type?: string; change?: Change };
+        try {
+          msg = JSON.parse(String(data));
+        } catch {
+          return;
+        }
+        if (msg.type === "submit" && msg.change) {
+          // Append (with OT rebase) then broadcast to everyone in the room,
+          // including the sender — whose client treats the echo as its ack.
+          const accepted = await store.appendChange(docId, msg.change);
+          bcast.publish(docId, accepted);
+        }
+      })();
+    });
   });
 
   return { server, bcast };

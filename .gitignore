@@ -12,7 +12,8 @@ shots/
 .env
 
 # large local test documents (real fixtures live in src/**/__fixtures__/)
-/RenderedReportsDocx_*
+# un-anchored so copies under any workspace dir are ignored too
+RenderedReportsDocx_*
 
 # Office lock files
 ~$*

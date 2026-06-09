@@ -150,6 +150,9 @@ export interface Editor {
   getChangeLog(): Change[];
   /** The local version: number of changes recorded since load. */
   getChangeHead(): number;
+  /** Apply ops received from a remote collaborator: mutates the document and
+   *  rebases the local caret, without recording to the change log or undo stack. */
+  applyRemoteOps(ops: Op[]): void;
   destroy(): void;
 }
 
@@ -590,6 +593,26 @@ export function createEditor(
     runOps(entry.ops);
     recorder.record(entry.ops, "redo", entry.selectionAfter, Date.now());
     afterMutation(entry.selectionAfter);
+  };
+
+  // Apply ops that arrived from another collaborator. Unlike commit(), these are
+  // NOT recorded (the server's log already holds them) and do NOT enter the undo
+  // stack (a user can't undo a peer's edit). The local caret is rebased through
+  // each op's position mapper so it survives the remote insert/delete.
+  const applyRemoteOps = (ops: Op[]): void => {
+    let sel = selection;
+    for (const op of ops) {
+      const res = applyOp(doc, op);
+      doc = res.doc;
+      if (sel) {
+        sel = {
+          anchor: res.mapPosition(sel.anchor),
+          focus: res.mapPosition(sel.focus),
+          ...(sel.goalX !== undefined ? { goalX: sel.goalX } : {}),
+        };
+      }
+    }
+    afterMutation(sel);
   };
 
   // ---- AutoCorrect (typographic) -------------------------------------------
@@ -1719,6 +1742,7 @@ export function createEditor(
     getChangeHead(): number {
       return recorder.head();
     },
+    applyRemoteOps,
     dispatch,
     toggleStyle,
     setCharStyle(patch: Partial<CharStyle>): void {

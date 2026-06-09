@@ -9,7 +9,7 @@
 // different store without touching the server.
 
 import type { Pool } from "pg";
-import { SNAPSHOT_VERSION, type Change, type SerializedDocument } from "@cw/shared";
+import { SNAPSHOT_VERSION, transformOps, type Change, type Op, type SerializedDocument } from "@cw/shared";
 
 export interface DocSnapshotRecord {
   docId: string;
@@ -109,6 +109,20 @@ export class PgChangeStore implements ChangeStore {
       );
       if ((doc.rowCount ?? 0) === 0) throw new Error(`document ${docId} not found`);
       const seq = Number(doc.rows[0]!.head_version);
+
+      // OT: if the change was generated against an older version, rebase its ops
+      // onto current head by transforming against the changes committed since —
+      // same transform + side the client used, so the two agree (TP1).
+      let ops: Op[] = change.ops;
+      if (change.baseVersion < seq) {
+        const concurrent = await client.query<{ ops: Op[] }>(
+          "SELECT ops FROM changes WHERE doc_id = $1 AND seq >= $2 AND seq < $3 ORDER BY seq ASC",
+          [docId, change.baseVersion, seq],
+        );
+        const against = concurrent.rows.flatMap((r) => r.ops);
+        ops = transformOps(change.ops, against, "right");
+      }
+
       await client.query(
         `INSERT INTO changes (doc_id, ${CHANGE_COLS})
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
@@ -120,13 +134,13 @@ export class PgChangeStore implements ChangeStore {
           change.siteId,
           change.origin,
           change.ts,
-          JSON.stringify(change.ops),
+          JSON.stringify(ops),
           change.selectionAfter != null ? JSON.stringify(change.selectionAfter) : null,
         ],
       );
       await client.query("UPDATE documents SET head_version = $1 WHERE id = $2", [seq + 1, docId]);
       await client.query("COMMIT");
-      return { ...change, seq };
+      return { ...change, ops, seq };
     } catch (e) {
       await client.query("ROLLBACK");
       throw e;

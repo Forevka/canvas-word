@@ -1,5 +1,6 @@
-import { configureIds, deserializeDocument, reconstruct, serializeDocument } from "@cw/shared";
+import { configureIds, deserializeDocument, reconstruct, serializeDocument, type Change, type Document } from "@cw/shared";
 import { mediaStore, rehydrateDocMedia } from "./media/store";
+import { SyncClient } from "./sync/SyncClient";
 import { createEditor, type CurrentFormat } from "./index";
 import { createLayoutEngine } from "./layout/engine";
 import { sampleDoc } from "./model/sampleDoc";
@@ -34,8 +35,24 @@ const reportImport = (r: ImportResult, ms: number): void => {
 const params = new URLSearchParams(location.search);
 const stress = params.get("stress");
 const docxUrl = params.get("docx");
+// ?collab=<docId> joins a live collaboration session: load the server's current
+// document (base snapshot + replayed change log) and sync edits over WebSocket.
+const collabId = params.get("collab");
+const BACKEND_HTTP = params.get("backend") ?? "http://localhost:8787";
+const BACKEND_WS = BACKEND_HTTP.replace(/^http/, "ws");
+let collabVersion = 0;
+let sync: SyncClient | null = null;
 let doc =
-  stress !== null ? stressDoc(Number(stress) || 1000)
+  collabId !== null ? await (async () => {
+    const r = await fetch(`${BACKEND_HTTP}/docs/${encodeURIComponent(collabId)}/document`);
+    if (!r.ok) throw new Error(`collab document ${collabId} not found (${r.status})`);
+    const payload = (await r.json()) as { doc: Document; version: number };
+    collabVersion = payload.version;
+    rehydrateDocMedia(payload.doc);
+    console.log(`[collab] loaded ${collabId} at v${collabVersion}`);
+    return payload.doc;
+  })()
+  : stress !== null ? stressDoc(Number(stress) || 1000)
   : docxUrl !== null ? await (async () => {
       const i0 = performance.now();
       const result = await importDocx(await (await fetch(docxUrl)).arrayBuffer(), {
@@ -66,6 +83,11 @@ let toggleRuler: () => boolean = () => false;
 let refreshImageBar: () => void = () => {};
 const editorOpts = {
   engine,
+  ...(collabId !== null ? { docId: collabId } : {}),
+  // In a collab session, ship each recorded local edit to the server.
+  onChangeRecorded: (change: Change) => {
+    sync?.localEdit(change.ops);
+  },
   onChange: () => {
     syncToolbar();
     refreshOutline();
@@ -81,6 +103,12 @@ const editorOpts = {
   },
 };
 let editor = createEditor(app, doc, editorOpts);
+
+if (collabId !== null) {
+  sync = new SyncClient({ wsUrl: BACKEND_WS, docId: collabId, editor, startVersion: collabVersion });
+  sync.connect();
+  console.log(`[collab] connected to ${BACKEND_WS}/ws?doc=${collabId}`);
+}
 
 // Replace the open document (docx import): tear down and rebuild the editor —
 // the layout engine is reused so its caches survive across documents.
