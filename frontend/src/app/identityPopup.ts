@@ -2,26 +2,13 @@
 // a `user`, ask for a First/Last name and derive a DETERMINISTIC id (same name →
 // same id, so the backend recognizes a returning person). A real embedder skips
 // this by passing `user` directly. Self-contained inline styles since it renders
-// before the editor (and its stylesheet) mounts. Remembers the last identity.
+// before the editor (and its stylesheet) mounts. POC: identity is NOT persisted —
+// every page entry without a provided `user` prompts again.
 
 import { deterministicUserId, type UserInfo } from "@cw/shared";
 
-const LS_KEY = "wordcanvas.identity";
-
-export function loadStoredIdentity(): UserInfo | null {
-  try {
-    const u = JSON.parse(localStorage.getItem(LS_KEY) ?? "null") as UserInfo | null;
-    if (u && u.id && (u.firstName || u.lastName)) return u;
-  } catch {
-    /* ignore */
-  }
-  return null;
-}
-
 export function showIdentityPopup(): Promise<UserInfo> {
   return new Promise((resolve) => {
-    const stored = loadStoredIdentity();
-
     const back = document.createElement("div");
     back.style.cssText =
       "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.35);display:flex;align-items:center;" +
@@ -48,8 +35,8 @@ export function showIdentityPopup(): Promise<UserInfo> {
       return input;
     };
 
-    const first = mkField("First name", stored?.firstName ?? "");
-    const last = mkField("Last name", stored?.lastName ?? "");
+    const first = mkField("First name", "");
+    const last = mkField("Last name", "");
 
     const row = document.createElement("div");
     row.style.cssText = "display:flex;justify-content:flex-end;margin-top:6px;";
@@ -68,11 +55,6 @@ export function showIdentityPopup(): Promise<UserInfo> {
       const f = first.value.trim() || "Anonymous";
       const l = last.value.trim();
       const user: UserInfo = { id: deterministicUserId(`${f} ${l}`), firstName: f, lastName: l };
-      try {
-        localStorage.setItem(LS_KEY, JSON.stringify(user));
-      } catch {
-        /* ignore */
-      }
       back.remove();
       resolve(user);
     };
