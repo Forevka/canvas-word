@@ -4,8 +4,8 @@
 
 import type { Block, CharStyle, Document, ParaStyle, TableBlock } from "@cw/shared";
 import { BAND_CONTAINERS } from "@cw/shared";
-import type { DocPosition, DocSelection } from "@cw/shared";
-import { isCollapsed } from "@cw/shared";
+import type { DocPosition, DocSelection, UserInfo } from "@cw/shared";
+import { isCollapsed, colorForId, userDisplayName } from "@cw/shared";
 import { applyOp, containerBlocks, containerOf, effectiveFractions, locateImage, sliceRuns, type Op } from "@cw/shared";
 import { bandParagraphs, blockById, containerListOf, locateParagraph, paragraphsOf, styleAtRuns, textOfRuns } from "@cw/shared";
 import { createLayoutEngine, type LayoutEngine } from "./layout/engine";
@@ -17,6 +17,7 @@ import {
   linkAt,
   objectRect,
   selectionRects,
+  type CaretRect,
   type ColumnBoundaryHit,
   type GeoScope,
   type Rect,
@@ -153,6 +154,11 @@ export interface Editor {
   /** Apply ops received from a remote collaborator: mutates the document and
    *  rebases the local caret, without recording to the change log or undo stack. */
   applyRemoteOps(ops: Op[]): void;
+  /** Upsert a remote collaborator's caret (rebased through edits, rendered with
+   *  their name). `selection` null hides their caret. */
+  setPeerPresence(siteId: string, user: UserInfo | undefined, selection: DocSelection | null): void;
+  /** Remove a collaborator's caret (they left). */
+  removePeer(siteId: string): void;
   destroy(): void;
 }
 
@@ -169,6 +175,8 @@ export interface EditorOptions {
   /** Fires for each committed Change (the document-history log entry). The
    *  SyncClient subscribes here to ship edits to the server. */
   onChangeRecorded?: ChangeSink;
+  /** Fires whenever the local selection/caret moves (for presence broadcast). */
+  onSelectionChange?: (selection: DocSelection | null) => void;
 }
 
 export function createEditor(
@@ -327,6 +335,37 @@ export function createEditor(
     options.onChange?.();
   };
 
+  // ---- remote collaborator presence (live carets) -------------------------
+  interface RemotePeer {
+    user: UserInfo | undefined;
+    color: string;
+    selection: DocSelection | null;
+  }
+  const remotePeers = new Map<string, RemotePeer>();
+
+  const paintRemoteCarets = (): void => {
+    const carets: { siteId: string; color: string; label: string; rect: CaretRect }[] = [];
+    for (const [siteId, peer] of remotePeers) {
+      if (!peer.selection) continue;
+      const rect = caretRect(tree, peer.selection.focus, scope());
+      if (rect) carets.push({ siteId, color: peer.color, label: peer.user ? userDisplayName(peer.user) : "", rect });
+    }
+    paint.setRemoteCarets(carets);
+  };
+
+  // Rebase peer caret positions through an applied op (same mapper as the local
+  // selection), so their carets travel with the text everyone is editing.
+  const rebasePeers = (mapPosition: (p: DocPosition) => DocPosition): void => {
+    for (const peer of remotePeers.values()) {
+      if (peer.selection) {
+        peer.selection = {
+          anchor: mapPosition(peer.selection.anchor),
+          focus: mapPosition(peer.selection.focus),
+        };
+      }
+    }
+  };
+
   const setSelection = (next: DocSelection | null): void => {
     // Word: entering a placeholder control selects its whole content, so the
     // first keystroke replaces the prompt text.
@@ -351,6 +390,7 @@ export function createEditor(
     refreshSelectionVisuals();
     mirror.sync(state());
     notifyChange();
+    options.onSelectionChange?.(selection);
   };
 
   // ---- story mode (header/footer band editing) ----------------------------
@@ -531,6 +571,7 @@ export function createEditor(
     for (const op of ops) {
       const res = applyOp(doc, op);
       doc = res.doc;
+      rebasePeers(res.mapPosition); // keep peer carets aligned with the edited text
       inverses.unshift(res.inverse);
     }
     return inverses;
@@ -549,8 +590,10 @@ export function createEditor(
       const caret = caretRect(tree, selection.focus, scope());
       if (caret) paint.ensureVisible(caret);
     }
+    paintRemoteCarets(); // peers' carets re-measured against the new layout
     mirror.sync(state());
     notifyChange();
+    options.onSelectionChange?.(selection);
   };
 
   const commit = (trn: Transaction): void => {
@@ -604,6 +647,7 @@ export function createEditor(
     for (const op of ops) {
       const res = applyOp(doc, op);
       doc = res.doc;
+      rebasePeers(res.mapPosition); // peers' carets travel with the remote edit too
       if (sel) {
         sel = {
           anchor: res.mapPosition(sel.anchor),
@@ -613,6 +657,16 @@ export function createEditor(
       }
     }
     afterMutation(sel);
+  };
+
+  const setPeerPresence = (siteId: string, user: UserInfo | undefined, selection: DocSelection | null): void => {
+    remotePeers.set(siteId, { user, color: colorForId(user?.id ?? siteId), selection });
+    paintRemoteCarets();
+  };
+
+  const removePeer = (siteId: string): void => {
+    remotePeers.delete(siteId);
+    paintRemoteCarets();
   };
 
   // ---- AutoCorrect (typographic) -------------------------------------------
@@ -1743,6 +1797,8 @@ export function createEditor(
       return recorder.head();
     },
     applyRemoteOps,
+    setPeerPresence,
+    removePeer,
     dispatch,
     toggleStyle,
     setCharStyle(patch: Partial<CharStyle>): void {

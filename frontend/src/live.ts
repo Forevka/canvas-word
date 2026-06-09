@@ -7,6 +7,7 @@
 //   import { WordCanvas } from "@cw/frontend";
 //   new WordCanvas({ container, backendUrl: "https://api.example.com" });
 
+import { showIdentityPopup } from "./app/identityPopup";
 import { WordCanvas } from "./wordcanvas";
 
 const BACKEND_URL = "http://localhost:8787";
@@ -14,9 +15,14 @@ const BACKEND_URL = "http://localhost:8787";
 // Still honor ?collab so a generated share link opens here and joins the session.
 const collab = new URLSearchParams(location.search).get("collab");
 
+// Online demo: ask who you are (POC identity) so carets/edits are attributed.
+// A real embedder would pass `user` directly and skip this.
+const user = await showIdentityPopup();
+
 const editor = new WordCanvas({
   container: document.body,
   backendUrl: BACKEND_URL,
+  user,
   ...(collab ? { collabId: collab } : {}),
 });
 

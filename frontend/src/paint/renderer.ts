@@ -54,6 +54,9 @@ export interface PaintScheduler {
    *  gray frame around the active control). Null clears. */
   setSdtAdornment(adorn: { rects: Rect[]; label: string } | null): void;
   setCaret(caret: CaretRect | null): void;
+  /** Remote collaborators' carets (DOM overlays with name flags). Replaces the
+   *  whole set each call; pass [] to clear. */
+  setRemoteCarets(carets: RemoteCaret[]): void;
   /** Coalesce: mark pages dirty now, paint once on the next animation frame. */
   invalidatePages(pageIndexes: number[]): void;
   /** Map a client (viewport) point onto page-local coordinates. Clamps into the
@@ -76,6 +79,14 @@ export interface PaintScheduler {
 const PAGE_GAP_PX = 24;
 const SELECTION_COLOR = "rgba(38, 111, 219, 0.28)";
 
+/** A remote collaborator's caret to render: page-local rect + their color/name. */
+export interface RemoteCaret {
+  siteId: string;
+  color: string;
+  label: string;
+  rect: CaretRect;
+}
+
 let caretCssInjected = false;
 function injectCaretCss(): void {
   if (caretCssInjected) return;
@@ -83,7 +94,10 @@ function injectCaretCss(): void {
   const style = document.createElement("style");
   style.textContent =
     "@keyframes cw-caret-blink{0%,55%{opacity:1}56%,100%{opacity:0}}" +
-    ".cw-caret{position:absolute;width:2px;background:#1a1a2e;pointer-events:none;animation:cw-caret-blink 1.06s step-end infinite;}";
+    ".cw-caret{position:absolute;width:2px;background:#1a1a2e;pointer-events:none;animation:cw-caret-blink 1.06s step-end infinite;}" +
+    ".cw-rcaret{position:absolute;width:2px;pointer-events:none;z-index:3;}" +
+    ".cw-rcaret .flag{position:absolute;top:-13px;left:-1px;height:13px;display:flex;align-items:center;" +
+    "font:600 10px/1 'Segoe UI',Roboto,sans-serif;color:#fff;padding:0 4px;border-radius:3px 3px 3px 0;white-space:nowrap;}";
   document.head.appendChild(style);
 }
 
@@ -109,6 +123,10 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
   let rafId: number | null = null;
   let zoom = 1;
   let lastCaret: CaretRect | null = null;
+  // Remote collaborators' carets: one DOM overlay per siteId (colored bar + name
+  // flag), kept alongside the local caret and repositioned the same way on zoom.
+  const remoteCaretEls = new Map<string, HTMLDivElement>();
+  let lastRemoteCarets: RemoteCaret[] = [];
 
   const observer = new IntersectionObserver(
     (entries) => {
@@ -182,6 +200,43 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
       if (canvas && page) paintPage(canvas, page);
     }
     dirty.clear();
+  }
+
+  // Reconcile the remote-caret DOM overlays against the current set (and zoom):
+  // create/move/position one per siteId, drop those no longer present.
+  function applyRemoteCarets(carets: RemoteCaret[]): void {
+    const seen = new Set<string>();
+    for (const c of carets) {
+      seen.add(c.siteId);
+      let el = remoteCaretEls.get(c.siteId);
+      if (!el) {
+        el = document.createElement("div");
+        el.className = "cw-rcaret";
+        el.appendChild(Object.assign(document.createElement("div"), { className: "flag" }));
+        remoteCaretEls.set(c.siteId, el);
+      }
+      const ph = placeholders[c.rect.pageIndex];
+      if (!ph) {
+        el.style.display = "none";
+        continue;
+      }
+      if (el.parentElement !== ph) ph.appendChild(el);
+      el.style.display = "block";
+      el.style.background = c.color;
+      el.style.left = `${c.rect.x * zoom - 1}px`;
+      el.style.top = `${c.rect.y * zoom}px`;
+      el.style.height = `${c.rect.height * zoom}px`;
+      const flag = el.firstElementChild as HTMLElement;
+      flag.textContent = c.label;
+      flag.style.background = c.color;
+      flag.style.display = c.label ? "flex" : "none";
+    }
+    for (const [siteId, el] of remoteCaretEls) {
+      if (!seen.has(siteId)) {
+        el.remove();
+        remoteCaretEls.delete(siteId);
+      }
+    }
   }
 
   function paintPage(canvas: HTMLCanvasElement, page: Page): void {
@@ -491,6 +546,11 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
       caretEl.style.animation = "";
     },
 
+    setRemoteCarets(carets: RemoteCaret[]): void {
+      lastRemoteCarets = carets;
+      applyRemoteCarets(carets);
+    },
+
     invalidatePages(pageIndexes: number[]): void {
       for (const i of pageIndexes) if (liveCanvases.has(i)) dirty.add(i);
       schedule();
@@ -581,6 +641,7 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
           caretEl.style.height = `${lastCaret.height * zoom}px`;
         }
       }
+      applyRemoteCarets(lastRemoteCarets); // peers' carets follow the new zoom
     },
     getZoom(): number {
       return zoom;

@@ -6,7 +6,21 @@
 // once on first import; its CSS is id-based). Constructing a second WordCanvas
 // throws.
 
-import type { Document } from "@cw/shared";
+import type { Document, UserInfo } from "@cw/shared";
+
+/** One other collaborator currently in the document. */
+export interface Participant {
+  siteId: string;
+  user?: UserInfo | undefined;
+}
+
+/** Events the WordCanvas wrapper re-emits to the embedder. */
+export type WordCanvasEvent =
+  | { type: "ready" }
+  | { type: "shared"; docId: string; url: string }
+  | { type: "userEntered"; siteId: string; user?: UserInfo | undefined }
+  | { type: "userLeave"; siteId: string; user?: UserInfo | undefined }
+  | { type: "presence"; participants: Participant[] };
 
 /** Handle the editor app exposes back to the WordCanvas wrapper. */
 export interface EditorHandle {
@@ -26,10 +40,14 @@ export interface WordCanvasRuntime {
   backendUrl?: string | undefined;
   /** Join an existing collaboration session on load (online only). */
   collabId?: string | undefined;
+  /** Caller-supplied identity — stamped on changes/presence (attribution). */
+  user?: UserInfo | undefined;
   /** Override how a share link is surfaced; default shows a built-in dialog. */
   onShareLink?: ((url: string, docId: string) => void) | undefined;
   /** Called once the editor is mounted and ready. */
   onReady?: ((handle: EditorHandle) => void) | undefined;
+  /** Sink for collaboration events (presence, share, ready) → WordCanvas.on(...). */
+  onEvent?: ((ev: WordCanvasEvent) => void) | undefined;
 }
 
 let current: WordCanvasRuntime | null = null;

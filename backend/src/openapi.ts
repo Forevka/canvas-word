@@ -132,6 +132,47 @@ export const OPENAPI_SPEC = {
         },
       },
     },
+    "/docs/{id}/activity": {
+      get: {
+        summary: "Edit history with author names (attribution)",
+        parameters: [{ $ref: "#/components/parameters/DocId" }],
+        responses: {
+          "200": {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    docId: { type: "string" },
+                    createdBy: { type: ["string", "null"] },
+                    creatorFirstName: { type: "string" },
+                    creatorLastName: { type: "string" },
+                    createdAt: { type: "integer" },
+                    entries: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          seq: { type: "integer" },
+                          userId: { type: ["string", "null"] },
+                          firstName: { type: "string" },
+                          lastName: { type: "string" },
+                          ts: { type: "integer" },
+                          origin: { type: "string" },
+                          opCount: { type: "integer" },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "404": { $ref: "#/components/responses/NotFound" },
+        },
+      },
+    },
     "/media/{hash}": {
       put: {
         summary: "Store image bytes under their content hash",
@@ -188,6 +229,7 @@ export const OPENAPI_SPEC = {
           baseVersion: { type: "integer", description: "version the change was generated against" },
           seq: { type: "integer", description: "canonical order, server-assigned" },
           siteId: { type: "string" },
+          userId: { type: "string", description: "caller-supplied author id (attribution)" },
           origin: { type: "string", enum: ["typing", "command", "paste", "undo", "redo"] },
           ts: { type: "integer", description: "author epoch ms" },
           ops: { type: "array", items: { $ref: "#/components/schemas/Op" } },

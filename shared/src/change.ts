@@ -15,6 +15,41 @@ import type { DocSelection } from "./model/position";
  *  literal forward ops so the history is faithful. */
 export type ChangeOrigin = "typing" | "command" | "paste" | "undo" | "redo";
 
+/** Caller-supplied identity for a collaborator. The embedder owns auth and
+ *  decides who can see what — the editor just attributes/presents whatever it's
+ *  handed. `id` flows onto changes and the document creator; first/last name are
+ *  shown on carets and in the activity panel. */
+export interface UserInfo {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
+
+/** Display name for a user (handles missing parts gracefully). */
+export function userDisplayName(u: Pick<UserInfo, "firstName" | "lastName">): string {
+  return `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || "Anonymous";
+}
+
+/** A stable id derived from a name (POC identity: same name → same id, so the
+ *  backend recognizes a returning person). Small FNV-1a hash → short hex; not
+ *  cryptographic — the embedder supplies real ids in production. */
+export function deterministicUserId(name: string): string {
+  const s = name.trim().toLowerCase().replace(/\s+/g, " ");
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return "u" + (h >>> 0).toString(16).padStart(8, "0");
+}
+
+/** A stable, readable color for a user/site id (caret + label tint). */
+export function colorForId(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return `hsl(${h % 360}, 70%, 45%)`;
+}
+
 export interface Change {
   /** Globally-unique, client-minted id. Idempotency key: re-submitting the same
    *  change (after a reconnect) must not double-apply. */
@@ -29,6 +64,9 @@ export interface Change {
   seq?: number;
   /** The session that authored the change (see shared/ids). */
   siteId: string;
+  /** The caller-supplied user id of the author (attribution). Optional: offline /
+   *  no-identity sessions omit it. */
+  userId?: string;
   /** What kind of edit produced this change (audit/filtering; undo and redo are
    *  recorded as literal forward ops, so this is how they're recognized). Does
    *  not affect replay. */

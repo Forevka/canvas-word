@@ -10,15 +10,19 @@
 //     un-acked ops (inflight + buffer) and applies the result to the editor,
 //     and rebases inflight + buffer against the remote.
 //
-// The server independently transforms an in-flight change against any changes
-// committed since its baseVersion — using the SAME transform + side — so the
-// server's accepted ops equal the client's locally-rebased ops (TP1). Hence an
-// ack needs no re-apply: optimistic local state already matches the server.
+// It also relays PRESENCE (ephemeral, never persisted): a "hello" with the local
+// user on connect, the local caret on every move (throttled), and inbound
+// roster/presence/leave → the editor (which owns + rebases peer caret positions)
+// plus userEntered/userLeave/presence callbacks for the embedder.
 
-import { currentSiteId, freshId, transformOps, type Change, type Op } from "@cw/shared";
+import { currentSiteId, freshId, transformOps, type Change, type DocSelection, type Op, type UserInfo } from "@cw/shared";
 
 export interface SyncEditor {
   applyRemoteOps(ops: Op[]): void;
+  /** Upsert a peer's caret (the editor rebases it through edits + renders it). */
+  setPeerPresence(siteId: string, user: UserInfo | undefined, selection: DocSelection | null): void;
+  /** Remove a peer's caret (they left). */
+  removePeer(siteId: string): void;
 }
 
 export interface SyncClientOptions {
@@ -28,9 +32,25 @@ export interface SyncClientOptions {
   editor: SyncEditor;
   /** Server version (head) the initial document was loaded at. */
   startVersion: number;
-  /** Optional: notified on every applied remote change (UI/presence). */
-  onRemote?: (change: Change) => void;
+  /** Local user identity (attribution + presence). */
+  user?: UserInfo | undefined;
+  /** Notified on every applied remote change (e.g. activity panel). */
+  onRemote?: ((change: Change) => void) | undefined;
+  onUserEntered?: ((siteId: string, user: UserInfo | undefined) => void) | undefined;
+  onUserLeave?: ((siteId: string, user: UserInfo | undefined) => void) | undefined;
+  onPresence?: ((participants: Array<{ siteId: string; user?: UserInfo | undefined }>) => void) | undefined;
 }
+
+interface PresenceMsg {
+  type: string;
+  change?: Change;
+  siteId?: string;
+  user?: UserInfo;
+  selection?: DocSelection | null;
+  entries?: Array<{ siteId: string; user?: UserInfo; selection?: DocSelection | null }>;
+}
+
+const PRESENCE_THROTTLE_MS = 80;
 
 export class SyncClient {
   private ws: WebSocket | null = null;
@@ -38,6 +58,10 @@ export class SyncClient {
   private inflight: { id: string; ops: Op[] } | null = null;
   private buffer: Op[] = [];
   private readonly opts: SyncClientOptions;
+  // Known peers (for entered/left dedup + the participants list).
+  private readonly peers = new Map<string, UserInfo | undefined>();
+  private presenceTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastSelection: DocSelection | null = null;
 
   constructor(opts: SyncClientOptions) {
     this.opts = opts;
@@ -47,10 +71,26 @@ export class SyncClient {
   connect(): void {
     const ws = new WebSocket(`${this.opts.wsUrl}/ws?doc=${encodeURIComponent(this.opts.docId)}`);
     this.ws = ws;
-    ws.onopen = () => this.flush();
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: "hello", siteId: currentSiteId(), user: this.opts.user }));
+      this.flush();
+    };
     ws.onmessage = (ev) => {
-      const msg = JSON.parse(ev.data as string) as { type: string; change?: Change };
-      if (msg.type === "change" && msg.change) this.onServerChange(msg.change);
+      const msg = JSON.parse(ev.data as string) as PresenceMsg;
+      switch (msg.type) {
+        case "change":
+          if (msg.change) this.onServerChange(msg.change);
+          break;
+        case "roster":
+          for (const e of msg.entries ?? []) this.applyPeer(e.siteId, e.user, e.selection ?? null);
+          break;
+        case "presence":
+          if (msg.siteId) this.applyPeer(msg.siteId, msg.user, msg.selection ?? null);
+          break;
+        case "leave":
+          if (msg.siteId) this.removePeer(msg.siteId);
+          break;
+      }
     };
     ws.onclose = () => {
       this.ws = null;
@@ -64,7 +104,20 @@ export class SyncClient {
     this.flush();
   }
 
-  /** Current confirmed server version. */
+  /** Broadcast the local caret (throttled). */
+  localPresence(selection: DocSelection | null): void {
+    this.lastSelection = selection;
+    if (this.presenceTimer) return;
+    this.presenceTimer = setTimeout(() => {
+      this.presenceTimer = null;
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(
+          JSON.stringify({ type: "presence", siteId: currentSiteId(), user: this.opts.user, selection: this.lastSelection }),
+        );
+      }
+    }, PRESENCE_THROTTLE_MS);
+  }
+
   getVersion(): number {
     return this.version;
   }
@@ -81,6 +134,7 @@ export class SyncClient {
       docId: this.opts.docId,
       baseVersion: this.version,
       siteId: currentSiteId(),
+      ...(this.opts.user ? { userId: this.opts.user.id } : {}),
       origin: "command",
       ts: Date.now(),
       ops,
@@ -112,7 +166,29 @@ export class SyncClient {
     this.opts.onRemote?.(change);
   }
 
+  private applyPeer(siteId: string, user: UserInfo | undefined, selection: DocSelection | null): void {
+    if (siteId === currentSiteId()) return; // never show our own caret
+    const isNew = !this.peers.has(siteId);
+    this.peers.set(siteId, user);
+    this.opts.editor.setPeerPresence(siteId, user, selection);
+    if (isNew) this.opts.onUserEntered?.(siteId, user);
+    this.emitPresence();
+  }
+
+  private removePeer(siteId: string): void {
+    const user = this.peers.get(siteId);
+    if (!this.peers.delete(siteId)) return;
+    this.opts.editor.removePeer(siteId);
+    this.opts.onUserLeave?.(siteId, user);
+    this.emitPresence();
+  }
+
+  private emitPresence(): void {
+    this.opts.onPresence?.([...this.peers.entries()].map(([siteId, user]) => ({ siteId, user })));
+  }
+
   destroy(): void {
+    if (this.presenceTimer) clearTimeout(this.presenceTimer);
     this.ws?.close();
     this.ws = null;
   }

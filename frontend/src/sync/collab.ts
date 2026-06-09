@@ -3,13 +3,15 @@
 // move content-addressed media over the wire so images survive across clients.
 // Reuses @cw/shared serialization and the session media store.
 
-import { collectMediaIds, serializeDocument, type Document } from "@cw/shared";
+import { collectMediaIds, serializeDocument, type Document, type UserInfo } from "@cw/shared";
 import { mediaStore, rehydrateDocMedia } from "../media/store";
 
-/** Upload referenced media, then create a server document from the snapshot. */
+/** Upload referenced media, then create a server document from the snapshot,
+ *  attributed to `user` (the creator). */
 export async function publishDocument(
   backendUrl: string,
   doc: Document,
+  user?: UserInfo,
 ): Promise<{ docId: string; version: number }> {
   const store = mediaStore();
   for (const id of collectMediaIds(doc)) {
@@ -24,7 +26,7 @@ export async function publishDocument(
   const res = await fetch(`${backendUrl}/docs`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(serializeDocument(doc)),
+    body: JSON.stringify({ snapshot: serializeDocument(doc), createdBy: user?.id, user }),
   });
   if (!res.ok) throw new Error(`publish failed (${res.status})`);
   return (await res.json()) as { docId: string; version: number };

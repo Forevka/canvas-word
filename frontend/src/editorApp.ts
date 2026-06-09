@@ -1,4 +1,4 @@
-import { configureIds, deserializeDocument, reconstruct, serializeDocument, type Change, type Document } from "@cw/shared";
+import { configureIds, deserializeDocument, reconstruct, serializeDocument, type Change, type DocSelection, type Document } from "@cw/shared";
 import { mediaStore, rehydrateDocMedia } from "./media/store";
 import { SyncClient } from "./sync/SyncClient";
 import { createEditor, type CurrentFormat } from "./index";
@@ -83,6 +83,10 @@ const editorOpts = {
   onChangeRecorded: (change: Change) => {
     sync?.localEdit(change.ops);
   },
+  // Broadcast the local caret to collaborators on every move.
+  onSelectionChange: (sel: DocSelection | null) => {
+    sync?.localPresence(sel);
+  },
   onChange: () => {
     syncToolbar();
     refreshOutline();
@@ -99,9 +103,32 @@ const editorOpts = {
 };
 let editor = createEditor(app, doc, editorOpts);
 
+// Listeners notified whenever a remote change is applied (the activity panel,
+// Part 3, registers here).
+const remoteChangeListeners: Array<(change: Change) => void> = [];
+
+// Build a SyncClient for `docId` wired to the current editor + identity + the
+// presence/event callbacks. Used by both the join path and goOnline.
+const connectSync = (docId: string, startVersion: number): SyncClient => {
+  const s = new SyncClient({
+    wsUrl: BACKEND_WS!,
+    docId,
+    editor,
+    startVersion,
+    user: runtime.user,
+    onUserEntered: (siteId, user) => runtime.onEvent?.({ type: "userEntered", siteId, user }),
+    onUserLeave: (siteId, user) => runtime.onEvent?.({ type: "userLeave", siteId, user }),
+    onPresence: (participants) => runtime.onEvent?.({ type: "presence", participants }),
+    onRemote: (change: Change) => {
+      for (const l of remoteChangeListeners) l(change);
+    },
+  });
+  s.connect();
+  return s;
+};
+
 if (collabId !== null && BACKEND_WS) {
-  sync = new SyncClient({ wsUrl: BACKEND_WS, docId: collabId, editor, startVersion: collabVersion });
-  sync.connect();
+  sync = connectSync(collabId, collabVersion);
   console.log(`[collab] connected to ${BACKEND_WS}/ws?doc=${collabId}`);
 }
 
@@ -114,12 +141,11 @@ let showShareDialog: (link: string) => void = () => {};
 // link. Online only. Used by openDocx (auto) and the Share button.
 const goOnlineWithCurrentDoc = async (): Promise<string> => {
   if (!BACKEND_HTTP || !BACKEND_WS) throw new Error("cannot share: offline (no backendUrl)");
-  const { docId } = await publishDocument(BACKEND_HTTP, editor.getDocument());
+  const { docId } = await publishDocument(BACKEND_HTTP, editor.getDocument(), runtime.user);
   sync?.destroy();
   collabId = docId;
   collabVersion = 0;
-  sync = new SyncClient({ wsUrl: BACKEND_WS, docId, editor, startVersion: 0 });
-  sync.connect();
+  sync = connectSync(docId, 0);
   // Reflect in the address bar so a reload re-joins (best-effort; harmless if the
   // host controls routing differently).
   try {
@@ -131,6 +157,7 @@ const goOnlineWithCurrentDoc = async (): Promise<string> => {
     shareLink = `${location.origin}${location.pathname}?collab=${docId}`;
   }
   console.log(`[collab] published, sharing ${docId}`);
+  runtime.onEvent?.({ type: "shared", docId, url: shareLink });
   if (runtime.onShareLink) runtime.onShareLink(shareLink, docId);
   else showShareDialog(shareLink);
   return shareLink;
@@ -1727,3 +1754,4 @@ const handle: EditorHandle = {
   },
 };
 runtime.onReady?.(handle);
+runtime.onEvent?.({ type: "ready" });

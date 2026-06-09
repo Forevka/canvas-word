@@ -5,7 +5,7 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
-import { reconstruct, type Change, type SerializedDocument } from "@cw/shared";
+import { reconstruct, type Change, type SerializedDocument, type UserInfo } from "@cw/shared";
 import { createPool } from "./db";
 import { OPENAPI_SPEC, SWAGGER_HTML } from "./openapi";
 import { PgChangeStore, type ChangeStore } from "./store/ChangeStore";
@@ -31,23 +31,80 @@ async function readJson<T>(req: IncomingMessage): Promise<T> {
   return JSON.parse(buf.toString("utf8")) as T;
 }
 
-// --- live broadcast ---------------------------------------------------------
+// --- live broadcast + presence ----------------------------------------------
+
+interface Conn {
+  docId: string;
+  siteId?: string;
+  user?: UserInfo | undefined;
+  selection?: unknown;
+}
 
 class Broadcaster {
   private readonly rooms = new Map<string, Set<WebSocket>>();
+  private readonly meta = new Map<WebSocket, Conn>();
 
   join(docId: string, ws: WebSocket): void {
     let room = this.rooms.get(docId);
     if (!room) this.rooms.set(docId, (room = new Set()));
     room.add(ws);
-    ws.on("close", () => room!.delete(ws));
+    this.meta.set(ws, { docId });
+    ws.on("close", () => {
+      room!.delete(ws);
+      const m = this.meta.get(ws);
+      this.meta.delete(ws);
+      // Tell the room this collaborator left so their caret disappears.
+      if (m?.siteId) this.toRoom(docId, { type: "leave", siteId: m.siteId }, ws);
+    });
   }
 
+  /** A client identified itself: send it the current roster, announce it. */
+  hello(ws: WebSocket, siteId: string, user?: UserInfo): void {
+    const m = this.meta.get(ws);
+    if (!m) return;
+    m.siteId = siteId;
+    m.user = user;
+    const entries = this.roster(m.docId, ws);
+    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "roster", entries }));
+    this.toRoom(m.docId, { type: "presence", siteId, user, selection: m.selection ?? null }, ws);
+  }
+
+  /** A client's caret moved: relay to the rest of the room. */
+  presence(ws: WebSocket, selection: unknown): void {
+    const m = this.meta.get(ws);
+    if (!m?.siteId) return;
+    m.selection = selection;
+    this.toRoom(m.docId, { type: "presence", siteId: m.siteId, user: m.user, selection }, ws);
+  }
+
+  /** Accepted change → everyone in the room (incl. sender, who treats it as ack). */
   publish(docId: string, change: Change): void {
+    this.toRoom(docId, { type: "change", change });
+  }
+
+  private roster(
+    docId: string,
+    exclude: WebSocket,
+  ): Array<{ siteId: string; user?: UserInfo | undefined; selection: unknown }> {
+    const room = this.rooms.get(docId);
+    const out: Array<{ siteId: string; user?: UserInfo | undefined; selection: unknown }> = [];
+    if (!room) return out;
+    for (const ws of room) {
+      if (ws === exclude) continue;
+      const m = this.meta.get(ws);
+      if (m?.siteId) out.push({ siteId: m.siteId, user: m.user, selection: m.selection ?? null });
+    }
+    return out;
+  }
+
+  private toRoom(docId: string, msg: unknown, exclude?: WebSocket): void {
     const room = this.rooms.get(docId);
     if (!room) return;
-    const msg = JSON.stringify({ type: "change", change });
-    for (const ws of room) if (ws.readyState === ws.OPEN) ws.send(msg);
+    const s = JSON.stringify(msg);
+    for (const ws of room) {
+      if (ws === exclude) continue;
+      if (ws.readyState === ws.OPEN) ws.send(s);
+    }
   }
 }
 
@@ -69,7 +126,7 @@ export function createApp(store: ChangeStore): { server: Server; bcast: Broadcas
     bcast.join(docId, ws);
     ws.on("message", (data) => {
       void (async () => {
-        let msg: { type?: string; change?: Change };
+        let msg: { type?: string; change?: Change; siteId?: string; user?: UserInfo; selection?: unknown };
         try {
           msg = JSON.parse(String(data));
         } catch {
@@ -80,6 +137,11 @@ export function createApp(store: ChangeStore): { server: Server; bcast: Broadcas
           // including the sender — whose client treats the echo as its ack.
           const accepted = await store.appendChange(docId, msg.change);
           bcast.publish(docId, accepted);
+        } else if (msg.type === "hello" && msg.siteId) {
+          if (msg.user) await store.upsertUser(msg.user);
+          bcast.hello(ws, msg.siteId, msg.user);
+        } else if (msg.type === "presence") {
+          bcast.presence(ws, msg.selection ?? null);
         }
       })();
     });
@@ -118,10 +180,18 @@ async function handle(
     return;
   }
 
-  // POST /docs  — create a document from a base snapshot
+  // POST /docs  — create a document from a base snapshot. Body is either a bare
+  // SerializedDocument, or { snapshot, createdBy?, user? } for attribution.
   if (method === "POST" && parts.length === 1 && parts[0] === "docs") {
-    const base = await readJson<SerializedDocument>(req);
-    const created = await store.createDocument(base);
+    const body = await readJson<
+      SerializedDocument | { snapshot: SerializedDocument; createdBy?: string; user?: UserInfo }
+    >(req);
+    const wrapped = body && typeof body === "object" && "snapshot" in body;
+    const snapshot = (wrapped ? body.snapshot : body) as SerializedDocument;
+    const createdBy = wrapped ? body.createdBy : undefined;
+    const user = wrapped ? body.user : undefined;
+    if (user) await store.upsertUser(user);
+    const created = await store.createDocument(snapshot, createdBy ? { createdBy } : {});
     return sendJson(res, 201, created);
   }
 
@@ -159,6 +229,13 @@ async function handle(
       const changes = await store.getChanges(docId, snap.version);
       const doc = reconstruct(snap.snapshot, changes);
       return sendJson(res, 200, { docId, version: (snap.version + changes.length), doc });
+    }
+
+    // GET /docs/:id/activity  — edit history with author names (attribution)
+    if (method === "GET" && parts[2] === "activity") {
+      const activity = await store.getActivity(docId);
+      if (!activity) return sendJson(res, 404, { error: "document not found" });
+      return sendJson(res, 200, activity);
     }
   }
 
