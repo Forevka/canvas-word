@@ -3,8 +3,8 @@
 The editor exports the document model to **PDF** (page-accurate) and **DOCX**
 (hand-rolled OOXML). Both run **isomorphically**: the same pure pipeline executes
 in a browser Web Worker *and* on a Node backend (no DOM), tested under vitest.
-The whole feature is additive under `src/export/`, plus one small seam in
-`src/layout/metrics.ts`.
+The whole feature is additive under `frontend/src/export/`, plus one small seam in
+`frontend/src/layout/metrics.ts`.
 
 ```
 exportDocument(doc, "pdf"|"docx")   main thread: resolve image bytes, post to worker
@@ -18,7 +18,7 @@ exportDocument(doc, "pdf"|"docx")   main thread: resolve image bytes, post to wo
 PDF is **not** a reflow. `renderPdf` runs the editor's own
 `createLayoutEngine().layout(doc)` to get the `LayoutTree` (absolute page
 geometry), then `pdf/paintBlock.ts` draws each page with pdfkit — a
-constant-for-constant inverse of `src/paint/renderer.ts` (same baseline formula,
+constant-for-constant inverse of `frontend/src/paint/renderer.ts` (same baseline formula,
 sub/super shifts, underline/strike offsets, default grid color, footnote-rule
 width, leader dashes). So a PDF page matches the canvas pixel-for-pixel (modulo
 metric-clone glyph shapes). The model is CSS px (96dpi); each PDF page is sized in
@@ -52,7 +52,7 @@ overrides `colorSpace` (via pdfkit's `openImage`) before placing the image.
 Caladea↔Cambria, Gelasio↔Georgia, Arimo↔Arial, Cousine↔Courier New, plus the
 **genuine Times New Roman** (bundled on request — proprietary; see `FONTS.md` and
 `fonts/LICENSES.md`). The family→clone map and substitution live in
-`src/fonts/clones.ts` (`cloneFamilyFor`), shared with the editor; `Arimo` is the
+`frontend/src/fonts/clones.ts` (`cloneFamilyFor`), shared with the editor; `Arimo` is the
 fallback (emits a `font-substituted` warning). `shared/fontRegistry.ts` loads/
 resolves them via fontkit. Node reads the files with `fs`; the browser worker
 `fetch`es them (Vite emits them as assets). **Full rationale: `FONTS.md`.**
@@ -61,7 +61,7 @@ resolves them via fontkit. Node reads the files with `fs`; the browser worker
 
 `writeDocx` emits `document.xml`, `styles.xml`, `numbering.xml`, `footnotes.xml`,
 `settings.xml`, header/footer parts, `[Content_Types].xml`, and `.rels`, then zips
-with `fflate`. Unit inverses live in `src/export/units.ts` (px→twips ×15,
+with `fflate`. Unit inverses live in `frontend/src/export/units.ts` (px→twips ×15,
 →half-pt ×1.5, →EMU ×9525, border →eighth-pt ×6). Runs carry full direct
 formatting (every toggle explicit on/off) so a paragraph's `w:pStyle` can't leak
 run props back through the cascade on re-import. Row spans re-synthesize the

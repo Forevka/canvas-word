@@ -3,7 +3,7 @@
 A TypeScript docx importer running in a Web Worker. No Rust/WASM: docx import is
 data-dense and compute-light — the cost of marshaling a large object graph across the
 WASM boundary would eat any parsing win, and the hard part (OOXML semantics → our model)
-iterates fastest in TS next to `src/model/document.ts`. The worker makes import
+iterates fastest in TS next to `shared/src/model/document.ts`. The worker makes import
 perceptually free regardless of duration; the real cost of opening a 70-page document is
 our own cold layout pass, not XML parsing.
 
@@ -22,7 +22,7 @@ our own cold layout pass, not XML parsing.
 ## Module structure
 
 ```
-src/import/docx/
+frontend/src/import/docx/
   importDocx.ts       ← main-thread API (the only file the app imports)
   worker.ts           ← worker entry: message protocol only, no logic
   pipeline.ts         ← orchestrates the stages below (pure, no worker refs)
@@ -118,12 +118,14 @@ buf ─► unzip ─► contentTypes ─► rels ─► styles+theme ─► pars
    - `w:p` → paragraph IR: `pPr` (style ref, `jc`, `spacing`, `ind`, numbering ref) +
      inline walk: `w:r` (rPr + `w:t`/`w:tab`/`w:br`/`w:drawing`), `w:hyperlink`
      (unwrap, apply `Hyperlink` char style), `w:fldSimple`/field codes (take cached
-     result text), `w:sdt` inline (unwrap `sdtContent` transparently)
+     result text), `w:sdt` inline (mapped to a first-class content control — `sdtPr`
+     captured into a shared sdt registry, see below), `w:bookmarkStart/End` (recorded
+     as character-range bookmarks)
    - `w:tbl` → rows → `w:tc` → nested block walk (cells hold paragraphs — matches
-     `TableCell.blocks: Paragraph[]`); record `gridSpan`/`vMerge` in IR even though the
-     model can't hold them yet
-   - `w:sdt` block-level → unwrap to its content (content controls become invisible —
-     warning emitted)
+     `TableCell.blocks: Block[]`); `gridSpan` → `TableCell.colSpan` and `vMerge` →
+     `TableCell.rowSpan` (the span-aware table grid holds both now)
+   - `w:sdt` block-level → unwrap to its content (block-level content controls aren't
+     modelled; a warning is emitted)
    - body-level `w:sectPr` → page size/margins/header-footer refs
 5. **Media**: `w:drawing` → `a:blip r:embed` rId → media part → `Blob` → object URL.
    Size from `wp:extent` (EMUs); if absent, `createImageBitmap` (worker-available) for
@@ -172,6 +174,9 @@ than a silent drop:
 | `vMerge` | `TableCell.rowSpan` | Faithful: continuation cells dropped, the restart cell's `rowSpan` bumped (HTML semantics); `colFractions` always emitted so the layout keeps the column count |
 | Explicit page breaks (`w:br type="page"`, `w:pageBreakBefore`) | — | Faithful: map to `ParaStyle.pageBreakBefore` (inline breaks split the paragraph; the follower carries the break) |
 | Multiple sections | `ParaStyle.sectionBreak` (`SectionPatch`) | A section with distinct page size / columns / page-numbering becomes a real `sectionBreak` on the paragraph that ends it (engine pages + applies the geometry). Geometry-preserving footer/header-only breaks **flow** (these reports emit dozens; a literal break strands half-pages), unless the next section opens with a heading. Per-section *bands* on a flowed section aren't applied (`section-bands-flattened` warning) — the document section's are used |
+| Inline content controls (`w:sdt`) | `CharStyle.sdtId` + `Document.sdts` | Faithful: `sdtPr` mirrored losslessly (alias, tag, type, list items, date format, checkbox state, locks, placeholder flag); contiguous runs share an `sdtId`. Block-level `w:sdt` still unwraps to its content (warning) |
+| Bookmarks (`w:bookmarkStart/End`) | `Document.bookmarks` | Faithful: name → character range (body, cell, or band); zero-width anchors kept (`start === end`). Powers TOC/cross-reference targets and the Bookmarks panel |
+| Hidden text (`w:vanish`) | `CharStyle.hidden` | Faithful: preserved through round-trips but never laid out or painted (matches Word's bookmark-anchor paragraphs that generated reports hide) |
 
 This table doubles as the **model-evolution backlog** — when the model later gains lists
 or rich headers, the importer seam already collects the data (the IR keeps it; only
@@ -180,7 +185,7 @@ or rich headers, the importer seam already collects the data (the IR keeps it; o
 ## Testing
 
 - All stages are DOM-free → plain **vitest in Node**. Fixtures: a handful of small real
-  `.docx` files in `src/import/docx/__fixtures__/` (Word-generated, covering styles
+  `.docx` files in `frontend/src/import/docx/__fixtures__/` (Word-generated, covering styles
   cascade, tables, images, sdt, headers).
 - Unit level: `units.test.ts` (pure math), `styles.test.ts` (cascade + toggle-XOR
   against minimal `styles.xml` snippets), `relationships.test.ts`.
@@ -193,8 +198,8 @@ or rich headers, the importer seam already collects the data (the IR keeps it; o
 ## Build order
 
 1. ✅ **Skeleton + happy path** — zip → document.xml → paragraphs/runs, worker wiring,
-   `?docx=` dev hook + 📂 toolbar button. Tables, sectPr, sdt/hyperlink/field
-   unwrapping, hidden text (`w:vanish`) landed here too. 8.9 MB real report: ~160ms.
+   `?docx=` dev hook + 📂 toolbar button. Tables, sectPr, hyperlink/field unwrapping,
+   hidden text (`w:vanish`) landed here too. 8.9 MB real report: ~160ms.
 2. ✅ **StyleResolver + theme** — docDefaults, `basedOn` chains (cycle-guarded),
    toggle-XOR (§17.7.3), `w:default` paragraph style, theme fonts (`asciiTheme`) and
    colors (`themeColor`), memoized per (pStyle, rStyle). Parts located via real
@@ -215,6 +220,10 @@ or rich headers, the importer seam already collects the data (the IR keeps it; o
    `footnotes.xml` → `Document.footnotes` + `footnoteRef`; `w:keepLines` →
    `keepLinesTogether`; `w:cols` → `SectionProps.columns`; `w:pgNumType` →
    `pageNumberStart`; table border/shading cascade → `TableCell.borders`/`shading`.
+6. ✅ **Content controls, bookmarks, vertical cell merge** — inline `w:sdt` →
+   `CharStyle.sdtId` + `Document.sdts` (full `sdtPr`); `w:bookmarkStart/End` →
+   `Document.bookmarks` (character ranges); `vMerge` → `TableCell.rowSpan` on the
+   span-aware grid.
 
 Still on the backlog: table-style *conditional* formatting (firstRow/banding via
 `w:tblStylePr`), per-section header/footer **bands** on geometry-preserving flowed

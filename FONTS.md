@@ -19,13 +19,13 @@ Windows/Office originals:
 | (anything unmapped) | Arimo (fallback) | — |
 
 > **Times New Roman is the real Microsoft font**, bundled at the project owner's
-> request in place of the OFL "Tinos" clone (`src/export/shared/fonts/TimesNewRoman-*.ttf`,
+> request in place of the OFL "Tinos" clone (`frontend/src/export/shared/fonts/TimesNewRoman-*.ttf`,
 > from <https://github.com/misuchiru03/font-times-new-roman>). Unlike the other
 > faces it is **not** freely redistributable — see `fonts/LICENSES.md`. To restore
 > a fully-redistributable build, swap it back for Tinos (Apache-2.0).
 
-Single source of truth: **`src/fonts/clones.ts`** (`CLONE_OF`, `FONT_FILES`,
-`TOOLBAR_FONTS`). Font files + their licenses: `src/export/shared/fonts/`.
+Single source of truth: **`frontend/src/fonts/clones.ts`** (`CLONE_OF`, `FONT_FILES`,
+`TOOLBAR_FONTS`). Font files + their licenses: `frontend/src/export/shared/fonts/`.
 
 ## Why this decision was made
 
@@ -52,21 +52,21 @@ Single source of truth: **`src/fonts/clones.ts`** (`CLONE_OF`, `FONT_FILES`,
 The document model keeps the **original** family name (`"Calibri, serif"`). The
 substitution happens only at render/measure/embed time:
 
-- **`src/layout/metrics.ts` → `charStyleToFont`** maps the family to its clone, so
+- **`frontend/src/layout/metrics.ts` → `charStyleToFont`** maps the family to its clone, so
   every canvas font string the engine builds uses the clone. This is the one
   place the editor's measurement & painting pick up the clone.
-- **`src/layout/metrics.ts` → `fontMetrics`** returns line-height ascent/descent
-  from baked per-clone ratios (`CLONE_METRICS` in `src/fonts/clones.ts`), **not**
+- **`frontend/src/layout/metrics.ts` → `fontMetrics`** returns line-height ascent/descent
+  from baked per-clone ratios (`CLONE_METRICS` in `frontend/src/fonts/clones.ts`), **not**
   from the canvas/fontkit context. This is what makes pagination identical across
   the editor and exporters (see "Pagination parity" below).
-- **`src/export/shared/editorFonts.ts` → `loadEditorFonts`** loads the clone TTFs
+- **`frontend/src/export/shared/editorFonts.ts` → `loadEditorFonts`** loads the clone TTFs
   as `FontFace`s (under their clone names) on the main thread **before the first
   layout** (`main.ts`). Without this the editor canvas couldn't draw the clones.
-- **`src/export/shared/measureHost.ts` + `fontkitContext.ts`** measure with
+- **`frontend/src/export/shared/measureHost.ts` + `fontkitContext.ts`** measure with
   fontkit over the same clones — in the export worker and on Node.
-- **`src/export/shared/fontRegistry.ts` + `pdf/renderPdf.ts`** embed the clone
+- **`frontend/src/export/shared/fontRegistry.ts` + `pdf/renderPdf.ts`** embed the clone
   faces into the PDF (pdfkit, subset-embedded).
-- **DOCX (`src/export/docx/…`)** writes the **original** family name
+- **DOCX (`frontend/src/export/docx/…`)** writes the **original** family name
   (`w:rFonts w:ascii`), so a `.docx` reopened in Word uses the real Calibri. The
   clone is a *rendering/measuring* concern, never stored in the document.
 
@@ -74,7 +74,7 @@ substitution happens only at render/measure/embed time:
 
 The font dropdown shows **"Original (Clone)"** — e.g. `Calibri (Carlito)` — so a
 user can see the on-screen text is a metric-compatible substitute, not the literal
-system font. Defined in `TOOLBAR_FONTS` (`src/fonts/clones.ts`). The selected
+system font. Defined in `TOOLBAR_FONTS` (`frontend/src/fonts/clones.ts`). The selected
 *value* is still the original family (what gets stored in the model).
 
 ## Pagination parity: editor === browser export === Node export
@@ -104,10 +104,10 @@ page counts) — they must stay equal. See `EXPORT.md` for the export architectu
 ## Adding or changing a font
 
 1. Drop the four faces (`Family-Regular/Bold/Italic/BoldItalic.ttf`) into
-   `src/export/shared/fonts/`. **Only ship OFL/Apache (or otherwise
+   `frontend/src/export/shared/fonts/`. **Only ship OFL/Apache (or otherwise
    redistributable) fonts** and add them to `fonts/LICENSES.md`.
-2. Update `CLONE_FAMILIES`, `CLONE_OF`, and `TOOLBAR_FONTS` in `src/fonts/clones.ts`.
+2. Update `CLONE_FAMILIES`, `CLONE_OF`, and `TOOLBAR_FONTS` in `frontend/src/fonts/clones.ts`.
    `FONT_FILES` derives automatically; the editor loader, fontkit measure host, and
    pdfkit embedder all read from there, so nothing else needs editing.
-3. Run the export tests (`npx vitest run src/export/`) — the measure-host test
+3. Run the export tests (`npx vitest run src/export/`, from `frontend/`) — the measure-host test
    asserts fontkit widths match pdfkit's embedded-font widths.

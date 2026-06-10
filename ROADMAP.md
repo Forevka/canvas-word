@@ -1,24 +1,23 @@
-# Roadmap — Tier 1 & Tier 2
+# Feature roadmap
 
-Target: a document editor where a typical Word user writes a real multi-page
-document and doesn't notice it isn't Word. Tier 1 closes the gaps a user hits in
-the first five minutes; Tier 2 closes the document-level gaps. Each entry lists
-the model/engine/input/UI deltas, undo story, edge cases, verification plan, and
-effort. Conventions referenced throughout:
+The goal: a document editor where a typical Word user writes a real multi-page
+document and doesn't notice it isn't Word. This was the working plan to get there
+— the gaps a user hits in the first five minutes, then the document-level gaps
+that follow. **Everything below has shipped.** Each entry records the
+model/engine/input/UI deltas, undo story, edge cases, and verification.
+Conventions referenced throughout:
 
 - **"op"** = an entry in `model/ops.ts` — must return an exact inverse + position
   mapper (the undo/collab invariant).
 - **"the walk"** = the pagination loop in `layout/engine.ts#layoutDocument`.
 - **"band machinery"** = per-page header/footer layout with `{page}` substitution.
 - Importer coordination notes assume the docx workstream's prop tables in
-  `src/import/docx/` (shared id spaces; their resolver flattens cascades into
-  concrete runs and keeps `namedStyle`/list refs).
+  `frontend/src/import/docx/` (shared id spaces; their resolver flattens cascades
+  into concrete runs and keeps `namedStyle`/list refs).
 
 ---
 
-## TIER 1
-
-### T1.1 Lists (bullets, numbered, multilevel) — ✅ DONE
+### Lists (bullets, numbered, multilevel) — ✅ DONE
 **Shipped as planned; verified: counter sequence 1./2./a./b./i./3. with level
 resets, hanging-indent markers, toggle, Tab ladder, Enter semantics, undo.**
 
@@ -62,8 +61,8 @@ Verify
 
 Importer coordination: `numbering.xml → Document.lists`, `w:numPr → ParaStyle.list`.
 
-### T1.2 Find & Replace — ✅ DONE (with T1.3–T1.6, one batch)
-**Effort: ~1 day. No dependencies.**
+### Find & replace — ✅ DONE
+**Shipped as one batch with hyperlinks, highlight, sub/superscript, format painter and autocorrect.**
 
 - Search model: walk `paragraphsOf(doc)` text (body + cells + bands); collect
   `{ blockId, start, end }[]`. Plain text, options: match case, whole word.
@@ -79,8 +78,7 @@ Importer coordination: `numbering.xml → Document.lists`, `w:numPr → ParaStyl
 - Verify: matches in cells and headers (band scope jump on navigate enters story
   mode), replace-all single-undo, case/whole-word, zero matches.
 
-### T1.3 Hyperlinks
-**Effort: ~1 day. No dependencies.**
+### Hyperlinks — ✅ DONE
 
 - Model: `CharStyle.link?: string` (must join `styleEq` so runs split/merge
   correctly at link boundaries).
@@ -94,8 +92,7 @@ Importer coordination: `numbering.xml → Document.lists`, `w:numPr → ParaStyl
   maps `<a>` back. Importer: `w:hyperlink` + rels → link prop (their side).
 - Verify: split/merge at link edges, copy→paste round-trip, ctrl+click, undo.
 
-### T1.4 Highlight + subscript/superscript
-**Effort: ~0.5 day. No dependencies.**
+### Highlight + subscript/superscript — ✅ DONE
 
 - Model: `CharStyle.highlightColor?: string`, `CharStyle.verticalAlign?: 'sub'|'super'`.
 - Measurement stays honest: `charStyleToFont` returns the **scaled** size
@@ -106,8 +103,7 @@ Importer coordination: `numbering.xml → Document.lists`, `w:numPr → ParaStyl
 - Verify: mixed sub/super/normal in one line keeps a stable baseline; caret
   height on scaled runs; highlight under selection color blend.
 
-### T1.5 Format painter
-**Effort: ~0.5 day. No dependencies.**
+### Format painter — ✅ DONE
 
 - `editor.copyFormat()` captures `{ char: styleAtRuns(caret), para: caretBlock.style }`
   into a one-shot slot; cursor swaps to a brush; next selection (mouseup with a
@@ -115,8 +111,7 @@ Importer coordination: `numbering.xml → Document.lists`, `w:numPr → ParaStyl
   `setParaProps` in one transaction. Double-click the button = sticky until Esc
   (Word). Toolbar 🖌 button.
 
-### T1.6 AutoCorrect (typographic)
-**Effort: ~0.5 day. No dependencies.**
+### AutoCorrect (typographic) — ✅ DONE
 
 - Hook in the wiring layer before `insertText` dispatch, triggered on
   word-delimiters (space, punctuation, Enter): straight→curly quotes
@@ -127,8 +122,7 @@ Importer coordination: `numbering.xml → Document.lists`, `w:numPr → ParaStyl
   acceptable divergence, noted.)
 - Settings object on the editor so the demo can toggle rules.
 
-### T1.7 Soft line break (Shift+Enter) — ✅ DONE (Tier 1 complete)
-**Effort: ~1 day. Touches the engine.**
+### Soft line break (Shift+Enter) — ✅ DONE
 
 - Model: a **vertical-tab sentinel** `"\v"` inside run text = hard line break
   within the paragraph (1 UTF-16 unit → offsets/caret/backspace need zero
@@ -147,13 +141,18 @@ Importer coordination: `numbering.xml → Document.lists`, `w:numPr → ParaStyl
 
 ---
 
-## TIER 2
-
-### T2.1 .docx export
-**Effort: ~2–3 days. Coordinate with the import workstream (mirror their prop tables).**
+### .docx export — ✅ DONE
+**Shipped: `frontend/src/export/docx/writeDocx.ts` emits `document.xml`, `styles.xml`,
+`numbering.xml`, `footnotes.xml`, `settings.xml`, header/footer parts,
+`[Content_Types].xml` and `.rels`, zipped with `fflate`. Runs carry full direct
+formatting (every toggle explicit) so `w:pStyle` can't leak run props on re-import;
+row spans re-synthesize the `w:vMerge="continue"` cells the importer drops; list ids
+remap to integer `numId`s. Correctness oracle: `writeDocx → runImport → compare` —
+the 8.9 MB report re-imports to the exact same block count (1031 → 1031). Runs both in
+a browser worker and on the Node backend. See `EXPORT.md`.**
 
 - Emit with `fflate`: `[Content_Types].xml`, `_rels/.rels`,
-  `word/document.xml`, `word/styles.xml`, `word/numbering.xml` (after T1.1),
+  `word/document.xml`, `word/styles.xml`, `word/numbering.xml` (after lists),
   `word/header1.xml` / `footer1.xml` + sectPr refs, `word/media/*` +
   `word/_rels/document.xml.rels`.
 - Mapping (exact inverses of the importer's decoders — share one prop table
@@ -170,8 +169,16 @@ Importer coordination: `numbering.xml → Document.lists`, `w:numPr → ParaStyl
 - Acceptance: **round-trip** `import(export(doc))` equals doc on a normalized
   comparison, and the file opens clean in actual Word/LibreOffice.
 
-### T2.2 Print & PDF export
-**Effort: raster ~0.5 day; vector ~2–3 days.**
+### Print & PDF export — ✅ DONE (vector PDF)
+**Shipped the vector path directly (skipping the raster phase): `frontend/src/export/pdf/renderPdf.ts`
+re-runs the editor's own layout engine to get the `LayoutTree`, then replays each page
+into **pdfkit** (not pdf-lib as planned here) — a constant-for-constant inverse of
+`paint/renderer.ts`, so a PDF page matches the canvas pixel-for-pixel. Fonts: the bundled
+metric-clone faces are subset-embedded via fontkit (no system fonts), the same DOM-free
+measure host the editor and the Node backend share, so editor = browser export = Node
+export paginate identically (8.9 MB report = 80 pages everywhere; see `FONTS.md`). Browser
+runtime verified end-to-end via Playwright; the Node path is fully test-covered.
+Real 8.9 MB / 81-page report: PDF ~1.2 s. See `EXPORT.md`.**
 
 - **Phase A (raster)**: print stylesheet that hides chrome and lays each page
   canvas at exact physical size (`@page { size: letter; margin: 0 }`); force
@@ -184,7 +191,7 @@ Importer coordination: `numbering.xml → Document.lists`, `w:numPr → ParaStyl
   data-URIs/URLs into XObjects. Headers/footers/tables/floats come free — they
   are already absolute geometry in the tree.
 
-### T2.3 Sections (page setup per part) — ✅ DONE
+### Sections (page setup per part) — ✅ DONE
 **Shipped: next-page section breaks (`ParaStyle.sectionBreak` carrying a
 `SectionPatch` — absent fields inherit doc.section, so bands "link to
 previous"), per-page Page dims in the tree, per-section measure widths +
@@ -207,7 +214,7 @@ caret/typing on resized pages, undo/redo, stress clean (1217pp warm 4.9ms).**
   orientation, margins) applying to the caret's section.
 - Verify: A4 + Letter mixed, landscape, per-section headers, undo.
 
-### T2.4 Newspaper columns — ✅ DONE
+### Newspaper columns — ✅ DONE
 **Shipped: `SectionProps.columns {count,gapPx}` (SectionPatch uses `null` =
 explicitly off vs absent = inherit), flow `newPage()` → next column → hard page;
 all "empty page" guards became "empty column" (colHasContent), floats clamp to
@@ -228,7 +235,7 @@ column top, arrow nav across the boundary, undo, stress 0 violations.**
 - Verify: 2/3-col layouts, breaks, caret Up/Down across column boundaries
   (line-index order already follows fill order).
 
-### T2.5 First/odd/even headers & footers — ✅ DONE
+### First/odd/even headers & footers — ✅ DONE
 **Shipped: six band containers (`header/footer` + `First/Even` variants) as
 first-class Containers (ops, locator, paragraphsOf); band layout picks
 first-of-section → even-displayed-number → default per page and records
@@ -242,8 +249,8 @@ Along the way (user-reported): tall bands now PUSH the content box (Word) —
 `Page.contentTopPx/contentBottomPx`; band-edit dash/dim follow it; band
 TABLES are fully editable (imported footers: table + page-number paragraph).**
 
-### T2.6 Fields & Table of Contents — ✅ DONE
-**Shipped: band field tokens extended with `{date}`/`{time}` (+ the T2.5
+### Fields & Table of Contents — ✅ DONE
+**Shipped: band field tokens extended with `{date}`/`{time}` (+ the header
 `{page:fmt}` formats); TOC as REAL paragraphs tagged `ParaStyle.tocEntry`
 {targetId, level} generated from Heading1–3 paragraphs (☰§ button inserts at
 the caret or regenerates in place). Page numbers are PAINT-ONLY decorations
@@ -268,7 +275,7 @@ fields, pretext tab stops.**
   `tabStopAdvance` — wire `ParaStyle.tabStops` through prepare options).
 - Click a TOC entry → scroll to target (bookmarks: `Run.bookmark?: string`).
 
-### T2.7 Footnotes — ✅ DONE
+### Footnotes — ✅ DONE
 **Shipped: `CharStyle.footnoteRef` (the ref run's TEXT is its number, kept in
 sync by the insert command's renumber pass — model text and area markers can
 never disagree) + `Document.footnotes: Record<id, Paragraph[]>` + `setFootnote`
@@ -285,7 +292,7 @@ holding on every page, undo, stress clean.
 Deferred: refs inside table cells/floats (top-level body paragraphs only),
 note splitting across pages (overflow), endnotes.**
 
-### T2.8 Remaining break controls — ✅ DONE
+### Remaining break controls — ✅ DONE
 **Shipped: `ParaStyle.keepLinesTogether` (w:keepLines) — a paragraph that
 would split moves whole unless taller than a page; keep-with-next CHAINS —
 every chained member must fit whole and the chain terminator must keep its
@@ -297,24 +304,10 @@ importer maps w:keepLines/w:keepNext; `setParaProps` sets them via API.)**
 
 ---
 
-**Tier 2 status: complete except T2.1 (.docx export — other workstream) and
-T2.2 (print/PDF).**
+## Status
 
-## Suggested sequencing
-
-```
-T1.2 find/replace ──┐
-T1.3 hyperlinks ────┤ (independent, parallelizable, ~1 day each)
-T1.4 high/sub/sup ──┤
-T1.5 fmt painter ───┤
-T1.6 autocorrect ───┘
-T1.1 lists ───────────→ T2.6 fields/TOC
-T1.7 soft breaks ─┘
-T2.1 docx export  (after lists so numbering.xml round-trips)
-T2.2a raster print → T2.2b vector PDF
-T2.3 sections → T2.4 columns → T2.5 band variants
-T2.8 break controls (anytime)
-T2.7 footnotes (last; benefits from sections + fields)
-```
-
-Total: Tier 1 ≈ 7–8 working days; Tier 2 ≈ 12–14 working days.
+Every feature above has shipped — including `.docx` and PDF export (see
+`EXPORT.md`). The only item dropped from the original plan is raster
+browser-print, covered by the vector PDF path. The editor covers ~95% of everyday
+Word usage. Work since then has moved past this plan into collaboration, a Node
+backend, an admin dashboard, and npm distribution — see `README.md`.

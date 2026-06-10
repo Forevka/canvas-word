@@ -65,8 +65,9 @@ const editor = new WordCanvas({
   container: document.getElementById("editor")!,
   backendUrl: "https://api.example.com",
   user: { id: "u-42", firstName: "Ada", lastName: "Lovelace" },
-  // Join an existing session if the share link carried one:
-  docId: params.get("doc") ?? undefined,
+  // Join an existing session if the share link carried one (the editor's own
+  // share links use ?collab=<docId>):
+  docId: params.get("collab") ?? undefined,
 });
 
 editor.on("shared", ({ url }) => navigator.clipboard.writeText(url));

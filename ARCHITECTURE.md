@@ -33,9 +33,11 @@ paint (next rAF). Selection/hit-testing *reads* the layout tree; nothing writes 
 
 ---
 
-## 1. Document model (`src/model/`)
+## 1. Document model (`shared/src/model/`)
 
 The single source of truth. Pure data, zero DOM/canvas knowledge, fully serializable.
+It lives in the `shared` workspace (not `frontend`) so the Node backend reuses the
+exact same model, ops, and OT primitives the editor runs.
 
 ### Tree shape
 
@@ -69,7 +71,7 @@ Run = { text: string, charStyle: CharStyle }          ← style-homogeneous span
 - Ops also report a **position-mapping function** so selection and any stored positions
   survive edits (insert 3 chars before offset 10 → offset 13).
 
-## 2. Layout engine (`src/layout/`)
+## 2. Layout engine (`frontend/src/layout/`)
 
 Turns the model into a `LayoutTree` of absolutely-positioned fragments. This is where
 pretext lives — and the *only* place it's imported.
@@ -123,7 +125,7 @@ for each block:  lines = linesOf(block, contentWidth)
 - `caretRect(pos) → {page, x, y, height}` and `selectionRects(range) → Rect[]`
   (per-line rectangles; handles multi-page selections).
 
-## 3. Paint layer (`src/paint/`)
+## 3. Paint layer (`frontend/src/paint/`)
 
 Dumb and fast: takes the `LayoutTree` + `EditorState`, draws pixels. No measurement ever
 happens here — that would defeat pretext.
@@ -142,7 +144,7 @@ happens here — that would defeat pretext.
 - **Damage tracking:** repaint only pages whose content or selection changed; within a
   page, optional dirty-rect clip for the common single-line edit.
 
-## 4. Input layer (`src/input/`)
+## 4. Input layer (`frontend/src/input/`)
 
 The hardest layer to get right, because we threw away contenteditable.
 
@@ -182,7 +184,7 @@ Single dispatch table: `Ctrl+B → toggleCharStyle('bold')`, `Ctrl+Z → undo`, 
 splitParagraph`, … Commands are pure `(state) → Transaction | null`, which makes toolbar
 buttons and keys share one code path and makes the whole editing surface testable headless.
 
-## 5. Editor core (`src/editor/`)
+## 5. Editor core (`frontend/src/editor/`)
 
 ```
 EditorState = { doc: Document, selection: DocSelection, stylesheet: Stylesheet }
@@ -196,7 +198,7 @@ Transaction = { ops: Op[], selectionAfter, inverseOps, origin }
 - State is immutable-by-convention (ops produce new run arrays); enables cheap dirty
   checking and future time-travel/collab.
 
-## 6. Accessibility (`src/a11y/`)
+## 6. Accessibility (`frontend/src/a11y/`)
 
 Canvas text is invisible to assistive tech. Non-negotiable mitigation:
 
@@ -210,18 +212,44 @@ Canvas text is invisible to assistive tech. Non-negotiable mitigation:
 
 ## Repository layout
 
+An npm-workspace monorepo. The editor layers above all live in the `frontend`
+workspace; the model and OT primitives live in `shared` so the backend reuses them.
+
 ```
-src/
-  model/    document.ts  position.ts  ops.ts  styles.ts
-  layout/   engine.ts  prepareCache.ts  paginate.ts  layoutTree.ts  geometry.ts
-  paint/    pageView.ts  renderer.ts  virtualizer.ts  caretOverlay.ts
-  input/    imeProxy.ts  selectionController.ts  clipboard.ts  keymap.ts
-  editor/   state.ts  transaction.ts  undo.ts  commands.ts
-  a11y/     mirror.ts
-  index.ts  (wires everything: createEditor(container, initialDoc))
+shared/    src/model/ (document, ops, position, stylesheet, text, tableGrid, lists)
+           src/ (change, transform, replay, ids)   ← OT collaboration primitives
+           src/persist/ (serialize, media)
+frontend/  src/layout/  src/paint/  src/input/  src/editor/  src/a11y/
+           src/import/docx/   ← .docx import (IMPORT.md)
+           src/export/        ← .docx + PDF export, DOM-free measure host (EXPORT.md)
+           src/sync/          ← live-collaboration client
+           src/media/  src/fonts/  src/ui/  src/app/  src/model/ (sample/stress docs)
+           src/wordcanvas.ts  ← @forevka/wordcanvas library entry
+           src/editorApp.ts  src/main.ts  ← composition root + demo chrome
+backend/   src/ (server, db, store/ChangeStore, export, import, admin, auth, webhooks, openapi)
+dashboard/ admin panel (Vite)
+examples/  embed-offline, embed-live   web/  Caddyfile (edge)
 ```
 
-## Build order (each milestone is demoable)
+See the **Workspaces** and **Editor layer map** tables in [README.md](./README.md)
+for the per-directory breakdown.
+
+### Collaboration & backend (the OT seam, realized)
+
+The "exact seam where OT/CRDT collaboration slots in" promised by the invertible-op
+model (§1) is now built. `shared/` holds change/transform/replay primitives; the
+editor's `sync/` records local edits and streams them over a WebSocket; the Node
+`backend/` transforms and broadcasts them against a Postgres-backed `ChangeStore`,
+and runs the same import/export pipelines server-side (so a doc can be rendered to
+PDF/DOCX without a browser). Identity, presence, and attribution ride the same
+channel; the `dashboard/` and integration tokens sit on top.
+
+## Build order (delivered)
+
+Milestones 1–6 below shipped in order; the editor then closed out the
+[ROADMAP.md](./ROADMAP.md) feature plan and grew the collaboration backend,
+export pipelines, and distribution layer described above. The full delivery log
+is the **Implementation history** table in [README.md](./README.md).
 
 1. **Read-only renderer** — model → pretext layout → single-page canvas paint. Proves the
    pretext integration and the prepare-cache before any editing complexity.
@@ -238,6 +266,6 @@ src/
 |---|---|
 | IME edge cases (CJK, dead keys, Android GBoard) | Proxy pattern from day one; test matrix early (milestone 4, not 6) |
 | Font availability mismatch (layout vs paint) | `document.fonts.load()` before first layout; re-layout on `fonts.ready` |
-| pretext API churn (young library) | All pretext calls confined to `src/layout/` — one adapter module |
+| pretext API churn (young library) | All pretext calls confined to `frontend/src/layout/` — one adapter module |
 | A11y debt | Mirror built in milestone 4 alongside typing, not bolted on |
 | Float/decimal coordinate blur | Round paint coords to device pixels; keep layout in float CSS px |
