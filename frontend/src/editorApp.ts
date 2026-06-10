@@ -12,6 +12,7 @@ import { TOOLBAR_FONTS } from "./fonts/clones";
 import { getRuntime, type EditorHandle } from "./app/runtime";
 import { buildShell } from "./app/shell";
 import { ensureWordCanvasStyles } from "./ui/styles";
+import { showContextMenu, type MenuEntry } from "./ui/contextMenu";
 import { loadCollabDocument, publishDocument } from "./sync/collab";
 import { showBusy } from "./app/busyOverlay";
 
@@ -457,6 +458,16 @@ if (toolbar) {
     return b;
   };
 
+  // Context-gated buttons: a button is disabled (greyed) when its predicate is
+  // false for the caret's context — e.g. image buttons need a selected image, so
+  // they don't silently no-op when the caret is in a paragraph. syncToolbar
+  // re-evaluates these on every change.
+  const enableButtons: { el: HTMLButtonElement; enabled: (f: CurrentFormat) => boolean; title: string; hint?: string }[] = [];
+  const enable = (b: HTMLButtonElement, enabled: (f: CurrentFormat) => boolean, hint?: string): HTMLButtonElement => {
+    enableButtons.push({ el: b, enabled, title: b.title, ...(hint !== undefined ? { hint } : {}) });
+    return b;
+  };
+
   // ---- anchored popovers (palettes, menus, pickers, dialogs) --------------
   let activePop: HTMLElement | null = null;
   const closePop = (): void => {
@@ -819,16 +830,6 @@ if (toolbar) {
   sizeInput.title = "Font size (pt)";
   sizeInput.style.cssText = "width:46px;padding:0 4px;";
   sizeInput.addEventListener("mousedown", (e) => e.stopPropagation());
-  // Editable combo: type any size, or pick a Word preset from the dropdown.
-  const sizeList = el("datalist");
-  sizeList.id = "cw-font-sizes";
-  for (const p of [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 72]) {
-    const o = el("option");
-    o.value = String(p);
-    sizeList.appendChild(o);
-  }
-  document.body.appendChild(sizeList);
-  sizeInput.setAttribute("list", sizeList.id);
   /** Apply a size given in POINTS (clamped to the model's 6–96px range). */
   const setSizePt = (pt: number): void => {
     if (!Number.isFinite(pt)) return;
@@ -837,7 +838,31 @@ if (toolbar) {
     editor.focus();
   };
   sizeInput.addEventListener("change", () => setSizePt(Number(sizeInput.value)));
-  controls.appendChild(sizeInput);
+  // Editable combo: type any size in the field, or click the caret for a Word
+  // preset. (A `<datalist>` dropdown never opens for `type=number` in Chromium,
+  // so we render our own menu — which also keeps the typed field + spinner.)
+  const SIZE_PRESETS = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 72];
+  const sizeWrap = el("div");
+  sizeWrap.style.cssText = "display:inline-flex;align-items:stretch;";
+  const sizeCaret = el("button", "rib-btn");
+  sizeCaret.title = "Font size presets";
+  sizeCaret.innerHTML = CARET;
+  sizeCaret.style.cssText = "padding:0 1px;min-width:14px;";
+  sizeCaret.addEventListener("mousedown", (e) => e.preventDefault());
+  sizeCaret.addEventListener("click", () => {
+    const r = sizeWrap.getBoundingClientRect();
+    const entries: MenuEntry[] = SIZE_PRESETS.map((p) => ({
+      kind: "item",
+      label: String(p),
+      onClick: () => {
+        sizeInput.value = String(p);
+        setSizePt(p);
+      },
+    }));
+    showContextMenu(r.left, r.bottom + 2, entries);
+  });
+  sizeWrap.append(sizeInput, sizeCaret);
+  controls.appendChild(sizeWrap);
   const curPt = (): number => pxToPt(editor.currentFormat().fontSizePx ?? 16);
   txtBtn("A", "Grow font", () => setSizePt(curPt() + 1), "font-size:15px;font-weight:600;");
   txtBtn("A", "Shrink font", () => setSizePt(curPt() - 1), "font-size:10px;font-weight:600;");
@@ -1036,14 +1061,22 @@ if (toolbar) {
     editor.dispatch(insertImageInCell(TOOLBAR_SVG, 280, 100)); // table-cell caret
   });
   group(insert, "Picture"); // acts on the selected image
-  btn(ICONS.wrapSquare, "Wrap text around image (square)", () => {
-    const id = editor.getSelectedObject();
-    if (id) editor.dispatch(setImageProps(id, { wrap: "square", align: "left" }));
-  });
-  btn(ICONS.wrapInline, "Image in line with text (block)", () => {
-    const id = editor.getSelectedObject();
-    if (id) editor.dispatch(setImageProps(id, { wrap: "block", align: "center" }));
-  });
+  enable(
+    btn(ICONS.wrapSquare, "Wrap text around image (square)", () => {
+      const id = editor.getSelectedObject();
+      if (id) editor.dispatch(setImageProps(id, { wrap: "square", align: "left" }));
+    }),
+    (f) => f.imageSelected,
+    "select an image first",
+  );
+  enable(
+    btn(ICONS.wrapInline, "Image in line with text (block)", () => {
+      const id = editor.getSelectedObject();
+      if (id) editor.dispatch(setImageProps(id, { wrap: "block", align: "center" }));
+    }),
+    (f) => f.imageSelected,
+    "select an image first",
+  );
   group(insert, "Links");
   const insLinkBtn = btn(ICONS.link, "Insert/remove hyperlink", () => {});
   insLinkBtn.addEventListener("click", () => linkDialog(insLinkBtn));
@@ -1085,15 +1118,23 @@ if (toolbar) {
     editor.dispatch(insertContentControl("date", { alias: "Date", dateFormat: "M/d/yyyy" }));
     editor.focus();
   });
-  btn(ICONS.sdtProps, "Content control properties & content (inspect the control at the caret)", () => {
-    if (!editor.inspectContentControl()) alert("Place the caret inside a content control first.");
-  });
-  btn(ICONS.sdtRemove, "Remove the content control at the caret (keeps its text)", () => {
-    const sel = editor.getSelection();
-    const id = sel ? sdtAtPosition(editor.getDocument(), sel.focus) : null;
-    if (id) editor.dispatch(removeContentControl(id, false));
-    editor.focus();
-  });
+  enable(
+    btn(ICONS.sdtProps, "Content control properties & content (inspect the control at the caret)", () => {
+      if (!editor.inspectContentControl()) alert("Place the caret inside a content control first.");
+    }),
+    (f) => f.inContentControl,
+    "place the caret in a content control",
+  );
+  enable(
+    btn(ICONS.sdtRemove, "Remove the content control at the caret (keeps its text)", () => {
+      const sel = editor.getSelection();
+      const id = sel ? sdtAtPosition(editor.getDocument(), sel.focus) : null;
+      if (id) editor.dispatch(removeContentControl(id, false));
+      editor.focus();
+    }),
+    (f) => f.inContentControl,
+    "place the caret in a content control",
+  );
 
   // ===== Layout tab ========================================================
   const layout = tab("layout", "Layout");
@@ -1136,6 +1177,7 @@ if (toolbar) {
   // ---- Activity panel (who created/edited, when) — online only ------------
   if (online) {
     const panel = el("div");
+    panel.className = "cw-float-drawer";
     panel.style.cssText =
       "position:fixed;top:0;right:0;width:300px;height:100%;z-index:45;background:#fff;border-left:1px solid #e1dfdd;" +
       "box-shadow:-4px 0 16px rgba(0,0,0,0.08);display:none;flex-direction:column;font-size:13px;";
@@ -1403,6 +1445,12 @@ if (toolbar) {
     curLineHeight = f.lineHeight; // read by the line-spacing menu when opened
     // Pressed state for B/I/U/S, highlight, sub/super, lists, alignment.
     for (const t of toggleButtons) t.el.classList.toggle("active", t.active(f));
+    // Enabled state for context-dependent buttons (image, content control, …).
+    for (const e of enableButtons) {
+      const on = e.enabled(f);
+      e.el.disabled = !on;
+      e.el.title = on || !e.hint ? e.title : `${e.title} — ${e.hint}`;
+    }
   };
 
   // Reflect the live zoom (also driven by Ctrl+wheel): snap the select to the
@@ -1422,6 +1470,8 @@ if (toolbar) {
       zoomSel.value = String(z);
     }
   };
+
+  syncToolbar(); // set initial pressed/enabled state before the first edit
 }
 
 // ---- status bar (page count, word/character count, zoom slider) -------------
@@ -1535,25 +1585,31 @@ if (toolbar) {
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(cL, 4, cR - cL, H - 8);
       // inch ticks + numbers, measured from the left content edge (Word's 0)
+      // Ticks hang from the top of the ruler band; numbers sit in the lower half
+      // so they never overlap the tick lines.
       const inch = 96 * zoom;
+      const tickTop = 4;        // top of the page band
+      const tickBot = 10;       // bottom of the major tick (6 px, upper half only)
+      const halfTickBot = 8;    // bottom of the half-inch tick (4 px)
+      const numY = H - 4;       // number baseline anchored to the bottom of the band
       ctx.strokeStyle = "#8a8f98";
       ctx.fillStyle = "#605e5c";
       ctx.font = "9px 'Segoe UI', sans-serif";
       ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
+      ctx.textBaseline = "bottom";
       ctx.lineWidth = 1;
       for (let i = 1; cL + i * inch < cR - 2; i++) {
         const x = Math.round(cL + i * inch) + 0.5;
         ctx.beginPath();
-        ctx.moveTo(x, H / 2 - 3);
-        ctx.lineTo(x, H / 2 + 3);
+        ctx.moveTo(x, tickTop);
+        ctx.lineTo(x, tickBot);
         ctx.stroke();
-        ctx.fillText(String(i), x, H / 2);
+        ctx.fillText(String(i), x, numY);
         // mid tick at the half-inch
         const hx = Math.round(cL + (i - 0.5) * inch) + 0.5;
         ctx.beginPath();
-        ctx.moveTo(hx, H / 2 - 1.5);
-        ctx.lineTo(hx, H / 2 + 1.5);
+        ctx.moveTo(hx, tickTop);
+        ctx.lineTo(hx, halfTickBot);
         ctx.stroke();
       }
     };
@@ -1706,6 +1762,7 @@ const pageSetupPanel = (() => {
     Wide: { top: 96, right: 144, bottom: 96, left: 144 },
   };
   const panel = document.createElement("div");
+  panel.className = "cw-float-panel";
   panel.style.cssText =
     "position:fixed;top:46px;right:24px;display:none;flex-direction:column;gap:6px;" +
     "background:#fff;border:1px solid #dadce0;border-radius:8px;padding:10px 12px;" +
@@ -1817,6 +1874,7 @@ const pageSetupPanel = (() => {
 // ---- find & replace bar (Ctrl+F) -------------------------------------------
 {
   const bar = document.createElement("div");
+  bar.className = "cw-float-panel";
   bar.style.cssText =
     "position:fixed;top:46px;right:24px;display:none;gap:4px;align-items:center;" +
     "background:#fff;border:1px solid #dadce0;border-radius:8px;padding:6px 8px;" +
