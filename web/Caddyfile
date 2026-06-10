@@ -23,19 +23,16 @@
 		file_server
 	}
 
-	# The online collab page is served from /srv/live/index.html for the clean
-	# /live path (and /live?collab=… share links keep their query). It is the
-	# examples/embed-live build (which consumes the @forevka/wordcanvas package),
-	# placed at /srv/live by Dockerfile.web. Its assets (/live/assets/*,
-	# /live/wordcanvas/*) fall through to the default file_server below.
-	@live path /live /live/
-	handle @live {
-		root * /srv
-		rewrite * /live/index.html
-		file_server
-	}
-
 	# Static frontend (default: the offline editor at index.html).
+	#
+	# This also serves the embedding examples placed under /srv by Dockerfile.web:
+	#   /live              -> examples/embed-live  (online + collaboration)
+	#   /examples/offline  -> examples/embed-offline
+	# Both have RELATIVE asset URLs (./assets, ./wordcanvas), so they must load
+	# under a trailing slash. file_server treats /srv/live as a directory and
+	# canonically redirects /live -> /live/ (query preserved, so ?collab=… share
+	# links keep working), then resolves its index.html — relative assets then
+	# resolve under /live/.
 	handle {
 		root * /srv
 		file_server
