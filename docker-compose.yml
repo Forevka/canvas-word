@@ -65,6 +65,13 @@ services:
       BACKEND_PORT: "8787"
       # In-compose connection: service name `postgres`, container port 5432.
       DATABASE_URL: "postgres://${CW_DB_USER:-postgres}:${CW_DB_PASSWORD:-postgres}@postgres:5432/${CW_DB_NAME:-canvasword}"
+      # Dashboard admin (seeded by deploy.ps1 into .env; defaults are dev-only).
+      ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-admin}"
+      ADMIN_TOKEN_SECRET: "${ADMIN_TOKEN_SECRET:-dev-insecure-token-secret-change-me}"
+      # Public origin used to build the .docx/.pdf download links in webhook payloads.
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://localhost:8787}"
+      SESSION_END_DEBOUNCE_MS: "${SESSION_END_DEBOUNCE_MS:-8000}"
     expose:
       - "8787"
     depends_on:

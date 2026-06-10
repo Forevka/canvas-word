@@ -20,7 +20,10 @@ export interface WordCanvasOptions {
   container: HTMLElement;
   /** Backend base URL (e.g. "https://api.example.com"). Online iff provided. */
   backendUrl?: string;
-  /** Join an existing collaboration session on load (online only). */
+  /** Open this document on load (online only) — e.g. the id returned by an
+   *  upload. The canonical name; `collabId` is the deprecated alias. */
+  docId?: string;
+  /** @deprecated Use `docId`. Join an existing collaboration session on load. */
   collabId?: string;
   /** Caller-supplied identity (attribution + presence). The embedder owns auth. */
   user?: UserInfo;
@@ -56,7 +59,8 @@ export class WordCanvas {
       setRuntime({
         container: opts.container,
         backendUrl: opts.backendUrl,
-        collabId: opts.collabId,
+        // `docId` is the canonical name; fall back to the deprecated `collabId`.
+        collabId: opts.docId ?? opts.collabId,
         user: opts.user,
         onShareLink: opts.onShareLink,
         onReady: (h) => {

@@ -6,7 +6,7 @@
 // created per part; the pipeline aggregates the URLs for ImportResult.mediaUrls.
 
 import type { Relationships } from "./relationships";
-import { WarningSink } from "./types";
+import { WarningSink, type MediaCollector } from "./types";
 import type { Archive } from "./zip";
 
 export interface MediaStore {
@@ -28,7 +28,12 @@ const CONTENT_TYPES: Record<string, string> = {
   svg: "image/svg+xml",
 };
 
-export function createMediaStore(archive: Archive, rels: Relationships, warnings: WarningSink): MediaStore {
+export function createMediaStore(
+  archive: Archive,
+  rels: Relationships,
+  warnings: WarningSink,
+  collect?: MediaCollector,
+): MediaStore {
   const byTarget = new Map<string, string | undefined>(); // same image referenced twice → one URL
   const created: string[] = [];
 
@@ -73,8 +78,16 @@ export function createMediaStore(archive: Archive, rels: Relationships, warnings
         } else {
           // Copy into a fresh buffer: `bytes` may be a view into the archive's
           // big backing buffer, and Blob([view]) would retain all of it.
-          url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: contentType }));
-          created.push(url);
+          const copy = new Uint8Array(bytes);
+          if (collect) {
+            // Node/backend path: hand the bytes to the collector (which the
+            // caller content-addresses) and use the synthetic src it returns —
+            // no blob: URL (createObjectURL isn't reliably available off-browser).
+            url = collect.add(copy, contentType);
+          } else {
+            url = URL.createObjectURL(new Blob([copy], { type: contentType }));
+            created.push(url);
+          }
         }
       }
       byTarget.set(rel.target, url);

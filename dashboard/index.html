@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>canvas-word · admin</title>
+    <style>
+      :root {
+        --bg: #0f1115; --panel: #181b22; --panel2: #1f232c; --line: #2a2f3a;
+        --text: #e6e9ef; --muted: #9aa3b2; --accent: #5b8cff; --accent2: #3a6; --danger: #e2566b;
+        --radius: 10px;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--text);
+        font: 14px/1.5 -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      }
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      button {
+        font: inherit; cursor: pointer; border: 1px solid var(--line); background: var(--panel2);
+        color: var(--text); padding: 6px 12px; border-radius: 8px;
+      }
+      button:hover { border-color: var(--accent); }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      button.danger { border-color: var(--danger); color: var(--danger); }
+      input {
+        font: inherit; background: var(--panel2); border: 1px solid var(--line);
+        color: var(--text); padding: 8px 10px; border-radius: 8px; width: 100%;
+      }
+      header.bar {
+        display: flex; align-items: center; gap: 16px; padding: 12px 20px;
+        border-bottom: 1px solid var(--line); background: var(--panel);
+      }
+      header.bar h1 { font-size: 16px; margin: 0; font-weight: 600; }
+      nav.tabs { display: flex; gap: 4px; }
+      nav.tabs button.tab { background: transparent; border: none; color: var(--muted); padding: 6px 12px; }
+      nav.tabs button.tab.active { color: var(--text); border-bottom: 2px solid var(--accent); border-radius: 0; }
+      .spacer { flex: 1; }
+      main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+      tr:hover td { background: var(--panel); }
+      .muted { color: var(--muted); }
+      .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); }
+      .pill.ok { color: var(--accent2); border-color: var(--accent2); }
+      .pill.off { color: var(--muted); }
+      .pill.fail { color: var(--danger); border-color: var(--danger); }
+      .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; }
+      .row { display: flex; gap: 8px; align-items: center; }
+      .login { max-width: 340px; margin: 12vh auto; }
+      .login h1 { font-size: 18px; }
+      .stack > * + * { margin-top: 12px; }
+      .err { color: var(--danger); min-height: 18px; }
+      code.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; word-break: break-all; }
+      .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/app.ts"></script>
+  </body>
+</html>

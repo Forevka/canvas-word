@@ -9,7 +9,10 @@
     ".": {
       "types": "./types/wordcanvas.d.ts",
       "import": "./dist-lib/wordcanvas.js"
-    }
+    },
+    "./import": "./src/import/docx/pipeline.ts",
+    "./export": "./src/export/pipeline.ts",
+    "./export/measure": "./src/export/shared/measureHost.ts"
   },
   "files": ["dist-lib", "types"],
   "scripts": {

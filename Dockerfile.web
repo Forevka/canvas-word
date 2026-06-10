@@ -15,13 +15,19 @@ COPY package.json package-lock.json tsconfig.base.json ./
 COPY shared/package.json ./shared/
 COPY frontend/package.json ./frontend/
 COPY backend/package.json ./backend/
+COPY dashboard/package.json ./dashboard/
 RUN npm ci
 COPY shared ./shared
 COPY frontend ./frontend
+COPY dashboard ./dashboard
 RUN npm run build --workspace @cw/frontend
+# Admin dashboard — built with base /dashboard/ so it serves under that path on
+# the single app origin (see web/Caddyfile + dashboard/vite.config.ts).
+RUN npm run build --workspace @cw/dashboard
 
 # 2. Serve + proxy with Caddy. Static files in /srv, API/WS to the backend.
 FROM caddy:2-alpine
 COPY web/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /app/frontend/dist /srv
+COPY --from=build /app/dashboard/dist /srv/dashboard
 EXPOSE 80

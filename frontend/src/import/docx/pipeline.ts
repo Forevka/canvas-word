@@ -13,14 +13,30 @@ import { createStyleResolver, parseStylesXml, resolveTableStyle, EMPTY_STYLES } 
 import { parseThemeXml, EMPTY_THEME } from "./theme";
 import { el, parseXml, rootEl } from "./xml";
 import { openArchive, type Archive } from "./zip";
-import { ImportError, WarningSink, type BandRefs, type ImportPhase, type ImportResult, type IRSdtProps } from "./types";
+import { ImportError, WarningSink, type BandRefs, type ImportMedia, type ImportPhase, type ImportResult, type IRSdtProps, type MediaCollector, type RunImportOpts } from "./types";
 
 export function runImport(
   bytes: Uint8Array,
   onProgress?: (phase: ImportPhase, pct: number) => void,
+  opts?: RunImportOpts,
 ): ImportResult {
-  const progress = (phase: ImportPhase, pct: number): void => onProgress?.(phase, pct);
+  const progress = (phase: ImportPhase, pct: number): void =>
+    (opts?.onProgress ?? onProgress)?.(phase, pct);
   const warnings = new WarningSink();
+
+  // Node/backend path: collect raw image bytes instead of minting blob: URLs.
+  // Each call returns a synthetic src ("cw-media:N") the mapper stamps on the
+  // ImageBlock, so the caller can match bytes → block and swap in a mediaId.
+  const mediaRecords: ImportMedia[] = [];
+  const collector: MediaCollector | undefined = opts?.collectMediaBytes
+    ? {
+        add(b, mime) {
+          const src = `cw-media:${mediaRecords.length}`;
+          mediaRecords.push({ src, bytes: b, mime });
+          return src;
+        },
+      }
+    : undefined;
 
   progress("unzip", 0);
   const archive = openArchive(bytes);
@@ -70,7 +86,7 @@ export function runImport(
   );
   const mediaStores: MediaStore[] = [];
   const mediaFor = (partRels: Relationships): MediaStore => {
-    const store = createMediaStore(archive, partRels, warnings);
+    const store = createMediaStore(archive, partRels, warnings, collector);
     mediaStores.push(store);
     return store;
   };
@@ -130,6 +146,7 @@ export function runImport(
     doc,
     warnings: warnings.list,
     mediaUrls: mediaStores.flatMap((s) => s.urls()),
+    media: mediaRecords,
   };
 }
 

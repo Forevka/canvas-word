@@ -6,12 +6,14 @@
   "workspaces": [
     "shared",
     "frontend",
-    "backend"
+    "backend",
+    "dashboard"
   ],
   "scripts": {
     "dev": "npm run dev --workspace @cw/frontend",
+    "dev:dashboard": "npm run dev --workspace @cw/dashboard",
     "build": "npm run build --workspace @cw/frontend",
-    "typecheck": "npm run typecheck --workspace @cw/shared && npm run typecheck --workspace @cw/frontend && npm run typecheck --workspace @cw/backend",
+    "typecheck": "npm run typecheck --workspace @cw/shared && npm run typecheck --workspace @cw/frontend && npm run typecheck --workspace @cw/backend && npm run typecheck --workspace @cw/dashboard",
     "test": "npm run test --workspace @cw/shared && npm run test --workspace @cw/frontend && npm run test --workspace @cw/backend",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down"

@@ -7,7 +7,9 @@ import { WordCanvas } from "./wordcanvas";
 
 const params = new URLSearchParams(location.search);
 const backend = params.get("backend");
-const collab = params.get("collab");
+// `?doc` is the canonical param (e.g. the upload redirect target); `?collab` is
+// the older alias kept working.
+const collab = params.get("doc") ?? params.get("collab");
 
 // Online (a backend is configured): ask who you are so edits/carets are
 // attributed. Offline: no identity needed.

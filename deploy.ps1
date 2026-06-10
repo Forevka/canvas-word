@@ -30,10 +30,11 @@
 
 [CmdletBinding()]
 param(
-    [string]$RemoteHost = 'root@your-server',
-    [string]$RemotePath = '/opt/canvas-word',
-    [string]$Url        = 'https://doc-editor.example.com/openapi.json',
-    [int]   $EdgePort   = 3003
+    [string]$RemoteHost   = 'root@your-server',
+    [string]$RemotePath   = '/opt/canvas-word',
+    [string]$Url          = 'https://doc-editor.example.com/openapi.json',
+    [string]$PublicOrigin = 'https://doc-editor.example.com',
+    [int]   $EdgePort     = 3003
 )
 
 $ErrorActionPreference = 'Stop'
@@ -103,6 +104,16 @@ CW_DB_PORT=5544
 EDGE_PORT=$EdgePort
 EOF
 fi
+# Ensure dashboard-admin + webhook vars exist (idempotent across re-deploys, so
+# an existing .env from a prior deploy gets them appended too).
+grep -q '^ADMIN_USERNAME=' .env || echo "ADMIN_USERNAME=admin" >> .env
+if ! grep -q '^ADMIN_PASSWORD=' .env; then
+  APW=`$(openssl rand -hex 16)
+  echo "ADMIN_PASSWORD=`$APW" >> .env
+  echo "    >>> generated admin login -> user: admin  password: `$APW  (save this; shown once)"
+fi
+grep -q '^ADMIN_TOKEN_SECRET=' .env || echo "ADMIN_TOKEN_SECRET=`$(openssl rand -hex 32)" >> .env
+grep -q '^PUBLIC_BASE_URL=' .env || echo "PUBLIC_BASE_URL=$PublicOrigin" >> .env
 docker compose --profile app up -d --build 2>&1 | tail -25
 sleep 5
 docker compose --profile app ps

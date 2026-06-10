@@ -43,6 +43,33 @@ export interface ImportResult {
   warnings: ImportWarning[];
   /** blob: URLs created for embedded media; caller revokes when the doc is discarded. */
   mediaUrls: string[];
+  /** Raw embedded image bytes, populated only when runImport is called with
+   *  { collectMediaBytes: true } — the Node/backend path, which content-addresses
+   *  them into its own media store instead of minting blob: URLs. Each `src`
+   *  matches the ImageBlock.src the mapper assigned, so the caller can swap in a
+   *  mediaId. Empty (and mediaUrls carry blob: URLs) in the browser path. */
+  media: ImportMedia[];
+}
+
+/** A collected embedded image (Node/backend path). */
+export interface ImportMedia {
+  /** The synthetic src the mapper put on the ImageBlock (e.g. "cw-media:0"). */
+  src: string;
+  bytes: Uint8Array;
+  mime: string;
+}
+
+/** Sink the media store routes raw image bytes to instead of creating a blob:
+ *  URL. Returns the src string to stamp on the ImageBlock. */
+export interface MediaCollector {
+  add(bytes: Uint8Array, mime: string): string;
+}
+
+export interface RunImportOpts {
+  onProgress?: (phase: ImportPhase, pct: number) => void;
+  /** Collect raw image bytes (and skip blob: URL creation) for Node/backend
+   *  callers that content-address media themselves. */
+  collectMediaBytes?: boolean;
 }
 
 // ---------------------------------------------------------------------------

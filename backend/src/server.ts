@@ -3,15 +3,48 @@
 // is the single source of order (the ShareDB-style seam where OT rebasing lands
 // in Phase 4). Reconstructing a version is base snapshot + replay (shared).
 
+import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { gunzipSync } from "node:zlib";
 import { WebSocketServer, type WebSocket } from "ws";
 import { reconstruct, type Change, type SerializedDocument, type UserInfo } from "@cw/shared";
+import { checkCredentials, issueToken, requireAdmin } from "./admin/auth";
 import { createPool } from "./db";
+import { exportDoc } from "./export/serverExport";
+import { parseAndStore } from "./import/serverImport";
 import { OPENAPI_SPEC, SWAGGER_HTML } from "./openapi";
 import { PgChangeStore, type ChangeStore } from "./store/ChangeStore";
+import { SESSION_ENDED_EVENT, WebhookDispatcher } from "./webhooks/dispatcher";
 
 const PORT = Number(process.env.BACKEND_PORT ?? 8787);
+// Uploads are token-guarded by default; set UPLOAD_PUBLIC=1 for anonymous upload.
+const UPLOAD_REQUIRES_AUTH = process.env.UPLOAD_PUBLIC !== "1";
+
+// --- small header / value helpers -------------------------------------------
+
+function headerStr(h: string | string[] | undefined): string | undefined {
+  return Array.isArray(h) ? h[0] : h;
+}
+
+function safeParseUser(raw: string): UserInfo | undefined {
+  try {
+    const u = JSON.parse(raw) as Partial<UserInfo>;
+    if (u && typeof u.id === "string") {
+      return { id: u.id, firstName: u.firstName ?? "", lastName: u.lastName ?? "" };
+    }
+  } catch {
+    // ignore malformed header
+  }
+  return undefined;
+}
+
+/** Make a title safe for a Content-Disposition filename (no quotes/paths/control). */
+function sanitizeFilename(name: string): string {
+  const cleaned = name.replace(/[-"\\/:*?<>|]+/g, "_").trim();
+  return cleaned.length > 0 ? cleaned.slice(0, 120) : "document";
+}
+
+const randomSecret = (): string => randomBytes(24).toString("hex");
 
 // --- tiny request helpers ---------------------------------------------------
 
@@ -50,8 +83,23 @@ interface Conn {
 class Broadcaster {
   private readonly rooms = new Map<string, Set<WebSocket>>();
   private readonly meta = new Map<WebSocket, Conn>();
+  // Pending session-end timers, keyed by doc — set when a room empties, cleared
+  // if someone (re)joins before the debounce elapses.
+  private readonly pendingEnd = new Map<string, ReturnType<typeof setTimeout>>();
+
+  constructor(
+    private readonly onSessionEnd?: (docId: string, ctx: { lastEditor?: UserInfo }) => void,
+    private readonly debounceMs: number = Number(process.env.SESSION_END_DEBOUNCE_MS ?? 8000),
+  ) {}
 
   join(docId: string, ws: WebSocket): void {
+    // A (re)join means the editing session is still alive — cancel any pending
+    // session-end webhook for this document.
+    const pending = this.pendingEnd.get(docId);
+    if (pending) {
+      clearTimeout(pending);
+      this.pendingEnd.delete(docId);
+    }
     let room = this.rooms.get(docId);
     if (!room) this.rooms.set(docId, (room = new Set()));
     room.add(ws);
@@ -62,7 +110,24 @@ class Broadcaster {
       this.meta.delete(ws);
       // Tell the room this collaborator left so their caret disappears.
       if (m?.siteId) this.toRoom(docId, { type: "leave", siteId: m.siteId }, ws);
+      // The last editor just left → arm the debounced session-end signal.
+      if (room!.size === 0) this.scheduleSessionEnd(docId, m);
     });
+  }
+
+  /** Arm (or re-arm) the debounced session-end for a now-empty room. The last
+   *  connection's user is the best-effort "last editor"; the dispatcher falls
+   *  back to the most recent author if it's absent. */
+  private scheduleSessionEnd(docId: string, m: Conn | undefined): void {
+    if (!this.onSessionEnd) return;
+    const existing = this.pendingEnd.get(docId);
+    if (existing) clearTimeout(existing);
+    const lastEditor = m?.user;
+    const timer = setTimeout(() => {
+      this.pendingEnd.delete(docId);
+      this.onSessionEnd!(docId, lastEditor ? { lastEditor } : {});
+    }, this.debounceMs);
+    this.pendingEnd.set(docId, timer);
   }
 
   /** A client identified itself: send it the current roster, announce it. */
@@ -117,8 +182,14 @@ class Broadcaster {
 
 // --- app --------------------------------------------------------------------
 
-export function createApp(store: ChangeStore): { server: Server; bcast: Broadcaster } {
-  const bcast = new Broadcaster();
+export function createApp(
+  store: ChangeStore,
+  opts: { dispatcher?: WebhookDispatcher } = {},
+): { server: Server; bcast: Broadcaster } {
+  const dispatcher = opts.dispatcher ?? new WebhookDispatcher(store);
+  const bcast = new Broadcaster((docId, ctx) => {
+    void dispatcher.onSessionEnded(docId, ctx);
+  });
 
   const server = createServer((req, res) => {
     handle(req, res, store, bcast).catch((e) => {
@@ -170,8 +241,8 @@ async function handle(
   if (method === "OPTIONS") {
     res.writeHead(204, {
       "access-control-allow-origin": "*",
-      "access-control-allow-methods": "GET,POST,PUT,OPTIONS",
-      "access-control-allow-headers": "content-type,content-encoding",
+      "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+      "access-control-allow-headers": "content-type,content-encoding,authorization,x-filename,x-user",
     });
     res.end();
     return;
@@ -185,6 +256,76 @@ async function handle(
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "access-control-allow-origin": "*" });
     res.end(SWAGGER_HTML);
     return;
+  }
+
+  // --- admin API (dashboard) — token-guarded except the login route ----------
+  if (parts[0] === "admin") {
+    if (method === "POST" && parts[1] === "login" && parts.length === 2) {
+      const { username, password } = await readJson<{ username?: string; password?: string }>(req);
+      if (!username || !password || !checkCredentials(username, password)) {
+        return sendJson(res, 401, { error: "invalid credentials" });
+      }
+      return sendJson(res, 200, issueToken(username));
+    }
+    if (!requireAdmin(req, res)) return;
+
+    if (method === "GET" && parts[1] === "docs" && parts.length === 2) {
+      return sendJson(res, 200, { documents: await store.listDocuments() });
+    }
+    // GET /admin/docs/:id/activity — per-document edit history with author names.
+    if (method === "GET" && parts[1] === "docs" && parts[3] === "activity" && parts[2]) {
+      const activity = await store.getActivity(parts[2]);
+      if (!activity) return sendJson(res, 404, { error: "document not found" });
+      return sendJson(res, 200, activity);
+    }
+    if (method === "GET" && parts[1] === "users" && parts.length === 2) {
+      return sendJson(res, 200, { users: await store.listUsers() });
+    }
+    if (parts[1] === "webhooks") {
+      if (method === "GET" && parts.length === 2) {
+        return sendJson(res, 200, { webhooks: await store.listWebhooks() });
+      }
+      if (method === "POST" && parts.length === 2) {
+        const b = await readJson<{ url?: string; secret?: string; events?: string[] }>(req);
+        if (!b.url) return sendJson(res, 400, { error: "url required" });
+        const secret = b.secret && b.secret.length > 0 ? b.secret : randomSecret();
+        const events = b.events && b.events.length > 0 ? b.events : [SESSION_ENDED_EVENT];
+        return sendJson(res, 201, await store.createWebhook({ url: b.url, secret, events }));
+      }
+      if (parts[2]) {
+        const id = parts[2];
+        if (method === "DELETE" && parts.length === 3) {
+          await store.deleteWebhook(id);
+          return sendJson(res, 200, { id });
+        }
+        if (method === "PATCH" && parts.length === 3) {
+          const b = await readJson<{ active?: boolean }>(req);
+          if (typeof b.active === "boolean") await store.setWebhookActive(id, b.active);
+          return sendJson(res, 200, { id });
+        }
+        if (method === "GET" && parts[3] === "deliveries") {
+          return sendJson(res, 200, { deliveries: await store.listDeliveries(id) });
+        }
+      }
+    }
+    return sendJson(res, 404, { error: "not found" });
+  }
+
+  // POST /upload — parse a .docx server-side, store it, return its docId so the
+  // caller can redirect into WordCanvas({ docId }). Body = raw file bytes;
+  // filename + optional user come from headers.
+  if (method === "POST" && parts.length === 1 && parts[0] === "upload") {
+    if (UPLOAD_REQUIRES_AUTH && !requireAdmin(req, res)) return;
+    const bytes = await readBody(req);
+    const filename = headerStr(req.headers["x-filename"]) ?? "Untitled.docx";
+    const userHeader = headerStr(req.headers["x-user"]);
+    const user = userHeader ? safeParseUser(userHeader) : undefined;
+    try {
+      const result = await parseAndStore(new Uint8Array(bytes), filename, store, user);
+      return sendJson(res, 201, result);
+    } catch (e) {
+      return sendJson(res, 400, { error: String(e instanceof Error ? e.message : e) });
+    }
   }
 
   // POST /docs  — create a document from a base snapshot. Body is either a bare
@@ -243,6 +384,26 @@ async function handle(
       const activity = await store.getActivity(docId);
       if (!activity) return sendJson(res, 404, { error: "document not found" });
       return sendJson(res, 200, activity);
+    }
+
+    // GET /docs/:id/export.docx | /docs/:id/export.pdf — server-side download.
+    // These are the URLs the session-ended webhook hands to integrations.
+    if (method === "GET" && (parts[2] === "export.docx" || parts[2] === "export.pdf")) {
+      const format = parts[2] === "export.pdf" ? "pdf" : "docx";
+      const exported = await exportDoc(docId, format, store);
+      if (!exported) return sendJson(res, 404, { error: "document not found" });
+      const filename = `${sanitizeFilename(exported.title ?? docId)}.${format}`;
+      const mime =
+        format === "pdf"
+          ? "application/pdf"
+          : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      res.writeHead(200, {
+        "content-type": mime,
+        "content-disposition": `attachment; filename="${filename}"`,
+        "access-control-allow-origin": "*",
+      });
+      res.end(Buffer.from(exported.bytes));
+      return;
     }
   }
 

@@ -1,10 +1,18 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["ES2022"],
+    // The server now hosts the browser-derived import/export pipelines (parse on
+    // upload, .docx/.pdf export). Those pure modules are Node-safe at RUNTIME
+    // (measurement contexts are injected before any DOM is touched), but their
+    // TS source references ambient DOM types (document, fetch, Blob, ...). DOM
+    // libs satisfy the typechecker; nothing here actually touches the DOM.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "baseUrl": ".",
     "paths": {
-      "@cw/shared": ["../shared/src/index.ts"]
+      "@cw/shared": ["../shared/src/index.ts"],
+      "@cw/frontend/import": ["../frontend/src/import/docx/pipeline.ts"],
+      "@cw/frontend/export": ["../frontend/src/export/pipeline.ts"],
+      "@cw/frontend/export/measure": ["../frontend/src/export/shared/measureHost.ts"]
     }
   },
   "include": ["src"]

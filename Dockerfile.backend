@@ -14,6 +14,7 @@ COPY package.json package-lock.json tsconfig.base.json ./
 COPY shared/package.json ./shared/
 COPY frontend/package.json ./frontend/
 COPY backend/package.json ./backend/
+COPY dashboard/package.json ./dashboard/
 RUN npm ci
 
 # 2. Runtime image: deps + the TS sources tsx executes directly.
@@ -25,6 +26,10 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json tsconfig.base.json ./
 COPY shared ./shared
 COPY backend ./backend
+# The backend reuses the frontend's pure import/export pipelines (parse on
+# upload, .docx/.pdf export) via tsx — so the frontend TS source + bundled fonts
+# must be present at runtime (resolved through the @cw/frontend workspace link).
+COPY frontend ./frontend
 USER node
 EXPOSE 8787
 # argv[1] ends with "server.ts" so the entry-point guard in server.ts fires.

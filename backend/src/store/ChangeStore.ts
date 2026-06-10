@@ -44,12 +44,75 @@ export interface DocumentActivity {
   entries: ActivityEntry[];
 }
 
+/** One row of the dashboard's document list. */
+export interface DocumentSummary {
+  docId: string;
+  title: string | null;
+  createdBy: string | null;
+  creatorFirstName: string;
+  creatorLastName: string;
+  createdAt: number;
+  headVersion: number;
+  /** Distinct authors who have a recorded change (NULL authors excluded). */
+  contributorCount: number;
+  /** ts of the most recent change, or null if none. */
+  lastEditedAt: number | null;
+}
+
+/** One row of the dashboard's user list. */
+export interface UserSummary {
+  id: string;
+  firstName: string;
+  lastName: string;
+  docsCreated: number;
+  changeCount: number;
+  lastActive: number | null;
+}
+
+export interface WebhookRecord {
+  id: string;
+  url: string;
+  secret: string;
+  events: string[];
+  active: boolean;
+  createdAt: number;
+}
+
+export interface DeliveryRecord {
+  id: string;
+  webhookId: string;
+  docId: string | null;
+  event: string;
+  status: "success" | "failed";
+  responseCode: number | null;
+  attempts: number;
+  lastError: string | null;
+  createdAt: number;
+}
+
 export interface ChangeStore {
   /** Create a document from a base snapshot (stored as version 0). */
   createDocument(
     base: SerializedDocument,
-    opts?: { docId?: string; createdBy?: string },
+    opts?: { docId?: string; createdBy?: string; title?: string },
   ): Promise<{ docId: string; version: number }>;
+  /** Rename a document (dashboard / upload filename). */
+  setDocumentTitle(docId: string, title: string): Promise<void>;
+  /** A document's title (for export filenames), or null if unset/missing. */
+  getDocumentTitle(docId: string): Promise<string | null>;
+  /** Document list for the dashboard, newest first. */
+  listDocuments(): Promise<DocumentSummary[]>;
+  /** User list for the dashboard, most-recently-seen first. */
+  listUsers(): Promise<UserSummary[]>;
+  /** Registered webhook endpoints. */
+  listWebhooks(): Promise<WebhookRecord[]>;
+  createWebhook(input: { url: string; secret: string; events: string[] }): Promise<WebhookRecord>;
+  deleteWebhook(id: string): Promise<void>;
+  setWebhookActive(id: string, active: boolean): Promise<void>;
+  /** Append a webhook delivery attempt to the log. */
+  recordDelivery(rec: Omit<DeliveryRecord, "id" | "createdAt">): Promise<void>;
+  /** Delivery log, newest first, optionally scoped to one webhook. */
+  listDeliveries(webhookId?: string): Promise<DeliveryRecord[]>;
   /** Newest snapshot (base or checkpoint) + the version it represents. */
   getSnapshot(docId: string): Promise<DocSnapshotRecord | null>;
   /** Changes with seq >= sinceSeq, in seq order. */
@@ -74,20 +137,20 @@ export class PgChangeStore implements ChangeStore {
 
   async createDocument(
     base: SerializedDocument,
-    opts: { docId?: string; createdBy?: string } = {},
+    opts: { docId?: string; createdBy?: string; title?: string } = {},
   ): Promise<{ docId: string; version: number }> {
-    const { docId, createdBy = null } = opts;
+    const { docId, createdBy = null, title = null } = opts;
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       const row = docId
         ? await client.query<{ id: string }>(
-            "INSERT INTO documents (id, created_by) VALUES ($1, $2) RETURNING id",
-            [docId, createdBy],
+            "INSERT INTO documents (id, created_by, title) VALUES ($1, $2, $3) RETURNING id",
+            [docId, createdBy, title],
           )
         : await client.query<{ id: string }>(
-            "INSERT INTO documents (created_by) VALUES ($1) RETURNING id",
-            [createdBy],
+            "INSERT INTO documents (created_by, title) VALUES ($1, $2) RETURNING id",
+            [createdBy, title],
           );
       const id = row.rows[0]!.id;
       await client.query("INSERT INTO snapshots (doc_id, version, doc) VALUES ($1, 0, $2)", [
@@ -272,6 +335,130 @@ export class PgChangeStore implements ChangeStore {
     };
   }
 
+  async setDocumentTitle(docId: string, title: string): Promise<void> {
+    await this.pool.query("UPDATE documents SET title = $1 WHERE id = $2", [title, docId]);
+  }
+
+  async getDocumentTitle(docId: string): Promise<string | null> {
+    const res = await this.pool.query<{ title: string | null }>(
+      "SELECT title FROM documents WHERE id = $1",
+      [docId],
+    );
+    return (res.rowCount ?? 0) > 0 ? (res.rows[0]!.title ?? null) : null;
+  }
+
+  async listDocuments(): Promise<DocumentSummary[]> {
+    const res = await this.pool.query<{
+      id: string;
+      title: string | null;
+      created_by: string | null;
+      head_version: string;
+      created_at: string;
+      creator_first: string | null;
+      creator_last: string | null;
+      contributor_count: string;
+      last_edited_at: string | null;
+    }>(
+      `SELECT d.id, d.title, d.created_by, d.head_version,
+              (extract(epoch from d.created_at) * 1000)::bigint AS created_at,
+              cu.first_name AS creator_first, cu.last_name AS creator_last,
+              (SELECT count(DISTINCT c.user_id) FROM changes c WHERE c.doc_id = d.id) AS contributor_count,
+              (SELECT max(c.ts) FROM changes c WHERE c.doc_id = d.id) AS last_edited_at
+       FROM documents d
+       LEFT JOIN users cu ON cu.id = d.created_by
+       ORDER BY d.created_at DESC`,
+    );
+    return res.rows.map((r) => ({
+      docId: r.id,
+      title: r.title,
+      createdBy: r.created_by,
+      creatorFirstName: r.creator_first ?? "",
+      creatorLastName: r.creator_last ?? "",
+      createdAt: Number(r.created_at),
+      headVersion: Number(r.head_version),
+      contributorCount: Number(r.contributor_count),
+      lastEditedAt: r.last_edited_at != null ? Number(r.last_edited_at) : null,
+    }));
+  }
+
+  async listUsers(): Promise<UserSummary[]> {
+    const res = await this.pool.query<{
+      id: string;
+      first_name: string;
+      last_name: string;
+      docs_created: string;
+      change_count: string;
+      last_active: string | null;
+    }>(
+      `SELECT u.id, u.first_name, u.last_name,
+              (SELECT count(*) FROM documents d WHERE d.created_by = u.id) AS docs_created,
+              (SELECT count(*) FROM changes c WHERE c.user_id = u.id) AS change_count,
+              (SELECT max(c.ts) FROM changes c WHERE c.user_id = u.id) AS last_active
+       FROM users u
+       ORDER BY u.updated_at DESC`,
+    );
+    return res.rows.map((r) => ({
+      id: r.id,
+      firstName: r.first_name,
+      lastName: r.last_name,
+      docsCreated: Number(r.docs_created),
+      changeCount: Number(r.change_count),
+      lastActive: r.last_active != null ? Number(r.last_active) : null,
+    }));
+  }
+
+  async listWebhooks(): Promise<WebhookRecord[]> {
+    const res = await this.pool.query<WebhookRow>(
+      `SELECT id, url, secret, events, active,
+              (extract(epoch from created_at) * 1000)::bigint AS created_at
+       FROM webhooks ORDER BY created_at DESC`,
+    );
+    return res.rows.map(rowToWebhook);
+  }
+
+  async createWebhook(input: { url: string; secret: string; events: string[] }): Promise<WebhookRecord> {
+    const res = await this.pool.query<WebhookRow>(
+      `INSERT INTO webhooks (url, secret, events) VALUES ($1, $2, $3)
+       RETURNING id, url, secret, events, active,
+                 (extract(epoch from created_at) * 1000)::bigint AS created_at`,
+      [input.url, input.secret, input.events],
+    );
+    return rowToWebhook(res.rows[0]!);
+  }
+
+  async deleteWebhook(id: string): Promise<void> {
+    await this.pool.query("DELETE FROM webhooks WHERE id = $1", [id]);
+  }
+
+  async setWebhookActive(id: string, active: boolean): Promise<void> {
+    await this.pool.query("UPDATE webhooks SET active = $1 WHERE id = $2", [active, id]);
+  }
+
+  async recordDelivery(rec: Omit<DeliveryRecord, "id" | "createdAt">): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO webhook_deliveries
+         (webhook_id, doc_id, event, status, response_code, attempts, last_error)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [rec.webhookId, rec.docId, rec.event, rec.status, rec.responseCode, rec.attempts, rec.lastError],
+    );
+  }
+
+  async listDeliveries(webhookId?: string): Promise<DeliveryRecord[]> {
+    const res = webhookId
+      ? await this.pool.query<DeliveryRow>(
+          `SELECT id, webhook_id, doc_id, event, status, response_code, attempts, last_error,
+                  (extract(epoch from created_at) * 1000)::bigint AS created_at
+           FROM webhook_deliveries WHERE webhook_id = $1 ORDER BY created_at DESC LIMIT 200`,
+          [webhookId],
+        )
+      : await this.pool.query<DeliveryRow>(
+          `SELECT id, webhook_id, doc_id, event, status, response_code, attempts, last_error,
+                  (extract(epoch from created_at) * 1000)::bigint AS created_at
+           FROM webhook_deliveries ORDER BY created_at DESC LIMIT 200`,
+        );
+    return res.rows.map(rowToDelivery);
+  }
+
   private rowToChange(docId: string, r: Record<string, unknown>): Change {
     return {
       id: r.change_id as string,
@@ -286,4 +473,52 @@ export class PgChangeStore implements ChangeStore {
       selectionAfter: (r.selection as Change["selectionAfter"]) ?? null,
     };
   }
+}
+
+// --- webhook / delivery row mappers (module-level: no instance state) --------
+
+interface WebhookRow {
+  id: string;
+  url: string;
+  secret: string;
+  events: string[];
+  active: boolean;
+  created_at: string;
+}
+
+interface DeliveryRow {
+  id: string;
+  webhook_id: string;
+  doc_id: string | null;
+  event: string;
+  status: string;
+  response_code: number | null;
+  attempts: number;
+  last_error: string | null;
+  created_at: string;
+}
+
+function rowToWebhook(r: WebhookRow): WebhookRecord {
+  return {
+    id: r.id,
+    url: r.url,
+    secret: r.secret,
+    events: r.events,
+    active: r.active,
+    createdAt: Number(r.created_at),
+  };
+}
+
+function rowToDelivery(r: DeliveryRow): DeliveryRecord {
+  return {
+    id: r.id,
+    webhookId: r.webhook_id,
+    docId: r.doc_id,
+    event: r.event,
+    status: r.status === "success" ? "success" : "failed",
+    responseCode: r.response_code,
+    attempts: r.attempts,
+    lastError: r.last_error,
+    createdAt: Number(r.created_at),
+  };
 }
