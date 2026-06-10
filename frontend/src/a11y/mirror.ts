@@ -16,8 +16,11 @@ export interface A11yMirror {
 export function createA11yMirror(proxyEl: HTMLElement): A11yMirror {
   const live = document.createElement("div");
   live.setAttribute("aria-live", "polite");
+  // Pinned to the origin (top/left:0) so the out-of-flow node can't sit past the
+  // page content and add ~1px of scroll height; margin:0 keeps it from nudging
+  // layout. Still visually hidden (1px + clip) but present for assistive tech.
   live.style.cssText =
-    "position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);";
+    "position:absolute;top:0;left:0;width:1px;height:1px;margin:0;overflow:hidden;clip-path:inset(50%);";
   document.body.appendChild(live);
 
   return {
