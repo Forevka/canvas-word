@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WordCanvas — offline embed (no build step)</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      /* The editor mounts its full chrome into this host, so give it a size.
+         Here it fills the viewport; in a real app it can be any sized element. */
+      #editor {
+        position: fixed;
+        inset: 0;
+      }
+    </style>
+
+    <!--
+      Resolve the bare package specifier to the built bundle. In a bundler-based
+      app you'd just `import { WordCanvas } from "@forevka/wordcanvas"` and skip
+      this entirely. Path is absolute from the repo root, so serve this example
+      with the repo root as the static root (see this folder's README.md).
+    -->
+    <script type="importmap">
+      {
+        "imports": {
+          "@forevka/wordcanvas": "/node_modules/@forevka/wordcanvas/dist-lib/wordcanvas.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="editor"></div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

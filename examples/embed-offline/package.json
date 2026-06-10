@@ -1,0 +1,7 @@
+{
+  "name": "@cw/example-embed-offline",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Minimal, no-build offline embed of @forevka/wordcanvas via a browser import map."
+}

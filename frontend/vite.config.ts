@@ -9,8 +9,8 @@ import { nodePolyfills } from "vite-plugin-node-polyfills";
 // `Buffer.isBuffer` checks. vitest sets process.env.VITEST.
 const underVitest = process.env.VITEST !== undefined;
 
-// `vite build --mode lib` produces the embeddable @cw/frontend package (entry
-// src/wordcanvas.ts) into dist-lib; the default build produces the dev app
+// `vite build --mode lib` produces the embeddable @forevka/wordcanvas package
+// (entry src/wordcanvas.ts) into dist-lib; the default build produces the dev app
 // (index.html) into dist.
 export default defineConfig(({ mode }) => {
   const lib = mode === "lib";
@@ -38,36 +38,13 @@ export default defineConfig(({ mode }) => {
         }
       : {
           target: "es2022",
-          // Multi-page app build: the default editor page + the /live online demo.
-          rollupOptions: {
-            input: {
-              main: fileURLToPath(new URL("index.html", import.meta.url)),
-              live: fileURLToPath(new URL("live/index.html", import.meta.url)),
-            },
-          },
+          // Single-page dev app: the editor harness (index.html). The online +
+          // collaboration demo lives in examples/embed-live, which consumes the
+          // built @forevka/wordcanvas package the way a real embedder would.
         },
     plugins: underVitest
       ? []
-      : [
-          nodePolyfills({ include: ["buffer", "stream", "zlib", "util", "assert", "events", "process"] }),
-          // Serve the /live page at the clean "/live" path (dev), not just "/live/".
-          {
-            name: "live-route",
-            configureServer(server) {
-              server.middlewares.use((req, _res, next) => {
-                const url = req.url ?? "";
-                const q = url.indexOf("?");
-                const path = q === -1 ? url : url.slice(0, q);
-                // Match the PATH only — a share link is /live?collab=… ; keep the
-                // query so live.ts can read ?collab.
-                if (path === "/live" || path === "/live/") {
-                  req.url = "/live/index.html" + (q === -1 ? "" : url.slice(q));
-                }
-                next();
-              });
-            },
-          },
-        ],
+      : [nodePolyfills({ include: ["buffer", "stream", "zlib", "util", "assert", "events", "process"] })],
     // ES-format workers so the export worker can code-split shared chunks (the
     // model/layout engine). The default IIFE format forbids code-splitting.
     worker: { format: "es" },
