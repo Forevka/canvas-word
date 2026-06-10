@@ -23,8 +23,11 @@
 		file_server
 	}
 
-	# The online collab page is built to /srv/live/index.html; serve it for the
-	# clean /live path (and /live?collab=… share links keep their query).
+	# The online collab page is served from /srv/live/index.html for the clean
+	# /live path (and /live?collab=… share links keep their query). It is the
+	# examples/embed-live build (which consumes the @forevka/wordcanvas package),
+	# placed at /srv/live by Dockerfile.web. Its assets (/live/assets/*,
+	# /live/wordcanvas/*) fall through to the default file_server below.
 	@live path /live /live/
 	handle @live {
 		root * /srv

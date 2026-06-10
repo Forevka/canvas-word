@@ -1,10 +1,20 @@
 # syntax=docker/dockerfile:1.7
 #
-# @cw/web — builds the Vite frontend (multi-page: / offline editor + /live
-# online collab demo) and serves it with Caddy, which also reverse-proxies the
+# @cw/web — builds the Vite frontend (the offline editor at /) plus the embedding
+# examples, and serves them with Caddy, which also reverse-proxies the
 # API/WebSocket paths to the backend so the whole app lives on one origin.
+#
+# Routes served from /srv:
+#   /                  -> frontend dev app (offline editor)
+#   /dashboard         -> admin dashboard SPA
+#   /live              -> examples/embed-live (online + collaboration; same origin
+#                         as the backend, so its location.origin backend URL works)
+#   /examples/offline  -> examples/embed-offline (minimal offline embed)
+#
+# Both examples consume the @forevka/wordcanvas package as a PRE-BUILT bundle
+# (dist-lib) — built here via `build:lib` — never re-bundled by a downstream tool.
 
-# 1. Build the static bundle. Vite resolves @cw/shared via its config alias to
+# 1. Build the static bundles. Vite resolves @cw/shared via its config alias to
 #    ../shared/src, so shared must be present at build time.
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
@@ -16,18 +26,36 @@ COPY shared/package.json ./shared/
 COPY frontend/package.json ./frontend/
 COPY backend/package.json ./backend/
 COPY dashboard/package.json ./dashboard/
+# Example workspaces must be present for `npm ci` to match the lockfile.
+COPY examples/embed-live/package.json ./examples/embed-live/
+COPY examples/embed-offline/package.json ./examples/embed-offline/
 RUN npm ci
 COPY shared ./shared
 COPY frontend ./frontend
 COPY dashboard ./dashboard
-RUN npm run build --workspace @cw/frontend
+COPY examples ./examples
+# The embeddable library bundle — the examples import this built dist-lib.
+RUN npm run build:lib --workspace @forevka/wordcanvas
+# Frontend dev app (offline editor at /).
+RUN npm run build --workspace @forevka/wordcanvas
 # Admin dashboard — built with base /dashboard/ so it serves under that path on
 # the single app origin (see web/Caddyfile + dashboard/vite.config.ts).
 RUN npm run build --workspace @cw/dashboard
+# Online + collaboration example -> self-contained dist (app + ./wordcanvas copy).
+RUN npm run build --workspace @cw/example-embed-live
+# Offline example: assemble a self-contained dir by copying the static files and
+# rewriting the dev import map (repo-root /node_modules path) to a sibling copy of
+# the library bundle.
+RUN mkdir -p examples/embed-offline/dist/wordcanvas \
+ && cp examples/embed-offline/index.html examples/embed-offline/app.js examples/embed-offline/dist/ \
+ && sed -i 's#/node_modules/@forevka/wordcanvas/dist-lib/wordcanvas.js#./wordcanvas/wordcanvas.js#' examples/embed-offline/dist/index.html \
+ && cp -a frontend/dist-lib/. examples/embed-offline/dist/wordcanvas/
 
 # 2. Serve + proxy with Caddy. Static files in /srv, API/WS to the backend.
 FROM caddy:2-alpine
 COPY web/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /app/frontend/dist /srv
 COPY --from=build /app/dashboard/dist /srv/dashboard
+COPY --from=build /app/examples/embed-live/dist /srv/live
+COPY --from=build /app/examples/embed-offline/dist /srv/examples/offline
 EXPOSE 80
