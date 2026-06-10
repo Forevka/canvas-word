@@ -2,7 +2,7 @@
 // (later) toolbar buttons all dispatch through these.
 
 import type { Block, CellBorder, CellBorders, CharStyle, ImageBlock, ParaStyle, Paragraph, Run, SdtProps, SdtType, TableBlock, TableCell, TableRow } from "@cw/shared";
-import type { DocPosition, DocSelection, GridRect } from "@cw/shared";
+import type { BookmarkRange, DocPosition, DocSelection, GridRect } from "@cw/shared";
 import { isCollapsed, BAND_CONTAINERS } from "@cw/shared";
 import type { Op, SectionGeometry } from "@cw/shared";
 import { sliceRuns, applyStylePatchToRuns, mapTextInRuns, containerOf, containerBlocks, containerListOf, locateImage, freshId } from "@cw/shared";
@@ -35,6 +35,44 @@ const caret = (blockId: string, offset: number): DocSelection => ({
 // collaborating clients never mint the same id (see shared/ids). The frontend
 // configures the siteId at startup (configureIds in main.ts).
 const freshBlockId = (): string => freshId();
+
+// ---------------------------------------------------------------------------
+// Bookmarks (name → range; managed from the Bookmarks panel)
+
+/** Create or move a bookmark to cover the current selection (or caret = a point
+ *  bookmark). Names are unique; re-adding an existing name moves it. */
+export function addBookmarkCmd(name: string): Command {
+  return (state) => {
+    const sel = state.selection;
+    if (!sel || name.trim().length === 0) return null;
+    const [from, to] = orderedRange(state, sel);
+    const range: BookmarkRange = { start: from, end: to };
+    return tr([{ type: "setBookmark", name, range }], sel, "command");
+  };
+}
+
+export function removeBookmarkCmd(name: string): Command {
+  return (state) => {
+    if (!state.doc.bookmarks?.[name]) return null;
+    return tr([{ type: "setBookmark", name, range: null }], state.selection, "command");
+  };
+}
+
+/** Rename a bookmark, preserving its range (delete old + set new, one undo step). */
+export function renameBookmarkCmd(oldName: string, newName: string): Command {
+  return (state) => {
+    const range = state.doc.bookmarks?.[oldName];
+    if (!range || newName.trim().length === 0 || newName === oldName || state.doc.bookmarks?.[newName]) return null;
+    return tr(
+      [
+        { type: "setBookmark", name: oldName, range: null },
+        { type: "setBookmark", name: newName, range },
+      ],
+      state.selection,
+      "command",
+    );
+  };
+}
 
 /** Order a selection by document position (model order, no layout needed). */
 function orderedRange(state: EditorState, sel: DocSelection): [DocPosition, DocPosition] {

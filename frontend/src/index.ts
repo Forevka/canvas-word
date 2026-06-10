@@ -4,7 +4,7 @@
 
 import type { Block, CharStyle, Document, ParaStyle, TableBlock } from "@cw/shared";
 import { BAND_CONTAINERS } from "@cw/shared";
-import type { DocPosition, DocSelection, UserInfo } from "@cw/shared";
+import type { BookmarkRange, DocPosition, DocSelection, UserInfo } from "@cw/shared";
 import { isCollapsed, colorForId, userDisplayName } from "@cw/shared";
 import { applyOp, containerBlocks, containerOf, effectiveFractions, locateImage, sliceRuns, type Op } from "@cw/shared";
 import { bandParagraphs, blockById, buildTableGrid, containerListOf, gridOriginOfCell, locateParagraph, normalizeRect, paragraphsOf, styleAtRuns, textOfRuns } from "@cw/shared";
@@ -141,6 +141,9 @@ export interface Editor {
   /** Move the caret to a block's start and scroll it into view (outline pane,
    *  navigation). No-op if the block id isn't in the current document. */
   revealBlock(blockId: string): void;
+  /** Select a bookmark's range and scroll it into view (Bookmarks panel "Go To").
+   *  No-op if the bookmark is missing or anchored in hidden/unplaced content. */
+  revealBookmark(name: string): void;
   /** Select the whole document body (Select All button / Ctrl+A). */
   selectAll(): void;
   /** Layout summary for the status bar: total pages and the caret's 1-based page. */
@@ -615,12 +618,30 @@ export function createEditor(
 
   // ---- transaction pipeline ------------------------------------------------
 
+  /** Bookmark ranges are offset-precise, so they travel with edits — mapped
+   *  through each applied op exactly like the selection and peer carets. */
+  const rebaseBookmarks = (mapPosition: (p: DocPosition) => DocPosition): void => {
+    if (!doc.bookmarks) return;
+    const next: Record<string, BookmarkRange> = {};
+    let changed = false;
+    for (const [name, r] of Object.entries(doc.bookmarks)) {
+      const start = mapPosition(r.start);
+      const end = mapPosition(r.end);
+      if (start.blockId !== r.start.blockId || start.offset !== r.start.offset || end.blockId !== r.end.blockId || end.offset !== r.end.offset) {
+        changed = true;
+      }
+      next[name] = { start, end };
+    }
+    if (changed) doc = { ...doc, bookmarks: next };
+  };
+
   const runOps = (ops: Op[]): Op[] => {
     const inverses: Op[] = [];
     for (const op of ops) {
       const res = applyOp(doc, op);
       doc = res.doc;
       rebasePeers(res.mapPosition); // keep peer carets aligned with the edited text
+      rebaseBookmarks(res.mapPosition);
       inverses.unshift(res.inverse);
     }
     return inverses;
@@ -698,6 +719,7 @@ export function createEditor(
       const res = applyOp(doc, op);
       doc = res.doc;
       rebasePeers(res.mapPosition); // peers' carets travel with the remote edit too
+      rebaseBookmarks(res.mapPosition);
       if (sel) {
         sel = {
           anchor: res.mapPosition(sel.anchor),
@@ -2082,6 +2104,14 @@ export function createEditor(
       setSelection({ anchor: { blockId, offset: 0 }, focus: { blockId, offset: 0 } });
       const rect = caretRect(tree, { blockId, offset: 0 });
       if (rect) paint.ensureVisible(rect, "center");
+    },
+    revealBookmark: (name: string): void => {
+      const range = doc.bookmarks?.[name];
+      if (!range || !blockById(doc, range.start.blockId)) return;
+      const rect = caretRect(tree, range.start, scope());
+      if (!rect) return; // anchored in hidden/unplaced content — nothing to show
+      setSelection({ anchor: range.start, focus: range.end });
+      paint.ensureVisible(rect, "center");
     },
     selectAll: (): void => {
       const paras = doc.blocks.filter((b): b is import("@cw/shared").Paragraph => b.kind === "paragraph");

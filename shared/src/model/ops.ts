@@ -6,6 +6,7 @@
 import type {
   BandContainer,
   Block,
+  BookmarkRange,
   CharStyle,
   Document,
   ImageBlock,
@@ -51,7 +52,8 @@ export type Op =
   | { type: "setSectionProps"; geometry: SectionGeometry }
   | { type: "setSectionBand"; band: BandContainer; blocks: Block[] | null }
   | { type: "setFootnote"; noteId: string; paras: Paragraph[] | null }
-  | { type: "setSdtProps"; id: string; props: SdtProps | null };
+  | { type: "setSdtProps"; id: string; props: SdtProps | null }
+  | { type: "setBookmark"; name: string; range: BookmarkRange | null };
 
 /** Page-setup fields of the final section (`doc.section`). Bands are NOT here —
  *  they change through container ops; mid-document sections change through
@@ -800,6 +802,19 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
         inverse: { type: "setSdtProps", id: op.id, props: old },
         mapPosition: identity,
         dirtyBlockIds: [], // run markers change via setRuns/applyStylePatch ops
+      };
+    }
+
+    case "setBookmark": {
+      const old = doc.bookmarks?.[op.name] ?? null;
+      const bookmarks = { ...(doc.bookmarks ?? {}) };
+      if (op.range) bookmarks[op.name] = op.range;
+      else delete bookmarks[op.name];
+      return {
+        doc: { ...doc, bookmarks },
+        inverse: { type: "setBookmark", name: op.name, range: old },
+        mapPosition: identity,
+        dirtyBlockIds: [],
       };
     }
 
