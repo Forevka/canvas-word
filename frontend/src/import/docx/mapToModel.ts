@@ -244,24 +244,50 @@ export function createMapper(
     let coverHasContent = false;
     const hasRealContent = (bs: Block[]): boolean =>
       bs.some((b) => b.kind !== "paragraph" || b.runs.some((r) => r.text.trim().length > 0));
-    for (const irBlock of blocks) {
+
+    // Looking PAST blank/hidden lead-in paragraphs, does the section beginning
+    // after `afterIndex` open with a real section title? These generated reports
+    // format titles directly (bold/centered) rather than with a Heading style, so
+    // isHeading misses them — but Word always bookmarks a section title for its
+    // TOC (_Toc<n> targets, or the TOC's own _Part_TOC anchor). A titled section
+    // starts a new page (Word's Next Page break); plain continuing body text
+    // after a footer-only break flows. Hidden-anchor paragraphs (w:vanish text,
+    // dropped on import) are skipped here via the IR's vanish flag.
+    const isHeadingLedSection = (afterIndex: number): boolean => {
+      for (let i = afterIndex + 1; i < blocks.length; i++) {
+        const b = blocks[i]!;
+        if (b.kind !== "paragraph") return false; // opens with a table/image, not a title
+        const visible = b.inlines.some(
+          (inl) => inl.kind === "run" && inl.text.trim().length > 0 && !inl.props.vanish,
+        );
+        if (!visible) continue; // blank line or hidden anchor — keep looking
+        if (resolver.isHeading(b.props.styleId)) return true;
+        return (b.bookmarks ?? []).some((n) => /toc/i.test(n));
+      }
+      return false;
+    };
+
+    for (let bi = 0; bi < blocks.length; bi++) {
+      const irBlock = blocks[bi]!;
       const mapped =
         irBlock.kind === "paragraph"
           ? mapParagraph(irBlock, media, resolveLink)
           : [mapTable(irBlock, media, resolveLink)];
 
       // Resolve a pending (same-geometry) section break against this block.
+      // Blank/hidden lead-in paragraphs are skipped so the break lands on the
+      // section's first VISIBLE line (the title), not an empty anchor above it.
       if (pending && mapped.length > 0) {
         const first = mapped[0]!;
-        const heading = irBlock.kind === "paragraph" && resolver.isHeading(irBlock.props.styleId);
         const empty = first.kind === "paragraph" && first.runs.every((r) => r.text.length === 0);
-        if (heading || pendingForce) {
-          if (first.kind === "paragraph") first.style.pageBreakBefore = true;
-          else mapped.unshift({ ...emptyParagraph(), style: { ...documentPara, pageBreakBefore: true } });
+        if (!empty) {
+          const heading = irBlock.kind === "paragraph" && resolver.isHeading(irBlock.props.styleId);
+          if (heading || pendingForce) {
+            if (first.kind === "paragraph") first.style.pageBreakBefore = true;
+            else mapped.unshift({ ...emptyParagraph(), style: { ...documentPara, pageBreakBefore: true } });
+          }
           pending = false;
           pendingForce = false;
-        } else if (!empty) {
-          pending = false; // reached the section's first real content → it flows
         }
         // empty paragraph: keep pending and look past it for the real section start
       }
@@ -287,7 +313,10 @@ export function createMapper(
             );
           }
           pending = true;
-          pendingForce = !seenPageSection && coverHasContent; // cover→body boundary breaks
+          // Break out of the section when it's the cover→body boundary OR the new
+          // section opens with a real title (heading style / TOC-bookmarked) —
+          // Word's Next Page behavior for titled sections (TOC, Flood Map, …).
+          pendingForce = (!seenPageSection && coverHasContent) || isHeadingLedSection(bi);
         }
         seenPageSection = true;
       }

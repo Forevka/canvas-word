@@ -158,6 +158,29 @@ describe("docx pipeline — lossy policies emit warnings", () => {
     expect(para(r.doc.blocks[2]).style.pageBreakBefore).toBe(true);
   });
 
+  it("page-breaks a titled section (TOC bookmark, past a hidden anchor) but flows footer-only breaks", () => {
+    // Mirrors the generated-report shape: each section break is followed by a
+    // hidden w:vanish anchor, then the section title — formatted directly (bold)
+    // rather than with a Heading style, but bookmarked for the TOC (_Toc<n>).
+    const sect = `<w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:pPr></w:p>`;
+    const hiddenAnchor =
+      `<w:p><w:bookmarkStart w:id="9" w:name="_Part_x"/><w:r><w:rPr><w:vanish/></w:rPr><w:t>hidden</w:t></w:r></w:p>`;
+    const r = importBody(
+      `<w:p><w:r><w:t>COVER</w:t></w:r></w:p>` + sect + // 1st break: cover -> body, always breaks
+        `<w:p><w:r><w:t>letter body</w:t></w:r></w:p>` + sect + // 2nd break: plain body follows -> flows
+        `<w:p><w:r><w:t>just more body</w:t></w:r></w:p>` + sect + // 3rd break: titled section follows -> breaks
+        hiddenAnchor +
+        `<w:p><w:bookmarkStart w:id="2" w:name="_Toc0000000022"/><w:r><w:rPr><w:b/></w:rPr><w:t>FLOOD MAP</w:t></w:r></w:p>`,
+    );
+    const find = (t: string): Paragraph =>
+      para(r.doc.blocks.find((b) => para(b).runs.some((rn) => rn.text === t))!);
+    expect(find("just more body").style.pageBreakBefore).toBeUndefined(); // footer-only -> flow
+    expect(find("FLOOD MAP").style.pageBreakBefore).toBe(true); // TOC-bookmarked title -> new page
+    // The hidden anchor itself flowed (no break stranded above the title).
+    const floodIdx = r.doc.blocks.indexOf(find("FLOOD MAP"));
+    expect(para(r.doc.blocks[floodIdx - 1]!).style.pageBreakBefore).toBeUndefined();
+  });
+
   it("warns when a flowed section break carries its own header/footer", () => {
     const r = importBody(
       `<w:p><w:pPr><w:sectPr><w:footerReference w:type="default" r:id="rF"/>` +
