@@ -1,8 +1,30 @@
 {
-  "name": "@cw/frontend",
-  "version": "0.0.1",
-  "private": true,
+  "name": "@forevka/wordcanvas",
+  "version": "0.1.0",
   "type": "module",
+  "description": "Embeddable canvas-rendered, Word-compatible document editor with live collaboration and DOCX/PDF import & export. Self-contained, zero runtime dependencies.",
+  "license": "MIT",
+  "author": "Bohdan Lushchyk",
+  "homepage": "https://github.com/Forevka/canvas-word#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Forevka/canvas-word.git",
+    "directory": "frontend"
+  },
+  "bugs": {
+    "url": "https://github.com/Forevka/canvas-word/issues"
+  },
+  "keywords": [
+    "word",
+    "editor",
+    "docx",
+    "pdf",
+    "canvas",
+    "wysiwyg",
+    "rich-text",
+    "document",
+    "collaboration"
+  ],
   "module": "./dist-lib/wordcanvas.js",
   "types": "./types/wordcanvas.d.ts",
   "exports": {
@@ -14,26 +36,34 @@
     "./export": "./src/export/pipeline.ts",
     "./export/measure": "./src/export/shared/measureHost.ts"
   },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./types/wordcanvas.d.ts",
+        "import": "./dist-lib/wordcanvas.js"
+      }
+    }
+  },
   "files": ["dist-lib", "types"],
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "build:lib": "vite build --mode lib",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepublishOnly": "npm run typecheck && npm run build:lib"
   },
-  "dependencies": {
+  "devDependencies": {
     "@cw/shared": "*",
     "@chenglou/pretext": "latest",
+    "@types/fontkit": "^2.0.9",
+    "@types/pdfkit": "^0.17.6",
     "fflate": "^0.8.3",
     "fontkit": "^2.0.4",
     "pdfkit": "^0.19.0",
-    "txml": "^6.0.0"
-  },
-  "devDependencies": {
-    "@types/fontkit": "^2.0.9",
-    "@types/pdfkit": "^0.17.6",
     "playwright": "^1.60.0",
+    "txml": "^6.0.0",
     "vite": "^6.0.0",
     "vite-plugin-node-polyfills": "^0.28.0",
     "vitest": "^3.0.0"

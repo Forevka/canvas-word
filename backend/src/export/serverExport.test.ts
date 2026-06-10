@@ -4,8 +4,8 @@
 // layout works (installMeasureHost), and that embedded media survives the
 // content-address bridge (bytes -> mediaId -> bytes).
 
-import { runExport } from "@cw/frontend/export";
-import { installMeasureHost } from "@cw/frontend/export/measure";
+import { runExport } from "@forevka/wordcanvas/export";
+import { installMeasureHost } from "@forevka/wordcanvas/export/measure";
 import {
   reconstruct,
   textOfRuns,

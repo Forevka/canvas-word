@@ -7,7 +7,7 @@
 // the bytes into the media table (same sha256 the client uses) and swap each
 // block's src for its mediaId — the portable handle serializeDocument keeps.
 
-import { runImport } from "@cw/frontend/import";
+import { runImport } from "@forevka/wordcanvas/import";
 import { forEachImage, mediaIdForBytes, serializeDocument, type UserInfo } from "@cw/shared";
 import type { ChangeStore } from "../store/ChangeStore";
 

@@ -1,8 +1,8 @@
 // /upload authorization via a 3rd-party integration token (no DB): a valid
 // X-API-Key is accepted and returns a docId; missing/invalid keys are rejected.
 
-import { runExport } from "@cw/frontend/export";
-import { installMeasureHost } from "@cw/frontend/export/measure";
+import { runExport } from "@forevka/wordcanvas/export";
+import { installMeasureHost } from "@forevka/wordcanvas/export/measure";
 import { type Document, type Paragraph, type SectionProps } from "@cw/shared";
 import { type Server } from "node:http";
 import { type AddressInfo } from "node:net";

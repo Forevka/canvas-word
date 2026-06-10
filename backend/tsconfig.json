@@ -10,9 +10,9 @@
     "baseUrl": ".",
     "paths": {
       "@cw/shared": ["../shared/src/index.ts"],
-      "@cw/frontend/import": ["../frontend/src/import/docx/pipeline.ts"],
-      "@cw/frontend/export": ["../frontend/src/export/pipeline.ts"],
-      "@cw/frontend/export/measure": ["../frontend/src/export/shared/measureHost.ts"]
+      "@forevka/wordcanvas/import": ["../frontend/src/import/docx/pipeline.ts"],
+      "@forevka/wordcanvas/export": ["../frontend/src/export/pipeline.ts"],
+      "@forevka/wordcanvas/export/measure": ["../frontend/src/export/shared/measureHost.ts"]
     }
   },
   "include": ["src"]

@@ -7,18 +7,24 @@
     "shared",
     "frontend",
     "backend",
-    "dashboard"
+    "dashboard",
+    "examples/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace @cw/frontend",
+    "dev": "npm run dev --workspace @forevka/wordcanvas",
     "dev:dashboard": "npm run dev --workspace @cw/dashboard",
-    "build": "npm run build --workspace @cw/frontend",
-    "typecheck": "npm run typecheck --workspace @cw/shared && npm run typecheck --workspace @cw/frontend && npm run typecheck --workspace @cw/backend && npm run typecheck --workspace @cw/dashboard",
-    "test": "npm run test --workspace @cw/shared && npm run test --workspace @cw/frontend && npm run test --workspace @cw/backend",
+    "dev:example": "npm run dev --workspace @cw/example-embed-live",
+    "build": "npm run build --workspace @forevka/wordcanvas",
+    "build:lib": "npm run build:lib --workspace @forevka/wordcanvas",
+    "typecheck": "npm run typecheck --workspace @cw/shared && npm run typecheck --workspace @forevka/wordcanvas && npm run typecheck --workspace @cw/backend && npm run typecheck --workspace @cw/dashboard",
+    "test": "npm run test --workspace @cw/shared && npm run test --workspace @forevka/wordcanvas && npm run test --workspace @cw/backend",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down"
   },
   "devDependencies": {
     "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "@forevka/wordcanvas": "^0.1.0"
   }
 }

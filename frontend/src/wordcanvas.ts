@@ -1,6 +1,6 @@
 // WordCanvas — the embeddable package entry.
 //
-//   import { WordCanvas } from "@cw/frontend";
+//   import { WordCanvas } from "@forevka/wordcanvas";
 //   const ed = new WordCanvas({ container, backendUrl: "https://…", user });
 //   ed.on("userEntered", ({ user }) => showAvatar(user));
 //

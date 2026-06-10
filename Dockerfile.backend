@@ -28,7 +28,7 @@ COPY shared ./shared
 COPY backend ./backend
 # The backend reuses the frontend's pure import/export pipelines (parse on
 # upload, .docx/.pdf export) via tsx — so the frontend TS source + bundled fonts
-# must be present at runtime (resolved through the @cw/frontend workspace link).
+# must be present at runtime (resolved through the @forevka/wordcanvas workspace link).
 COPY frontend ./frontend
 USER node
 EXPOSE 8787

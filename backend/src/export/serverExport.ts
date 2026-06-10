@@ -6,8 +6,8 @@
 // keys embedded images by ImageBlock.src, so we set src = mediaId and feed an
 // images map keyed by the same id, pulling bytes from the media table.
 
-import { runExport } from "@cw/frontend/export";
-import { installMeasureHost } from "@cw/frontend/export/measure";
+import { runExport } from "@forevka/wordcanvas/export";
+import { installMeasureHost } from "@forevka/wordcanvas/export/measure";
 import { forEachImage, reconstruct } from "@cw/shared";
 import type { ChangeStore } from "../store/ChangeStore";
 

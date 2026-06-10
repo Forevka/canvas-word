@@ -10,7 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@cw/frontend": "*",
+    "@forevka/wordcanvas": "*",
     "@cw/shared": "*",
     "pg": "^8.13.1",
     "ws": "^8.18.0"
