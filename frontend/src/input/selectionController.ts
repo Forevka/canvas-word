@@ -15,6 +15,7 @@ import { isCollapsed } from "@cw/shared";
 import {
   words,
   bandParagraphs,
+  isHiddenParagraph,
   paragraphsOf,
   prevGrapheme,
   nextGrapheme,
@@ -102,9 +103,10 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
       const pg = deps.getTree().pages[story.pageIndex];
       const source =
         (story.band === "header" ? pg?.headerSource : pg?.footerSource) ?? story.band;
-      return bandParagraphs(deps.getDoc(), source);
+      return bandParagraphs(deps.getDoc(), source).filter((p) => !isHiddenParagraph(p));
     }
-    return paragraphsOf(deps.getDoc()).filter((p) => !isBandParagraph(p.id));
+    // Hidden (w:vanish) paragraphs aren't laid out, so the caret must skip them.
+    return paragraphsOf(deps.getDoc()).filter((p) => !isBandParagraph(p.id) && !isHiddenParagraph(p));
   };
 
   const isBandParagraph = (blockId: string): boolean => {

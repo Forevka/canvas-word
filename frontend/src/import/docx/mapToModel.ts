@@ -243,7 +243,7 @@ export function createMapper(
     let seenPageSection = false;
     let coverHasContent = false;
     const hasRealContent = (bs: Block[]): boolean =>
-      bs.some((b) => b.kind !== "paragraph" || b.runs.some((r) => r.text.trim().length > 0));
+      bs.some((b) => b.kind !== "paragraph" || b.runs.some((r) => r.text.trim().length > 0 && !r.style.hidden));
 
     // Looking PAST blank/hidden lead-in paragraphs, does the section beginning
     // after `afterIndex` open with a real section title? These generated reports
@@ -279,7 +279,8 @@ export function createMapper(
       // section's first VISIBLE line (the title), not an empty anchor above it.
       if (pending && mapped.length > 0) {
         const first = mapped[0]!;
-        const empty = first.kind === "paragraph" && first.runs.every((r) => r.text.length === 0);
+        // Hidden runs count as blank — a w:vanish anchor paragraph is invisible.
+        const empty = first.kind === "paragraph" && first.runs.every((r) => r.text.length === 0 || r.style.hidden);
         if (!empty) {
           const heading = irBlock.kind === "paragraph" && resolver.isHeading(irBlock.props.styleId);
           if (heading || pendingForce) {
@@ -336,7 +337,8 @@ export function createMapper(
    *  body text (with a figure further down) is NOT pulled. */
   const keepHeadingWithFollowingFigure = (blocks: Block[]): void => {
     const isFigure = (b: Block): boolean => b.kind === "image" || b.kind === "table";
-    const isBlank = (b: Block): boolean => b.kind === "paragraph" && b.runs.every((r) => r.text.trim().length === 0);
+    const isBlank = (b: Block): boolean =>
+      b.kind === "paragraph" && b.runs.every((r) => r.text.trim().length === 0 || r.style.hidden);
     const textLen = (b: Block): number => (b.kind === "paragraph" ? b.runs.reduce((s, r) => s + r.text.length, 0) : 0);
     for (let i = 0; i < blocks.length; i++) {
       const h = blocks[i]!;
@@ -433,13 +435,9 @@ export function createMapper(
         }
         case "run": {
           const effective = resolver.run(ir.props.styleId, inline.props);
-          if (effective.vanish) {
-            // Hidden text is invisible in Word's normal view — keeping it would
-            // surface text the author deliberately suppressed. (vanish can
-            // arrive via the style cascade too, hence the post-resolution check.)
-            warnings.add("hidden-text", "Hidden text (w:vanish) was dropped.");
-            break;
-          }
+          // Hidden text (w:vanish) is PRESERVED with style.hidden (set via
+          // applyRunProps) — never displayed, never caret-reachable, protected
+          // from deletion — so a round-trip re-emits it instead of losing it.
           runs.push(mapRun(inline.text, effective, resolveLink, inline.sdtId));
           trailingBreak = false;
           break;
@@ -830,6 +828,7 @@ function applyRunProps(style: Partial<CharStyle>, props: IRRunProps): void {
   }
   if (props.vertAlign === "superscript") style.verticalAlign = "super";
   else if (props.vertAlign === "subscript") style.verticalAlign = "sub";
+  if (props.vanish) style.hidden = true; // preserved, never displayed (see CharStyle.hidden)
 }
 
 /** IR content controls → model SdtProps (shapes match; copy defined fields). */

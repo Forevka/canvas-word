@@ -12,6 +12,7 @@ import {
   blockById,
   blockIndexOf,
   bodyParagraphs,
+  isHiddenParagraph,
   isInCell,
   locateParagraph,
   paragraphsOf,
@@ -71,10 +72,20 @@ function deleteRangeOps(state: EditorState, from: DocPosition, to: DocPosition):
   if (to.offset > 0) {
     ops.push({ type: "deleteRange", blockId: to.blockId, start: 0, end: to.offset });
   }
+  // Hidden (w:vanish) anchor paragraphs in the deleted span are PRESERVED — they
+  // survive even Select-All → Delete. When any sit between the ends we also skip
+  // the final merge so the two cleared paragraphs stay separate around them
+  // (merging would absorb the hidden runs / orphan their block id).
+  let hiddenBetween = false;
   for (let i = fi + 1; i < ti; i++) {
-    ops.push({ type: "removeBlock", blockId: docBlocks[i]!.id });
+    const b = docBlocks[i]!;
+    if (b.kind === "paragraph" && isHiddenParagraph(b)) {
+      hiddenBetween = true;
+      continue;
+    }
+    ops.push({ type: "removeBlock", blockId: b.id });
   }
-  ops.push({ type: "mergeParagraphs", firstBlockId: from.blockId });
+  if (!hiddenBetween) ops.push({ type: "mergeParagraphs", firstBlockId: from.blockId });
   return ops;
 }
 

@@ -91,6 +91,7 @@ export function styleEq(a: CharStyle, b: CharStyle): boolean {
     a.underline === b.underline &&
     a.strikethrough === b.strikethrough &&
     a.color === b.color &&
+    !!a.hidden === !!b.hidden && // hidden runs must never merge with visible ones
     (a.letterSpacingPx ?? 0) === (b.letterSpacingPx ?? 0) &&
     a.highlightColor === b.highlightColor &&
     a.verticalAlign === b.verticalAlign &&

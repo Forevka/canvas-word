@@ -8,6 +8,13 @@ import { BAND_CONTAINERS } from "./document";
 export const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 export const words = new Intl.Segmenter(undefined, { granularity: "word" });
 
+/** A paragraph whose every non-empty run is hidden (w:vanish): it has text but
+ *  none is visible. Such a paragraph is never laid out, caret-reachable, or
+ *  deletable — it's preserved metadata. A truly empty paragraph (no text at all)
+ *  is NOT hidden — it's a normal blank line. */
+export const isHiddenParagraph = (p: Paragraph): boolean =>
+  p.runs.some((r) => r.text.length > 0) && p.runs.every((r) => r.text.length === 0 || r.style.hidden === true);
+
 const paragraphsInBlocks = (blocks: Block[], includeCells: boolean): Paragraph[] => {
   const out: Paragraph[] = [];
   for (const b of blocks) {

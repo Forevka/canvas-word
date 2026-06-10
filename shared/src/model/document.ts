@@ -8,6 +8,11 @@ export interface CharStyle {
   underline: boolean;
   strikethrough: boolean;
   color: string;
+  /** Hidden text (OOXML w:vanish). Preserved through round-trips but NEVER laid
+   *  out, painted, or reachable by the caret/selection — and protected from
+   *  deletion (it survives Select-All → Delete). Inert metadata, e.g. the
+   *  bookmark-anchor paragraphs generated reports hide. */
+  hidden?: boolean;
   letterSpacingPx?: number;
   /** Background highlight (Word's text highlight). `| undefined` so patches can remove. */
   highlightColor?: string | undefined;

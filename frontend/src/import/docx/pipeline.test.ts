@@ -297,13 +297,16 @@ describe("docx pipeline — lossy policies emit warnings", () => {
     expect(para(r.doc.blocks[0]).runs[0]!.text).toBe("7");
   });
 
-  it("drops hidden text (w:vanish)", () => {
+  it("preserves hidden text (w:vanish) as a hidden run, not dropped", () => {
     const r = importBody(
       `<w:p><w:r><w:rPr><w:vanish/></w:rPr><w:t>secret</w:t></w:r><w:r><w:t>visible</w:t></w:r></w:p>`,
     );
     const p = para(r.doc.blocks[0]);
-    expect(p.runs.map((x) => x.text).join("")).toBe("visible");
-    expect(warningCodes(r)).toContain("hidden-text");
+    expect(p.runs.map((x) => x.text).join("")).toBe("secretvisible"); // text retained
+    const secret = p.runs.find((x) => x.text === "secret")!;
+    expect(secret.style.hidden).toBe(true);
+    expect(p.runs.find((x) => x.text === "visible")!.style.hidden).toBeUndefined();
+    expect(warningCodes(r)).not.toContain("hidden-text"); // no longer lossy
   });
 
 });

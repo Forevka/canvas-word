@@ -247,6 +247,28 @@ describe("engine — cell shading and borders", () => {
   });
 });
 
+describe("engine — hidden paragraphs", () => {
+  it("a fully-hidden (w:vanish) paragraph takes zero space and isn't placed", () => {
+    const a = para("first");
+    const hiddenP: Paragraph = {
+      kind: "paragraph",
+      id: fresh(),
+      revision: 0,
+      runs: [{ text: "secret", style: { ...CHAR, hidden: true } }],
+      style: { ...PARA },
+    };
+    const b = para("second");
+    const withHidden = layout(doc([a, hiddenP, b]));
+    const without = layout(doc([para("first"), para("second")]));
+    expect(placedOf(withHidden, hiddenP.id)).toBeNull(); // not laid out
+    // "second" lands at the SAME y whether or not the hidden anchor is present.
+    const gapWith = placedOf(withHidden, b.id)!.pb.y - placedOf(withHidden, a.id)!.pb.y;
+    const ctrl = without.pages[0]!.blocks;
+    const gapWithout = ctrl[1]!.y - ctrl[0]!.y;
+    expect(gapWith).toBeCloseTo(gapWithout, 1);
+  });
+});
+
 describe("engine — lists inside table cells", () => {
   const listCell = (text: string): TableCell => ({
     id: fresh(),

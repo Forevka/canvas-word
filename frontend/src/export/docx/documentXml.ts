@@ -67,6 +67,7 @@ function rPrXml(s: CharStyle): string {
   children.push(el("w:b", { "w:val": s.bold ? "1" : "0" }));
   children.push(el("w:i", { "w:val": s.italic ? "1" : "0" }));
   if (s.strikethrough) children.push(el("w:strike", { "w:val": "1" }));
+  if (s.hidden) children.push(el("w:vanish", { "w:val": "1" })); // preserved hidden text
   children.push(el("w:color", { "w:val": hex(s.color) }));
   children.push(el("w:sz", { "w:val": pxToHalfPoints(s.fontSizePx) }));
   children.push(el("w:szCs", { "w:val": pxToHalfPoints(s.fontSizePx) }));

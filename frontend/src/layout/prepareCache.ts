@@ -59,9 +59,12 @@ export function segmentRuns(runs: Run[]): { runs: Run[]; startOffset: number }[]
 }
 
 function toItems(runs: Run[]): RichInlineItem[] {
+  // Hidden runs stay in the list (so item indices line up with seg.runs and the
+  // run-offset accounting is unchanged) but contribute EMPTY text to pretext — no
+  // fragment, zero width, never painted. Offsets still span the full text.
   return runs.map((run) => {
-    const item: RichInlineItem = { text: run.text, font: charStyleToFont(run.style) };
-    if (run.style.letterSpacingPx !== undefined) item.letterSpacing = run.style.letterSpacingPx;
+    const item: RichInlineItem = { text: run.style.hidden ? "" : run.text, font: charStyleToFont(run.style) };
+    if (!run.style.hidden && run.style.letterSpacingPx !== undefined) item.letterSpacing = run.style.letterSpacingPx;
     return item;
   });
 }

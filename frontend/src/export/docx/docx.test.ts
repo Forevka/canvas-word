@@ -262,6 +262,21 @@ describe("DOCX export — round trip", () => {
     expect(Object.keys(b.bookmarks ?? {})).toContain("target");
   });
 
+  it("round-trips hidden text (w:vanish) instead of dropping it", () => {
+    const a = runImport(
+      simpleDocx(
+        `<w:p><w:r><w:rPr><w:vanish/></w:rPr><w:t>secret</w:t></w:r><w:r><w:t>shown</w:t></w:r></w:p>`,
+      ),
+    ).doc;
+    // exporter must emit w:vanish for the hidden run
+    expect(exportedDocumentXml(a)).toContain("<w:vanish");
+    const b = roundTrip(a);
+    const p = paras(b)[0]!;
+    const secret = p.runs.find((r) => r.text === "secret")!;
+    expect(secret.style.hidden).toBe(true);
+    expect(p.runs.find((r) => r.text === "shown")!.style.hidden).toBeUndefined();
+  });
+
   it("produces an archive the importer reads without error", () => {
     const a = runImport(simpleDocx(`<w:p><w:r><w:t>hello</w:t></w:r></w:p>`)).doc;
     const { bytes, warnings } = writeDocx(a);

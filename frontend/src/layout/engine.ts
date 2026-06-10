@@ -10,7 +10,7 @@ import {
   type RichInlineCursor,
 } from "@chenglou/pretext/rich-inline";
 import type { Block, CharStyle, Document, ImageBlock, Paragraph, Run, SectionPatch, SectionProps, TableBlock, TableCell, TabStop } from "@cw/shared";
-import { effectiveFractions } from "@cw/shared";
+import { effectiveFractions, isHiddenParagraph } from "@cw/shared";
 import { formatListNumber, markerText, type ListDefinition, type ListLevel } from "@cw/shared";
 import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock } from "./layoutTree";
 import { PrepareCache, prepareRuns, type PreparedSegment } from "./prepareCache";
@@ -137,6 +137,12 @@ function segRunOffsets(runs: Run[], base: number): number[] {
     acc += run.text.length;
   }
   return runStarts;
+}
+
+/** A fully-hidden paragraph takes ZERO space — unless it carries a structural
+ *  break, which we keep so the break isn't lost. */
+function isHiddenLayoutSkip(p: Paragraph): boolean {
+  return isHiddenParagraph(p) && !p.style.sectionBreak && !p.style.pageBreakBefore;
 }
 
 /** Default line metrics for a fragment-less line (empty paragraph / segment). */
@@ -707,6 +713,7 @@ function layoutDocument(
     while (bi > sections[secIdx]!.endBlock) applySection(sections[++secIdx]!.props);
     const block = doc.blocks[bi]!;
     if (block.kind === "paragraph") {
+      if (isHiddenLayoutSkip(block)) continue; // fully-hidden anchor: contributes no layout
       // Indented paragraphs (quotes, list levels) measure at the narrowed width;
       // colWidth IS contentWidth in single-column sections. TOC entries reserve
       // a right gutter so their text never collides with the page number.
