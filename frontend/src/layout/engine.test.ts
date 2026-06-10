@@ -393,6 +393,35 @@ describe("engine — footnotes", () => {
     expect(placedNote.page).toBe(refPage);
     expect(placedNote.pb.y).toBeGreaterThan(tree.pages[refPage]!.footnoteRuleY!);
   });
+
+  it("reserves and places a note for a footnote ref inside a table cell", () => {
+    const note = para("the footnote body");
+    const refCell: TableCell = {
+      id: fresh(),
+      blocks: [
+        {
+          kind: "paragraph",
+          id: fresh(),
+          revision: 0,
+          runs: [
+            { text: "cell text", style: { ...CHAR } },
+            { text: "1", style: { ...CHAR, footnoteRef: "fn1", verticalAlign: "super" } },
+          ],
+          style: { ...PARA },
+        },
+      ],
+    };
+    const t = table([[refCell, cell("other")]]);
+    const d: Document = { ...doc([t]), footnotes: { fn1: [note] } };
+    const tree = layout(d);
+    const refPage = placedOf(tree, t.id)!.page;
+    // separator rule reserved on the page carrying the table row with the ref…
+    expect(tree.pages[refPage]!.footnoteRuleY).toBeGreaterThan(0);
+    // …and the note body is placed at that page's bottom, below the rule.
+    const placedNote = placedOf(tree, note.id)!;
+    expect(placedNote.page).toBe(refPage);
+    expect(placedNote.pb.y).toBeGreaterThan(tree.pages[refPage]!.footnoteRuleY!);
+  });
 });
 
 // --- table of contents ----------------------------------------------------

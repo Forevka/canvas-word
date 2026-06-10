@@ -32,6 +32,11 @@ export type BandName = "header" | "footer";
 export const bandParagraphs = (doc: Document, band: BandContainer): Paragraph[] =>
   paragraphsInBlocks(doc.section[band] ?? [], true);
 
+/** Body paragraphs in document order, INCLUDING table-cell paragraphs (one
+ *  level deep). Excludes margin bands and footnote notes — the body story only.
+ *  Heading/TOC scans use this so headings inside table cells are found too. */
+export const bodyParagraphs = (doc: Document): Paragraph[] => paragraphsInBlocks(doc.blocks, true);
+
 /** All editable paragraphs in document order: body (including table cells),
  *  then every band story (header/footer + first/even variants). This is the
  *  index space commands use. */

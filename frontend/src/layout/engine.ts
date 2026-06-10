@@ -864,6 +864,54 @@ function layoutDocument(
     return fit;
   };
 
+  /** Page-bottom space the given refs' notes need (FN_SEP only when this page
+   *  has no notes yet), paired with the measures to commit. */
+  const measureNotes = (refs: [string, string][]): { H: number; measures: [string, string, NoteMeasure][] } => {
+    let H = pageNotes[page.index]!.length === 0 ? FN_SEP : 0;
+    const measures: [string, string, NoteMeasure][] = [];
+    for (const [id, numText] of refs) {
+      const m = noteMeasure(id);
+      if (m) {
+        H += m.height;
+        measures.push([id, numText, m]);
+      }
+    }
+    return { H, measures };
+  };
+
+  /** Reserve `H` px at this page's bottom and mark the notes placed. */
+  const commitNotes = (measures: [string, string, NoteMeasure][], H: number): void => {
+    for (const [id, numText] of measures) {
+      placedNotes.add(id);
+      pageNotes[page.index]!.push(id);
+      noteNumbers.set(id, numText);
+    }
+    reserved += H;
+    pageReserved[page.index] = reserved;
+  };
+
+  /** New (unplaced) footnote refs in a set of table rows (one level deep into
+   *  nested tables), document order: [refId, markerText][]. */
+  const refsInRows = (rows: TableBlock["rows"]): [string, string][] => {
+    const out: [string, string][] = [];
+    const visit = (blocks: Block[]): void => {
+      for (const b of blocks) {
+        if (b.kind === "paragraph") {
+          let acc = 0;
+          for (const r of b.runs) {
+            const id = r.style.footnoteRef;
+            if (id && fns[id] && !placedNotes.has(id) && !out.some(([o]) => o === id)) out.push([id, r.text]);
+            acc += r.text.length;
+          }
+        } else if (b.kind === "table") {
+          for (const row of b.rows) for (const cell of row.cells) visit(cell.blocks);
+        }
+      }
+    };
+    for (const row of rows) for (const cell of row.cells) visit(cell.blocks);
+    return out;
+  };
+
   /** Reserve footnote space for the new refs in lines[i..i+take), shrinking
    *  `take` until the chunk and its notes co-fit on this page. Mutates the
    *  reservation state when it commits. */
@@ -872,15 +920,7 @@ function layoutDocument(
       if (take <= 0) return take;
       const refs = refsInLines(lines, i, take);
       if (refs.length === 0) return take;
-      let H = pageNotes[page.index]!.length === 0 ? FN_SEP : 0;
-      const measures: [string, string, NoteMeasure][] = [];
-      for (const [id, numText] of refs) {
-        const m = noteMeasure(id);
-        if (m) {
-          H += m.height;
-          measures.push([id, numText, m]);
-        }
-      }
+      const { H, measures } = measureNotes(refs);
       if (measures.length === 0) return take;
       let chunkH = 0;
       for (let k = i; k < i + take; k++) chunkH += lines[k]!.height;
@@ -889,13 +929,7 @@ function layoutDocument(
         // Commit (overflow rather than loop when even one line can't co-fit
         // in an empty column — the note may then collide; Word splits notes,
         // we don't yet).
-        for (const [id, numText] of measures) {
-          placedNotes.add(id);
-          pageNotes[page.index]!.push(id);
-          noteNumbers.set(id, numText);
-        }
-        reserved += H;
-        pageReserved[page.index] = reserved;
+        commitNotes(measures, H);
         return take;
       }
       take--;
@@ -1102,6 +1136,30 @@ function layoutDocument(
         }
         fit = 1; // row taller than an empty column: overflow rather than loop
       }
+      // Footnote refs inside these rows reserve page-bottom space; shrink the
+      // chunk until rows + notes co-fit (the table analogue of fitChunkWithNotes).
+      let pendingNotes: [string, string, NoteMeasure][] = [];
+      let pendingNotesH = 0;
+      for (;;) {
+        const refs = refsInRows(m.block.rows.slice(ri, ri + fit));
+        if (refs.length === 0) break;
+        const { H, measures } = measureNotes(refs);
+        if (measures.length === 0) break;
+        let chunkH = 0;
+        for (let k = ri; k < ri + fit; k++) chunkH += m.rows[k]!.height;
+        if (y + chunkH + H <= bottomY() || (fit === 1 && !colHasContent())) {
+          pendingNotes = measures;
+          pendingNotesH = H;
+          break;
+        }
+        fit--;
+        if (fit === 0) break; // even one row + its notes overflow → next page
+      }
+      if (fit === 0) {
+        newPage();
+        continue;
+      }
+      if (pendingNotes.length > 0) commitNotes(pendingNotes, pendingNotesH);
       const chunk = m.rows.slice(ri, ri + fit);
       page.blocks.push(placeTable(m.block, chunk, m.colWidths, colX(), y, colWidth, ri));
       y += chunk.reduce((s, r) => s + r.height, 0);
@@ -1276,11 +1334,15 @@ function layoutDocument(
   // measured with a reserved right gutter). One pass, no fixpoint.
   if (tocPlacements.size > 0) {
     const firstPageOf = new Map<string, number>(); // blockId -> displayed number
-    for (const pg of pages) {
-      for (const b of pg.blocks) {
-        if (!firstPageOf.has(b.blockId)) firstPageOf.set(b.blockId, pageNumbers[pg.index]!);
+    const mapPage = (blocks: PlacedBlock[], num: number): void => {
+      for (const b of blocks) {
+        if (!firstPageOf.has(b.blockId)) firstPageOf.set(b.blockId, num);
+        // Headings (TOC targets) can live inside table cells — recurse so their
+        // page number resolves just like body paragraphs.
+        if (b.table) for (const row of b.table.rows) for (const cell of row.cells) mapPage(cell.blocks, num);
       }
-    }
+    };
+    for (const pg of pages) mapPage(pg.blocks, pageNumbers[pg.index]!);
     for (const rec of tocPlacements.values()) {
       const target = rec.para.style.tocEntry!.targetId;
       const num = firstPageOf.get(target);
