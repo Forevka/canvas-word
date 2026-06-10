@@ -162,6 +162,30 @@ describe("DOCX export — round trip", () => {
     expect(b.lists?.[listId]?.levels[0]?.format).toBe("decimal");
   });
 
+  it("preserves a list on a paragraph INSIDE a table cell", () => {
+    const numbering = `<?xml version="1.0"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum>` +
+      `<w:num w:numId="3"><w:abstractNumId w:val="0"/></w:num></w:numbering>`;
+    const docx = makeDocx({
+      "[Content_Types].xml": CONTENT_TYPES_XML,
+      "word/document.xml": documentXml(
+        `<w:tbl><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid>` +
+          `<w:tr><w:tc><w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr></w:pPr><w:r><w:t>cell item</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`,
+      ),
+      "word/_rels/document.xml.rels": relsXml([{ id: "rId1", type: REL_TYPES.numbering, target: "numbering.xml" }]),
+      "word/numbering.xml": numbering,
+    });
+    const a = runImport(docx).doc;
+    const cellParaA = tables(a)[0]!.rows[0]!.cells[0]!.blocks[0]!;
+    expect(cellParaA.kind === "paragraph" && cellParaA.style.list).toBeDefined(); // imported onto the cell paragraph
+    const b = roundTrip(a);
+    const cellParaB = tables(b)[0]!.rows[0]!.cells[0]!.blocks[0]!;
+    expect(cellParaB.kind === "paragraph" && cellParaB.style.list).toBeDefined(); // and survives export → re-import
+    const listId = cellParaB.kind === "paragraph" ? cellParaB.style.list!.listId : "";
+    expect(b.lists?.[listId]?.levels[0]?.format).toBe("decimal");
+    expect(cellText(cellParaB)).toBe("cell item");
+  });
+
   it("preserves per-section page geometry", () => {
     // A4 (11906 x 16838 twips) body section.
     const a = runImport(
