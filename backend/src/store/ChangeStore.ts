@@ -90,6 +90,16 @@ export interface DeliveryRecord {
   createdAt: number;
 }
 
+/** A 3rd-party integration token (API key). The hash is never returned. */
+export interface ApiTokenRecord {
+  id: string;
+  name: string;
+  prefix: string;
+  active: boolean;
+  createdAt: number;
+  lastUsedAt: number | null;
+}
+
 export interface ChangeStore {
   /** Create a document from a base snapshot (stored as version 0). */
   createDocument(
@@ -113,6 +123,12 @@ export interface ChangeStore {
   recordDelivery(rec: Omit<DeliveryRecord, "id" | "createdAt">): Promise<void>;
   /** Delivery log, newest first, optionally scoped to one webhook. */
   listDeliveries(webhookId?: string): Promise<DeliveryRecord[]>;
+  /** Integration tokens (API keys) for machine-to-machine upload. */
+  createApiToken(input: { name: string; tokenHash: string; prefix: string }): Promise<ApiTokenRecord>;
+  listApiTokens(): Promise<ApiTokenRecord[]>;
+  revokeApiToken(id: string): Promise<void>;
+  /** True if the hash matches an active token; touches its last_used_at. */
+  verifyApiToken(tokenHash: string): Promise<boolean>;
   /** Newest snapshot (base or checkpoint) + the version it represents. */
   getSnapshot(docId: string): Promise<DocSnapshotRecord | null>;
   /** Changes with seq >= sinceSeq, in seq order. */
@@ -459,6 +475,39 @@ export class PgChangeStore implements ChangeStore {
     return res.rows.map(rowToDelivery);
   }
 
+  async createApiToken(input: { name: string; tokenHash: string; prefix: string }): Promise<ApiTokenRecord> {
+    const res = await this.pool.query<ApiTokenRow>(
+      `INSERT INTO api_tokens (name, token_hash, prefix) VALUES ($1, $2, $3)
+       RETURNING id, name, prefix, active,
+                 (extract(epoch from created_at) * 1000)::bigint AS created_at,
+                 (extract(epoch from last_used_at) * 1000)::bigint AS last_used_at`,
+      [input.name, input.tokenHash, input.prefix],
+    );
+    return rowToApiToken(res.rows[0]!);
+  }
+
+  async listApiTokens(): Promise<ApiTokenRecord[]> {
+    const res = await this.pool.query<ApiTokenRow>(
+      `SELECT id, name, prefix, active,
+              (extract(epoch from created_at) * 1000)::bigint AS created_at,
+              (extract(epoch from last_used_at) * 1000)::bigint AS last_used_at
+       FROM api_tokens ORDER BY created_at DESC`,
+    );
+    return res.rows.map(rowToApiToken);
+  }
+
+  async revokeApiToken(id: string): Promise<void> {
+    await this.pool.query("DELETE FROM api_tokens WHERE id = $1", [id]);
+  }
+
+  async verifyApiToken(tokenHash: string): Promise<boolean> {
+    const res = await this.pool.query(
+      "UPDATE api_tokens SET last_used_at = now() WHERE token_hash = $1 AND active = true RETURNING id",
+      [tokenHash],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
   private rowToChange(docId: string, r: Record<string, unknown>): Change {
     return {
       id: r.change_id as string,
@@ -520,5 +569,25 @@ function rowToDelivery(r: DeliveryRow): DeliveryRecord {
     attempts: r.attempts,
     lastError: r.last_error,
     createdAt: Number(r.created_at),
+  };
+}
+
+interface ApiTokenRow {
+  id: string;
+  name: string;
+  prefix: string;
+  active: boolean;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+function rowToApiToken(r: ApiTokenRow): ApiTokenRecord {
+  return {
+    id: r.id,
+    name: r.name,
+    prefix: r.prefix,
+    active: r.active,
+    createdAt: Number(r.created_at),
+    lastUsedAt: r.last_used_at != null ? Number(r.last_used_at) : null,
   };
 }

@@ -8,7 +8,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { gunzipSync } from "node:zlib";
 import { WebSocketServer, type WebSocket } from "ws";
 import { reconstruct, type Change, type SerializedDocument, type UserInfo } from "@cw/shared";
-import { checkCredentials, issueToken, requireAdmin } from "./admin/auth";
+import { authFromRequest, checkCredentials, issueToken, requireAdmin } from "./admin/auth";
+import { hashToken, newApiToken } from "./auth/apiToken";
 import { createPool } from "./db";
 import { exportDoc } from "./export/serverExport";
 import { parseAndStore } from "./import/serverImport";
@@ -45,6 +46,23 @@ function sanitizeFilename(name: string): string {
 }
 
 const randomSecret = (): string => randomBytes(24).toString("hex");
+
+/** Bearer value from the Authorization header (admin token OR an integration token). */
+function bearerToken(req: IncomingMessage): string | undefined {
+  const h = req.headers["authorization"];
+  if (!h || Array.isArray(h)) return undefined;
+  const m = /^Bearer\s+(.+)$/i.exec(h.trim());
+  return m ? m[1] : undefined;
+}
+
+/** Upload auth: a dashboard admin token (UI) OR a 3rd-party integration token
+ *  (sent as X-API-Key or Bearer). */
+async function authorizeUpload(req: IncomingMessage, store: ChangeStore): Promise<boolean> {
+  if (authFromRequest(req)) return true; // admin (dashboard) token
+  const raw = headerStr(req.headers["x-api-key"]) ?? bearerToken(req);
+  if (!raw) return false;
+  return store.verifyApiToken(hashToken(raw));
+}
 
 // --- tiny request helpers ---------------------------------------------------
 
@@ -308,6 +326,25 @@ async function handle(
         }
       }
     }
+
+    // Integration tokens (API keys) for 3rd-party /upload.
+    if (parts[1] === "tokens") {
+      if (method === "GET" && parts.length === 2) {
+        return sendJson(res, 200, { tokens: await store.listApiTokens() });
+      }
+      if (method === "POST" && parts.length === 2) {
+        const b = await readJson<{ name?: string }>(req);
+        const name = b.name?.trim() || "integration";
+        const { token, tokenHash, prefix } = newApiToken();
+        const rec = await store.createApiToken({ name, tokenHash, prefix });
+        // The plaintext token is returned ONCE here and never stored.
+        return sendJson(res, 201, { ...rec, token });
+      }
+      if (method === "DELETE" && parts[2] && parts.length === 3) {
+        await store.revokeApiToken(parts[2]);
+        return sendJson(res, 200, { id: parts[2] });
+      }
+    }
     return sendJson(res, 404, { error: "not found" });
   }
 
@@ -315,7 +352,9 @@ async function handle(
   // caller can redirect into WordCanvas({ docId }). Body = raw file bytes;
   // filename + optional user come from headers.
   if (method === "POST" && parts.length === 1 && parts[0] === "upload") {
-    if (UPLOAD_REQUIRES_AUTH && !requireAdmin(req, res)) return;
+    if (UPLOAD_REQUIRES_AUTH && !(await authorizeUpload(req, store))) {
+      return sendJson(res, 401, { error: "unauthorized" });
+    }
     const bytes = await readBody(req);
     const filename = headerStr(req.headers["x-filename"]) ?? "Untitled.docx";
     const userHeader = headerStr(req.headers["x-user"]);

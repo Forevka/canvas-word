@@ -5,6 +5,7 @@
 import { randomUUID } from "node:crypto";
 import { transformOps, type Change, type SerializedDocument, type UserInfo } from "@cw/shared";
 import type {
+  ApiTokenRecord,
   ChangeStore,
   DeliveryRecord,
   DocSnapshotRecord,
@@ -31,6 +32,7 @@ export class MemoryChangeStore implements ChangeStore {
   private readonly media = new Map<string, MediaRecord>();
   private readonly webhooks = new Map<string, WebhookRecord>();
   private readonly deliveries: DeliveryRecord[] = [];
+  private readonly apiTokens = new Map<string, ApiTokenRecord & { tokenHash: string }>();
 
   async createDocument(
     base: SerializedDocument,
@@ -212,5 +214,45 @@ export class MemoryChangeStore implements ChangeStore {
     return this.deliveries
       .filter((d) => !webhookId || d.webhookId === webhookId)
       .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  async createApiToken(input: { name: string; tokenHash: string; prefix: string }): Promise<ApiTokenRecord> {
+    const rec: ApiTokenRecord = {
+      id: randomUUID(),
+      name: input.name,
+      prefix: input.prefix,
+      active: true,
+      createdAt: Date.now(),
+      lastUsedAt: null,
+    };
+    this.apiTokens.set(rec.id, { ...rec, tokenHash: input.tokenHash });
+    return rec;
+  }
+
+  async listApiTokens(): Promise<ApiTokenRecord[]> {
+    return [...this.apiTokens.values()]
+      .map((t) => ({
+        id: t.id,
+        name: t.name,
+        prefix: t.prefix,
+        active: t.active,
+        createdAt: t.createdAt,
+        lastUsedAt: t.lastUsedAt,
+      }))
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  async revokeApiToken(id: string): Promise<void> {
+    this.apiTokens.delete(id);
+  }
+
+  async verifyApiToken(tokenHash: string): Promise<boolean> {
+    for (const t of this.apiTokens.values()) {
+      if (t.active && t.tokenHash === tokenHash) {
+        t.lastUsedAt = Date.now();
+        return true;
+      }
+    }
+    return false;
   }
 }

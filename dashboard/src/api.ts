@@ -2,6 +2,8 @@
 // clears it and surfaces as AuthError so the shell can bounce back to login.
 
 import type {
+  ApiTokenCreated,
+  ApiTokenRecord,
   DeliveryRecord,
   DocumentActivity,
   DocumentSummary,
@@ -72,6 +74,13 @@ export const api = {
     ),
   deliveries: (id: string) =>
     req(`/admin/webhooks/${id}/deliveries`).then(json<{ deliveries: DeliveryRecord[] }>).then((d) => d.deliveries),
+  listTokens: () =>
+    req("/admin/tokens").then(json<{ tokens: ApiTokenRecord[] }>).then((d) => d.tokens),
+  createToken: (name: string) =>
+    req("/admin/tokens", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ name }) }).then(
+      json<ApiTokenCreated>,
+    ),
+  revokeToken: (id: string) => req(`/admin/tokens/${id}`, { method: "DELETE" }).then(() => undefined),
   upload: (file: File, user?: { id: string; firstName: string; lastName: string }) => {
     const headers = new Headers();
     headers.set("x-filename", file.name);

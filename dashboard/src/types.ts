@@ -66,3 +66,17 @@ export interface UploadResult {
   version: number;
   warnings: { code: string; message: string }[];
 }
+
+export interface ApiTokenRecord {
+  id: string;
+  name: string;
+  prefix: string;
+  active: boolean;
+  createdAt: number;
+  lastUsedAt: number | null;
+}
+
+/** Create response — includes the plaintext token, shown once. */
+export interface ApiTokenCreated extends ApiTokenRecord {
+  token: string;
+}

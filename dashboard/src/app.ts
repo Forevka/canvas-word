@@ -1,9 +1,9 @@
 // Admin dashboard shell: login gate + tabbed views (Documents, Users, Webhooks,
 // Upload). Vanilla TS; each view fetches and renders into the main panel.
 
-import { api, AuthError, downloadUrl, editorUrl, getToken, login } from "./api";
+import { api, AuthError, BACKEND_URL, downloadUrl, editorUrl, getToken, login } from "./api";
 import { clear, el, fmtDate, fmtName } from "./dom";
-import type { DeliveryRecord, WebhookRecord } from "./types";
+import type { ApiTokenCreated, DeliveryRecord, WebhookRecord } from "./types";
 
 const root = document.getElementById("app")!;
 
@@ -53,6 +53,7 @@ const TABS: Tab[] = [
   { id: "documents", label: "Documents", render: renderDocuments },
   { id: "users", label: "Users", render: renderUsers },
   { id: "webhooks", label: "Webhooks", render: renderWebhooks },
+  { id: "tokens", label: "Integrations", render: renderTokens },
   { id: "upload", label: "Upload", render: renderUpload },
 ];
 
@@ -326,6 +327,111 @@ async function loadDeliveries(webhookId: string, box: HTMLElement): Promise<void
     ),
   );
   box.append(table(["Status", "HTTP", "Attempts", "Doc", "When", "Error"], rows));
+}
+
+// --- integrations (API tokens) ----------------------------------------------
+
+function renderTokens(main: HTMLElement): void {
+  clear(main);
+  const reveal = el("div"); // one-time token box appears here after create
+  const listBox = el("div");
+  main.append(tokenForm(reveal, listBox), reveal, listBox);
+  void refreshTokenList(listBox);
+}
+
+function tokenForm(reveal: HTMLElement, listBox: HTMLElement): HTMLElement {
+  const name = el("input", { placeholder: "e.g. partner-crm" });
+  const err = el("div", { class: "err" });
+  const submit = async (e: Event): Promise<void> => {
+    e.preventDefault();
+    err.textContent = "";
+    try {
+      const created = await api.createToken(name.value.trim() || "integration");
+      name.value = "";
+      clear(reveal);
+      reveal.append(tokenRevealBox(created));
+      await refreshTokenList(listBox);
+    } catch (ex) {
+      if (ex instanceof AuthError) return renderLogin();
+      err.textContent = ex instanceof Error ? ex.message : String(ex);
+    }
+  };
+  return el(
+    "form",
+    { class: "card stack", onsubmit: submit, style: "margin-bottom:16px" },
+    el("h2", {}, "Create integration token"),
+    el("p", { class: "muted" }, "A long-lived API key a 3rd-party system uses to POST /upload and get back a docId. Shown once; only its hash is stored."),
+    el("div", { class: "row" }, name, el("button", { class: "primary", type: "submit" }, "Create token")),
+    err,
+  );
+}
+
+function tokenRevealBox(created: ApiTokenCreated): HTMLElement {
+  const usage = `curl -X POST ${BACKEND_URL}/upload \\
+  -H "X-API-Key: ${created.token}" \\
+  -H "X-Filename: report.docx" \\
+  --data-binary @report.docx
+# -> { "docId": "...", "version": 0, "warnings": [] }`;
+  return el(
+    "div",
+    { class: "card stack", style: "border-color:var(--accent);margin-bottom:16px" },
+    el("strong", {}, "Copy this token now — it won't be shown again."),
+    el("code", { class: "mono" }, created.token),
+    el("button", { onclick: () => void navigator.clipboard?.writeText(created.token) }, "Copy"),
+    el(
+      "details",
+      {},
+      el("summary", { class: "muted" }, "How a 3rd-party system uses it"),
+      el("pre", { class: "mono muted", style: "white-space:pre-wrap" }, usage),
+    ),
+  );
+}
+
+async function refreshTokenList(listBox: HTMLElement): Promise<void> {
+  clear(listBox);
+  let tokens;
+  try {
+    tokens = await api.listTokens();
+  } catch (ex) {
+    if (ex instanceof AuthError) return renderLogin();
+    listBox.append(el("p", { class: "err" }, ex instanceof Error ? ex.message : String(ex)));
+    return;
+  }
+  if (tokens.length === 0) {
+    listBox.append(el("p", { class: "muted" }, "No integration tokens yet."));
+    return;
+  }
+  const rows = tokens.map((t) =>
+    el(
+      "tr",
+      {},
+      el("td", {}, el("div", {}, t.name), el("code", { class: "mono muted" }, `${t.prefix}…`)),
+      el("td", {}, el("span", { class: `pill ${t.active ? "ok" : "off"}` }, t.active ? "active" : "revoked")),
+      el("td", {}, fmtDate(t.createdAt)),
+      el("td", {}, fmtDate(t.lastUsedAt)),
+      el(
+        "td",
+        { class: "actions" },
+        el(
+          "button",
+          {
+            class: "danger",
+            onclick: async () => {
+              if (!confirm(`Revoke "${t.name}"? Integrations using it will stop working.`)) return;
+              try {
+                await api.revokeToken(t.id);
+                await refreshTokenList(listBox);
+              } catch (ex) {
+                if (ex instanceof AuthError) renderLogin();
+              }
+            },
+          },
+          "Revoke",
+        ),
+      ),
+    ),
+  );
+  listBox.append(table(["Token", "Status", "Created", "Last used", ""], rows));
 }
 
 // --- upload -----------------------------------------------------------------
