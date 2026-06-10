@@ -17,7 +17,7 @@ import type {
   TableCell,
 } from "@cw/shared";
 import { createLayoutEngine, effectiveSection, resolveSections } from "./engine";
-import { gridColumnCount, effectiveFractions } from "@cw/shared";
+import { gridColumnCount, effectiveFractions, defaultListDefinition } from "@cw/shared";
 import type { PlacedBlock } from "./layoutTree";
 
 // --- builders -------------------------------------------------------------
@@ -244,6 +244,41 @@ describe("engine — cell shading and borders", () => {
     expect(c.shading).toBe("#fff2cc");
     expect(c.borders?.top?.color).toBe("#c00000");
     expect(c.borders?.bottom?.widthPx).toBe(2);
+  });
+});
+
+describe("engine — lists inside table cells", () => {
+  const listCell = (text: string): TableCell => ({
+    id: fresh(),
+    blocks: [para(text, { list: { listId: "numbers", level: 0 } })],
+  });
+  const cellMarkers = (tree: ReturnType<typeof layout>, tableId: string): string[] => {
+    const tbl = placedOf(tree, tableId)!.pb.table!;
+    const out: string[] = [];
+    for (const row of tbl.rows) for (const c of row.cells) for (const b of c.blocks) if (b.marker) out.push(b.marker.text);
+    return out;
+  };
+
+  it("numbers a list straight through cells in reading order (Word continuation)", () => {
+    // row0: [a, b] ; row1: [c, d]. Numbering continues 1..4 across the cells.
+    const t = table([
+      [listCell("a"), listCell("b")],
+      [listCell("c"), listCell("d")],
+    ]);
+    const d: Document = { ...doc([t]), lists: { numbers: defaultListDefinition("decimal") } };
+    expect(cellMarkers(layout(d), t.id)).toEqual(["1.", "2.", "3.", "4."]);
+  });
+
+  it("hangs the marker inside the cell, left of the indented text", () => {
+    const t = table([[listCell("item")]]);
+    const d: Document = { ...doc([t]), lists: { numbers: defaultListDefinition("decimal") } };
+    const tbl = placedOf(layout(d), t.id)!.pb.table!;
+    const cellBox = tbl.rows[0]!.cells[0]!;
+    const placedPara = cellBox.blocks[0]!;
+    expect(placedPara.marker).toBeDefined();
+    // marker sits left of the text origin but not outside the cell's left edge.
+    expect(placedPara.marker!.x).toBeLessThan(placedPara.x);
+    expect(placedPara.marker!.x).toBeGreaterThanOrEqual(cellBox.x);
   });
 });
 

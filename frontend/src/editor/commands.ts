@@ -330,14 +330,17 @@ import {
   type ListDefinition,
 } from "@cw/shared";
 
-/** Top-level paragraphs covered by the selection (lists are body-only for now). */
+/** Paragraphs covered by the selection that can take a list: top-level body
+ *  paragraphs and body table-cell paragraphs (Word numbers a list straight
+ *  through cells in reading order). Bands and footnotes are excluded. */
 function selectedTopLevelParagraphs(state: EditorState): Paragraph[] {
   const out: Paragraph[] = [];
   const seen = new Set<string>();
   for (const s of selectedSegments(state)) {
     if (seen.has(s.block.id)) continue;
     seen.add(s.block.id);
-    if (containerOf(state.doc, s.block.id)?.where === "body") out.push(s.block);
+    const loc = locateParagraph(state.doc, s.block.id);
+    if (loc?.kind === "top" || (loc?.kind === "cell" && loc.where === "body")) out.push(s.block);
   }
   return out;
 }

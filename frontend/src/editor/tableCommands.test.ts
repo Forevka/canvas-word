@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Document, SectionProps, TableBlock, TableCell } from "@cw/shared";
 import { applyOp, buildTableGrid } from "@cw/shared";
-import { mergeCellsCmd, setCellsBordersCmd, setCellsShadingCmd, unmergeCellCmd } from "./commands";
+import { mergeCellsCmd, setCellsBordersCmd, setCellsShadingCmd, toggleList, unmergeCellCmd } from "./commands";
 import type { CellBorder } from "@cw/shared";
 import type { CellSelection, EditorState } from "./state";
 
@@ -163,6 +163,23 @@ describe("setCellsShadingCmd", () => {
       setCellsShadingCmd(null),
     );
     expect(tableOf(cleared).rows[0]!.cells[0]!.shading).toBeUndefined();
+  });
+});
+
+describe("lists in table cells", () => {
+  it("toggleList applies a list to a paragraph inside a cell", () => {
+    const table = grid2x2();
+    const cellPara = table.rows[0]!.cells[0]!.blocks[0]!;
+    const id = cellPara.kind === "paragraph" ? cellPara.id : "";
+    const state: EditorState = {
+      doc: docWith(table),
+      selection: { anchor: { blockId: id, offset: 0 }, focus: { blockId: id, offset: 0 } },
+      cellSelection: null,
+    };
+    const doc = runCmd(state, toggleList("bullet"));
+    const para = (doc.blocks[0] as TableBlock).rows[0]!.cells[0]!.blocks[0]!;
+    expect(para.kind === "paragraph" && para.style.list?.listId).toBe("bullets");
+    expect(doc.lists?.["bullets"]).toBeDefined(); // definition materialized
   });
 });
 

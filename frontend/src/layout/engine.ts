@@ -651,6 +651,9 @@ function layoutDocument(
   const indentOf = (p: Paragraph): number =>
     p.style.indentLeftPx + (listLevelOf(p)?.indentLeftPx ?? 0);
   const rightIndentOf = (p: Paragraph): number => p.style.indentRightPx ?? 0;
+  // The list-level indent alone (table cells add it ON TOP of the paragraph's
+  // own indent, which their placement already applies).
+  const listIndentOf = (p: Paragraph): number => listLevelOf(p)?.indentLeftPx ?? 0;
 
   const counters = new Map<string, number[]>();
   // Marker x is resolved at PLACEMENT time (placed.x - hangingPx) — with
@@ -676,6 +679,19 @@ function layoutDocument(
     });
   };
 
+  // Numbering runs over the whole body in reading order BEFORE measurement —
+  // recursing into table cells so a list continues straight through them (Word
+  // counts 1,2,3 down a column of cells, not restarting per cell). Markers are
+  // then read at placement time for both body and cell paragraphs.
+  const numberBlocks = (blocks: Block[]): void => {
+    for (const b of blocks) {
+      if (b.kind === "paragraph") numberParagraph(b);
+      else if (b.kind === "table") for (const row of b.rows) for (const cell of row.cells) numberBlocks(cell.blocks);
+    }
+  };
+  numberBlocks(doc.blocks);
+  const cellListCtx: CellListCtx = { indentOf: listIndentOf, markers };
+
   // Measure every block first (prepare/line caches make re-runs cheap); break
   // rules need full sizes before placement decisions.
   type Measured =
@@ -691,7 +707,6 @@ function layoutDocument(
     while (bi > sections[secIdx]!.endBlock) applySection(sections[++secIdx]!.props);
     const block = doc.blocks[bi]!;
     if (block.kind === "paragraph") {
-      numberParagraph(block);
       // Indented paragraphs (quotes, list levels) measure at the narrowed width;
       // colWidth IS contentWidth in single-column sections. TOC entries reserve
       // a right gutter so their text never collides with the page number.
@@ -704,7 +719,7 @@ function layoutDocument(
     } else if (block.kind === "image") {
       measured.push({ kind: "image", block, height: block.heightPx });
     } else {
-      const t = measureTable(block, colWidth, getLines);
+      const t = measureTable(block, colWidth, getLines, cellListCtx);
       measured.push({ kind: "table", block, ...t });
     }
   }
@@ -1161,7 +1176,7 @@ function layoutDocument(
       }
       if (pendingNotes.length > 0) commitNotes(pendingNotes, pendingNotesH);
       const chunk = m.rows.slice(ri, ri + fit);
-      page.blocks.push(placeTable(m.block, chunk, m.colWidths, colX(), y, colWidth, ri));
+      page.blocks.push(placeTable(m.block, chunk, m.colWidths, colX(), y, colWidth, ri, cellListCtx));
       y += chunk.reduce((s, r) => s + r.height, 0);
       ri += fit;
       if (ri < m.rows.length) newPage();
@@ -1493,8 +1508,8 @@ function layoutBand(
       });
       y += b.heightPx;
     } else {
-      const m = measureTable(b, width, getBandLines);
-      placed.push(placeTable(b, m.rows, m.colWidths, originX, y, width));
+      const m = measureTable(b, width, getBandLines, EMPTY_LIST_CTX);
+      placed.push(placeTable(b, m.rows, m.colWidths, originX, y, width, 0, EMPTY_LIST_CTX));
       y += m.height;
     }
   }
@@ -1559,10 +1574,23 @@ interface MeasuredRow {
 
 const CELL_BLOCK_GAP = 4; // vertical gap around non-paragraph blocks in cells
 
+/** List geometry threaded into the table layout so cell paragraphs can carry a
+ *  list marker, just like body paragraphs. `indentOf` is the list-level indent
+ *  (added on top of the cell paragraph's own indent); `markers` is the shared
+ *  per-paragraph marker map filled by the numbering pass. */
+interface CellListCtx {
+  indentOf: (p: Paragraph) => number;
+  markers: Map<string, { text: string; style: CharStyle; hangingPx: number }>;
+}
+
+/** Lists are body-only, so band (header/footer) tables carry no list geometry. */
+const EMPTY_LIST_CTX: CellListCtx = { indentOf: () => 0, markers: new Map() };
+
 function measureTable(
   t: TableBlock,
   contentWidth: number,
   getLines: (p: Paragraph, width: number) => LineBox[],
+  listCtx: CellListCtx,
 ): { rows: MeasuredRow[]; colWidths: number[]; height: number } {
   const fractions = effectiveFractions(t);
   const colWidths = fractions.map((f) => f * contentWidth);
@@ -1589,7 +1617,9 @@ function measureTable(
       let h = 0;
       const items: MeasuredCellItem[] = cell.blocks.map((b) => {
         if (b.kind === "paragraph") {
-          const lines = getLines(b, innerWidth);
+          // A list paragraph reserves its marker's hanging indent: measure the
+          // text at the cell width minus the list indent so it wraps in-cell.
+          const lines = getLines(b, Math.max(8, innerWidth - listCtx.indentOf(b)));
           h += b.style.spaceBeforePx + totalLinesHeight(lines) + b.style.spaceAfterPx;
           return { kind: "para", block: b, lines };
         }
@@ -1601,7 +1631,7 @@ function measureTable(
           h += ih + CELL_BLOCK_GAP;
           return { kind: "image", block: b, width: w, height: ih };
         }
-        const m = measureTable(b, innerWidth, getLines); // nested table
+        const m = measureTable(b, innerWidth, getLines, listCtx); // nested table
         h += m.height + CELL_BLOCK_GAP;
         return { kind: "table", block: b, ...m };
       });
@@ -1641,7 +1671,8 @@ function placeTable(
   x: number,
   y: number,
   width: number,
-  firstRowIndex = 0,
+  firstRowIndex: number,
+  listCtx: CellListCtx,
 ): PlacedBlock {
   // Cumulative grid-column x offsets, so a cell lands at its colStart regardless
   // of rowspan holes in this row; and cumulative row y within the chunk, so a
@@ -1668,13 +1699,21 @@ function placeTable(
       for (const it of mc.items) {
         if (it.kind === "para") {
           py += it.block.style.spaceBeforePx;
-          blocks.push({
+          // List paragraphs shift right by the list indent; the marker hangs in
+          // that indent, clamped so it stays inside the cell's left padding.
+          const lx = cx + mgn.left + it.block.style.indentLeftPx + listCtx.indentOf(it.block);
+          const placedPara: PlacedBlock = {
             blockId: it.block.id,
-            x: cx + mgn.left + it.block.style.indentLeftPx,
+            x: lx,
             y: py,
             firstLineIndex: 0,
             lines: it.lines, // line.y is already block-relative; coords stay consistent
-          });
+          };
+          const marker = listCtx.markers.get(it.block.id);
+          if (marker) {
+            placedPara.marker = { text: marker.text, style: marker.style, x: Math.max(cx + 1, lx - marker.hangingPx) };
+          }
+          blocks.push(placedPara);
           py += totalLinesHeight(it.lines) + it.block.style.spaceAfterPx;
         } else if (it.kind === "image") {
           const innerH = cellHeight - mgn.top - mgn.bottom;
@@ -1713,7 +1752,7 @@ function placeTable(
           }
         } else {
           // nested table — placed recursively, read-only inner cells
-          blocks.push(placeTable(it.block, it.rows, it.colWidths, cx + mgn.left, py, innerWidth));
+          blocks.push(placeTable(it.block, it.rows, it.colWidths, cx + mgn.left, py, innerWidth, 0, listCtx));
           py += it.height + CELL_BLOCK_GAP;
         }
       }
