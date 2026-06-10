@@ -4,6 +4,7 @@
 // in Phase 4). Reconstructing a version is base snapshot + replay (shared).
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { gunzipSync } from "node:zlib";
 import { WebSocketServer, type WebSocket } from "ws";
 import { reconstruct, type Change, type SerializedDocument, type UserInfo } from "@cw/shared";
 import { createPool } from "./db";
@@ -23,7 +24,13 @@ function sendJson(res: ServerResponse, code: number, body: unknown): void {
 async function readBody(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const c of req) chunks.push(c as Buffer);
-  return Buffer.concat(chunks);
+  const raw = Buffer.concat(chunks);
+  // Transparently inflate gzipped bodies (clients gzip the large JSON snapshot;
+  // Content-Encoding: gzip). Media PUTs send raw bytes — already-compressed images.
+  if (raw.length > 0 && (req.headers["content-encoding"] ?? "").toLowerCase() === "gzip") {
+    return gunzipSync(raw);
+  }
+  return raw;
 }
 
 async function readJson<T>(req: IncomingMessage): Promise<T> {
@@ -164,7 +171,7 @@ async function handle(
     res.writeHead(204, {
       "access-control-allow-origin": "*",
       "access-control-allow-methods": "GET,POST,PUT,OPTIONS",
-      "access-control-allow-headers": "content-type",
+      "access-control-allow-headers": "content-type,content-encoding",
     });
     res.end();
     return;

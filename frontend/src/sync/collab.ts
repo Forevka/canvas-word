@@ -6,28 +6,63 @@
 import { collectMediaIds, serializeDocument, type Document, type UserInfo } from "@cw/shared";
 import { mediaStore, rehydrateDocMedia } from "../media/store";
 
-/** Upload referenced media, then create a server document from the snapshot,
- *  attributed to `user` (the creator). */
+/** Max media uploads in flight at once. They share one HTTP/2 connection and
+ *  each costs a roughly fixed server round-trip (content-hash + idempotent
+ *  INSERT) independent of payload size — so the upload is latency-bound, and a
+ *  small pool collapses N serial round-trips into a few parallel waves. */
+const MEDIA_UPLOAD_CONCURRENCY = 6;
+
+/** gzip a UTF-8 string via the platform CompressionStream (no JS deflate lib).
+ *  The document snapshot is large, repetitive JSON that shrinks ~8×, turning the
+ *  POST /docs upload from hundreds of KB into tens. */
+async function gzipText(text: string): Promise<ArrayBuffer> {
+  const stream = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
+  return new Response(stream).arrayBuffer();
+}
+
+/** Publish a local document: upload its media and create the server document
+ *  from the snapshot, attributed to `user` (the creator). The snapshot POST is
+ *  independent of media (the server stores media separately, content-addressed
+ *  and idempotent), so media uploads and the snapshot POST all run concurrently
+ *  rather than serially — turning ~(N×RTT + post) into ~max(a few waves, post). */
 export async function publishDocument(
   backendUrl: string,
   doc: Document,
   user?: UserInfo,
 ): Promise<{ docId: string; version: number }> {
   const store = mediaStore();
-  for (const id of collectMediaIds(doc)) {
-    const blob = store.get(id);
-    if (!blob) continue; // bytes not in this session (shouldn't happen for imported media)
-    await fetch(`${backendUrl}/media/${encodeURIComponent(id)}`, {
-      method: "PUT",
-      headers: { "content-type": blob.mime },
-      body: new Uint8Array(blob.bytes),
-    });
-  }
-  const res = await fetch(`${backendUrl}/docs`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ snapshot: serializeDocument(doc), createdBy: user?.id, user }),
-  });
+  const blobs = [...collectMediaIds(doc)]
+    .map((id) => ({ id, blob: store.get(id) }))
+    .filter((e): e is { id: string; blob: NonNullable<typeof e.blob> } => e.blob != null);
+
+  // A worker pulls from the shared queue until it's drained; `pool` of them run
+  // in parallel (bounded so we don't buffer every image body in memory at once).
+  let next = 0;
+  const uploadWorker = async (): Promise<void> => {
+    while (next < blobs.length) {
+      const { id, blob } = blobs[next++]!;
+      await fetch(`${backendUrl}/media/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        headers: { "content-type": blob.mime },
+        body: new Uint8Array(blob.bytes),
+      });
+    }
+  };
+  const pool = Array.from(
+    { length: Math.min(MEDIA_UPLOAD_CONCURRENCY, blobs.length) },
+    uploadWorker,
+  );
+
+  const snapshotJson = JSON.stringify({ snapshot: serializeDocument(doc), createdBy: user?.id, user });
+  const postSnapshot = gzipText(snapshotJson).then((body) =>
+    fetch(`${backendUrl}/docs`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "content-encoding": "gzip" },
+      body,
+    }),
+  );
+
+  const [res] = await Promise.all([postSnapshot, ...pool]);
   if (!res.ok) throw new Error(`publish failed (${res.status})`);
   return (await res.json()) as { docId: string; version: number };
 }
