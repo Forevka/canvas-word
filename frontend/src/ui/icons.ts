@@ -9,6 +9,7 @@ const filled = (body: string): string =>
   `<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor">${body}</svg>`;
 
 export const ICONS = {
+  bookmark: svg(`<path d="M4 2.5h8v11l-4-3-4 3z"/>`),
   undo: svg(`<path d="M5.5 3.5 2.5 6.5l3 3"/><path d="M2.5 6.5h7a4 4 0 0 1 0 8H6"/>`),
   redo: svg(`<path d="M10.5 3.5l3 3-3 3"/><path d="M13.5 6.5h-7a4 4 0 0 0 0 8H10"/>`),
   painter: svg(

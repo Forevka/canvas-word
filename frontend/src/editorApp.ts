@@ -110,6 +110,8 @@ let refreshStatus: () => void = () => {};
 let refreshRuler: () => void = () => {};
 let toggleRuler: () => boolean = () => false;
 let refreshImageBar: () => void = () => {};
+let refreshBookmarks: () => void = () => {};
+let toggleBookmarks: () => void = () => {};
 const editorOpts = {
   engine,
   ...(collabId !== null ? { docId: collabId } : {}),
@@ -127,6 +129,7 @@ const editorOpts = {
     refreshStatus();
     refreshRuler();
     refreshImageBar();
+    refreshBookmarks();
   },
   onZoomChange: (z: number) => {
     syncZoom(z);
@@ -284,6 +287,9 @@ import {
   updateStyleToSelection,
   createStyleFromSelection,
   setParaProps,
+  addBookmarkCmd,
+  removeBookmarkCmd,
+  renameBookmarkCmd,
   toggleList,
   applyListStyleCmd,
   toggleMultilevelList,
@@ -1221,6 +1227,7 @@ if (toolbar) {
   group(view, "Show");
   let outlineToggle = (): void => {};
   const outlineBtn = btn(ICONS.outline, "Outline / navigation pane (jump to any heading)", () => outlineToggle());
+  const bookmarksBtn = btn(ICONS.bookmark, "Bookmarks — list, go to, add, rename, delete", () => toggleBookmarks());
   const rulerBtn = btn(ICONS.ruler, "Ruler", () => rulerBtn.classList.toggle("active", toggleRuler()));
   rulerBtn.classList.add("active"); // ruler shows by default
   stub(ICONS.marks, "Show/hide formatting marks");
@@ -1453,6 +1460,93 @@ if (toolbar) {
       if (open) build();
     };
     setOpen(true); // visible by default (Word opens the navigation pane on demand; we lead with it)
+  }
+
+  // ---- Bookmarks panel (list + Go To + add/rename/delete) -----------------
+  {
+    const panel = el("div", "cw-float-drawer");
+    panel.style.cssText =
+      "position:fixed;top:0;right:0;width:300px;height:100%;z-index:45;background:#fff;border-left:1px solid #e1dfdd;" +
+      "box-shadow:-4px 0 16px rgba(0,0,0,0.08);display:none;flex-direction:column;font-size:13px;";
+    const head = el("div", "outline-head");
+    const title = el("span");
+    title.textContent = "Bookmarks";
+    const addBtn = el("button");
+    addBtn.textContent = "+";
+    addBtn.title = "Add a bookmark for the current selection";
+    addBtn.style.cssText = "margin-left:auto;border:none;background:transparent;font-size:18px;cursor:pointer;color:#2b579a;";
+    const closeBtn = el("button");
+    closeBtn.innerHTML = "×";
+    closeBtn.title = "Close";
+    head.append(title, addBtn, closeBtn);
+    const list = el("div");
+    list.style.cssText = "flex:1 1 auto;overflow-y:auto;padding:2px 0;";
+    panel.append(head, list);
+    document.body.appendChild(panel);
+
+    const build = (): void => {
+      const names = Object.keys(editor.getDocument().bookmarks ?? {}).sort((a, b) => a.localeCompare(b));
+      list.textContent = "";
+      if (names.length === 0) {
+        const empty = el("div", "outline-empty");
+        empty.textContent = "No bookmarks. Select text (or place the caret) and press + to add one.";
+        list.appendChild(empty);
+        return;
+      }
+      for (const name of names) {
+        const row = el("div");
+        row.style.cssText = "display:flex;align-items:center;gap:2px;padding:0 6px 0 0;";
+        const go = el("button", "outline-item");
+        go.style.cssText = "flex:1 1 auto;";
+        go.textContent = name;
+        go.title = `Go to "${name}"`;
+        go.addEventListener("mousedown", (e) => e.preventDefault());
+        go.addEventListener("click", () => editor.revealBookmark(name));
+        const iconBtn = (glyph: string, tip: string, onClick: () => void): HTMLButtonElement => {
+          const b = el("button");
+          b.textContent = glyph;
+          b.title = tip;
+          b.style.cssText = "border:none;background:transparent;cursor:pointer;color:#605e5c;width:24px;height:24px;border-radius:4px;font-size:13px;";
+          b.addEventListener("mousedown", (e) => e.preventDefault());
+          b.addEventListener("click", onClick);
+          return b;
+        };
+        const renameB = iconBtn("✎", "Rename bookmark", () => {
+          const next = prompt("Rename bookmark:", name);
+          if (next && next.trim() && next !== name) {
+            editor.dispatch(renameBookmarkCmd(name, next.trim()));
+            editor.focus();
+          }
+        });
+        const delB = iconBtn("🗑", "Delete bookmark", () => {
+          editor.dispatch(removeBookmarkCmd(name));
+          editor.focus();
+        });
+        row.append(go, renameB, delB);
+        list.appendChild(row);
+      }
+    };
+
+    let open = false;
+    const setOpen = (v: boolean): void => {
+      open = v;
+      panel.style.display = v ? "flex" : "none";
+      bookmarksBtn.classList.toggle("active", v);
+      if (v) build();
+    };
+    addBtn.addEventListener("click", () => {
+      const name = prompt("Bookmark name:");
+      if (name && name.trim()) {
+        editor.dispatch(addBookmarkCmd(name.trim()));
+        editor.focus();
+        build();
+      }
+    });
+    closeBtn.addEventListener("click", () => setOpen(false));
+    toggleBookmarks = (): void => setOpen(!open);
+    refreshBookmarks = (): void => {
+      if (open) build();
+    };
   }
 
   // Collapse / expand the ribbon body (keeps the tab strip). A pinned chevron
