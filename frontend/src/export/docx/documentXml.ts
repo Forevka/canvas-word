@@ -8,6 +8,7 @@
 
 import type {
   Block,
+  CellBorders,
   CharStyle,
   Paragraph,
   ParaStyle,
@@ -244,7 +245,11 @@ function bordersXml(tag: string, b: NonNullable<TableCell["borders"]>): string {
     return el("w:" + name, { "w:val": val, "w:sz": pxToEighthPoints(spec.widthPx), "w:space": 0, "w:color": hex(spec.color) });
   };
   const inner = edge("top", b.top) + edge("left", b.left) + edge("bottom", b.bottom) + edge("right", b.right);
-  return inner ? el(tag, undefined, inner) : "";
+  // Always emit the element when a borders object is present, even with no edges:
+  // an empty <w:tcBorders/> is the author's explicit "no borders", which the
+  // importer keys on (bordersSpecified) to suppress the renderer's gray default
+  // grid. Dropping it reverts a borderless table to that grid on reopen.
+  return el(tag, undefined, inner);
 }
 
 function cellXml(cell: TableCell, ctx: PartCtx): string {
@@ -258,9 +263,41 @@ function cellXml(cell: TableCell, ctx: PartCtx): string {
   return el("w:tc", undefined, tcPr + content);
 }
 
+/** An active vertical merge, keyed by its START column: how many continue rows
+ *  remain, how many grid columns it spans, and the owner's resolved borders. */
+interface PendingMerge {
+  remaining: number;
+  span: number;
+  borders: CellBorders | undefined;
+}
+
+/** A synthesized w:vMerge="continue" cell for one band of an open vertical merge.
+ *  Word renders a merged cell's edges from its constituent cells, NOT the restart
+ *  cell alone: the side borders repeat on every band, and the merged region's
+ *  bottom is taken from the FINAL continue cell. We mirror the owner's borders
+ *  onto each band so Word draws the same box the engine paints from the owner. */
+function continueCellXml(m: PendingMerge): string {
+  const pr: string[] = [];
+  if (m.span > 1) pr.push(el("w:gridSpan", { "w:val": m.span })); // gridSpan precedes vMerge per CT_TcPr
+  pr.push(el("w:vMerge", { "w:val": "continue" }));
+  if (m.borders) {
+    const isFinalBand = m.remaining === 1; // last continue row owns the merge's bottom edge
+    const b: CellBorders = {};
+    if (m.borders.left) b.left = m.borders.left;
+    if (m.borders.right) b.right = m.borders.right;
+    if (isFinalBand && m.borders.bottom) b.bottom = m.borders.bottom;
+    if (b.left || b.right || b.bottom) pr.push(bordersXml("w:tcBorders", b));
+  }
+  return el("w:tc", undefined, el("w:tcPr", undefined, pr.join("")) + el("w:p"));
+}
+
 /** Build per-row cells, re-synthesizing the w:vMerge "continue" cells the
- *  importer dropped: a rowSpan=N owner needs N-1 empty continue cells stacked
- *  below it in the following rows, and gridSpan-aware column tracking. */
+ *  importer dropped: a rowSpan=N owner needs N-1 continue cells stacked below it
+ *  in the following rows. A continue cell carries the owner's gridSpan (so a
+ *  colSpan+rowSpan merge stays one logical cell — emitting one continue per
+ *  column would make the importer bump rowSpan once PER column) and the owner's
+ *  borders (so Word draws the merged region's sides/bottom rather than its gray
+ *  gridlines). */
 function tableXml(table: TableBlock, ctx: PartCtx): string {
   const colCount = Math.max(
     1,
@@ -270,37 +307,43 @@ function tableXml(table: TableBlock, ctx: PartCtx): string {
     .map((f) => el("w:gridCol", { "w:w": Math.max(1, Math.round(f * 9000)) }))
     .join("");
 
-  // Track active vertical merges: for each column, remaining continue rows.
-  const pendingContinue = new Array<number>(colCount).fill(0);
+  // Active vertical merges, indexed by their START column (covered columns stay
+  // undefined — we emit one gridSpan'd continue cell and skip past them).
+  const pending = new Array<PendingMerge | undefined>(colCount).fill(undefined);
+
+  // Emit every continue cell occupying columns from `col` onward, stopping at a
+  // free column. Returns the advanced column index.
+  const emitContinues = (col: number, out: string[]): number => {
+    while (col < colCount) {
+      const m = pending[col];
+      if (!m || m.remaining <= 0) break;
+      out.push(continueCellXml(m));
+      m.remaining--;
+      if (m.remaining <= 0) pending[col] = undefined;
+      col += m.span;
+    }
+    return col;
+  };
+
   const rowsXml: string[] = [];
   for (const row of table.rows) {
     let col = 0;
-    let cellsXml = "";
+    const out: string[] = [];
     for (const cell of row.cells) {
-      // Emit continue cells for columns still spanning from a row above.
-      while (col < colCount && pendingContinue[col]! > 0) {
-        pendingContinue[col]!--;
-        cellsXml += el("w:tc", undefined, el("w:tcPr", undefined, el("w:vMerge", { "w:val": "continue" })) + el("w:p"));
-        col++;
-      }
+      // Continue cells for merges still spanning down from a row above.
+      col = emitContinues(col, out);
       const span = cell.colSpan ?? 1;
       if (cell.rowSpan && cell.rowSpan > 1) {
-        // restart owner; schedule continues for the columns it covers.
-        const withMerge = injectVMergeRestart(cellXml(cell, ctx));
-        cellsXml += withMerge;
-        for (let k = 0; k < span && col + k < colCount; k++) pendingContinue[col + k] = cell.rowSpan - 1;
+        out.push(injectVMergeRestart(cellXml(cell, ctx)));
+        pending[col] = { remaining: cell.rowSpan - 1, span, borders: cell.borders };
       } else {
-        cellsXml += cellXml(cell, ctx);
+        out.push(cellXml(cell, ctx));
       }
       col += span;
     }
     // Trailing columns still under a span.
-    while (col < colCount && pendingContinue[col]! > 0) {
-      pendingContinue[col]!--;
-      cellsXml += el("w:tc", undefined, el("w:tcPr", undefined, el("w:vMerge", { "w:val": "continue" })) + el("w:p"));
-      col++;
-    }
-    rowsXml.push(el("w:tr", undefined, cellsXml));
+    col = emitContinues(col, out);
+    rowsXml.push(el("w:tr", undefined, out.join("")));
   }
 
   const tblPr = el(

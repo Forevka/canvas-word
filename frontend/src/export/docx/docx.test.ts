@@ -3,6 +3,7 @@
 // the oracle, so anything the writer mis-encodes shows up as drift.
 
 import { describe, expect, it } from "vitest";
+import { strFromU8, unzipSync } from "fflate";
 import type { Block, Document, Paragraph, TableBlock } from "@cw/shared";
 import { runImport } from "../../import/docx/pipeline";
 import {
@@ -16,6 +17,8 @@ import {
 import { writeDocx } from "./writeDocx";
 
 const roundTrip = (doc: Document): Document => runImport(writeDocx(doc).bytes).doc;
+const exportedDocumentXml = (doc: Document): string =>
+  strFromU8(unzipSync(writeDocx(doc).bytes)["word/document.xml"]!);
 const paras = (d: Document): Paragraph[] => d.blocks.filter((b): b is Paragraph => b.kind === "paragraph");
 const text = (p: Paragraph): string => p.runs.map((r) => r.text).join("");
 const tables = (d: Document): TableBlock[] => d.blocks.filter((b): b is TableBlock => b.kind === "table");
@@ -81,6 +84,64 @@ describe("DOCX export — round trip", () => {
     expect(cellText(owner.blocks[0]!)).toBe("owner");
     // the continue row drops its merged cell (one cell present)
     expect(tb.rows[2]!.cells.length).toBe(1);
+  });
+
+  it("preserves an explicit no-borders table (does not revert to the default grid)", () => {
+    // An author's explicit "no borders" — empty <w:tblBorders/> — imports to a
+    // present-but-empty CellBorders {} so the renderer suppresses its gray
+    // default grid. The export must keep that intent or the table reopens gray.
+    const body =
+      `<w:tbl><w:tblPr><w:tblBorders/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
+    const a = runImport(simpleDocx(body)).doc;
+    const cellA = tables(a)[0]!.rows[0]!.cells[0]!;
+    expect(cellA.borders).toBeDefined(); // imported as "borders specified, none drawn"
+    const b = roundTrip(a);
+    const cellB = tables(b)[0]!.rows[0]!.cells[0]!;
+    // Must stay defined (empty) — undefined would draw the gray default grid.
+    expect(cellB.borders).toBeDefined();
+    expect(cellB.borders!.top).toBeUndefined();
+  });
+
+  it("mirrors a vertical merge's borders onto its continue cells (Word draws the merged box)", () => {
+    // A rowSpan owner carries the merged region's full borders, but Word renders
+    // a merged cell's sides/bottom from its CONTINUE cells, not the restart cell.
+    // A 2x2 table, fully bordered, with col 0 merged down both rows.
+    const border = `<w:tblBorders><w:top w:val="single" w:sz="8" w:color="000000"/><w:left w:val="single" w:sz="8" w:color="000000"/><w:bottom w:val="single" w:sz="8" w:color="000000"/><w:right w:val="single" w:sz="8" w:color="000000"/><w:insideH w:val="single" w:sz="8" w:color="000000"/><w:insideV w:val="single" w:sz="8" w:color="000000"/></w:tblBorders>`;
+    const body =
+      `<w:tbl><w:tblPr>${border}</w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid>` +
+      `<w:tr><w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>m</w:t></w:r></w:p></w:tc>` +
+      `<w:tc><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr>` +
+      `<w:tr><w:tc><w:tcPr><w:vMerge w:val="continue"/></w:tcPr><w:p/></w:tc>` +
+      `<w:tc><w:p><w:r><w:t>c</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
+    const a = runImport(simpleDocx(body)).doc;
+    const xml = exportedDocumentXml(a);
+    // Isolate the synthesized continue cell.
+    const cont = xml.slice(xml.indexOf('<w:vMerge w:val="continue"/>'));
+    const tcBorders = cont.slice(cont.indexOf("<w:tcBorders>"), cont.indexOf("</w:tcBorders>"));
+    expect(tcBorders).toContain("<w:left"); // side borders repeat on the band
+    expect(tcBorders).toContain("<w:right");
+    expect(tcBorders).toContain("<w:bottom"); // final band owns the region's bottom
+    expect(tcBorders).not.toContain("<w:top"); // interior to the merge
+  });
+
+  it("preserves a combined colSpan+rowSpan merge without inflating rowSpan", () => {
+    // One cell spanning 2 cols AND 2 rows. The continue band must round-trip as a
+    // single gridSpan'd cell — one continue PER COLUMN would make the importer
+    // bump the owner's rowSpan once per column (2 -> 3), drifting the model.
+    const body =
+      `<w:tbl><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid>` +
+      `<w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>big</w:t></w:r></w:p></w:tc></w:tr>` +
+      `<w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/><w:vMerge w:val="continue"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl>`;
+    const a = runImport(simpleDocx(body)).doc;
+    const owner = tables(a)[0]!.rows[0]!.cells[0]!;
+    expect(owner.colSpan).toBe(2);
+    expect(owner.rowSpan).toBe(2);
+    const b = roundTrip(a);
+    const ownerB = tables(b)[0]!.rows[0]!.cells[0]!;
+    expect(ownerB.colSpan).toBe(2);
+    expect(ownerB.rowSpan).toBe(2); // not 3 — the continue band stayed one cell
+    expect(tables(b)[0]!.rows.length).toBe(2);
   });
 
   it("preserves list membership and marker format", () => {
