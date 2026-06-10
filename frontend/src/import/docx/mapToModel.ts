@@ -323,7 +323,43 @@ export function createMapper(
       out.push(...mapped);
       if (!seenPageSection) coverHasContent ||= hasRealContent(mapped);
     }
+    keepHeadingWithFollowingFigure(out);
     return out;
+  };
+
+  /** Don't strand a section heading above its figure: when a heading is followed
+   *  — through only blank lines and a short caption — by an image or table, mark
+   *  the heading (and that caption) "keep with next" so the engine's keep-chain
+   *  rides them to the figure's page. These reports leave the heading's keepNext
+   *  off, so a Heading1 like FLOOD MAP otherwise sits at a page bottom while its
+   *  map flows to the next page. Bounded to a tight group so a heading above real
+   *  body text (with a figure further down) is NOT pulled. */
+  const keepHeadingWithFollowingFigure = (blocks: Block[]): void => {
+    const isFigure = (b: Block): boolean => b.kind === "image" || b.kind === "table";
+    const isBlank = (b: Block): boolean => b.kind === "paragraph" && b.runs.every((r) => r.text.trim().length === 0);
+    const textLen = (b: Block): number => (b.kind === "paragraph" ? b.runs.reduce((s, r) => s + r.text.length, 0) : 0);
+    for (let i = 0; i < blocks.length; i++) {
+      const h = blocks[i]!;
+      if (h.kind !== "paragraph" || !h.style.namedStyle || !resolver.isHeading(h.style.namedStyle)) continue;
+      const between: Paragraph[] = [];
+      let captions = 0;
+      let figureAt = -1;
+      for (let j = i + 1; j < blocks.length && j <= i + 6; j++) {
+        const b = blocks[j]!;
+        if (isFigure(b)) {
+          figureAt = j;
+          break;
+        }
+        if (b.kind !== "paragraph") break; // anything else ends the tight group
+        if (isBlank(b)) continue; // blank spacer — the engine bridges it
+        if (captions >= 2 || textLen(b) > 300) break; // real body content, not a caption
+        captions++;
+        between.push(b);
+      }
+      if (figureAt < 0) continue;
+      h.style.keepWithNext = true;
+      for (const cap of between) cap.style.keepWithNext = true;
+    }
   };
 
   // -------------------------------------------------------------------------

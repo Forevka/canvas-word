@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { Paragraph, TableBlock } from "@cw/shared";
 import { runImport } from "./pipeline";
 import { ImportError } from "./types";
-import { CONTENT_TYPES_XML, documentXml, makeDocx, simpleDocx } from "./fixture";
+import { CONTENT_TYPES_XML, documentXml, makeDocx, simpleDocx, styledDocx, stylesPartXml } from "./fixture";
 
 const importBody = (body: string) => runImport(simpleDocx(body));
 
@@ -179,6 +179,41 @@ describe("docx pipeline — lossy policies emit warnings", () => {
     // The hidden anchor itself flowed (no break stranded above the title).
     const floodIdx = r.doc.blocks.indexOf(find("FLOOD MAP"));
     expect(para(r.doc.blocks[floodIdx - 1]!).style.pageBreakBefore).toBeUndefined();
+  });
+
+  it("keeps a heading with a closely-following figure so it isn't stranded above it", () => {
+    const styles = stylesPartXml(`<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style>`);
+    const fig = `<w:tbl><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>map</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
+    const r = runImport(
+      styledDocx(
+        `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>FLOOD MAP</w:t></w:r></w:p>` +
+          `<w:p/>` + // blank spacer
+          `<w:p><w:r><w:t>A short caption.</w:t></w:r></w:p>` +
+          fig,
+        styles,
+      ),
+    );
+    const findPara = (t: string): Paragraph =>
+      para(r.doc.blocks.find((b) => b.kind === "paragraph" && (b as Paragraph).runs.some((rn) => rn.text === t))!);
+    expect(findPara("FLOOD MAP").style.keepWithNext).toBe(true);
+    expect(findPara("A short caption.").style.keepWithNext).toBe(true);
+  });
+
+  it("does NOT keep a heading with a figure separated by real body text", () => {
+    const styles = stylesPartXml(`<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style>`);
+    const fig = `<w:tbl><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>fig</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
+    const r = runImport(
+      styledDocx(
+        `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>SECTION</w:t></w:r></w:p>` +
+          `<w:p><w:r><w:t>${"word ".repeat(80)}</w:t></w:r></w:p>` + // long body paragraph (>300 chars)
+          fig,
+        styles,
+      ),
+    );
+    const heading = para(
+      r.doc.blocks.find((b) => b.kind === "paragraph" && (b as Paragraph).runs.some((rn) => rn.text === "SECTION"))!,
+    );
+    expect(heading.style.keepWithNext).toBeUndefined();
   });
 
   it("warns when a flowed section break carries its own header/footer", () => {
