@@ -262,6 +262,21 @@ describe("DOCX export — round trip", () => {
     expect(Object.keys(b.bookmarks ?? {})).toContain("target");
   });
 
+  it("round-trips a bookmark's character range (start and end offsets)", () => {
+    const a = runImport(
+      simpleDocx(`<w:p><w:bookmarkStart w:id="3" w:name="bm"/><w:r><w:t>hello world</w:t></w:r><w:bookmarkEnd w:id="3"/></w:p>`),
+    ).doc;
+    const ra = a.bookmarks!["bm"]!;
+    expect(ra.start.offset).toBe(0);
+    expect(ra.end.offset).toBe(11); // after "hello world"
+    expect(ra.start.blockId).toBe(paras(a)[0]!.id);
+    const b = roundTrip(a);
+    const rb = b.bookmarks!["bm"]!;
+    expect(rb.start.offset).toBe(0);
+    expect(rb.end.offset).toBe(11);
+    expect(rb.start.blockId).toBe(paras(b)[0]!.id);
+  });
+
   it("round-trips hidden text (w:vanish) instead of dropping it", () => {
     const a = runImport(
       simpleDocx(

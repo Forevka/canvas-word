@@ -41,6 +41,13 @@ const JC: Record<ParaStyle["align"], string> = { left: "left", center: "center",
 const TAB_VAL: Record<string, string> = { left: "left", center: "center", right: "right", decimal: "decimal" };
 const TAB_LEADER: Record<string, string> = { dot: "dot", dash: "hyphen", underscore: "underscore" };
 
+export interface ExportBookmarkMark {
+  id: number;
+  name?: string;
+  kind: "start" | "end";
+  offset: number;
+}
+
 export interface PartCtx {
   rels: RelManager;
   media: MediaManager;
@@ -48,8 +55,10 @@ export interface PartCtx {
   sdts: Record<string, SdtProps>;
   /** Doc-wide unique ids for w:bookmarkStart / w:footnoteReference fallbacks. */
   nextId: () => number;
-  /** model blockId -> bookmark names anchored there (body only). */
-  bookmarksByBlock: Map<string, string[]>;
+  /** model blockId -> bookmark start/end markers anchored there (body + bands).
+   *  `id` pairs a start with its end; `offset` is the UTF-16 position in the
+   *  paragraph text where the marker sits. */
+  bookmarksByBlock: Map<string, ExportBookmarkMark[]>;
   /** model list id -> Word-valid integer numId (shared with numbering.xml). */
   listIdMap: Map<string, number>;
 }
@@ -216,24 +225,46 @@ function pPrXml(style: ParaStyle, ctx: PartCtx, markRun?: CharStyle): string {
   return el("w:pPr", undefined, c.join(""));
 }
 
+const bookmarkEl = (m: ExportBookmarkMark): string =>
+  m.kind === "start"
+    ? el("w:bookmarkStart", { "w:id": m.id, "w:name": m.name ?? "" })
+    : el("w:bookmarkEnd", { "w:id": m.id });
+
 function paragraphXml(p: Paragraph, ctx: PartCtx): string {
   const isEmpty = p.runs.every((r) => r.text.length === 0) && !p.runs.some((r) => r.style.footnoteRef);
   const markRun = isEmpty && p.runs[0] ? p.runs[0].style : undefined;
-  const body = pPrXml(p.style, ctx, markRun) + runsXml(isEmpty ? [] : p.runs, ctx);
-  const para = el("w:p", undefined, body);
-  // Bookmarks anchored to this block bracket the paragraph.
-  const names = ctx.bookmarksByBlock.get(p.id);
-  if (names && names.length > 0) {
-    let pre = "";
-    let post = "";
-    for (const name of names) {
-      const id = ctx.nextId();
-      pre += el("w:bookmarkStart", { "w:id": id, "w:name": name });
-      post += el("w:bookmarkEnd", { "w:id": id });
-    }
-    return pre + para + post;
+  const pPr = pPrXml(p.style, ctx, markRun);
+  const runs = isEmpty ? [] : p.runs;
+  const marks = ctx.bookmarksByBlock.get(p.id);
+
+  if (!marks || marks.length === 0) {
+    return el("w:p", undefined, pPr + runsXml(runs, ctx));
   }
-  return para;
+  // A paragraph whose runs join an sdt content control can't have markers spliced
+  // between its runs without breaking the w:sdt grouping — bracket the whole
+  // paragraph at block level instead (start before w:p, end after).
+  if (runs.some((r) => r.style.sdtId)) {
+    const pre = marks.filter((m) => m.kind === "start").map(bookmarkEl).join("");
+    const post = marks.filter((m) => m.kind === "end").map(bookmarkEl).join("");
+    return pre + el("w:p", undefined, pPr + runsXml(runs, ctx)) + post;
+  }
+  // Offset-aware: emit each run, inserting markers at run boundaries (ends before
+  // starts at a shared offset so a point bookmark nests correctly).
+  const sorted = [...marks].sort((a, b) => a.offset - b.offset || (a.kind === "end" ? -1 : 1));
+  let body = pPr;
+  let cum = 0;
+  let mi = 0;
+  const flush = (upto: number): void => {
+    while (mi < sorted.length && sorted[mi]!.offset <= upto) body += bookmarkEl(sorted[mi++]!);
+  };
+  for (const run of runs) {
+    flush(cum);
+    body += singleRun(run, ctx);
+    cum += run.text.length;
+  }
+  flush(cum);
+  while (mi < sorted.length) body += bookmarkEl(sorted[mi++]!); // trailing markers past text end
+  return el("w:p", undefined, body);
 }
 
 // ---------------------------------------------------------------------------

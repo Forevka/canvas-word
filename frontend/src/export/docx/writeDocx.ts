@@ -6,7 +6,7 @@ import { strToU8, zipSync, type Zippable } from "fflate";
 import type { Block, Document } from "@cw/shared";
 import type { ExportResult, ImageBytes } from "../types";
 import { WarningSink } from "../warnings";
-import { buildDocumentXml, type AddBandPart, type PartCtx } from "./documentXml";
+import { buildDocumentXml, type AddBandPart, type ExportBookmarkMark, type PartCtx } from "./documentXml";
 import { contentTypesXml, CT } from "./contentTypes";
 import { footnotesXml } from "./footnotesXml";
 import { headerFooterXml } from "./headerFooterXml";
@@ -30,12 +30,20 @@ export function writeDocx(doc: Document, images: ImageBytes = {}): ExportResult 
   let nextNumId = 1;
   for (const listId of Object.keys(doc.lists ?? {})) listIdMap.set(listId, nextNumId++);
 
-  // blockId -> bookmark names.
-  const bookmarksByBlock = new Map<string, string[]>();
-  for (const [name, blockId] of Object.entries(doc.bookmarks ?? {})) {
+  // blockId -> bookmark start/end markers. Keyed by block id, so band (header/
+  // footer) blocks resolve when the same map is handed to the band parts. A
+  // shared integer id pairs each start with its end.
+  const bookmarksByBlock = new Map<string, ExportBookmarkMark[]>();
+  let bmId = 0;
+  const pushMark = (blockId: string, mark: ExportBookmarkMark): void => {
     const list = bookmarksByBlock.get(blockId) ?? [];
-    list.push(name);
+    list.push(mark);
     bookmarksByBlock.set(blockId, list);
+  };
+  for (const [name, range] of Object.entries(doc.bookmarks ?? {})) {
+    const id = bmId++;
+    pushMark(range.start.blockId, { id, name, kind: "start", offset: range.start.offset });
+    pushMark(range.end.blockId, { id, kind: "end", offset: range.end.offset });
   }
 
   const sdts = doc.sdts ?? {};
@@ -64,7 +72,7 @@ export function writeDocx(doc: Document, images: ImageBytes = {}): ExportResult 
       warn: (c, d) => warnings.warn(c, d),
       sdts,
       nextId,
-      bookmarksByBlock: new Map(),
+      bookmarksByBlock, // same map — band block ids resolve here, so band bookmarks export
       listIdMap,
     };
     parts[`word/${file}`] = headerFooterXml(blocks, kind, bandCtx);

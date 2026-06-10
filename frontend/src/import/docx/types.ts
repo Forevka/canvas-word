@@ -206,12 +206,24 @@ export interface IRParaProps {
   markRunProps?: IRRunProps;
 }
 
+/** A w:bookmarkStart / w:bookmarkEnd seen while walking a paragraph: its w:id
+ *  (pairs start↔end, possibly across paragraphs), w:name (start only), and the
+ *  UTF-16 offset within the paragraph text where it sits. */
+export interface BookmarkMarker {
+  id: string;
+  name?: string;
+  kind: "start" | "end";
+  offset: number;
+}
+
 export interface IRParagraph {
   kind: "paragraph";
   props: IRParaProps;
   inlines: IRInline[];
-  /** w:bookmarkStart names anchored in this paragraph (TOC/cross-ref targets). */
+  /** w:bookmarkStart names anchored in this paragraph (TOC/cross-ref heuristics). */
   bookmarks?: string[];
+  /** Start/end markers with offsets — resolved to model ranges in mapToModel. */
+  bookmarkMarkers?: BookmarkMarker[];
 }
 
 /** One raw border edge (w:top/w:left/… inside w:tblBorders or w:tcBorders).

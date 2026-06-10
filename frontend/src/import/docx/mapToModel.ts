@@ -10,7 +10,9 @@
 
 import type {
   Block,
+  BookmarkRange,
   CharStyle,
+  DocPosition,
   Document,
   ImageBlock,
   ParaStyle,
@@ -97,8 +99,8 @@ export interface Mapper {
   emptyParagraph(): Paragraph;
   /** Model list definitions for the lists actually referenced — for Document.lists. */
   lists(): Record<string, ListDefinition>;
-  /** Bookmark name → model block id, collected across all mapped stories. */
-  bookmarks(): Record<string, string>;
+  /** Bookmark name → resolved model range, collected across all mapped stories. */
+  bookmarks(): Record<string, BookmarkRange>;
   /** Footnotes referenced (in document order) — the pipeline maps their bodies
    *  into Document.footnotes. `noteId` is the model key, `docxId` the source id. */
   footnoteRefs(): { docxId: string; noteId: string }[];
@@ -118,8 +120,10 @@ export function createMapper(
   let nextId = 0;
   const id = (): string => `i${nextId++}`;
 
-  // Bookmark name → the id of the first model paragraph it anchors.
-  const bookmarkMap: Record<string, string> = {};
+  // Bookmark markers resolved to model positions, keyed by w:id; paired into
+  // ranges in bookmarks(). Start carries the name; end may live in a later block.
+  const bookmarkStarts = new Map<string, { name: string; pos: DocPosition }>();
+  const bookmarkEnds = new Map<string, DocPosition>();
 
   // Footnote markers numbered sequentially in document order (docx id → number),
   // matching the editor's renumber convention. The pipeline maps the referenced
@@ -465,9 +469,17 @@ export function createMapper(
         p.style.indentLeftPx = round2(p.style.indentLeftPx + listLevelIndentPx);
       }
     });
-    // Bookmarks anchored in this paragraph point at its first emitted block.
-    if (ir.bookmarks && ir.bookmarks.length > 0 && blocks[0]) {
-      for (const name of ir.bookmarks) bookmarkMap[name] = blocks[0]!.id;
+    // Resolve this paragraph's bookmark markers to model positions. The home is
+    // the first emitted block; offsets clamp to its text (exact for the common
+    // single-block paragraph; a soft-break split anchors into the first block).
+    if (ir.bookmarkMarkers && ir.bookmarkMarkers.length > 0 && blocks[0]) {
+      const home = blocks[0]!;
+      const homeLen = home.kind === "paragraph" ? home.runs.reduce((s, r) => s + r.text.length, 0) : 0;
+      for (const m of ir.bookmarkMarkers) {
+        const pos: DocPosition = { blockId: home.id, offset: Math.min(m.offset, homeLen) };
+        if (m.kind === "start" && m.name) bookmarkStarts.set(m.id, { name: m.name, pos });
+        else if (m.kind === "end") bookmarkEnds.set(m.id, pos);
+      }
     }
     return blocks;
   }
@@ -683,7 +695,13 @@ export function createMapper(
     mapSection,
     emptyParagraph,
     lists: () => Object.fromEntries(usedLists),
-    bookmarks: () => bookmarkMap,
+    bookmarks: () => {
+      const out: Record<string, BookmarkRange> = {};
+      for (const [id, s] of bookmarkStarts) {
+        out[s.name] = { start: s.pos, end: bookmarkEnds.get(id) ?? s.pos }; // point bookmark if no end
+      }
+      return out;
+    },
     footnoteRefs: () => footnoteOrder.map((docxId) => ({ docxId, noteId: `fn${docxId}` })),
   };
 }

@@ -1,5 +1,7 @@
 // Layer 1: Document model — single source of truth. Pure data, no DOM/canvas imports.
 
+import type { DocPosition } from "./position";
+
 export interface CharStyle {
   fontFamily: string;
   fontSizePx: number;
@@ -300,7 +302,15 @@ export interface Document {
   footnotes?: Record<string, Paragraph[]>;
   /** Content-control properties keyed by sdtId (runs carry the membership). */
   sdts?: Record<string, SdtProps>;
-  /** Bookmark name → id of the block it sits in (docx w:bookmarkStart). Targets
-   *  for in-document anchor links ("#name" — TOC entries, cross-references). */
-  bookmarks?: Record<string, string>;
+  /** Bookmark name → its character RANGE (docx w:bookmarkStart/End). `start`/`end`
+   *  are positions (block id + UTF-16 offset) that may span paragraphs; a point
+   *  bookmark has start === end. The block may live in the body, a table cell, or
+   *  a header/footer band. Targets for in-document anchor links ("#name" — TOC
+   *  entries, cross-references) and the Bookmarks panel. */
+  bookmarks?: Record<string, BookmarkRange>;
+}
+
+export interface BookmarkRange {
+  start: DocPosition;
+  end: DocPosition;
 }

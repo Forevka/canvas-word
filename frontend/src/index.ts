@@ -1817,7 +1817,7 @@ export function createEditor(
   /** Resolve an in-document anchor (TOC entry / cross-ref) to a target block
    *  via the modeled bookmarks (docx w:bookmarkStart). */
   const resolveAnchorTarget = (anchorName: string, _fromBlockId: string | null): string | null => {
-    const target = doc.bookmarks?.[anchorName];
+    const target = doc.bookmarks?.[anchorName]?.start.blockId;
     return target && blockById(doc, target) ? target : null;
   };
 
@@ -1840,7 +1840,7 @@ export function createEditor(
       if (b.kind !== "paragraph") continue;
       const anchor = b.runs.find((r) => r.style.link?.startsWith("#"))?.style.link?.slice(1);
       if (!anchor) continue;
-      const targetId = doc.bookmarks?.[anchor];
+      const targetId = doc.bookmarks?.[anchor]?.start.blockId;
       if (!targetId) continue;
       const num = pageOfBlock.get(targetId);
       if (num === undefined) continue;

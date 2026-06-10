@@ -8,6 +8,7 @@
 import { ImportError, WarningSink } from "./types";
 import type {
   BandRefs,
+  BookmarkMarker,
   IRBlock,
   IRCellMargin,
   IRDocument,
@@ -39,6 +40,21 @@ interface ParseCtx {
   pendingBookmarks: string[];
   /** Bookmark names collected inside the paragraph currently being walked. */
   currentBookmarks: string[] | null;
+  /** Block-level bookmark markers, attached at offset 0 of the NEXT paragraph. */
+  pendingMarkers: BookmarkMarker[];
+  /** Bookmark markers (start/end + offset) inside the paragraph being walked. */
+  currentMarkers: BookmarkMarker[] | null;
+}
+
+/** UTF-16 offset accumulated so far in a paragraph's inline list (runs count
+ *  their text; a soft break occupies one offset; images contribute nothing). */
+function inlineOffset(out: IRInline[]): number {
+  let n = 0;
+  for (const inl of out) {
+    if (inl.kind === "run") n += inl.text.length;
+    else if (inl.kind === "break") n += 1;
+  }
+  return n;
 }
 
 export function parseDocumentXml(xmlText: string, partName: string, warnings: WarningSink): IRDocument {
@@ -48,7 +64,7 @@ export function parseDocumentXml(xmlText: string, partName: string, warnings: Wa
     throw new ImportError("MALFORMED_XML", `${partName} has no w:document/w:body root.`);
   }
   const sdts: Record<string, IRSdtProps> = {};
-  const ctx: ParseCtx = { warnings, fieldTokens: false, sdts, nextSdt: { n: 0 }, pendingBookmarks: [], currentBookmarks: null };
+  const ctx: ParseCtx = { warnings, fieldTokens: false, sdts, nextSdt: { n: 0 }, pendingBookmarks: [], currentBookmarks: null, pendingMarkers: [], currentMarkers: null };
 
   const blocks: IRBlock[] = [];
   walkBlocks(children(body), blocks, ctx);
@@ -72,7 +88,7 @@ export function parseHeaderFooterXml(
   if (!root) {
     throw new ImportError("MALFORMED_XML", `${partName} has no w:hdr/w:ftr root.`);
   }
-  const ctx: ParseCtx = { warnings, fieldTokens: true, sdts, nextSdt: { n: Object.keys(sdts).length }, pendingBookmarks: [], currentBookmarks: null };
+  const ctx: ParseCtx = { warnings, fieldTokens: true, sdts, nextSdt: { n: Object.keys(sdts).length }, pendingBookmarks: [], currentBookmarks: null, pendingMarkers: [], currentMarkers: null };
   const blocks: IRBlock[] = [];
   walkBlocks(children(root), blocks, ctx);
   return blocks;
@@ -115,9 +131,18 @@ function walkBlocks(nodes: XmlNode[], out: IRBlock[], ctx: ParseCtx): void {
         break;
       }
       case "w:bookmarkStart": {
-        // Block-level bookmark — attach to the next paragraph.
+        // Block-level bookmark — attach to the start (offset 0) of the next paragraph.
         const name = bookmarkName(node);
-        if (name) ctx.pendingBookmarks.push(name);
+        const idAttr = attr(node, "w:id");
+        if (name) {
+          ctx.pendingBookmarks.push(name);
+          if (idAttr) ctx.pendingMarkers.push({ id: idAttr, name, kind: "start", offset: 0 });
+        }
+        break;
+      }
+      case "w:bookmarkEnd": {
+        const idAttr = attr(node, "w:id");
+        if (idAttr) ctx.pendingMarkers.push({ id: idAttr, kind: "end", offset: 0 });
         break;
       }
       case "w:sectPr":
@@ -140,13 +165,20 @@ function parseParagraph(p: XmlNode, ctx: ParseCtx): IRParagraph {
   const bookmarks = ctx.pendingBookmarks;
   ctx.pendingBookmarks = [];
   ctx.currentBookmarks = bookmarks;
+  // Block-level markers (pending from before this paragraph) sit at its start;
+  // inline markers accumulate during walkInlines.
+  const markers = ctx.pendingMarkers;
+  ctx.pendingMarkers = [];
+  ctx.currentMarkers = markers;
   // Complex fields (w:fldChar begin → instr → separate → result → end) span
   // multiple runs; the state lives at paragraph scope.
   const field: FieldState = { depth: 0, instr: "", suppressResult: false };
   walkInlines(children(p), inlines, ctx, field);
   ctx.currentBookmarks = null;
+  ctx.currentMarkers = null;
   const para: IRParagraph = { kind: "paragraph", props, inlines };
   if (bookmarks.length > 0) para.bookmarks = bookmarks;
+  if (markers.length > 0) para.bookmarkMarkers = markers;
   return para;
 }
 
@@ -225,11 +257,20 @@ function walkInlines(nodes: XmlNode[], out: IRInline[], ctx: ParseCtx, field: Fi
         break;
       case "w:bookmarkStart": {
         const name = bookmarkName(node);
+        const idAttr = attr(node, "w:id");
         if (name && ctx.currentBookmarks) ctx.currentBookmarks.push(name);
+        if (name && idAttr && ctx.currentMarkers) {
+          ctx.currentMarkers.push({ id: idAttr, name, kind: "start", offset: inlineOffset(out) });
+        }
+        break;
+      }
+      case "w:bookmarkEnd": {
+        const idAttr = attr(node, "w:id");
+        if (idAttr && ctx.currentMarkers) ctx.currentMarkers.push({ id: idAttr, kind: "end", offset: inlineOffset(out) });
         break;
       }
       default:
-        break; // w:pPr, w:proofErr, w:bookmarkEnd, comment ranges, …
+        break; // w:pPr, w:proofErr, comment ranges, …
     }
   }
 }
@@ -642,6 +683,8 @@ export function parseFootnotesXml(
     nextSdt: { n: Object.keys(sdts).length },
     pendingBookmarks: [],
     currentBookmarks: null,
+    pendingMarkers: [],
+    currentMarkers: null,
   };
   for (const note of els(root, "w:footnote")) {
     const fnId = attr(note, "w:id");

@@ -1,8 +1,10 @@
 // Milestone 3: embedded/linked images and header/footer block stories.
 
 import { describe, expect, it } from "vitest";
+import { strFromU8, unzipSync } from "fflate";
 import type { ImageBlock, Paragraph, TableBlock } from "@cw/shared";
 import { runImport } from "./pipeline";
+import { writeDocx } from "../../export/docx/writeDocx";
 import {
   CONTENT_TYPES_XML,
   documentXml,
@@ -218,6 +220,24 @@ describe("headers and footers", () => {
       ...(opts.extra ?? {}),
     });
   }
+
+  it("imports and re-exports a bookmark inside a header", () => {
+    const r = runImport(
+      docxWithHeaderFooter({
+        headerXml: headerPartXml(
+          `<w:p><w:bookmarkStart w:id="7" w:name="hdrMark"/><w:r><w:t>top</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p>`,
+        ),
+      }),
+    );
+    // imported: the bookmark resolves to the header band's paragraph
+    const range = r.doc.bookmarks?.["hdrMark"];
+    expect(range).toBeDefined();
+    expect(range!.start.blockId).toBe(para(r.doc.section.header![0]).id);
+    // re-exported: the marker lands in the HEADER part, not just the body
+    const parts = unzipSync(writeDocx(r.doc).bytes);
+    const headerPart = Object.keys(parts).find((k) => /word\/header\d+\.xml$/.test(k))!;
+    expect(strFromU8(parts[headerPart]!)).toContain('w:name="hdrMark"');
+  });
 
   it("imports the default header as a block story", () => {
     const r = runImport(
