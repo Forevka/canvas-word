@@ -27,6 +27,7 @@ import {
   comparePositions,
   documentEdges,
   hitTest,
+  hitTestCell,
   hitTestObject,
   hitTestColumnBoundary,
   caretRect,
@@ -37,6 +38,7 @@ import {
   type GeoScope,
 } from "../layout/geometry";
 import type { PagePoint } from "../paint/renderer";
+import type { CellSelection } from "../editor/state";
 import { extractFragment, fragmentToHtml, fragmentToPlainText } from "./clipboard";
 
 export interface SelectionControllerDeps {
@@ -45,6 +47,8 @@ export interface SelectionControllerDeps {
   getDoc(): Document;
   getSelection(): DocSelection | null;
   setSelection(sel: DocSelection | null): void;
+  /** Set (or clear) the rectangular table-cell selection during a cross-cell drag. */
+  setCellSelection(sel: CellSelection | null): void;
   clientToPage(clientX: number, clientY: number): PagePoint | null;
   /** Route focus to the IME proxy so typing works right after a click. */
   focusProxy(): void;
@@ -153,6 +157,10 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
   let dragging = false;
   let autoScrollDir = 0;
   let autoScrollRaf: number | null = null;
+  // Cross-cell drag: the table + anchor cell captured on mousedown, and whether
+  // the drag has crossed into another cell (switching from text to cell selection).
+  let cellDragTable: string | null = null;
+  let cellDragAnchor: { row: number; col: number } | null = null;
 
   const posFromEvent = (ev: MouseEvent): DocPosition | null => {
     const pt = deps.clientToPage(ev.clientX, ev.clientY);
@@ -284,6 +292,12 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
       selectWordAt(pos);
       return;
     }
+    // Capture a potential cross-cell drag origin (body tables only). Dragging
+    // into another cell of the same table switches to rectangular cell selection.
+    const startCell = !story && !band ? hitTestCell(deps.getTree(), pt.pageIndex, pt.x, pt.y) : null;
+    cellDragTable = startCell?.tableId ?? null;
+    cellDragAnchor = startCell ? { row: startCell.row, col: startCell.col } : null;
+    deps.setCellSelection(null); // a fresh press clears any prior cell selection
     dragging = true;
     applyMove(pos, ev.shiftKey);
   };
@@ -314,13 +328,59 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
           ? Math.ceil((ev.clientY - (rect.bottom - margin)) / 3)
           : 0;
     if (autoScrollDir !== 0 && autoScrollRaf === null) autoScrollTick();
+    // Cross-cell drag: once the pointer enters a different cell of the same
+    // table, paint a rectangular cell selection instead of a text selection.
+    if (cellDragTable && cellDragAnchor) {
+      const pt = deps.clientToPage(ev.clientX, ev.clientY);
+      const cur = pt ? hitTestCell(deps.getTree(), pt.pageIndex, pt.x, pt.y) : null;
+      if (cur && cur.tableId === cellDragTable) {
+        const crossed = cur.row !== cellDragAnchor.row || cur.col !== cellDragAnchor.col;
+        if (crossed) {
+          deps.setCellSelection({ tableId: cellDragTable, anchor: cellDragAnchor, focus: { row: cur.row, col: cur.col } });
+          return; // suppress text selection while spanning cells
+        }
+      }
+    }
     const pos = posFromEvent(ev);
     if (pos) applyMove(pos, true);
   };
 
   const onMouseUp = (): void => {
     dragging = false;
+    cellDragTable = null;
+    cellDragAnchor = null;
     stopAutoScroll();
+  };
+
+  // Touch/pen: open the soft keyboard by focusing the IME proxy inside a trusted
+  // gesture. The synthesized mousedown after a tap is NOT a trusted activation,
+  // so focusing only there leaves the keyboard shut on iOS. We focus on pointerUP
+  // (also the most reliable moment on iOS) and ONLY for a clean single-finger tap
+  // — never when a second finger joined (pinch) or the finger dragged (scroll),
+  // so pinch-zoom and scroll don't pop the keyboard. Caret placement still rides
+  // the synthesized mouse path (onMouseDown); this only routes focus.
+  let touchCount = 0;
+  let touchTap: { x: number; y: number; multi: boolean } | null = null;
+  const onTouchDown = (ev: PointerEvent): void => {
+    if (ev.pointerType === "mouse") return;
+    touchCount++;
+    if (touchCount === 1) touchTap = { x: ev.clientX, y: ev.clientY, multi: false };
+    else if (touchTap) touchTap.multi = true; // a 2nd finger → pinch, not a tap
+  };
+  const onTouchUp = (ev: PointerEvent): void => {
+    if (ev.pointerType === "mouse") return;
+    touchCount = Math.max(0, touchCount - 1);
+    if (touchCount !== 0) return; // wait until every finger lifts
+    const tap = touchTap;
+    touchTap = null;
+    if (!tap || tap.multi) return; // was a pinch / multi-touch
+    if (Math.hypot(ev.clientX - tap.x, ev.clientY - tap.y) > 10) return; // a drag/scroll
+    deps.focusProxy();
+  };
+  const onTouchCancel = (ev: PointerEvent): void => {
+    if (ev.pointerType === "mouse") return;
+    touchCount = Math.max(0, touchCount - 1);
+    if (touchCount === 0) touchTap = null;
   };
 
   // Hover affordances: col-resize over column grips, pointer + tooltip over links.
@@ -452,6 +512,9 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
   };
 
   container.addEventListener("mousedown", onMouseDown);
+  container.addEventListener("pointerdown", onTouchDown);
+  container.addEventListener("pointerup", onTouchUp);
+  container.addEventListener("pointercancel", onTouchCancel);
   window.addEventListener("mousemove", onMouseMove);
   window.addEventListener("mouseup", onMouseUp);
   container.addEventListener("mousemove", onHoverMove);
@@ -463,6 +526,9 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
     destroy(): void {
       stopAutoScroll();
       container.removeEventListener("mousedown", onMouseDown);
+      container.removeEventListener("pointerdown", onTouchDown);
+      container.removeEventListener("pointerup", onTouchUp);
+      container.removeEventListener("pointercancel", onTouchCancel);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
       container.removeEventListener("mousemove", onHoverMove);

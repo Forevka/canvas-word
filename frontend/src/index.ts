@@ -7,12 +7,15 @@ import { BAND_CONTAINERS } from "@cw/shared";
 import type { DocPosition, DocSelection, UserInfo } from "@cw/shared";
 import { isCollapsed, colorForId, userDisplayName } from "@cw/shared";
 import { applyOp, containerBlocks, containerOf, effectiveFractions, locateImage, sliceRuns, type Op } from "@cw/shared";
-import { bandParagraphs, blockById, containerListOf, locateParagraph, paragraphsOf, styleAtRuns, textOfRuns } from "@cw/shared";
+import { bandParagraphs, blockById, buildTableGrid, containerListOf, gridOriginOfCell, locateParagraph, normalizeRect, paragraphsOf, styleAtRuns, textOfRuns } from "@cw/shared";
+import type { CellBorders } from "@cw/shared";
 import { createLayoutEngine, type LayoutEngine } from "./layout/engine";
 import {
   caretRect,
+  cellRangeRects,
   comparePositions,
   hitTest,
+  hitTestCell,
   hitTestObject,
   linkAt,
   objectRect,
@@ -31,6 +34,7 @@ import { createKeymapHandler, type StyleKey } from "./input/keymap";
 import { extractFragment, fragmentToHtml, fragmentToPlainText, htmlToFragment, type DocFragment } from "./input/clipboard";
 import { showContextMenu, type ContextMenuHandle, type MenuEntry } from "./ui/contextMenu";
 import { showSdtInspector, type SdtInspectorData, type SdtInspectorHandle } from "./ui/sdtInspector";
+import { showTableProperties, type BorderStyleName, type TablePropertiesHandle } from "./ui/tableProperties";
 import { createA11yMirror } from "./a11y/mirror";
 import {
   changeListLevel,
@@ -44,9 +48,12 @@ import {
   deleteBackward,
   deleteForward,
   deleteImage,
+  findTableById,
   insertTableColumnCmd,
   insertTableRowCmd,
   mergeCellsCmd,
+  setCellsBordersCmd,
+  setCellsShadingCmd,
   removeContentControl,
   replaceBackAndInsert,
   replaceSdtContent,
@@ -68,7 +75,7 @@ import {
 } from "./editor/commands";
 import type { SdtType } from "@cw/shared";
 import { ICONS } from "./ui/icons";
-import type { Command, EditorState, Transaction } from "./editor/state";
+import type { CellSelection, Command, EditorState, Transaction } from "./editor/state";
 import { UndoManager } from "./editor/undo";
 import { ChangeRecorder, type ChangeSink } from "./sync/changeRecorder";
 import type { Change, ChangeOrigin } from "@cw/shared";
@@ -90,6 +97,10 @@ export interface CurrentFormat {
   /** Paragraph alignment, and which list (if any) the caret paragraph is in. */
   align: ParaStyle["align"] | null;
   listKind: "bullet" | "number" | null;
+  /** Caret/selection context — drives which ribbon buttons are enabled. */
+  imageSelected: boolean;
+  inTable: boolean;
+  inContentControl: boolean;
 }
 
 export interface SearchState {
@@ -195,12 +206,13 @@ export function createEditor(
   let doc = initialDoc;
   let tree: LayoutTree = engine.layout(doc);
   let selection: DocSelection | null = null;
+  let cellSelection: CellSelection | null = null; // rectangular table-cell selection
   let pendingStyle: Partial<CharStyle> | null = null;
   let activeStory: GeoScope | null = null; // header/footer story-edit scope
   let savedBodySelection: DocSelection | null = null; // restored on story exit
   paint.setTree(tree);
 
-  const state = (): EditorState => ({ doc, selection, pendingStyle });
+  const state = (): EditorState => ({ doc, selection, cellSelection, pendingStyle });
   const scope = (): GeoScope | undefined => activeStory ?? undefined;
 
   // ---- selection visuals + proxy follow ----------------------------------
@@ -310,8 +322,30 @@ export function createEditor(
     paint.setSdtAdornment({ rects, label: props.alias ?? SDT_LABELS[props.type] ?? "Content control" });
   };
 
+  /** Pixel rects for the active cell selection, normalized to whole merged cells. */
+  const cellSelectionRects = (): Rect[] => {
+    if (!cellSelection) return [];
+    const found = findTableById(doc, cellSelection.tableId);
+    if (!found) return [];
+    const grid = buildTableGrid(found.table);
+    const rect = normalizeRect(grid, {
+      r0: cellSelection.anchor.row,
+      c0: cellSelection.anchor.col,
+      r1: cellSelection.focus.row,
+      c1: cellSelection.focus.col,
+    });
+    return cellRangeRects(tree, cellSelection.tableId, rect.r0, rect.c0, rect.r1, rect.c1);
+  };
+
   const refreshSelectionVisuals = (): void => {
     updateSdtAdornment();
+    // A rectangular cell selection paints filled cell rects and hides the caret;
+    // it supersedes any lingering text selection visual.
+    if (cellSelection) {
+      paint.setSelectionRects(cellSelectionRects());
+      paint.setCaret(null);
+      return;
+    }
     if (!selection) {
       paint.setSelectionRects([]);
       paint.setCaret(null);
@@ -390,10 +424,21 @@ export function createEditor(
       }
     }
     selection = next;
+    cellSelection = null; // a text caret/selection supersedes a cell selection
     pendingStyle = null; // moving the caret drops the pending typing style
     refreshSelectionVisuals();
     mirror.sync(state());
     notifyChange();
+    options.onSelectionChange?.(selection);
+  };
+
+  /** Set (or clear) the rectangular table-cell selection. Repaints the cell rects
+   *  and updates the menu/toolbar context. */
+  const setCellSelection = (next: CellSelection | null): void => {
+    if (!next && !cellSelection) return;
+    cellSelection = next;
+    refreshSelectionVisuals();
+    mirror.sync(state());
     options.onSelectionChange?.(selection);
   };
 
@@ -584,6 +629,7 @@ export function createEditor(
   const afterMutation = (selectionAfter: DocSelection | null): void => {
     relayout();
     selection = selectionAfter;
+    cellSelection = null; // grid coords are invalidated by any structural change
     refreshSelectionVisuals();
     refreshObjectFrame(); // images move/resize with reflow; frame follows
     if (searchQuery) {
@@ -1090,6 +1136,7 @@ export function createEditor(
     getDoc: () => doc,
     getSelection: () => selection,
     setSelection,
+    setCellSelection,
     clientToPage: (x, y) => paint.clientToPage(x, y),
     focusProxy: () => proxy.focus(),
     onDeleteSelection: () => dispatch(deleteBackward()),
@@ -1477,6 +1524,92 @@ export function createEditor(
     return level?.format === "bullet" ? "bullet" : "decimal";
   };
 
+  // ---- Borders & Shading modal -------------------------------------------
+
+  let tableProps: TablePropertiesHandle | null = null;
+
+  /** True when a page point lands within the active rectangular cell selection. */
+  const pointInCellSelection = (pt: { pageIndex: number; x: number; y: number }): boolean => {
+    if (!cellSelection) return false;
+    const hit = hitTestCell(tree, pt.pageIndex, pt.x, pt.y);
+    if (!hit || hit.tableId !== cellSelection.tableId) return false;
+    const found = findTableById(doc, cellSelection.tableId);
+    if (!found) return false;
+    const rect = normalizeRect(buildTableGrid(found.table), {
+      r0: cellSelection.anchor.row,
+      c0: cellSelection.anchor.col,
+      r1: cellSelection.focus.row,
+      c1: cellSelection.focus.col,
+    });
+    return hit.row >= rect.r0 && hit.row <= rect.r1 && hit.col >= rect.c0 && hit.col <= rect.c1;
+  };
+
+  /** A single-cell selection at the caret's cell (when no rectangular cell
+   *  selection is active), so the modal can target the cell the caret sits in. */
+  const singleCellAtCaret = (): CellSelection | null => {
+    const focus = selection?.focus;
+    if (!focus) return null;
+    const loc = locateParagraph(doc, focus.blockId);
+    if (loc?.kind !== "cell") return null;
+    const table = containerListOf(doc, loc.where)[loc.bi];
+    if (!table || table.kind !== "table") return null;
+    const origin = gridOriginOfCell(buildTableGrid(table), loc.ri, loc.ci);
+    if (!origin) return null;
+    return { tableId: table.id, anchor: { row: origin.row, col: origin.col }, focus: { row: origin.row, col: origin.col } };
+  };
+
+  /** Seed the modal's border controls from an existing edge, else a 1px black line. */
+  const borderSeed = (b: CellBorders | undefined): { color: string; widthPx: number; style: BorderStyleName } => {
+    const e = b && (b.top ?? b.right ?? b.bottom ?? b.left);
+    return { color: e?.color ?? "#000000", widthPx: e?.widthPx ?? 1, style: e?.style ?? "single" };
+  };
+
+  const openTableProperties = (): void => {
+    const captured = cellSelection ?? singleCellAtCaret();
+    if (!captured) return;
+    const found = findTableById(doc, captured.tableId);
+    if (!found) return;
+    const grid = buildTableGrid(found.table);
+    const rect = normalizeRect(grid, {
+      r0: captured.anchor.row,
+      c0: captured.anchor.col,
+      r1: captured.focus.row,
+      c1: captured.focus.col,
+    });
+    const topLeft = grid.slots[rect.r0]?.[rect.c0]?.cell;
+    const multiCell = rect.r1 > rect.r0 || rect.c1 > rect.c0;
+    const seed = borderSeed(topLeft?.borders);
+    tableProps?.close();
+    tableProps = showTableProperties(
+      {
+        color: seed.color,
+        widthPx: seed.widthPx,
+        style: seed.style,
+        shading: topLeft?.shading ?? null,
+        rangeLabel: multiCell ? "Selected cells" : "1 cell",
+        multiCell,
+      },
+      {
+        applyBorders: (spec, edges) => {
+          dispatch(setCellsBordersCmd(spec, edges, captured));
+          keepCellSelection(captured); // border edits don't change the grid — keep the highlight
+        },
+        applyShading: (fill) => {
+          dispatch(setCellsShadingCmd(fill, captured));
+          keepCellSelection(captured);
+        },
+      },
+    );
+  };
+
+  /** Re-assert a cell selection after a property edit that left the grid intact
+   *  (afterMutation clears it defensively), so the highlight stays put while the
+   *  modal is open. */
+  const keepCellSelection = (cs: CellSelection): void => {
+    cellSelection = cs;
+    refreshSelectionVisuals();
+  };
+
   const buildContextEntries = (pt: { pageIndex: number; x: number; y: number }): MenuEntry[] => {
     const item = (
       label: string,
@@ -1486,12 +1619,13 @@ export function createEditor(
     const sep: MenuEntry = { kind: "sep" };
 
     const hasSel = !!selection && !isCollapsed(selection);
+    const hasCellSel = !!cellSelection;
     const focus = selection?.focus ?? null;
     const para = focus ? blockById(doc, focus.blockId) : undefined;
     const loc = focus ? locateParagraph(doc, focus.blockId) : null;
     const imgId = selectedObject;
     const imgInCell = imgId ? locateImage(doc, imgId)?.kind === "cell" : false;
-    const inCell = loc?.kind === "cell" || imgInCell;
+    const inCell = loc?.kind === "cell" || imgInCell || hasCellSel;
     const sdtId = focus && !imgId ? sdtAtPosition(doc, focus) : null;
     const linkUrl = linkAt(tree, pt.pageIndex, pt.x, pt.y, scope());
     const band = bandAtPoint(pt);
@@ -1660,8 +1794,10 @@ export function createEditor(
             { kind: "item", label: "Table", icon: ICONS.deleteTable, danger: true, onClick: () => dispatch(deleteTableCmd()) },
           ],
         },
-        item("Merge Cells", () => dispatch(mergeCellsCmd()), { icon: ICONS.mergeCells, disabled: !hasSel }),
+        item("Merge Cells", () => dispatch(mergeCellsCmd()), { icon: ICONS.mergeCells, disabled: !hasSel && !hasCellSel }),
         item("Unmerge Cell", () => dispatch(unmergeCellCmd()), { icon: ICONS.unmergeCells }),
+        sep,
+        item("Borders & Shading…", () => openTableProperties(), { icon: ICONS.borders }),
       );
     }
 
@@ -1738,17 +1874,21 @@ export function createEditor(
     closeContextMenu();
     proxy.focus();
 
-    // Word: right-click places focus unless it lands inside an existing range.
-    const imageId = hitTestObject(tree, pt.pageIndex, pt.x, pt.y)?.blockId ?? null;
-    if (imageId) {
-      selectObject(imageId);
-      caretIntoImageCell(imageId); // lets the Table section act on the image's cell
-    } else {
-      selectObject(null);
-      const pos = hitTest(tree, pt.pageIndex, pt.x, pt.y, scope());
-      if (pos && !positionWithinSelection(pos)) setSelection({ anchor: pos, focus: pos });
+    // Word: right-click places focus unless it lands inside an existing range —
+    // including a rectangular cell selection, which must survive so Merge /
+    // Borders act on the whole dragged block, not just the clicked cell.
+    if (!pointInCellSelection(pt)) {
+      const imageId = hitTestObject(tree, pt.pageIndex, pt.x, pt.y)?.blockId ?? null;
+      if (imageId) {
+        selectObject(imageId);
+        caretIntoImageCell(imageId); // lets the Table section act on the image's cell
+      } else {
+        selectObject(null);
+        const pos = hitTest(tree, pt.pageIndex, pt.x, pt.y, scope());
+        if (pos && !positionWithinSelection(pos)) setSelection({ anchor: pos, focus: pos });
+      }
+      refreshSelectionVisuals();
     }
-    refreshSelectionVisuals();
 
     const entries = buildContextEntries(pt);
     if (entries.length > 0) contextMenu = showContextMenu(ev.clientX, ev.clientY, entries);
@@ -1780,6 +1920,72 @@ export function createEditor(
     },
     { passive: false },
   );
+
+  // Soft keyboard: when it opens, the VISUAL viewport shrinks but the document's
+  // native scroll doesn't know the caret is now behind it. On a visualViewport
+  // resize/scroll, re-center a focused, collapsed caret so it stays readable
+  // above the keyboard. (Android resizes the layout viewport so centering is
+  // exact; iOS overlays the keyboard, where centering keeps the caret in the
+  // upper half, clear of a typical keyboard.)
+  const vv = window.visualViewport;
+  const onViewportChange = (): void => {
+    if (!proxy.hasFocus() || !selection || !isCollapsed(selection)) return;
+    const caret = caretRect(tree, selection.focus, scope());
+    if (caret) paint.ensureVisible(caret, "center");
+  };
+  if (vv) {
+    vv.addEventListener("resize", onViewportChange);
+    vv.addEventListener("scroll", onViewportChange);
+  }
+
+  // Pinch-to-zoom (touch): two fingers zoom the DOCUMENT through the same
+  // anchor-aware applyZoom the wheel uses — not the browser chrome (#app has
+  // touch-action that disables native pinch there). The pinch MIDPOINT Y is the
+  // zoom anchor, so the point between the fingers stays put. applyZoom calls are
+  // throttled to one per frame to avoid relayout/paint thrash.
+  const pinchPts = new Map<number, { x: number; y: number }>();
+  let pinchDist = 0;
+  let pinchZoom = 1;
+  let pinchRaf: number | null = null;
+  let pinchNext: { scale: number; midY: number } | null = null;
+  const pinchPair = (): [{ x: number; y: number }, { x: number; y: number }] | null => {
+    if (pinchPts.size !== 2) return null;
+    const it = pinchPts.values();
+    return [it.next().value!, it.next().value!];
+  };
+  const flushPinch = (): void => {
+    pinchRaf = null;
+    if (!pinchNext) return;
+    applyZoom(pinchZoom * pinchNext.scale, pinchNext.midY);
+    pinchNext = null;
+  };
+  const onPinchDown = (ev: PointerEvent): void => {
+    if (ev.pointerType === "mouse") return;
+    pinchPts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    const pair = pinchPair();
+    if (pair) {
+      pinchDist = Math.hypot(pair[0].x - pair[1].x, pair[0].y - pair[1].y);
+      pinchZoom = paint.getZoom();
+    }
+  };
+  const onPinchMove = (ev: PointerEvent): void => {
+    if (!pinchPts.has(ev.pointerId)) return;
+    pinchPts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    const pair = pinchPair();
+    if (!pair || pinchDist === 0) return;
+    ev.preventDefault();
+    const dist = Math.hypot(pair[0].x - pair[1].x, pair[0].y - pair[1].y);
+    pinchNext = { scale: dist / pinchDist, midY: (pair[0].y + pair[1].y) / 2 };
+    if (pinchRaf === null) pinchRaf = requestAnimationFrame(flushPinch);
+  };
+  const onPinchUp = (ev: PointerEvent): void => {
+    if (!pinchPts.delete(ev.pointerId)) return;
+    if (pinchPts.size < 2) pinchDist = 0; // a finger lifted: end this pinch
+  };
+  container.addEventListener("pointerdown", onPinchDown);
+  container.addEventListener("pointermove", onPinchMove, { passive: false });
+  container.addEventListener("pointerup", onPinchUp);
+  container.addEventListener("pointercancel", onPinchUp);
 
   return {
     focus(): void {
@@ -1841,6 +2047,9 @@ export function createEditor(
         subscript: effective.verticalAlign === "sub",
         align: block?.style.align ?? null,
         listKind,
+        imageSelected: selectedObject !== null,
+        inTable: !!cellSelection || (focus ? locateParagraph(doc, focus.blockId)?.kind === "cell" : false),
+        inContentControl: focus && !selectedObject ? sdtAtPosition(doc, focus) !== null : false,
       };
     },
     align(align: ParaStyle["align"]): void {
@@ -1922,8 +2131,18 @@ export function createEditor(
       searchClear();
       closeContextMenu();
       sdtInspector?.close();
+      tableProps?.close();
       container.removeEventListener("keydown", keymapHandler);
       container.removeEventListener("contextmenu", onContextMenu);
+      if (vv) {
+        vv.removeEventListener("resize", onViewportChange);
+        vv.removeEventListener("scroll", onViewportChange);
+      }
+      if (pinchRaf !== null) cancelAnimationFrame(pinchRaf);
+      container.removeEventListener("pointerdown", onPinchDown);
+      container.removeEventListener("pointermove", onPinchMove);
+      container.removeEventListener("pointerup", onPinchUp);
+      container.removeEventListener("pointercancel", onPinchUp);
       controller.destroy();
       objectFrame.destroy();
       mirror.destroy();

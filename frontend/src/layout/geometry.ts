@@ -501,6 +501,81 @@ export function hitTestColumnBoundary(
   return null;
 }
 
+/** A point's table cell, in GRID coordinates (body tables only). Grid row is the
+ *  table chunk's first row index (PlacedBlock.firstLineIndex) plus the local row
+ *  band containing y; grid column comes from the cumulative colWidths, so merged
+ *  cells and rowSpan holes don't distort it. */
+export interface CellHit {
+  tableId: string;
+  row: number;
+  col: number;
+}
+
+export function hitTestCell(tree: LayoutTree, pageIndex: number, x: number, y: number): CellHit | null {
+  const page = tree.pages[pageIndex];
+  if (!page) return null;
+  for (const block of page.blocks) {
+    const t = block.table;
+    if (!t) continue;
+    if (x < t.x || x > t.x + t.width || y < t.y || y > t.y + t.height) continue;
+    // Local row band (placed rows are grid rows; this chunk starts at firstLineIndex).
+    let localRow = t.rows.length - 1;
+    for (let i = 0; i < t.rows.length; i++) {
+      const r = t.rows[i]!;
+      if (y < r.y + r.height) {
+        localRow = i;
+        break;
+      }
+    }
+    const row = block.firstLineIndex + localRow;
+    // Column band from cumulative widths.
+    let col = t.colWidths.length - 1;
+    let edge = t.x;
+    for (let i = 0; i < t.colWidths.length; i++) {
+      if (x < edge + t.colWidths[i]!) {
+        col = i;
+        break;
+      }
+      edge += t.colWidths[i]!;
+    }
+    return { tableId: block.blockId, row, col };
+  }
+  return null;
+}
+
+/** Pixel rectangles covering a NORMALIZED grid rectangle [r0..r1]×[c0..c1] of a
+ *  table (one per page chunk it spans). The caller normalizes against the model
+ *  grid first so the rectangle aligns to whole merged cells. */
+export function cellRangeRects(
+  tree: LayoutTree,
+  tableId: string,
+  r0: number,
+  c0: number,
+  r1: number,
+  c1: number,
+): Rect[] {
+  const rects: Rect[] = [];
+  for (let pageIndex = 0; pageIndex < tree.pages.length; pageIndex++) {
+    for (const block of tree.pages[pageIndex]!.blocks) {
+      const t = block.table;
+      if (!t || block.blockId !== tableId) continue;
+      const chunkFirst = block.firstLineIndex;
+      const chunkLast = chunkFirst + t.rows.length - 1;
+      const lo = Math.max(r0, chunkFirst);
+      const hi = Math.min(r1, chunkLast);
+      if (lo > hi) continue;
+      const topRow = t.rows[lo - chunkFirst]!;
+      const botRow = t.rows[hi - chunkFirst]!;
+      let xLeft = t.x;
+      for (let i = 0; i < c0 && i < t.colWidths.length; i++) xLeft += t.colWidths[i]!;
+      let width = 0;
+      for (let i = c0; i <= c1 && i < t.colWidths.length; i++) width += t.colWidths[i]!;
+      rects.push({ pageIndex, x: xLeft, y: topRow.y, width, height: botRow.y + botRow.height - topRow.y });
+    }
+  }
+  return rects;
+}
+
 /** First/last positions in the document — or in the scoped band story. */
 export function documentEdges(tree: LayoutTree, scope?: GeoScope): { start: DocPosition; end: DocPosition } | null {
   const idx = getIndex(tree, scope);

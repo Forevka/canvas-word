@@ -1,14 +1,17 @@
 // Commands: pure (state) -> Transaction | null. The keymap, the IME proxy, and
 // (later) toolbar buttons all dispatch through these.
 
-import type { Block, CharStyle, ImageBlock, ParaStyle, Paragraph, Run, SdtProps, SdtType, TableBlock, TableCell, TableRow } from "@cw/shared";
-import type { DocPosition, DocSelection } from "@cw/shared";
-import { isCollapsed } from "@cw/shared";
+import type { Block, CellBorder, CellBorders, CharStyle, ImageBlock, ParaStyle, Paragraph, Run, SdtProps, SdtType, TableBlock, TableCell, TableRow } from "@cw/shared";
+import type { DocPosition, DocSelection, GridRect } from "@cw/shared";
+import { isCollapsed, BAND_CONTAINERS } from "@cw/shared";
 import type { Op, SectionGeometry } from "@cw/shared";
-import { sliceRuns, applyStylePatchToRuns, mapTextInRuns, containerOf, containerBlocks, locateImage, freshId } from "@cw/shared";
+import { sliceRuns, applyStylePatchToRuns, mapTextInRuns, containerOf, containerBlocks, containerListOf, locateImage, freshId } from "@cw/shared";
+import { buildTableGrid, cellsInRect, gridOriginOfCell, mergeRows, normalizeRect, rebuildRows, unmergeRows } from "@cw/shared";
+import type { CellSelection } from "./state";
 import {
   blockById,
   blockIndexOf,
+  bodyParagraphs,
   isInCell,
   locateParagraph,
   paragraphsOf,
@@ -605,8 +608,8 @@ function buildTocParagraphs(doc: EditorState["doc"]): Paragraph[] {
       },
     },
   ];
-  for (const b of doc.blocks) {
-    if (b.kind !== "paragraph") continue;
+  // Scan body AND table-cell paragraphs so headings inside tables are listed.
+  for (const b of bodyParagraphs(doc)) {
     const level = headingLevel(b);
     if (level === null) continue;
     const text = textOfRuns(b.runs).replace(/\v/g, " ").trim();
@@ -1021,7 +1024,8 @@ export function insertFootnoteCmd(): Command {
     if (!sel || !isCollapsed(sel)) return null;
     const at = sel.focus;
     const loc = locateParagraph(state.doc, at.blockId);
-    if (loc?.kind !== "top") return null; // body top-level paragraphs only (v1)
+    // Body paragraphs OR body table cells — not header/footer bands or notes.
+    if (loc?.kind !== "top" && !(loc?.kind === "cell" && loc.where === "body")) return null;
 
     // Document-ordered refs with their host paragraph + run index.
     interface RefAt {
@@ -1029,16 +1033,18 @@ export function insertFootnoteCmd(): Command {
       runIdx: number;
       offset: number;
     }
+    // Walk body AND table-cell paragraphs in document order, so numbering stays
+    // correct wherever a ref lives (and a ref can sit inside a table cell).
+    const body = bodyParagraphs(state.doc);
     const refs: RefAt[] = [];
-    for (const b of state.doc.blocks) {
-      if (b.kind !== "paragraph") continue;
+    body.forEach((para) => {
       let off = 0;
-      b.runs.forEach((r, runIdx) => {
-        if (r.style.footnoteRef) refs.push({ para: b, runIdx, offset: off });
+      para.runs.forEach((r, runIdx) => {
+        if (r.style.footnoteRef) refs.push({ para, runIdx, offset: off });
         off += r.text.length;
       });
-    }
-    const orderOf = (blockId: string): number => state.doc.blocks.findIndex((b) => b.id === blockId);
+    });
+    const orderOf = (blockId: string): number => body.findIndex((p) => p.id === blockId);
     const caretOrder = orderOf(at.blockId);
     let idx = 0;
     while (idx < refs.length) {
@@ -1062,7 +1068,7 @@ export function insertFootnoteCmd(): Command {
       m.set(r.runIdx, String(k + 2));
     }
     for (const [paraId, m] of renumber) {
-      const p = state.doc.blocks.find((b) => b.id === paraId) as Paragraph;
+      const p = blockById(state.doc, paraId)!; // cell-aware (refs may live in cells)
       const runs = p.runs.map((r, i) => (m.has(i) ? { ...r, text: m.get(i)! } : r));
       ops.push({ type: "setRuns", blockId: paraId, runs });
     }
@@ -1346,58 +1352,225 @@ export function deleteTableColumnCmd(): Command {
   };
 }
 
-/** Merge horizontally: selection anchor and focus must sit in different cells
- *  of the SAME row. Content concatenates; the merged cell spans the columns.
- *  Invertible in one step via the whole-row setTableRow op. */
+/** Find a body- or band-level table by id (cell selections are body-only today,
+ *  but a table can also live in a header/footer story). */
+export function findTableById(doc: EditorState["doc"], tableId: string): { table: TableBlock; where: "body" | (typeof BAND_CONTAINERS)[number] } | null {
+  for (const where of ["body", ...BAND_CONTAINERS] as const) {
+    const t = containerListOf(doc, where).find((b): b is TableBlock => b.kind === "table" && b.id === tableId);
+    if (t) return { table: t, where };
+  }
+  return null;
+}
+
+/** Resolve a rectangular cell range to act on: an explicit `override` (the modal
+ *  passes the range it captured) or the live cell selection wins; otherwise a
+ *  text selection straddling two cells of the same table is the rectangle
+ *  between them. Returns grid-space coordinates. */
+function cellRangeFromState(state: EditorState, override?: CellSelection | null): { table: TableBlock; rect: GridRect } | null {
+  const cs = override ?? state.cellSelection;
+  if (cs) {
+    const found = findTableById(state.doc, cs.tableId);
+    if (!found) return null;
+    return { table: found.table, rect: { r0: cs.anchor.row, c0: cs.anchor.col, r1: cs.focus.row, c1: cs.focus.col } };
+  }
+  const sel = state.selection;
+  if (!sel) return null;
+  const a = locateParagraph(state.doc, sel.anchor.blockId);
+  const f = locateParagraph(state.doc, sel.focus.blockId);
+  if (a?.kind !== "cell" || f?.kind !== "cell" || a.where !== f.where || a.bi !== f.bi) return null;
+  const table = containerBlocks(state.doc, a.where)[a.bi] as TableBlock;
+  const grid = buildTableGrid(table);
+  const oa = gridOriginOfCell(grid, a.ri, a.ci);
+  const of = gridOriginOfCell(grid, f.ri, f.ci);
+  if (!oa || !of) return null;
+  return { table, rect: { r0: oa.row, c0: oa.col, r1: of.row, c1: of.col } };
+}
+
+/** A block is "blank" if it's an empty paragraph. Used to avoid stacking a pile
+ *  of empty paragraphs when merging mostly-empty cells. */
+const isBlankPara = (b: Block): boolean => b.kind === "paragraph" && b.runs.every((r) => r.text.length === 0);
+
+/** Concatenate covered cells' content for a merge, dropping wholly-blank cells
+ *  unless they're all blank (then keep the first cell's single paragraph). */
+function mergedBlocks(cells: TableCell[]): Block[] {
+  const nonBlank = cells.filter((c) => !c.blocks.every(isBlankPara));
+  if (nonBlank.length === 0) return cells[0]!.blocks.slice(0, 1);
+  return nonBlank.flatMap((c) => c.blocks);
+}
+
+/** Merge any rectangular block of cells (horizontal, vertical, or 2-D) into one
+ *  spanning cell. The rectangle is normalized so it can't bisect an existing
+ *  merged cell. Content concatenates into the top-left; styling follows it.
+ *  Emitted as one setTableStructure op (multiple rows change), invertible. */
 export function mergeCellsCmd(): Command {
   return (state) => {
-    const sel = state.selection;
-    if (!sel) return null;
-    const a = locateParagraph(state.doc, sel.anchor.blockId);
-    const f = locateParagraph(state.doc, sel.focus.blockId);
-    if (a?.kind !== "cell" || f?.kind !== "cell") return null;
-    if (a.bi !== f.bi || a.ri !== f.ri || a.ci === f.ci) return null;
-    const table = state.doc.blocks[a.bi] as TableBlock;
-    const row = table.rows[a.ri]!;
-    const ciStart = Math.min(a.ci, f.ci);
-    const ciEnd = Math.max(a.ci, f.ci);
-    const covered = row.cells.slice(ciStart, ciEnd + 1);
-    const spanSum = covered.reduce((s, c) => s + (c.colSpan ?? 1), 0);
-    const mergedCell: TableCell = {
-      id: covered[0]!.id,
-      blocks: covered.flatMap((c) => c.blocks),
-      colSpan: spanSum,
+    const range = cellRangeFromState(state);
+    if (!range) return null;
+    const grid = buildTableGrid(range.table);
+    const rect = normalizeRect(grid, range.rect);
+    if (rect.r0 === rect.r1 && rect.c0 === rect.c1) return null; // single cell — nothing to merge
+    const topLeft = grid.slots[rect.r0]![rect.c0]!.cell;
+    const colSpan = rect.c1 - rect.c0 + 1;
+    const rowSpan = rect.r1 - rect.r0 + 1;
+    const merged: TableCell = {
+      id: topLeft.id,
+      blocks: mergedBlocks(cellsInRect(grid, rect).map((s) => s.cell)),
+      ...(colSpan > 1 ? { colSpan } : {}),
+      ...(rowSpan > 1 ? { rowSpan } : {}),
+      ...(topLeft.shading !== undefined ? { shading: topLeft.shading } : {}),
+      ...(topLeft.borders !== undefined ? { borders: topLeft.borders } : {}),
+      ...(topLeft.margin !== undefined ? { margin: topLeft.margin } : {}),
     };
-    const cells = [...row.cells.slice(0, ciStart), mergedCell, ...row.cells.slice(ciEnd + 1)];
-    const firstPara = firstCellPara(mergedCell);
+    const rows = mergeRows(grid, rect, merged);
+    const firstPara = firstCellPara(merged);
     return tr(
-      [{ type: "setTableRow", tableId: table.id, rowIndex: a.ri, row: { cells } }],
+      [structureOp(range.table, rows)],
       firstPara ? caret(firstPara.id, 0) : null,
       "command",
     );
   };
 }
 
-/** Split a merged cell back into single-column cells (content stays in the first). */
+/** The cell to unmerge: the top-left of an active cell selection, else the cell
+ *  containing the caret. */
+function unmergeTarget(state: EditorState): { table: TableBlock; row: number; col: number; cell: TableCell } | null {
+  const cs = state.cellSelection;
+  if (cs) {
+    const found = findTableById(state.doc, cs.tableId);
+    if (!found) return null;
+    const grid = buildTableGrid(found.table);
+    const rect = normalizeRect(grid, { r0: cs.anchor.row, c0: cs.anchor.col, r1: cs.focus.row, c1: cs.focus.col });
+    const slot = grid.slots[rect.r0]?.[rect.c0];
+    if (!slot) return null;
+    return { table: found.table, row: slot.originRow, col: slot.originCol, cell: slot.cell };
+  }
+  const ctx = cellContext(state);
+  if (!ctx) return null;
+  const grid = buildTableGrid(ctx.table);
+  const origin = gridOriginOfCell(grid, ctx.ri, ctx.ci);
+  if (!origin) return null;
+  return { table: ctx.table, row: origin.row, col: origin.col, cell: ctx.table.rows[ctx.ri]!.cells[ctx.ci]! };
+}
+
+/** Split a merged cell back into a 1x1 grid of cells (content stays in the
+ *  top-left; the freed slots become empty cells). Works for colSpan, rowSpan,
+ *  or both. */
 export function unmergeCellCmd(): Command {
   return (state) => {
-    const ctx = cellContext(state);
-    if (!ctx) return null;
-    const row = ctx.table.rows[ctx.ri]!;
-    const cell = row.cells[ctx.ci]!;
-    const span = cell.colSpan ?? 1;
-    if (span <= 1) return null;
-    const restored: TableCell[] = [{ id: cell.id, blocks: cell.blocks }];
-    for (let k = 1; k < span; k++) {
-      restored.push({ id: freshBlockId(), blocks: [emptyCellPara(firstCellPara(cell))] });
-    }
-    const cells = [...row.cells.slice(0, ctx.ci), ...restored, ...row.cells.slice(ctx.ci + 1)];
+    const target = unmergeTarget(state);
+    if (!target) return null;
+    const { table, row, col, cell } = target;
+    if ((cell.colSpan ?? 1) <= 1 && (cell.rowSpan ?? 1) <= 1) return null;
+    const grid = buildTableGrid(table);
+    const topLeft: TableCell = {
+      id: cell.id,
+      blocks: cell.blocks,
+      ...(cell.shading !== undefined ? { shading: cell.shading } : {}),
+      ...(cell.borders !== undefined ? { borders: cell.borders } : {}),
+      ...(cell.margin !== undefined ? { margin: cell.margin } : {}),
+    };
+    const makeEmpty = (): TableCell => ({
+      id: freshBlockId(),
+      blocks: [emptyCellPara(firstCellPara(cell))],
+      ...(cell.margin !== undefined ? { margin: cell.margin } : {}),
+    });
+    const rows = unmergeRows(grid, row, col, topLeft, makeEmpty);
     const caretPara = firstCellPara(cell);
     return tr(
-      [{ type: "setTableRow", tableId: ctx.table.id, rowIndex: ctx.ri, row: { cells } }],
+      [structureOp(table, rows)],
       caretPara ? caret(caretPara.id, 0) : null,
       "command",
     );
+  };
+}
+
+/** A setTableStructure op preserving the table's column fractions (cell merges
+ *  and border edits never change the grid-column count). */
+function structureOp(table: TableBlock, rows: TableRow[]): Op {
+  return table.colFractions
+    ? { type: "setTableStructure", tableId: table.id, rows, colFractions: table.colFractions }
+    : { type: "setTableStructure", tableId: table.id, rows };
+}
+
+// ---------------------------------------------------------------------------
+// Borders & shading (Word's "Borders and Shading")
+
+/** Which roles of a cell-rectangle to target. Outer roles (top/right/bottom/
+ *  left) are the selection's perimeter; insideH/insideV are the shared edges
+ *  between selected cells. The modal's presets map onto these:
+ *  All = every flag, Outside = the four sides, Inside = insideH+insideV, plus
+ *  individual toggles. */
+export interface BorderEdgeFlags {
+  top?: boolean;
+  right?: boolean;
+  bottom?: boolean;
+  left?: boolean;
+  insideH?: boolean;
+  insideV?: boolean;
+}
+
+/** Apply (spec) or clear (spec=null) borders on the targeted edges of every cell
+ *  in the range. Each cell's physical edge is an OUTER edge when it lies on the
+ *  selection perimeter and an INTERIOR edge otherwise, so the same flag set drives
+ *  any cell shape (incl. merged cells spanning several grid tracks). Touched
+ *  cells keep a present borders object (never reverting to the default grid). */
+export function setCellsBordersCmd(spec: CellBorder | null, edges: BorderEdgeFlags, range?: CellSelection | null): Command {
+  return (state) => {
+    const found = cellRangeFromState(state, range);
+    if (!found) return null;
+    const grid = buildTableGrid(found.table);
+    const rect = normalizeRect(grid, found.rect);
+    let changed = false;
+    const rows = rebuildRows(grid, (cell, s) => {
+      const top = s.originRow;
+      const bottom = s.originRow + s.rowSpan - 1;
+      const left = s.originCol;
+      const right = s.originCol + s.colSpan - 1;
+      if (top < rect.r0 || bottom > rect.r1 || left < rect.c0 || right > rect.c1) return cell; // outside the rectangle
+      const targetTop = top === rect.r0 ? edges.top : edges.insideH;
+      const targetBottom = bottom === rect.r1 ? edges.bottom : edges.insideH;
+      const targetLeft = left === rect.c0 ? edges.left : edges.insideV;
+      const targetRight = right === rect.c1 ? edges.right : edges.insideV;
+      if (!targetTop && !targetBottom && !targetLeft && !targetRight) return cell;
+      const borders: CellBorders = { ...(cell.borders ?? {}) };
+      const apply = (key: keyof CellBorders, on: boolean | undefined): void => {
+        if (!on) return;
+        if (spec) borders[key] = { ...spec };
+        else delete borders[key];
+      };
+      apply("top", targetTop);
+      apply("bottom", targetBottom);
+      apply("left", targetLeft);
+      apply("right", targetRight);
+      changed = true;
+      return { ...cell, borders };
+    });
+    if (!changed) return null;
+    return tr([structureOp(found.table, rows)], state.selection, "command");
+  };
+}
+
+/** Set (fill) or clear (fill=null) the background shading of every cell in the
+ *  range. */
+export function setCellsShadingCmd(fill: string | null, range?: CellSelection | null): Command {
+  return (state) => {
+    const found = cellRangeFromState(state, range);
+    if (!found) return null;
+    const grid = buildTableGrid(found.table);
+    const rect = normalizeRect(grid, found.rect);
+    let changed = false;
+    const rows = rebuildRows(grid, (cell, s) => {
+      if (s.originRow < rect.r0 || s.originRow > rect.r1 || s.originCol < rect.c0 || s.originCol > rect.c1) return cell;
+      changed = true;
+      if (fill === null) {
+        if (cell.shading === undefined) return cell;
+        const { shading: _drop, ...rest } = cell;
+        return rest;
+      }
+      return { ...cell, shading: fill };
+    });
+    if (!changed) return null;
+    return tr([structureOp(found.table, rows)], state.selection, "command");
   };
 }
 
