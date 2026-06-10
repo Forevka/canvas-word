@@ -123,6 +123,26 @@ export function defaultListDefinition(kind: "bullet" | "decimal"): ListDefinitio
   return { id: kind === "bullet" ? DEFAULT_BULLET_LIST_ID : DEFAULT_NUMBER_LIST_ID, levels };
 }
 
+/** A single-glyph bullet list (every level uses `char`) — what the bullet
+ *  style picker applies. */
+export function bulletListDefinition(id: string, char: string): ListDefinition {
+  const levels: ListLevel[] = [];
+  for (let i = 0; i < 9; i++) {
+    levels.push({ format: "bullet", text: "", bulletChar: char, indentLeftPx: 24 + i * 24, hangingPx: 18, start: 1 });
+  }
+  return { id, levels };
+}
+
+/** A single-format numbered list (every level uses `format`), with `suffix`
+ *  after each counter ("." or ")") — what the number style picker applies. */
+export function numberListDefinition(id: string, format: ListNumberFormat, suffix: string): ListDefinition {
+  const levels: ListLevel[] = [];
+  for (let i = 0; i < 9; i++) {
+    levels.push({ format, text: `%${i + 1}${suffix}`, indentLeftPx: 24 + i * 24, hangingPx: 22, start: 1 });
+  }
+  return { id, levels };
+}
+
 /** Legal-style multilevel list: every level is decimal and its marker compounds
  *  all ancestors — level 0 "1.", level 1 "1.1.", level 2 "1.1.1.", … (Word's
  *  default Multilevel List). Tab/Shift+Tab walk the levels. */

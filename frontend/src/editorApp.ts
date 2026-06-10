@@ -2,6 +2,7 @@ import { configureIds, deserializeDocument, reconstruct, serializeDocument, type
 import { mediaStore, rehydrateDocMedia } from "./media/store";
 import { SyncClient } from "./sync/SyncClient";
 import { createEditor, type CurrentFormat } from "./index";
+import type { Command } from "./editor/state";
 import { createLayoutEngine } from "./layout/engine";
 import { sampleDoc } from "./model/sampleDoc";
 import { stressDoc } from "./model/stressDoc";
@@ -284,6 +285,7 @@ import {
   createStyleFromSelection,
   setParaProps,
   toggleList,
+  applyListStyleCmd,
   toggleMultilevelList,
   toggleHighlight,
   toggleVerticalAlign,
@@ -304,7 +306,7 @@ import {
   sdtAtPosition,
 } from "./editor/commands";
 import { defaultStylesheet, resolveStyle, styleById } from "@cw/shared";
-import { paragraphsOf, textOfRuns } from "@cw/shared";
+import { bulletListDefinition, numberListDefinition, paragraphsOf, textOfRuns } from "@cw/shared";
 import { ICONS } from "./ui/icons";
 
 const TOOLBAR_SVG =
@@ -632,6 +634,50 @@ if (toolbar) {
     if (cfg.active) toggleButtons.push({ el: main, active: cfg.active });
   };
 
+  /** A list button split like Word's: the icon toggles the default list; the
+   *  caret opens a style picker (bullet glyphs / number formats). The picker
+   *  rows carry a marker preview in their label. */
+  const listSplit = (
+    icon: string,
+    title: string,
+    faceCmd: () => Command,
+    active: (f: CurrentFormat) => boolean,
+    styles: { label: string; cmd: () => Command }[],
+  ): void => {
+    const wrap = el("div");
+    wrap.style.cssText = "display:flex;align-items:stretch;";
+    const main = el("button", "rib-btn");
+    main.title = title;
+    main.innerHTML = icon;
+    main.addEventListener("mousedown", (e) => e.preventDefault());
+    main.addEventListener("click", () => {
+      editor.dispatch(faceCmd());
+      editor.focus();
+    });
+    toggleButtons.push({ el: main, active });
+    const more = el("button", "rib-btn");
+    more.title = `${title} — choose style`;
+    more.style.cssText = "min-width:14px;padding:0;";
+    more.innerHTML = CARET;
+    more.addEventListener("mousedown", (e) => e.preventDefault());
+    more.addEventListener("click", () =>
+      openPop(
+        more,
+        menu(
+          styles.map((s) => ({
+            label: s.label,
+            onClick: () => {
+              editor.dispatch(s.cmd());
+              editor.focus();
+            },
+          })),
+        ),
+      ),
+    );
+    wrap.append(main, more);
+    controls.appendChild(wrap);
+  };
+
   /** Word's table-size grid: hover to size, click to insert. */
   const tableGridPopover = (anchor: HTMLElement): void => {
     const ROWS = 8;
@@ -929,8 +975,21 @@ if (toolbar) {
   // ---- Paragraph ----
   const paraRow = groupRows(home, "Paragraph");
   paraRow();
-  toggle(btn(ICONS.bullets, "Bulleted list", () => editor.dispatch(toggleList("bullet")), true), (f) => f.listKind === "bullet");
-  toggle(btn(ICONS.numbering, "Numbered list (Tab/Shift+Tab change level)", () => editor.dispatch(toggleList("decimal")), true), (f) => f.listKind === "number");
+  listSplit(ICONS.bullets, "Bulleted list", () => toggleList("bullet"), (f) => f.listKind === "bullet", [
+    { label: "•   Filled circle", cmd: () => toggleList("bullet") },
+    { label: "◦   Hollow circle", cmd: () => applyListStyleCmd(bulletListDefinition("bullets-circle", "◦")) },
+    { label: "▪   Filled square", cmd: () => applyListStyleCmd(bulletListDefinition("bullets-square", "▪")) },
+    { label: "–   Dash", cmd: () => applyListStyleCmd(bulletListDefinition("bullets-dash", "–")) },
+    { label: "➤   Arrow", cmd: () => applyListStyleCmd(bulletListDefinition("bullets-arrow", "➤")) },
+  ]);
+  listSplit(ICONS.numbering, "Numbered list (Tab/Shift+Tab change level)", () => toggleList("decimal"), (f) => f.listKind === "number", [
+    { label: "1.   Decimal", cmd: () => toggleList("decimal") },
+    { label: "1)   Decimal, parenthesis", cmd: () => applyListStyleCmd(numberListDefinition("numbers-paren", "decimal", ")")) },
+    { label: "a.   Lower letter", cmd: () => applyListStyleCmd(numberListDefinition("numbers-lalpha", "lowerLetter", ".")) },
+    { label: "A.   Upper letter", cmd: () => applyListStyleCmd(numberListDefinition("numbers-ualpha", "upperLetter", ".")) },
+    { label: "i.   Lower roman", cmd: () => applyListStyleCmd(numberListDefinition("numbers-lroman", "lowerRoman", ".")) },
+    { label: "I.   Upper roman", cmd: () => applyListStyleCmd(numberListDefinition("numbers-uroman", "upperRoman", ".")) },
+  ]);
   btn(ICONS.multilevel, "Multilevel list (1, 1.1, 1.1.1 — Tab / Shift+Tab change level)", () => editor.dispatch(toggleMultilevelList()));
   sep();
   btn(ICONS.indentDecrease, "Decrease indent", () => editor.dispatch(adjustIndentCmd(-36)));

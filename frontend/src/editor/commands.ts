@@ -373,6 +373,27 @@ export function toggleList(kind: "bullet" | "decimal"): Command {
   return toggleListById(listId, () => defaultListDefinition(kind));
 }
 
+/** Apply a SPECIFIC list style (bullet glyph / number format) from the list
+ *  pickers. Unlike toggleList this always sets the style (re)materializing its
+ *  definition — picking a style never toggles the list off. */
+export function applyListStyleCmd(def: ListDefinition): Command {
+  return (state) => {
+    const sel = state.selection;
+    if (!sel) return null;
+    const paragraphs = selectedTopLevelParagraphs(state);
+    if (paragraphs.length === 0) return null;
+    const ops: Op[] = [{ type: "setListDefinition", listId: def.id, def }];
+    for (const p of paragraphs) {
+      ops.push({
+        type: "setParaStyle",
+        blockId: p.id,
+        patch: { list: { listId: def.id, level: p.style.list?.level ?? 0 }, indentFirstLinePx: 0 },
+      });
+    }
+    return tr(ops, sel, "command");
+  };
+}
+
 /** Apply (or remove) a legal-style multilevel numbered list (1 / 1.1 / 1.1.1). */
 export function toggleMultilevelList(): Command {
   return toggleListById(DEFAULT_MULTILEVEL_LIST_ID, multilevelListDefinition);
