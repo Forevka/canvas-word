@@ -32,20 +32,58 @@ export interface ImeProxy {
 }
 
 export function createImeProxy(container: HTMLElement, deps: ImeProxyDeps): ImeProxy {
+  // Touch keyboards swallow Backspace when the editable is empty (no
+  // deleteContentBackward fires with nothing before the caret). On coarse-pointer
+  // devices we keep a hidden SENTINEL char in the proxy so the caret always has
+  // something to delete; see `seed()`. Desktop keeps the empty-proxy behavior.
+  const coarse = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+  const SENTINEL = " "; // non-breaking space: never collapsed (white-space:pre)
+
   const el = document.createElement("div");
   el.contentEditable = "true";
   el.spellcheck = false;
   el.setAttribute("role", "textbox");
   el.setAttribute("aria-multiline", "true");
   el.setAttribute("aria-label", "Document editor");
+  // Soft-keyboard hints. Mobile keyboards read these off the focused element;
+  // they're inert on desktop. `enterkeyhint=enter` matches insertParagraph.
+  el.setAttribute("inputmode", "text");
+  el.setAttribute("enterkeyhint", "enter");
+  // On touch we keep a sentinel char in the field, so autocapitalize/autocorrect
+  // would operate on that stale content (every letter capitalized after the
+  // sentinel space, suggestions for the sentinel) — disable them there. Desktop
+  // (empty proxy) keeps sentence capitalization.
+  el.setAttribute("autocapitalize", coarse ? "off" : "sentences");
+  el.setAttribute("autocorrect", coarse ? "off" : "on");
+  // font-size:16px keeps iOS Safari from page-zooming when the proxy gains focus
+  // (it has no visible text, but Safari still applies the <16px zoom-on-focus rule).
   el.style.cssText =
     "position:absolute;left:0;top:0;width:2px;height:1em;opacity:0;overflow:hidden;" +
-    "white-space:pre;outline:none;user-select:text;z-index:1;";
+    "white-space:pre;outline:none;user-select:text;z-index:1;font-size:16px;";
   container.appendChild(el);
 
   let composing = false;
 
+  // Re-assert the sentinel and pin the caret AFTER it, so every Backspace has a
+  // char to delete (and the caret can't drift before the sentinel, which would
+  // make only the first Backspace fire). No-op on desktop and during composition.
+  const seed = (): void => {
+    if (!coarse || composing) return;
+    if (el.firstChild === null || el.textContent !== SENTINEL) el.textContent = SENTINEL;
+    const node = el.firstChild;
+    const sel = window.getSelection();
+    if (!node || !sel) return;
+    const r = document.createRange();
+    r.setStart(node, (node.textContent ?? "").length);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+  };
+
   const onBeforeInput = (ev: InputEvent): void => {
+    // All real edits are prevented below, so the sentinel never actually changes;
+    // re-pin the caret after each handled key (skipped during composition).
+    if (coarse) queueMicrotask(seed);
     switch (ev.inputType) {
       case "insertText":
         ev.preventDefault();
@@ -94,7 +132,10 @@ export function createImeProxy(container: HTMLElement, deps: ImeProxyDeps): ImeP
   const onCompositionEnd = (ev: CompositionEvent): void => {
     composing = false;
     deps.onCompositionEnd(ev.data ?? "");
-    el.textContent = ""; // discard whatever the browser staged in the proxy
+    // Discard whatever the browser staged in the proxy; on touch, restore the
+    // sentinel (re-arming Backspace) instead of leaving it empty.
+    if (coarse) seed();
+    else el.textContent = "";
   };
 
   el.addEventListener("beforeinput", onBeforeInput);
@@ -106,6 +147,7 @@ export function createImeProxy(container: HTMLElement, deps: ImeProxyDeps): ImeP
     el,
     focus(): void {
       el.focus({ preventScroll: true });
+      seed(); // arm Backspace on touch the moment we take focus
     },
     hasFocus(): boolean {
       return document.activeElement === el;
@@ -113,7 +155,9 @@ export function createImeProxy(container: HTMLElement, deps: ImeProxyDeps): ImeP
     moveTo(left: number, top: number, height: number): void {
       el.style.left = `${left}px`;
       el.style.top = `${top}px`;
-      el.style.height = `${height}px`;
+      // Never 0-height: iOS won't reliably keep the soft keyboard open for a
+      // zero-height focused element.
+      el.style.height = `${Math.max(height, 12)}px`;
     },
     destroy(): void {
       el.remove();

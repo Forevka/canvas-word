@@ -56,6 +56,7 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
   const handleEls: HTMLDivElement[] = HANDLES.map((h) => {
     const el = document.createElement("div");
     el.dataset["handle"] = h.name;
+    el.className = "cw-obj-handle"; // the mobile CSS enlarges its touch hit area
     el.style.cssText =
       "position:absolute;width:8px;height:8px;background:#fff;border:1.5px solid #1a73e8;" +
       `border-radius:50%;pointer-events:auto;cursor:${h.cursor};` +
@@ -73,10 +74,28 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     startH: number;
   } | null = null;
 
-  const onHandleDown = (ev: MouseEvent): void => {
+  // Pointer Events (not mouse) so the handles drag by finger/pen too. Pointer
+  // capture routes move/up to the captured handle even when the finger leaves it.
+  let dragEl: HTMLElement | null = null;
+  let dragPointerId = 0;
+
+  const endDrag = (): void => {
+    if (!dragEl) return;
+    dragEl.removeEventListener("pointermove", onDragMove);
+    dragEl.removeEventListener("pointerup", onDragUp);
+    dragEl.removeEventListener("pointercancel", onDragUp);
+    try {
+      dragEl.releasePointerCapture(dragPointerId);
+    } catch {
+      /* pointer already released */
+    }
+    dragEl = null;
+  };
+
+  const onHandleDown = (ev: PointerEvent): void => {
     if (!current) return;
-    const name = (ev.target as HTMLElement).dataset["handle"];
-    const spec = HANDLES.find((h) => h.name === name);
+    const el = ev.currentTarget as HTMLElement;
+    const spec = HANDLES.find((h) => h.name === el.dataset["handle"]);
     if (!spec) return;
     ev.preventDefault();
     ev.stopPropagation();
@@ -87,8 +106,12 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
       startW: current.rect.width,
       startH: current.rect.height,
     };
-    window.addEventListener("mousemove", onDragMove);
-    window.addEventListener("mouseup", onDragUp);
+    dragEl = el;
+    dragPointerId = ev.pointerId;
+    el.setPointerCapture(ev.pointerId);
+    el.addEventListener("pointermove", onDragMove);
+    el.addEventListener("pointerup", onDragUp);
+    el.addEventListener("pointercancel", onDragUp);
   };
 
   const sizeFromDrag = (ev: MouseEvent): { w: number; h: number } => {
@@ -117,22 +140,21 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     return { w: Math.round(w), h: Math.round(h) };
   };
 
-  const onDragMove = (ev: MouseEvent): void => {
+  const onDragMove = (ev: PointerEvent): void => {
     if (!drag) return;
     const { w, h } = sizeFromDrag(ev);
     deps.onResizePreview(w, h);
   };
 
-  const onDragUp = (ev: MouseEvent): void => {
+  const onDragUp = (ev: PointerEvent): void => {
     if (!drag) return;
     const { w, h } = sizeFromDrag(ev);
     drag = null;
-    window.removeEventListener("mousemove", onDragMove);
-    window.removeEventListener("mouseup", onDragUp);
+    endDrag();
     deps.onResizeCommit(w, h);
   };
 
-  for (const el of handleEls) el.addEventListener("mousedown", onHandleDown);
+  for (const el of handleEls) el.addEventListener("pointerdown", onHandleDown);
 
   return {
     show(rect: Rect, maxWidth: number): void {

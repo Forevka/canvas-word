@@ -127,7 +127,11 @@ const CSS = `
 /* work area: optional outline drawer + ruler + the scrolling page canvas */
 #workarea { flex: 1 1 auto; min-height: 0; display: flex; }
 #editorpane { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-#app { flex: 1 1 auto; min-height: 0; min-width: 0; overflow: auto; background: #e8eaed; position: relative; }
+/* touch-action: keep one/two-finger PAN (scroll) but disable the browser's
+   native pinch-zoom and double-tap-zoom on the document, so our own
+   pinch-to-zoom handler (index.ts) owns those gestures. The toolbar/status bar
+   keep default touch-action so the ribbon scrolls and taps normally. */
+#app { flex: 1 1 auto; min-height: 0; min-width: 0; overflow: auto; background: #e8eaed; position: relative; touch-action: pan-x pan-y; }
 
 /* horizontal ruler (inch ticks, margin shading, draggable indent markers) */
 #ruler { flex: 0 0 22px; height: 22px; position: relative; background: #e8eaed; border-bottom: 1px solid #d2d0ce; overflow: hidden; }
@@ -257,6 +261,43 @@ const CSS = `
 #img-toolbar button.danger:hover { background: #fde7e9; color: #a4262c; }
 #img-toolbar button svg { width: 16px; height: 16px; }
 #img-toolbar .sep { width: 1px; height: 18px; background: #e1dfdd; margin: 0 2px; }
+
+/* ===== Mobile / touch responsive layer ============================== */
+/* Activates on touch devices (coarse primary pointer) OR narrow screens.
+   Desktop is untouched outside this block. Strategy: collapse the ribbon to one
+   horizontally-scrollable row, hide group captions, grow touch targets to ~40px,
+   turn the 264px outline into an overlay drawer, and clamp floating panels to
+   the viewport (a bottom sheet) so they never render off-screen. */
+@media (pointer: coarse), (max-width: 760px) {
+  /* Ribbon body: single scrollable row instead of a tall multi-group block. */
+  .rib-panel { min-height: 0; overflow-x: auto; overflow-y: hidden; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+  .rib-label { display: none; }
+  .rib-group { padding: 4px 6px; }
+  /* Touch targets (Apple/Material guideline is ~40-48px). */
+  #toolbar button.rib-btn { min-width: 40px; height: 40px; }
+  #toolbar button.rib-btn svg { width: 18px; height: 18px; }
+  .rib-tab { padding: 9px 14px; font-size: 14px; }
+  #toolbar select, #toolbar input[type="number"] { height: 36px; font-size: 14px; }
+
+  /* Outline: overlay the page instead of stealing 264px of a ~360px screen. */
+  #workarea { position: relative; }
+  #outline { position: absolute; left: 0; top: 0; bottom: 0; height: auto; width: min(264px, 80vw); z-index: 30; box-shadow: 2px 0 16px rgba(0,0,0,0.18); }
+
+  /* Status bar: tappable zoom controls. */
+  #statusbar { height: 36px; }
+  #statusbar button.sb-btn { width: 32px; height: 30px; font-size: 17px; }
+  #statusbar input[type="range"] { width: 96px; }
+
+  /* Floating panels (Page Setup, Find) → bottom sheet; Activity → full-width.
+     !important overrides the inline position/size set in editorApp.ts. */
+  .cw-float-panel { left: 8px !important; right: 8px !important; top: auto !important; bottom: 8px !important; width: auto !important; max-width: none !important; max-height: 60vh; overflow: auto; }
+  .cw-float-drawer { width: 100% !important; }
+  #img-toolbar button { width: 34px; height: 34px; }
+
+  /* Image resize handles: 8px dots are unhittable with a finger — an invisible
+     ::before pads the touch target to ~24px without changing the visual size. */
+  .cw-obj-handle::before { content: ""; position: absolute; inset: -8px; }
+}
 `;
 
 /** Inject the component stylesheet once per document (idempotent). */
