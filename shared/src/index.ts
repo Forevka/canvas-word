@@ -10,6 +10,7 @@ export * from "./model/text";
 export * from "./model/stylesheet";
 export * from "./model/lists";
 export * from "./model/ops";
+export * from "./model/tableGrid";
 
 // Collaboration foundations: unique ids, content-addressed media, document <->
 // snapshot serialization, the change log, and replay.
