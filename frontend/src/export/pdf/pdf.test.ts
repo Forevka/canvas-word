@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeAll } from "vitest";
-import type { CharStyle, Document, Paragraph, ParaStyle } from "@cw/shared";
+import type { Block, CharStyle, Document, Paragraph, ParaStyle } from "@cw/shared";
+import { defaultListDefinition } from "@cw/shared";
 import { sampleDoc } from "../../model/sampleDoc";
 import { installMeasureHost } from "../shared/measureHost";
 import { renderPdf } from "./renderPdf";
@@ -80,6 +81,27 @@ describe("PDF export — happy path", () => {
     );
     const { bytes } = await renderPdf(styled);
     expect(isPdf(bytes)).toBe(true);
+  });
+
+  it("renders a numbered list INSIDE a table cell (cell marker paint path)", async () => {
+    // A cell paragraph carrying a list ref — the engine hangs its marker in the
+    // cell and the PDF painter draws it via the same recursive paintBlock as a
+    // body marker. Proves the new in-cell-list path runs through real PDFKit.
+    const item = para("cell item", {}, { list: { listId: "numbers", level: 0 } } as Partial<ParaStyle>);
+    const table: Block = {
+      kind: "table",
+      id: "t",
+      revision: 0,
+      rows: [{ cells: [{ id: "c", blocks: [item] }] }],
+    };
+    const doc: Document = {
+      section: { pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } },
+      blocks: [table],
+      lists: { numbers: defaultListDefinition("decimal") },
+    };
+    const { bytes, warnings } = await renderPdf(doc);
+    expect(isPdf(bytes)).toBe(true);
+    expect(warnings.find((w) => w.code === "font-substituted")).toBeUndefined();
   });
 
   it("substitutes unknown families and warns once", async () => {
