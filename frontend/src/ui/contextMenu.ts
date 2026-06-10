@@ -123,6 +123,12 @@ export function showContextMenu(
     const panel = document.createElement("div");
     panel.className = "cw-menu";
     panel.addEventListener("contextmenu", (e) => e.preventDefault());
+    // Keep the editor's focus (its hidden IME proxy) while the menu is used:
+    // items fire on mouseup, so suppressing the default mousedown stops the menu
+    // from stealing focus. Otherwise focus falls to <body> and the next
+    // keystroke — typically Ctrl+Z to undo the menu action — is dropped until
+    // the user clicks back into the document.
+    panel.addEventListener("mousedown", (e) => e.preventDefault());
     for (const entry of items) {
       if (entry.kind === "sep") {
         const s = document.createElement("div");
