@@ -124,7 +124,7 @@ collaboration primitives live in `shared` so the Node `backend` can reuse them.
 | `frontend/` | The editor itself (the `@forevka/wordcanvas` package) — layers below |
 | `backend/` | Node HTTP/WS server: Postgres-backed change store, OT broadcast, server-side import/export, admin auth, integration tokens, session webhooks, OpenAPI/Swagger |
 | `dashboard/` | Admin panel (Vite app): document upload → docId, session inspection |
-| `examples/` | Standalone embeds consuming the published package (`embed-offline`, `embed-live`, `playground`) |
+| `examples/` | Standalone embeds consuming the published package (`embed-offline`, `embed-live`, `playground`, `embed-multi`) |
 | `web/` | Caddy edge config for the deployed stack |
 
 ### Editor layer map (`frontend/src/`)
@@ -345,6 +345,7 @@ npm run db:up         # start Postgres + the collaboration backend (docker compo
 npm run dev:dashboard # admin dashboard dev server
 npm run dev:example   # the embed-live example (consumes the built library)
 npm run dev:playground # document-builder playground (code + JSON → live preview)
+npm run dev:multi     # multiple editors on one page (consumes the built library)
 ```
 
 - `/?stress=1000` — generate a ~1000-page perf-probe document and log timings.
@@ -372,7 +373,6 @@ Everything in it is done; the editor covers ~95% of everyday Word usage.
   renders, but a note splitting across pages does not.
 - Only Latin metric-clone fonts are bundled, so CJK/complex scripts render as
   tofu in PDF export (same gap as the importer).
-- One `WordCanvas` instance per page (the library chrome uses id-based CSS).
 - Raster browser-print was skipped — use PDF export instead.
 - Layout caches don't evict deleted blocks (bounded, harmless, tracked).
 - `font-feature-settings` / optical sizing unsupported (pretext limitation).

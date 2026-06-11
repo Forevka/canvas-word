@@ -106,8 +106,10 @@ input.addEventListener("change", async () => {
 
 ## Notes & limitations
 
-- **One instance per page** in this version — the chrome uses id-based CSS and the
-  app bootstraps once on import. Constructing a second `WordCanvas` throws.
+- **Multiple instances per page are supported** — the chrome is class-scoped under
+  a per-instance root and each instance mounts independently, so you can run several
+  editors at once. `destroy()` removes an instance's chrome and its floating panels.
+  See the [`embed-multi`](../examples/embed-multi) example.
 - The editor injects its own stylesheet and mounts its full chrome (ribbon, ruler,
   outline, status bar) inside the container; give it a sized element.
 - The bundle is large on disk (~20 MB unminified, code-split) because it ships a
