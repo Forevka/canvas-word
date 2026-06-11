@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WordCanvas — multiple instances on one page</title>
+
+    <!--
+      Resolves the bare `@forevka/wordcanvas` import in the PRODUCTION build, where
+      the library is external (not re-bundled). `npm run build` copies the library's
+      dist-lib next to the app as ./wordcanvas, so this path resolves at runtime,
+      including when deployed under a subpath like /multi. In `vite dev` this map is
+      inert — Vite resolves the import from node_modules itself.
+    -->
+    <script type="importmap">
+      {
+        "imports": {
+          "@forevka/wordcanvas": "./wordcanvas/wordcanvas.js"
+        }
+      }
+    </script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+      }
+      header {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 14px;
+        background: #2b579a;
+        color: #fff;
+      }
+      header h1 {
+        font-size: 14px;
+        font-weight: 600;
+        margin: 0;
+      }
+      header button {
+        font: inherit;
+        font-size: 13px;
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        background: transparent;
+        color: #fff;
+        border-radius: 4px;
+        padding: 4px 10px;
+        cursor: pointer;
+      }
+      header button:hover {
+        background: rgba(255, 255, 255, 0.15);
+      }
+      #editors {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        gap: 6px;
+        padding: 6px;
+        box-sizing: border-box;
+        background: #d9dce1;
+      }
+      /* Each editor lives in its own sized box — WordCanvas fills its container. */
+      .pane {
+        flex: 1 1 0;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        background: #fff;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>WordCanvas — independent editors on a single page</h1>
+      <button id="add">Add editor</button>
+      <button id="remove">Remove last</button>
+      <span id="count"></span>
+    </header>
+    <div id="editors"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

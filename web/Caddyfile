@@ -29,7 +29,8 @@
 	#   /live              -> examples/embed-live  (online + collaboration)
 	#   /examples/offline  -> examples/embed-offline
 	#   /playground        -> examples/playground  (document-builder playground)
-	# Both have RELATIVE asset URLs (./assets, ./wordcanvas), so they must load
+	#   /multi             -> examples/embed-multi  (multiple editors on one page)
+	# These have RELATIVE asset URLs (./assets, ./wordcanvas), so they must load
 	# under a trailing slash. file_server treats /srv/live as a directory and
 	# canonically redirects /live -> /live/ (query preserved, so ?collab=… share
 	# links keep working), then resolves its index.html — relative assets then
