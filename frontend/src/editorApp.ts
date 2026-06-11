@@ -11,30 +11,94 @@ import { importDocx, type ImportResult, type ImportPhase } from "./import/docx/i
 import { exportDocument, type ExportFormat } from "./export/exportDocument";
 import { loadEditorFonts } from "./export/shared/editorFonts";
 import { TOOLBAR_FONTS } from "./fonts/clones";
-import { getRuntime, type EditorHandle } from "./app/runtime";
+import type { EditorHandle, WordCanvasRuntime } from "./app/runtime";
 import { buildShell } from "./app/shell";
 import { ensureWordCanvasStyles } from "./ui/styles";
 import { showContextMenu, type MenuEntry } from "./ui/contextMenu";
 import { loadCollabDocument, publishDocument } from "./sync/collab";
 import { showBusy } from "./app/busyOverlay";
+// Ribbon/toolbar command set + style helpers + icons — the chrome, not the core.
+// (Hoisted here from the toolbar block; ES imports must be top-level, and the
+// toolbar code now lives inside mountEditorApp.)
+import {
+  insertImage,
+  insertImageInCell,
+  insertTable,
+  insertTableRowCmd,
+  insertTableColumnCmd,
+  deleteTableRowCmd,
+  deleteTableColumnCmd,
+  deleteTableCmd,
+  mergeCellsCmd,
+  unmergeCellCmd,
+  setImageProps,
+  applyNamedStyle,
+  updateStyleToSelection,
+  createStyleFromSelection,
+  setParaProps,
+  addBookmarkCmd,
+  removeBookmarkCmd,
+  renameBookmarkCmd,
+  toggleList,
+  applyListStyleCmd,
+  toggleMultilevelList,
+  toggleHighlight,
+  toggleVerticalAlign,
+  changeCaseCmd,
+  adjustIndentCmd,
+  clearCharFormatting,
+  type CaseMode,
+  setLinkCmd,
+  insertPageBreak,
+  insertSectionBreak,
+  applyPageSetup,
+  pageSetupAt,
+  setBandVariantEnabled,
+  insertTocCmd,
+  insertFootnoteCmd,
+  insertContentControl,
+  removeContentControl,
+  sdtAtPosition,
+} from "./editor/commands";
+import { defaultStylesheet, resolveStyle, styleById } from "@cw/shared";
+import { bulletListDefinition, numberListDefinition, paragraphsOf, textOfRuns } from "@cw/shared";
+import { ICONS } from "./ui/icons";
 
-// Fonts must be resolved before the first layout — pretext measures with the same
-// font strings the paint layer draws with, so a late font swap would desync them.
-// The editor renders the bundled metric clones (Calibri→Carlito, …) so layout
-// matches the PDF/DOCX exporters exactly, with no dependency on system fonts.
-await loadEditorFonts();
-await document.fonts.ready;
+// Dev hook for in-browser verification (break-rule scans, perf probes, and the
+// snapshot/replay round-trip). Assigned near the end of mountEditorApp.
+declare global {
+  interface Window {
+    __cw?: unknown;
+  }
+}
 
-// Give this editor session a unique siteId so every block/cell id it mints is
-// disjoint from other collaborating clients' ids (see shared/ids). A short
-// random token is enough; the server later assigns the authoritative ordering.
-configureIds(crypto.randomUUID().slice(0, 8));
+// Mount ONE editor into runtime.container and hand its control surface to
+// runtime.onReady. Called once per WordCanvas instance — every binding below is
+// per-call, so multiple editors coexist on a single page. The CSS is class-based
+// (see ui/styles.ts) and all off-container artifacts are tracked for destroy().
+export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> {
+  // Fonts must be resolved before the first layout — pretext measures with the same
+  // font strings the paint layer draws with, so a late font swap would desync them.
+  // The editor renders the bundled metric clones (Calibri→Carlito, …) so layout
+  // matches the PDF/DOCX exporters exactly, with no dependency on system fonts.
+  await loadEditorFonts();
+  await document.fonts.ready;
 
-// Config + DOM come from the WordCanvas runtime (see app/runtime), not the page.
-const runtime = getRuntime();
-ensureWordCanvasStyles();
-const shell = buildShell(runtime.container);
-const app = shell.app;
+  // Give this editor session a unique siteId so every block/cell id it mints is
+  // disjoint from other collaborating clients' ids (see shared/ids). A short
+  // random token is enough; the server later assigns the authoritative ordering.
+  configureIds(crypto.randomUUID().slice(0, 8));
+
+  ensureWordCanvasStyles();
+  const shell = buildShell(runtime.container);
+  const app = shell.app;
+
+  // Per-instance teardown. Global window/document listeners are registered with
+  // this signal, and body-level floating panels (popovers, find bar, image bar,
+  // page-setup, the colour <input>) are tracked in `detachables` — destroy()
+  // aborts the signal and removes them, so nothing leaks outside shell.root.
+  const teardown = new AbortController();
+  const detachables: Element[] = [];
 
 // Backend base URL gates online features. Present ⇒ sync/publish/share; absent ⇒
 // fully offline editor (the kill-switch).
@@ -293,50 +357,6 @@ const openDocxFile = async (file: File | ArrayBuffer): Promise<void> => {
 };
 
 // ---- demo toolbar (app chrome, not editor core) ----------------------------
-import {
-  insertImage,
-  insertImageInCell,
-  insertTable,
-  insertTableRowCmd,
-  insertTableColumnCmd,
-  deleteTableRowCmd,
-  deleteTableColumnCmd,
-  deleteTableCmd,
-  mergeCellsCmd,
-  unmergeCellCmd,
-  setImageProps,
-  applyNamedStyle,
-  updateStyleToSelection,
-  createStyleFromSelection,
-  setParaProps,
-  addBookmarkCmd,
-  removeBookmarkCmd,
-  renameBookmarkCmd,
-  toggleList,
-  applyListStyleCmd,
-  toggleMultilevelList,
-  toggleHighlight,
-  toggleVerticalAlign,
-  changeCaseCmd,
-  adjustIndentCmd,
-  clearCharFormatting,
-  type CaseMode,
-  setLinkCmd,
-  insertPageBreak,
-  insertSectionBreak,
-  applyPageSetup,
-  pageSetupAt,
-  setBandVariantEnabled,
-  insertTocCmd,
-  insertFootnoteCmd,
-  insertContentControl,
-  removeContentControl,
-  sdtAtPosition,
-} from "./editor/commands";
-import { defaultStylesheet, resolveStyle, styleById } from "@cw/shared";
-import { bulletListDefinition, numberListDefinition, paragraphsOf, textOfRuns } from "@cw/shared";
-import { ICONS } from "./ui/icons";
-
 const TOOLBAR_SVG =
   "data:image/svg+xml," +
   encodeURIComponent(
@@ -571,6 +591,7 @@ if (toolbar) {
   colorPicker.type = "color";
   colorPicker.style.cssText = "position:fixed;left:-9999px;width:0;height:0;";
   document.body.appendChild(colorPicker);
+  detachables.push(colorPicker);
   const pickColor = (initial: string, onPick: (c: string) => void): void => {
     colorPicker.value = initial;
     colorPicker.oninput = null;
@@ -1389,7 +1410,7 @@ if (toolbar) {
     closeBtn.title = "Close";
     head.append(title, closeBtn);
     const list = el("div");
-    list.id = "outline-list";
+    list.className = "cw-outline-list";
     outlineEl.append(head, list);
 
     // Detect a heading + its outline level. Real .docx files name their styles
@@ -1587,7 +1608,7 @@ if (toolbar) {
       e.preventDefault();
       setCollapsed(!toolbar.classList.contains("collapsed"));
     }
-  });
+  }, { signal: teardown.signal });
   setCollapsed(false);
   tabsBar.appendChild(collapseBtn);
 
@@ -1723,7 +1744,7 @@ if (toolbar) {
     };
     // Scrolling only re-evaluates the visible page (cheap) — not the word count.
     app.addEventListener("scroll", setPageItem, { passive: true });
-    window.addEventListener("resize", setPageItem);
+    window.addEventListener("resize", setPageItem, { signal: teardown.signal });
     refreshStatus();
   }
 }
@@ -1854,7 +1875,7 @@ if (toolbar) {
     firstMarker.addEventListener("pointerdown", startDrag("first"));
 
     app.addEventListener("scroll", () => refreshRuler());
-    window.addEventListener("resize", () => refreshRuler());
+    window.addEventListener("resize", () => refreshRuler(), { signal: teardown.signal });
     // expose a toggle for the View-tab button
     toggleRuler = (): boolean => {
       ruler.classList.toggle("hidden");
@@ -1870,8 +1891,9 @@ if (toolbar) {
 // Appears above a selected image (Word's hover bar): wrap, align, delete.
 {
   const bar = document.createElement("div");
-  bar.id = "img-toolbar";
+  bar.className = "cw-img-toolbar";
   document.body.appendChild(bar);
+  detachables.push(bar);
   const ibtn = (icon: string, title: string, onClick: () => void, cls = ""): void => {
     const b = document.createElement("button");
     if (cls) b.className = cls;
@@ -1920,7 +1942,7 @@ if (toolbar) {
     bar.style.top = `${Math.round(top)}px`;
   };
   app.addEventListener("scroll", () => refreshImageBar());
-  window.addEventListener("resize", () => refreshImageBar());
+  window.addEventListener("resize", () => refreshImageBar(), { signal: teardown.signal });
 }
 
 // ---- page setup panel (📐) ---------------------------------------------------
@@ -2015,6 +2037,7 @@ const pageSetupPanel = (() => {
   });
   panel.appendChild(apply);
   document.body.appendChild(panel);
+  detachables.push(panel);
 
   return {
     toggle(): void {
@@ -2122,6 +2145,7 @@ const pageSetupPanel = (() => {
   };
   mkBtn("×", "Close (Esc)", close);
   document.body.appendChild(bar);
+  detachables.push(bar);
 
   openFind = (): void => {
     bar.style.display = "flex";
@@ -2146,17 +2170,12 @@ const pageSetupPanel = (() => {
       ev.preventDefault();
       openFind();
     }
-  });
+  }, { signal: teardown.signal });
 }
 
 // Dev hook for in-browser verification (break-rule scans, perf probes, and the
 // snapshot/replay round-trip: serialize the doc at load, reconstruct from the
-// editor's change log, compare).
-declare global {
-  interface Window {
-    __cw?: unknown;
-  }
-}
+// editor's change log, compare). Last-mounted instance wins the global.
 const persist = { serializeDocument, deserializeDocument, reconstruct, rehydrateDocMedia, mediaStore };
 window.__cw = { doc, tree, engine, editor, createLayoutEngine, sampleDoc, stressDoc, persist, share: goOnlineWithCurrentDoc };
 
@@ -2169,6 +2188,8 @@ const handle: EditorHandle = {
   getDocId: () => collabId,
   getShareLink: () => shareLink,
   destroy: () => {
+    teardown.abort(); // drop every global window/document listener this instance added
+    for (const el of detachables) el.remove(); // body-level floats (find bar, image bar, …)
     sync?.destroy();
     editor.destroy();
     shell.root.remove();
@@ -2176,3 +2197,4 @@ const handle: EditorHandle = {
 };
 runtime.onReady?.(handle);
 runtime.onEvent?.({ type: "ready" });
+}

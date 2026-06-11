@@ -13,22 +13,24 @@ export interface EditorShell {
 }
 
 export function buildShell(container: HTMLElement): EditorShell {
-  const div = (id?: string, tag: keyof HTMLElementTagNameMap = "div"): HTMLElement => {
+  // Class-based (not id-based) so multiple editors can share one page — see
+  // ui/styles.ts. Every structural node is keyed by a `cw-*` class the shared
+  // stylesheet targets under `.wordcanvas-root`.
+  const div = (cls?: string, tag: keyof HTMLElementTagNameMap = "div"): HTMLElement => {
     const e = document.createElement(tag);
-    if (id) e.id = id;
+    if (cls) e.className = cls;
     return e;
   };
 
-  const root = div() as HTMLDivElement;
-  root.className = "wordcanvas-root";
+  const root = div("wordcanvas-root") as HTMLDivElement;
 
-  const toolbar = div("toolbar") as HTMLDivElement;
-  const workarea = div("workarea") as HTMLDivElement;
-  const outline = div("outline", "aside");
-  const editorpane = div("editorpane") as HTMLDivElement;
-  const ruler = div("ruler") as HTMLDivElement;
-  const app = div("app") as HTMLDivElement;
-  const statusbar = div("statusbar") as HTMLDivElement;
+  const toolbar = div("cw-toolbar") as HTMLDivElement;
+  const workarea = div("cw-workarea") as HTMLDivElement;
+  const outline = div("cw-outline", "aside");
+  const editorpane = div("cw-editorpane") as HTMLDivElement;
+  const ruler = div("cw-ruler") as HTMLDivElement;
+  const app = div("cw-app") as HTMLDivElement;
+  const statusbar = div("cw-statusbar") as HTMLDivElement;
 
   editorpane.append(ruler, app);
   workarea.append(outline, editorpane);

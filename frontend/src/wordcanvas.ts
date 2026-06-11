@@ -6,11 +6,10 @@
 //
 // `backendUrl` is the online/offline kill-switch: when set, opening a document
 // auto-publishes it and exposes a shareable link, edits sync live, and presence
-// events fire; when omitted, the editor runs fully offline. v1 supports one
-// WordCanvas per page.
+// events fire; when omitted, the editor runs fully offline. Multiple WordCanvas
+// instances can coexist on one page (class-scoped chrome, per-instance runtime).
 
-import { setRuntime, type EditorHandle, type Participant, type WordCanvasEvent } from "./app/runtime";
-import { ensureWordCanvasStyles } from "./ui/styles";
+import type { EditorHandle, Participant, WordCanvasEvent, WordCanvasRuntime } from "./app/runtime";
 import type { Document, UserInfo } from "@cw/shared";
 
 export type { Document, UserInfo, Participant };
@@ -42,21 +41,14 @@ export interface WordCanvasEventMap {
 
 type Handler<E extends keyof WordCanvasEventMap> = (data: WordCanvasEventMap[E]) => void;
 
-let mounted = false;
-
 export class WordCanvas {
   private handle: EditorHandle | null = null;
   private readonly ready: Promise<EditorHandle>;
   private readonly handlers = new Map<string, Set<(data: unknown) => void>>();
 
   constructor(opts: WordCanvasOptions) {
-    if (mounted) {
-      throw new Error("WordCanvas: only one instance per page is supported in this version");
-    }
-    mounted = true;
-    ensureWordCanvasStyles();
     this.ready = new Promise<EditorHandle>((resolve) => {
-      setRuntime({
+      const runtime: WordCanvasRuntime = {
         container: opts.container,
         backendUrl: opts.backendUrl,
         // `docId` is the canonical name; fall back to the deprecated `collabId`.
@@ -68,9 +60,11 @@ export class WordCanvas {
           resolve(h);
         },
         onEvent: (ev) => this.emit(ev),
-      });
-      // Evaluating the editor app (once) mounts the UI and calls onReady.
-      void import("./editorApp");
+      };
+      // Lazy-load the editor chunk, then mount this instance. Each call mounts an
+      // independent editor (the chunk's module-eval cost is shared, the mount is
+      // per-instance), so multiple WordCanvas instances coexist on one page.
+      void import("./editorApp").then((m) => m.mountEditorApp(runtime));
     });
   }
 
@@ -128,6 +122,5 @@ export class WordCanvas {
     this.handle?.destroy();
     this.handle = null;
     this.handlers.clear();
-    mounted = false;
   }
 }

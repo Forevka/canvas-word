@@ -1,10 +1,7 @@
 // Runtime config bridge between the WordCanvas wrapper and the editor app
-// module. WordCanvas sets the runtime, then dynamic-imports editorApp, whose
-// top-level bootstrap reads it via getRuntime() and calls onReady with a handle.
-//
-// v1 supports a single embedded editor per page (editorApp's top-level code runs
-// once on first import; its CSS is id-based). Constructing a second WordCanvas
-// throws.
+// module. WordCanvas builds a runtime and passes it to mountEditorApp(runtime),
+// which mounts one editor and calls onReady with a handle. The runtime is a plain
+// per-call value (no module singleton), so multiple editors coexist on one page.
 
 import type { Document, UserInfo } from "@cw/shared";
 
@@ -53,15 +50,4 @@ export interface WordCanvasRuntime {
   onReady?: ((handle: EditorHandle) => void) | undefined;
   /** Sink for collaboration events (presence, share, ready) → WordCanvas.on(...). */
   onEvent?: ((ev: WordCanvasEvent) => void) | undefined;
-}
-
-let current: WordCanvasRuntime | null = null;
-
-export function setRuntime(r: WordCanvasRuntime): void {
-  current = r;
-}
-
-export function getRuntime(): WordCanvasRuntime {
-  if (!current) throw new Error("WordCanvas runtime not configured (set it before importing editorApp)");
-  return current;
 }

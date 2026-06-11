@@ -4,9 +4,10 @@
 // <style> is that the page-level `html, body` rules become a `.wordcanvas-root`
 // container rule, so embedding doesn't restyle the host's body.
 //
-// NOTE (v1): structural selectors are ids (#toolbar/#app/#ruler/#outline/
-// #statusbar). One WordCanvas per page is supported; multi-instance / host-id
-// isolation (shadow DOM or class-scoped selectors) is a follow-up.
+// Structural selectors are CLASS-based (.cw-toolbar/.cw-app/.cw-ruler/
+// .cw-outline/.cw-statusbar), scoped by the per-instance .wordcanvas-root, so
+// multiple editors can coexist on one page without id collisions. The stylesheet
+// itself is shared (injected once, keyed by STYLE_ID) — it styles every instance.
 
 const STYLE_ID = "wordcanvas-styles";
 
@@ -18,7 +19,7 @@ const CSS = `
 }
 
 /* ===== Word-style ribbon ============================================ */
-#toolbar {
+.cw-toolbar {
   flex: 0 0 auto; display: flex; flex-direction: column;
   background: #f3f2f1; border-bottom: 1px solid #e1dfdd; user-select: none;
 }
@@ -70,41 +71,41 @@ const CSS = `
 }
 
 /* --- buttons --- */
-#toolbar button.rib-btn {
+.cw-toolbar button.rib-btn {
   min-width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid transparent; border-radius: 4px; background: transparent; cursor: pointer;
   color: #323130; font-size: 13px; padding: 0 4px; gap: 1px;
 }
-#toolbar button.rib-btn:hover { background: #e1dfdd; }
-#toolbar button.rib-btn:active { background: #d2d0ce; }
-#toolbar button.rib-btn.active { background: #cfe3fb; color: #0b57d0; border-color: #b3d3f5; }
-#toolbar button.rib-btn.active:hover { background: #bcd8fa; }
-#toolbar button.rib-btn.active svg { color: #0b57d0; }
-#toolbar button.rib-btn svg { width: 16px; height: 16px; display: block; }
-#toolbar button.rib-btn .caret { width: 8px; height: 8px; }
+.cw-toolbar button.rib-btn:hover { background: #e1dfdd; }
+.cw-toolbar button.rib-btn:active { background: #d2d0ce; }
+.cw-toolbar button.rib-btn.active { background: #cfe3fb; color: #0b57d0; border-color: #b3d3f5; }
+.cw-toolbar button.rib-btn.active:hover { background: #bcd8fa; }
+.cw-toolbar button.rib-btn.active svg { color: #0b57d0; }
+.cw-toolbar button.rib-btn svg { width: 16px; height: 16px; display: block; }
+.cw-toolbar button.rib-btn .caret { width: 8px; height: 8px; }
 
 /* large button (Paste): icon over caption */
-#toolbar button.rib-big {
+.cw-toolbar button.rib-big {
   flex-direction: column; height: 100%; min-width: 48px; padding: 4px 6px; gap: 2px; justify-content: center;
 }
-#toolbar button.rib-big svg { width: 26px; height: 26px; }
-#toolbar button.rib-big .big-cap { font-size: 11px; display: flex; align-items: center; gap: 1px; }
+.cw-toolbar button.rib-big svg { width: 26px; height: 26px; }
+.cw-toolbar button.rib-big .big-cap { font-size: 11px; display: flex; align-items: center; gap: 1px; }
 
 /* swatch button: icon row + colour underline */
-#toolbar button.rib-swatch { flex-direction: column; gap: 0; padding: 2px 3px; }
-#toolbar button.rib-swatch .row { display: flex; align-items: center; gap: 1px; }
-#toolbar button.rib-swatch .bar { width: 18px; height: 3px; margin-top: 1px; border-radius: 1px; }
+.cw-toolbar button.rib-swatch { flex-direction: column; gap: 0; padding: 2px 3px; }
+.cw-toolbar button.rib-swatch .row { display: flex; align-items: center; gap: 1px; }
+.cw-toolbar button.rib-swatch .bar { width: 18px; height: 3px; margin-top: 1px; border-radius: 1px; }
 
 /* disabled stub (feature not supported by the engine yet) */
-#toolbar button.rib-btn:disabled { opacity: 0.38; cursor: default; }
-#toolbar button.rib-btn:disabled:hover { background: transparent; }
+.cw-toolbar button.rib-btn:disabled { opacity: 0.38; cursor: default; }
+.cw-toolbar button.rib-btn:disabled:hover { background: transparent; }
 
 /* form controls */
-#toolbar select, #toolbar input[type="number"] {
+.cw-toolbar select, .cw-toolbar input[type="number"] {
   height: 24px; border: 1px solid #c8c6c4; border-radius: 3px; background: #fff;
   font: inherit; font-size: 13px; color: #323130;
 }
-#toolbar select:hover, #toolbar input[type="number"]:hover { border-color: #8a8886; }
+.cw-toolbar select:hover, .cw-toolbar input[type="number"]:hover { border-color: #8a8886; }
 
 /* styles gallery */
 .rib-gallery {
@@ -125,42 +126,42 @@ const CSS = `
 .style-card .name { font-size: 10px; color: #605e5c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 72px; }
 
 /* work area: optional outline drawer + ruler + the scrolling page canvas */
-#workarea { flex: 1 1 auto; min-height: 0; display: flex; }
-#editorpane { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.cw-workarea { flex: 1 1 auto; min-height: 0; display: flex; }
+.cw-editorpane { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 /* touch-action: keep one/two-finger PAN (scroll) but disable the browser's
    native pinch-zoom and double-tap-zoom on the document, so our own
    pinch-to-zoom handler (index.ts) owns those gestures. The toolbar/status bar
    keep default touch-action so the ribbon scrolls and taps normally. */
-#app { flex: 1 1 auto; min-height: 0; min-width: 0; overflow: auto; background: #e8eaed; position: relative; touch-action: pan-x pan-y; }
+.cw-app { flex: 1 1 auto; min-height: 0; min-width: 0; overflow: auto; background: #e8eaed; position: relative; touch-action: pan-x pan-y; }
 
 /* horizontal ruler (inch ticks, margin shading, draggable indent markers) */
-#ruler { flex: 0 0 22px; height: 22px; position: relative; background: #e8eaed; border-bottom: 1px solid #d2d0ce; overflow: hidden; }
-#ruler.hidden { display: none; }
-#ruler canvas { position: absolute; inset: 0; }
-#ruler .ruler-marker { position: absolute; width: 0; height: 0; cursor: ew-resize; z-index: 2; }
+.cw-ruler { flex: 0 0 22px; height: 22px; position: relative; background: #e8eaed; border-bottom: 1px solid #d2d0ce; overflow: hidden; }
+.cw-ruler.hidden { display: none; }
+.cw-ruler canvas { position: absolute; inset: 0; }
+.cw-ruler .ruler-marker { position: absolute; width: 0; height: 0; cursor: ew-resize; z-index: 2; }
 /* left-indent: bottom-pointing triangle sitting on the baseline */
-#ruler .ruler-left { bottom: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 7px solid #5b6b8c; }
+.cw-ruler .ruler-left { bottom: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 7px solid #5b6b8c; }
 /* first-line-indent: top-pointing triangle */
-#ruler .ruler-first { top: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid #5b6b8c; }
+.cw-ruler .ruler-first { top: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid #5b6b8c; }
 
 /* ===== Outline / Navigation drawer ================================== */
-#outline {
+.cw-outline {
   flex: 0 0 264px; width: 264px; min-height: 0; overflow-y: auto;
   background: #fff; border-right: 1px solid #e1dfdd; display: none;
 }
-#outline.open { display: block; }
-#outline .outline-head {
+.cw-outline.open { display: block; }
+.cw-outline .outline-head {
   position: sticky; top: 0; background: #fff; z-index: 1;
   display: flex; align-items: center; justify-content: space-between;
   padding: 9px 8px 9px 14px; border-bottom: 1px solid #e1dfdd;
   font-size: 13px; font-weight: 600; color: #323130;
 }
-#outline .outline-head button {
+.cw-outline .outline-head button {
   border: none; background: transparent; cursor: pointer; color: #605e5c;
   width: 24px; height: 24px; border-radius: 4px; font-size: 17px; line-height: 1;
 }
-#outline .outline-head button:hover { background: #f3f2f1; }
-#outline-list { padding: 4px 0 12px; }
+.cw-outline .outline-head button:hover { background: #f3f2f1; }
+.cw-outline-list { padding: 4px 0 12px; }
 .outline-item {
   display: block; width: 100%; box-sizing: border-box; text-align: left;
   border: none; border-left: 3px solid transparent; background: transparent; cursor: pointer;
@@ -172,24 +173,24 @@ const CSS = `
 .outline-empty { padding: 14px; color: #80868b; font-size: 12px; line-height: 1.4; }
 
 /* collapsed ribbon: keep the tab strip, hide the body */
-#toolbar.collapsed .rib-bodies { display: none; }
+.cw-toolbar.collapsed .rib-bodies { display: none; }
 
 /* ===== Status bar ================================================== */
-#statusbar {
+.cw-statusbar {
   flex: 0 0 auto; height: 24px; display: flex; align-items: center; justify-content: space-between;
   background: #2b579a; color: #fff; font-size: 12px; padding: 0 10px; user-select: none;
 }
-#statusbar .sb-left, #statusbar .sb-right { display: flex; align-items: center; gap: 16px; }
-#statusbar .sb-right { gap: 8px; }
-#statusbar .sb-item { white-space: nowrap; }
-#statusbar .sb-sep { width: 1px; height: 14px; background: rgba(255,255,255,0.35); }
-#statusbar button.sb-btn {
+.cw-statusbar .sb-left, .cw-statusbar .sb-right { display: flex; align-items: center; gap: 16px; }
+.cw-statusbar .sb-right { gap: 8px; }
+.cw-statusbar .sb-item { white-space: nowrap; }
+.cw-statusbar .sb-sep { width: 1px; height: 14px; background: rgba(255,255,255,0.35); }
+.cw-statusbar button.sb-btn {
   background: transparent; border: none; color: #fff; cursor: pointer; font-size: 15px;
   width: 22px; height: 20px; border-radius: 3px; line-height: 1; padding: 0;
 }
-#statusbar button.sb-btn:hover { background: rgba(255,255,255,0.18); }
-#statusbar input[type="range"] { width: 120px; cursor: pointer; accent-color: #fff; }
-#statusbar .sb-zoom { min-width: 38px; text-align: right; }
+.cw-statusbar button.sb-btn:hover { background: rgba(255,255,255,0.18); }
+.cw-statusbar input[type="range"] { width: 120px; cursor: pointer; accent-color: #fff; }
+.cw-statusbar .sb-zoom { min-width: 38px; text-align: right; }
 
 /* ===== Popovers (palettes, menus, pickers, dialogs) ================ */
 .cw-pop {
@@ -248,19 +249,19 @@ const CSS = `
 .cw-progress-bar { height: 100%; width: 0%; background: #2b579a; transition: width 0.15s ease; }
 
 /* floating mini-toolbar shown above a selected image */
-#img-toolbar {
+.cw-img-toolbar {
   position: fixed; display: none; align-items: center; gap: 2px; z-index: 40;
   background: #fff; border: 1px solid #c8c6c4; border-radius: 6px; padding: 3px;
   box-shadow: 0 3px 12px rgba(0,0,0,0.18);
 }
-#img-toolbar button {
+.cw-img-toolbar button {
   width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid transparent; border-radius: 4px; background: transparent; cursor: pointer; color: #323130;
 }
-#img-toolbar button:hover { background: #e1dfdd; }
-#img-toolbar button.danger:hover { background: #fde7e9; color: #a4262c; }
-#img-toolbar button svg { width: 16px; height: 16px; }
-#img-toolbar .sep { width: 1px; height: 18px; background: #e1dfdd; margin: 0 2px; }
+.cw-img-toolbar button:hover { background: #e1dfdd; }
+.cw-img-toolbar button.danger:hover { background: #fde7e9; color: #a4262c; }
+.cw-img-toolbar button svg { width: 16px; height: 16px; }
+.cw-img-toolbar .sep { width: 1px; height: 18px; background: #e1dfdd; margin: 0 2px; }
 
 /* ===== Mobile / touch responsive layer ============================== */
 /* Activates on touch devices (coarse primary pointer) OR narrow screens.
@@ -274,25 +275,25 @@ const CSS = `
   .rib-label { display: none; }
   .rib-group { padding: 4px 6px; }
   /* Touch targets (Apple/Material guideline is ~40-48px). */
-  #toolbar button.rib-btn { min-width: 40px; height: 40px; }
-  #toolbar button.rib-btn svg { width: 18px; height: 18px; }
+  .cw-toolbar button.rib-btn { min-width: 40px; height: 40px; }
+  .cw-toolbar button.rib-btn svg { width: 18px; height: 18px; }
   .rib-tab { padding: 9px 14px; font-size: 14px; }
-  #toolbar select, #toolbar input[type="number"] { height: 36px; font-size: 14px; }
+  .cw-toolbar select, .cw-toolbar input[type="number"] { height: 36px; font-size: 14px; }
 
   /* Outline: overlay the page instead of stealing 264px of a ~360px screen. */
-  #workarea { position: relative; }
-  #outline { position: absolute; left: 0; top: 0; bottom: 0; height: auto; width: min(264px, 80vw); z-index: 30; box-shadow: 2px 0 16px rgba(0,0,0,0.18); }
+  .cw-workarea { position: relative; }
+  .cw-outline { position: absolute; left: 0; top: 0; bottom: 0; height: auto; width: min(264px, 80vw); z-index: 30; box-shadow: 2px 0 16px rgba(0,0,0,0.18); }
 
   /* Status bar: tappable zoom controls. */
-  #statusbar { height: 36px; }
-  #statusbar button.sb-btn { width: 32px; height: 30px; font-size: 17px; }
-  #statusbar input[type="range"] { width: 96px; }
+  .cw-statusbar { height: 36px; }
+  .cw-statusbar button.sb-btn { width: 32px; height: 30px; font-size: 17px; }
+  .cw-statusbar input[type="range"] { width: 96px; }
 
   /* Floating panels (Page Setup, Find) → bottom sheet; Activity → full-width.
      !important overrides the inline position/size set in editorApp.ts. */
   .cw-float-panel { left: 8px !important; right: 8px !important; top: auto !important; bottom: 8px !important; width: auto !important; max-width: none !important; max-height: 60vh; overflow: auto; }
   .cw-float-drawer { width: 100% !important; }
-  #img-toolbar button { width: 34px; height: 34px; }
+  .cw-img-toolbar button { width: 34px; height: 34px; }
 
   /* Image resize handles: 8px dots are unhittable with a finger — an invisible
      ::before pads the touch target to ~24px without changing the visual size. */
