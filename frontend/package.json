@@ -1,6 +1,6 @@
 {
   "name": "@forevka/wordcanvas",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "description": "Embeddable canvas-rendered, Word-compatible document editor with live collaboration and DOCX/PDF import & export. Self-contained, zero runtime dependencies.",
   "license": "MIT",
@@ -27,28 +27,19 @@
   ],
   "module": "./dist-lib/wordcanvas.js",
   "types": "./types/wordcanvas.d.ts",
+  "//exports": "Only the surface that is actually shipped (files: dist-lib + types). The frontend's import/export pipelines are consumed in-workspace by the backend via its tsconfig paths + vitest aliases, NOT through this map, so they are intentionally not published. Note: npm's publishConfig does NOT override `exports`, so this committed map is what ships — keep it pointing at dist, not src.",
   "exports": {
     ".": {
       "types": "./types/wordcanvas.d.ts",
       "import": "./dist-lib/wordcanvas.js"
     },
-    "./builder": "./src/builder/index.ts",
-    "./import": "./src/import/docx/pipeline.ts",
-    "./export": "./src/export/pipeline.ts",
-    "./export/measure": "./src/export/shared/measureHost.ts"
+    "./builder": {
+      "types": "./types/builder.d.ts",
+      "import": "./dist-lib/builder.js"
+    }
   },
   "publishConfig": {
-    "access": "public",
-    "exports": {
-      ".": {
-        "types": "./types/wordcanvas.d.ts",
-        "import": "./dist-lib/wordcanvas.js"
-      },
-      "./builder": {
-        "types": "./types/builder.d.ts",
-        "import": "./dist-lib/builder.js"
-      }
-    }
+    "access": "public"
   },
   "files": ["dist-lib", "types"],
   "scripts": {
