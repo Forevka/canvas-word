@@ -1,6 +1,6 @@
 {
   "name": "@forevka/wordcanvas",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Embeddable canvas-rendered, Word-compatible document editor with live collaboration and DOCX/PDF import & export. Self-contained, zero runtime dependencies.",
   "license": "MIT",
