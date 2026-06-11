@@ -6,7 +6,7 @@
 // with one cached prefix-measureText pass — most fragments are never hit-tested.
 
 import type { DocPosition, DocSelection } from "@cw/shared";
-import type { InlineFragment, LayoutTree, LineBox, PlacedBlock } from "./layoutTree";
+import type { InlineFragment, LayoutTree, LineBox, PlacedBlock, PlacedTableCell } from "./layoutTree";
 import { charStyleToFont } from "./metrics";
 
 export interface CaretRect {
@@ -34,6 +34,9 @@ interface LineEntry {
   /** Paragraph-text offsets covered by this line (empty line: 0..0). */
   startOffset: number;
   endOffset: number;
+  /** The table cell this line lives in, if any — shared by reference across all
+   *  of the cell's lines so hit-testing can pin a click to its cell. */
+  cell?: PlacedTableCell;
 }
 
 interface TreeIndex {
@@ -62,7 +65,7 @@ function buildIndex(
   const entries: LineEntry[] = [];
   const byBlock = new Map<string, number[]>();
   const blockOrder = new Map<string, number>();
-  const indexBlock = (pageIndex: number, block: PlacedBlock, depth = 0): void => {
+  const indexBlock = (pageIndex: number, block: PlacedBlock, depth = 0, cell?: PlacedTableCell): void => {
     if (block.table) {
       // Cell paragraphs are regular PlacedBlocks — index them in cell order and
       // every caret/selection query works inside tables with no special cases.
@@ -70,7 +73,7 @@ function buildIndex(
       // are read-only — the paragraph locator only goes one level deep.)
       if (!indexBandTables || depth > 0) return;
       for (const row of block.table.rows) {
-        for (const cell of row.cells) for (const cb of cell.blocks) indexBlock(pageIndex, cb, depth + 1);
+        for (const c of row.cells) for (const cb of c.blocks) indexBlock(pageIndex, cb, depth + 1, c);
       }
       return;
     }
@@ -91,6 +94,7 @@ function buildIndex(
         line,
         startOffset: first ? first.startOffset : (line.emptyOffset ?? 0),
         endOffset: last ? last.endOffset : (line.emptyOffset ?? 0),
+        ...(cell ? { cell } : {}),
       });
     }
   };
@@ -278,6 +282,20 @@ export function hitTest(
 ): DocPosition | null {
   const idx = getIndex(tree, scope);
 
+  // If the point lands inside a table cell, the caret belongs in THAT cell —
+  // never a neighbour. A short line in the clicked cell can sit farther from x
+  // than a longer line in the next column, so the x-distance ranking below
+  // would otherwise jump columns. Pin candidates to the containing cell.
+  let targetCell: PlacedTableCell | undefined;
+  for (const e of idx.entries) {
+    if (e.pageIndex !== pageIndex || !e.cell) continue;
+    const c = e.cell;
+    if (x >= c.x && x < c.x + c.width && y >= c.y && y < c.y + c.height) {
+      targetCell = c;
+      break;
+    }
+  }
+
   const xDistance = (e: LineEntry): number => {
     const first = e.line.fragments[0];
     const last = e.line.fragments[e.line.fragments.length - 1];
@@ -297,6 +315,7 @@ export function hitTest(
       earlier = e;
       continue;
     }
+    if (targetCell && e.cell !== targetCell) continue; // pinned to the clicked cell
     const top = e.block.y + e.line.y;
     const bottom = top + e.line.height;
     if (y >= top && y < bottom) {

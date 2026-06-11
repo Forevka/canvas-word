@@ -4,7 +4,7 @@ import "./test-canvas-setup";
 import { describe, it, expect } from "vitest";
 import type { Block, CharStyle, Document, ParaStyle, Paragraph, SectionProps, TableBlock, TableCell } from "@cw/shared";
 import { createLayoutEngine } from "./engine";
-import { cellRangeRects, hitTestCell } from "./geometry";
+import { cellRangeRects, hitTest, hitTestCell } from "./geometry";
 import type { PlacedBlock } from "./layoutTree";
 
 const CHAR: CharStyle = { fontFamily: "Georgia, serif", fontSizePx: 16, bold: false, italic: false, underline: false, strikethrough: false, color: "#000" };
@@ -60,6 +60,29 @@ describe("hitTestCell", () => {
     const row1 = pt.rows[1]!;
     const x = pt.x + pt.colWidths[0]! + pt.colWidths[1]! / 2;
     expect(hitTestCell(tree, page, x, row1.y + row1.height / 2)).toEqual({ tableId: "tbl", row: 1, col: 1 });
+  });
+});
+
+describe("hitTest inside table cells", () => {
+  it("pins the caret to the clicked cell even when a neighbour's text is closer", () => {
+    // 3x3 grid; the middle-left cell holds one short character while its right
+    // neighbour is full of text. Clicking the empty space past the short text
+    // used to land in the long neighbour (its text was horizontally closer).
+    const t = table([
+      [cell("aaaaaaaaaa"), cell("bbbbbbbbbb"), cell("cccccccccc")],
+      [cell("x"), cell("yyyyyyyyyyyyyyyyyyyy"), cell("zzzzzzzzzz")],
+      [cell("dddddddddd"), cell("eeeeeeeeee"), cell("ffffffffff")],
+    ]);
+    const tree = layout(doc([t]));
+    const { page, pb } = placedTable(tree, "tbl");
+    const pt = pb.table!;
+    const short = pt.rows[1]!.cells[0]!; // the "x" cell
+    const expectedBlockId = short.blocks[0]!.blockId;
+    // Click near the right edge of the short cell, past where "x" ends.
+    const x = short.x + short.width - 4;
+    const y = short.y + short.height / 2;
+    const pos = hitTest(tree, page, x, y);
+    expect(pos?.blockId).toBe(expectedBlockId);
   });
 });
 
