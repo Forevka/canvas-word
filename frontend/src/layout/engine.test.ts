@@ -544,3 +544,40 @@ describe("engine — right indent", () => {
     expect(plain - indented).toBeCloseTo(100, 0);
   });
 });
+
+// --- floats (square-wrap images) ------------------------------------------
+
+describe("engine — floats", () => {
+  // A left-floated image: text flows beside it, y is not advanced.
+  const leftFloat = (w: number, h: number): ImageBlock => ({ ...image(w, h), wrap: "square", align: "left" });
+
+  it("justifies wrapped lines beside a float (not just left-aligns them)", () => {
+    const img = leftFloat(200, 100);
+    const body = para("word ".repeat(120).trim(), { align: "justify" });
+    const pb = placedOf(layout(doc([img, body])), body.id)!.pb;
+    // Lines whose fragments start well past the left margin are beside the float.
+    const besideFloat = pb.lines.filter((l) => (l.fragments[0]?.x ?? 0) > 150);
+    expect(besideFloat.length).toBeGreaterThan(1);
+    // Justify stretches spaces via wordSpacingPx; a left fallback never sets it.
+    const justifiedBesideFloat = besideFloat.some((l) => l.fragments.some((f) => (f.wordSpacingPx ?? 0) > 0));
+    expect(justifiedBesideFloat).toBe(true);
+  });
+
+  it("leaves wrapped lines beside a float ragged when the paragraph is left-aligned", () => {
+    const img = leftFloat(200, 100);
+    const body = para("word ".repeat(120).trim(), { align: "left" });
+    const pb = placedOf(layout(doc([img, body])), body.id)!.pb;
+    const anyWordSpacing = pb.lines.some((l) => l.fragments.some((f) => (f.wordSpacingPx ?? 0) > 0));
+    expect(anyWordSpacing).toBe(false);
+  });
+
+  it("drops a table below an active float instead of overlapping it", () => {
+    const img = leftFloat(200, 100);
+    const t = table([[cell("a"), cell("b")]]);
+    const tree = layout(doc([img, t]));
+    const imgPb = placedOf(tree, img.id)!.pb;
+    const tablePb = placedOf(tree, t.id)!.pb;
+    // The table must start at or below the float's bottom edge — never beside it.
+    expect(tablePb.y).toBeGreaterThanOrEqual(imgPb.y + 100);
+  });
+});

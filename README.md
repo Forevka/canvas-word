@@ -368,9 +368,9 @@ Everything in it is done; the editor covers ~95% of everyday Word usage.
 - RTL/bidi caret affinity unhandled (pretext renders bidi; editing it is open).
 - Real-IME tested via synthetic events only — needs a hands-on CJK keyboard pass.
 - A11y mirror is minimal (aria-label sync + live region; full mirror planned).
-- Justify falls back to left inside float regions; tables beside floats overlap.
-- No repeat-header-row on table chunks; rowSpan (vertical merge) round-trips and
-  renders, but a note splitting across pages does not.
+- No repeat-header-row on table chunks; a vertical-merge (rowSpan) table taller
+  than a page splits at a row boundary, leaving the merged cell on the first page
+  only (a table that fits whole is moved intact to the next page instead).
 - Only Latin metric-clone fonts are bundled, so CJK/complex scripts render as
   tofu in PDF export (same gap as the importer).
 - Raster browser-print was skipped — use PDF export instead.

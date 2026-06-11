@@ -378,6 +378,27 @@ function layoutTabbedSegment(
   return out;
 }
 
+/** Justify a line: distribute `slack` px across every inter-word space (painted
+ *  via ctx.wordSpacing, so the fragment stays ONE fillText) and every eaten
+ *  inter-fragment gap. Mutates each fragment's x / width / wordSpacing in place;
+ *  the caller applies any left-edge offset (indent / float box) separately. */
+function justifyLine(frags: RawFrag[], slack: number): void {
+  if (slack <= 0) return;
+  const totalGaps = frags.reduce((s, rf) => s + rf.spaces + (rf.hadGap ? 1 : 0), 0);
+  if (totalGaps <= 0) return;
+  const extra = slack / totalGaps;
+  let shift = 0;
+  for (const rf of frags) {
+    if (rf.hadGap) shift += extra;
+    rf.frag.x += shift;
+    if (rf.spaces > 0) {
+      rf.frag.wordSpacingPx = extra;
+      rf.frag.width += rf.spaces * extra;
+      shift += rf.spaces * extra;
+    }
+  }
+}
+
 function paragraphLines(p: Paragraph, contentWidth: number, cache: PrepareCache): LineBox[] {
   const segments = cache.get(p);
   const lines: LineBox[] = [];
@@ -450,24 +471,7 @@ function paragraphLines(p: Paragraph, contentWidth: number, cache: PrepareCache)
     let startX = rl.indent;
     if (p.style.align === "center") startX += slack / 2;
     else if (p.style.align === "right") startX += slack;
-    else if (p.style.align === "justify" && !rl.lastOfSegment && slack > 0) {
-      // Distribute slack across every space (painted via ctx.wordSpacing — the
-      // fragment stays ONE fillText) and every eaten inter-fragment gap.
-      const totalGaps = rl.frags.reduce((s, rf) => s + rf.spaces + (rf.hadGap ? 1 : 0), 0);
-      if (totalGaps > 0) {
-        const extra = slack / totalGaps;
-        let shift = 0;
-        for (const rf of rl.frags) {
-          if (rf.hadGap) shift += extra;
-          rf.frag.x += shift;
-          if (rf.spaces > 0) {
-            rf.frag.wordSpacingPx = extra;
-            rf.frag.width += rf.spaces * extra;
-            shift += rf.spaces * extra;
-          }
-        }
-      }
-    }
+    else if (p.style.align === "justify" && !rl.lastOfSegment) justifyLine(rl.frags, slack);
     for (const rf of rl.frags) rf.frag.x += startX;
     const box: LineBox = { y, height: rl.height, ascent: rl.ascent, fragments: rl.frags.map((rf) => rf.frag) };
     if (rl.emptyOffset !== undefined) box.emptyOffset = rl.emptyOffset;
@@ -1055,8 +1059,9 @@ function layoutDocument(
   /** Float-affected paragraphs: re-break per line with the float-shrunk width
    *  at the line's own y (pretext's per-line maxWidth makes this cheap). A line
    *  that doesn't fit the page is ROLLED BACK (runCursors snapshot) and
-   *  re-broken at full width on the next page. Justify falls back to left in
-   *  float regions (it needs paragraph-final-line lookahead). */
+   *  re-broken at full width on the next page. Justify is applied with a
+   *  one-line buffer (a line is justified once the NEXT line proves it isn't the
+   *  segment's last — which stays ragged, like a paragraph's final line). */
   const placeParagraphFloating = (p: Paragraph): void => {
     const segments = getPrepared(p);
     let first = true;
@@ -1087,6 +1092,9 @@ function layoutDocument(
       const runCursors: number[] = seg.runs.map(() => 0);
       let cursor: RichInlineCursor | undefined = undefined;
       let produced = false;
+      // Buffered previous line for justify: held until the next line confirms it
+      // isn't the segment's last (the last line stays ragged). Reset per segment.
+      let justifyPrev: { frags: RawFrag[]; slack: number } | null = null;
 
       for (;;) {
         const snapshot = runCursors.slice();
@@ -1112,6 +1120,12 @@ function layoutDocument(
         if (p.style.align === "center") startX += slack / 2;
         else if (p.style.align === "right") startX += slack;
         for (const rf of bl.frags) rf.frag.x += startX;
+        // Justify the PREVIOUS line now that this one exists (so it's non-last);
+        // buffer this line for the same decision next iteration.
+        if (p.style.align === "justify") {
+          if (justifyPrev) justifyLine(justifyPrev.frags, justifyPrev.slack);
+          justifyPrev = { frags: bl.frags, slack };
+        }
         pushLine(bl.frags, bl.height, bl.ascent);
         cursor = bl.end;
         first = false;
@@ -1213,6 +1227,9 @@ function layoutDocument(
     }
     if (m.kind === "table") {
       if (!prevAtomic) y += ATOMIC_GAP;
+      // Tables don't flow beside floats the way text does — drop below any float
+      // still active at y so the grid never overlaps a floated image.
+      for (const f of floats) if (f.bottom > y) y = f.bottom;
       placeTableChunked(m);
       if (!nextAtomic) y += ATOMIC_GAP;
       continue;
