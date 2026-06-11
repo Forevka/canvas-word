@@ -15,6 +15,13 @@ const underVitest = process.env.VITEST !== undefined;
 export default defineConfig(({ mode }) => {
   const lib = mode === "lib";
   return {
+    // Relative asset/worker URLs (`new URL("./assets/…", import.meta.url)`) so the
+    // bundle is relocatable: embedders mount dist-lib under an arbitrary subpath
+    // (e.g. /live/wordcanvas/) and the editor's import/export workers still
+    // resolve against their own location. With the default base "/", worker URLs
+    // become origin-absolute (/assets/…) and 404 under any subpath — the worker
+    // then fails to load with an opaque error. The dev app keeps the default base.
+    base: lib ? "./" : "/",
     // Resolve the shared document core (@cw/shared) straight to its TS source so
     // dev/build/vitest all work without relying on a workspace symlink in
     // node_modules. Mirrors the `paths` entry in tsconfig.json.
