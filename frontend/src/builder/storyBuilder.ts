@@ -1,0 +1,139 @@
+// Block-scope base for the fluent builder: anything that holds a Block story —
+// the document body (DocumentBuilder extends this), header/footer bands, and
+// table cells — shares this surface. Methods append eagerly and return `this`
+// (or a ParagraphBuilder that delegates back), so chains never need a seal step.
+
+import type { Block, CharStyle } from "@cw/shared";
+import { DEFAULT_BULLET_LIST_ID, DEFAULT_NUMBER_LIST_ID, defaultListDefinition } from "@cw/shared";
+import type { BuilderContext } from "./blockFactory";
+import { bytesToDataUrl } from "./media";
+import { ParagraphBuilder } from "./paragraphBuilder";
+import { TableBuilder, type CellContent, type TableOptions } from "./tableBuilder";
+
+export interface ImageOptions {
+  /** Intrinsic display size — required: the builder runs in Node too, where
+   *  there is no DOM to measure an image (auto-measure is on the roadmap). */
+  widthPx: number;
+  heightPx: number;
+  align?: "left" | "center" | "right";
+  /** 'block' (default): own line. 'square': floats per align, text wraps. */
+  wrap?: "block" | "square";
+}
+
+export interface ListItem {
+  text: string;
+  /** Nesting level 0..8 (default 0, or ListOptions.level). */
+  level?: number;
+  style?: Partial<CharStyle>;
+}
+
+export interface ListOptions {
+  kind?: "bullet" | "number";
+  /** Reference an existing list definition (e.g. one carried by the template). */
+  listId?: string;
+  /** Default nesting level for all items (per-item `level` overrides). */
+  level?: number;
+}
+
+export class StoryBuilder {
+  protected readonly ctx: BuilderContext;
+  protected readonly blocks: Block[];
+  private pendingPageBreak = false;
+
+  constructor(ctx: BuilderContext, blocks: Block[]) {
+    this.ctx = ctx;
+    this.blocks = blocks;
+  }
+
+  /** Append a block, honoring a pending pageBreak(). Only paragraphs carry
+   *  pageBreakBefore, so a break before a table/image lands on an injected
+   *  empty paragraph (same trick as the docx import mapper). */
+  protected push(block: Block): void {
+    if (this.pendingPageBreak) {
+      if (block.kind === "paragraph") block.style.pageBreakBefore = true;
+      else this.blocks.push(this.ctx.paragraph([], { pageBreakBefore: true }));
+      this.pendingPageBreak = false;
+    }
+    this.blocks.push(block);
+  }
+
+  /** Start a paragraph. The returned scope styles THIS paragraph and delegates
+   *  block-starting calls back here, so the chain continues seamlessly. */
+  paragraph(text?: string, style?: Partial<CharStyle>): ParagraphBuilder<this> {
+    const runs = text !== undefined ? [this.ctx.run(text, style ?? {})] : [];
+    const para = this.ctx.paragraph(runs);
+    this.push(para);
+    return new ParagraphBuilder(this, this.ctx, para);
+  }
+
+  /** Data-driven table: 2D array of cell text/specs (the common case). */
+  table(rows: CellContent[][], opts?: TableOptions): this;
+  /** Structural table: callback scope for spans, nested blocks, full control. */
+  table(build: (t: TableBuilder) => void, opts?: TableOptions): this;
+  table(arg: CellContent[][] | ((t: TableBuilder) => void), opts?: TableOptions): this {
+    const t = new TableBuilder(this.ctx, opts);
+    if (typeof arg === "function") arg(t);
+    else t.rows(arg);
+    this.push(t.toBlock());
+    return this;
+  }
+
+  /** Insert an image from a URL (https:/data:) or raw bytes (inlined as data:). */
+  image(src: string | { data: Uint8Array | ArrayBuffer; mime: string }, opts: ImageOptions): this {
+    if (!Number.isFinite(opts?.widthPx) || !Number.isFinite(opts?.heightPx) || opts.widthPx <= 0 || opts.heightPx <= 0) {
+      throw new TypeError("image() requires positive widthPx and heightPx (no DOM to auto-measure in Node).");
+    }
+    const url = typeof src === "string" ? src : bytesToDataUrl(src.data, src.mime);
+    this.push(this.ctx.image(url, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.wrap));
+    return this;
+  }
+
+  /** One paragraph per item, marked as list members. Definitions resolve to the
+   *  template's (via listId), or the editor-default bullet/number definitions
+   *  registered on demand. */
+  list(items: (string | ListItem)[], opts: ListOptions = {}): this {
+    const kind = opts.kind ?? "bullet";
+    const lists = (this.ctx.doc.lists ??= {});
+    let listId = opts.listId;
+    if (listId !== undefined) {
+      if (!lists[listId]) {
+        this.ctx.warn(
+          `list-missing:${listId}`,
+          `List definition "${listId}" is not in the document — a default ${kind} definition was registered under that id.`,
+        );
+        lists[listId] = { ...defaultListDefinition(kind === "number" ? "decimal" : "bullet"), id: listId };
+      }
+    } else {
+      listId = kind === "number" ? DEFAULT_NUMBER_LIST_ID : DEFAULT_BULLET_LIST_ID;
+      if (!lists[listId]) lists[listId] = defaultListDefinition(kind === "number" ? "decimal" : "bullet");
+    }
+    for (const item of items) {
+      const it = typeof item === "string" ? { text: item } : item;
+      const level = Math.max(0, Math.min(8, it.level ?? opts.level ?? 0));
+      this.push(this.ctx.paragraph([this.ctx.run(it.text, it.style ?? {})], { list: { listId, level } }));
+    }
+    return this;
+  }
+
+  bulletList(items: (string | ListItem)[]): this {
+    return this.list(items, { kind: "bullet" });
+  }
+
+  numberedList(items: (string | ListItem)[]): this {
+    return this.list(items, { kind: "number" });
+  }
+
+  /** The NEXT block starts a new page. */
+  pageBreak(): this {
+    this.pendingPageBreak = true;
+    return this;
+  }
+
+  /** A trailing pageBreak() with no following block still needs to exist —
+   *  materialize it as an empty page-broken paragraph (called by build()). */
+  protected flushPendingPageBreak(): void {
+    if (!this.pendingPageBreak) return;
+    this.blocks.push(this.ctx.paragraph([], { pageBreakBefore: true }));
+    this.pendingPageBreak = false;
+  }
+}

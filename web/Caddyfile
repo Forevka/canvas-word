@@ -28,6 +28,7 @@
 	# This also serves the embedding examples placed under /srv by Dockerfile.web:
 	#   /live              -> examples/embed-live  (online + collaboration)
 	#   /examples/offline  -> examples/embed-offline
+	#   /playground        -> examples/playground  (document-builder playground)
 	# Both have RELATIVE asset URLs (./assets, ./wordcanvas), so they must load
 	# under a trailing slash. file_server treats /srv/live as a directory and
 	# canonically redirects /live -> /live/ (query preserved, so ?collab=… share

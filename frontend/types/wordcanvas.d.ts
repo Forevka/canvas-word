@@ -2,6 +2,10 @@
 // Hand-written so the published types stay small, self-contained, and stable
 // regardless of internal refactors — no dependency on internal workspace types.
 
+import type { Document } from "./model";
+
+export type { Document } from "./model";
+
 /** Caller-supplied identity, used for change attribution and presence. */
 export interface UserInfo {
   id: string;
@@ -43,6 +47,12 @@ export interface WordCanvasEventMap {
 
 /** Handle resolved once the editor is mounted (via `whenReady()`). */
 export interface EditorHandle {
+  /** Snapshot of the current document (plain data). */
+  getDocument(): Document;
+  /** Replace the open document with a programmatically-built one (e.g. a
+   *  DocumentBuilder result). Cloned; drops undo history and any live collab
+   *  session; preserves zoom + scroll. */
+  setDocument(doc: Document): void;
   /** Open a .docx (auto-publishes when online); resolves when loaded. */
   openDocx(file: File | ArrayBuffer): Promise<void>;
   /** Publish the current document and resolve its shareable link (online only). */
@@ -62,6 +72,12 @@ export declare class WordCanvas {
   whenReady(): Promise<EditorHandle>;
   /** Open a .docx. When online, auto-publishes it and surfaces a share link. */
   openDocx(file: File | ArrayBuffer): Promise<void>;
+  /** Replace the open document with a programmatically-built one (e.g. a
+   *  DocumentBuilder result). The input is cloned. Like openDocx, this starts a
+   *  NEW document: undo history and any live collab session are dropped (the
+   *  next share() forks). Zoom and scroll are preserved, so calling this on
+   *  every data change gives a stable live preview. */
+  setDocument(doc: Document): Promise<void>;
   /** Publish the current document and resolve its shareable link (online only). */
   share(): Promise<string>;
   getDocId(): string | null;

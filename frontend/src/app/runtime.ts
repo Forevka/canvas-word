@@ -25,6 +25,11 @@ export type WordCanvasEvent =
 /** Handle the editor app exposes back to the WordCanvas wrapper. */
 export interface EditorHandle {
   getDocument(): Document;
+  /** Replace the open document with a programmatically-built one (e.g. from
+   *  the DocumentBuilder). The input is cloned; like openDocx, this is a NEW
+   *  document — any live collab session is dropped (the next Share forks).
+   *  Discards undo history and unsaved edits; preserves zoom + scroll. */
+  setDocument(doc: Document): void;
   /** Open a .docx (auto-publishes when online); resolves when loaded. */
   openDocx(file: File | ArrayBuffer): Promise<void>;
   /** Publish the current document and resolve its shareable link (online only). */

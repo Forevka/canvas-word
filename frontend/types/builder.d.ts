@@ -1,0 +1,231 @@
+// Public type surface for @forevka/wordcanvas/builder — the fluent
+// programmatic document composer. Hand-written, self-contained (model types
+// come from ./model, shared with wordcanvas.d.ts).
+//
+//   import { DocumentBuilder } from "@forevka/wordcanvas/builder";
+//   const b = await DocumentBuilder.fromTemplate(templateBytes);
+//   const doc = b.paragraph(data.title).withStyle("Heading1").build();
+//
+// Works in the browser (live preview via WordCanvas.setDocument) and in Node
+// (server-side DOCX/PDF generation via the export subpath).
+
+import type { CellBorders, CellMargin, CharStyle, Document, NamedStyle, ParaStyle, Stylesheet } from "./model";
+
+export type { Block, CharStyle, Document, NamedStyle, ParaStyle, Stylesheet } from "./model";
+
+// ---------------------------------------------------------------------------
+// Units
+
+/** Inches → px @96dpi. */
+export declare function inches(n: number): number;
+/** Centimeters → px @96dpi. */
+export declare function cm(n: number): number;
+/** Points (1/72in) → px @96dpi. */
+export declare function pt(n: number): number;
+/** Twips (1/20pt) → px @96dpi. */
+export declare function twips(n: number): number;
+
+export interface PageSize {
+  pageWidthPx: number;
+  pageHeightPx: number;
+}
+
+/** Common page sizes in px @96dpi. */
+export declare const PAGE_SIZES: Record<"Letter" | "Legal" | "A4" | "A3" | "Tabloid", PageSize>;
+export type PageSizeName = keyof typeof PAGE_SIZES;
+
+/** Base64-encode image bytes as a portable data: URL. */
+export declare function bytesToDataUrl(bytes: Uint8Array | ArrayBuffer, mime: string): string;
+
+// ---------------------------------------------------------------------------
+// Options
+
+export interface BuilderWarning {
+  code: string;
+  message: string;
+}
+
+export interface CreateOptions {
+  pageSize?: PageSizeName | PageSize;
+  margins?: Partial<{ top: number; right: number; bottom: number; left: number }>;
+  /** Start from a custom stylesheet (default: the editor's default gallery). */
+  stylesheet?: Stylesheet;
+  /** Deterministic id namespace (tests); default is a random per-builder seed. */
+  idSeed?: string;
+}
+
+export interface TemplateOptions {
+  /** Keep the template's body content and append after it (default: discard —
+   *  the template contributes styles, lists, page setup, and bands). */
+  keepBody?: boolean;
+  idSeed?: string;
+}
+
+export interface PageSetup {
+  pageSize?: PageSizeName | PageSize;
+  orientation?: "portrait" | "landscape";
+  margins?: Partial<{ top: number; right: number; bottom: number; left: number }>;
+  columns?: { count: number; gapPx?: number };
+  headerDistancePx?: number;
+  footerDistancePx?: number;
+  pageNumberStart?: number;
+}
+
+export interface BandOptions {
+  /** Which page band variant: default (all pages), first page, or even pages. */
+  variant?: "default" | "first" | "even";
+}
+
+export interface ImageOptions {
+  /** Required — the builder runs in Node too, where images can't be measured. */
+  widthPx: number;
+  heightPx: number;
+  align?: "left" | "center" | "right";
+  wrap?: "block" | "square";
+}
+
+export interface ListItem {
+  text: string;
+  /** Nesting level 0..8 (default 0, or ListOptions.level). */
+  level?: number;
+  style?: Partial<CharStyle>;
+}
+
+export interface ListOptions {
+  kind?: "bullet" | "number";
+  /** Reference an existing list definition (e.g. one carried by the template). */
+  listId?: string;
+  level?: number;
+}
+
+export interface CellSpec {
+  text?: string;
+  colSpan?: number;
+  rowSpan?: number;
+  /** Background fill (CSS color). */
+  shading?: string;
+  borders?: CellBorders;
+  margin?: CellMargin;
+  /** Char formatting for the cell's text. */
+  style?: Partial<CharStyle>;
+  align?: ParaStyle["align"];
+}
+
+export type CellContent = string | CellSpec;
+export type CellOptions = Omit<CellSpec, "text">;
+
+export interface TableOptions {
+  /** Column widths as fractions of the content width (normalized to sum 1). */
+  colFractions?: number[];
+  /** Bold every run in the first row. */
+  headerRow?: boolean;
+}
+
+export interface SpacingOptions {
+  before?: number;
+  after?: number;
+  lineHeight?: number;
+}
+
+export interface IndentOptions {
+  left?: number;
+  right?: number;
+  firstLine?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Scopes
+
+/** Block-scope surface shared by the document body, header/footer bands, and
+ *  table cells. Methods append eagerly and return the scope (or a paragraph
+ *  scope that delegates back), so chains never need a seal step. */
+export declare class StoryBuilder {
+  paragraph(text?: string, style?: Partial<CharStyle>): ParagraphBuilder<this>;
+  table(rows: CellContent[][], opts?: TableOptions): this;
+  table(build: (t: TableBuilder) => void, opts?: TableOptions): this;
+  image(src: string | { data: Uint8Array | ArrayBuffer; mime: string }, opts: ImageOptions): this;
+  list(items: (string | ListItem)[], opts?: ListOptions): this;
+  bulletList(items: (string | ListItem)[]): this;
+  numberedList(items: (string | ListItem)[]): this;
+  /** The NEXT block starts a new page. */
+  pageBreak(): this;
+}
+
+/** Paragraph scope. Char formatting (bold/color/font/…) patches every run
+ *  already in the paragraph and becomes the default for later text() runs;
+ *  mixed formatting uses text(t, { …patch }). Any block-starting call pops
+ *  back to the parent scope. */
+export declare class ParagraphBuilder<P extends StoryBuilder> {
+  /** Apply a named style: sets the reference and patches exactly the fields
+   *  the style defines. Direct formatting applied AFTER this call wins. */
+  withStyle(id: string): this;
+  /** Append a run. Inherits the scope's accrued formatting; `style` wins. */
+  text(text: string, style?: Partial<CharStyle>): this;
+  bold(on?: boolean): this;
+  italic(on?: boolean): this;
+  underline(on?: boolean): this;
+  strikethrough(on?: boolean): this;
+  color(cssColor: string): this;
+  highlight(cssColor: string): this;
+  fontSize(px: number): this;
+  font(family: string): this;
+  link(url: string): this;
+  align(align: ParaStyle["align"]): this;
+  spacing(opts: SpacingOptions): this;
+  indent(opts: IndentOptions): this;
+  keepWithNext(on?: boolean): this;
+  /** Escape the paragraph scope explicitly (block-starting calls do it implicitly). */
+  end(): P;
+
+  // Delegated block-starting surface (pops this scope):
+  paragraph(text?: string, style?: Partial<CharStyle>): ParagraphBuilder<P>;
+  table(rows: CellContent[][], opts?: TableOptions): P;
+  table(build: (t: TableBuilder) => void, opts?: TableOptions): P;
+  image(src: string | { data: Uint8Array | ArrayBuffer; mime: string }, opts: ImageOptions): P;
+  list(items: (string | ListItem)[], opts?: ListOptions): P;
+  bulletList(items: (string | ListItem)[]): P;
+  numberedList(items: (string | ListItem)[]): P;
+  pageBreak(): P;
+
+  // Document-level delegators (only when the parent is the root builder):
+  header(this: ParagraphBuilder<DocumentBuilder>, build: (s: StoryBuilder) => void, opts?: BandOptions): DocumentBuilder;
+  footer(this: ParagraphBuilder<DocumentBuilder>, build: (s: StoryBuilder) => void, opts?: BandOptions): DocumentBuilder;
+  pageSetup(this: ParagraphBuilder<DocumentBuilder>, setup: PageSetup): DocumentBuilder;
+  style(this: ParagraphBuilder<DocumentBuilder>, def: NamedStyle): DocumentBuilder;
+  build(this: ParagraphBuilder<DocumentBuilder>): Document;
+}
+
+export declare class TableBuilder {
+  row(cells: CellContent[]): this;
+  row(build: (r: RowBuilder) => void): this;
+  rows(data: CellContent[][]): this;
+  colFractions(fractions: number[]): this;
+}
+
+export declare class RowBuilder {
+  cell(content: CellContent, opts?: CellOptions): this;
+  cell(build: (s: StoryBuilder) => void, opts?: CellOptions): this;
+}
+
+/** Root of the fluent builder. Produces the same plain-data Document the
+ *  editor renders (WordCanvas.setDocument) and the exporters write. build()
+ *  returns a deep clone; the builder stays usable afterwards. */
+export declare class DocumentBuilder extends StoryBuilder {
+  /** Start from a blank document (default stylesheet, US Letter, 1in margins). */
+  static create(opts?: CreateOptions): DocumentBuilder;
+  /** Start from a .docx template: its stylesheet, list definitions, page setup,
+   *  and header/footer bands carry over (body discarded unless keepBody). */
+  static fromTemplate(docx: ArrayBuffer | Uint8Array, opts?: TemplateOptions): Promise<DocumentBuilder>;
+
+  /** Lossy decisions (unknown style ids, template import warnings, …). */
+  readonly warnings: readonly BuilderWarning[];
+  /** Compose a header band (replaces the variant's existing story). */
+  header(build: (s: StoryBuilder) => void, opts?: BandOptions): this;
+  footer(build: (s: StoryBuilder) => void, opts?: BandOptions): this;
+  /** Merge page geometry onto the section (template values are the base). */
+  pageSetup(setup: PageSetup): this;
+  /** Register (or override) a named style — BEFORE applying it via withStyle(). */
+  style(def: NamedStyle): this;
+  /** Snapshot the document: deep clone, guaranteed at least one paragraph. */
+  build(): Document;
+}

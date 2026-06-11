@@ -1,6 +1,6 @@
 {
   "name": "@forevka/wordcanvas",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Embeddable canvas-rendered, Word-compatible document editor with live collaboration and DOCX/PDF import & export. Self-contained, zero runtime dependencies.",
   "license": "MIT",
@@ -32,6 +32,7 @@
       "types": "./types/wordcanvas.d.ts",
       "import": "./dist-lib/wordcanvas.js"
     },
+    "./builder": "./src/builder/index.ts",
     "./import": "./src/import/docx/pipeline.ts",
     "./export": "./src/export/pipeline.ts",
     "./export/measure": "./src/export/shared/measureHost.ts"
@@ -42,6 +43,10 @@
       ".": {
         "types": "./types/wordcanvas.d.ts",
         "import": "./dist-lib/wordcanvas.js"
+      },
+      "./builder": {
+        "types": "./types/builder.d.ts",
+        "import": "./dist-lib/builder.js"
       }
     }
   },

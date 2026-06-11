@@ -31,9 +31,14 @@ export default defineConfig(({ mode }) => {
           outDir: "dist-lib",
           emptyOutDir: true,
           lib: {
-            entry: fileURLToPath(new URL("src/wordcanvas.ts", import.meta.url)),
+            // Multi-entry (ES-only, which we already are): the editor package
+            // plus the standalone builder (@forevka/wordcanvas/builder), which
+            // pulls in the import pipeline but none of the editor UI.
+            entry: {
+              wordcanvas: fileURLToPath(new URL("src/wordcanvas.ts", import.meta.url)),
+              builder: fileURLToPath(new URL("src/builder/index.ts", import.meta.url)),
+            },
             formats: ["es"],
-            fileName: "wordcanvas",
           },
         }
       : {

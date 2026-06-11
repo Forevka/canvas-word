@@ -11,9 +11,9 @@
 
 import { setRuntime, type EditorHandle, type Participant, type WordCanvasEvent } from "./app/runtime";
 import { ensureWordCanvasStyles } from "./ui/styles";
-import type { UserInfo } from "@cw/shared";
+import type { Document, UserInfo } from "@cw/shared";
 
-export type { UserInfo, Participant };
+export type { Document, UserInfo, Participant };
 
 export interface WordCanvasOptions {
   /** Element to mount the editor into. */
@@ -100,6 +100,15 @@ export class WordCanvas {
   /** Open a .docx. When online, auto-publishes it and surfaces a share link. */
   async openDocx(file: File | ArrayBuffer): Promise<void> {
     return (await this.ready).openDocx(file);
+  }
+
+  /** Replace the open document with a programmatically-built one (e.g. a
+   *  DocumentBuilder result). The input is cloned. Like openDocx, this starts
+   *  a NEW document: undo history and any live collab session are dropped
+   *  (the next share() forks). Zoom and scroll position are preserved, so
+   *  calling this on every data change gives a stable live preview. */
+  async setDocument(doc: Document): Promise<void> {
+    (await this.ready).setDocument(doc);
   }
 
   /** Publish the current document and resolve its shareable link (online only). */

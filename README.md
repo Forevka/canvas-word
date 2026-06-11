@@ -124,7 +124,7 @@ collaboration primitives live in `shared` so the Node `backend` can reuse them.
 | `frontend/` | The editor itself (the `@forevka/wordcanvas` package) — layers below |
 | `backend/` | Node HTTP/WS server: Postgres-backed change store, OT broadcast, server-side import/export, admin auth, integration tokens, session webhooks, OpenAPI/Swagger |
 | `dashboard/` | Admin panel (Vite app): document upload → docId, session inspection |
-| `examples/` | Standalone embeds consuming the published package (`embed-offline`, `embed-live`) |
+| `examples/` | Standalone embeds consuming the published package (`embed-offline`, `embed-live`, `playground`) |
 | `web/` | Caddy edge config for the deployed stack |
 
 ### Editor layer map (`frontend/src/`)
@@ -138,6 +138,7 @@ collaboration primitives live in `shared` so the Node `backend` can reuse them.
 | `a11y/` | Screen-reader mirror + live region | `mirror.ts` |
 | `import/docx/` | .docx import pipeline (see [IMPORT.md](./IMPORT.md)) | `importDocx.ts` `pipeline.ts` … |
 | `export/` | .docx + PDF export, DOM-free measure host (see [EXPORT.md](./EXPORT.md)) | `exportDocument.ts` `docx/` `pdf/` `shared/` |
+| `builder/` | Fluent programmatic document composition + .docx templates (see [BUILDER.md](./BUILDER.md)) | `documentBuilder.ts` `template.ts` … |
 | `sync/` | Live collaboration client: change recorder, OT sync client, presence | `SyncClient.ts` `changeRecorder.ts` `collab.ts` |
 | `media/` | Image/media store (blob handling, backend upload bridge) | `store.ts` |
 | `fonts/` | Metric-clone family map + baked metrics (see [FONTS.md](./FONTS.md)) | `clones.ts` |
@@ -287,6 +288,15 @@ DOM-free pipeline in a browser Web Worker and on the Node backend, over bundled
 metric-clone fonts so editor, browser export and server export paginate
 identically. See [EXPORT.md](./EXPORT.md) and [FONTS.md](./FONTS.md).
 
+**Programmatic generation** — a fluent document-builder API
+(`@forevka/wordcanvas/builder`): compose documents in JS/TS instead of a
+C#/OOXML backend — `DocumentBuilder.fromTemplate(docx)` carries a template's
+styles/page setup/bands, chain `.paragraph(data.title).withStyle("Heading1")`,
+tables/images/lists/headers/footers, feed a JSON data model, and live-preview
+via `WordCanvas.setDocument(doc)` (declarative rebuild on data change,
+zoom/scroll preserved). Runs in the browser and in Node. Interactive
+playground at `examples/playground`. See [BUILDER.md](./BUILDER.md).
+
 **Collaboration** — operational-transform sync over a WebSocket backend
 (`shared/` holds the change/transform/replay primitives; the editor's `sync/`
 records edits and the `backend/` broadcasts them against a Postgres change
@@ -334,6 +344,7 @@ npm run build:lib     # build the @forevka/wordcanvas library bundle (dist-lib)
 npm run db:up         # start Postgres + the collaboration backend (docker compose)
 npm run dev:dashboard # admin dashboard dev server
 npm run dev:example   # the embed-live example (consumes the built library)
+npm run dev:playground # document-builder playground (code + JSON → live preview)
 ```
 
 - `/?stress=1000` — generate a ~1000-page perf-probe document and log timings.

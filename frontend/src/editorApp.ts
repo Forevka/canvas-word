@@ -1,4 +1,5 @@
-import { configureIds, deserializeDocument, reconstruct, serializeDocument, type Change, type DocSelection, type Document } from "@cw/shared";
+import { configureIds, deserializeDocument, freshId, reconstruct, serializeDocument, type Change, type DocSelection, type Document } from "@cw/shared";
+import { emptyParagraphFor } from "./builder/blockFactory";
 import { mediaStore, rehydrateDocMedia } from "./media/store";
 import { SyncClient } from "./sync/SyncClient";
 import { createEditor, type CurrentFormat } from "./index";
@@ -235,6 +236,43 @@ const replaceDocument = (next: typeof doc): void => {
   window.__cw = { doc, tree: undefined, engine, editor, createLayoutEngine, sampleDoc, stressDoc, persist };
 };
 
+// A freshly opened/set document is a NEW document: drop any live collab session
+// so the next Share publishes a fresh doc/link (fork), and clear ?collab.
+// Publishing is lazy — it happens on the first Share click, not on open.
+const detachCollabSession = (): void => {
+  sync?.destroy();
+  sync = null;
+  collabId = null;
+  shareLink = null;
+  collabVersion = 0;
+  try {
+    const u = new URL(location.href);
+    if (u.searchParams.has("collab")) {
+      u.searchParams.delete("collab");
+      history.replaceState(null, "", u.toString());
+    }
+  } catch {
+    /* ignore URL errors */
+  }
+};
+
+// Programmatic document swap (the builder / data-binding path): same teardown
+// as a docx open, but the caller hands a ready Document. Clone defensively so
+// later caller-side mutations (or a re-used builder) can't alias editor state,
+// and preserve the viewport (zoom + scroll) so live rebuilds don't jump.
+const setDocumentFromApi = (next: Document): void => {
+  const clone = structuredClone(next);
+  if (clone.blocks.length === 0) clone.blocks.push(emptyParagraphFor(clone, freshId()));
+  const scrollTop = app.scrollTop;
+  const zoom = editor.getZoom();
+  replaceDocument(clone);
+  editor.setZoom(zoom);
+  requestAnimationFrame(() => {
+    app.scrollTop = Math.min(scrollTop, Math.max(0, app.scrollHeight - app.clientHeight));
+  });
+  detachCollabSession();
+};
+
 const openDocxFile = async (file: File | ArrayBuffer): Promise<void> => {
   const i0 = performance.now();
   const busy = showBusy("Opening document…");
@@ -244,23 +282,7 @@ const openDocxFile = async (file: File | ArrayBuffer): Promise<void> => {
     });
     reportImport(result, performance.now() - i0);
     replaceDocument(result.doc);
-    // A freshly opened document is a NEW document: drop any live collab session
-    // so the next Share publishes a fresh doc/link (fork), and clear ?collab.
-    // Publishing is lazy — it happens on the first Share click, not on open.
-    sync?.destroy();
-    sync = null;
-    collabId = null;
-    shareLink = null;
-    collabVersion = 0;
-    try {
-      const u = new URL(location.href);
-      if (u.searchParams.has("collab")) {
-        u.searchParams.delete("collab");
-        history.replaceState(null, "", u.toString());
-      }
-    } catch {
-      /* ignore URL errors */
-    }
+    detachCollabSession();
   } catch (e) {
     console.error("[docx-import]", e);
     const name = file instanceof File ? file.name : "document";
@@ -2141,6 +2163,7 @@ window.__cw = { doc, tree, engine, editor, createLayoutEngine, sampleDoc, stress
 // Hand the wrapper a control surface for the mounted editor.
 const handle: EditorHandle = {
   getDocument: () => editor.getDocument(),
+  setDocument: (d) => setDocumentFromApi(d),
   openDocx: (file) => openDocxFile(file),
   share: () => goOnlineWithCurrentDoc(),
   getDocId: () => collabId,

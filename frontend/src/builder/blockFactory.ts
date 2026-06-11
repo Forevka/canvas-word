@@ -1,0 +1,109 @@
+// Shared builder context + concrete block factories. The model keeps runs
+// CONCRETE (every CharStyle/ParaStyle field present on every run/paragraph),
+// so the context owns the resolved defaults — derived from the stylesheet's
+// default style over editor-matching baselines — and every factory spreads
+// them. Modeled on the run/para closures in model/sampleDoc.ts.
+
+import type { CharStyle, Document, ImageBlock, ParaStyle, Paragraph, Run, Stylesheet } from "@cw/shared";
+import { createIdGenerator, resolveStyle, styleById, type IdGenerator } from "@cw/shared";
+
+export interface BuilderWarning {
+  code: string;
+  message: string;
+}
+
+/** Baseline concrete styles (match the editor's sample-doc/import defaults). */
+const BASE_CHAR: CharStyle = {
+  fontFamily: "Georgia, serif",
+  fontSizePx: 16,
+  bold: false,
+  italic: false,
+  underline: false,
+  strikethrough: false,
+  color: "#202124",
+};
+
+const BASE_PARA: ParaStyle = {
+  align: "left",
+  lineHeight: 1.5,
+  spaceBeforePx: 0,
+  spaceAfterPx: 12,
+  indentFirstLinePx: 0,
+  indentLeftPx: 0,
+};
+
+/** A concrete empty paragraph matching the document's default style — the
+ *  caret home injected when a document arrives with no blocks (builder build()
+ *  and the editor's programmatic setDocument both guard with this). */
+export function emptyParagraphFor(doc: Document, id: string): Paragraph {
+  const resolved = doc.stylesheet ? resolveStyle(doc.stylesheet, doc.stylesheet.defaultStyleId) : { char: {}, para: {} };
+  return {
+    kind: "paragraph",
+    id,
+    revision: 0,
+    runs: [{ text: "", style: { ...BASE_CHAR, ...resolved.char } }],
+    style: { ...BASE_PARA, ...resolved.para },
+  };
+}
+
+/** Everything builder scopes share: id minting, the (mutable) document under
+ *  construction, resolved defaults, and the deduplicating warning list. */
+export class BuilderContext {
+  readonly ids: IdGenerator;
+  readonly doc: Document;
+  readonly warnings: BuilderWarning[] = [];
+  private readonly seenWarnings = new Set<string>();
+  /** Concrete defaults for new runs/paragraphs (default style resolved). */
+  charDefault: CharStyle;
+  paraDefault: ParaStyle;
+
+  constructor(doc: Document, idSeed?: string) {
+    this.doc = doc;
+    this.ids = createIdGenerator(idSeed ?? `bld${Math.random().toString(36).slice(2, 6)}`);
+    const resolved = doc.stylesheet ? resolveStyle(doc.stylesheet, doc.stylesheet.defaultStyleId) : { char: {}, para: {} };
+    this.charDefault = { ...BASE_CHAR, ...resolved.char };
+    this.paraDefault = { ...BASE_PARA, ...resolved.para };
+  }
+
+  warn(code: string, message: string): void {
+    if (this.seenWarnings.has(code)) return;
+    this.seenWarnings.add(code);
+    this.warnings.push({ code, message });
+  }
+
+  run(text: string, patch: Partial<CharStyle> = {}): Run {
+    return { text, style: { ...this.charDefault, ...patch } };
+  }
+
+  paragraph(runs: Run[], patch: Partial<ParaStyle> = {}): Paragraph {
+    return {
+      kind: "paragraph",
+      id: this.ids.next(),
+      revision: 0,
+      runs: runs.length > 0 ? runs : [this.run("")],
+      style: { ...this.paraDefault, ...patch },
+    };
+  }
+
+  image(src: string, widthPx: number, heightPx: number, align: ImageBlock["align"], wrap?: ImageBlock["wrap"]): ImageBlock {
+    const img: ImageBlock = { kind: "image", id: this.ids.next(), revision: 0, src, widthPx, heightPx, align };
+    if (wrap) img.wrap = wrap;
+    return img;
+  }
+
+  /** The stylesheet, creating an empty one on demand for style registration. */
+  stylesheet(): Stylesheet {
+    if (!this.doc.stylesheet) this.doc.stylesheet = { styles: [], defaultStyleId: "Normal" };
+    return this.doc.stylesheet;
+  }
+
+  /** Resolved char+para templates for a named style, or undefined (+ warning). */
+  lookupStyle(id: string): { char: Partial<CharStyle>; para: Partial<ParaStyle> } | undefined {
+    const sheet = this.doc.stylesheet;
+    if (!sheet || !styleById(sheet, id)) {
+      this.warn(`style-missing:${id}`, `Named style "${id}" is not in the stylesheet — .withStyle("${id}") was ignored.`);
+      return undefined;
+    }
+    return resolveStyle(sheet, id);
+  }
+}
