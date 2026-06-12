@@ -9,35 +9,53 @@
     generated DB password, then runs `docker compose --profile app up -d --build`
     and a smoke test.
 
-    The host Caddy must have a `doc-editor.<domain>` block pointing at
+    The host Caddy must have a `<domain>` block pointing at
     127.0.0.1:$EdgePort (set up separately / by the deploy notes).
 
 .PARAMETER RemoteHost
-    SSH target. Default: root@your-server
+    SSH target, e.g. user@host. Defaults to $env:CW_DEPLOY_HOST.
+
+.PARAMETER Domain
+    Public domain the app is served on, e.g. doc-editor.example.com.
+    Defaults to $env:CW_DEPLOY_DOMAIN. Used to derive the smoke-test URL
+    and the public origin baked into webhook download links.
 
 .PARAMETER RemotePath
     Project directory on the VPS. Default: /opt/canvas-word
-
-.PARAMETER Url
-    URL to smoke-test after deploy. Default: https://doc-editor.example.com/openapi.json
 
 .PARAMETER EdgePort
     Host port the web edge binds (127.0.0.1). Default: 3003
 
 .EXAMPLE
+    $env:CW_DEPLOY_HOST   = 'user@your-server'
+    $env:CW_DEPLOY_DOMAIN = 'doc-editor.example.com'
     .\deploy.ps1
+
+.EXAMPLE
+    .\deploy.ps1 -RemoteHost user@your-server -Domain doc-editor.example.com
 #>
 
 [CmdletBinding()]
 param(
-    [string]$RemoteHost   = 'root@your-server',
+    [string]$RemoteHost   = $env:CW_DEPLOY_HOST,
+    [string]$Domain       = $env:CW_DEPLOY_DOMAIN,
     [string]$RemotePath   = '/opt/canvas-word',
-    [string]$Url          = 'https://doc-editor.example.com/openapi.json',
-    [string]$PublicOrigin = 'https://doc-editor.example.com',
     [int]   $EdgePort     = 3003
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Require the deploy target + domain from parameters or environment so no
+# host/domain is hard-coded in this (public) repo.
+if ([string]::IsNullOrWhiteSpace($RemoteHost)) {
+    throw "RemoteHost is required. Pass -RemoteHost user@host or set `$env:CW_DEPLOY_HOST."
+}
+if ([string]::IsNullOrWhiteSpace($Domain)) {
+    throw "Domain is required. Pass -Domain doc-editor.example.com or set `$env:CW_DEPLOY_DOMAIN."
+}
+
+$PublicOrigin = "https://$Domain"
+$Url          = "$PublicOrigin/openapi.json"
 
 $projectRoot   = $PSScriptRoot
 $tarballName   = "canvas-word-src-$(Get-Date -Format 'yyyyMMdd-HHmmss').tar.gz"
