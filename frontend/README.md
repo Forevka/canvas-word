@@ -10,6 +10,35 @@ The published bundle is **self-contained**: it has **zero runtime dependencies**
 code-split). You can drop it onto a page with a plain `<script type="module">` or
 import it from any bundler.
 
+## How it compares
+
+If you have shopped for an embeddable Word editor, you have met Syncfusion
+Document Editor, OnlyOffice, and DevExpress Rich Text Editor. They are mature
+and cover more of the Word long tail than this package does. They also ask for a
+commercial per-seat license, and two of the three want a server running before
+the editor renders a page.
+
+WordCanvas takes the other trade. It ships under MIT, paints to a `<canvas>`
+the way Google Docs has since 2021, and runs fully in the browser with zero
+runtime dependencies. You only stand up a backend if you want live
+collaboration; reading, editing, and DOCX/PDF export all work offline.
+
+| | WordCanvas | Syncfusion Document Editor | OnlyOffice | DevExpress Rich Text |
+|---|---|---|---|---|
+| License | MIT | Commercial seat | AGPL or commercial | Commercial seat |
+| Rendering | Canvas | DOM | Canvas (in an iframe) | DOM |
+| Server required to render | No | For some file conversions | Yes (Document Server) | Yes (.NET backend) |
+| Runtime dependencies | Zero | Several | Bundled suite | .NET stack |
+| DOCX import + export | In-browser | Yes | Yes | Yes |
+| PDF export | Page-accurate, in-browser | Yes | Yes | Yes |
+| Live collaboration | Built in (opt-in backend) | Add-on | Built in | Add-on |
+| Primary target | Any JS app | Angular/React/Vue | Iframe / full suite | Blazor / .NET |
+
+Where the commercial editors win today: RTL and complex-script editing, bundled
+CJK fonts, charts and equations, and an enterprise support contract. The full
+breakdown, including what each one does better, lives in
+[Best embeddable JS Word editors](https://forevka.dev/articles/best-embeddable-js-word-editors/).
+
 ## Install
 
 ```sh

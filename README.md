@@ -58,6 +58,22 @@ and an export pipeline for `.docx` and PDF (`frontend/src/export/`, see
 - Being a rich-text *component*. This is a paged document editor; if you need
   comments-in-a-sidebar rich text, use Lexical.
 
+### Where this sits next to the commercial editors
+
+Teams that need an embeddable Word editor usually evaluate Syncfusion Document
+Editor, OnlyOffice, and DevExpress Rich Text Editor. Those products cover more
+of the Word long tail and ship enterprise support. They also charge a per-seat
+license, and most expect a server (OnlyOffice Document Server, a Syncfusion
+file-conversion endpoint, or a .NET backend) before the editor renders.
+
+This project is the open-source, browser-native option. It ships under MIT,
+paints to a `<canvas>` instead of leaning on `contenteditable`, carries zero
+runtime dependencies, and runs fully offline; a backend is optional and only
+buys live collaboration. The honest gaps versus the incumbents are RTL/complex
+scripts, bundled CJK fonts, and charts/equations (see Known limitations below).
+A full side-by-side writeup lives at
+[Best embeddable JS Word editors](https://forevka.dev/articles/best-embeddable-js-word-editors/).
+
 ---
 
 ## Architecture
