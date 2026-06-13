@@ -173,6 +173,8 @@ export interface Editor {
   setPeerPresence(siteId: string, user: UserInfo | undefined, selection: DocSelection | null): void;
   /** Remove a collaborator's caret (they left). */
   removePeer(siteId: string): void;
+  /** True when the editor was created in view-only mode (mutations are no-ops). */
+  isReadonly(): boolean;
   destroy(): void;
 }
 
@@ -191,6 +193,11 @@ export interface EditorOptions {
   onChangeRecorded?: ChangeSink;
   /** Fires whenever the local selection/caret moves (for presence broadcast). */
   onSelectionChange?: (selection: DocSelection | null) => void;
+  /** View-only mode: the document renders and stays selectable/copyable, but
+   *  every mutation (typing, paste, undo/redo, structural edits) is a no-op.
+   *  Remote collaborator edits still apply — a read-only client tracks a live
+   *  session, it just can't author. */
+  readonly?: boolean;
 }
 
 export function createEditor(
@@ -199,6 +206,10 @@ export function createEditor(
   options: EditorOptions = {},
 ): Editor {
   const engine = options.engine ?? createLayoutEngine();
+  // View-only mode: the mutation pipeline (commit/undo/redo) and edit-affordance
+  // gestures below short-circuit, so the document can be read, selected, and
+  // copied but never authored. Remote ops bypass this gate (applyRemoteOps).
+  const readonly = options.readonly ?? false;
   const paint = createPaintLayer(container);
   const undoMgr = new UndoManager();
   // Document history: every committed edit (and undo/redo, as forward ops) is
@@ -514,6 +525,9 @@ export function createEditor(
   };
 
   const selectObject = (blockId: string | null): void => {
+    // View-only: never raise the image frame (resize handles) — clearing (null)
+    // still runs so any stale frame can be torn down.
+    if (readonly && blockId !== null) return;
     if (blockId === selectedObject) {
       if (blockId) refreshObjectFrame();
       return;
@@ -668,6 +682,7 @@ export function createEditor(
   };
 
   const commit = (trn: Transaction): void => {
+    if (readonly) return; // view-only: drop every local mutation (typing, IME, commands)
     const selectionBefore = selection;
     const inverses = runOps(trn.ops);
     if (trn.origin !== "transient") {
@@ -692,6 +707,7 @@ export function createEditor(
   };
 
   const undo = (): void => {
+    if (readonly) return; // undo/redo bypass commit() — gate them directly
     const entry = undoMgr.popUndo();
     if (!entry) return;
     runOps(entry.inverseOps);
@@ -702,6 +718,7 @@ export function createEditor(
   };
 
   const redo = (): void => {
+    if (readonly) return;
     const entry = undoMgr.popRedo();
     if (!entry) return;
     runOps(entry.ops);
@@ -891,6 +908,7 @@ export function createEditor(
   };
 
   const armFormatPainter = (sticky: boolean): void => {
+    if (readonly) return; // view-only: the painter would only ever apply no-op edits
     if (painter) {
       cancelFormatPainter(); // pressing the button again disarms
       return;
@@ -1114,6 +1132,7 @@ export function createEditor(
   };
 
   const proxy = createImeProxy(container, {
+    readonly,
     onInsertText: (text) => insertWithAutoCorrect(text),
     onDeleteBackward: () => {
       if (sdtBlocksEdit()) return;
@@ -1641,6 +1660,17 @@ export function createEditor(
     const sep: MenuEntry = { kind: "sep" };
 
     const hasSel = !!selection && !isCollapsed(selection);
+
+    // View-only: only the non-mutating actions (copy text, follow a link).
+    if (readonly) {
+      const url = linkAt(tree, pt.pageIndex, pt.x, pt.y, scope());
+      const ro: MenuEntry[] = [
+        item("Copy", () => void copySelection(), { shortcut: "Ctrl+C", disabled: !hasSel }),
+      ];
+      if (url) ro.push(sep, item("Open Hyperlink", () => window.open(url, "_blank", "noopener"), { icon: ICONS.link }));
+      return ro;
+    }
+
     const hasCellSel = !!cellSelection;
     const focus = selection?.focus ?? null;
     const para = focus ? blockById(doc, focus.blockId) : undefined;
@@ -2031,6 +2061,7 @@ export function createEditor(
     applyRemoteOps,
     setPeerPresence,
     removePeer,
+    isReadonly: (): boolean => readonly,
     dispatch,
     toggleStyle,
     setCharStyle(patch: Partial<CharStyle>): void {

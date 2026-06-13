@@ -28,6 +28,10 @@ export interface WordCanvasOptions {
   user?: UserInfo;
   /** Override how a share link is surfaced (default: a built-in dialog). */
   onShareLink?: (url: string, docId: string) => void;
+  /** Mount as a view-only viewer: the document renders and stays selectable and
+   *  copyable, but the editing chrome is hidden and every mutation is a no-op.
+   *  In an online session a read-only client still receives live remote edits. */
+  readonly?: boolean;
 }
 
 /** Event name → payload, for `on(...)`. */
@@ -55,6 +59,7 @@ export class WordCanvas {
         collabId: opts.docId ?? opts.collabId,
         user: opts.user,
         onShareLink: opts.onShareLink,
+        readonly: opts.readonly,
         onReady: (h) => {
           this.handle = h;
           resolve(h);

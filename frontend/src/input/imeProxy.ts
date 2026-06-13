@@ -12,6 +12,10 @@
 //   as one real insert on compositionend.
 
 export interface ImeProxyDeps {
+  /** View-only mode: keep the proxy focusable (so the copy/keyboard path still
+   *  works) but suppress the soft keyboard and announce read-only to AT. The
+   *  editor core already drops every edit, so input events here are harmless. */
+  readonly?: boolean;
   onInsertText(text: string): void;
   onDeleteBackward(): void;
   onDeleteForward(): void;
@@ -55,6 +59,14 @@ export function createImeProxy(container: HTMLElement, deps: ImeProxyDeps): ImeP
   // (empty proxy) keeps sentence capitalization.
   el.setAttribute("autocapitalize", coarse ? "off" : "sentences");
   el.setAttribute("autocorrect", coarse ? "off" : "on");
+  // View-only: inputmode=none keeps the on-screen keyboard from opening on focus
+  // while leaving the element focusable for selection/copy and keyboard nav.
+  if (deps.readonly) {
+    el.setAttribute("inputmode", "none");
+    el.setAttribute("aria-readonly", "true");
+    el.setAttribute("autocorrect", "off");
+    el.setAttribute("autocapitalize", "off");
+  }
   // font-size:16px keeps iOS Safari from page-zooming when the proxy gains focus
   // (it has no visible text, but Safari still applies the <16px zoom-on-focus rule).
   el.style.cssText =

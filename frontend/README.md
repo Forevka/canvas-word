@@ -119,6 +119,7 @@ new WordCanvas(options)
 | `docId`       | `string`                               | Open this document on load (online only).                             |
 | `user`        | `{ id, firstName, lastName }`          | Identity for attribution + presence.                                  |
 | `onShareLink` | `(url, docId) => void`                 | Override how the share link is surfaced (default: built-in dialog).   |
+| `readonly`    | `boolean`                              | Mount as a view-only viewer (see below). Default `false`.            |
 
 Methods: `whenReady(): Promise<EditorHandle>`, `openDocx(file)`, `share()`,
 `getDocId()`, `getShareLink()`, `destroy()`, and `on(event, handler)` /
@@ -132,6 +133,22 @@ input.addEventListener("change", async () => {
   await editor.openDocx(input.files![0]);
 });
 ```
+
+### Read-only / viewer mode
+
+Pass `readonly: true` to mount a view-only viewer:
+
+```ts
+const viewer = new WordCanvas({ container, readonly: true });
+await viewer.openDocx(file); // or viewer.setDocument(doc)
+```
+
+The document still renders, scrolls, and stays selectable and copyable (Ctrl+C,
+right-click → Copy), and `Ctrl+F` find works. The editing chrome is hidden (no
+ribbon or ruler; the find bar drops Replace) and **every mutation is a no-op** —
+typing, paste, undo/redo, drag-resize, and the programmatic editing paths all
+short-circuit. In an online session a read-only client still joins the
+collaboration and receives live remote edits; it just can't author them.
 
 ## Notes & limitations
 

@@ -46,6 +46,9 @@ export interface WordCanvasRuntime {
   user?: UserInfo | undefined;
   /** Override how a share link is surfaced; default shows a built-in dialog. */
   onShareLink?: ((url: string, docId: string) => void) | undefined;
+  /** Mount view-only: hide the editing chrome and make every mutation a no-op
+   *  (the document is still selectable, copyable, and live for remote edits). */
+  readonly?: boolean | undefined;
   /** Called once the editor is mounted and ready. */
   onReady?: ((handle: EditorHandle) => void) | undefined;
   /** Sink for collaboration events (presence, share, ready) → WordCanvas.on(...). */

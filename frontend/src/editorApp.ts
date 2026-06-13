@@ -105,6 +105,10 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
 const BACKEND_HTTP: string | null = runtime.backendUrl ?? null;
 const BACKEND_WS: string | null = BACKEND_HTTP ? BACKEND_HTTP.replace(/^http/, "ws") : null;
 const online = BACKEND_HTTP !== null;
+// View-only viewer: hide the editing chrome (ribbon, ruler, replace) and run the
+// editor core in readonly mode. Selection, copy, find, zoom, and live remote
+// edits all still work.
+const readonly = runtime.readonly ?? false;
 // Join an existing session only makes sense online.
 let collabId: string | null = online ? (runtime.collabId ?? null) : null;
 let shareLink: string | null = null;
@@ -179,6 +183,7 @@ let refreshBookmarks: () => void = () => {};
 let toggleBookmarks: () => void = () => {};
 const editorOpts = {
   engine,
+  readonly,
   ...(collabId !== null ? { docId: collabId } : {}),
   // In a collab session, ship each recorded local edit to the server.
   onChangeRecorded: (change: Change) => {
@@ -370,7 +375,10 @@ const TOOLBAR_SVG =
 // and the global Ctrl+F shortcut share it.
 let openFind: () => void = () => {};
 
+// View-only: visually hide the editing ribbon, but keep the block running so the
+// side drawers it wires up (outline navigation, bookmarks) still build and show.
 const toolbar = shell.toolbar;
+if (readonly) toolbar.style.display = "none";
 if (toolbar) {
   // ===== Word-style tabbed ribbon ==========================================
   // A tab strip drives a stack of panels (one visible at a time). Each panel
@@ -1751,7 +1759,10 @@ if (toolbar) {
 
 // ---- horizontal ruler (inch ticks, margin shading, draggable indents) -------
 {
-  const ruler = shell.ruler;
+  // View-only: the ruler's only interactions are draggable indent markers, so
+  // hide it (refreshRuler also early-returns while hidden).
+  const ruler = readonly ? null : shell.ruler;
+  if (readonly) shell.ruler.classList.add("hidden");
   if (ruler) {
     const canvas = document.createElement("canvas");
     const leftMarker = document.createElement("div");
@@ -1888,8 +1899,9 @@ if (toolbar) {
 }
 
 // ---- floating image mini-toolbar -------------------------------------------
-// Appears above a selected image (Word's hover bar): wrap, align, delete.
-{
+// Appears above a selected image (Word's hover bar): wrap, align, delete. Skipped
+// in view-only mode — images can't be selected there, and all its actions edit.
+if (!readonly) {
   const bar = document.createElement("div");
   bar.className = "cw-img-toolbar";
   document.body.appendChild(bar);
@@ -2131,13 +2143,16 @@ const pageSetupPanel = (() => {
   optBtn("⌈W⌋", "Match whole word only", () => wholeWord, (v) => (wholeWord = v));
   mkBtn("‹", "Previous (Shift+Enter)", () => update(editor.searchNav(-1)));
   mkBtn("›", "Next (Enter)", () => update(editor.searchNav(1)));
-  const replaceInput = mkInput("Replace", 120);
-  mkBtn("Replace", "Replace current", () => update(editor.searchReplaceCurrent(replaceInput.value)));
-  mkBtn("All", "Replace all", () => {
-    const n = editor.searchReplaceAll(replaceInput.value);
-    update(editor.search(findInput.value, { matchCase, wholeWord }));
-    counter.textContent += ` (${n} replaced)`;
-  });
+  // Replace is an edit — only in editable mode. Find/navigate stay for the viewer.
+  if (!readonly) {
+    const replaceInput = mkInput("Replace", 120);
+    mkBtn("Replace", "Replace current", () => update(editor.searchReplaceCurrent(replaceInput.value)));
+    mkBtn("All", "Replace all", () => {
+      const n = editor.searchReplaceAll(replaceInput.value);
+      update(editor.search(findInput.value, { matchCase, wholeWord }));
+      counter.textContent += ` (${n} replaced)`;
+    });
+  }
   const close = (): void => {
     bar.style.display = "none";
     editor.searchClear();
