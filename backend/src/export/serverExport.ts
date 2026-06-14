@@ -8,7 +8,7 @@
 
 import { runExport } from "@forevka/wordcanvas/export";
 import { installMeasureHost } from "@forevka/wordcanvas/export/measure";
-import { forEachImage, reconstruct } from "@cw/shared";
+import { applyReviewOp, bakeReview, emptyReview, forEachImage, reconstruct, type BakeMode } from "@cw/shared";
 import type { ChangeStore } from "../store/ChangeStore";
 
 export type ExportFormat = "docx" | "pdf";
@@ -46,11 +46,19 @@ export async function exportDoc(
   docId: string,
   format: ExportFormat,
   store: ChangeStore,
+  bakeMode: BakeMode = "reject",
 ): Promise<ExportedDoc | null> {
   const snap = await store.getSnapshot(docId);
   if (!snap) return null;
   const changes = await store.getChanges(docId, snap.version);
-  const doc = reconstruct(snap.snapshot, changes);
+  const reconstructed = reconstruct(snap.snapshot, changes);
+
+  // Fold the review overlay into a clean document so the review-blind writer emits
+  // a plain file. Default "reject" = the original baseline (insertions removed,
+  // deletions kept); "accept" = the final text. The core writer never sees review.
+  const reviewOps = await store.getReviewOps(docId);
+  const review = reviewOps.reduce((l, env) => applyReviewOp(l, env.op).layer, emptyReview(docId));
+  const doc = bakeReview(reconstructed, review, bakeMode);
 
   // Hydrate media: src = mediaId (stable key), bytes pulled from the store.
   const mediaIds = new Set<string>();

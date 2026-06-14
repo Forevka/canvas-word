@@ -304,10 +304,39 @@ importer maps w:keepLines/w:keepNext; `setParaProps` sets them via API.)**
 
 ---
 
+### Track changes & comments — ✅ DONE
+**Shipped beyond the original plan: a review OVERLAY extension (`shared/src/review/`
++ `frontend/src/review/`) that the OOXML-faithful core never sees. A three-way
+mode switch (Editing / Suggesting / Viewing) lives in the ribbon header. In
+suggest mode a transaction interceptor rewrites destructive edits into
+non-destructive, attributed records — insertions paint as author-colored
+underlines, deletions as strikethroughs (the text stays live in the model until
+accepted), format changes as margin change-bars; the anchors ride the same
+`mapPosition` rebasing bookmarks use (so they track text through every local AND
+remote edit), with a GC pass for emptied records. Threaded comments anchor to a
+range with a Google-Docs-style floating composer (an auto "add a comment" chip on
+selection) + a docked Review pane (suggestions/comments, Accept/Reject, accept-
+/reject-all, click-to-scroll). Accept/reject emit ordinary core ops, so they're
+undoable + synced. Everything syncs in real time on a dedicated, idempotent,
+causally-delivered review channel (Postgres `review_ops` log) and rehydrates on
+join — anchors fast-forwarded to head so a joiner sees existing feedback in the
+right place; the join-window race is closed by holding inbound ops until the
+seeded snapshot. Default `.docx`/PDF export BAKES the overlay (reject-all = the
+original baseline) so the review-blind writers emit a clean file; the
+session-end webhook carries review state. Context menus are mode-aware (view =
+read-only; suggest = tracking-safe Cut/Copy/Comment). Verified: 70+ unit tests
+(model/ops/rebase, interceptor, resolve/bake, rehydrate fast-forward, the
+sync-hold race) + Playwright UI checks. V1 tracks single insert/delete/format;
+structural suggestions, paste tracking, and rich comment bodies are V2. See
+`REVIEW.md`.**
+
+---
+
 ## Status
 
 Every feature above has shipped — including `.docx` and PDF export (see
 `EXPORT.md`). The only item dropped from the original plan is raster
 browser-print, covered by the vector PDF path. The editor covers ~95% of everyday
 Word usage. Work since then has moved past this plan into collaboration, a Node
-backend, an admin dashboard, and npm distribution — see `README.md`.
+backend, an admin dashboard, npm distribution, and a track-changes + comments
+review layer — see `README.md`.

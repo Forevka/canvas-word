@@ -5,7 +5,7 @@
 import type { Block, CharStyle, Document, ParaStyle, TableBlock } from "@cw/shared";
 import { BAND_CONTAINERS } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, UserInfo } from "@cw/shared";
-import { isCollapsed, colorForId, userDisplayName } from "@cw/shared";
+import { isCollapsed, colorForId, userDisplayName, freshId } from "@cw/shared";
 import { applyOp, containerBlocks, containerOf, effectiveFractions, locateImage, sliceRuns, type Op } from "@cw/shared";
 import { bandParagraphs, blockById, buildTableGrid, containerListOf, gridOriginOfCell, locateParagraph, normalizeRect, paragraphsOf, styleAtRuns, textOfRuns } from "@cw/shared";
 import type { CellBorders } from "@cw/shared";
@@ -79,6 +79,24 @@ import type { CellSelection, Command, EditorState, Transaction } from "./editor/
 import { UndoManager } from "./editor/undo";
 import { ChangeRecorder, type ChangeSink } from "./sync/changeRecorder";
 import type { Change, ChangeOrigin } from "@cw/shared";
+import {
+  applyReviewOp,
+  emptyReview,
+  rebaseReview,
+  type Fragment,
+  type ReviewLayer,
+  type ReviewOp,
+  type ReviewOpEnvelope,
+} from "@cw/shared";
+import { intercept } from "./review/intercept";
+import { decorate } from "./review/decorate";
+import { acceptSuggestion, rejectSuggestion, acceptAllSuggestions, rejectAllSuggestions, type Resolution } from "@cw/shared";
+
+/** Editor mode: edit (normal), suggest (edits become tracked-change records), or
+ *  view (read-only — every mutation is a no-op; the old `readonly:true`). */
+export type EditMode = "edit" | "suggest" | "view";
+
+export type { ReviewOpEnvelope };
 
 export interface CurrentFormat {
   styleId: string | null;
@@ -175,6 +193,34 @@ export interface Editor {
   removePeer(siteId: string): void;
   /** True when the editor was created in view-only mode (mutations are no-ops). */
   isReadonly(): boolean;
+  // ---- review layer (track changes + comments) ----------------------------
+  /** Current editor mode. */
+  getMode(): EditMode;
+  /** Switch mode. Returns false if `mode` isn't in `allowedModes`. */
+  setMode(mode: EditMode): boolean;
+  /** Read-only snapshot of the review overlay. */
+  getReview(): ReviewLayer;
+  /** Replace the review overlay (e.g. a rehydrated snapshot loaded on join) and
+   *  repaint. Used by the collab join flow after the document is mounted. */
+  seedReview(layer: ReviewLayer): void;
+  /** Scroll to and select a suggestion or comment thread by id (panel "go to"). */
+  revealReview(id: string): void;
+  acceptSuggestion(id: string): void;
+  rejectSuggestion(id: string): void;
+  acceptAllSuggestions(): void;
+  rejectAllSuggestions(): void;
+  /** Add a comment thread anchored to the current selection (start===end ⇒ a
+   *  point comment). `body` is a rich fragment. Returns the new thread id, or
+   *  null if there's no selection. */
+  addComment(body: Fragment): string | null;
+  /** Open the floating comment composer anchored to the current selection
+   *  (Google-Docs-style bubble). No-op in view mode or with no selection. */
+  startComment(): void;
+  replyToComment(threadId: string, body: Fragment): void;
+  resolveThread(threadId: string, resolved?: boolean): void;
+  /** Apply a review op that arrived from a collaborator (already anchor-rebased
+   *  to the local doc by the caller). Not recorded/broadcast. */
+  applyRemoteReviewOp(op: ReviewOp): void;
   destroy(): void;
 }
 
@@ -196,8 +242,27 @@ export interface EditorOptions {
   /** View-only mode: the document renders and stays selectable/copyable, but
    *  every mutation (typing, paste, undo/redo, structural edits) is a no-op.
    *  Remote collaborator edits still apply — a read-only client tracks a live
-   *  session, it just can't author. */
+   *  session, it just can't author. Equivalent to `mode: "view"`. */
   readonly?: boolean;
+  /** Initial editor mode. Defaults to "view" when `readonly`, else "edit". */
+  mode?: EditMode;
+  /** Modes the user may switch to (the mode picker is constrained to these and
+   *  setMode rejects others). Omit ⇒ all three. */
+  allowedModes?: EditMode[];
+  /** Local user identity — attributed onto suggestions/comments authored here.
+   *  Without it, suggest mode falls back to anonymous attribution. */
+  user?: UserInfo;
+  /** Seed the review overlay (e.g. a layer loaded from the backend). */
+  review?: ReviewLayer;
+  /** Fires after the review overlay changes (suggestion/comment added, resolved,
+   *  rebased) — for panels + the embedder. */
+  onReviewChanged?: (review: ReviewLayer) => void;
+  /** Fires for each locally-authored review op (suggest mode, accept/reject,
+   *  comments). The SyncClient ships these on the review channel; persistence
+   *  appends them. */
+  onReviewOpRecorded?: (env: ReviewOpEnvelope) => void;
+  /** Fires when the mode changes (picker / setMode). */
+  onModeChanged?: (mode: EditMode) => void;
 }
 
 export function createEditor(
@@ -206,16 +271,23 @@ export function createEditor(
   options: EditorOptions = {},
 ): Editor {
   const engine = options.engine ?? createLayoutEngine();
-  // View-only mode: the mutation pipeline (commit/undo/redo) and edit-affordance
-  // gestures below short-circuit, so the document can be read, selected, and
-  // copied but never authored. Remote ops bypass this gate (applyRemoteOps).
-  const readonly = options.readonly ?? false;
+  // Editor mode. "view" short-circuits the mutation pipeline (commit/undo/redo)
+  // so the document can be read/selected/copied but never authored; remote ops
+  // bypass it. "suggest" routes edits through the review interceptor. `readonly`
+  // captures the INITIAL view state for construction-time affordance gating;
+  // the mutation gates below check `mode` so a runtime switch to view is honored.
+  let mode: EditMode = options.mode ?? (options.readonly ? "view" : "edit");
+  const allowedModes = options.allowedModes;
+  const readonly = mode === "view";
   const paint = createPaintLayer(container);
   const undoMgr = new UndoManager();
   // Document history: every committed edit (and undo/redo, as forward ops) is
   // recorded as a Change. The base snapshot + this ordered log reconstructs any
   // version (see shared/replay).
   const recorder = new ChangeRecorder(options.docId ?? "local", options.onChangeRecorded);
+  // Review overlay (track changes + comments) — a SIBLING of `doc`, never folded
+  // into it. Anchors ride mapPosition exactly like bookmarks (rebaseReviewLayer).
+  let review: ReviewLayer = options.review ?? emptyReview(options.docId ?? "local", recorder.head());
 
   let doc = initialDoc;
   let tree: LayoutTree = engine.layout(doc);
@@ -351,7 +423,10 @@ export function createEditor(
     return cellRangeRects(tree, cellSelection.tableId, rect.r0, rect.c0, rect.r1, rect.c1);
   };
 
-  const refreshSelectionVisuals = (): void => {
+  // Assigned in the review section below; called from refreshSelectionVisuals.
+  let updateCommentAffordance: () => void = () => {};
+
+  const applySelectionVisuals = (): void => {
     updateSdtAdornment();
     // A rectangular cell selection paints filled cell rects and hides the caret;
     // it supersedes any lingering text selection visual.
@@ -377,6 +452,11 @@ export function createEditor(
       paint.setSelectionRects(selectionRects(tree, selection, scope()));
       paint.setCaret(null); // Word hides the caret while a range is selected
     }
+  };
+
+  const refreshSelectionVisuals = (): void => {
+    applySelectionVisuals();
+    updateCommentAffordance(); // float the comment chip beside a suggest-mode selection
   };
 
   const notifyChange = (): void => {
@@ -649,6 +729,35 @@ export function createEditor(
     if (changed) doc = { ...doc, bookmarks: next };
   };
 
+  // Review anchors ride the SAME position-mapper as bookmarks (REVIEW.md §5.1):
+  // suggestion + comment ranges travel through every applied core op, then GC
+  // drops records whose text was removed.
+  const rebaseReviewLayer = (mapPosition: (p: DocPosition) => DocPosition): void => {
+    review = rebaseReview(review, mapPosition);
+  };
+
+  const notifyReviewChanged = (): void => {
+    options.onReviewChanged?.(review);
+  };
+
+  const reviewAuthor = (): UserInfo => options.user ?? { id: "anon", firstName: "Anonymous", lastName: "" };
+
+  /** Apply one locally-authored review op: mutate the layer and broadcast/persist
+   *  it via the sink (with the core version it depends on). Returns its inverse
+   *  for the undo coupling. */
+  const applyLocalReviewOp = (op: ReviewOp): ReviewOp => {
+    const res = applyReviewOp(review, op);
+    review = res.layer;
+    options.onReviewOpRecorded?.({ op, dependsOnSeq: recorder.head(), ...(options.user ? { author: options.user } : {}) });
+    return res.inverse;
+  };
+
+  /** Recompute + repaint review decorations from the current layer + layout
+   *  tree (metric-neutral → repaint only, like search highlights). */
+  const refreshReviewDecorations = (): void => {
+    paint.setReviewDecorations(decorate(review, tree, scope()));
+  };
+
   const runOps = (ops: Op[]): Op[] => {
     const inverses: Op[] = [];
     for (const op of ops) {
@@ -656,6 +765,7 @@ export function createEditor(
       doc = res.doc;
       rebasePeers(res.mapPosition); // keep peer carets aligned with the edited text
       rebaseBookmarks(res.mapPosition);
+      rebaseReviewLayer(res.mapPosition); // suggestion/comment anchors travel too
       inverses.unshift(res.inverse);
     }
     return inverses;
@@ -676,29 +786,50 @@ export function createEditor(
       if (caret) paint.ensureVisible(caret);
     }
     paintRemoteCarets(); // peers' carets re-measured against the new layout
+    refreshReviewDecorations(); // suggestion/comment overlays re-measured too
     mirror.sync(state());
     notifyChange();
     options.onSelectionChange?.(selection);
   };
 
-  const commit = (trn: Transaction): void => {
-    if (readonly) return; // view-only: drop every local mutation (typing, IME, commands)
+  /** Raw commit: applies core ops + already-decided review ops WITHOUT mode
+   *  interception. Couples the review ops into the undo entry so Ctrl+Z reverses
+   *  text + records as one action. Used by the mode-aware commit (after
+   *  intercept) and by accept/reject. */
+  const commitCore = (trn: Transaction, reviewOps: ReviewOp[]): void => {
     const selectionBefore = selection;
     const inverses = runOps(trn.ops);
-    if (trn.origin !== "transient") {
+    // Review ops apply AFTER core ops, so their anchors are in post-core coords.
+    const reviewInverses: ReviewOp[] = [];
+    for (const rop of reviewOps) reviewInverses.unshift(applyLocalReviewOp(rop));
+    if (trn.origin !== "transient" && (trn.ops.length > 0 || reviewOps.length > 0)) {
       undoMgr.record({
         ops: trn.ops,
         inverseOps: inverses,
+        reviewOps,
+        reviewInverses,
         selectionBefore,
         selectionAfter: trn.selectionAfter,
         origin: trn.origin,
         time: Date.now(),
       });
-      // Mirror the edit into the document-history log (transient IME previews are
-      // excluded, exactly as for undo). origin is now ChangeOrigin-compatible.
+      // Mirror the core edit into the document-history log (empty for a pure
+      // deletion-suggestion; the recorder no-ops on empty ops).
       recorder.record(trn.ops, trn.origin as ChangeOrigin, trn.selectionAfter, Date.now());
     }
+    if (reviewOps.length > 0) notifyReviewChanged();
     afterMutation(trn.selectionAfter);
+  };
+
+  const commit = (trn: Transaction): void => {
+    if (mode === "view") return; // view-only: drop every local mutation
+    if (mode === "suggest" && trn.origin !== "transient") {
+      // Rewrite destructive edits into non-destructive review records.
+      const r = intercept(trn, review, doc, reviewAuthor(), Date.now());
+      commitCore(r.core, r.reviewOps);
+      return;
+    }
+    commitCore(trn, []);
   };
 
   const dispatch = (cmd: Command): void => {
@@ -707,10 +838,16 @@ export function createEditor(
   };
 
   const undo = (): void => {
-    if (readonly) return; // undo/redo bypass commit() — gate them directly
+    if (mode === "view") return; // undo/redo bypass commit() — gate them directly
     const entry = undoMgr.popUndo();
     if (!entry) return;
     runOps(entry.inverseOps);
+    // Review inverses AFTER the text inverses, so anchors are valid when records
+    // are restored (reverse application order — they were unshifted on record).
+    if (entry.reviewInverses?.length) {
+      for (const rop of entry.reviewInverses) applyLocalReviewOp(rop);
+      notifyReviewChanged();
+    }
     // Undo is a real forward edit in history terms — record the inverse ops it
     // applied so the log faithfully replays the same end state.
     recorder.record(entry.inverseOps, "undo", entry.selectionBefore, Date.now());
@@ -718,10 +855,14 @@ export function createEditor(
   };
 
   const redo = (): void => {
-    if (readonly) return;
+    if (mode === "view") return;
     const entry = undoMgr.popRedo();
     if (!entry) return;
     runOps(entry.ops);
+    if (entry.reviewOps?.length) {
+      for (const rop of entry.reviewOps) applyLocalReviewOp(rop);
+      notifyReviewChanged();
+    }
     recorder.record(entry.ops, "redo", entry.selectionAfter, Date.now());
     afterMutation(entry.selectionAfter);
   };
@@ -737,6 +878,7 @@ export function createEditor(
       doc = res.doc;
       rebasePeers(res.mapPosition); // peers' carets travel with the remote edit too
       rebaseBookmarks(res.mapPosition);
+      rebaseReviewLayer(res.mapPosition); // remote insert shifts everyone's pins
       if (sel) {
         sel = {
           anchor: res.mapPosition(sel.anchor),
@@ -745,8 +887,222 @@ export function createEditor(
         };
       }
     }
+    if (ops.length > 0) notifyReviewChanged();
     afterMutation(sel);
   };
+
+  // ---- review actions (track changes + comments) --------------------------
+
+  /** Pure review-layer action (comments, status) — no core ops. Undoable as a
+   *  coupled review-only entry; repaints decorations (no relayout). */
+  const recordReviewOnly = (ops: ReviewOp[]): void => {
+    if (mode === "view" || ops.length === 0) return;
+    const reviewInverses: ReviewOp[] = [];
+    for (const op of ops) reviewInverses.unshift(applyLocalReviewOp(op));
+    undoMgr.record({
+      ops: [],
+      inverseOps: [],
+      reviewOps: ops,
+      reviewInverses,
+      selectionBefore: selection,
+      selectionAfter: selection,
+      origin: "command",
+      time: Date.now(),
+    });
+    notifyReviewChanged();
+    refreshReviewDecorations();
+  };
+
+  const commitResolution = (r: Resolution | null): void => {
+    if (!r) return;
+    commitCore({ ops: r.ops, selectionAfter: selection, origin: "command" }, r.reviewOps);
+  };
+
+  /** Ordered [start,end] of the current selection (anchor/focus in doc order). */
+  const orderedSelectionRange = (): { start: DocPosition; end: DocPosition } | null => {
+    if (!selection) return null;
+    const cmp = comparePositions(tree, selection.anchor, selection.focus, scope());
+    return cmp <= 0
+      ? { start: selection.anchor, end: selection.focus }
+      : { start: selection.focus, end: selection.anchor };
+  };
+
+  const addComment = (body: Fragment): string | null => {
+    if (mode === "view") return null;
+    const range = orderedSelectionRange();
+    if (!range) return null;
+    const author = reviewAuthor();
+    const now = Date.now();
+    const thread = {
+      id: freshId(),
+      anchor: { start: range.start, end: range.end },
+      status: "open" as const,
+      comments: [{ id: freshId(), author, body, createdAt: now }],
+    };
+    recordReviewOnly([{ type: "addThread", t: thread }]);
+    return thread.id;
+  };
+
+  const replyToComment = (threadId: string, body: Fragment): void => {
+    recordReviewOnly([
+      { type: "addComment", threadId, c: { id: freshId(), author: reviewAuthor(), body, createdAt: Date.now() } },
+    ]);
+  };
+
+  const resolveThread = (threadId: string, resolved = true): void => {
+    recordReviewOnly([{ type: "setThreadStatus", threadId, status: resolved ? "resolved" : "open" }]);
+  };
+
+  // Google-Docs-style comment affordance: in suggest mode, selecting text shows a
+  // small floating "comment" chip next to the selection; clicking it expands into
+  // the full composer. No ribbon icon needed.
+  let commentBubble: HTMLDivElement | null = null;
+  let commentChip: HTMLButtonElement | null = null;
+  const closeCommentComposer = (): void => {
+    commentBubble?.remove();
+    commentBubble = null;
+  };
+  const hideCommentChip = (): void => {
+    commentChip?.remove();
+    commentChip = null;
+  };
+
+  /** Container-relative anchor (top-right of the selection's first line) for the
+   *  comment chip + composer, or null if there's no usable ranged selection. */
+  const commentAnchorAt = (): { left: number; top: number; lineH: number } | null => {
+    if (!selection || isCollapsed(selection) || cellSelection) return null;
+    const rects = selectionRects(tree, selection, scope());
+    if (rects.length === 0) return null;
+    const r = rects[0]!;
+    const at = paint.caretToContainer({ pageIndex: r.pageIndex, x: r.x + r.width, y: r.y, height: r.height });
+    return at ? { left: at.left, top: at.top, lineH: r.height } : null;
+  };
+
+  const styleForComment = (): CharStyle => {
+    const block = selection ? blockById(doc, selection.focus.blockId) : undefined;
+    return (
+      (block && styleAtRuns(block.runs, selection!.focus.offset)) ?? {
+        fontFamily: "Georgia, serif", fontSizePx: 16, bold: false, italic: false, underline: false, strikethrough: false, color: "#202124",
+      }
+    );
+  };
+
+  /** Expand the full composer at the current selection (chip click, or API). */
+  const openComposer = (): void => {
+    if (mode === "view") return;
+    const anchor = commentAnchorAt();
+    if (!anchor) return;
+    hideCommentChip();
+    closeCommentComposer();
+    const style = styleForComment();
+
+    const bubble = document.createElement("div");
+    bubble.className = "cw-comment-bubble";
+    const maxLeft = container.clientWidth - 312;
+    bubble.style.left = `${Math.max(8, Math.min(anchor.left + 6, maxLeft))}px`;
+    bubble.style.top = `${anchor.top + anchor.lineH + 8}px`;
+    bubble.addEventListener("mousedown", (e) => e.stopPropagation());
+
+    const who = reviewAuthor();
+    const row = document.createElement("div");
+    row.className = "cw-bubble-row";
+    const av = document.createElement("div");
+    av.className = "cw-avatar";
+    av.style.background = colorForId(who.id);
+    av.textContent = (who.firstName[0] ?? "?") + (who.lastName[0] ?? "");
+    const ta = document.createElement("textarea");
+    ta.placeholder = "Add a comment…";
+    row.append(av, ta);
+
+    const actions = document.createElement("div");
+    actions.className = "cw-bubble-actions";
+    const cancel = document.createElement("button");
+    cancel.className = "cw-btn cw-btn-sm";
+    cancel.textContent = "Cancel";
+    const submit = document.createElement("button");
+    submit.className = "cw-btn cw-btn-primary cw-btn-sm";
+    submit.textContent = "Comment";
+    submit.disabled = true;
+    actions.append(cancel, submit);
+    bubble.append(row, actions);
+    container.appendChild(bubble);
+    commentBubble = bubble;
+    setTimeout(() => ta.focus(), 0);
+
+    ta.addEventListener("input", () => {
+      submit.disabled = ta.value.trim().length === 0;
+    });
+    const send = (): void => {
+      const text = ta.value.trim();
+      if (!text) return;
+      addComment([{ text, style }]);
+      closeCommentComposer();
+      proxy.focus();
+    };
+    ta.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.preventDefault(); closeCommentComposer(); proxy.focus(); }
+      else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
+    });
+    cancel.addEventListener("click", () => { closeCommentComposer(); proxy.focus(); });
+    submit.addEventListener("click", send);
+  };
+
+  // Public: open the composer directly (kept for API parity).
+  const startComment = openComposer;
+
+  /** Show/hide the floating comment chip as the selection changes (suggest mode
+   *  only). Called from refreshSelectionVisuals + setMode. */
+  updateCommentAffordance = (): void => {
+    if (commentBubble) return; // composer open → leave it; chip is irrelevant
+    const anchor = mode === "suggest" ? commentAnchorAt() : null;
+    if (!anchor) {
+      hideCommentChip();
+      return;
+    }
+    if (!commentChip) {
+      commentChip = document.createElement("button");
+      commentChip.className = "cw-comment-chip";
+      commentChip.title = "Leave a comment";
+      commentChip.textContent = "💬";
+      // stopPropagation is essential: without it the selection controller sees the
+      // mousedown and collapses the selection, so openComposer finds nothing.
+      commentChip.addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); });
+      commentChip.addEventListener("click", (e) => { e.stopPropagation(); openComposer(); });
+      container.appendChild(commentChip);
+    }
+    commentChip.style.left = `${anchor.left + 6}px`;
+    commentChip.style.top = `${anchor.top - 4}px`;
+  };
+
+  const applyRemoteReviewOp = (op: ReviewOp): void => {
+    review = applyReviewOp(review, op).layer;
+    notifyReviewChanged();
+    refreshReviewDecorations();
+  };
+
+  const seedReview = (layer: ReviewLayer): void => {
+    review = layer;
+    notifyReviewChanged();
+    refreshReviewDecorations();
+  };
+
+  const setMode = (next: EditMode): boolean => {
+    if (allowedModes && !allowedModes.includes(next)) return false;
+    if (next === mode) return true;
+    mode = next;
+    pendingStyle = null; // clear pending preview on switch
+    if (mode !== "suggest") {
+      hideCommentChip();
+      closeCommentComposer();
+    }
+    updateCommentAffordance(); // reflect the new mode immediately
+    options.onModeChanged?.(mode);
+    notifyChange();
+    return true;
+  };
+
+  // Paint any seeded review overlay once at startup (pages pick it up on mount).
+  if (review.suggestions.length > 0 || review.threads.length > 0) refreshReviewDecorations();
 
   const setPeerPresence = (siteId: string, user: UserInfo | undefined, selection: DocSelection | null): void => {
     remotePeers.set(siteId, { user, color: colorForId(user?.id ?? siteId), selection });
@@ -1661,14 +2017,31 @@ export function createEditor(
 
     const hasSel = !!selection && !isCollapsed(selection);
 
-    // View-only: only the non-mutating actions (copy text, follow a link).
-    if (readonly) {
+    // View-only (checked dynamically so a runtime switch to view mode applies):
+    // only the non-mutating actions (copy text, follow a link).
+    if (mode === "view") {
       const url = linkAt(tree, pt.pageIndex, pt.x, pt.y, scope());
       const ro: MenuEntry[] = [
         item("Copy", () => void copySelection(), { shortcut: "Ctrl+C", disabled: !hasSel }),
       ];
       if (url) ro.push(sep, item("Open Hyperlink", () => window.open(url, "_blank", "noopener"), { icon: ICONS.link }));
       return ro;
+    }
+
+    // Suggesting: don't expose the full editing menu (paste, table/object edits
+    // and other structural actions aren't tracked as suggestions in V1 and would
+    // mutate the document directly). Offer only the tracking-safe + non-mutating
+    // actions — Cut becomes a tracked deletion, plus Comment (Google-Docs style).
+    if (mode === "suggest") {
+      const url = linkAt(tree, pt.pageIndex, pt.x, pt.y, scope());
+      const m: MenuEntry[] = [
+        item("Cut", () => void copySelection().then(() => dispatch(deleteBackward())), { shortcut: "Ctrl+X", disabled: !hasSel }),
+        item("Copy", () => void copySelection(), { shortcut: "Ctrl+C", disabled: !hasSel }),
+        sep,
+        item("Comment", () => startComment(), { icon: ICONS.comment, disabled: !hasSel }),
+      ];
+      if (url) m.push(sep, item("Open Hyperlink", () => window.open(url, "_blank", "noopener"), { icon: ICONS.link }));
+      return m;
     }
 
     const hasCellSel = !!cellSelection;
@@ -1693,6 +2066,9 @@ export function createEditor(
       item("Copy", () => void copySelection(), { shortcut: "Ctrl+C", disabled: !hasSel }),
       item("Paste", () => void pasteFromClipboard(), { shortcut: "Ctrl+V", disabled: sdtBlocksEdit() }),
     );
+
+    // Comment on the selection (edit mode has no floating chip — suggest mode does).
+    entries.push(sep, item("Comment", () => startComment(), { icon: ICONS.comment, disabled: !hasSel }));
 
     // Link.
     if (linkUrl) {
@@ -2061,7 +2437,20 @@ export function createEditor(
     applyRemoteOps,
     setPeerPresence,
     removePeer,
-    isReadonly: (): boolean => readonly,
+    isReadonly: (): boolean => mode === "view",
+    getMode: (): EditMode => mode,
+    setMode,
+    getReview: (): ReviewLayer => review,
+    seedReview,
+    acceptSuggestion: (id: string): void => commitResolution(acceptSuggestion(doc, review, id)),
+    rejectSuggestion: (id: string): void => commitResolution(rejectSuggestion(doc, review, id)),
+    acceptAllSuggestions: (): void => commitResolution(acceptAllSuggestions(doc, review)),
+    rejectAllSuggestions: (): void => commitResolution(rejectAllSuggestions(doc, review)),
+    addComment,
+    startComment,
+    replyToComment,
+    resolveThread,
+    applyRemoteReviewOp,
     dispatch,
     toggleStyle,
     setCharStyle(patch: Partial<CharStyle>): void {
@@ -2142,6 +2531,14 @@ export function createEditor(
       const rect = caretRect(tree, range.start, scope());
       if (!rect) return; // anchored in hidden/unplaced content — nothing to show
       setSelection({ anchor: range.start, focus: range.end });
+      paint.ensureVisible(rect, "center");
+    },
+    revealReview: (id: string): void => {
+      const anchor = (review.suggestions.find((s) => s.id === id) ?? review.threads.find((t) => t.id === id))?.anchor;
+      if (!anchor || !blockById(doc, anchor.start.blockId)) return;
+      const rect = caretRect(tree, anchor.start, scope());
+      if (!rect) return; // anchored in unplaced content
+      setSelection({ anchor: anchor.start, focus: anchor.end });
       paint.ensureVisible(rect, "center");
     },
     selectAll: (): void => {

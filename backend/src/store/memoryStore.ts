@@ -3,7 +3,7 @@
 // dev backend. Mirrors PgChangeStore's semantics, including OT rebase on append.
 
 import { randomUUID } from "node:crypto";
-import { transformOps, type Change, type SerializedDocument, type UserInfo } from "@cw/shared";
+import { transformOps, type Change, type ReviewOpEnvelope, type SerializedDocument, type UserInfo } from "@cw/shared";
 import type {
   ApiTokenRecord,
   ChangeStore,
@@ -33,6 +33,7 @@ export class MemoryChangeStore implements ChangeStore {
   private readonly webhooks = new Map<string, WebhookRecord>();
   private readonly deliveries: DeliveryRecord[] = [];
   private readonly apiTokens = new Map<string, ApiTokenRecord & { tokenHash: string }>();
+  private readonly reviewOps = new Map<string, ReviewOpEnvelope[]>();
 
   async createDocument(
     base: SerializedDocument,
@@ -131,6 +132,16 @@ export class MemoryChangeStore implements ChangeStore {
 
   async getMedia(hash: string): Promise<MediaRecord | null> {
     return this.media.get(hash) ?? null;
+  }
+
+  async appendReviewOp(docId: string, env: ReviewOpEnvelope): Promise<void> {
+    const log = this.reviewOps.get(docId) ?? [];
+    log.push(env);
+    this.reviewOps.set(docId, log);
+  }
+
+  async getReviewOps(docId: string): Promise<ReviewOpEnvelope[]> {
+    return (this.reviewOps.get(docId) ?? []).slice();
   }
 
   async listDocuments(): Promise<DocumentSummary[]> {

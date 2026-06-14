@@ -15,10 +15,13 @@
 // roster/presence/leave → the editor (which owns + rebases peer caret positions)
 // plus userEntered/userLeave/presence callbacks for the embedder.
 
-import { currentSiteId, freshId, transformOps, type Change, type DocSelection, type Op, type UserInfo } from "@cw/shared";
+import { currentSiteId, freshId, transformOps, type Change, type DocSelection, type Op, type ReviewOp, type UserInfo } from "@cw/shared";
+import type { ReviewOpEnvelope } from "../index";
 
 export interface SyncEditor {
   applyRemoteOps(ops: Op[]): void;
+  /** Apply a review op (suggestion/comment) from a collaborator. */
+  applyRemoteReviewOp(op: ReviewOp): void;
   /** Upsert a peer's caret (the editor rebases it through edits + renders it). */
   setPeerPresence(siteId: string, user: UserInfo | undefined, selection: DocSelection | null): void;
   /** Remove a peer's caret (they left). */
@@ -44,6 +47,7 @@ export interface SyncClientOptions {
 interface PresenceMsg {
   type: string;
   change?: Change;
+  review?: ReviewOpEnvelope;
   siteId?: string;
   user?: UserInfo;
   selection?: DocSelection | null;
@@ -62,6 +66,20 @@ export class SyncClient {
   private readonly peers = new Map<string, UserInfo | undefined>();
   private presenceTimer: ReturnType<typeof setTimeout> | null = null;
   private lastSelection: DocSelection | null = null;
+  // Review ops whose anchor depends on a core version we haven't applied yet
+  // (causal hold). Flushed as the version catches up. REVIEW.md §5.4.
+  private reviewBuffer: ReviewOpEnvelope[] = [];
+  // Join-window race guard: while false, review ops are held in preSeedReview
+  // (not applied) so they aren't lost before the rehydrated snapshot is seeded;
+  // markReviewReady() replays them. Defaults true (no hold) for freshly-shared
+  // docs that have nothing to rehydrate. ReviewOps are id-keyed + idempotent, so
+  // replaying ones already in the snapshot is harmless.
+  private reviewReady = true;
+  private preSeedReview: ReviewOpEnvelope[] = [];
+  // Resolves once the socket is open (so a joiner can wait until it's in the
+  // room — and thus receiving broadcasts — before fetching the review snapshot).
+  private opened = false;
+  private openWaiters: Array<() => void> = [];
 
   constructor(opts: SyncClientOptions) {
     this.opts = opts;
@@ -74,12 +92,18 @@ export class SyncClient {
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: "hello", siteId: currentSiteId(), user: this.opts.user }));
       this.flush();
+      this.opened = true;
+      for (const w of this.openWaiters) w();
+      this.openWaiters = [];
     };
     ws.onmessage = (ev) => {
       const msg = JSON.parse(ev.data as string) as PresenceMsg;
       switch (msg.type) {
         case "change":
           if (msg.change) this.onServerChange(msg.change);
+          break;
+        case "review":
+          if (msg.review) this.onServerReview(msg.review);
           break;
         case "roster":
           for (const e of msg.entries ?? []) this.applyPeer(e.siteId, e.user, e.selection ?? null);
@@ -118,6 +142,62 @@ export class SyncClient {
     }, PRESENCE_THROTTLE_MS);
   }
 
+  /** Ship a locally-authored review op (suggestion/comment) to peers, tagged with
+   *  the core version its anchor depends on (causal delivery). */
+  localReviewOp(env: ReviewOpEnvelope): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: "review", review: env }));
+    }
+  }
+
+  /** Resolves once the socket is open (and the client is in the room receiving
+   *  broadcasts). A joiner awaits this before fetching the review snapshot so no
+   *  live review op can land in the gap unseen. */
+  whenOpen(): Promise<void> {
+    if (this.opened) return Promise.resolve();
+    return new Promise((resolve) => this.openWaiters.push(resolve));
+  }
+
+  /** Begin holding inbound review ops (call right after connect, before seeding):
+   *  they queue until markReviewReady() instead of applying to an unseeded layer. */
+  holdReview(): void {
+    this.reviewReady = false;
+  }
+
+  /** The rehydrated snapshot is seeded — replay every review op buffered during
+   *  the handshake. Idempotent: ops already folded into the snapshot are no-ops. */
+  markReviewReady(): void {
+    if (this.reviewReady) return;
+    this.reviewReady = true;
+    const pending = this.preSeedReview;
+    this.preSeedReview = [];
+    for (const env of pending) this.onServerReview(env);
+  }
+
+  /** Inbound review op. Held until the snapshot is seeded (join-window race),
+   *  then until our document has reached the core version its anchor was authored
+   *  against (causal hold), then applied (ReviewOps commute, so no OT). */
+  private onServerReview(env: ReviewOpEnvelope): void {
+    if (!this.reviewReady) {
+      this.preSeedReview.push(env);
+      return;
+    }
+    if (env.dependsOnSeq > this.version) {
+      this.reviewBuffer.push(env);
+      return;
+    }
+    this.opts.editor.applyRemoteReviewOp(env.op);
+  }
+
+  /** Apply any buffered review ops the version has now caught up to. */
+  private flushReviewBuffer(): void {
+    if (this.reviewBuffer.length === 0) return;
+    const ready = this.reviewBuffer.filter((e) => e.dependsOnSeq <= this.version);
+    if (ready.length === 0) return;
+    this.reviewBuffer = this.reviewBuffer.filter((e) => e.dependsOnSeq > this.version);
+    for (const env of ready) this.opts.editor.applyRemoteReviewOp(env.op);
+  }
+
   getVersion(): number {
     return this.version;
   }
@@ -150,6 +230,7 @@ export class SyncClient {
       this.version = (change.seq ?? this.version) + 1;
       this.inflight = null;
       this.flush();
+      this.flushReviewBuffer(); // version advanced → held review ops may be ready
       return;
     }
 
@@ -163,6 +244,7 @@ export class SyncClient {
     }
     this.buffer = transformOps(this.buffer, change.ops, "right");
     this.version = (change.seq ?? this.version) + 1;
+    this.flushReviewBuffer(); // version advanced → held review ops may be ready
     this.opts.onRemote?.(change);
   }
 

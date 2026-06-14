@@ -20,3 +20,8 @@ export * from "./persist/serialize";
 export * from "./change";
 export * from "./replay";
 export * from "./transform";
+
+// Review layer (track changes + comments) — an isomorphic OVERLAY extension. A
+// sibling of ./model, never imported by it, so the OOXML-faithful core stays
+// unaware of review. See shared/src/review and REVIEW.md.
+export * from "./review";

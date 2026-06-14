@@ -5,6 +5,7 @@
 // is logged so the dashboard can show delivery history.
 
 import { createHmac } from "node:crypto";
+import { applyReviewOp, emptyReview } from "@cw/shared";
 import type { ChangeStore, DocumentActivity } from "../store/ChangeStore";
 
 export const SESSION_ENDED_EVENT = "document.session_ended";
@@ -44,10 +45,12 @@ export class WebhookDispatcher {
       );
       if (subscribed.length === 0) return;
 
-      const [title, head] = await Promise.all([
+      const [title, head, reviewOps] = await Promise.all([
         this.store.getDocumentTitle(docId),
         this.store.getHead(docId),
+        this.store.getReviewOps(docId),
       ]);
+      const review = reviewOps.reduce((layer, env) => applyReviewOp(layer, env.op).layer, emptyReview(docId));
       const editors = dedupeEditors(activity);
       const payload = {
         event: SESSION_ENDED_EVENT,
@@ -56,6 +59,13 @@ export class WebhookDispatcher {
         version: head ?? 0,
         editors,
         lastEditor: ctx.lastEditor ?? editors[0] ?? null,
+        // Track-changes + comments state at session end (overlay, not the doc).
+        review: {
+          suggestionCount: review.suggestions.length,
+          openThreadCount: review.threads.filter((t) => t.status === "open").length,
+          suggestions: review.suggestions,
+          threads: review.threads,
+        },
         downloadUrls: {
           docx: `${this.baseUrl}/docs/${docId}/export.docx`,
           pdf: `${this.baseUrl}/docs/${docId}/export.pdf`,

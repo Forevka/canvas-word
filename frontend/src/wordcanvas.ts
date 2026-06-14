@@ -9,10 +9,10 @@
 // events fire; when omitted, the editor runs fully offline. Multiple WordCanvas
 // instances can coexist on one page (class-scoped chrome, per-instance runtime).
 
-import type { EditorHandle, Participant, WordCanvasEvent, WordCanvasRuntime } from "./app/runtime";
-import type { Document, UserInfo } from "@cw/shared";
+import type { EditMode, EditorHandle, Participant, WordCanvasEvent, WordCanvasRuntime } from "./app/runtime";
+import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
 
-export type { Document, UserInfo, Participant };
+export type { Document, UserInfo, Participant, EditMode, ReviewLayer, Fragment };
 
 export interface WordCanvasOptions {
   /** Element to mount the editor into. */
@@ -30,8 +30,15 @@ export interface WordCanvasOptions {
   onShareLink?: (url: string, docId: string) => void;
   /** Mount as a view-only viewer: the document renders and stays selectable and
    *  copyable, but the editing chrome is hidden and every mutation is a no-op.
-   *  In an online session a read-only client still receives live remote edits. */
+   *  In an online session a read-only client still receives live remote edits.
+   *  Equivalent to `mode: "view"`. */
   readonly?: boolean;
+  /** Initial editor mode: "edit" (default), "suggest" (edits become tracked
+   *  changes), or "view" (read-only). Defaults to "view" when `readonly`. */
+  mode?: EditMode;
+  /** Restrict which modes the user can switch to (constrains the mode picker and
+   *  setMode). Omit ⇒ all three. e.g. ["suggest","view"] locks out raw editing. */
+  allowedModes?: EditMode[];
 }
 
 /** Event name → payload, for `on(...)`. */
@@ -41,6 +48,11 @@ export interface WordCanvasEventMap {
   userEntered: { siteId: string; user?: UserInfo };
   userLeave: { siteId: string; user?: UserInfo };
   presence: { participants: Participant[] };
+  /** The editor mode changed (picker or setMode). */
+  modeChanged: { mode: EditMode };
+  /** The review overlay changed (suggestion/comment added, resolved, rebased).
+   *  Carries the full layer so panels can re-render. */
+  reviewChanged: { review: ReviewLayer };
 }
 
 type Handler<E extends keyof WordCanvasEventMap> = (data: WordCanvasEventMap[E]) => void;
@@ -60,6 +72,8 @@ export class WordCanvas {
         user: opts.user,
         onShareLink: opts.onShareLink,
         readonly: opts.readonly,
+        mode: opts.mode,
+        allowedModes: opts.allowedModes,
         onReady: (h) => {
           this.handle = h;
           resolve(h);
@@ -113,6 +127,48 @@ export class WordCanvas {
   /** Publish the current document and resolve its shareable link (online only). */
   async share(): Promise<string> {
     return (await this.ready).share();
+  }
+
+  // ---- review layer (track changes + comments) ----------------------------
+
+  /** Current editor mode. Returns null before the editor is ready. */
+  getMode(): EditMode | null {
+    return this.handle?.getMode() ?? null;
+  }
+
+  /** Switch mode. Resolves to false if the mode isn't allowed (or not ready). */
+  async setMode(mode: EditMode): Promise<boolean> {
+    return (await this.ready).setMode(mode);
+  }
+
+  /** Snapshot of the review overlay (suggestions + comment threads). */
+  async getReview(): Promise<ReviewLayer> {
+    return (await this.ready).getReview();
+  }
+
+  async acceptSuggestion(id: string): Promise<void> {
+    (await this.ready).acceptSuggestion(id);
+  }
+  async rejectSuggestion(id: string): Promise<void> {
+    (await this.ready).rejectSuggestion(id);
+  }
+  async acceptAllSuggestions(): Promise<void> {
+    (await this.ready).acceptAllSuggestions();
+  }
+  async rejectAllSuggestions(): Promise<void> {
+    (await this.ready).rejectAllSuggestions();
+  }
+
+  /** Add a comment thread anchored to the current selection (a rich-text body).
+   *  Resolves to the thread id, or null if there's no selection. */
+  async addComment(body: Fragment): Promise<string | null> {
+    return (await this.ready).addComment(body);
+  }
+  async replyToComment(threadId: string, body: Fragment): Promise<void> {
+    (await this.ready).replyToComment(threadId, body);
+  }
+  async resolveThread(threadId: string, resolved = true): Promise<void> {
+    (await this.ready).resolveThread(threadId, resolved);
   }
 
   getDocId(): string | null {

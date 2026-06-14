@@ -6,7 +6,10 @@ import { showIdentityPopup } from "./app/identityPopup";
 import { WordCanvas } from "./wordcanvas";
 
 const params = new URLSearchParams(location.search);
-const backend = params.get("backend");
+// `?backend=` wins; otherwise fall back to VITE_BACKEND (set by `npm run
+// dev:online`), so online mode works without appending the query param.
+const backend =
+  params.get("backend") ?? (import.meta.env as Record<string, string | undefined>).VITE_BACKEND ?? null;
 // `?doc` is the canonical param (e.g. the upload redirect target); `?collab` is
 // the older alias kept working.
 const collab = params.get("doc") ?? params.get("collab");

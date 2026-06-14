@@ -9,6 +9,9 @@ export interface EditorShell {
   outline: HTMLElement;
   ruler: HTMLDivElement;
   app: HTMLDivElement;
+  /** Right-docked review pane (track changes + comments) — in-flow like the
+   *  outline drawer, so it shrinks the editor rather than overlaying it. */
+  review: HTMLElement;
   statusbar: HTMLDivElement;
 }
 
@@ -30,12 +33,13 @@ export function buildShell(container: HTMLElement): EditorShell {
   const editorpane = div("cw-editorpane") as HTMLDivElement;
   const ruler = div("cw-ruler") as HTMLDivElement;
   const app = div("cw-app") as HTMLDivElement;
+  const review = div("cw-review", "aside");
   const statusbar = div("cw-statusbar") as HTMLDivElement;
 
   editorpane.append(ruler, app);
-  workarea.append(outline, editorpane);
+  workarea.append(outline, editorpane, review);
   root.append(toolbar, workarea, statusbar);
   container.appendChild(root);
 
-  return { root, toolbar, outline, ruler, app, statusbar };
+  return { root, toolbar, outline, ruler, app, review, statusbar };
 }

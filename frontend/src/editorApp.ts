@@ -1,8 +1,8 @@
-import { configureIds, deserializeDocument, freshId, reconstruct, serializeDocument, type Change, type DocSelection, type Document } from "@cw/shared";
+import { bakeReview, colorForId, configureIds, deserializeDocument, freshId, reconstruct, serializeDocument, type Change, type DocSelection, type Document, type Fragment, type ReviewLayer } from "@cw/shared";
 import { emptyParagraphFor } from "./builder/blockFactory";
 import { mediaStore, rehydrateDocMedia } from "./media/store";
 import { SyncClient } from "./sync/SyncClient";
-import { createEditor, type CurrentFormat } from "./index";
+import { createEditor, type CurrentFormat, type EditMode, type ReviewOpEnvelope } from "./index";
 import type { Command } from "./editor/state";
 import { createLayoutEngine } from "./layout/engine";
 import { sampleDoc } from "./model/sampleDoc";
@@ -15,7 +15,7 @@ import type { EditorHandle, WordCanvasRuntime } from "./app/runtime";
 import { buildShell } from "./app/shell";
 import { ensureWordCanvasStyles } from "./ui/styles";
 import { showContextMenu, type MenuEntry } from "./ui/contextMenu";
-import { loadCollabDocument, publishDocument } from "./sync/collab";
+import { loadCollabDocument, loadCollabReview, publishDocument } from "./sync/collab";
 import { showBusy } from "./app/busyOverlay";
 // Ribbon/toolbar command set + style helpers + icons — the chrome, not the core.
 // (Hoisted here from the toolbar block; ES imports must be top-level, and the
@@ -181,14 +181,33 @@ let toggleRuler: () => boolean = () => false;
 let refreshImageBar: () => void = () => {};
 let refreshBookmarks: () => void = () => {};
 let toggleBookmarks: () => void = () => {};
+let refreshReview: () => void = () => {};
+let toggleReview: () => void = () => {};
+let syncMode: () => void = () => {};
+// Ships a locally-authored review op on the collab review channel (assigned by
+// the sync wiring; no-op offline). Forward-declared so editorOpts can reference it.
+let onLocalReviewOp: (env: ReviewOpEnvelope) => void = () => {};
 const editorOpts = {
   engine,
   readonly,
+  ...(runtime.mode ? { mode: runtime.mode } : {}),
+  ...(runtime.allowedModes ? { allowedModes: runtime.allowedModes } : {}),
+  ...(runtime.user ? { user: runtime.user } : {}),
   ...(collabId !== null ? { docId: collabId } : {}),
   // In a collab session, ship each recorded local edit to the server.
   onChangeRecorded: (change: Change) => {
     sync?.localEdit(change.ops);
   },
+  // Review overlay: re-emit changes to the embedder + ship review ops to peers.
+  onReviewChanged: (review: ReviewLayer) => {
+    runtime.onEvent?.({ type: "reviewChanged", review });
+    refreshReview();
+  },
+  onModeChanged: (mode: EditMode) => {
+    runtime.onEvent?.({ type: "modeChanged", mode });
+    syncMode();
+  },
+  onReviewOpRecorded: (env: ReviewOpEnvelope) => onLocalReviewOp(env),
   // Broadcast the local caret to collaborators on every move.
   onSelectionChange: (sel: DocSelection | null) => {
     sync?.localPresence(sel);
@@ -231,11 +250,33 @@ const connectSync = (docId: string, startVersion: number): SyncClient => {
     },
   });
   s.connect();
+  // Ship locally-authored review ops on this socket's review channel.
+  onLocalReviewOp = (env) => s.localReviewOp(env);
   return s;
+};
+
+// Race-safe review rehydration for a JOINED session: hold inbound review ops,
+// wait until the socket is in the room, fetch the rehydrated snapshot, seed it,
+// then replay the held ops (idempotent) so a review op landing during the
+// HTTP-load → ws-handshake window isn't lost. REVIEW.md §6.
+const rehydrateReviewOnJoin = (s: SyncClient, docId: string): void => {
+  if (!BACKEND_HTTP) return;
+  s.holdReview();
+  void (async () => {
+    await s.whenOpen().catch(() => {});
+    try {
+      editor.seedReview(await loadCollabReview(BACKEND_HTTP, docId));
+    } catch (e) {
+      console.error("[collab] review rehydrate failed", e);
+    } finally {
+      s.markReviewReady(); // always release the hold, even if the fetch failed
+    }
+  })();
 };
 
 if (collabId !== null && BACKEND_WS) {
   sync = connectSync(collabId, collabVersion);
+  rehydrateReviewOnJoin(sync, collabId);
   console.log(`[collab] connected to ${BACKEND_WS}/ws?doc=${collabId}`);
 }
 
@@ -810,7 +851,10 @@ if (toolbar) {
 
   const exportAs = async (format: ExportFormat): Promise<void> => {
     try {
-      const { bytes, warnings } = await exportDocument(editor.getDocument(), format);
+      // Bake the review overlay into a clean doc (default: reject-all = original
+      // baseline) so the review-blind writer emits a plain file.
+      const baked = bakeReview(editor.getDocument(), editor.getReview(), "reject");
+      const { bytes, warnings } = await exportDocument(baked, format);
       const mime =
         format === "pdf"
           ? "application/pdf"
@@ -1283,6 +1327,38 @@ if (toolbar) {
   rulerBtn.classList.add("active"); // ruler shows by default
   stub(ICONS.marks, "Show/hide formatting marks");
   if (online) btn(ICONS.activity, "Activity — who created/edited this document and when", () => toggleActivity());
+
+  // ---- Review controls live in the ribbon HEADER (right of the tab strip,
+  //      by the collapse button) so the mode switch + pane toggle are reachable
+  //      from any tab — not buried inside the View tab.
+  const MODE_LABELS: Array<[EditMode, string]> = [["edit", "Editing"], ["suggest", "Suggesting"], ["view", "Viewing"]];
+  const allowedModesUi = runtime.allowedModes;
+  const headerReview = el("div", "cw-header-review");
+  const modeSel = el("select", "cw-mode-select");
+  modeSel.title = "Editing mode";
+  for (const [v, l] of MODE_LABELS) {
+    if (allowedModesUi && !allowedModesUi.includes(v)) continue;
+    const o = el("option");
+    o.value = v;
+    o.textContent = l;
+    modeSel.appendChild(o);
+  }
+  modeSel.value = editor.getMode();
+  modeSel.addEventListener("change", () => {
+    if (!editor.setMode(modeSel.value as EditMode)) modeSel.value = editor.getMode(); // rejected → revert
+    editor.focus();
+  });
+  syncMode = (): void => {
+    modeSel.value = editor.getMode();
+  };
+  const reviewBtn = el("button", "cw-header-btn");
+  reviewBtn.textContent = "Review";
+  reviewBtn.title = "Suggestions & comments — review, accept, reject";
+  reviewBtn.addEventListener("mousedown", (e) => e.preventDefault());
+  reviewBtn.addEventListener("click", () => toggleReview());
+  headerReview.append(modeSel, reviewBtn);
+  tabsBar.appendChild(headerReview);
+
   group(view, "Zoom");
   txtBtn("−", "Zoom out", () => editor.setZoom(editor.getZoom() / 1.1), "font-size:15px;");
   const zoomSel = select("Zoom level", 66);
@@ -1600,10 +1676,193 @@ if (toolbar) {
     };
   }
 
+  // ---- Review pane (track changes + comments) — docked right, in-shell ----
+  const COMMENT_STYLE = { fontFamily: "Georgia, serif", fontSizePx: 16, bold: false, italic: false, underline: false, strikethrough: false, color: "#202124" };
+  const commentFragment = (text: string): Fragment => [{ text, style: COMMENT_STYLE }];
+  {
+    const reviewEl = shell.review;
+    const authorName = (a: { firstName: string; lastName: string }): string => `${a.firstName} ${a.lastName}`.trim() || "Anonymous";
+    const initials = (a: { firstName: string; lastName: string }): string => ((a.firstName[0] ?? "?") + (a.lastName[0] ?? "")).toUpperCase();
+    const timeAgo = (ms: number): string => {
+      const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+      if (s < 60) return "just now";
+      const m = Math.round(s / 60);
+      if (m < 60) return `${m}m ago`;
+      const h = Math.round(m / 60);
+      if (h < 24) return `${h}h ago`;
+      return `${Math.round(h / 24)}d ago`;
+    };
+    const mkBtn = (cls: string, label: string, onClick: () => void): HTMLButtonElement => {
+      const b = el("button") as HTMLButtonElement;
+      b.className = cls;
+      b.textContent = label;
+      b.addEventListener("mousedown", (e) => e.preventDefault());
+      b.addEventListener("click", onClick);
+      return b;
+    };
+    const avatar = (a: { id: string; firstName: string; lastName: string }): HTMLElement => {
+      const av = el("div", "cw-avatar");
+      av.style.background = colorForId(a.id);
+      av.textContent = initials(a);
+      return av;
+    };
+
+    // header
+    const head = el("div", "cw-review-head");
+    const title = el("span", "cw-review-title");
+    title.textContent = "Review";
+    const closeBtn = mkBtn("cw-review-close", "×", () => setOpen(false));
+    closeBtn.title = "Close";
+    head.append(title, closeBtn);
+
+    // tabs
+    const tabs = el("div", "cw-review-tabs");
+    const tabSug = el("button", "cw-review-tab") as HTMLButtonElement;
+    const tabCom = el("button", "cw-review-tab") as HTMLButtonElement;
+    const sugPill = el("span", "cw-pill");
+    const comPill = el("span", "cw-pill");
+    tabSug.append(document.createTextNode("Suggestions "), sugPill);
+    tabCom.append(document.createTextNode("Comments "), comPill);
+    tabs.append(tabSug, tabCom);
+
+    const body = el("div", "cw-review-body");
+    reviewEl.append(head, tabs, body);
+
+    let activeTab: "suggestions" | "comments" = "suggestions";
+
+    const emptyState = (ico: string, text: string): HTMLElement => {
+      const e = el("div", "cw-review-empty");
+      const i = el("div", "cw-review-empty-ico");
+      i.textContent = ico;
+      const t = el("div");
+      t.textContent = text;
+      e.append(i, t);
+      return e;
+    };
+
+    const renderSuggestions = (review: ReturnType<typeof editor.getReview>): void => {
+      if (review.suggestions.length === 0) {
+        body.append(emptyState("✦", "No suggestions yet. Switch the mode to Suggesting and edit — your changes become tracked proposals here."));
+        return;
+      }
+      const bar = el("div", "cw-review-actions");
+      bar.append(
+        mkBtn("cw-btn cw-btn-accept cw-btn-sm", "✓ Accept all", () => { editor.acceptAllSuggestions(); editor.focus(); }),
+        mkBtn("cw-btn cw-btn-reject cw-btn-sm", "✗ Reject all", () => { editor.rejectAllSuggestions(); editor.focus(); }),
+      );
+      body.append(bar);
+      for (const s of review.suggestions) {
+        const card = el("div", "cw-sug");
+        card.style.setProperty("--cw-author", colorForId(s.author.id));
+        const top = el("div", "cw-sug-top");
+        const kind = el("div", "cw-sug-kind");
+        const dot = el("span", "cw-dot");
+        const verb = s.kind === "insert" ? "Insertion" : s.kind === "delete" ? "Deletion" : "Formatting";
+        kind.append(dot, document.createTextNode(verb));
+        const meta = el("div", "cw-sug-meta");
+        meta.textContent = `${authorName(s.author)} · ${timeAgo(s.createdAt)}`;
+        top.append(kind, meta);
+        const actions = el("div", "cw-sug-actions");
+        actions.append(
+          mkBtn("cw-btn cw-btn-accept cw-btn-sm", "✓ Accept", () => { editor.acceptSuggestion(s.id); editor.focus(); }),
+          mkBtn("cw-btn cw-btn-reject cw-btn-sm", "✗ Reject", () => { editor.rejectSuggestion(s.id); editor.focus(); }),
+        );
+        card.append(top, actions);
+        card.addEventListener("click", (e) => {
+          if (!(e.target as HTMLElement).closest("button")) editor.revealReview(s.id);
+        });
+        body.append(card);
+      }
+    };
+
+    const renderComments = (review: ReturnType<typeof editor.getReview>): void => {
+      if (review.threads.length === 0) {
+        body.append(emptyState("💬", "No comments yet. Select text in the document and click 💬 in the toolbar to start a discussion."));
+        return;
+      }
+      for (const t of review.threads) {
+        const card = el("div", t.status === "resolved" ? "cw-thread resolved" : "cw-thread");
+        for (const c of t.comments) {
+          const cm = el("div", "cw-comment");
+          const main = el("div", "cw-comment-main");
+          const who = el("div", "cw-comment-who");
+          who.textContent = authorName(c.author);
+          const when = el("span", "cw-comment-when");
+          when.textContent = timeAgo(c.createdAt);
+          who.append(when);
+          const text = el("div", "cw-comment-body");
+          text.textContent = c.body.map((r) => r.text).join("");
+          main.append(who, text);
+          cm.append(avatar(c.author), main);
+          card.append(cm);
+        }
+        // inline reply editor (Google-Docs-style, no prompt)
+        const replyBox = el("div", "cw-reply-box");
+        const replyTa = el("textarea") as HTMLTextAreaElement;
+        replyTa.placeholder = "Reply…";
+        replyTa.style.cssText = "flex:1 1 auto;resize:none;min-height:34px;border:1px solid #dadce0;border-radius:6px;padding:6px 8px;font:13px/1.4 inherit;outline:none;";
+        const replySend = mkBtn("cw-btn cw-btn-primary cw-btn-sm", "Reply", () => {
+          const v = replyTa.value.trim();
+          if (!v) return;
+          editor.replyToComment(t.id, commentFragment(v));
+          editor.focus();
+        });
+        replyBox.append(replyTa, replySend);
+        const actions = el("div", "cw-thread-actions");
+        if (t.status === "resolved") {
+          const tag = el("span", "cw-resolved-tag");
+          tag.textContent = "✓ Resolved";
+          actions.append(tag);
+          actions.append(mkBtn("cw-btn cw-btn-ghost cw-btn-sm", "Reopen", () => { editor.resolveThread(t.id, false); editor.focus(); }));
+        } else {
+          actions.append(
+            mkBtn("cw-btn cw-btn-ghost cw-btn-sm", "Reply", () => {
+              replyBox.classList.add("open");
+              replyTa.focus();
+            }),
+            mkBtn("cw-btn cw-btn-ghost cw-btn-sm", "Resolve", () => { editor.resolveThread(t.id, true); editor.focus(); }),
+          );
+        }
+        card.append(replyBox, actions);
+        card.addEventListener("click", (e) => {
+          if (!(e.target as HTMLElement).closest("button, textarea, .cw-reply-box")) editor.revealReview(t.id);
+        });
+        body.append(card);
+      }
+    };
+
+    const build = (): void => {
+      const review = editor.getReview();
+      sugPill.textContent = String(review.suggestions.length);
+      comPill.textContent = String(review.threads.filter((t) => t.status === "open").length);
+      tabSug.classList.toggle("active", activeTab === "suggestions");
+      tabCom.classList.toggle("active", activeTab === "comments");
+      body.textContent = "";
+      if (activeTab === "suggestions") renderSuggestions(review);
+      else renderComments(review);
+    };
+    tabSug.addEventListener("click", () => { activeTab = "suggestions"; build(); });
+    tabCom.addEventListener("click", () => { activeTab = "comments"; build(); });
+
+    let open = false;
+    const setOpen = (v: boolean): void => {
+      open = v;
+      reviewEl.classList.toggle("open", v);
+      reviewBtn.classList.toggle("active", v);
+      if (v) build();
+    };
+    toggleReview = (): void => setOpen(!open);
+    refreshReview = (): void => {
+      if (open) build();
+    };
+  }
+
   // Collapse / expand the ribbon body (keeps the tab strip). A pinned chevron
   // on the right of the tab strip toggles it; clicking any tab re-pins.
   const collapseBtn = el("button", "rib-tab");
-  collapseBtn.style.marginLeft = "auto";
+  // headerReview carries the single margin-left:auto that pushes the right
+  // cluster to the corner; the collapse chevron just sits after it with a gap.
+  collapseBtn.style.marginLeft = "6px";
   collapseBtn.innerHTML = chevron(true);
   const setCollapsed = (v: boolean): void => {
     toolbar.classList.toggle("collapsed", v);
@@ -2202,6 +2461,16 @@ const handle: EditorHandle = {
   share: () => goOnlineWithCurrentDoc(),
   getDocId: () => collabId,
   getShareLink: () => shareLink,
+  getMode: () => editor.getMode(),
+  setMode: (mode) => editor.setMode(mode),
+  getReview: () => editor.getReview(),
+  acceptSuggestion: (id) => editor.acceptSuggestion(id),
+  rejectSuggestion: (id) => editor.rejectSuggestion(id),
+  acceptAllSuggestions: () => editor.acceptAllSuggestions(),
+  rejectAllSuggestions: () => editor.rejectAllSuggestions(),
+  addComment: (body) => editor.addComment(body),
+  replyToComment: (threadId, body) => editor.replyToComment(threadId, body),
+  resolveThread: (threadId, resolved) => editor.resolveThread(threadId, resolved),
   destroy: () => {
     teardown.abort(); // drop every global window/document listener this instance added
     for (const el of detachables) el.remove(); // body-level floats (find bar, image bar, …)

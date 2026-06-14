@@ -46,6 +46,21 @@ const CSS = `
 .rib-tab.file { background: #2b579a; color: #fff; font-weight: 600; }
 .rib-tab.file:hover { background: #21457e; }
 
+/* review controls docked in the ribbon header (right of the tab strip) */
+.cw-header-review { margin-left: auto; display: flex; align-items: center; gap: 8px; padding-bottom: 3px; }
+.cw-mode-select {
+  height: 26px; border: 1px solid #d2d0ce; border-radius: 5px; background: #fff;
+  font: inherit; font-size: 12.5px; color: #323130; padding: 0 6px; cursor: pointer;
+}
+.cw-mode-select:hover { border-color: #b3b0ad; }
+.cw-header-btn {
+  height: 26px; border: 1px solid #d2d0ce; border-radius: 5px; background: #fff; cursor: pointer;
+  font: inherit; font-size: 12.5px; font-weight: 600; color: #2b579a; padding: 0 12px;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.cw-header-btn:hover { background: #f3f2f1; }
+.cw-header-btn.active { background: #2b579a; color: #fff; border-color: #2b579a; }
+
 /* --- ribbon body: one panel visible at a time --- */
 .rib-bodies {
   background: #fff; border-top: 1px solid #e1dfdd; border-bottom: 1px solid #e1dfdd;
@@ -172,6 +187,127 @@ const CSS = `
 .outline-item.active { background: #eef3fb; border-left-color: #2b579a; color: #2b579a; font-weight: 600; }
 .outline-empty { padding: 14px; color: #80868b; font-size: 12px; line-height: 1.4; }
 
+/* ===== Review pane (track changes + comments) ======================= */
+.cw-review {
+  flex: 0 0 320px; width: 320px; min-height: 0; display: none;
+  flex-direction: column; background: #f7f8fa; border-left: 1px solid #e1dfdd;
+  font-size: 13px; color: #202124;
+}
+.cw-review.open { display: flex; }
+.cw-review-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 10px 10px 14px; background: #fff; border-bottom: 1px solid #e8eaed;
+}
+.cw-review-head .cw-review-title { font-size: 14px; font-weight: 600; color: #202124; }
+.cw-review-head .cw-review-close {
+  margin-left: auto; border: none; background: transparent; cursor: pointer;
+  color: #5f6368; width: 28px; height: 28px; border-radius: 50%; font-size: 18px; line-height: 1;
+}
+.cw-review-head .cw-review-close:hover { background: #f1f3f4; }
+/* tab strip */
+.cw-review-tabs { display: flex; background: #fff; border-bottom: 1px solid #e8eaed; padding: 0 8px; }
+.cw-review-tab {
+  flex: 1 1 0; border: none; background: transparent; cursor: pointer;
+  padding: 9px 4px 8px; font-size: 13px; font-weight: 600; color: #5f6368;
+  border-bottom: 2px solid transparent; display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.cw-review-tab:hover { color: #202124; }
+.cw-review-tab.active { color: #1a73e8; border-bottom-color: #1a73e8; }
+.cw-review-tab .cw-pill {
+  background: #e8eaed; color: #5f6368; border-radius: 10px; padding: 0 7px;
+  font-size: 11px; font-weight: 700; min-width: 18px; text-align: center;
+}
+.cw-review-tab.active .cw-pill { background: #d2e3fc; color: #1a73e8; }
+/* sticky bulk-action bar */
+.cw-review-actions {
+  display: flex; gap: 8px; padding: 8px 12px; background: #f7f8fa;
+  border-bottom: 1px solid #e8eaed; position: sticky; top: 0; z-index: 1;
+}
+.cw-review-body { flex: 1 1 auto; overflow-y: auto; padding: 10px 12px; }
+.cw-review-empty { padding: 28px 16px; text-align: center; color: #80868b; font-size: 12.5px; line-height: 1.5; }
+.cw-review-empty .cw-review-empty-ico { font-size: 26px; display: block; margin-bottom: 8px; opacity: .6; }
+
+/* buttons */
+.cw-btn {
+  border: 1px solid #dadce0; background: #fff; color: #3c4043; cursor: pointer;
+  border-radius: 6px; padding: 5px 12px; font-size: 12.5px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 5px; line-height: 1;
+}
+.cw-btn:hover { background: #f8f9fa; box-shadow: 0 1px 2px rgba(60,64,67,.15); }
+.cw-btn.cw-btn-primary { background: #1a73e8; border-color: #1a73e8; color: #fff; }
+.cw-btn.cw-btn-primary:hover { background: #1b66c9; }
+.cw-btn.cw-btn-accept { color: #137333; border-color: #c6e0c9; background: #e6f4ea; }
+.cw-btn.cw-btn-accept:hover { background: #d3ecd9; }
+.cw-btn.cw-btn-reject { color: #c5221f; border-color: #f3c7c5; background: #fce8e6; }
+.cw-btn.cw-btn-reject:hover { background: #f9d6d3; }
+.cw-btn.cw-btn-ghost { border-color: transparent; background: transparent; color: #1a73e8; padding: 4px 6px; }
+.cw-btn.cw-btn-ghost:hover { background: #e8f0fe; box-shadow: none; }
+.cw-btn-sm { padding: 4px 9px; font-size: 12px; }
+
+/* suggestion card */
+.cw-sug {
+  background: #fff; border: 1px solid #e8eaed; border-left: 3px solid var(--cw-author, #1a73e8);
+  border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(60,64,67,.06);
+  cursor: pointer;
+}
+.cw-sug:hover { background: #f8f9fa; border-color: #d2e3fc; }
+.cw-sug-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.cw-sug-kind { font-weight: 600; font-size: 12.5px; color: #202124; display: flex; align-items: center; gap: 6px; }
+.cw-sug-kind .cw-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cw-author, #1a73e8); }
+.cw-sug-meta { margin-left: auto; color: #80868b; font-size: 11.5px; white-space: nowrap; }
+.cw-sug-actions { display: flex; gap: 8px; }
+
+/* avatar + comment card */
+.cw-avatar {
+  width: 28px; height: 28px; border-radius: 50%; flex: 0 0 28px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 12px; font-weight: 700; text-transform: uppercase;
+}
+.cw-thread {
+  background: #fff; border: 1px solid #e8eaed; border-radius: 8px;
+  padding: 12px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(60,64,67,.06);
+  cursor: pointer;
+}
+.cw-thread:hover { border-color: #d2e3fc; }
+.cw-thread.resolved { opacity: .62; }
+.cw-comment { display: flex; gap: 9px; margin-bottom: 10px; }
+.cw-comment:last-of-type { margin-bottom: 6px; }
+.cw-comment-main { min-width: 0; flex: 1 1 auto; }
+.cw-comment-who { font-weight: 600; font-size: 12.5px; color: #202124; }
+.cw-comment-when { color: #80868b; font-size: 11px; margin-left: 6px; font-weight: 400; }
+.cw-comment-body { color: #3c4043; font-size: 13px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; margin-top: 2px; }
+.cw-thread-actions { display: flex; gap: 4px; align-items: center; padding-top: 6px; border-top: 1px solid #f1f3f4; }
+.cw-thread-actions .cw-resolved-tag { color: #137333; font-size: 11.5px; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+
+/* inline reply editor inside a thread */
+.cw-reply-box { display: none; gap: 8px; margin-top: 8px; }
+.cw-reply-box.open { display: flex; }
+
+/* ===== Comment composer bubble (Google-Docs style, floats by selection) === */
+.cw-comment-bubble {
+  position: absolute; z-index: 60; width: 300px;
+  background: #fff; border: 1px solid #e0e0e0; border-radius: 10px;
+  box-shadow: 0 6px 22px rgba(60,64,67,.28); padding: 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.cw-comment-bubble .cw-bubble-row { display: flex; gap: 9px; align-items: flex-start; }
+.cw-comment-bubble textarea {
+  flex: 1 1 auto; resize: none; min-height: 48px; max-height: 180px;
+  border: none; outline: none; font: 13px/1.45 inherit; color: #202124;
+  padding: 4px 0; background: transparent;
+}
+.cw-comment-bubble .cw-bubble-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.cw-comment-bubble .cw-btn.cw-btn-primary:disabled { opacity: .45; cursor: default; box-shadow: none; }
+
+/* floating "leave a comment" chip shown beside a suggest-mode selection */
+.cw-comment-chip {
+  position: absolute; z-index: 55; width: 34px; height: 34px; border-radius: 50%;
+  border: 1px solid #e0e0e0; background: #fff; cursor: pointer; font-size: 16px;
+  box-shadow: 0 2px 8px rgba(60,64,67,.28); display: flex; align-items: center; justify-content: center;
+  padding: 0; line-height: 1; transition: transform .08s ease, box-shadow .08s ease;
+}
+.cw-comment-chip:hover { transform: scale(1.08); box-shadow: 0 3px 12px rgba(60,64,67,.34); background: #f8f9fa; }
+
 /* collapsed ribbon: keep the tab strip, hide the body */
 .cw-toolbar.collapsed .rib-bodies { display: none; }
 
@@ -283,6 +419,7 @@ const CSS = `
   /* Outline: overlay the page instead of stealing 264px of a ~360px screen. */
   .cw-workarea { position: relative; }
   .cw-outline { position: absolute; left: 0; top: 0; bottom: 0; height: auto; width: min(264px, 80vw); z-index: 30; box-shadow: 2px 0 16px rgba(0,0,0,0.18); }
+  .cw-review { position: absolute; right: 0; top: 0; bottom: 0; height: auto; width: min(320px, 88vw); z-index: 31; box-shadow: -2px 0 16px rgba(0,0,0,0.18); }
 
   /* Status bar: tappable zoom controls. */
   .cw-statusbar { height: 36px; }

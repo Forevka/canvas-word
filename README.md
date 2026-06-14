@@ -56,7 +56,7 @@ and an export pipeline for `.docx` and PDF (`frontend/src/export/`, see
 - Full OOXML fidelity. We target a **clean, honest subset** that round-trips;
   exotic constructs degrade with explicit warnings, never silently.
 - Being a rich-text *component*. This is a paged document editor; if you need
-  comments-in-a-sidebar rich text, use Lexical.
+  an inline rich-text field in a form, use Lexical.
 
 ### Where this sits next to the commercial editors
 
@@ -321,6 +321,23 @@ snapshot + parallel media upload) and returns a share link; remote
 collaborators' carets **and selections** render with attribution; an activity
 panel shows who created/edited and when; identity is owned by the embedder.
 
+**Track changes & comments (review)** — a three-way mode switch (Editing /
+Suggesting / Viewing) in the ribbon header. In **Suggesting** mode every edit
+becomes a tracked, attributed proposal: insertions paint as author-colored
+underlines, deletions as strikethroughs (**non-destructive — the text stays in
+the model until accepted**), with margin change-bars. **Comments** thread on a
+text range with reply + resolve, a Google-Docs-style floating composer bubble
+(an "add a comment" chip auto-appears on selection in suggest mode), and a docked
+**Review pane** (right side, like the outline drawer) that lists suggestions and
+comment threads with Accept / Reject (and accept-/reject-all), click-to-scroll
+navigation, and live counts. Everything syncs in real time on a dedicated review
+channel (idempotent, causally delivered) and **rehydrates on join** — a user
+opening a shared document sees existing feedback, anchored correctly even after
+later edits. Crucially this is an **overlay extension**: the OOXML-faithful core
+model and the `.docx`/PDF writers never see it — anchors ride the same
+`mapPosition` rebasing as bookmarks, and the default export *bakes* the overlay
+into a clean document (reject-all = the original baseline). See [REVIEW.md](./REVIEW.md).
+
 **Bookmarks** — character-range bookmarks (body, table cells, headers/footers)
 that rebase live as the document is edited; a Bookmarks panel lists them with
 Go-To navigation and management ops; they back TOC and cross-reference targets.
@@ -357,7 +374,9 @@ Other workspaces and the full stack:
 
 ```sh
 npm run build:lib     # build the @forevka/wordcanvas library bundle (dist-lib)
-npm run db:up         # start Postgres + the collaboration backend (docker compose)
+npm run dev:online    # one command: Postgres + backend + frontend in ONLINE mode
+                      #   (Share button, live collaboration, track-changes/comments sync)
+npm run db:up         # start Postgres + apply migrations (docker compose; backend runs separately)
 npm run dev:dashboard # admin dashboard dev server
 npm run dev:example   # the embed-live example (consumes the built library)
 npm run dev:playground # document-builder playground (code + JSON → live preview)
@@ -392,6 +411,9 @@ Everything in it is done; the editor covers ~95% of everyday Word usage.
 - Raster browser-print was skipped — use PDF export instead.
 - Layout caches don't evict deleted blocks (bounded, harmless, tracked).
 - `font-feature-settings` / optical sizing unsupported (pretext limitation).
+- Track-changes V1 tracks single insert/delete/format edits; structural edits
+  (paragraph split/merge, table ops) and paste pass through untracked in suggest
+  mode, and comment bodies are plain text (rich + structural suggestions are V2).
 
 ## Implementation history
 
@@ -407,3 +429,4 @@ Everything in it is done; the editor covers ~95% of everyday Word usage.
 | 8 | Roadmap close-out: lists, find/replace, hyperlinks, sub/super, format painter, autocorrect, soft breaks, sections, columns, header variants, fields/TOC, footnotes |
 | 9 | `.docx` + page-accurate PDF export (isomorphic browser/Node, bundled metric-clone fonts) |
 | 10 | Product layer: OT collaboration + Postgres backend, admin dashboard, integration tokens + session webhooks, `@forevka/wordcanvas` npm package, containerized VPS deploy behind Caddy |
+| 11 | Track changes & comments: edit/suggest/view modes, non-destructive tracked insert/delete/format, threaded comments with a floating composer, docked Review pane (accept/reject + scroll-to), real-time review sync with join rehydration, default export bake — all an overlay extension that never touches the OOXML core (see [REVIEW.md](./REVIEW.md)) |

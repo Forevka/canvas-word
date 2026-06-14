@@ -3,7 +3,7 @@
 // move content-addressed media over the wire so images survive across clients.
 // Reuses @cw/shared serialization and the session media store.
 
-import { collectMediaIds, serializeDocument, type Document, type UserInfo } from "@cw/shared";
+import { collectMediaIds, emptyReview, serializeDocument, type Document, type ReviewLayer, type UserInfo } from "@cw/shared";
 import { mediaStore, rehydrateDocMedia } from "../media/store";
 
 /** Max media uploads in flight at once. They share one HTTP/2 connection and
@@ -95,4 +95,18 @@ export async function loadCollabDocument(
     rehydrateDocMedia(payload.doc); // fill the blanks we just fetched
   }
   return { doc: payload.doc, version: payload.version };
+}
+
+/** Load the document's review overlay (track changes + comments), rehydrated to
+ *  head by the server so a joiner sees existing feedback correctly placed.
+ *  Returns an empty layer on any failure (review is non-critical to opening). */
+export async function loadCollabReview(backendUrl: string, docId: string): Promise<ReviewLayer> {
+  try {
+    const res = await fetch(`${backendUrl}/docs/${encodeURIComponent(docId)}/review`);
+    if (!res.ok) return emptyReview(docId);
+    const payload = (await res.json()) as { layer?: ReviewLayer };
+    return payload.layer ?? emptyReview(docId);
+  } catch {
+    return emptyReview(docId);
+  }
 }

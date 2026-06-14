@@ -10,6 +10,7 @@ const filled = (body: string): string =>
 
 export const ICONS = {
   bookmark: svg(`<path d="M4 2.5h8v11l-4-3-4 3z"/>`),
+  comment: svg(`<path d="M2.5 3.5h11v8H7l-3 2.5V11.5H2.5z"/>`),
   undo: svg(`<path d="M5.5 3.5 2.5 6.5l3 3"/><path d="M2.5 6.5h7a4 4 0 0 1 0 8H6"/>`),
   redo: svg(`<path d="M10.5 3.5l3 3-3 3"/><path d="M13.5 6.5h-7a4 4 0 0 0 0 8H10"/>`),
   painter: svg(

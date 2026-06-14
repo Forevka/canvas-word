@@ -5,6 +5,7 @@
 
 import type { Op } from "@cw/shared";
 import type { DocSelection } from "@cw/shared";
+import type { ReviewOp } from "@cw/shared";
 import type { TransactionOrigin } from "./state";
 
 export interface UndoEntry {
@@ -12,6 +13,12 @@ export interface UndoEntry {
   ops: Op[];
   /** Inverse ops (for undo), already in reverse application order. */
   inverseOps: Op[];
+  /** Review-layer forward ops this action also applied (suggest mode), in
+   *  application order — replayed on redo. Empty for plain text edits. */
+  reviewOps?: ReviewOp[];
+  /** Review-layer inverses, in reverse application order — replayed on undo,
+   *  AFTER the text inverses (so anchors are valid when records are restored). */
+  reviewInverses?: ReviewOp[];
   selectionBefore: DocSelection | null;
   selectionAfter: DocSelection | null;
   origin: TransactionOrigin;
@@ -35,6 +42,8 @@ export class UndoManager {
     ) {
       last.ops.push(...entry.ops);
       last.inverseOps = [...entry.inverseOps, ...last.inverseOps];
+      if (entry.reviewOps?.length) last.reviewOps = [...(last.reviewOps ?? []), ...entry.reviewOps];
+      if (entry.reviewInverses?.length) last.reviewInverses = [...entry.reviewInverses, ...(last.reviewInverses ?? [])];
       last.selectionAfter = entry.selectionAfter;
       last.time = entry.time;
       return;

@@ -9,7 +9,7 @@
 // different store without touching the server.
 
 import type { Pool } from "pg";
-import { SNAPSHOT_VERSION, transformOps, type Change, type Op, type SerializedDocument, type UserInfo } from "@cw/shared";
+import { SNAPSHOT_VERSION, transformOps, type Change, type Op, type ReviewOpEnvelope, type SerializedDocument, type UserInfo } from "@cw/shared";
 
 export interface DocSnapshotRecord {
   docId: string;
@@ -144,6 +144,12 @@ export interface ChangeStore {
   getActivity(docId: string): Promise<DocumentActivity | null>;
   putMedia(rec: MediaRecord): Promise<void>;
   getMedia(hash: string): Promise<MediaRecord | null>;
+  // ---- review layer (track changes + comments) ----------------------------
+  /** Append a review op to the document's review log (separate from changes). */
+  appendReviewOp(docId: string, env: ReviewOpEnvelope): Promise<void>;
+  /** The review op log in append order — fold through applyReviewOp to rebuild
+   *  the overlay (a late joiner then fast-forwards anchors to head). */
+  getReviewOps(docId: string): Promise<ReviewOpEnvelope[]>;
 }
 
 const CHANGE_COLS = "seq, change_id, base_version, site_id, user_id, origin, ts, ops, selection";
@@ -289,6 +295,25 @@ export class PgChangeStore implements ChangeStore {
     if ((res.rowCount ?? 0) === 0) return null;
     const r = res.rows[0]!;
     return { hash, mime: r.mime, bytes: new Uint8Array(r.bytes) };
+  }
+
+  async appendReviewOp(docId: string, env: ReviewOpEnvelope): Promise<void> {
+    await this.pool.query(
+      "INSERT INTO review_ops (doc_id, op, depends_on_seq, author_id) VALUES ($1, $2, $3, $4)",
+      [docId, JSON.stringify(env.op), env.dependsOnSeq, env.author?.id ?? null],
+    );
+  }
+
+  async getReviewOps(docId: string): Promise<ReviewOpEnvelope[]> {
+    const res = await this.pool.query<{ op: unknown; depends_on_seq: string; author_id: string | null }>(
+      "SELECT op, depends_on_seq, author_id FROM review_ops WHERE doc_id = $1 ORDER BY id ASC",
+      [docId],
+    );
+    return res.rows.map((r) => ({
+      op: r.op as ReviewOpEnvelope["op"],
+      dependsOnSeq: Number(r.depends_on_seq),
+      ...(r.author_id ? { author: { id: r.author_id, firstName: "", lastName: "" } } : {}),
+    }));
   }
 
   async upsertUser(user: UserInfo): Promise<void> {

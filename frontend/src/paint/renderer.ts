@@ -41,6 +41,35 @@ export interface PagePoint {
   y: number;
 }
 
+/** A colored rect for review overlays (insertion underline, deletion strike,
+ *  comment highlight, margin change-bar). x/y/width/height are page-local. */
+export interface ReviewDecoBox extends Rect {
+  color: string;
+}
+
+/** A comment marker drawn in the right margin; threadId drives hit-testing. */
+export interface ReviewPin {
+  pageIndex: number;
+  x: number;
+  y: number;
+  color: string;
+  threadId: string;
+  resolved: boolean;
+}
+
+/** Paint-only review decorations, computed from the review layer + layout tree.
+ *  Metric-neutral (underline/strike/highlight don't change line breaking) → a
+ *  repaint, never a relayout, exactly like search highlights. */
+export interface ReviewDecorations {
+  comments: ReviewDecoBox[];
+  inserts: ReviewDecoBox[];
+  deletes: ReviewDecoBox[];
+  changeBars: ReviewDecoBox[];
+  pins: ReviewPin[];
+}
+
+const EMPTY_REVIEW_DECOS: ReviewDecorations = { comments: [], inserts: [], deletes: [], changeBars: [], pins: [] };
+
 export interface PaintScheduler {
   setTree(tree: LayoutTree): void;
   /** Story-edit affordance: dim the body and mark the band boundary (Word's
@@ -50,6 +79,11 @@ export interface PaintScheduler {
   setSelectionRects(rects: Rect[]): void;
   /** Find-bar match highlights — painted under the selection. */
   setSearchRects(rects: Rect[]): void;
+  /** Track-changes + comment overlays (insertion underline, deletion strike,
+   *  comment highlight + margin pins, change bars). Replaces the whole set. */
+  setReviewDecorations(decos: ReviewDecorations): void;
+  /** The comment thread whose margin pin is at a client point, or null. */
+  reviewPinAt(clientX: number, clientY: number): string | null;
   /** Content-control focus adornment: bounding boxes + a title tab (Word's
    *  gray frame around the active control). Null clears. */
   setSdtAdornment(adorn: { rects: Rect[]; label: string } | null): void;
@@ -109,6 +143,7 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
   let tree: LayoutTree | null = null;
   let selectionRects: Rect[] = [];
   let searchRects: Rect[] = [];
+  let reviewDecos: ReviewDecorations = EMPTY_REVIEW_DECOS;
   let sdtAdorn: { rects: Rect[]; label: string } | null = null;
   let bandEditMode: "header" | "footer" | null = null;
 
@@ -291,6 +326,15 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
       if (r.pageIndex === page.index) ctx.fillRect(r.x, r.y, r.width, r.height);
     }
 
+    // 2c. comment highlight bands (under text, author-tinted)
+    ctx.globalAlpha = 0.16;
+    for (const r of reviewDecos.comments) {
+      if (r.pageIndex !== page.index) continue;
+      ctx.fillStyle = r.color;
+      ctx.fillRect(r.x, r.y, r.width, r.height);
+    }
+    ctx.globalAlpha = 1;
+
     // 2c. content-control adornment: gray frame + title tab (Word's active
     // control chrome). The tab text is UI chrome, not document text — measuring
     // it here doesn't violate the paint-never-measures-layout invariant.
@@ -336,6 +380,34 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
     //    painted through the same block painter, outside the selectable tree.
     if (page.header) for (const b of page.header) paintBlock(ctx, b, page.index);
     if (page.footer) for (const b of page.footer) paintBlock(ctx, b, page.index);
+
+    // 4b. review track-changes overlays (over text): insertion underlines,
+    //     deletion strikes, margin change-bars + comment pins.
+    for (const r of reviewDecos.inserts) {
+      if (r.pageIndex !== page.index) continue;
+      ctx.fillStyle = r.color;
+      ctx.fillRect(r.x, r.y + r.height - 2, r.width, 1.6); // underline at the baseline
+    }
+    for (const r of reviewDecos.deletes) {
+      if (r.pageIndex !== page.index) continue;
+      ctx.fillStyle = r.color;
+      ctx.fillRect(r.x, r.y + r.height / 2 - 0.8, r.width, 1.6); // strike through the middle
+    }
+    for (const r of reviewDecos.changeBars) {
+      if (r.pageIndex !== page.index) continue;
+      ctx.fillStyle = r.color;
+      ctx.fillRect(r.x, r.y, r.width, r.height);
+    }
+    for (const pin of reviewDecos.pins) {
+      if (pin.pageIndex !== page.index) continue;
+      ctx.beginPath();
+      ctx.arc(pin.x, pin.y + 6, 5, 0, Math.PI * 2);
+      ctx.fillStyle = pin.resolved ? "#9aa0a6" : pin.color;
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "#fff";
+      ctx.stroke();
+    }
 
     // 5. story-edit affordance: dim the body, dash the band boundary.
     if (bandEditMode) {
@@ -541,6 +613,34 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
       searchRects = rects;
       for (const i of affected) if (liveCanvases.has(i)) dirty.add(i);
       schedule();
+    },
+
+    setReviewDecorations(decos: ReviewDecorations): void {
+      const all = (d: ReviewDecorations): number[] => [
+        ...d.comments.map((r) => r.pageIndex),
+        ...d.inserts.map((r) => r.pageIndex),
+        ...d.deletes.map((r) => r.pageIndex),
+        ...d.changeBars.map((r) => r.pageIndex),
+        ...d.pins.map((p) => p.pageIndex),
+      ];
+      const affected = new Set([...all(reviewDecos), ...all(decos)]);
+      reviewDecos = decos;
+      for (const i of affected) if (liveCanvases.has(i)) dirty.add(i);
+      schedule();
+    },
+
+    reviewPinAt(clientX: number, clientY: number): string | null {
+      const pt = this.clientToPage(clientX, clientY);
+      if (!pt) return null;
+      let best: { id: string; d2: number } | null = null;
+      for (const pin of reviewDecos.pins) {
+        if (pin.pageIndex !== pt.pageIndex) continue;
+        const dx = pt.x - pin.x;
+        const dy = pt.y - (pin.y + 6);
+        const d2 = dx * dx + dy * dy;
+        if (d2 <= 100 && (!best || d2 < best.d2)) best = { id: pin.threadId, d2 }; // 10px radius
+      }
+      return best ? best.id : null;
     },
 
     setSdtAdornment(adorn: { rects: Rect[]; label: string } | null): void {

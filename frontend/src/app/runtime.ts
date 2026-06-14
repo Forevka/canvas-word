@@ -3,7 +3,10 @@
 // which mounts one editor and calls onReady with a handle. The runtime is a plain
 // per-call value (no module singleton), so multiple editors coexist on one page.
 
-import type { Document, UserInfo } from "@cw/shared";
+import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
+import type { EditMode } from "../index";
+
+export type { EditMode };
 
 /** One other collaborator currently in the document. */
 export interface Participant {
@@ -17,7 +20,9 @@ export type WordCanvasEvent =
   | { type: "shared"; docId: string; url: string }
   | { type: "userEntered"; siteId: string; user?: UserInfo | undefined }
   | { type: "userLeave"; siteId: string; user?: UserInfo | undefined }
-  | { type: "presence"; participants: Participant[] };
+  | { type: "presence"; participants: Participant[] }
+  | { type: "modeChanged"; mode: EditMode }
+  | { type: "reviewChanged"; review: ReviewLayer };
 
 /** Handle the editor app exposes back to the WordCanvas wrapper. */
 export interface EditorHandle {
@@ -33,6 +38,17 @@ export interface EditorHandle {
   share(): Promise<string>;
   getDocId(): string | null;
   getShareLink(): string | null;
+  // ---- review layer (track changes + comments) ----------------------------
+  getMode(): EditMode;
+  setMode(mode: EditMode): boolean;
+  getReview(): ReviewLayer;
+  acceptSuggestion(id: string): void;
+  rejectSuggestion(id: string): void;
+  acceptAllSuggestions(): void;
+  rejectAllSuggestions(): void;
+  addComment(body: Fragment): string | null;
+  replyToComment(threadId: string, body: Fragment): void;
+  resolveThread(threadId: string, resolved?: boolean): void;
   destroy(): void;
 }
 
@@ -49,6 +65,11 @@ export interface WordCanvasRuntime {
   /** Mount view-only: hide the editing chrome and make every mutation a no-op
    *  (the document is still selectable, copyable, and live for remote edits). */
   readonly?: boolean | undefined;
+  /** Initial editor mode ("edit" | "suggest" | "view"). Defaults to "view" when
+   *  `readonly`, else "edit". */
+  mode?: EditMode | undefined;
+  /** Modes the user may switch to (constrains the picker + setMode). */
+  allowedModes?: EditMode[] | undefined;
   /** Called once the editor is mounted and ready. */
   onReady?: ((handle: EditorHandle) => void) | undefined;
   /** Sink for collaboration events (presence, share, ready) → WordCanvas.on(...). */

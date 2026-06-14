@@ -7,7 +7,7 @@ import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { gunzipSync } from "node:zlib";
 import { WebSocketServer, type WebSocket } from "ws";
-import { reconstruct, type Change, type SerializedDocument, type UserInfo } from "@cw/shared";
+import { reconstruct, rehydrateReview, type Change, type ReviewOpEnvelope, type SerializedDocument, type UserInfo } from "@cw/shared";
 import { authFromRequest, checkCredentials, issueToken, requireAdmin } from "./admin/auth";
 import { hashToken, newApiToken } from "./auth/apiToken";
 import { createPool } from "./db";
@@ -172,6 +172,12 @@ class Broadcaster {
     this.toRoom(docId, { type: "change", change });
   }
 
+  /** A review op (suggestion/comment) → the rest of the room. Excludes the
+   *  sender, who already applied it locally (apply is idempotent regardless). */
+  publishReview(docId: string, env: ReviewOpEnvelope, sender: WebSocket): void {
+    this.toRoom(docId, { type: "review", review: env }, sender);
+  }
+
   private roster(
     docId: string,
     exclude: WebSocket,
@@ -222,7 +228,7 @@ export function createApp(
     bcast.join(docId, ws);
     ws.on("message", (data) => {
       void (async () => {
-        let msg: { type?: string; change?: Change; siteId?: string; user?: UserInfo; selection?: unknown };
+        let msg: { type?: string; change?: Change; review?: ReviewOpEnvelope; siteId?: string; user?: UserInfo; selection?: unknown };
         try {
           msg = JSON.parse(String(data));
         } catch {
@@ -233,6 +239,10 @@ export function createApp(
           // including the sender — whose client treats the echo as its ack.
           const accepted = await store.appendChange(docId, msg.change);
           bcast.publish(docId, accepted);
+        } else if (msg.type === "review" && msg.review) {
+          // Persist the review op (append log) and relay to the rest of the room.
+          await store.appendReviewOp(docId, msg.review);
+          bcast.publishReview(docId, msg.review, ws);
         } else if (msg.type === "hello" && msg.siteId) {
           if (msg.user) await store.upsertUser(msg.user);
           bcast.hello(ws, msg.siteId, msg.user);
@@ -418,6 +428,28 @@ async function handle(
       return sendJson(res, 200, { docId, version: (snap.version + changes.length), doc });
     }
 
+    // GET /docs/:id/review  — the review overlay (track changes + comments),
+    // rehydrated to HEAD: the op log folded with anchors fast-forwarded through
+    // the change log, so a joiner sees every suggestion/comment correctly placed.
+    if (method === "GET" && parts[2] === "review") {
+      const snap = await store.getSnapshot(docId);
+      if (!snap) return sendJson(res, 404, { error: "document not found" });
+      const [changes, reviewOps] = await Promise.all([
+        store.getChanges(docId, snap.version),
+        store.getReviewOps(docId),
+      ]);
+      const layer = rehydrateReview(docId, snap.snapshot, snap.version, changes, reviewOps);
+      return sendJson(res, 200, { docId, version: snap.version + changes.length, layer });
+    }
+
+    // POST /docs/:id/review/ops  — append a review op (REST fallback for offline
+    // clients; the live path is the WebSocket "review" message).
+    if (method === "POST" && parts[2] === "review" && parts[3] === "ops") {
+      const env = await readJson<ReviewOpEnvelope>(req);
+      await store.appendReviewOp(docId, env);
+      return sendJson(res, 200, { ok: true });
+    }
+
     // GET /docs/:id/activity  — edit history with author names (attribution)
     if (method === "GET" && parts[2] === "activity") {
       const activity = await store.getActivity(docId);
@@ -429,7 +461,9 @@ async function handle(
     // These are the URLs the session-ended webhook hands to integrations.
     if (method === "GET" && (parts[2] === "export.docx" || parts[2] === "export.pdf")) {
       const format = parts[2] === "export.pdf" ? "pdf" : "docx";
-      const exported = await exportDoc(docId, format, store);
+      // ?tracked=accept folds suggestions as accepted; default rejects (baseline).
+      const bakeMode = url.searchParams.get("tracked") === "accept" ? "accept" : "reject";
+      const exported = await exportDoc(docId, format, store, bakeMode);
       if (!exported) return sendJson(res, 404, { error: "document not found" });
       const filename = `${sanitizeFilename(exported.title ?? docId)}.${format}`;
       const mime =

@@ -21,7 +21,8 @@
     "typecheck": "npm run typecheck --workspace @cw/shared && npm run typecheck --workspace @forevka/wordcanvas && npm run typecheck --workspace @cw/backend && npm run typecheck --workspace @cw/dashboard",
     "test": "npm run test --workspace @cw/shared && npm run test --workspace @forevka/wordcanvas && npm run test --workspace @cw/backend",
     "db:up": "docker compose up -d",
-    "db:down": "docker compose down"
+    "db:down": "docker compose down",
+    "dev:online": "node scripts/dev-online.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.0"
