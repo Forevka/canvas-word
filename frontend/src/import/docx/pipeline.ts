@@ -3,6 +3,7 @@
 // pipeline runs under vitest in Node; worker.ts is just transport around this.
 
 import type { Block, BandContainer, Paragraph, SectionProps } from "@cw/shared";
+import { markImportedTocEntries } from "@cw/shared";
 import { findMainDocumentPart } from "./contentTypes";
 import { parseDocumentXml, parseFootnotesXml, parseHeaderFooterXml } from "./documentParser";
 import { buildStylesheet, collectUsedStyleIds, createMapper, mapSdts, type LinkResolver, type Mapper } from "./mapToModel";
@@ -142,12 +143,29 @@ export function runImport(
   const stylesheet = buildStylesheet(styles, collectUsedStyleIds(ir.blocks));
   if (stylesheet) doc.stylesheet = stylesheet;
 
+  // TOC field: capture its instruction (for verbatim re-emit) and mark the
+  // flattened entry paragraphs as live tocEntry (stripping their cached numbers)
+  // so export round-trips them as a real, F9-refreshable field, not frozen text.
+  const tocInstr = captureTocInstruction(documentXml);
+  if (tocInstr !== undefined) {
+    doc.tocInstruction = tocInstr;
+    markImportedTocEntries(doc);
+  }
+
   return {
     doc,
     warnings: warnings.list,
     mediaUrls: mediaStores.flatMap((s) => s.urls()),
     media: mediaRecords,
   };
+}
+
+/** The first `TOC` field instruction in the body XML (verbatim, spaces kept). */
+function captureTocInstruction(xml: string): string | undefined {
+  const re = /<w:instrText[^>]*>([\s\S]*?)<\/w:instrText>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(xml)) !== null) if (/\bTOC\b/.test(m[1]!)) return m[1];
+  return undefined;
 }
 
 function mapStory(

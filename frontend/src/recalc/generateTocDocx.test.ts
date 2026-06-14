@@ -3,8 +3,6 @@
 // into the original XML (drift-free).
 import { strFromU8, unzipSync } from "fflate";
 import { beforeAll, describe, expect, it } from "vitest";
-import { textOfRuns, type Block, type Document, type Paragraph } from "@cw/shared";
-import { runImport } from "../import/docx/pipeline";
 import { simpleDocx } from "../import/docx/fixture";
 import { installMeasureHost } from "../export/shared/measureHost";
 import { generateTocInDocx } from "./generateTocDocx";
@@ -28,16 +26,10 @@ function emptyTocDocx(instr = ' TOC \\o "1-3" \\h \\z \\u '): Uint8Array {
   return simpleDocx(tocField + heading("_Toc1", "Chapter One") + heading("_Toc2", "Chapter Two", true));
 }
 
-const allText = (doc: Document): string => {
-  const out: string[] = [];
-  const walk = (b: Block[]): void => {
-    for (const x of b) {
-      if (x.kind === "paragraph") out.push(textOfRuns(x.runs));
-      else if (x.kind === "table") for (const r of x.rows) for (const c of r.cells) walk(c.blocks);
-    }
-  };
-  walk(doc.blocks);
-  return out.join("\n");
+/** The cached page number inside a PAGEREF field (the first numeric w:t after it). */
+const cachedNum = (xml: string, anchor: string): string | undefined => {
+  const i = xml.indexOf(`PAGEREF ${anchor}`);
+  return i < 0 ? undefined : xml.slice(i).match(/<w:t[^>]*>(\d+)<\/w:t>/)?.[1];
 };
 
 describe("generateTocInDocx", () => {
@@ -59,19 +51,18 @@ describe("generateTocInDocx", () => {
     expect(xml).toContain('w:anchor="_Toc1"'); // \h hyperlink
     expect(xml).toContain('w:leader="dot"'); // dot leader tab stop
 
-    // Re-import: entries show the real pages (Chapter Two forced to page 2).
-    const text = allText(runImport(out.bytes).doc);
-    expect(text).toContain("Chapter One\t1");
-    expect(text).toContain("Chapter Two\t2");
+    // Cached PAGEREF numbers are the real pages (Chapter Two forced to page 2).
+    expect(cachedNum(xml, "_Toc1")).toBe("1");
+    expect(cachedNum(xml, "_Toc2")).toBe("2");
   });
 
   it("is drift-free / idempotent: re-running yields the same pages", () => {
     const once = generateTocInDocx(emptyTocDocx()).bytes;
     const twice = generateTocInDocx(once);
     expect(twice.generated).toBe(2);
-    const text = allText(runImport(twice.bytes).doc);
-    expect(text).toContain("Chapter One\t1");
-    expect(text).toContain("Chapter Two\t2");
+    const xml = strFromU8(unzipSync(twice.bytes)["word/document.xml"]!);
+    expect(cachedNum(xml, "_Toc1")).toBe("1");
+    expect(cachedNum(xml, "_Toc2")).toBe("2");
   });
 
   it("honors \\n (omit page numbers) — no PAGEREF for the hidden level", () => {

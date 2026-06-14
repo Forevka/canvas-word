@@ -19,6 +19,7 @@ import type {
   TableBlock,
   TableCell,
 } from "@cw/shared";
+import { inRange, parseTocInstruction } from "@cw/shared";
 import {
   multiplierToLine,
   pxToEighthPoints,
@@ -74,6 +75,9 @@ export interface PartCtx {
    *  doc has none) and return its name, so a live PAGEREF can point at it. Returns
    *  undefined if the target block doesn't exist (dangling TOC entry). */
   ensureTocBookmark?: (blockId: string) => string | undefined;
+  /** The document's preserved `TOC` field instruction, re-emitted verbatim (and its
+   *  switches honored). Absent → a sensible default ` TOC \o "1-3" \h \z \u `. */
+  tocInstruction?: string;
 }
 
 const hex = (color: string): string => color.replace(/^#/, "").toLowerCase();
@@ -488,22 +492,30 @@ const isTocEntry = (b: Block): b is Paragraph => b.kind === "paragraph" && !!b.s
 
 /** Emit a contiguous run of tocEntry paragraphs as one block-level `TOC` field.
  *  Each entry is "<label><tab><PAGEREF>"; the field's begin/instr/separate ride
- *  the first entry and its end rides the last. Headings get a bookmark (synthesized
- *  if needed) so the PAGEREF resolves. */
+ *  the first entry and its end rides the last. The instruction is the preserved
+ *  one (so imported TOCs round-trip with their switches), honoring `\h` (wrap
+ *  entries as hyperlinks) and `\n` (omit page numbers for levels). Headings get a
+ *  bookmark (synthesized if needed) so the PAGEREF resolves. */
 function tocFieldXml(entries: Paragraph[], ctx: PartCtx): string {
-  const instr = ' TOC \\o "1-3" \\h \\z \\u ';
+  const instr = ctx.tocInstruction ?? ' TOC \\o "1-3" \\h \\z \\u ';
+  const sw = parseTocInstruction(instr);
+  const hyperlink = sw.hyperlinks || ctx.tocInstruction === undefined; // default TOC is \h
   return entries
     .map((p, i) => {
       const rPr = p.runs[0] ? rPrXml(p.runs[0].style) : "";
       const targetId = p.style.tocEntry!.targetId;
-      const anchor = ctx.ensureTocBookmark?.(targetId);
+      const level = p.style.tocEntry!.level;
+      const wantNumber = !inRange(sw.hidePageNumberRange, level);
+      const anchor = wantNumber || hyperlink ? ctx.ensureTocBookmark?.(targetId) : undefined;
       let inner = "";
       if (i === 0) inner += fldRun("begin") + instrRun(instr) + fldRun("separate");
-      inner += runsXml(p.runs, ctx); // the entry label
-      if (anchor) {
+      let entry = runsXml(p.runs, ctx); // the entry label
+      if (anchor && wantNumber) {
         const numText = String(ctx.tocPages?.get(targetId) ?? "");
-        inner += el("w:r", undefined, rPr + el("w:tab")) + pagerefFieldXml(anchor, numText, rPr);
+        entry += el("w:r", undefined, rPr + el("w:tab")) + pagerefFieldXml(anchor, numText, rPr);
       }
+      if (hyperlink && anchor) entry = el("w:hyperlink", { "w:anchor": anchor, "w:history": "1" }, entry);
+      inner += entry;
       if (i === entries.length - 1) inner += fldRun("end");
       return el("w:p", undefined, pPrXml(p.style, ctx) + inner);
     })

@@ -6,7 +6,8 @@
 // the TOC paragraph styles, not the instruction (see TocOptions).
 
 import type { CharStyle, Document, ParaStyle, Paragraph } from "./model/document";
-import { bodyParagraphs } from "./model/text";
+import { bodyParagraphs, textOfRuns } from "./model/text";
+import { sliceRuns } from "./model/ops";
 
 /** Parsed `TOC` field switches. See ECMA-376 §17.16.5.68. */
 export interface TocSwitches {
@@ -116,6 +117,44 @@ export function detectTocHeadings(
     out.push({ block: p, level });
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Imported-TOC unification: an imported TOC field flattens to plain paragraphs
+// (label + "#anchor" hyperlink + cached "\t<number>" text). To round-trip it as a
+// LIVE field on export, mark those paragraphs as tocEntry and STRIP the cached
+// number text — so the number becomes layout-driven (paint decoration), exactly
+// like an editor-created TOC, and export wraps it in a real TOC/PAGEREF field.
+
+/** Mark a document's imported TOC entries as tocEntry and strip their cached page
+ *  numbers. Gated by the caller (only when a TOC field exists). Returns the count.
+ *  An entry is a body paragraph with a "#anchor" link resolving to a bookmarked
+ *  block plus a trailing "\t<number>"; level is inferred from its left indent. */
+export function markImportedTocEntries(doc: Document, indentStepPx = 20): number {
+  if (!doc.bookmarks) return 0;
+  const contentWidthPx = doc.section.pageWidthPx - doc.section.marginPx.left - doc.section.marginPx.right;
+  let count = 0;
+  for (const b of doc.blocks) {
+    if (b.kind !== "paragraph" || b.style.tocEntry) continue;
+    const anchor = b.runs.find((r) => r.style.link?.startsWith("#"))?.style.link?.slice(1);
+    if (!anchor) continue;
+    const targetId = doc.bookmarks[anchor]?.start.blockId;
+    if (!targetId) continue;
+    const full = textOfRuns(b.runs);
+    const m = full.match(/\t\d+\s*$/); // trailing tab + page number
+    if (!m) continue;
+    b.runs = sliceRuns(b.runs, 0, full.length - m[0].length); // drop "\t<number>"
+    if (b.runs.length === 0) b.runs = [{ text: "", style: { ...TOC_BASE_CHAR } }];
+    const level = Math.min(9, Math.max(1, Math.round((b.style.indentLeftPx || 0) / indentStepPx) + 1));
+    b.style.tocEntry = { targetId, level };
+    // Right-aligned dot leader so the painted/exported number aligns (if none set).
+    if (!b.style.tabStops?.length && contentWidthPx > 0) {
+      b.style.tabStops = [{ posPx: contentWidthPx, align: "right", leader: "dot" }];
+    }
+    b.revision++;
+    count++;
+  }
+  return count;
 }
 
 // ---------------------------------------------------------------------------

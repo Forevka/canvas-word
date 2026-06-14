@@ -277,6 +277,36 @@ describe("DOCX export — round trip", () => {
     expect(rb.start.blockId).toBe(paras(b)[0]!.id);
   });
 
+  it("round-trips an imported TOC field as a LIVE field with the preserved instruction", () => {
+    // A real Word TOC: outer TOC field wrapping HYPERLINK+PAGEREF entries, with the
+    // headings carrying _Toc bookmarks. Import flattens+marks the entries; export
+    // must re-emit a live TOC field with the SAME instruction (not a hardcoded one).
+    const entry = (anchor: string, label: string, page: string): string =>
+      `<w:hyperlink w:anchor="${anchor}"><w:r><w:t>${label}</w:t></w:r><w:r><w:tab/></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGEREF ${anchor} \\h </w:instrText></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>${page}</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:hyperlink>`;
+    const head = (anchor: string, label: string): string => {
+      const id = anchor.replace(/\D/g, "");
+      return `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:bookmarkStart w:id="${id}" w:name="${anchor}"/>` +
+        `<w:r><w:t>${label}</w:t></w:r><w:bookmarkEnd w:id="${id}"/></w:p>`;
+    };
+    const body =
+      `<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+      `<w:r><w:instrText xml:space="preserve"> TOC \\o "1-5" \\h </w:instrText></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="separate"/></w:r>${entry("_Toc1", "Chapter One", "3")}</w:p>` +
+      `<w:p>${entry("_Toc2", "Chapter Two", "5")}<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>` +
+      head("_Toc1", "Chapter One") + head("_Toc2", "Chapter Two");
+
+    const a = runImport(simpleDocx(body)).doc;
+    expect(a.tocInstruction).toContain('TOC \\o "1-5"'); // captured verbatim
+    expect(a.blocks.filter((b) => b.kind === "paragraph" && b.style.tocEntry).length).toBe(2); // marked
+
+    const xml = exportedDocumentXml(a);
+    expect(xml).toContain('TOC \\o "1-5"'); // preserved instruction re-emitted (not default \z \u)
+    expect(xml).toContain("PAGEREF _Toc1"); // live field, not flattened text
+    expect(xml).toContain('w:anchor="_Toc1"'); // \h hyperlink
+  });
+
   it("tags a TOC entry's runs with its target anchor (nested HYPERLINK + PAGEREF)", () => {
     // Word writes a TOC entry as a HYPERLINK field wrapping the label and a nested
     // PAGEREF field for the page number — neither is a w:hyperlink element. The

@@ -90,6 +90,7 @@ export function writeDocx(
     bookmarksByBlock,
     listIdMap,
     ...(tocPages ? { tocPages } : {}),
+    ...(doc.tocInstruction ? { tocInstruction: doc.tocInstruction } : {}),
     ensureTocBookmark,
   };
 

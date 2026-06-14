@@ -1,10 +1,14 @@
 // Backend TOC generation wiring: generateTocBytes imports + lays out + splices the
 // generated field result into the original .docx in place.
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
-import { runImport } from "@forevka/wordcanvas/import";
-import { textOfRuns, type Block, type Document } from "@cw/shared";
 import { describe, expect, it } from "vitest";
 import { generateTocBytes } from "./serverGenerateToc";
+
+/** The cached page number inside a PAGEREF field (the first numeric w:t after it). */
+const cachedNum = (xml: string, anchor: string): string | undefined => {
+  const i = xml.indexOf(`PAGEREF ${anchor}`);
+  return i < 0 ? undefined : xml.slice(i).match(/<w:t[^>]*>(\d+)<\/w:t>/)?.[1];
+};
 
 const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -29,18 +33,6 @@ function emptyTocDocx(): Uint8Array {
   return zipSync({ "[Content_Types].xml": strToU8(CONTENT_TYPES), "word/document.xml": strToU8(document) });
 }
 
-const allText = (doc: Document): string => {
-  const out: string[] = [];
-  const walk = (b: Block[]): void => {
-    for (const x of b) {
-      if (x.kind === "paragraph") out.push(textOfRuns(x.runs));
-      else if (x.kind === "table") for (const r of x.rows) for (const c of r.cells) walk(c.blocks);
-    }
-  };
-  walk(doc.blocks);
-  return out.join("\n");
-};
-
 describe("generateTocBytes", () => {
   it("generates the field result with correct pages and a valid docx", async () => {
     const r = await generateTocBytes(emptyTocDocx());
@@ -48,10 +40,8 @@ describe("generateTocBytes", () => {
     expect(r.headings).toBe(2);
     expect(r.bytes[0]).toBe(0x50); // PK
     const xml = strFromU8(unzipSync(r.bytes)["word/document.xml"]!);
-    expect(xml).toContain("PAGEREF _Toc1");
-    const text = allText(runImport(r.bytes).doc);
-    expect(text).toContain("Chapter One\t1");
-    expect(text).toContain("Chapter Two\t2");
+    expect(cachedNum(xml, "_Toc1")).toBe("1");
+    expect(cachedNum(xml, "_Toc2")).toBe("2"); // Chapter Two forced to page 2
   });
 
   it("applies caller TocOptions (custom title text + leader off)", async () => {

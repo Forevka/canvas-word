@@ -313,6 +313,10 @@ export interface Document {
    *  a header/footer band. Targets for in-document anchor links ("#name" — TOC
    *  entries, cross-references) and the Bookmarks panel. */
   bookmarks?: Record<string, BookmarkRange>;
+  /** The document's `TOC` field instruction (e.g. ` TOC \o "1-3" \h \z \u `),
+   *  captured on import so export re-emits it verbatim (honoring its switches)
+   *  instead of a hardcoded default. Absent when the document has no TOC field. */
+  tocInstruction?: string;
 }
 
 export interface BookmarkRange {
