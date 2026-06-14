@@ -277,6 +277,65 @@ describe("DOCX export — round trip", () => {
     expect(rb.start.blockId).toBe(paras(b)[0]!.id);
   });
 
+  it("tags a TOC entry's runs with its target anchor (nested HYPERLINK + PAGEREF)", () => {
+    // Word writes a TOC entry as a HYPERLINK field wrapping the label and a nested
+    // PAGEREF field for the page number — neither is a w:hyperlink element. The
+    // importer must still surface the "_Toc1" target as an in-document link so
+    // "recalculate TOC" can map the entry to its heading.
+    const entry =
+      `<w:p>` +
+      `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+      `<w:r><w:instrText xml:space="preserve"> HYPERLINK \\l "_Toc1" </w:instrText></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+      `<w:r><w:t>Chapter One</w:t></w:r><w:r><w:tab/></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+      `<w:r><w:instrText xml:space="preserve"> PAGEREF _Toc1 \\h </w:instrText></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+      `<w:r><w:t>7</w:t></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+      `</w:p>`;
+    const a = runImport(simpleDocx(entry)).doc;
+    const p = paras(a)[0]!;
+    expect(text(p)).toBe("Chapter One\t7");
+    expect(p.runs.some((r) => r.style.link === "#_Toc1")).toBe(true);
+    // Survives a round-trip (links re-emit as w:hyperlink w:anchor).
+    const b = roundTrip(a);
+    expect(paras(b)[0]!.runs.some((r) => r.style.link === "#_Toc1")).toBe(true);
+  });
+
+  it("emits footer {page}/{pages} as live PAGE/NUMPAGES fields (body tokens stay literal)", () => {
+    const CHAR = { fontFamily: "Georgia", fontSizePx: 16, bold: false, italic: false, underline: false, strikethrough: false, color: "#000" };
+    const PARA = { align: "left" as const, lineHeight: 1.2, spaceBeforePx: 0, spaceAfterPx: 0, indentFirstLinePx: 0, indentLeftPx: 0 };
+    const doc: Document = {
+      section: {
+        pageWidthPx: 816,
+        pageHeightPx: 1056,
+        marginPx: { top: 96, right: 96, bottom: 96, left: 96 },
+        footer: [{ kind: "paragraph", id: "f1", revision: 0, runs: [{ text: "Page {page} of {pages}", style: CHAR }], style: PARA }],
+      },
+      blocks: [{ kind: "paragraph", id: "p1", revision: 0, runs: [{ text: "body {page}", style: CHAR }], style: PARA }],
+    };
+    const zip = unzipSync(writeDocx(doc).bytes);
+
+    // Footer tokens -> live fields.
+    const footerName = Object.keys(zip).find((n) => /^word\/footer\d+\.xml$/.test(n));
+    expect(footerName).toBeDefined();
+    const footerXml = strFromU8(zip[footerName!]!);
+    expect(footerXml).toContain("PAGE \\* MERGEFORMAT");
+    expect(footerXml).toContain("NUMPAGES \\* MERGEFORMAT");
+
+    // Body tokens stay literal text (symmetric with import, which only tokenizes bands).
+    const bodyXml = strFromU8(zip["word/document.xml"]!);
+    expect(bodyXml).not.toContain("w:fldSimple");
+    expect(bodyXml).toContain("body {page}");
+
+    // The footer re-imports with the tokens intact, so layout still substitutes per page.
+    const b = runImport(writeDocx(doc).bytes).doc;
+    const footerText = (b.section.footer ?? []).map((bl) => (bl.kind === "paragraph" ? text(bl) : "")).join("");
+    expect(footerText).toBe("Page {page} of {pages}");
+  });
+
   it("round-trips hidden text (w:vanish) instead of dropping it", () => {
     const a = runImport(
       simpleDocx(

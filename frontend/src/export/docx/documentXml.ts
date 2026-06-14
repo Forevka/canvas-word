@@ -61,6 +61,11 @@ export interface PartCtx {
   bookmarksByBlock: Map<string, ExportBookmarkMark[]>;
   /** model list id -> Word-valid integer numId (shared with numbering.xml). */
   listIdMap: Map<string, number>;
+  /** Header/footer parts: {page}/{pages} run text becomes live PAGE/NUMPAGES
+   *  fields (the inverse of the importer's header/footer fieldTokens mode). In the
+   *  body those tokens stay literal text — symmetric with import, which only
+   *  tokenizes fields in bands. */
+  fieldTokens?: boolean;
 }
 
 const hex = (color: string): string => color.replace(/^#/, "").toLowerCase();
@@ -102,17 +107,59 @@ function runContent(text: string): string {
   return out;
 }
 
+// Page-number tokens the layout substitutes per page ({page}, {page:roman}, …,
+// {pages}). On export they become live PAGE/NUMPAGES fields — the inverse of the
+// importer's fieldToken (documentParser.ts) — so a re-rendered footer shows the real
+// page number instead of literal "{page}" text.
+const PAGE_TOKEN_RE = /\{(page(?::(?:roman|Roman|alpha|Alpha))?|pages)\}/g;
+const PAGE_TOKEN_TEST = /\{(?:page(?::(?:roman|Roman|alpha|Alpha))?|pages)\}/;
+
+/** OOXML field instruction for a page-number token. */
+function fieldInstr(token: string): string {
+  if (token === "pages") return " NUMPAGES \\* MERGEFORMAT ";
+  const fmt = token.includes(":") ? token.slice(token.indexOf(":") + 1) : undefined;
+  const sw =
+    fmt === "roman" ? " \\* roman"
+    : fmt === "Roman" ? " \\* ROMAN"
+    : fmt === "alpha" ? " \\* alphabetic"
+    : fmt === "Alpha" ? " \\* ALPHABETIC"
+    : "";
+  return ` PAGE${sw} \\* MERGEFORMAT `;
+}
+
+/** Serialize a run's text, emitting each page-number token as a w:fldSimple field
+ *  (carrying the run's rPr) and the literal segments around it as plain runs. The
+ *  field's cached result is an empty run — Word recomputes it, and re-import reads
+ *  the instruction, not the result. */
+function runBodyWithFields(text: string, rPr: string): string {
+  let out = "";
+  let last = 0;
+  PAGE_TOKEN_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = PAGE_TOKEN_RE.exec(text)) !== null) {
+    if (m.index > last) out += el("w:r", undefined, rPr + runContent(text.slice(last, m.index)));
+    out += el("w:fldSimple", { "w:instr": fieldInstr(m[1]!) }, el("w:r", undefined, rPr));
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out += el("w:r", undefined, rPr + runContent(text.slice(last)));
+  return out;
+}
+
 function singleRun(run: Run, ctx: PartCtx): string {
   const s = run.style;
-  let body: string;
+  const rPr = rPrXml(s);
   if (s.footnoteRef) {
     // model footnoteRef "fn<docxId>" -> w:footnoteReference w:id="<docxId>".
     const docxId = s.footnoteRef.replace(/^fn/, "");
-    body = el("w:footnoteReference", { "w:id": docxId });
-  } else {
-    body = runContent(run.text);
+    return el("w:r", undefined, rPr + el("w:footnoteReference", { "w:id": docxId }));
   }
-  const r = el("w:r", undefined, rPrXml(s) + body);
+  // Page-number tokens -> live PAGE/NUMPAGES fields (header/footer only). Skipped
+  // inside hyperlinks (page tokens never live in a link) so the wrapper logic
+  // below stays simple.
+  if (ctx.fieldTokens && !s.link && PAGE_TOKEN_TEST.test(run.text)) {
+    return runBodyWithFields(run.text, rPr);
+  }
+  const r = el("w:r", undefined, rPr + runContent(run.text));
   // Hyperlink wrapper. Anchor (#name) is in-document; otherwise an external rel.
   if (s.link) {
     if (s.link.startsWith("#")) return el("w:hyperlink", { "w:anchor": s.link.slice(1) }, r);

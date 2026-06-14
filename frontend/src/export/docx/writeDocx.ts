@@ -74,6 +74,7 @@ export function writeDocx(doc: Document, images: ImageBytes = {}): ExportResult 
       nextId,
       bookmarksByBlock, // same map — band block ids resolve here, so band bookmarks export
       listIdMap,
+      fieldTokens: true, // {page}/{pages} -> live PAGE/NUMPAGES fields in bands
     };
     parts[`word/${file}`] = headerFooterXml(blocks, kind, bandCtx);
     overrides.push([`/word/${file}`, kind === "header" ? CT.header : CT.footer]);

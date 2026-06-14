@@ -188,6 +188,11 @@ interface FieldState {
   /** True between "separate" and "end" when the field became a token — the
    *  cached result runs must not ALSO be emitted. */
   suppressResult: boolean;
+  /** Set between "separate" and "end" for a PAGEREF field: the bookmark it points
+   *  at. Its cached result runs (the page number) are tagged with this in-document
+   *  anchor so a TOC whose entries are plain text + a PAGEREF (no surrounding
+   *  hyperlink) still maps each entry to its heading for "recalculate TOC". */
+  pagerefAnchor?: string | undefined;
 }
 
 /** " PAGE \\* MERGEFORMAT " → "{page}". Layout substitutes per page. */
@@ -195,6 +200,15 @@ function fieldToken(instr: string): string | undefined {
   if (/\bNUMPAGES\b/.test(instr)) return "{pages}"; // before PAGE — substring!
   if (/\bPAGE\b/.test(instr)) return "{page}";
   return undefined;
+}
+
+/** The in-document bookmark a TOC entry points at, from its field instruction:
+ *  ` PAGEREF _Toc12345 \h ` or ` HYPERLINK \l "_Toc12345" ` → "_Toc12345". Word
+ *  writes TOC entries as a HYPERLINK field wrapping the label + a nested PAGEREF
+ *  for the number; either carries the same target. */
+function anchorFromInstr(instr: string): string | undefined {
+  const m = instr.match(/\bPAGEREF\s+("[^"]+"|\S+)/) ?? instr.match(/\bHYPERLINK\s+\\l\s+("[^"]+"|\S+)/);
+  return m ? m[1]!.replace(/^"|"$/g, "") : undefined;
 }
 
 function walkInlines(nodes: XmlNode[], out: IRInline[], ctx: ParseCtx, field: FieldState): void {
@@ -290,7 +304,15 @@ function parseRun(r: XmlNode, out: IRInline[], ctx: ParseCtx, field: FieldState)
   const props = rPr ? decodeRunProps(rPr) : {};
   let text = "";
   const flush = (): void => {
-    if (text.length > 0) out.push({ kind: "run", text, props });
+    if (text.length > 0) {
+      // Tag a PAGEREF's cached result (the page number) with its in-document
+      // anchor so TOC entries lacking a surrounding hyperlink still map to their
+      // heading. A real hyperlink wrapper overrides this afterwards (same target).
+      if (field.pagerefAnchor && props.linkAnchor === undefined && props.linkRelId === undefined) {
+        props.linkAnchor = field.pagerefAnchor;
+      }
+      out.push({ kind: "run", text, props });
+    }
     text = "";
   };
   const walkContent = (nodes: XmlNode[]): void => {
@@ -333,7 +355,14 @@ function parseRun(r: XmlNode, out: IRInline[], ctx: ParseCtx, field: FieldState)
           ctx.warnings.add("objects-skipped", "Embedded OLE objects are not imported.");
           break;
         case "w:instrText":
-          if (field.depth > 0) field.instr += textOf(node);
+          if (field.depth > 0) {
+            field.instr += textOf(node);
+            // A TOC entry's HYPERLINK/PAGEREF target — remember it so the cached
+            // result runs (label + page number) get tagged as in-document links,
+            // even when nested (Word nests PAGEREF inside the entry's HYPERLINK).
+            const anchor = anchorFromInstr(field.instr);
+            if (anchor) field.pagerefAnchor = anchor;
+          }
           break;
         case "w:fldChar":
           handleFldChar(node, props, out, ctx, field);
@@ -378,6 +407,7 @@ function handleFldChar(
       if (field.depth === 1) {
         field.instr = "";
         field.suppressResult = false;
+        field.pagerefAnchor = undefined;
       }
       break;
     case "separate": {
@@ -399,6 +429,7 @@ function handleFldChar(
         }
         field.instr = "";
         field.suppressResult = false;
+        field.pagerefAnchor = undefined;
       }
       break;
   }

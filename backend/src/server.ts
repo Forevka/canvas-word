@@ -13,6 +13,7 @@ import { hashToken, newApiToken } from "./auth/apiToken";
 import { createPool } from "./db";
 import { exportDoc } from "./export/serverExport";
 import { parseAndStore } from "./import/serverImport";
+import { recalcAndPersist, recalcDocxBytes } from "./recalc/serverRecalc";
 import { OPENAPI_SPEC, SWAGGER_HTML } from "./openapi";
 import { PgChangeStore, type ChangeStore } from "./store/ChangeStore";
 import { SESSION_ENDED_EVENT, WebhookDispatcher } from "./webhooks/dispatcher";
@@ -379,6 +380,31 @@ async function handle(
     }
   }
 
+  // POST /recalc.docx — stateless: take a .docx whose TOC field has stale/placeholder
+  // page numbers (a caller with no layout engine can't compute them), run our layout
+  // engine, and return the .docx with each TOC entry's page number corrected. Body =
+  // raw .docx bytes; response = the updated .docx (x-toc-entries-updated counts them).
+  if (method === "POST" && parts.length === 1 && parts[0] === "recalc.docx") {
+    if (UPLOAD_REQUIRES_AUTH && !(await authorizeUpload(req, store))) {
+      return sendJson(res, 401, { error: "unauthorized" });
+    }
+    const bytes = await readBody(req);
+    try {
+      const { bytes: out, changed } = await recalcDocxBytes(new Uint8Array(bytes));
+      res.writeHead(200, {
+        "content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "content-disposition": `attachment; filename="recalc.docx"`,
+        "x-toc-entries-updated": String(changed),
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "x-toc-entries-updated",
+      });
+      res.end(Buffer.from(out));
+      return;
+    } catch (e) {
+      return sendJson(res, 400, { error: String(e instanceof Error ? e.message : e) });
+    }
+  }
+
   // POST /docs  — create a document from a base snapshot. Body is either a bare
   // SerializedDocument, or { snapshot, createdBy?, user? } for attribution.
   if (method === "POST" && parts.length === 1 && parts[0] === "docs") {
@@ -479,6 +505,18 @@ async function handle(
       });
       res.end(Buffer.from(exported.bytes));
       return;
+    }
+
+    // POST /docs/:id/recalc — recalculate the stored document's TOC page numbers
+    // against the live layout and persist the rewrite as a versioned change (pushed
+    // to any connected editors). The caller then GETs /docs/:id/export.docx.
+    if (method === "POST" && parts[2] === "recalc" && parts.length === 3) {
+      if (UPLOAD_REQUIRES_AUTH && !(await authorizeUpload(req, store))) {
+        return sendJson(res, 401, { error: "unauthorized" });
+      }
+      const result = await recalcAndPersist(docId, store, (id, change) => bcast.publish(id, change));
+      if (!result) return sendJson(res, 404, { error: "document not found" });
+      return sendJson(res, 200, { docId, ...result });
     }
   }
 

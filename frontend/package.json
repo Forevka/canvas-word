@@ -51,7 +51,8 @@
     },
     "./import": "./src/import/docx/pipeline.ts",
     "./export": "./src/export/pipeline.ts",
-    "./export/measure": "./src/export/shared/measureHost.ts"
+    "./export/measure": "./src/export/shared/measureHost.ts",
+    "./recalc": "./src/recalc/recalcToc.ts"
   },
   "publishConfig": {
     "access": "public"

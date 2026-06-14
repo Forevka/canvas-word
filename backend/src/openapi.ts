@@ -132,6 +132,38 @@ export const OPENAPI_SPEC = {
         },
       },
     },
+    "/docs/{id}/recalc": {
+      post: {
+        summary: "Recalculate the stored document's TOC page numbers",
+        description:
+          "Lays the document out with the server's layout engine and rewrites each table-of-contents " +
+          "entry's page number to its heading's real page. The rewrite is persisted as a versioned change " +
+          "(and broadcast to connected editors), so a subsequent GET /docs/{id}/export.docx returns the " +
+          "updated file. Auth: dashboard admin token OR an integration API key (X-API-Key or Bearer). " +
+          "No-op (changed: 0) when every entry is already current.",
+        parameters: [{ $ref: "#/components/parameters/DocId" }],
+        responses: {
+          "200": {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    docId: { type: "string" },
+                    changed: { type: "integer", description: "number of TOC entries whose page number changed" },
+                    version: { type: "integer", description: "new head version (unchanged when changed is 0)" },
+                  },
+                  required: ["docId", "changed", "version"],
+                },
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "404": { $ref: "#/components/responses/NotFound" },
+        },
+      },
+    },
     "/docs/{id}/activity": {
       get: {
         summary: "Edit history with author names (attribution)",
@@ -173,6 +205,43 @@ export const OPENAPI_SPEC = {
         },
       },
     },
+    "/recalc.docx": {
+      post: {
+        summary: "Recalculate a .docx's TOC page numbers (stateless)",
+        description:
+          "Import the uploaded .docx, recompute every table-of-contents entry's page number with the " +
+          "server's layout engine, and return the updated .docx — no document is stored. For a render " +
+          "pipeline that emits a .docx with a TOC field but has no layout engine to fill in real page " +
+          "numbers. Auth: dashboard admin token OR an integration API key (X-API-Key or Bearer). Body is " +
+          "the raw .docx bytes.",
+        requestBody: {
+          required: true,
+          content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } },
+        },
+        responses: {
+          "200": {
+            description:
+              "The updated .docx. The X-TOC-Entries-Updated response header reports how many entries changed.",
+            headers: {
+              "X-TOC-Entries-Updated": {
+                description: "number of TOC entries whose page number changed",
+                schema: { type: "integer" },
+              },
+            },
+            content: {
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+                schema: { type: "string", format: "binary" },
+              },
+            },
+          },
+          "400": {
+            description: "The body was not a valid .docx",
+            content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
     "/media/{hash}": {
       put: {
         summary: "Store image bytes under their content hash",
@@ -206,6 +275,10 @@ export const OPENAPI_SPEC = {
     responses: {
       NotFound: {
         description: "Not found",
+        content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+      },
+      Unauthorized: {
+        description: "Missing or invalid auth (admin token or integration API key)",
         content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
       },
     },
