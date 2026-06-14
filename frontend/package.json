@@ -49,6 +49,7 @@
       "types": "./types/builder.d.ts",
       "import": "./dist-lib/builder.js"
     },
+    "./import": "./src/import/docx/pipeline.ts",
     "./export": "./src/export/pipeline.ts",
     "./export/measure": "./src/export/shared/measureHost.ts"
   },
