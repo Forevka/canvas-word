@@ -131,6 +131,70 @@ describe("session-end webhook", () => {
   }, 15000);
 });
 
+describe("comment.mention webhook", () => {
+  it("delivers a signed notification when a comment @-mentions users", async () => {
+    const received: { body: string; sig: string | undefined; event: string | undefined }[] = [];
+    let resolveHit: () => void;
+    const hit = new Promise<void>((r) => (resolveHit = r));
+    const catcher = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (c) => chunks.push(c as Buffer));
+      req.on("end", () => {
+        received.push({
+          body: Buffer.concat(chunks).toString("utf8"),
+          sig: req.headers["x-cw-signature"] as string | undefined,
+          event: req.headers["x-cw-event"] as string | undefined,
+        });
+        res.writeHead(200).end("ok");
+        resolveHit();
+      });
+    });
+    servers.push(catcher);
+    const catcherPort = await listen(catcher);
+
+    const store = new MemoryChangeStore();
+    const { docId } = await store.createDocument(serializeDocument(doc()), { createdBy: "u1" });
+    const secret = "mention-secret";
+    await store.createWebhook({ url: `http://127.0.0.1:${catcherPort}/hook`, secret, events: ["comment.mention"] });
+
+    const { server } = createApp(store);
+    servers.push(server);
+    const port = await listen(server);
+
+    const style = { fontFamily: "Georgia", fontSizePx: 16, bold: false, italic: false, underline: false, strikethrough: false, color: "#000" };
+    const ann = { id: "u-ann", firstName: "Ann", lastName: "Lee" };
+    const env = {
+      op: {
+        type: "addThread",
+        t: {
+          id: "t1",
+          anchor: { start: { blockId: "p1", offset: 0 }, end: { blockId: "p1", offset: 2 } },
+          status: "open",
+          comments: [{ id: "cm1", author: { id: "u1", firstName: "Ed", lastName: "Itor" }, body: [{ text: "look here @Ann Lee", style }], createdAt: 1, mentions: [ann] }],
+        },
+      },
+      dependsOnSeq: 0,
+    };
+
+    const a = new WebSocket(`ws://127.0.0.1:${port}/ws?doc=${docId}`);
+    await once(a, "open");
+    a.send(JSON.stringify({ type: "review", review: env }));
+
+    await Promise.race([hit, delay(5000)]);
+    a.close();
+    expect(received).toHaveLength(1);
+
+    const got = received[0]!;
+    expect(got.event).toBe("comment.mention");
+    expect(got.sig).toBe("sha256=" + createHmac("sha256", secret).update(got.body).digest("hex"));
+    const payload = JSON.parse(got.body) as { event: string; docId: string; threadId: string; body: string; mentions: { id: string }[] };
+    expect(payload.docId).toBe(docId);
+    expect(payload.threadId).toBe("t1");
+    expect(payload.mentions.map((m) => m.id)).toEqual(["u-ann"]);
+    expect(payload.body).toContain("@Ann Lee");
+  }, 15000);
+});
+
 function once(ws: WebSocket, ev: "open"): Promise<void> {
   return new Promise((resolve, reject) => {
     ws.once(ev, () => resolve());

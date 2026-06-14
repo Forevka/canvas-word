@@ -39,6 +39,9 @@ export interface WordCanvasOptions {
   /** Restrict which modes the user can switch to (constrains the mode picker and
    *  setMode). Omit ⇒ all three. e.g. ["suggest","view"] locks out raw editing. */
   allowedModes?: EditMode[];
+  /** Users that can be @-mentioned in comments. The embedder owns this roster;
+   *  update it later with `setKnownUsers`. */
+  knownUsers?: UserInfo[];
 }
 
 /** Event name → payload, for `on(...)`. */
@@ -74,6 +77,7 @@ export class WordCanvas {
         readonly: opts.readonly,
         mode: opts.mode,
         allowedModes: opts.allowedModes,
+        knownUsers: opts.knownUsers,
         onReady: (h) => {
           this.handle = h;
           resolve(h);
@@ -146,6 +150,17 @@ export class WordCanvas {
     return (await this.ready).getReview();
   }
 
+  /** The effective @-mentionable roster: the configured base PLUS whoever is
+   *  live-editing the document right now (auto-merged from presence). */
+  async getKnownUsers(): Promise<UserInfo[]> {
+    return (await this.ready).getKnownUsers();
+  }
+
+  /** Replace the configured base roster (live editors are still merged on top). */
+  async setKnownUsers(users: UserInfo[]): Promise<void> {
+    (await this.ready).setKnownUsers(users);
+  }
+
   async acceptSuggestion(id: string): Promise<void> {
     (await this.ready).acceptSuggestion(id);
   }
@@ -159,13 +174,14 @@ export class WordCanvas {
     (await this.ready).rejectAllSuggestions();
   }
 
-  /** Add a comment thread anchored to the current selection (a rich-text body).
-   *  Resolves to the thread id, or null if there's no selection. */
-  async addComment(body: Fragment): Promise<string | null> {
-    return (await this.ready).addComment(body);
+  /** Add a comment thread anchored to the current selection (a rich-text body;
+   *  `mentions` are @-tagged users). Resolves to the thread id, or null if
+   *  there's no selection. */
+  async addComment(body: Fragment, mentions?: UserInfo[]): Promise<string | null> {
+    return (await this.ready).addComment(body, mentions);
   }
-  async replyToComment(threadId: string, body: Fragment): Promise<void> {
-    (await this.ready).replyToComment(threadId, body);
+  async replyToComment(threadId: string, body: Fragment, mentions?: UserInfo[]): Promise<void> {
+    (await this.ready).replyToComment(threadId, body, mentions);
   }
   async resolveThread(threadId: string, resolved = true): Promise<void> {
     (await this.ready).resolveThread(threadId, resolved);

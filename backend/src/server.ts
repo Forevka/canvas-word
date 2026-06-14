@@ -243,6 +243,8 @@ export function createApp(
           // Persist the review op (append log) and relay to the rest of the room.
           await store.appendReviewOp(docId, msg.review);
           bcast.publishReview(docId, msg.review, ws);
+          // Notify third-party systems about any @-mentions in the op.
+          void dispatcher.onReviewOp(docId, msg.review.op);
         } else if (msg.type === "hello" && msg.siteId) {
           if (msg.user) await store.upsertUser(msg.user);
           bcast.hello(ws, msg.siteId, msg.user);

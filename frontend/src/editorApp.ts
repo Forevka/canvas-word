@@ -16,6 +16,7 @@ import { buildShell } from "./app/shell";
 import { ensureWordCanvasStyles } from "./ui/styles";
 import { showContextMenu, type MenuEntry } from "./ui/contextMenu";
 import { loadCollabDocument, loadCollabReview, publishDocument } from "./sync/collab";
+import { attachMentionAutocomplete } from "./review/mentions";
 import { showBusy } from "./app/busyOverlay";
 // Ribbon/toolbar command set + style helpers + icons — the chrome, not the core.
 // (Hoisted here from the toolbar block; ES imports must be top-level, and the
@@ -193,6 +194,7 @@ const editorOpts = {
   ...(runtime.mode ? { mode: runtime.mode } : {}),
   ...(runtime.allowedModes ? { allowedModes: runtime.allowedModes } : {}),
   ...(runtime.user ? { user: runtime.user } : {}),
+  ...(runtime.knownUsers ? { knownUsers: runtime.knownUsers } : {}),
   ...(collabId !== null ? { docId: collabId } : {}),
   // In a collab session, ship each recorded local edit to the server.
   onChangeRecorded: (change: Change) => {
@@ -1775,6 +1777,31 @@ if (toolbar) {
       }
     };
 
+    // Render a comment body as text + highlighted @mention chips (matched against
+    // the comment's resolved mentions; longest display first to avoid overlaps).
+    const renderCommentBody = (host: HTMLElement, text: string, mentions?: { firstName: string; lastName: string }[]): void => {
+      const tokens = (mentions ?? []).map((u) => `@${authorName(u)}`).sort((a, b) => b.length - a.length);
+      if (tokens.length === 0) {
+        host.textContent = text;
+        return;
+      }
+      let rest = text;
+      while (rest.length > 0) {
+        let at = -1;
+        let tok = "";
+        for (const n of tokens) {
+          const i = rest.indexOf(n);
+          if (i >= 0 && (at < 0 || i < at)) { at = i; tok = n; }
+        }
+        if (at < 0) { host.appendChild(document.createTextNode(rest)); break; }
+        if (at > 0) host.appendChild(document.createTextNode(rest.slice(0, at)));
+        const chip = el("span", "cw-mention");
+        chip.textContent = tok;
+        host.appendChild(chip);
+        rest = rest.slice(at + tok.length);
+      }
+    };
+
     const renderComments = (review: ReturnType<typeof editor.getReview>): void => {
       if (review.threads.length === 0) {
         body.append(emptyState("💬", "No comments yet. Select text in the document and click 💬 in the toolbar to start a discussion."));
@@ -1791,7 +1818,7 @@ if (toolbar) {
           when.textContent = timeAgo(c.createdAt);
           who.append(when);
           const text = el("div", "cw-comment-body");
-          text.textContent = c.body.map((r) => r.text).join("");
+          renderCommentBody(text, c.body.map((r) => r.text).join(""), c.mentions);
           main.append(who, text);
           cm.append(avatar(c.author), main);
           card.append(cm);
@@ -1801,10 +1828,11 @@ if (toolbar) {
         const replyTa = el("textarea") as HTMLTextAreaElement;
         replyTa.placeholder = "Reply…";
         replyTa.style.cssText = "flex:1 1 auto;resize:none;min-height:34px;border:1px solid #dadce0;border-radius:6px;padding:6px 8px;font:13px/1.4 inherit;outline:none;";
+        const replyMentions = attachMentionAutocomplete(replyTa, () => editor.getKnownUsers());
         const replySend = mkBtn("cw-btn cw-btn-primary cw-btn-sm", "Reply", () => {
           const v = replyTa.value.trim();
           if (!v) return;
-          editor.replyToComment(t.id, commentFragment(v));
+          editor.replyToComment(t.id, commentFragment(v), replyMentions.getMentions());
           editor.focus();
         });
         replyBox.append(replyTa, replySend);
@@ -2464,12 +2492,14 @@ const handle: EditorHandle = {
   getMode: () => editor.getMode(),
   setMode: (mode) => editor.setMode(mode),
   getReview: () => editor.getReview(),
+  getKnownUsers: () => editor.getKnownUsers(),
+  setKnownUsers: (users) => editor.setKnownUsers(users),
   acceptSuggestion: (id) => editor.acceptSuggestion(id),
   rejectSuggestion: (id) => editor.rejectSuggestion(id),
   acceptAllSuggestions: () => editor.acceptAllSuggestions(),
   rejectAllSuggestions: () => editor.rejectAllSuggestions(),
-  addComment: (body) => editor.addComment(body),
-  replyToComment: (threadId, body) => editor.replyToComment(threadId, body),
+  addComment: (body, mentions) => editor.addComment(body, mentions),
+  replyToComment: (threadId, body, mentions) => editor.replyToComment(threadId, body, mentions),
   resolveThread: (threadId, resolved) => editor.resolveThread(threadId, resolved),
   destroy: () => {
     teardown.abort(); // drop every global window/document listener this instance added

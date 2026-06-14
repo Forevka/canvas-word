@@ -308,6 +308,22 @@ const CSS = `
 }
 .cw-comment-chip:hover { transform: scale(1.08); box-shadow: 0 3px 12px rgba(60,64,67,.34); background: #f8f9fa; }
 
+/* @-mention autocomplete dropdown + rendered mention chips */
+.cw-mention-menu {
+  position: fixed; z-index: 70; background: #fff; border: 1px solid #e0e0e0;
+  border-radius: 8px; box-shadow: 0 6px 22px rgba(60,64,67,.28); padding: 4px;
+  max-height: 240px; overflow-y: auto; font: 13px/1.3 inherit;
+}
+.cw-mention-item {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; color: #202124;
+}
+.cw-mention-item:hover, .cw-mention-item.active { background: #e8f0fe; }
+.cw-mention-av {
+  width: 24px; height: 24px; border-radius: 50%; flex: 0 0 24px;
+  display: flex; align-items: center; justify-content: center; color: #fff; font-size: 10px; font-weight: 700; text-transform: uppercase;
+}
+.cw-mention { color: #1a73e8; background: #e8f0fe; border-radius: 4px; padding: 0 3px; font-weight: 600; }
+
 /* collapsed ribbon: keep the tab strip, hide the body */
 .cw-toolbar.collapsed .rib-bodies { display: none; }
 

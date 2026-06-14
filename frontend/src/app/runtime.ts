@@ -42,12 +42,14 @@ export interface EditorHandle {
   getMode(): EditMode;
   setMode(mode: EditMode): boolean;
   getReview(): ReviewLayer;
+  getKnownUsers(): UserInfo[];
+  setKnownUsers(users: UserInfo[]): void;
   acceptSuggestion(id: string): void;
   rejectSuggestion(id: string): void;
   acceptAllSuggestions(): void;
   rejectAllSuggestions(): void;
-  addComment(body: Fragment): string | null;
-  replyToComment(threadId: string, body: Fragment): void;
+  addComment(body: Fragment, mentions?: UserInfo[]): string | null;
+  replyToComment(threadId: string, body: Fragment, mentions?: UserInfo[]): void;
   resolveThread(threadId: string, resolved?: boolean): void;
   destroy(): void;
 }
@@ -70,6 +72,8 @@ export interface WordCanvasRuntime {
   mode?: EditMode | undefined;
   /** Modes the user may switch to (constrains the picker + setMode). */
   allowedModes?: EditMode[] | undefined;
+  /** Users that can be @-mentioned in comments (embedder-supplied roster). */
+  knownUsers?: UserInfo[] | undefined;
   /** Called once the editor is mounted and ready. */
   onReady?: ((handle: EditorHandle) => void) | undefined;
   /** Sink for collaboration events (presence, share, ready) → WordCanvas.on(...). */

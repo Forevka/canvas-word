@@ -316,7 +316,10 @@ accepted), format changes as margin change-bars; the anchors ride the same
 remote edit), with a GC pass for emptied records. Threaded comments anchor to a
 range with a Google-Docs-style floating composer (an auto "add a comment" chip on
 selection) + a docked Review pane (suggestions/comments, Accept/Reject, accept-
-/reject-all, click-to-scroll). Accept/reject emit ordinary core ops, so they're
+/reject-all, click-to-scroll). Comments support @-mentions — the mentionable
+roster is an embedder-supplied `knownUsers` list auto-extended with whoever is
+live-editing (reusing presence), and the backend fires a `comment.mention`
+webhook (HMAC-signed) so third-party systems can notify the tagged users. Accept/reject emit ordinary core ops, so they're
 undoable + synced. Everything syncs in real time on a dedicated, idempotent,
 causally-delivered review channel (Postgres `review_ops` log) and rehydrates on
 join — anchors fast-forwarded to head so a joiner sees existing feedback in the

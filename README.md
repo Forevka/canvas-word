@@ -326,7 +326,10 @@ Suggesting / Viewing) in the ribbon header. In **Suggesting** mode every edit
 becomes a tracked, attributed proposal: insertions paint as author-colored
 underlines, deletions as strikethroughs (**non-destructive — the text stays in
 the model until accepted**), with margin change-bars. **Comments** thread on a
-text range with reply + resolve, a Google-Docs-style floating composer bubble
+text range with reply + resolve, **@-mentions** (type `@` to tag from an
+embedder-supplied `knownUsers` roster; resolved identities are recorded per
+comment and the backend fires a `comment.mention` webhook to notify third-party
+systems), a Google-Docs-style floating composer bubble
 (an "add a comment" chip auto-appears on selection in suggest mode), and a docked
 **Review pane** (right side, like the outline drawer) that lists suggestions and
 comment threads with Accept / Reject (and accept-/reject-all), click-to-scroll

@@ -18,11 +18,21 @@ const collab = params.get("doc") ?? params.get("collab");
 // attributed. Offline: no identity needed.
 const user = backend ? await showIdentityPopup() : undefined;
 
+// Demo roster so @-mentions in comments are exercisable in the dev harness;
+// production embedders pass their own `knownUsers`.
+const knownUsers = [
+  { id: "u-ada", firstName: "Ada", lastName: "Lovelace" },
+  { id: "u-alan", firstName: "Alan", lastName: "Turing" },
+  { id: "u-grace", firstName: "Grace", lastName: "Hopper" },
+  { id: "u-linus", firstName: "Linus", lastName: "Torvalds" },
+];
+
 const editor = new WordCanvas({
   container: document.body,
   ...(backend ? { backendUrl: backend } : {}),
   ...(collab ? { collabId: collab } : {}),
   ...(user ? { user } : {}),
+  knownUsers,
 });
 
 // Expose for in-browser verification (Playwright).

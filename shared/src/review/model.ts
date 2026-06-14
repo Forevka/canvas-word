@@ -56,6 +56,10 @@ export interface Comment {
   body: Fragment;
   createdAt: number;
   editedAt?: number;
+  /** Users @-mentioned in this comment (structured, for notifications). The body
+   *  text carries the "@Display Name" spans; this is the resolved identity list,
+   *  drawn from the editor's `knownUsers`. */
+  mentions?: UserInfo[];
 }
 
 export type ThreadStatus = "open" | "resolved";

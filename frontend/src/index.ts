@@ -90,6 +90,7 @@ import {
 } from "@cw/shared";
 import { intercept } from "./review/intercept";
 import { decorate } from "./review/decorate";
+import { attachMentionAutocomplete } from "./review/mentions";
 import { acceptSuggestion, rejectSuggestion, acceptAllSuggestions, rejectAllSuggestions, type Resolution } from "@cw/shared";
 
 /** Editor mode: edit (normal), suggest (edits become tracked-change records), or
@@ -209,14 +210,18 @@ export interface Editor {
   rejectSuggestion(id: string): void;
   acceptAllSuggestions(): void;
   rejectAllSuggestions(): void;
+  /** The roster of @-mentionable users (set in the constructor / setKnownUsers). */
+  getKnownUsers(): UserInfo[];
+  /** Update the @-mentionable user roster at runtime. */
+  setKnownUsers(users: UserInfo[]): void;
   /** Add a comment thread anchored to the current selection (start===end ⇒ a
-   *  point comment). `body` is a rich fragment. Returns the new thread id, or
-   *  null if there's no selection. */
-  addComment(body: Fragment): string | null;
+   *  point comment). `body` is a rich fragment; `mentions` are tagged users.
+   *  Returns the new thread id, or null if there's no selection. */
+  addComment(body: Fragment, mentions?: UserInfo[]): string | null;
   /** Open the floating comment composer anchored to the current selection
    *  (Google-Docs-style bubble). No-op in view mode or with no selection. */
   startComment(): void;
-  replyToComment(threadId: string, body: Fragment): void;
+  replyToComment(threadId: string, body: Fragment, mentions?: UserInfo[]): void;
   resolveThread(threadId: string, resolved?: boolean): void;
   /** Apply a review op that arrived from a collaborator (already anchor-rebased
    *  to the local doc by the caller). Not recorded/broadcast. */
@@ -252,6 +257,9 @@ export interface EditorOptions {
   /** Local user identity — attributed onto suggestions/comments authored here.
    *  Without it, suggest mode falls back to anonymous attribution. */
   user?: UserInfo;
+  /** Users that can be @-mentioned in comments (the embedder owns the roster).
+   *  Updatable at runtime via setKnownUsers. */
+  knownUsers?: UserInfo[];
   /** Seed the review overlay (e.g. a layer loaded from the backend). */
   review?: ReviewLayer;
   /** Fires after the review overlay changes (suggestion/comment added, resolved,
@@ -927,7 +935,23 @@ export function createEditor(
       : { start: selection.focus, end: selection.anchor };
   };
 
-  const addComment = (body: Fragment): string | null => {
+  // The @-mentionable roster = the embedder's configured base PLUS whoever is
+  // live-editing the document right now (reusing presence: remotePeers already
+  // carries each peer's UserInfo, maintained by setPeerPresence/removePeer).
+  let knownUsers: UserInfo[] = options.knownUsers ?? [];
+  const dedupeById = (users: UserInfo[]): UserInfo[] => {
+    const seen = new Map<string, UserInfo>();
+    for (const u of users) if (u.id && !seen.has(u.id)) seen.set(u.id, u);
+    return [...seen.values()];
+  };
+  const mentionableUsers = (): UserInfo[] =>
+    dedupeById([
+      ...knownUsers,
+      ...[...remotePeers.values()].map((p) => p.user).filter((u): u is UserInfo => !!u),
+    ]);
+  const mentionField = (mentions?: UserInfo[]) => (mentions && mentions.length > 0 ? { mentions } : {});
+
+  const addComment = (body: Fragment, mentions?: UserInfo[]): string | null => {
     if (mode === "view") return null;
     const range = orderedSelectionRange();
     if (!range) return null;
@@ -937,15 +961,15 @@ export function createEditor(
       id: freshId(),
       anchor: { start: range.start, end: range.end },
       status: "open" as const,
-      comments: [{ id: freshId(), author, body, createdAt: now }],
+      comments: [{ id: freshId(), author, body, createdAt: now, ...mentionField(mentions) }],
     };
     recordReviewOnly([{ type: "addThread", t: thread }]);
     return thread.id;
   };
 
-  const replyToComment = (threadId: string, body: Fragment): void => {
+  const replyToComment = (threadId: string, body: Fragment, mentions?: UserInfo[]): void => {
     recordReviewOnly([
-      { type: "addComment", threadId, c: { id: freshId(), author: reviewAuthor(), body, createdAt: Date.now() } },
+      { type: "addComment", threadId, c: { id: freshId(), author: reviewAuthor(), body, createdAt: Date.now(), ...mentionField(mentions) } },
     ]);
   };
 
@@ -1011,8 +1035,9 @@ export function createEditor(
     av.style.background = colorForId(who.id);
     av.textContent = (who.firstName[0] ?? "?") + (who.lastName[0] ?? "");
     const ta = document.createElement("textarea");
-    ta.placeholder = "Add a comment…";
+    ta.placeholder = "Add a comment…  (@ to mention)";
     row.append(av, ta);
+    const mentions = attachMentionAutocomplete(ta, mentionableUsers);
 
     const actions = document.createElement("div");
     actions.className = "cw-bubble-actions";
@@ -1035,15 +1060,16 @@ export function createEditor(
     const send = (): void => {
       const text = ta.value.trim();
       if (!text) return;
-      addComment([{ text, style }]);
+      addComment([{ text, style }], mentions.getMentions());
+      mentions.destroy();
       closeCommentComposer();
       proxy.focus();
     };
     ta.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") { e.preventDefault(); closeCommentComposer(); proxy.focus(); }
+      if (e.key === "Escape") { e.preventDefault(); mentions.destroy(); closeCommentComposer(); proxy.focus(); }
       else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
     });
-    cancel.addEventListener("click", () => { closeCommentComposer(); proxy.focus(); });
+    cancel.addEventListener("click", () => { mentions.destroy(); closeCommentComposer(); proxy.focus(); });
     submit.addEventListener("click", send);
   };
 
@@ -2442,6 +2468,9 @@ export function createEditor(
     setMode,
     getReview: (): ReviewLayer => review,
     seedReview,
+    // The effective roster: configured base + live editors (presence-merged).
+    getKnownUsers: (): UserInfo[] => mentionableUsers(),
+    setKnownUsers: (users: UserInfo[]): void => { knownUsers = users; },
     acceptSuggestion: (id: string): void => commitResolution(acceptSuggestion(doc, review, id)),
     rejectSuggestion: (id: string): void => commitResolution(rejectSuggestion(doc, review, id)),
     acceptAllSuggestions: (): void => commitResolution(acceptAllSuggestions(doc, review)),

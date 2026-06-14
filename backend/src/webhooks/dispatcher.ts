@@ -5,10 +5,13 @@
 // is logged so the dashboard can show delivery history.
 
 import { createHmac } from "node:crypto";
-import { applyReviewOp, emptyReview } from "@cw/shared";
+import { applyReviewOp, emptyReview, type Comment, type ReviewOp } from "@cw/shared";
 import type { ChangeStore, DocumentActivity } from "../store/ChangeStore";
 
 export const SESSION_ENDED_EVENT = "document.session_ended";
+/** Fired when a comment (or reply) @-mentions one or more users, so a third-party
+ *  system can notify them. Embedders subscribe a webhook with this event. */
+export const MENTION_EVENT = "comment.mention";
 const MAX_ATTEMPTS = Number(process.env.WEBHOOK_MAX_ATTEMPTS ?? 3);
 
 export interface EditorRef {
@@ -79,12 +82,41 @@ export class WebhookDispatcher {
     }
   }
 
+  /** Notify subscribers when a comment/reply @-mentions users, so a third-party
+   *  system can ping them. Fire-and-forget; swallows its own errors. */
+  async onReviewOp(docId: string, op: ReviewOp): Promise<void> {
+    try {
+      const m = mentionFromOp(op);
+      if (!m || !m.comment.mentions || m.comment.mentions.length === 0) return;
+      const subscribed = (await this.store.listWebhooks()).filter(
+        (w) => w.active && w.events.includes(MENTION_EVENT),
+      );
+      if (subscribed.length === 0) return;
+      const c = m.comment;
+      const payload = {
+        event: MENTION_EVENT,
+        docId,
+        threadId: m.threadId,
+        commentId: c.id,
+        author: c.author,
+        body: c.body.map((r) => r.text).join(""),
+        mentions: c.mentions,
+        ts: Date.now(),
+      };
+      const body = JSON.stringify(payload);
+      await Promise.all(subscribed.map((w) => this.deliver(w.id, w.url, w.secret, docId, body, MENTION_EVENT)));
+    } catch {
+      // Never let webhook dispatch take down the connection handler.
+    }
+  }
+
   private async deliver(
     webhookId: string,
     url: string,
     secret: string,
     docId: string,
     body: string,
+    event: string = SESSION_ENDED_EVENT,
   ): Promise<void> {
     const sig = "sha256=" + createHmac("sha256", secret).update(body).digest("hex");
     let attempt = 0;
@@ -98,7 +130,7 @@ export class WebhookDispatcher {
           headers: {
             "content-type": "application/json",
             "x-cw-signature": sig,
-            "x-cw-event": SESSION_ENDED_EVENT,
+            "x-cw-event": event,
           },
           body,
         });
@@ -107,7 +139,7 @@ export class WebhookDispatcher {
           await this.store.recordDelivery({
             webhookId,
             docId,
-            event: SESSION_ENDED_EVENT,
+            event,
             status: "success",
             responseCode,
             attempts: attempt,
@@ -124,13 +156,24 @@ export class WebhookDispatcher {
     await this.store.recordDelivery({
       webhookId,
       docId,
-      event: SESSION_ENDED_EVENT,
+      event,
       status: "failed",
       responseCode,
       attempts: attempt,
       lastError,
     });
   }
+}
+
+/** The comment carrying mentions from a review op (a new thread's root comment or
+ *  an added reply), or null for ops without a comment. */
+function mentionFromOp(op: ReviewOp): { threadId: string; comment: Comment } | null {
+  if (op.type === "addThread") {
+    const root = op.t.comments[0];
+    return root ? { threadId: op.t.id, comment: root } : null;
+  }
+  if (op.type === "addComment") return { threadId: op.threadId, comment: op.c };
+  return null;
 }
 
 /** Distinct authors (by user id) in most-recent-first order, with display names. */
