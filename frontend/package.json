@@ -48,12 +48,14 @@
     "./builder": {
       "types": "./types/builder.d.ts",
       "import": "./dist-lib/builder.js"
-    }
+    },
+    "./export": "./src/export/pipeline.ts",
+    "./export/measure": "./src/export/shared/measureHost.ts"
   },
   "publishConfig": {
     "access": "public"
   },
-  "files": ["dist-lib", "types"],
+  "files": ["dist-lib", "types", "src"],
   "scripts": {
     "dev": "vite",
     "build": "vite build",
