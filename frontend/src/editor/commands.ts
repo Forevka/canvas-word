@@ -1,7 +1,8 @@
 // Commands: pure (state) -> Transaction | null. The keymap, the IME proxy, and
 // (later) toolbar buttons all dispatch through these.
 
-import type { Block, CellBorder, CellBorders, CharStyle, ImageBlock, ParaStyle, Paragraph, Run, SdtProps, SdtType, TableBlock, TableCell, TableRow } from "@cw/shared";
+import type { Block, CellBorder, CellBorders, CharStyle, ImageBlock, ParaStyle, Paragraph, Run, SdtProps, SdtType, TableBlock, TableCell, TableRow, TocOptions } from "@cw/shared";
+import { detectTocHeadings, tocEntryStyle, tocTitleStyle } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, GridRect } from "@cw/shared";
 import { isCollapsed, BAND_CONTAINERS } from "@cw/shared";
 import type { Op, SectionGeometry } from "@cw/shared";
@@ -638,13 +639,6 @@ export function setBandVariantEnabled(kind: "first" | "even", enabled: boolean):
 
 const TOC_LEVELS = 3;
 
-function headingLevel(p: Paragraph): number | null {
-  const m = p.style.namedStyle?.match(/^heading(\d)$/i);
-  if (!m) return null;
-  const lvl = Number(m[1]);
-  return lvl >= 1 && lvl <= TOC_LEVELS ? lvl : null;
-}
-
 function tocEntryBlocks(doc: EditorState["doc"]): Paragraph[] {
   const out: Paragraph[] = [];
   for (let i = 0; i < doc.blocks.length; i++) {
@@ -659,53 +653,42 @@ function tocEntryBlocks(doc: EditorState["doc"]): Paragraph[] {
   return out;
 }
 
-function buildTocParagraphs(doc: EditorState["doc"]): Paragraph[] {
-  const char = (size: number, bold = false): CharStyle => ({
-    fontFamily: "Georgia, serif",
-    fontSizePx: size,
-    bold,
-    italic: false,
-    underline: false,
-    strikethrough: false,
-    color: "#202124",
-  });
-  const out: Paragraph[] = [
-    {
-      kind: "paragraph",
-      id: freshBlockId(),
-      revision: 0,
-      runs: [{ text: "Table of Contents", style: char(20, true) }],
-      style: {
-        align: "left", lineHeight: 1.4, spaceBeforePx: 8, spaceAfterPx: 12,
-        indentFirstLinePx: 0, indentLeftPx: 0, namedStyle: "tocTitle",
-      },
-    },
-  ];
-  // Scan body AND table-cell paragraphs so headings inside tables are listed.
-  for (const b of bodyParagraphs(doc)) {
-    const level = headingLevel(b);
-    if (level === null) continue;
-    const text = textOfRuns(b.runs).replace(/\v/g, " ").trim();
-    if (text.length === 0) continue;
+/** Build TOC paragraphs (title + entries) from the document's headings. Every
+ *  hardcoded look is an overridable `TocOptions` default, so the editor and the
+ *  headless backend route share one generator. The page number is paint-only
+ *  (layout post-pass); a right-aligned dot-leader tab stop right-aligns it. */
+export function buildTocParagraphs(doc: EditorState["doc"], opts: TocOptions = {}): Paragraph[] {
+  const maxLevel = opts.maxLevel ?? TOC_LEVELS;
+  const contentWidthPx = doc.section.pageWidthPx - doc.section.marginPx.left - doc.section.marginPx.right;
+  const out: Paragraph[] = [];
+
+  const title = tocTitleStyle(opts);
+  if (title) {
     out.push({
-      kind: "paragraph",
-      id: freshBlockId(),
-      revision: 0,
-      runs: [{ text, style: char(level === 1 ? 14 : 13, level === 1) }],
-      style: {
-        align: "left", lineHeight: 1.5, spaceBeforePx: 0, spaceAfterPx: 2,
-        indentFirstLinePx: 0, indentLeftPx: (level - 1) * 20,
-        tocEntry: { targetId: b.id, level },
-      },
+      kind: "paragraph", id: freshBlockId(), revision: 0,
+      runs: [{ text: title.text, style: title.char }],
+      style: title.para,
+    });
+  }
+
+  // Scan body AND table-cell paragraphs so headings inside tables are listed.
+  for (const { block, level } of detectTocHeadings(doc, undefined, maxLevel)) {
+    const text = textOfRuns(block.runs).replace(/\v/g, " ").trim();
+    if (text.length === 0) continue;
+    const { char, para } = tocEntryStyle(opts, level, contentWidthPx);
+    out.push({
+      kind: "paragraph", id: freshBlockId(), revision: 0,
+      runs: [{ text, style: char }],
+      style: { ...para, tocEntry: { targetId: block.id, level } },
     });
   }
   return out;
 }
 
 /** Insert a TOC at the caret, or REGENERATE the existing one (Word's F9). */
-export function insertTocCmd(): Command {
+export function insertTocCmd(opts?: TocOptions): Command {
   return (state) => {
-    const fresh = buildTocParagraphs(state.doc);
+    const fresh = buildTocParagraphs(state.doc, opts);
     if (fresh.length <= 1) return null; // no headings -> nothing to list
     const existing = tocEntryBlocks(state.doc);
     const ops: Op[] = [];

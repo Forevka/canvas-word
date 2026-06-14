@@ -28,7 +28,7 @@ import {
 } from "../units";
 import { MediaManager } from "./mediaPack";
 import { REL, RelManager } from "./relationships";
-import { el, textEl, WML_NS, XML_DECL } from "./xmlWrite";
+import { el, escapeText, textEl, WML_NS, XML_DECL } from "./xmlWrite";
 
 // model verticalAlign -> w:vertAlign; jc; highlight hex -> Word color name.
 const HIGHLIGHT_NAME: Record<string, string> = {
@@ -66,6 +66,14 @@ export interface PartCtx {
    *  body those tokens stay literal text — symmetric with import, which only
    *  tokenizes fields in bands. */
   fieldTokens?: boolean;
+  /** Heading blockId → displayed page number, from a layout pass — the cached
+   *  result baked into each TOC entry's PAGEREF field so a non-updating viewer
+   *  shows correct numbers (Word recomputes on F9 regardless). */
+  tocPages?: Map<string, number>;
+  /** Ensure the heading block has an in-document bookmark (synthesizing one if the
+   *  doc has none) and return its name, so a live PAGEREF can point at it. Returns
+   *  undefined if the target block doesn't exist (dangling TOC entry). */
+  ensureTocBookmark?: (blockId: string) => string | undefined;
 }
 
 const hex = (color: string): string => color.replace(/^#/, "").toLowerCase();
@@ -454,6 +462,54 @@ export function blockXml(block: Block, ctx: PartCtx): string {
   return imageParagraphXml(block, ctx);
 }
 
+// ---------------------------------------------------------------------------
+// Live TOC field. A model TOC is a run of paragraphs carrying style.tocEntry
+// (the editor's generated table of contents). On export we wrap them in a real
+// Word `TOC` complex field and each entry's page number in a `PAGEREF` field —
+// so the result is a live, F9-refreshable table of contents, not frozen text.
+
+const fldRun = (type: "begin" | "separate" | "end"): string =>
+  el("w:r", undefined, el("w:fldChar", { "w:fldCharType": type }));
+const instrRun = (instr: string): string =>
+  el("w:r", undefined, el("w:instrText", { "xml:space": "preserve" }, escapeText(instr)));
+
+/** A `PAGEREF <anchor> \h` field whose cached result is `numText` (the page). */
+function pagerefFieldXml(anchor: string, numText: string, rPr: string): string {
+  return (
+    fldRun("begin") +
+    instrRun(` PAGEREF ${anchor} \\h `) +
+    fldRun("separate") +
+    el("w:r", undefined, rPr + (numText.length > 0 ? textEl(numText) : "")) +
+    fldRun("end")
+  );
+}
+
+const isTocEntry = (b: Block): b is Paragraph => b.kind === "paragraph" && !!b.style.tocEntry;
+
+/** Emit a contiguous run of tocEntry paragraphs as one block-level `TOC` field.
+ *  Each entry is "<label><tab><PAGEREF>"; the field's begin/instr/separate ride
+ *  the first entry and its end rides the last. Headings get a bookmark (synthesized
+ *  if needed) so the PAGEREF resolves. */
+function tocFieldXml(entries: Paragraph[], ctx: PartCtx): string {
+  const instr = ' TOC \\o "1-3" \\h \\z \\u ';
+  return entries
+    .map((p, i) => {
+      const rPr = p.runs[0] ? rPrXml(p.runs[0].style) : "";
+      const targetId = p.style.tocEntry!.targetId;
+      const anchor = ctx.ensureTocBookmark?.(targetId);
+      let inner = "";
+      if (i === 0) inner += fldRun("begin") + instrRun(instr) + fldRun("separate");
+      inner += runsXml(p.runs, ctx); // the entry label
+      if (anchor) {
+        const numText = String(ctx.tocPages?.get(targetId) ?? "");
+        inner += el("w:r", undefined, rPr + el("w:tab")) + pagerefFieldXml(anchor, numText, rPr);
+      }
+      if (i === entries.length - 1) inner += fldRun("end");
+      return el("w:p", undefined, pPrXml(p.style, ctx) + inner);
+    })
+    .join("");
+}
+
 function imageParagraphXml(img: Extract<Block, { kind: "image" }>, ctx: PartCtx): string {
   const target = ctx.media.resolve(img.src);
   if (!target) {
@@ -555,6 +611,18 @@ export function buildDocumentXml(
   ctx: PartCtx,
   addBand: AddBandPart,
 ): string {
-  const body = blocks.map((b) => blockXml(b, ctx)).join("") + sectPrXml(section, ctx, addBand, true);
+  const parts: string[] = [];
+  for (let i = 0; i < blocks.length; i++) {
+    if (isTocEntry(blocks[i]!)) {
+      // Wrap the whole contiguous run of TOC entries in one live TOC field.
+      const group: Paragraph[] = [];
+      while (i < blocks.length && isTocEntry(blocks[i]!)) group.push(blocks[i++] as Paragraph);
+      i--; // the for-loop will ++ past the last consumed block
+      parts.push(tocFieldXml(group, ctx));
+    } else {
+      parts.push(blockXml(blocks[i]!, ctx));
+    }
+  }
+  const body = parts.join("") + sectPrXml(section, ctx, addBand, true);
   return XML_DECL + el("w:document", WML_NS, el("w:body", undefined, body));
 }

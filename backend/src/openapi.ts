@@ -132,38 +132,6 @@ export const OPENAPI_SPEC = {
         },
       },
     },
-    "/docs/{id}/recalc": {
-      post: {
-        summary: "Recalculate the stored document's TOC page numbers",
-        description:
-          "Lays the document out with the server's layout engine and rewrites each table-of-contents " +
-          "entry's page number to its heading's real page. The rewrite is persisted as a versioned change " +
-          "(and broadcast to connected editors), so a subsequent GET /docs/{id}/export.docx returns the " +
-          "updated file. Auth: dashboard admin token OR an integration API key (X-API-Key or Bearer). " +
-          "No-op (changed: 0) when every entry is already current.",
-        parameters: [{ $ref: "#/components/parameters/DocId" }],
-        responses: {
-          "200": {
-            description: "OK",
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    docId: { type: "string" },
-                    changed: { type: "integer", description: "number of TOC entries whose page number changed" },
-                    version: { type: "integer", description: "new head version (unchanged when changed is 0)" },
-                  },
-                  required: ["docId", "changed", "version"],
-                },
-              },
-            },
-          },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-          "404": { $ref: "#/components/responses/NotFound" },
-        },
-      },
-    },
     "/docs/{id}/activity": {
       get: {
         summary: "Edit history with author names (attribution)",
@@ -209,11 +177,14 @@ export const OPENAPI_SPEC = {
       post: {
         summary: "Recalculate a .docx's TOC page numbers (stateless)",
         description:
-          "Import the uploaded .docx, recompute every table-of-contents entry's page number with the " +
-          "server's layout engine, and return the updated .docx — no document is stored. For a render " +
-          "pipeline that emits a .docx with a TOC field but has no layout engine to fill in real page " +
-          "numbers. Auth: dashboard admin token OR an integration API key (X-API-Key or Bearer). Body is " +
-          "the raw .docx bytes.",
+          "Recompute every TOC/cross-reference page number with the server's layout engine and return the " +
+          "updated .docx — no document is stored. The original file is preserved and PATCHED IN PLACE " +
+          "(only the cached PAGEREF result digits change), so the live TOC field, PAGEREF fields, and " +
+          "footer PAGE/NUMPAGES fields all stay intact and Word can still F9-refresh them. For a render " +
+          "pipeline that emits a real Word TOC field but has no layout engine to fill in real page numbers. " +
+          "Limitation: only arabic page numbers are recalculated — roman/alpha cached values are left as-is " +
+          "(reported via X-TOC-Entries-Skipped). Auth: dashboard admin token OR an integration API key " +
+          "(X-API-Key or Bearer). Body is the raw .docx bytes.",
         requestBody: {
           required: true,
           content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } },
@@ -227,6 +198,10 @@ export const OPENAPI_SPEC = {
                 description: "number of TOC entries whose page number changed",
                 schema: { type: "integer" },
               },
+              "X-TOC-Entries-Skipped": {
+                description: "PAGEREF entries left untouched because the cached page number was non-arabic (roman/alpha)",
+                schema: { type: "integer" },
+              },
             },
             content: {
               "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
@@ -236,6 +211,57 @@ export const OPENAPI_SPEC = {
           },
           "400": {
             description: "The body was not a valid .docx",
+            content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/generate-toc.docx": {
+      post: {
+        summary: "Generate a TOC field's result (headless, drift-free)",
+        description:
+          "For a .docx that contains a Word `TOC` field with an empty/placeholder result: detect the " +
+          "document's headings, compute their real pages with the server's layout engine, and splice the " +
+          "generated entries (styled, with live PAGEREF page numbers + hyperlinks) into the field's result " +
+          "region IN PLACE — the rest of the file is byte-preserved, so there is no pagination drift. " +
+          "Honors the field instruction's \\o/\\u/\\t/\\h/\\n/\\p switches. All entry styling is overridable " +
+          "via the `toc` part (see TocOptions in @cw/shared). Heading bookmarks are reused when present or " +
+          "synthesized. Auth: dashboard admin token OR an integration API key (X-API-Key or Bearer).",
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                properties: {
+                  file: { type: "string", format: "binary", description: "the .docx" },
+                  toc: { type: "string", description: "optional JSON TocOptions (title/levels/leader/…)" },
+                },
+                required: ["file"],
+              },
+            },
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+              schema: { type: "string", format: "binary", description: "raw .docx body (default options)" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "The patched .docx. Response headers report what was generated.",
+            headers: {
+              "X-TOC-Entries-Generated": { description: "entries written into the field result", schema: { type: "integer" } },
+              "X-Headings-Found": { description: "headings detected in the document", schema: { type: "integer" } },
+              "X-Bookmarks-Synthesized": { description: "heading bookmarks created (those that had none)", schema: { type: "integer" } },
+            },
+            content: {
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+                schema: { type: "string", format: "binary" },
+              },
+            },
+          },
+          "400": {
+            description: "Missing docx or invalid toc JSON",
             content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
           },
           "401": { $ref: "#/components/responses/Unauthorized" },

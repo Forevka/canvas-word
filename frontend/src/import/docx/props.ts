@@ -115,6 +115,14 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
   const pageBreakBefore = onOff(el(pPr, "w:pageBreakBefore"));
   if (pageBreakBefore !== undefined) props.pageBreakBefore = pageBreakBefore;
 
+  // w:outlineLvl (0-8) — heading styles set it; absent = body text. Resolved
+  // through the style cascade (mergeProps), so a heading paragraph inherits it.
+  const outline = val(pPr, "w:outlineLvl");
+  if (outline !== undefined) {
+    const n = Number(outline);
+    if (Number.isFinite(n) && n >= 0 && n <= 8) props.outlineLevel = n;
+  }
+
   const numPr = el(pPr, "w:numPr");
   if (numPr) {
     const numId = val(numPr, "w:numId");

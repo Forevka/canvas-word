@@ -39,7 +39,7 @@ export interface TocEdit {
 
 /** blockId → displayed page number of the FIRST page it appears on (body only,
  *  recursing into table cells so headings inside tables resolve too). */
-function pageOfBlockMap(tree: LayoutTree): Map<string, number> {
+export function pageOfBlockMap(tree: LayoutTree): Map<string, number> {
   const pageOfBlock = new Map<string, number>();
   const scan = (blocks: PlacedBlock[], pageNum: number): void => {
     for (const pb of blocks) {

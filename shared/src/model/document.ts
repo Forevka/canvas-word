@@ -77,6 +77,11 @@ export interface ParaStyle {
    *  Explicitly `| undefined` so a setParaStyle patch can REMOVE it. */
   list?: { listId: string; level: number } | undefined;
   namedStyle?: string; // resolved through Stylesheet cascade, e.g. "heading1"
+  /** Effective outline level (docx w:outlineLvl), 0-8 = TOC levels 1-9 — resolved
+   *  through the paragraph-style cascade (heading styles carry it). Drives TOC
+   *  generation under the field's `\u` switch and robust heading detection when
+   *  styles use opaque ids. Absent = body text (no outline level). */
+  outlineLevel?: number;
   /** This paragraph ENDS a section (OOXML puts sectPr ON a paragraph). `props`
    *  describes the section being terminated; blocks after it belong to the next
    *  break's section, or to `Document.section` (the final/body sectPr).

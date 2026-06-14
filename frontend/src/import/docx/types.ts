@@ -180,6 +180,8 @@ export interface IRParaProps {
   tabStops?: { posTwips: number; val?: string; leader?: string }[];
   /** w:pageBreakBefore — this paragraph starts a new page. */
   pageBreakBefore?: boolean;
+  /** w:outlineLvl — 0-8. Heading styles set it; drives TOC `\u`/heading detection. */
+  outlineLevel?: number;
   /** w:numPr — list membership. numId "0" / null = explicitly NOT a list
    *  (overrides an inherited list from the paragraph style). */
   list?: { numId: string; level: number } | null;

@@ -17,7 +17,11 @@ import { settingsXml } from "./settingsXml";
 import { stylesXml } from "./stylesXml";
 import { XML_DECL, el } from "./xmlWrite";
 
-export function writeDocx(doc: Document, images: ImageBytes = {}): ExportResult {
+export function writeDocx(
+  doc: Document,
+  images: ImageBytes = {},
+  tocPages?: Map<string, number>,
+): ExportResult {
   const warnings = new WarningSink();
   const parts: Record<string, string | Uint8Array> = {};
   const overrides: [string, string][] = [["/word/document.xml", CT.document]];
@@ -46,6 +50,34 @@ export function writeDocx(doc: Document, images: ImageBytes = {}): ExportResult 
     pushMark(range.end.blockId, { id, kind: "end", offset: range.end.offset });
   }
 
+  // TOC export: each entry's PAGEREF needs a bookmark on its target heading. Reuse
+  // an existing one (imported docs have _Toc bookmarks) or synthesize a point
+  // bookmark — but only for headings that actually exist (dangling entries skip).
+  const paraIds = new Set<string>();
+  const collectIds = (blocks: Block[]): void => {
+    for (const b of blocks) {
+      if (b.kind === "paragraph") paraIds.add(b.id);
+      else if (b.kind === "table") for (const r of b.rows) for (const c of r.cells) collectIds(c.blocks);
+    }
+  };
+  collectIds(doc.blocks);
+  const bmNameByBlock = new Map<string, string>();
+  for (const [name, range] of Object.entries(doc.bookmarks ?? {})) {
+    if (!bmNameByBlock.has(range.start.blockId)) bmNameByBlock.set(range.start.blockId, name);
+  }
+  let synthBm = 0;
+  const ensureTocBookmark = (blockId: string): string | undefined => {
+    if (!paraIds.has(blockId)) return undefined; // dangling target
+    const existing = bmNameByBlock.get(blockId);
+    if (existing) return existing;
+    const name = `_Toc9${String(synthBm++).padStart(8, "0")}`; // avoid clashing with real _TocNNN
+    bmNameByBlock.set(blockId, name);
+    const id = bmId++;
+    pushMark(blockId, { id, name, kind: "start", offset: 0 });
+    pushMark(blockId, { id, kind: "end", offset: 0 });
+    return name;
+  };
+
   const sdts = doc.sdts ?? {};
   const bodyRels = new RelManager();
   const bodyMedia = new MediaManager(images);
@@ -57,6 +89,8 @@ export function writeDocx(doc: Document, images: ImageBytes = {}): ExportResult 
     nextId,
     bookmarksByBlock,
     listIdMap,
+    ...(tocPages ? { tocPages } : {}),
+    ensureTocBookmark,
   };
 
   // Header/footer part factory — each band part gets its own rels + media.

@@ -13,7 +13,9 @@
       "@forevka/wordcanvas/import": ["../frontend/src/import/docx/pipeline.ts"],
       "@forevka/wordcanvas/export": ["../frontend/src/export/pipeline.ts"],
       "@forevka/wordcanvas/export/measure": ["../frontend/src/export/shared/measureHost.ts"],
-      "@forevka/wordcanvas/recalc": ["../frontend/src/recalc/recalcToc.ts"]
+      "@forevka/wordcanvas/recalc": ["../frontend/src/recalc/recalcToc.ts"],
+      "@forevka/wordcanvas/recalc-docx": ["../frontend/src/recalc/patchTocDocx.ts"],
+      "@forevka/wordcanvas/generate-toc": ["../frontend/src/recalc/generateTocDocx.ts"]
     }
   },
   "include": ["src"]

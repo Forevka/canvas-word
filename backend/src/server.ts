@@ -13,7 +13,9 @@ import { hashToken, newApiToken } from "./auth/apiToken";
 import { createPool } from "./db";
 import { exportDoc } from "./export/serverExport";
 import { parseAndStore } from "./import/serverImport";
-import { recalcAndPersist, recalcDocxBytes } from "./recalc/serverRecalc";
+import { recalcDocxBytes } from "./recalc/serverRecalc";
+import { generateTocBytes } from "./recalc/serverGenerateToc";
+import type { TocOptions } from "@cw/shared";
 import { OPENAPI_SPEC, SWAGGER_HTML } from "./openapi";
 import { PgChangeStore, type ChangeStore } from "./store/ChangeStore";
 import { SESSION_ENDED_EVENT, WebhookDispatcher } from "./webhooks/dispatcher";
@@ -88,6 +90,31 @@ async function readBody(req: IncomingMessage): Promise<Buffer> {
 async function readJson<T>(req: IncomingMessage): Promise<T> {
   const buf = await readBody(req);
   return JSON.parse(buf.toString("utf8")) as T;
+}
+
+/** Minimal multipart/form-data parser (binary-safe) — enough for a file part plus
+ *  small JSON fields. Returns each part's name → { data, filename? }. */
+function parseMultipart(contentType: string, body: Buffer): Record<string, { data: Buffer; filename?: string }> {
+  const m = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType);
+  if (!m) return {};
+  const boundary = Buffer.from("--" + (m[1] ?? m[2] ?? "").trim());
+  const out: Record<string, { data: Buffer; filename?: string }> = {};
+  let idx = body.indexOf(boundary);
+  while (idx >= 0) {
+    const start = idx + boundary.length;
+    if (body[start] === 0x2d && body[start + 1] === 0x2d) break; // closing "--"
+    const headerEnd = body.indexOf("\r\n\r\n", start);
+    if (headerEnd < 0) break;
+    const headers = body.toString("utf8", start, headerEnd);
+    const next = body.indexOf(boundary, headerEnd + 4);
+    if (next < 0) break;
+    const data = body.subarray(headerEnd + 4, next - 2); // strip trailing CRLF
+    const name = /name="([^"]+)"/i.exec(headers)?.[1];
+    const filename = /filename="([^"]*)"/i.exec(headers)?.[1];
+    if (name) out[name] = filename !== undefined ? { data, filename } : { data };
+    idx = next;
+  }
+  return out;
 }
 
 // --- live broadcast + presence ----------------------------------------------
@@ -390,15 +417,61 @@ async function handle(
     }
     const bytes = await readBody(req);
     try {
-      const { bytes: out, changed } = await recalcDocxBytes(new Uint8Array(bytes));
+      const { bytes: out, changed, skipped } = await recalcDocxBytes(new Uint8Array(bytes));
       res.writeHead(200, {
         "content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "content-disposition": `attachment; filename="recalc.docx"`,
         "x-toc-entries-updated": String(changed),
+        "x-toc-entries-skipped": String(skipped),
         "access-control-allow-origin": "*",
-        "access-control-expose-headers": "x-toc-entries-updated",
+        "access-control-expose-headers": "x-toc-entries-updated, x-toc-entries-skipped",
       });
       res.end(Buffer.from(out));
+      return;
+    } catch (e) {
+      return sendJson(res, 400, { error: String(e instanceof Error ? e.message : e) });
+    }
+  }
+
+  // POST /generate-toc.docx — multipart (file=docx, toc=JSON TocOptions): generate
+  // the TOC field's RESULT (the entries Word renders on F9) using our layout engine
+  // and splice it into the original file in place (drift-free). Also accepts a raw
+  // .docx body (no options). Returns the patched .docx.
+  if (method === "POST" && parts.length === 1 && parts[0] === "generate-toc.docx") {
+    if (UPLOAD_REQUIRES_AUTH && !(await authorizeUpload(req, store))) {
+      return sendJson(res, 401, { error: "unauthorized" });
+    }
+    const ctype = headerStr(req.headers["content-type"]) ?? "";
+    const body = await readBody(req);
+    let docx: Buffer | undefined;
+    let opts: TocOptions = {};
+    if (/multipart\/form-data/i.test(ctype)) {
+      const fields = parseMultipart(ctype, body);
+      docx = fields["file"]?.data;
+      const tocJson = fields["toc"]?.data?.toString("utf8");
+      if (tocJson) {
+        try {
+          opts = JSON.parse(tocJson) as TocOptions;
+        } catch {
+          return sendJson(res, 400, { error: "invalid toc JSON" });
+        }
+      }
+    } else {
+      docx = body; // raw .docx body, default options
+    }
+    if (!docx || docx.length === 0) return sendJson(res, 400, { error: "missing docx (multipart 'file' part or raw body)" });
+    try {
+      const r = await generateTocBytes(new Uint8Array(docx), opts);
+      res.writeHead(200, {
+        "content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "content-disposition": `attachment; filename="toc.docx"`,
+        "x-toc-entries-generated": String(r.generated),
+        "x-headings-found": String(r.headings),
+        "x-bookmarks-synthesized": String(r.bookmarksSynthesized),
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "x-toc-entries-generated, x-headings-found, x-bookmarks-synthesized",
+      });
+      res.end(Buffer.from(r.bytes));
       return;
     } catch (e) {
       return sendJson(res, 400, { error: String(e instanceof Error ? e.message : e) });
@@ -505,18 +578,6 @@ async function handle(
       });
       res.end(Buffer.from(exported.bytes));
       return;
-    }
-
-    // POST /docs/:id/recalc — recalculate the stored document's TOC page numbers
-    // against the live layout and persist the rewrite as a versioned change (pushed
-    // to any connected editors). The caller then GETs /docs/:id/export.docx.
-    if (method === "POST" && parts[2] === "recalc" && parts.length === 3) {
-      if (UPLOAD_REQUIRES_AUTH && !(await authorizeUpload(req, store))) {
-        return sendJson(res, 401, { error: "unauthorized" });
-      }
-      const result = await recalcAndPersist(docId, store, (id, change) => bcast.publish(id, change));
-      if (!result) return sendJson(res, 404, { error: "document not found" });
-      return sendJson(res, 200, { docId, ...result });
     }
   }
 

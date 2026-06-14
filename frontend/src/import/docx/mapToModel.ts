@@ -953,6 +953,7 @@ function mapParaStyle(props: IRParaProps): ParaStyle {
   if (props.keepLinesTogether) style.keepLinesTogether = true;
   if (props.tabStops) style.tabStops = mapTabStops(props.tabStops);
   if (props.pageBreakBefore) style.pageBreakBefore = true;
+  if (props.outlineLevel !== undefined) style.outlineLevel = props.outlineLevel;
   if (props.styleId) style.namedStyle = props.styleId;
   return style;
 }

@@ -19,6 +19,8 @@ export default defineConfig({
       { find: "@forevka/wordcanvas/import", replacement: at("../frontend/src/import/docx/pipeline.ts") },
       { find: "@forevka/wordcanvas/export/measure", replacement: at("../frontend/src/export/shared/measureHost.ts") },
       { find: "@forevka/wordcanvas/export", replacement: at("../frontend/src/export/pipeline.ts") },
+      { find: "@forevka/wordcanvas/generate-toc", replacement: at("../frontend/src/recalc/generateTocDocx.ts") },
+      { find: "@forevka/wordcanvas/recalc-docx", replacement: at("../frontend/src/recalc/patchTocDocx.ts") },
       { find: "@forevka/wordcanvas/recalc", replacement: at("../frontend/src/recalc/recalcToc.ts") },
     ],
   },

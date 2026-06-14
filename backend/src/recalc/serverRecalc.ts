@@ -1,26 +1,20 @@
-// Server-side TOC recalculation: run THIS project's layout engine headless to give
-// each TOC entry its heading's real page number — the thing a renderer-less caller
-// (e.g. a C# pipeline that emits a .docx with a TOC field) cannot compute itself.
+// Server-side TOC recalculation: use THIS project's layout engine to compute each
+// heading's real page, then PATCH those numbers into the uploaded .docx in place —
+// rewriting only the cached PAGEREF result digits and preserving every field
+// (live TOC, PAGEREF, footer PAGE/NUMPAGES) and every other part untouched. This
+// is the faithful, drift-free path for a renderer-less caller (e.g. a C# pipeline
+// that emits a real Word TOC field but cannot compute page numbers).
 //
-// installMeasureHost() injects the DOM-free fontkit measure context, so layout runs
-// in Node. The recalc only edits TOC entries' trailing page-number text, so the
-// layout never needs image pixels (ImageBlock carries its own width/height) — unlike
-// export, no media hydration is required here.
-//
-// Two entry points: a stateless bytes-in/bytes-out path for throwaway recalcs, and a
-// docId path that persists the rewrite as an OT Change so it's versioned and pushed
-// live to connected editors.
+// installMeasureHost() injects the DOM-free fontkit measure context so layout runs
+// in Node. We import only to LAY OUT — the output is the original bytes, not a
+// re-export — so there is no import↔export pagination drift.
 
 import { runImport } from "@forevka/wordcanvas/import";
-import { runExport } from "@forevka/wordcanvas/export";
 import { installMeasureHost } from "@forevka/wordcanvas/export/measure";
-import { computeTocEditsWithLayout, recalcToc, tocEditsToOps } from "@forevka/wordcanvas/recalc";
-import { reconstruct, type Change } from "@cw/shared";
-import { randomUUID } from "node:crypto";
-import type { ChangeStore } from "../store/ChangeStore";
+import { patchTocFromLayout } from "@forevka/wordcanvas/recalc-docx";
 
-// Layout (and the stateless path's export) is CPU-heavy; cap concurrency so a burst
-// can't starve the event loop / collab traffic. Mirrors serverExport.ts.
+// Layout is CPU-heavy; cap concurrency so a burst can't starve the event loop /
+// collab traffic. Mirrors serverExport.ts.
 const MAX_CONCURRENT = Number(process.env.RECALC_CONCURRENCY ?? process.env.EXPORT_CONCURRENCY ?? 2);
 let active = 0;
 const queue: (() => void)[] = [];
@@ -44,76 +38,25 @@ function release(): void {
 
 export interface RecalcDocxResult {
   bytes: Uint8Array;
-  /** Number of TOC entries whose page number changed. */
+  /** TOC/cross-reference page numbers rewritten to a new value. */
   changed: number;
+  /** PAGEREF results left untouched because the cached value was non-arabic
+   *  (roman/alpha page numbers are not recalculated — see patchTocDocx). */
+  skipped: number;
   warnings: { code: string; message: string }[];
 }
 
-/** Stateless: import a .docx, recalculate its TOC page numbers, export it back.
- *  No persistence — for a render pipeline that just wants a corrected file. */
+/** Recalculate a .docx's TOC page numbers and return the patched .docx. Stateless;
+ *  the file is preserved except the cached page numbers. */
 export async function recalcDocxBytes(bytes: Uint8Array): Promise<RecalcDocxResult> {
-  // collectMediaBytes stamps each image with a synthetic src ("cw-media:N") and
-  // hands back the bytes; the exporter keys embedded images by that same src, so we
-  // pass them straight through (no content-addressing round-trip needed here).
-  const result = runImport(bytes, undefined, { collectMediaBytes: true });
-  const images: Record<string, Uint8Array> = {};
-  for (const m of result.media) images[m.src] = m.bytes;
+  const result = runImport(bytes);
 
   await acquire();
   try {
     await installMeasureHost();
-    const { doc, changed } = recalcToc(result.doc);
-    const { bytes: out } = await runExport(doc, "docx", images);
-    return { bytes: out, changed, warnings: result.warnings };
+    const { bytes: out, changed, skipped } = patchTocFromLayout(bytes, result.doc);
+    return { bytes: out, changed, skipped, warnings: result.warnings };
   } finally {
     release();
   }
-}
-
-export interface RecalcPersistResult {
-  changed: number;
-  /** New head version after the recalc change (unchanged when nothing was stale). */
-  version: number;
-}
-
-/** docId path: reconstruct the live head, recalculate, and persist the rewrite as an
- *  OT Change (versioned, audit-visible, broadcast to connected editors). Uses the
- *  live (un-baked) document and layout — matching what editors see and the editor's
- *  own "recalculate TOC" command; the export endpoint handles track-changes baking
- *  separately. Returns null if the document doesn't exist. */
-export async function recalcAndPersist(
-  docId: string,
-  store: ChangeStore,
-  publish: (docId: string, change: Change) => void,
-): Promise<RecalcPersistResult | null> {
-  const snap = await store.getSnapshot(docId);
-  if (!snap) return null;
-  const changes = await store.getChanges(docId, snap.version);
-  const head = snap.version + changes.length;
-  const doc = reconstruct(snap.snapshot, changes);
-
-  await acquire();
-  let ops;
-  try {
-    await installMeasureHost();
-    ops = tocEditsToOps(computeTocEditsWithLayout(doc));
-  } finally {
-    release();
-  }
-  if (ops.length === 0) return { changed: 0, version: head };
-
-  const change: Change = {
-    id: randomUUID(),
-    docId,
-    baseVersion: head,
-    siteId: "server-recalc",
-    origin: "command",
-    ts: Date.now(),
-    ops,
-    selectionAfter: null,
-  };
-  const accepted = await store.appendChange(docId, change);
-  publish(docId, accepted);
-  // Two ops (deleteRange + insertText) per changed entry.
-  return { changed: ops.length / 2, version: accepted.seq ?? head + 1 };
 }

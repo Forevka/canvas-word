@@ -52,7 +52,9 @@
     "./import": "./src/import/docx/pipeline.ts",
     "./export": "./src/export/pipeline.ts",
     "./export/measure": "./src/export/shared/measureHost.ts",
-    "./recalc": "./src/recalc/recalcToc.ts"
+    "./recalc": "./src/recalc/recalcToc.ts",
+    "./recalc-docx": "./src/recalc/patchTocDocx.ts",
+    "./generate-toc": "./src/recalc/generateTocDocx.ts"
   },
   "publishConfig": {
     "access": "public"
