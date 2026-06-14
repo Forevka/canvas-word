@@ -348,6 +348,18 @@ function cellXml(cell: TableCell, ctx: PartCtx): string {
   if (cell.colSpan && cell.colSpan > 1) pr.push(el("w:gridSpan", { "w:val": cell.colSpan }));
   if (cell.shading) pr.push(el("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": hex(cell.shading) }));
   if (cell.borders) pr.push(bordersXml("w:tcBorders", cell.borders));
+  // Cell padding (w:tcMar). The importer resolves every side onto cell.margin, so
+  // omitting it would re-import as Word's default (0 top/bottom) — silently
+  // shrinking every row and drifting page count. Emit all four sides to round-trip.
+  if (cell.margin) {
+    const m = cell.margin;
+    pr.push(el("w:tcMar", undefined,
+      el("w:top", { "w:w": pxToTwips(m.top), "w:type": "dxa" }) +
+      el("w:left", { "w:w": pxToTwips(m.left), "w:type": "dxa" }) +
+      el("w:bottom", { "w:w": pxToTwips(m.bottom), "w:type": "dxa" }) +
+      el("w:right", { "w:w": pxToTwips(m.right), "w:type": "dxa" }),
+    ));
+  }
   const tcPr = el("w:tcPr", undefined, pr.join(""));
   // A cell must contain at least one paragraph.
   const content = cell.blocks.length > 0 ? cell.blocks.map((b) => blockXml(b, ctx)).join("") : el("w:p");

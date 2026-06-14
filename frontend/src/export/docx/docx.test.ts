@@ -60,6 +60,26 @@ describe("DOCX export — round trip", () => {
     expect(s.indentFirstLinePx).toBeCloseTo(24, 1);
   });
 
+  it("round-trips table cell margins (w:tcMar) — top/bottom must survive", () => {
+    // Regression: the writer used to drop cell margins, so top/bottom re-imported as
+    // Word's default 0 — shrinking every row and drifting page count by ~5%.
+    const a = runImport(
+      simpleDocx(
+        `<w:tbl><w:tblPr><w:tblCellMar>` +
+          `<w:top w:w="100" w:type="dxa"/><w:bottom w:w="100" w:type="dxa"/>` +
+          `<w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr>` +
+          `<w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid>` +
+          `<w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`,
+      ),
+    ).doc;
+    const ma = tables(a)[0]!.rows[0]!.cells[0]!.margin!;
+    expect(ma.top).toBeCloseTo(6.67, 1); // 100 twips
+    const mb = tables(roundTrip(a))[0]!.rows[0]!.cells[0]!.margin!;
+    expect(mb.top).toBeCloseTo(6.67, 1);
+    expect(mb.bottom).toBeCloseTo(6.67, 1);
+    expect(mb.left).toBeCloseTo(7.2, 1);
+  });
+
   it("preserves a table with gridSpan, vMerge, borders and shading", () => {
     const border = `<w:tcBorders><w:top w:val="single" w:sz="12" w:color="0000FF"/><w:bottom w:val="single" w:sz="12" w:color="0000FF"/><w:left w:val="single" w:sz="12" w:color="0000FF"/><w:right w:val="single" w:sz="12" w:color="0000FF"/></w:tcBorders>`;
     const body =
