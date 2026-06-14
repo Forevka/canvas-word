@@ -212,8 +212,29 @@ function renderWebhooks(main: HTMLElement): void {
   });
 }
 
+// Subscribable webhook events (must match the backend's event constants).
+const WEBHOOK_EVENTS: Array<{ id: string; label: string; hint: string }> = [
+  { id: "document.session_ended", label: "Document session ended", hint: "the last editor of a document disconnects" },
+  { id: "comment.mention", label: "Comment @-mention", hint: "a comment or reply @-mentions one or more users" },
+];
+
 function webhookForm(onCreated: () => void): HTMLElement {
   const url = el("input", { placeholder: "https://example.com/hooks/canvas-word", type: "url" });
+  const boxes = WEBHOOK_EVENTS.map((ev) => {
+    const cb = el("input", { type: "checkbox", checked: true }) as HTMLInputElement;
+    const row = el(
+      "label",
+      { style: "display:flex;align-items:flex-start;gap:8px;cursor:pointer;padding:2px 0" },
+      cb,
+      el(
+        "span",
+        {},
+        el("strong", {}, ev.label),
+        el("span", { class: "muted", style: "display:block;font-size:12px" }, ev.hint),
+      ),
+    );
+    return { id: ev.id, cb, row };
+  });
   const err = el("div", { class: "err" });
   const submit = async (e: Event): Promise<void> => {
     e.preventDefault();
@@ -222,8 +243,13 @@ function webhookForm(onCreated: () => void): HTMLElement {
       err.textContent = "URL is required";
       return;
     }
+    const events = boxes.filter((b) => b.cb.checked).map((b) => b.id);
+    if (events.length === 0) {
+      err.textContent = "Select at least one event";
+      return;
+    }
     try {
-      const hook = await api.createWebhook({ url: url.value.trim() });
+      const hook = await api.createWebhook({ url: url.value.trim(), events });
       alert(`Webhook created. Signing secret (shown once):\n\n${hook.secret}`);
       onCreated();
     } catch (ex) {
@@ -235,8 +261,10 @@ function webhookForm(onCreated: () => void): HTMLElement {
     "form",
     { class: "card stack", onsubmit: submit, style: "margin-bottom:16px" },
     el("h2", {}, "Add webhook"),
-    el("p", { class: "muted" }, "Fired when the last editor of a document disconnects (document.session_ended). The signing secret is generated and shown once."),
-    el("div", { class: "row" }, url, el("button", { class: "primary", type: "submit" }, "Create")),
+    el("p", { class: "muted" }, "Subscribe an endpoint to one or more events. Each delivery is HMAC-signed (X-CW-Signature) and tagged with X-CW-Event; the signing secret is generated and shown once."),
+    url,
+    el("div", { class: "stack", style: "gap:4px;margin:8px 0" }, el("div", { class: "muted", style: "font-size:12px" }, "Events"), ...boxes.map((b) => b.row)),
+    el("div", { class: "row" }, el("button", { class: "primary", type: "submit" }, "Create")),
     err,
   );
 }
