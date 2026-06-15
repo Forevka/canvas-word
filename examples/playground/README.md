@@ -38,3 +38,12 @@ npm run build --workspace @cw/example-playground   # bundle + copy dist-lib
 The build keeps `@forevka/wordcanvas` (and its `/builder` subpath) external and
 resolves them at runtime through the import map in `index.html`, pointing at
 the copied `./wordcanvas/` bundle — the same pattern as `examples/embed-live`.
+
+## Connect an AI agent (WebMCP)
+
+`src/main.ts` sets **`agentTools: true`**, exposing the previewed document to AI
+agents over [WebMCP](https://webmcp.dev) (`navigator.modelContext`). Connect via the
+WebMCP browser extension / Chrome DevTools MCP. The natural fit here is **read &
+inspect** — e.g. `inspect_layout` to examine the built document's page/line/fragment
+geometry while you iterate on builder code. (The rebuild loop owns the document, so
+an agent's direct edits are replaced on the next code/data change.)

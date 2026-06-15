@@ -39,6 +39,29 @@ export interface WordCanvasOptions {
    *  callback receives the field's name + verbatim instruction and returns the new
    *  result to splice in (see FieldResult). */
   resolveField?: FieldResolver;
+  /** Expose this editor to AI agents over WebMCP (https://webmcp.dev), the standard
+   *  `navigator.modelContext` API. `true` registers the full tool set — read &
+   *  inspect (including a layout-geometry dump for debugging rendering / text-
+   *  placement issues), plus suggestions, comments, and direct edits. Pass an
+   *  object to restrict capabilities or namespace the tool names. The WebMCP
+   *  polyfill is lazy-loaded only when this is set, so it adds nothing for
+   *  embedders that don't opt in. Connect an agent via the WebMCP browser
+   *  extension / Chrome DevTools MCP. */
+  agentTools?: boolean | AgentToolsOptions;
+}
+
+/** Opt-in WebMCP agent tooling (see WordCanvasOptions.agentTools). */
+export interface AgentToolsOptions {
+  /** Which tool buckets to register. Default: all three.
+   *  - `read`  — read & inspect (get_document, get_selection, search_document,
+   *    inspect_layout, get_document_stats);
+   *  - `suggest` — set_mode, comments, tracked-change suggestions, accept/reject;
+   *  - `edit`  — replace_text, insert_text, format_text, set_alignment,
+   *    select_range, undo/redo, set_document. */
+  capabilities?: ("read" | "suggest" | "edit")[];
+  /** Optional prefix so several editors on one page don't collide
+   *  (e.g. "doc1" → "doc1_get_document"). */
+  name?: string;
 }
 
 /** Request passed to a custom-field resolver (see WordCanvasOptions.resolveField). */

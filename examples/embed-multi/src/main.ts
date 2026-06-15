@@ -16,6 +16,11 @@ const countEl = document.getElementById("count")!;
 // up its chrome + body-level floating panels).
 const instances: { pane: HTMLElement; editor: WordCanvas }[] = [];
 
+// Monotonic id so each editor's WebMCP tools get a UNIQUE namespace — several
+// editors on one page would otherwise register colliding tool names (get_document,
+// …). destroy() unregisters an instance's tools, so ids never need reuse.
+let nextId = 0;
+
 const updateCount = (): void => {
   countEl.textContent = `${instances.length} editor${instances.length === 1 ? "" : "s"}`;
 };
@@ -25,7 +30,9 @@ const addEditor = (): void => {
   pane.className = "pane";
   editorsEl.appendChild(pane);
   // Each instance is a separate, self-contained editor mounted into its own box.
-  const editor = new WordCanvas({ container: pane });
+  // Namespace its WebMCP tools (e.g. "editor0_get_document") so an agent can target
+  // a specific editor among the several on this page.
+  const editor = new WordCanvas({ container: pane, agentTools: { name: `editor${nextId++}` } });
   instances.push({ pane, editor });
   updateCount();
 };

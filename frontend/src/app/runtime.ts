@@ -8,6 +8,18 @@ import type { EditMode, FieldResolver } from "../index";
 
 export type { EditMode, FieldResolver };
 
+/** Opt-in WebMCP agent tooling. `true` registers all tool buckets; an object
+ *  restricts capabilities or namespaces tool names. */
+export interface AgentToolsOptions {
+  /** Which tool buckets to register. Default: all three.
+   *  read = read & inspect (incl. layout dump); suggest = suggestions + comments;
+   *  edit = direct text/format edits. */
+  capabilities?: ("read" | "suggest" | "edit")[];
+  /** Optional prefix so several editors on one page don't collide (e.g. "doc1"
+   *  → "doc1_get_document"). */
+  name?: string;
+}
+
 /** One other collaborator currently in the document. */
 export interface Participant {
   siteId: string;
@@ -82,4 +94,8 @@ export interface WordCanvasRuntime {
    *  clicking a custom field offers "Update Field (<name>)", which calls this and
    *  splices the returned OOXML in as the field's new result. */
   resolveField?: FieldResolver | undefined;
+  /** Expose the editor to AI agents over WebMCP (navigator.modelContext). `true`
+   *  registers all tool buckets; an object restricts/namespaces them. The polyfill
+   *  is lazy-loaded only when this is set, so other embedders pay nothing. */
+  agentTools?: boolean | AgentToolsOptions | undefined;
 }

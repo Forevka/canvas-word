@@ -36,6 +36,16 @@ to join the same document and see live collaboration + presence.
 - `vite.config.ts` — minimal; `optimizeDeps.exclude` serves the pre-built,
   worker-using bundle as-is in dev.
 
+## Connect an AI agent (WebMCP)
+
+`src/main.ts` sets **`agentTools: true`**, exposing this live document to AI agents
+over [WebMCP](https://webmcp.dev) (the standard `navigator.modelContext` API) —
+the "connect an agent as reviewer/editor to a shared document" workflow. Open the
+page, connect an agent via the **WebMCP browser extension** or **Chrome DevTools
+MCP**, then have it read, comment, suggest tracked changes, or edit directly. The
+WebMCP polyfill is lazy-loaded only because `agentTools` is set. Restrict it with
+`agentTools: { capabilities: ["read", "suggest"] }`.
+
 ## Deploying as `/live`
 
 `base: "./"` makes the build path-relative, so `npm run build --workspace

@@ -22,6 +22,11 @@ const editor = new WordCanvas({
   container: document.getElementById("editor")!,
   backendUrl: BACKEND_URL,
   user,
+  // Expose this (online/collab) document to AI agents over WebMCP — the
+  // "connect an agent as reviewer/editor to a live document" workflow. Connect via
+  // the WebMCP browser extension / Chrome DevTools MCP, then have the agent read,
+  // comment, suggest, or edit. `true` = all tools.
+  agentTools: true,
   // `docId` joins an existing collaboration session; here it comes from the share
   // link's ?collab param.
   ...(collab ? { docId: collab } : {}),

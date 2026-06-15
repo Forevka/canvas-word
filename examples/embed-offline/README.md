@@ -30,6 +30,47 @@ static server).
   synthesizing it locally. Built-in `TOC` fields show **Update Field (TOC)** and
   regenerate locally (no backend).
 
+## Debugging a document with an AI agent (WebMCP)
+
+`app.js` sets **`agentTools: true`**, which exposes the live editor to AI agents
+over [WebMCP](https://webmcp.dev) — the standard `navigator.modelContext` API.
+This is the "a user reported a document that renders weirdly" workflow: open the
+offending `.docx` locally (the file picker, top-right), connect an agent, and let
+it inspect and fix the document.
+
+**Connect an agent** with either:
+
+- the **WebMCP browser extension** (it discovers the page's `navigator.modelContext`
+  tools and bridges them to your MCP client / Claude Desktop), or
+- **Chrome DevTools MCP** — point your agent at the tab.
+
+The polyfill that installs `navigator.modelContext` is bundled into the editor and
+loaded lazily only because `agentTools` is set, so embedders that don't opt in pay
+nothing.
+
+**Tools the agent gets** (all on by default; restrict with
+`agentTools: { capabilities: ["read"] }`):
+
+| Bucket | Tools |
+| --- | --- |
+| read & inspect | `get_document`, `get_selection`, `search_document`, `inspect_layout`, `get_document_stats` |
+| suggest & comment | `set_mode`, `get_review`, `add_comment`, `reply_to_comment`, `resolve_thread`, `accept_suggestion`, `reject_suggestion` |
+| direct edits | `replace_text`, `insert_text`, `format_text`, `set_alignment`, `select_range`, `undo`, `redo`, `set_document` |
+
+`inspect_layout` is the debugging workhorse: it dumps the laid-out geometry
+(per page → block → line → text-fragment positions, in page-local CSS px). Example
+prompts:
+
+- *"Call `inspect_layout` for page 1 and tell me why the heading overlaps the table."*
+- *"Find the paragraph whose fragments have `whitespaceCollapsed: true` and show its text."*
+- *"Switch to suggest mode and replace every 'colour' with 'color', then add a comment explaining why."*
+
+To restrict the agent to read-only inspection, set:
+
+```js
+new WordCanvas({ container, agentTools: { capabilities: ["read"] } });
+```
+
 In a real app installed from npm, drop the import map and let your bundler resolve
 the bare specifier:
 

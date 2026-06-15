@@ -2483,6 +2483,9 @@ const persist = { serializeDocument, deserializeDocument, reconstruct, rehydrate
 window.__cw = { doc, tree, engine, editor, createLayoutEngine, sampleDoc, stressDoc, persist, share: goOnlineWithCurrentDoc };
 
 // Hand the wrapper a control surface for the mounted editor.
+// Disposer for the WebMCP agent tools (set below when runtime.agentTools is on).
+let disposeAgentTools: (() => void) | null = null;
+
 const handle: EditorHandle = {
   getDocument: () => editor.getDocument(),
   setDocument: (d) => setDocumentFromApi(d),
@@ -2503,6 +2506,7 @@ const handle: EditorHandle = {
   replyToComment: (threadId, body, mentions) => editor.replyToComment(threadId, body, mentions),
   resolveThread: (threadId, resolved) => editor.resolveThread(threadId, resolved),
   destroy: () => {
+    disposeAgentTools?.(); // unregister WebMCP tools before tearing the editor down
     teardown.abort(); // drop every global window/document listener this instance added
     for (const el of detachables) el.remove(); // body-level floats (find bar, image bar, …)
     sync?.destroy();
@@ -2512,4 +2516,21 @@ const handle: EditorHandle = {
 };
 runtime.onReady?.(handle);
 runtime.onEvent?.({ type: "ready" });
+
+// WebMCP agent tooling (opt-in). Lazy-load the polyfill + bridge so non-agent
+// embedders never pull them into their bundle; initialize navigator.modelContext,
+// then register the tools wrapping the live editor.
+if (runtime.agentTools) {
+  const cfg = typeof runtime.agentTools === "object" ? runtime.agentTools : {};
+  void Promise.all([import("@mcp-b/global"), import("./agent/webmcp")])
+    .then(([global, bridge]) => {
+      global.initializeWebModelContext();
+      disposeAgentTools = bridge.registerAgentTools(
+        editor,
+        { docId: () => collabId, setDocument: setDocumentFromApi },
+        cfg,
+      );
+    })
+    .catch((e) => console.error("[wordcanvas] failed to enable agent tools:", e));
+}
 }

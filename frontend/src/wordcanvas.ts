@@ -9,11 +9,11 @@
 // events fire; when omitted, the editor runs fully offline. Multiple WordCanvas
 // instances can coexist on one page (class-scoped chrome, per-instance runtime).
 
-import type { EditMode, EditorHandle, FieldResolver, Participant, WordCanvasEvent, WordCanvasRuntime } from "./app/runtime";
+import type { AgentToolsOptions, EditMode, EditorHandle, FieldResolver, Participant, WordCanvasEvent, WordCanvasRuntime } from "./app/runtime";
 import type { FieldResolveRequest, FieldResult } from "./index";
 import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
 
-export type { Document, UserInfo, Participant, EditMode, ReviewLayer, Fragment, FieldResolver, FieldResolveRequest, FieldResult };
+export type { Document, UserInfo, Participant, EditMode, ReviewLayer, Fragment, FieldResolver, FieldResolveRequest, FieldResult, AgentToolsOptions };
 
 export interface WordCanvasOptions {
   /** Element to mount the editor into. */
@@ -48,6 +48,15 @@ export interface WordCanvasOptions {
    *  (<name>)"; this callback receives the field's name + verbatim instruction and
    *  must return OOXML (w:p / w:tbl, or a full w:document) for its new result. */
   resolveField?: FieldResolver;
+  /** Expose this editor to AI agents over [WebMCP](https://webmcp.dev)
+   *  (the standard `navigator.modelContext` API). `true` registers the full tool
+   *  set (read & inspect — including a layout-geometry dump for debugging render
+   *  issues — plus suggestions, comments, and direct edits); pass an object to
+   *  restrict capabilities or namespace tool names. The WebMCP polyfill is
+   *  lazy-loaded only when this is set, so it adds nothing for embedders that
+   *  don't opt in. Connect an agent via the WebMCP browser extension / Chrome
+   *  DevTools MCP. */
+  agentTools?: boolean | AgentToolsOptions;
 }
 
 /** Event name → payload, for `on(...)`. */
@@ -85,6 +94,7 @@ export class WordCanvas {
         allowedModes: opts.allowedModes,
         knownUsers: opts.knownUsers,
         resolveField: opts.resolveField,
+        agentTools: opts.agentTools,
         onReady: (h) => {
           this.handle = h;
           resolve(h);

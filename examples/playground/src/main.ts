@@ -124,7 +124,11 @@ const showStatus = (kind: "ok" | "warn" | "error", text: string): void => {
 // ---------------------------------------------------------------------------
 // Editor (offline — the preview needs no backend)
 
-const wc = new WordCanvas({ container: $("editor") });
+// `agentTools` exposes the previewed document to AI agents over WebMCP — handy for
+// inspecting the built document's layout (inspect_layout) while iterating. Note the
+// rebuild loop owns the document, so an agent's direct edits are replaced on the
+// next code/data change; read & inspect tools are the natural fit here.
+const wc = new WordCanvas({ container: $("editor"), agentTools: true });
 
 // ---------------------------------------------------------------------------
 // Rebuild loop

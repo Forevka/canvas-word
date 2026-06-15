@@ -341,6 +341,18 @@ model and the `.docx`/PDF writers never see it — anchors ride the same
 `mapPosition` rebasing as bookmarks, and the default export *bakes* the overlay
 into a clean document (reject-all = the original baseline). See [REVIEW.md](./REVIEW.md).
 
+**Agent tools (WebMCP)** — opt-in (`agentTools: true`), the editor exposes itself to
+AI agents over [WebMCP](https://webmcp.dev) (the standard `navigator.modelContext`
+API). An agent connected via the WebMCP browser extension / Chrome DevTools MCP gets
+tools to **read & inspect** (`get_document`, `search_document`, `inspect_layout` — a
+page/line/fragment **geometry dump** for debugging "renders weirdly" reports —
+`get_document_stats`), **suggest & comment** (mode switch, threaded comments,
+tracked-change accept/reject), and **directly edit** (find-anchored
+replace/insert/format, alignment, undo/redo). Capability-gated and namespaced for
+multiple editors per page; the WebMCP polyfill is lazy-loaded only when enabled, so
+the zero-runtime-dependency package is unchanged for everyone else. See
+[WEBMCP.md](./WEBMCP.md).
+
 **Bookmarks** — character-range bookmarks (body, table cells, headers/footers)
 that rebase live as the document is edited; a Bookmarks panel lists them with
 Go-To navigation and management ops; they back TOC and cross-reference targets.

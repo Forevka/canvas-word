@@ -5,6 +5,14 @@ import { WordCanvas } from "@forevka/wordcanvas";
 
 const editor = new WordCanvas({
   container: document.getElementById("editor"),
+  // Expose the editor to AI agents over WebMCP (the standard navigator.modelContext
+  // API). This is exactly the local-debugging workflow: open a document a user
+  // reported as "rendering weirdly", then connect an agent (WebMCP browser
+  // extension / Chrome DevTools MCP) and ask it to call `inspect_layout` to see the
+  // page/line/fragment geometry, `replace_text`/`format_text` to fix content, or
+  // `add_comment` to leave review notes. `true` = all tools; pass an object to
+  // restrict, e.g. { capabilities: ["read"] } for read-only inspection.
+  agentTools: true,
   // Custom fields: when a document contains a developer-defined field (e.g. a
   // paragraph whose w:instrText is ` MYCHART "sales-2026" `), right-clicking it
   // shows "Update Field (MYCHART)". This callback computes the field's result.

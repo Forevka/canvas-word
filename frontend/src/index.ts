@@ -137,6 +137,14 @@ export interface Editor {
   focus(): void;
   getDocument(): Document;
   getSelection(): DocSelection | null;
+  /** Move the caret/selection programmatically (null clears it). Unlike
+   *  revealBlock/revealBookmark this does NOT scroll — it just sets the anchor so
+   *  a following command (insert/format) targets the range. Used by agent tools. */
+  setSelection(sel: DocSelection | null): void;
+  /** The current layout tree (pages, placed blocks, line boxes, fragments — all
+   *  page-local geometry). Read-only snapshot for diagnostics/agent inspection of
+   *  text placement and rendering. */
+  getLayoutTree(): LayoutTree;
   getSelectedObject(): string | null;
   dispatch(cmd: Command): void;
   toggleStyle(key: StyleKey): void;
@@ -2509,6 +2517,12 @@ export function createEditor(
     },
     getSelection(): DocSelection | null {
       return selection;
+    },
+    setSelection(sel: DocSelection | null): void {
+      setSelection(sel);
+    },
+    getLayoutTree(): LayoutTree {
+      return tree;
     },
     getSelectedObject(): string | null {
       return selectedObject;
