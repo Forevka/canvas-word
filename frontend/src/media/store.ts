@@ -6,7 +6,7 @@
 // so a document loaded from a snapshot — whose image srcs are blank — paints
 // correctly. This is the inverse of shared/persist/serialize, which strips srcs.
 
-import { BAND_CONTAINERS, MemoryMediaStore, mediaIdForBytes, type Block, type Document } from "@cw/shared";
+import { forEachImage, MemoryMediaStore, mediaIdForBytes, type Document } from "@cw/shared";
 
 const store = new MemoryMediaStore();
 // mediaId -> blob: URL, live for this session. Avoids minting a second URL for
@@ -46,37 +46,17 @@ export function mediaUrl(mediaId: string): string | undefined {
   return url;
 }
 
-function rewrite(blocks: Block[] | undefined): void {
-  for (const b of blocks ?? []) {
-    if (b.kind === "image") {
-      // Only fill blanks (a snapshot's stripped src); leave live/data: srcs.
-      if (b.mediaId && b.src === "") {
-        const url = mediaUrl(b.mediaId);
-        if (url) b.src = url;
-      }
-    } else if (b.kind === "table") {
-      for (const row of b.rows) for (const cell of row.cells) rewrite(cell.blocks);
-    }
-  }
-}
-
 /** Rehydrate every image in a freshly-deserialized document: fill blank srcs
  *  from the store via each image's mediaId. Mutates in place. Returns the ids
  *  it could NOT resolve (their bytes must be fetched before they'll paint). */
 export function rehydrateDocMedia(doc: Document): string[] {
-  rewrite(doc.blocks);
-  for (const band of BAND_CONTAINERS) rewrite(doc.section[band]);
   const missing: string[] = [];
-  const check = (blocks: Block[] | undefined): void => {
-    for (const b of blocks ?? []) {
-      if (b.kind === "image") {
-        if (b.mediaId && b.src === "" && !missing.includes(b.mediaId)) missing.push(b.mediaId);
-      } else if (b.kind === "table") {
-        for (const row of b.rows) for (const cell of row.cells) check(cell.blocks);
-      }
-    }
-  };
-  check(doc.blocks);
-  for (const band of BAND_CONTAINERS) check(doc.section[band]);
+  forEachImage(doc, (b) => {
+    // Only fill blanks (a snapshot's stripped src); leave live/data: srcs.
+    if (!b.mediaId || b.src !== "") return;
+    const url = mediaUrl(b.mediaId);
+    if (url) b.src = url;
+    else if (!missing.includes(b.mediaId)) missing.push(b.mediaId);
+  });
   return missing;
 }
