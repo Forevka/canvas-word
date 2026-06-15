@@ -88,8 +88,9 @@ export interface PlacedBlock {
   marker?: { text: string; style: CharStyle; x: number };
   /** TOC entry decoration: the target's page number right-aligned at numX with
    *  a dot leader, on line `lineIndex` of this chunk. Paint-only — resolved in
-   *  an engine post-pass from the final page map, so it is never stale. */
-  toc?: { numText: string; numX: number; lineIndex: number; style: CharStyle };
+   *  an engine post-pass from the final page map, so it is never stale.
+   *  `targetId` is the heading block this entry points at (PDF emits a GoTo link). */
+  toc?: { numText: string; numX: number; lineIndex: number; style: CharStyle; targetId: string };
   /** Present when this placed block is an image / table (lines stays empty). */
   image?: PlacedImage;
   table?: PlacedTable;

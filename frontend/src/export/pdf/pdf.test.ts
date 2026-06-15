@@ -109,3 +109,64 @@ describe("PDF export — happy path", () => {
     expect(warnings.find((w) => w.code === "font-substituted")?.detail).toBe("Wingdings");
   });
 });
+
+const latin1 = (b: Uint8Array): string => Buffer.from(b).toString("latin1");
+
+describe("PDF export — internal navigation", () => {
+  it("emits GoTo links, named destinations and an outline for a TOC", async () => {
+    const heading: Paragraph = {
+      kind: "paragraph",
+      id: "h1",
+      revision: 0,
+      runs: [{ text: "Chapter One", style: { ...CHAR } }],
+      style: { ...PARA, namedStyle: "heading1" },
+    };
+    const entry: Paragraph = {
+      kind: "paragraph",
+      id: "toc1",
+      revision: 0,
+      runs: [{ text: "Chapter One", style: { ...CHAR } }],
+      style: { ...PARA, tocEntry: { targetId: "h1", level: 1 } } as ParaStyle,
+    };
+    const { bytes } = await renderPdf(docOf(entry, heading, para("Body.")));
+    const text = latin1(bytes);
+    expect(isPdf(bytes)).toBe(true);
+    expect(text).toContain("/GoTo"); // TOC entry → heading link
+    expect(text).toContain("b_h1"); // named destination for the heading
+    expect(text).toContain("/Dests"); // names tree carrying the destination
+    expect(text).toContain("/Outlines"); // bookmarks panel built from headings
+  });
+
+  it("emits a GoTo for an in-document #anchor link", async () => {
+    const target: Paragraph = {
+      kind: "paragraph",
+      id: "sec",
+      revision: 0,
+      runs: [{ text: "Target heading", style: { ...CHAR } }],
+      style: { ...PARA, namedStyle: "heading1" },
+    };
+    const ref = para("see ");
+    ref.runs.push({ text: "this section", style: { ...CHAR, link: "#mark" } });
+    const doc: Document = {
+      section: { pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } },
+      blocks: [ref, target],
+      bookmarks: { mark: { start: { blockId: "sec", offset: 0 }, end: { blockId: "sec", offset: 0 } } },
+    };
+    const text = latin1((await renderPdf(doc)).bytes);
+    expect(text).toContain("/GoTo");
+    expect(text).toContain("b_sec");
+  });
+
+  it("ignores an unresolved #anchor (no GoTo annotation)", async () => {
+    // pdfkit always writes an empty /Dests names tree, so the real signal that a
+    // dangling anchor emitted nothing is the absence of a GoTo action.
+    const text = latin1((await renderPdf(docOf(para("x", { link: "#nope" })))).bytes);
+    expect(text).not.toContain("/GoTo");
+  });
+
+  it("still emits a URI annotation for external links", async () => {
+    const p = para("link", { link: "https://example.com", color: "#0563c1", underline: true });
+    const text = latin1((await renderPdf(docOf(p))).bytes);
+    expect(text).toContain("/URI");
+  });
+});

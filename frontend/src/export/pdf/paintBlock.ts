@@ -33,6 +33,10 @@ export interface PaintCtx {
   /** Image bytes for a src, or undefined if unresolved/unsupported. */
   image: (src: string) => Uint8Array | undefined;
   warn: (code: string, detail?: string) => void;
+  /** Resolve a TOC target blockId or an in-document "#anchor" to a registered
+   *  named-destination string, or undefined when the target doesn't exist. The
+   *  caller emits a GoTo annotation only when a name comes back. */
+  destName?: (ref: { blockId?: string; anchor?: string }) => string | undefined;
 }
 
 const firstFamily = (stack: string): string => (stack.split(",")[0] ?? "sans-serif").trim();
@@ -119,6 +123,15 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
         doc.undash().restore();
       }
     }
+    // Whole entry is a clickable GoTo to its heading (Ctrl+click in the editor).
+    const name = ctx.destName?.({ blockId: block.toc.targetId });
+    if (name) {
+      for (const ln of block.lines) {
+        const last = ln.fragments[ln.fragments.length - 1];
+        const right = Math.max(last ? block.x + last.x + last.width : block.x, block.toc.numX);
+        if (right > block.x) doc.goTo(block.x, block.y + ln.y, right - block.x, ln.height, name);
+      }
+    }
   }
 
   for (const line of block.lines) {
@@ -173,6 +186,11 @@ function paintLine(ctx: PaintCtx, block: PlacedBlock, line: LineBox, baselineY: 
     if (rp.externalLink && s.link) {
       // Clickable annotation over the run's line box.
       doc.link(x, block.y + line.y, frag.width, line.height, s.link);
+    } else if (s.link && s.link.startsWith("#")) {
+      // In-document anchor (cross-reference / hyperlinked TOC entry): GoTo the
+      // resolved heading instead of an external URI.
+      const name = ctx.destName?.({ anchor: s.link.slice(1) });
+      if (name) doc.goTo(x, block.y + line.y, frag.width, line.height, name);
     }
   }
 }

@@ -1394,6 +1394,7 @@ function layoutDocument(
         numX: rec.rightEdge - measureTextWidth(numText, charStyleToFont(style)),
         lineIndex: rec.chunk.lines.length - 1,
         style,
+        targetId: target,
       };
     }
   }
