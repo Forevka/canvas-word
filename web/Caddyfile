@@ -6,6 +6,26 @@
 :80 {
 	encode zstd gzip
 
+	# --- Cache policy --------------------------------------------------------
+	# Vite fingerprints every JS/CSS/worker chunk under an assets/ dir, so the
+	# filename changes on every rebuild. Cache those hard: a fresh deploy never
+	# serves stale code (old hashed chunks/workers are simply never requested
+	# again), and the large export/import worker bundle isn't re-fetched.
+	@assets path /assets/* */assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+
+	# Everything else that isn't the backend surface — HTML entry documents and
+	# SPA fallbacks — must ALWAYS be revalidated, so a deployment's new asset
+	# hashes are picked up on the next normal load (no hard-reload needed). This
+	# is what evicts stale worker code after a deploy: a revalidated index.html
+	# points at the new hashed chunks, which pull the new worker. The backend
+	# sets its own cache headers, so its paths are left untouched.
+	@revalidate {
+		not path /assets/* */assets/*
+		not path /docs /docs/* /media /media/* /ws /ws/* /admin /admin/* /upload /openapi.json /swagger /swagger/*
+	}
+	header @revalidate Cache-Control "no-cache"
+
 	# Backend surface (see backend/src/server.ts): document/media CRUD, the
 	# /ws collaboration socket, the admin API (+ webhooks), upload, and the
 	# OpenAPI/Swagger docs. reverse_proxy auto-handles the /ws upgrade.
