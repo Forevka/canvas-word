@@ -13,7 +13,6 @@ import type {
   BookmarkRange,
   CharStyle,
   DocPosition,
-  Document,
   ImageBlock,
   ParaStyle,
   Paragraph,

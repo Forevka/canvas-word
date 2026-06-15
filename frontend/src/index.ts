@@ -20,7 +20,6 @@ import {
   linkAt,
   objectRect,
   selectionRects,
-  type CaretRect,
   type ColumnBoundaryHit,
   type GeoScope,
   type Rect,
