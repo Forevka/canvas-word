@@ -1,6 +1,6 @@
 {
   "name": "@forevka/wordcanvas",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "description": "Open-source embeddable Word-style document editor: canvas-rendered, with live collaboration, track changes & comments, and DOCX/PDF import & export. A lightweight alternative to Syncfusion, OnlyOffice, and DevExpress document editors. Self-contained, zero runtime dependencies.",
   "license": "MIT",
