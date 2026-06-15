@@ -385,6 +385,12 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
     if (touchCount === 0) touchTap = null;
   };
 
+  /** Is the point over a TOC-entry paragraph (Ctrl-clickable to its heading)? */
+  const isTocEntryAt = (pt: { pageIndex: number; x: number; y: number }): boolean => {
+    const pos = hitTest(deps.getTree(), pt.pageIndex, pt.x, pt.y, scope());
+    return !!(pos && paragraphs().find((p) => p.id === pos.blockId)?.style.tocEntry);
+  };
+
   // Hover affordances: col-resize over column grips, pointer + tooltip over links.
   const onHoverMove = (ev: MouseEvent): void => {
     if (dragging) return;
@@ -398,7 +404,11 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
         ? hitTestColumnBoundary(deps.getTree(), pt.pageIndex, pt.x, pt.y)
         : null;
     const href = !hit && pt ? linkAt(deps.getTree(), pt.pageIndex, pt.x, pt.y, scope()) : null;
-    container.style.cursor = hit ? "col-resize" : href ? "pointer" : "text";
+    // A TOC entry is Ctrl-clickable (jumps to its heading via tocEntry.targetId)
+    // even with no run link — match the cursor to that click affordance, so
+    // regenerated/link-free entries still read as clickable.
+    const overTocEntry = !hit && !href && pt ? isTocEntryAt(pt) : false;
+    container.style.cursor = hit ? "col-resize" : href || overTocEntry ? "pointer" : "text";
     if ((container.title || "") !== (href ?? "")) container.title = href ?? "";
   };
 

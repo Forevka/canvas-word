@@ -124,6 +124,12 @@ export interface Paragraph {
   revision: number; // bumped by ops; invalidates the pretext prepare-cache
   runs: Run[];
   style: ParaStyle;
+  /** Membership in a generic field's result region (see Document.fields). A
+   *  contiguous run of blocks sharing a fieldId IS the field's result; export
+   *  wraps them in the field's begin/instrText/separate…end. Absent = ordinary
+   *  content. Like `tocEntry`/run `sdtId`, an invisible flat marker — no layout
+   *  effect. `| undefined` so an op can clear it. */
+  fieldId?: string | undefined;
 }
 
 export interface ImageBlock {
@@ -147,6 +153,8 @@ export interface ImageBlock {
    *  'square': floats at the left/right margin (per align) and following text
    *  flows around it — pretext's per-line maxWidth makes this affordable. */
   wrap?: "block" | "square";
+  /** Field result membership — see Paragraph.fieldId. */
+  fieldId?: string | undefined;
 }
 
 /** Cells hold Blocks: paragraphs (first-class editing targets, located through
@@ -216,9 +224,24 @@ export interface TableBlock {
   rows: TableRow[];
   /** Column widths as fractions of the content width (sum = 1). Absent = equal. */
   colFractions?: number[];
+  /** Field result membership — see Paragraph.fieldId. */
+  fieldId?: string | undefined;
 }
 
 export type Block = Paragraph | ImageBlock | TableBlock;
+
+/** A generic OOXML field tracked in the model: its verbatim instruction plus a
+ *  classification. Only CUSTOM (host-resolvable, non-built-in) fields are tracked
+ *  this way — TOC keeps its own `tocEntry`/`tocInstruction` path. The field's
+ *  result is the contiguous run of blocks carrying its `id` as `fieldId`. */
+export interface FieldDef {
+  id: string;
+  /** Verbatim w:instrText (e.g. ` MYCHART "sales-2026" `), re-emitted on export. */
+  instruction: string;
+  /** Field keyword, uppercased — the first instruction token (e.g. "MYCHART"). */
+  name: string;
+  kind: "custom";
+}
 
 /** The six margin-band stories: default header/footer plus the Word variants
  *  ("Different first page" / "Different odd & even"). Container ops, the
@@ -317,6 +340,11 @@ export interface Document {
    *  captured on import so export re-emits it verbatim (honoring its switches)
    *  instead of a hardcoded default. Absent when the document has no TOC field. */
   tocInstruction?: string;
+  /** Generic custom fields keyed by id (blocks carry the membership via
+   *  `fieldId`). Populated on import for non-built-in fields; export re-emits each
+   *  region as a real complex field; the editor refreshes it via `resolveField`.
+   *  Absent when the document has no custom fields. */
+  fields?: Record<string, FieldDef>;
 }
 
 export interface BookmarkRange {

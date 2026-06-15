@@ -10,6 +10,7 @@ import type {
   Block,
   CellBorders,
   CharStyle,
+  FieldDef,
   Paragraph,
   ParaStyle,
   Run,
@@ -78,6 +79,10 @@ export interface PartCtx {
   /** The document's preserved `TOC` field instruction, re-emitted verbatim (and its
    *  switches honored). Absent → a sensible default ` TOC \o "1-3" \h \z \u `. */
   tocInstruction?: string;
+  /** Custom (non-built-in) fields keyed by id — a contiguous run of body blocks
+   *  sharing a `fieldId` is re-emitted as the field's complex region (begin /
+   *  instrText / separate … end), wrapping the result blocks. */
+  fields?: Record<string, FieldDef>;
 }
 
 const hex = (color: string): string => color.replace(/^#/, "").toLowerCase();
@@ -534,6 +539,48 @@ function tocFieldXml(entries: Paragraph[], ctx: PartCtx): string {
     .join("");
 }
 
+// ---------------------------------------------------------------------------
+// Generic custom field. A run of contiguous blocks sharing a `fieldId` is the
+// result region of a host-defined field (Document.fields). On export we wrap it
+// in a real complex field — the begin/instrText/separate ride the FIRST result
+// paragraph, the end rides the LAST — so it re-imports as the same field and the
+// host can refresh it. The verbatim instruction is re-emitted unchanged.
+
+/** Insert `frag` immediately after the paragraph's w:pPr (before its first run),
+ *  so field begin/instr/separate lead the paragraph content. */
+function injectAfterPPr(pXml: string, frag: string): string {
+  const at = pXml.indexOf("</w:pPr>");
+  if (at >= 0) return pXml.slice(0, at + 8) + frag + pXml.slice(at + 8);
+  const m = pXml.match(/<w:p(?:\s[^>]*)?>/);
+  if (m) { const i = m.index! + m[0].length; return pXml.slice(0, i) + frag + pXml.slice(i); }
+  return frag + pXml;
+}
+
+/** Insert `frag` just before the paragraph's closing tag, so the field end is the
+ *  paragraph's last run. */
+function injectBeforePClose(pXml: string, frag: string): string {
+  const at = pXml.lastIndexOf("</w:p>");
+  return at >= 0 ? pXml.slice(0, at) + frag + pXml.slice(at) : pXml + frag;
+}
+
+function fieldRegionXml(blocks: Block[], ctx: PartCtx): string {
+  const def = ctx.fields?.[blocks[0]!.fieldId!];
+  const prefix = fldRun("begin") + instrRun(def?.instruction ?? " ") + fldRun("separate");
+  const suffix = fldRun("end");
+  const rendered = blocks.map((b) => blockXml(b, ctx));
+  // The field boundary runs must live inside a paragraph; if the first/last result
+  // block is a table/image, carry the boundary on a synthetic empty paragraph
+  // (which re-imports as part of the field, so a later round-trip is stable).
+  let head = "";
+  let tail = "";
+  if (blocks[0]!.kind === "paragraph") rendered[0] = injectAfterPPr(rendered[0]!, prefix);
+  else head = el("w:p", undefined, prefix);
+  const last = rendered.length - 1;
+  if (blocks[last]!.kind === "paragraph") rendered[last] = injectBeforePClose(rendered[last]!, suffix);
+  else tail = el("w:p", undefined, suffix);
+  return head + rendered.join("") + tail;
+}
+
 function imageParagraphXml(img: Extract<Block, { kind: "image" }>, ctx: PartCtx): string {
   const target = ctx.media.resolve(img.src);
   if (!target) {
@@ -637,14 +684,22 @@ export function buildDocumentXml(
 ): string {
   const parts: string[] = [];
   for (let i = 0; i < blocks.length; i++) {
-    if (isTocEntry(blocks[i]!)) {
+    const b = blocks[i]!;
+    if (isTocEntry(b)) {
       // Wrap the whole contiguous run of TOC entries in one live TOC field.
       const group: Paragraph[] = [];
       while (i < blocks.length && isTocEntry(blocks[i]!)) group.push(blocks[i++] as Paragraph);
       i--; // the for-loop will ++ past the last consumed block
       parts.push(tocFieldXml(group, ctx));
+    } else if (b.fieldId && ctx.fields?.[b.fieldId]) {
+      // Wrap the contiguous run of blocks sharing this fieldId in a complex field.
+      const id = b.fieldId;
+      const group: Block[] = [];
+      while (i < blocks.length && blocks[i]!.fieldId === id) group.push(blocks[i++]!);
+      i--;
+      parts.push(fieldRegionXml(group, ctx));
     } else {
-      parts.push(blockXml(blocks[i]!, ctx));
+      parts.push(blockXml(b, ctx));
     }
   }
   const body = parts.join("") + sectPrXml(section, ctx, addBand, true);

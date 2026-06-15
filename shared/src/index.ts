@@ -19,6 +19,7 @@ export * from "./persist/media";
 export * from "./persist/serialize";
 export * from "./change";
 export * from "./toc";
+export * from "./fields";
 export * from "./replay";
 export * from "./transform";
 

@@ -5,6 +5,8 @@
 // properties during mapping. Everything the parser understands goes into the
 // IR; mapToModel decides what the model can hold.
 
+import type { FieldDef } from "@cw/shared";
+import { isCustomFieldInstruction, parseFieldInstruction } from "@cw/shared";
 import { ImportError, WarningSink } from "./types";
 import type {
   BandRefs,
@@ -44,6 +46,44 @@ interface ParseCtx {
   pendingMarkers: BookmarkMarker[];
   /** Bookmark markers (start/end + offset) inside the paragraph being walked. */
   currentMarkers: BookmarkMarker[] | null;
+  /** Capture non-built-in complex fields into a model field registry + stamp the
+   *  result blocks' fieldId. True for the body only — bands/footnotes keep their
+   *  cached result flattened (custom fields live in the body). */
+  trackFields: boolean;
+  /** Block-scoped complex-field tracker — survives across paragraphs so a field
+   *  whose result spans multiple blocks is captured whole. */
+  fieldTrack: FieldTrack;
+}
+
+/** Tracks custom (host-resolvable, non-built-in) complex fields at BLOCK scope —
+ *  the per-paragraph FieldState below resets each paragraph, but a field's result
+ *  can span many blocks (begin in block 1, end in block N). */
+interface FieldTrack {
+  /** Global complex-field nesting depth (begin++/end--), spanning paragraphs. */
+  depth: number;
+  /** Instruction text of the current top-level (depth-1) field, accumulated. */
+  topInstr: string;
+  /** fieldId of the current top-level field IF it's a custom field, else null. */
+  openId: string | null;
+  /** fieldId to stamp on the block currently being built — the field open when the
+   *  block started, or one that opened during it (kept set through the block that
+   *  closes the field). */
+  markBlock: string | null;
+  next: { n: number };
+  registry: Record<string, FieldDef>;
+}
+
+const newFieldTrack = (): FieldTrack => ({ depth: 0, topInstr: "", openId: null, markBlock: null, next: { n: 0 }, registry: {} });
+
+/** Open a custom field if the just-completed top-level instruction is a non-built-in
+ *  one (idempotent — only the first call per field, e.g. at `separate`, opens it). */
+function decideCustomField(ctx: ParseCtx): void {
+  const ft = ctx.fieldTrack;
+  if (ft.openId !== null || !isCustomFieldInstruction(ft.topInstr)) return;
+  const id = `field${ft.next.n++}`;
+  ft.registry[id] = { id, instruction: ft.topInstr, name: parseFieldInstruction(ft.topInstr).name, kind: "custom" };
+  ft.openId = id;
+  ft.markBlock = id;
 }
 
 /** UTF-16 offset accumulated so far in a paragraph's inline list (runs count
@@ -64,7 +104,7 @@ export function parseDocumentXml(xmlText: string, partName: string, warnings: Wa
     throw new ImportError("MALFORMED_XML", `${partName} has no w:document/w:body root.`);
   }
   const sdts: Record<string, IRSdtProps> = {};
-  const ctx: ParseCtx = { warnings, fieldTokens: false, sdts, nextSdt: { n: 0 }, pendingBookmarks: [], currentBookmarks: null, pendingMarkers: [], currentMarkers: null };
+  const ctx: ParseCtx = { warnings, fieldTokens: false, sdts, nextSdt: { n: 0 }, pendingBookmarks: [], currentBookmarks: null, pendingMarkers: [], currentMarkers: null, trackFields: true, fieldTrack: newFieldTrack() };
 
   const blocks: IRBlock[] = [];
   walkBlocks(children(body), blocks, ctx);
@@ -72,7 +112,8 @@ export function parseDocumentXml(xmlText: string, partName: string, warnings: Wa
   const sectPr = el(body, "w:sectPr");
   const section = sectPr ? parseSection(sectPr, warnings) : null;
 
-  return { blocks, section, sdts };
+  const fields = ctx.fieldTrack.registry;
+  return Object.keys(fields).length > 0 ? { blocks, section, sdts, fields } : { blocks, section, sdts };
 }
 
 /** header1.xml / footer1.xml — same block content under a w:hdr / w:ftr root.
@@ -88,7 +129,7 @@ export function parseHeaderFooterXml(
   if (!root) {
     throw new ImportError("MALFORMED_XML", `${partName} has no w:hdr/w:ftr root.`);
   }
-  const ctx: ParseCtx = { warnings, fieldTokens: true, sdts, nextSdt: { n: Object.keys(sdts).length }, pendingBookmarks: [], currentBookmarks: null, pendingMarkers: [], currentMarkers: null };
+  const ctx: ParseCtx = { warnings, fieldTokens: true, sdts, nextSdt: { n: Object.keys(sdts).length }, pendingBookmarks: [], currentBookmarks: null, pendingMarkers: [], currentMarkers: null, trackFields: false, fieldTrack: newFieldTrack() };
   const blocks: IRBlock[] = [];
   walkBlocks(children(root), blocks, ctx);
   return blocks;
@@ -105,13 +146,22 @@ function bookmarkName(node: XmlNode): string | null {
 
 function walkBlocks(nodes: XmlNode[], out: IRBlock[], ctx: ParseCtx): void {
   for (const node of nodes) {
+    // A custom field open here marks the block being built; one that opens/closes
+    // mid-block is captured during the parse (decideCustomField sets markBlock).
+    if (ctx.trackFields) ctx.fieldTrack.markBlock = ctx.fieldTrack.openId;
     switch (node.tagName) {
-      case "w:p":
-        out.push(parseParagraph(node, ctx));
+      case "w:p": {
+        const p = parseParagraph(node, ctx);
+        if (ctx.trackFields && ctx.fieldTrack.markBlock) p.fieldId = ctx.fieldTrack.markBlock;
+        out.push(p);
         break;
-      case "w:tbl":
-        out.push(parseTable(node, ctx));
+      }
+      case "w:tbl": {
+        const t = parseTable(node, ctx);
+        if (ctx.trackFields && ctx.fieldTrack.markBlock) t.fieldId = ctx.fieldTrack.markBlock;
+        out.push(t);
         break;
+      }
       case "w:sdt": {
         const content = el(node, "w:sdtContent");
         if (!content) break;
@@ -363,6 +413,10 @@ function parseRun(r: XmlNode, out: IRInline[], ctx: ParseCtx, field: FieldState)
             const anchor = anchorFromInstr(field.instr);
             if (anchor) field.pagerefAnchor = anchor;
           }
+          // Block-scoped custom-field tracker: accumulate the TOP-level field's
+          // instruction (nested fields' instrText belongs to them, not the field
+          // whose result region we're capturing).
+          if (ctx.trackFields && ctx.fieldTrack.depth === 1) ctx.fieldTrack.topInstr += textOf(node);
           break;
         case "w:fldChar":
           handleFldChar(node, props, out, ctx, field);
@@ -401,6 +455,7 @@ function handleFldChar(
   ctx: ParseCtx,
   field: FieldState,
 ): void {
+  const ft = ctx.fieldTrack;
   switch (attr(node, "w:fldCharType")) {
     case "begin":
       field.depth++;
@@ -409,8 +464,18 @@ function handleFldChar(
         field.suppressResult = false;
         field.pagerefAnchor = undefined;
       }
+      if (ctx.trackFields) {
+        ft.depth++;
+        if (ft.depth === 1) {
+          ft.topInstr = "";
+          ft.openId = null;
+        }
+      }
       break;
     case "separate": {
+      // Custom field's instruction is complete by `separate` — open it now so its
+      // result blocks (which follow) get tagged with the field id.
+      if (ctx.trackFields && ft.depth === 1) decideCustomField(ctx);
       if (field.depth !== 1) break;
       const token = ctx.fieldTokens ? fieldToken(field.instr) : undefined;
       if (token) {
@@ -420,6 +485,14 @@ function handleFldChar(
       break;
     }
     case "end":
+      if (ctx.trackFields && ft.depth > 0) {
+        if (ft.depth === 1) {
+          decideCustomField(ctx); // custom field with no `separate` (no cached result)
+          ft.openId = null; // closed — but markBlock keeps this block tagged
+          ft.topInstr = "";
+        }
+        ft.depth--;
+      }
       if (field.depth > 0) field.depth--;
       if (field.depth === 0) {
         // Field without a "separate" (no cached result): emit the token now.
@@ -716,6 +789,8 @@ export function parseFootnotesXml(
     currentBookmarks: null,
     pendingMarkers: [],
     currentMarkers: null,
+    trackFields: false,
+    fieldTrack: newFieldTrack(),
   };
   for (const note of els(root, "w:footnote")) {
     const fnId = attr(note, "w:id");

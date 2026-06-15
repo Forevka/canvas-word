@@ -278,6 +278,10 @@ export function createMapper(
           ? mapParagraph(irBlock, media, resolveLink)
           : [mapTable(irBlock, media, resolveLink)];
 
+      // Custom-field membership: an IR block in a field's result region stamps its
+      // fieldId onto every model block it produced (a paragraph may split).
+      if (irBlock.fieldId) for (const b of mapped) b.fieldId = irBlock.fieldId;
+
       // Resolve a pending (same-geometry) section break against this block.
       // Blank/hidden lead-in paragraphs are skipped so the break lands on the
       // section's first VISIBLE line (the title), not an empty anchor above it.

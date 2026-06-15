@@ -91,6 +91,7 @@ export function writeDocx(
     listIdMap,
     ...(tocPages ? { tocPages } : {}),
     ...(doc.tocInstruction ? { tocInstruction: doc.tocInstruction } : {}),
+    ...(doc.fields ? { fields: doc.fields } : {}),
     ensureTocBookmark,
   };
 

@@ -195,6 +195,7 @@ const editorOpts = {
   ...(runtime.allowedModes ? { allowedModes: runtime.allowedModes } : {}),
   ...(runtime.user ? { user: runtime.user } : {}),
   ...(runtime.knownUsers ? { knownUsers: runtime.knownUsers } : {}),
+  ...(runtime.resolveField ? { resolveField: runtime.resolveField } : {}),
   ...(collabId !== null ? { docId: collabId } : {}),
   // In a collab session, ship each recorded local edit to the server.
   onChangeRecorded: (change: Change) => {

@@ -21,6 +21,14 @@ static server).
 
 - `index.html` — the import map mapping `@forevka/wordcanvas` to the built bundle.
 - `app.js` — `import { WordCanvas } from "@forevka/wordcanvas"; new WordCanvas({ container })`.
+- `app.js` also wires a **`resolveField`** callback. Open a `.docx` containing a
+  developer-defined field — a paragraph whose `w:instrText` is something like
+  ` MYCHART "sales-2026" ` — then right-click it and choose **Update Field
+  (MYCHART)**. The engine calls `resolveField({ name, instruction })`, parses the
+  OOXML it returns, and splices it in as the field's result. In production you'd
+  forward that request to your backend (which renders the OOXML) instead of
+  synthesizing it locally. Built-in `TOC` fields show **Update Field (TOC)** and
+  regenerate locally (no backend).
 
 In a real app installed from npm, drop the import map and let your bundler resolve
 the bare specifier:

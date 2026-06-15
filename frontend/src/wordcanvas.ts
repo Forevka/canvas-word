@@ -9,10 +9,11 @@
 // events fire; when omitted, the editor runs fully offline. Multiple WordCanvas
 // instances can coexist on one page (class-scoped chrome, per-instance runtime).
 
-import type { EditMode, EditorHandle, Participant, WordCanvasEvent, WordCanvasRuntime } from "./app/runtime";
+import type { EditMode, EditorHandle, FieldResolver, Participant, WordCanvasEvent, WordCanvasRuntime } from "./app/runtime";
+import type { FieldResolveRequest, FieldResult } from "./index";
 import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
 
-export type { Document, UserInfo, Participant, EditMode, ReviewLayer, Fragment };
+export type { Document, UserInfo, Participant, EditMode, ReviewLayer, Fragment, FieldResolver, FieldResolveRequest, FieldResult };
 
 export interface WordCanvasOptions {
   /** Element to mount the editor into. */
@@ -42,6 +43,11 @@ export interface WordCanvasOptions {
   /** Users that can be @-mentioned in comments. The embedder owns this roster;
    *  update it later with `setKnownUsers`. */
   knownUsers?: UserInfo[];
+  /** Resolve a custom (developer-defined) field's content from your backend. When
+   *  provided, right-clicking a custom field in the document offers "Update Field
+   *  (<name>)"; this callback receives the field's name + verbatim instruction and
+   *  must return OOXML (w:p / w:tbl, or a full w:document) for its new result. */
+  resolveField?: FieldResolver;
 }
 
 /** Event name → payload, for `on(...)`. */
@@ -78,6 +84,7 @@ export class WordCanvas {
         mode: opts.mode,
         allowedModes: opts.allowedModes,
         knownUsers: opts.knownUsers,
+        resolveField: opts.resolveField,
         onReady: (h) => {
           this.handle = h;
           resolve(h);

@@ -33,6 +33,8 @@ import { createObjectFrame } from "./input/objectController";
 import { createImeProxy } from "./input/imeProxy";
 import { createKeymapHandler, type StyleKey } from "./input/keymap";
 import { extractFragment, fragmentToHtml, fragmentToPlainText, htmlToFragment, type DocFragment } from "./input/clipboard";
+import { parseOoxmlFragment } from "./import/docx/fragment";
+import { importDocx } from "./import/docx/importDocx";
 import { showContextMenu, type ContextMenuHandle, type MenuEntry } from "./ui/contextMenu";
 import { showSdtInspector, type SdtInspectorData, type SdtInspectorHandle } from "./ui/sdtInspector";
 import { showTableProperties, type BorderStyleName, type TablePropertiesHandle } from "./ui/tableProperties";
@@ -52,7 +54,10 @@ import {
   findTableById,
   insertTableColumnCmd,
   insertTableRowCmd,
+  fieldAtBlock,
+  updateTocFieldCmd,
   mergeCellsCmd,
+  replaceFieldResultCmd,
   setCellsBordersCmd,
   setCellsShadingCmd,
   removeContentControl,
@@ -272,6 +277,45 @@ export interface EditorOptions {
   onReviewOpRecorded?: (env: ReviewOpEnvelope) => void;
   /** Fires when the mode changes (picker / setMode). */
   onModeChanged?: (mode: EditMode) => void;
+  /** Resolve a custom field's content from the host (e.g. its backend). Invoked by
+   *  the "Update Field" context-menu action for a non-built-in field; the result is
+   *  imported and spliced in as the field's new result. Absent ⇒ no refresh. */
+  resolveField?: FieldResolver;
+}
+
+/** Request passed to a custom-field resolver. */
+export interface FieldResolveRequest {
+  /** The field's id (Document.fields key). */
+  fieldId: string;
+  /** Field keyword, uppercased (e.g. "MYCHART"). */
+  name: string;
+  /** The verbatim field instruction (e.g. ` MYCHART "sales-2026" `). */
+  instruction: string;
+  /** The collaboration doc id, when the session has one. */
+  docId?: string;
+}
+
+/** What a field resolver returns:
+ *  - a full **.docx** (ArrayBuffer / Uint8Array / Blob) — RECOMMENDED: imported
+ *    through the same pipeline as opening a document, so images, tables, lists and
+ *    styles all come through (media is content-addressed and survives export);
+ *  - or an **OOXML fragment string** (w:p / w:tbl, or a w:document) for simple,
+ *    text-only results (no embedded media). */
+export type FieldResult = string | ArrayBuffer | Uint8Array | Blob;
+
+/** Host hook: produce a field's result for the given request. */
+export type FieldResolver = (req: FieldResolveRequest) => Promise<FieldResult>;
+
+/** Turn a resolver result into model blocks: a .docx goes through the full import
+ *  pipeline (worker + media re-homing, so images render and export); an OOXML
+ *  fragment string is parsed media-free. */
+async function fieldResultToBlocks(result: FieldResult): Promise<Block[]> {
+  if (typeof result === "string") return result.trim() === "" ? [] : parseOoxmlFragment(result);
+  // ArrayBuffer / Blob pass straight to importDocx; wrap a Uint8Array in a Blob
+  // (sidesteps SharedArrayBuffer typing and any subarray view offset).
+  const input =
+    result instanceof ArrayBuffer || result instanceof Blob ? result : new Blob([new Uint8Array(result)]);
+  return (await importDocx(input)).doc.blocks;
 }
 
 export function createEditor(
@@ -2107,6 +2151,40 @@ export function createEditor(
           if (u !== null) dispatch(setLinkCmd(u.trim() === "" ? null : u.trim()));
         }),
         item("Remove Hyperlink", () => dispatch(setLinkCmd(null)), { danger: true }),
+      );
+    }
+
+    // Field — regenerate a TOC (Word's F9) or refresh a custom field from the host
+    // via the resolveField hook (parse its OOXML, splice in as the new result).
+    const field = focus ? fieldAtBlock(doc, focus.blockId) : null;
+    if (field?.kind === "toc") {
+      entries.push(sep, item("Update Field (TOC)", () => dispatch(updateTocFieldCmd())));
+    } else if (field?.kind === "custom") {
+      const def = field.def;
+      const resolve = options.resolveField;
+      entries.push(
+        sep,
+        item(
+          `Update Field (${def.name})`,
+          () => {
+            if (!resolve) return;
+            void (async () => {
+              try {
+                const result = await resolve({
+                  fieldId: def.id,
+                  name: def.name,
+                  instruction: def.instruction,
+                  ...(options.docId ? { docId: options.docId } : {}),
+                });
+                const blocks = await fieldResultToBlocks(result);
+                if (blocks.length > 0) dispatch(replaceFieldResultCmd(def.id, blocks));
+              } catch (err) {
+                console.error("resolveField failed", err);
+              }
+            })();
+          },
+          { disabled: !resolve },
+        ),
       );
     }
 

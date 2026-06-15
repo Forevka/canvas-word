@@ -5,6 +5,22 @@ import { WordCanvas } from "@forevka/wordcanvas";
 
 const editor = new WordCanvas({
   container: document.getElementById("editor"),
+  // Custom fields: when a document contains a developer-defined field (e.g. a
+  // paragraph whose w:instrText is ` MYCHART "sales-2026" `), right-clicking it
+  // shows "Update Field (MYCHART)". This callback computes the field's result.
+  //
+  // In a real app you'd POST {name, instruction} to your backend and return the
+  // **.docx it renders** (an ArrayBuffer) — that path is imported in full, so
+  // images and rich content come through, e.g.:
+  //   const res = await fetch(`/fields/${name}`, { method: "POST", body: instruction });
+  //   return await res.arrayBuffer();
+  // Here (offline, no backend) we return a simple OOXML fragment string instead,
+  // which is also accepted for text-only results.
+  resolveField: async ({ name, instruction }) => {
+    const xmlEsc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const text = `${name} resolved at ${new Date().toLocaleTimeString()} — instr:${instruction.trim()}`;
+    return `<w:p><w:r><w:t xml:space="preserve">${xmlEsc(text)}</w:t></w:r></w:p>`;
+  },
 });
 
 editor.on("ready", () => {

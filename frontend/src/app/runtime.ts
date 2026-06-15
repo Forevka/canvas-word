@@ -4,9 +4,9 @@
 // per-call value (no module singleton), so multiple editors coexist on one page.
 
 import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
-import type { EditMode } from "../index";
+import type { EditMode, FieldResolver } from "../index";
 
-export type { EditMode };
+export type { EditMode, FieldResolver };
 
 /** One other collaborator currently in the document. */
 export interface Participant {
@@ -78,4 +78,8 @@ export interface WordCanvasRuntime {
   onReady?: ((handle: EditorHandle) => void) | undefined;
   /** Sink for collaboration events (presence, share, ready) → WordCanvas.on(...). */
   onEvent?: ((ev: WordCanvasEvent) => void) | undefined;
+  /** Resolve a custom field's content from the host backend. When set, right-
+   *  clicking a custom field offers "Update Field (<name>)", which calls this and
+   *  splices the returned OOXML in as the field's new result. */
+  resolveField?: FieldResolver | undefined;
 }

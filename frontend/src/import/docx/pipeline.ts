@@ -152,6 +152,10 @@ export function runImport(
     markImportedTocEntries(doc);
   }
 
+  // Custom (non-built-in) fields captured during the body walk — their result
+  // blocks already carry the matching fieldId (see mapToModel).
+  if (ir.fields) doc.fields = ir.fields;
+
   return {
     doc,
     warnings: warnings.list,

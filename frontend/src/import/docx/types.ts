@@ -5,7 +5,7 @@
 // everything it understands (even what the model can't hold yet); mapToModel
 // decides what survives and emits an ImportWarning for every lossy decision.
 
-import type { Document } from "@cw/shared";
+import type { Document, FieldDef } from "@cw/shared";
 
 export type ImportPhase = "unzip" | "styles" | "parse" | "map";
 
@@ -226,6 +226,8 @@ export interface IRParagraph {
   bookmarks?: string[];
   /** Start/end markers with offsets — resolved to model ranges in mapToModel. */
   bookmarkMarkers?: BookmarkMarker[];
+  /** Custom-field result membership — mapped onto Block.fieldId. */
+  fieldId?: string;
 }
 
 /** One raw border edge (w:top/w:left/… inside w:tblBorders or w:tcBorders).
@@ -298,6 +300,8 @@ export interface IRTable {
   /** w:tblPr/w:tblCellMar — table-wide cell-margin default (twips), the base each
    *  cell's own w:tcMar overrides per side. */
   cellMarginTwips?: IRCellMargin;
+  /** Custom-field result membership — mapped onto Block.fieldId. */
+  fieldId?: string;
 }
 
 export type IRBlock = IRParagraph | IRTable;
@@ -355,4 +359,6 @@ export interface IRDocument {
   section: IRSection | null;
   /** Content controls found in the body (header/footer parsing extends it). */
   sdts: Record<string, IRSdtProps>;
+  /** Custom (non-built-in) complex fields captured in the body, keyed by id. */
+  fields?: Record<string, FieldDef>;
 }

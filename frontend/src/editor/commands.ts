@@ -708,6 +708,88 @@ export function insertTocCmd(opts?: TocOptions): Command {
   };
 }
 
+/** Derive TocOptions that REPRODUCE the document's current TOC look — its title
+ *  (or none) and each level's char/para styling sampled from existing entries —
+ *  so regenerating an imported TOC doesn't clobber it with the editor defaults. */
+function tocOptionsFromExisting(doc: EditorState["doc"]): TocOptions {
+  const blocks = tocEntryBlocks(doc);
+  const opts: TocOptions = {};
+
+  // Title: reuse the existing generated title, or suppress it entirely when the
+  // TOC has none (the common imported case — Word's title is a separate heading
+  // we don't touch). Without this, the default "Table of Contents" gets injected.
+  const titlePara = blocks.find((b) => b.style.namedStyle === "tocTitle" && !b.style.tocEntry);
+  if (titlePara) {
+    opts.title = {
+      text: textOfRuns(titlePara.runs),
+      ...(titlePara.runs[0] ? { char: titlePara.runs[0].style } : {}),
+      para: titlePara.style,
+      ...(titlePara.style.namedStyle ? { namedStyle: titlePara.style.namedStyle } : {}),
+    };
+  } else {
+    opts.title = null;
+  }
+
+  // Per-level styling: the first existing entry of each level supplies the look.
+  // Strip the run's stale in-document `link` (each entry links to its OWN heading
+  // via tocEntry.targetId; a copied "#anchor" would point every entry at one).
+  const levels: Record<number, { char?: Partial<CharStyle>; para?: Partial<ParaStyle> }> = {};
+  for (const b of blocks) {
+    const te = b.style.tocEntry;
+    if (!te || levels[te.level]) continue;
+    const sampleChar = b.runs[0]?.style;
+    const char = sampleChar ? { ...sampleChar } : undefined;
+    if (char) delete char.link;
+    levels[te.level] = { ...(char ? { char } : {}), para: b.style };
+  }
+  if (Object.keys(levels).length > 0) opts.levels = levels;
+  return opts;
+}
+
+/** Refresh an existing TOC in place (Word's F9): re-list headings + recompute
+ *  page numbers while PRESERVING the current TOC's title presence and styling.
+ *  Distinct from insertTocCmd, which (re)builds with the caller's/default look. */
+export function updateTocFieldCmd(): Command {
+  return (state) => insertTocCmd(tocOptionsFromExisting(state.doc))(state);
+}
+
+// ---------------------------------------------------------------------------
+// Generic custom fields (Document.fields). A contiguous run of body blocks
+// sharing a `fieldId` is the field's result region; "Update Field" replaces it
+// with freshly-resolved content. TOC keeps its own tocEntry path (insertTocCmd).
+
+/** Classify the field (if any) the block at `blockId` belongs to — drives the
+ *  "Update Field (…)" context-menu entry. */
+export function fieldAtBlock(
+  doc: EditorState["doc"],
+  blockId: string,
+): { kind: "toc" } | { kind: "custom"; def: import("@cw/shared").FieldDef } | null {
+  const b = blockById(doc, blockId);
+  if (!b) return null;
+  if (b.kind === "paragraph" && (b.style.tocEntry || b.style.namedStyle === "tocTitle")) return { kind: "toc" };
+  if (b.fieldId && doc.fields?.[b.fieldId]) return { kind: "custom", def: doc.fields[b.fieldId]! };
+  return null;
+}
+
+/** Replace a custom field's result region with `blocks` (re-stamped with the
+ *  fieldId, fresh ids so they never collide with the originals). The field's
+ *  Document.fields entry is untouched, so the instruction round-trips. */
+export function replaceFieldResultCmd(fieldId: string, blocks: Block[]): Command {
+  return (state) => {
+    const all = state.doc.blocks;
+    const lo = all.findIndex((b) => b.fieldId === fieldId);
+    if (lo < 0) return null;
+    let hi = lo;
+    while (hi + 1 < all.length && all[hi + 1]!.fieldId === fieldId) hi++;
+    const fresh: Block[] = blocks.map((b) => ({ ...b, id: freshBlockId(), fieldId }));
+    if (fresh.length === 0) return null;
+    const ops: Op[] = [];
+    for (let i = hi; i >= lo; i--) ops.push({ type: "removeBlock", blockId: all[i]!.id });
+    fresh.forEach((b, k) => ops.push({ type: "insertBlock", index: lo + k, block: b }));
+    return tr(ops, caret(fresh[0]!.id, 0), "command");
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Content controls (OOXML w:sdt) — contiguous runs sharing a CharStyle.sdtId
 // form one inline control; properties live in Document.sdts. Placeholder text

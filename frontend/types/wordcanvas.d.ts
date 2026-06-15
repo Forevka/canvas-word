@@ -34,7 +34,35 @@ export interface WordCanvasOptions {
   user?: UserInfo;
   /** Override how a share link is surfaced (default: a built-in dialog). */
   onShareLink?: (url: string, docId: string) => void;
+  /** Resolve a custom (developer-defined) field's content from your backend. When
+   *  set, right-clicking a custom field offers "Update Field (<name>)"; the
+   *  callback receives the field's name + verbatim instruction and returns the new
+   *  result to splice in (see FieldResult). */
+  resolveField?: FieldResolver;
 }
+
+/** Request passed to a custom-field resolver (see WordCanvasOptions.resolveField). */
+export interface FieldResolveRequest {
+  /** The field's id within the document. */
+  fieldId: string;
+  /** Field keyword, uppercased (e.g. "MYCHART"). */
+  name: string;
+  /** The verbatim field instruction (e.g. ` MYCHART "sales-2026" `). */
+  instruction: string;
+  /** The collaboration doc id, when the session has one. */
+  docId?: string;
+}
+
+/** What a field resolver returns:
+ *  - a full **.docx** (ArrayBuffer / Uint8Array / Blob) — RECOMMENDED: imported
+ *    through the same pipeline as opening a document, so images, tables, lists and
+ *    styles come through (media survives export);
+ *  - or an **OOXML fragment string** (w:p / w:tbl, or a w:document) for simple,
+ *    text-only results (no embedded media). */
+export type FieldResult = string | ArrayBuffer | Uint8Array | Blob;
+
+/** Host hook producing a field's result for a resolve request. */
+export type FieldResolver = (req: FieldResolveRequest) => Promise<FieldResult>;
 
 /** Event name → payload, for `on(...)`/`off(...)`. */
 export interface WordCanvasEventMap {
