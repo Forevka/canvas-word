@@ -94,4 +94,10 @@ export class PrepareCache {
   evict(blockId: string): void {
     this.map.delete(blockId);
   }
+
+  /** Drop every entry whose id is NOT in `keep` (paragraphs no longer in the
+   *  document). Called after a full layout to bound the cache to live blocks. */
+  retainOnly(keep: ReadonlySet<string>): void {
+    for (const id of this.map.keys()) if (!keep.has(id)) this.map.delete(id);
+  }
 }
