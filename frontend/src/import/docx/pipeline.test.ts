@@ -133,6 +133,20 @@ describe("docx pipeline — lossy policies emit warnings", () => {
     expect(last.style.pageBreakBefore).toBe(true);
   });
 
+  it("collapses a page-break-only paragraph to a single carrier (no orphan blank)", () => {
+    // A paragraph whose only content is a page break must yield ONE empty carrier,
+    // not two blanks — the stray blank, after a full-page figure, becomes an empty
+    // page (Word's break-only paragraph between a full-page map and the next section).
+    const r = importBody(
+      `<w:p><w:r><w:br w:type="page"/></w:r></w:p>` + `<w:p><w:r><w:t>next</w:t></w:r></w:p>`,
+    );
+    expect(r.doc.blocks).toHaveLength(2);
+    expect(para(r.doc.blocks[0]).runs.every((x) => x.text.length === 0)).toBe(true);
+    expect(para(r.doc.blocks[0]).style.pageBreakBefore).toBe(true);
+    expect(para(r.doc.blocks[1]).runs[0]!.text).toBe("next");
+    expect(para(r.doc.blocks[1]).style.pageBreakBefore).toBeUndefined();
+  });
+
   it("flows a geometry-preserving mid-document section break (footer-only)", () => {
     // Same page size as the document and no own bands → nothing to apply, so it
     // flows (a page break would just strand the rest of the page) — silently.

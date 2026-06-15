@@ -451,12 +451,19 @@ export function createMapper(
         case "break":
           if (!inline.page && !inline.column) {
             warnings.add("soft-breaks", "Soft line breaks (Shift+Enter) became paragraph breaks.");
+            // A soft break with nothing before it is an empty visual line ("a\n\nb").
+            if (runs.length > 0) flushPara();
+            else blocks.push(paraOf([]));
+          } else {
+            // A page/column break flushes any preceding text but emits NO empty line
+            // of its own — the pending break rides the NEXT emitted paragraph. Pushing
+            // a blank "before" line here strands an empty paragraph that, after a
+            // full-page figure, becomes an entire blank page (the break-only paragraph
+            // Word places between a full-page map and the following section).
+            if (runs.length > 0) flushPara();
+            if (inline.page) pendingPageBreak = true;
+            if (inline.column) pendingColumnBreak = true;
           }
-          // A break with nothing pending is an empty visual line ("a\n\nb").
-          if (runs.length > 0) flushPara();
-          else blocks.push(paraOf([]));
-          if (inline.page) pendingPageBreak = true;
-          if (inline.column) pendingColumnBreak = true;
           trailingBreak = true;
           break;
         case "image": {
