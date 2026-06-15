@@ -213,6 +213,31 @@ describe("StyleResolver — heading-led section breaks", () => {
     const tocEntry = runImport(styledDocx(`${sect}<w:p><w:pPr><w:pStyle w:val="TocE"/></w:pPr><w:r><w:t>An entry</w:t></w:r></w:p>`, styles));
     expect(para(tocEntry.doc.blocks.find((b) => para(b).runs.some((r) => r.text === "An entry"))!).style.pageBreakBefore).toBeUndefined();
   });
+
+  it("page-breaks a heading section sitting behind a continuous break (full-page map)", () => {
+    // Real appraisal-report shape: ZONING (nextPage) → a full-page Zoning Map section
+    // (CONTINUOUS — flows on the same page) → HIGHEST AND BEST USE (nextPage). A
+    // sectPr describes the section it CLOSES, so HIGHEST's new page comes from the
+    // sectPr AFTER it; the map's continuous break must not swallow it.
+    const sect = `<w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:pPr></w:p>`;
+    const cont = `<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:pPr></w:p>`;
+    const h1 = (t: string): string => `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>${t}</w:t></w:r></w:p>`;
+    const r = importStyled(
+      `<w:p><w:r><w:t>COVER</w:t></w:r></w:p>` +
+        sect +
+        h1("ZONING") +
+        sect +
+        `<w:p><w:r><w:t>Zoning Map</w:t></w:r></w:p>` +
+        cont +
+        h1("HIGHEST AND BEST USE") +
+        sect +
+        `<w:p><w:r><w:t>tail</w:t></w:r></w:p>`,
+    );
+    const find = (t: string): Paragraph => para(r.doc.blocks.find((b) => para(b).runs.some((rn) => rn.text === t))!);
+    expect(find("ZONING").style.pageBreakBefore).toBe(true);
+    expect(find("Zoning Map").style.pageBreakBefore).toBeUndefined(); // continuous → flows
+    expect(find("HIGHEST AND BEST USE").style.pageBreakBefore).toBe(true); // regression: was undefined
+  });
 });
 
 const round = (v: number): number => Math.round(v * 100) / 100;

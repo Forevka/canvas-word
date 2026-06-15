@@ -249,6 +249,21 @@ export function createMapper(
     const hasRealContent = (bs: Block[]): boolean =>
       bs.some((b) => b.kind !== "paragraph" || b.runs.some((r) => r.text.trim().length > 0 && !r.style.hidden));
 
+    // Backward attribution: a w:sectPr describes the section it CLOSES, so whether a
+    // heading starts a new page depends on ITS OWN section's type — the NEXT sectPr,
+    // not the one before it. The forward `pending` above breaks the section AFTER a
+    // page-type break, which silently misses a heading-led page-type section sitting
+    // behind a "continuous" break (e.g. a full-page map between two chapters). We
+    // track where the current section began and its first visible line so, when the
+    // section closes as page-type, the break can land on that title directly.
+    let sectionStartBi = 0;
+    let sectionFirstVisible: Paragraph | null = null;
+    const firstVisiblePara = (bs: Block[]): Paragraph | undefined => {
+      for (const b of bs)
+        if (b.kind === "paragraph" && b.runs.some((r) => r.text.trim().length > 0 && !r.style.hidden)) return b;
+      return undefined;
+    };
+
     // Looking PAST blank/hidden lead-in paragraphs, does the section beginning
     // after `afterIndex` open with a real section title? These generated reports
     // format titles directly (bold/centered) rather than with a Heading style, so
@@ -326,8 +341,22 @@ export function createMapper(
           // section opens with a real title (heading style / TOC-bookmarked) —
           // Word's Next Page behavior for titled sections (TOC, Flood Map, …).
           pendingForce = (!seenPageSection && coverHasContent) || isHeadingLedSection(bi);
+          // …and break THIS closing section's own title when it's titled — covers the
+          // heading-led page section the forward `pending` misses behind a preceding
+          // continuous break. Never the document's first section (it can't break).
+          if (sectionStartBi > 0 && sectionFirstVisible && isHeadingLedSection(sectionStartBi - 1)) {
+            sectionFirstVisible.style.pageBreakBefore = true;
+          }
         }
         seenPageSection = true;
+      }
+      // Section boundary (page OR continuous): the next block opens a new section, so
+      // reset the title tracker; otherwise remember this section's first visible line.
+      if (irBlock.kind === "paragraph" && irBlock.props.sectionBreak !== undefined) {
+        sectionStartBi = bi + 1;
+        sectionFirstVisible = null;
+      } else if (!sectionFirstVisible) {
+        sectionFirstVisible = firstVisiblePara(mapped) ?? null;
       }
       out.push(...mapped);
       if (!seenPageSection) coverHasContent ||= hasRealContent(mapped);
