@@ -141,7 +141,7 @@ collaboration primitives live in `shared` so the Node `backend` can reuse them.
 | `backend/` | Node HTTP/WS server: Postgres-backed change store, OT broadcast, server-side import/export, admin auth, integration tokens, session webhooks, OpenAPI/Swagger |
 | `dashboard/` | Admin panel (Vite app): document upload → docId, session inspection |
 | `examples/` | Standalone embeds consuming the published package (`embed-offline`, `embed-live`, `playground`, `embed-multi`) |
-| `web/` | Caddy edge config for the deployed stack |
+| `web/` | Caddy edge config for the deployed stack (see [DEPLOY.md](./DEPLOY.md)) |
 
 ### Editor layer map (`frontend/src/`)
 

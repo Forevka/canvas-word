@@ -124,7 +124,7 @@ To produce a **tracked change**: `set_mode("suggest")`, then run an edit tool.
 | `insert_text` | `text` (required), `find?` | Inserts at the current selection (replacing it if it's a range). With `find`, selects that text first — note this **replaces** the found text; use `replace_text` for plain replacement. |
 | `format_text` | `find?`, `bold?`, `italic?`, `underline?`, `strikethrough?`, `color?`, `fontFamily?`, `fontSizePx?`, `highlightColor?`, `clear?` | Applies a character-style patch to the found/selected range. `clear:true` resets bold/italic/underline/strikethrough/highlight. |
 | `set_alignment` | `align: "left" \| "center" \| "right" \| "justify"` (required) | Paragraph alignment of the selection. |
-| `select_range` | `anchorBlockId`, `anchorOffset`, `focusBlockId`, `focusOffset` (all required) | Sets an explicit selection by model position. Discover block ids via `get_document(json)` / `inspect_layout`. |
+| `select_range` | `anchorBlockId`, `anchorOffset`, `focusBlockId`, `focusOffset` (all required) | Sets an explicit selection by model position. Discover block ids via `get_document(json)` / `inspect_layout`. Unknown block ids are rejected (`isError`); offsets are clamped to the block's text length, so a slightly-too-large offset still lands at the end rather than corrupting the selection. |
 | `undo` / `redo` | — | Undo / redo the last edit. |
 | `set_document` | `json` (required) | Replace the whole document with a JSON model (same shape as `get_document(json)`). Drops undo history — use sparingly. |
 
