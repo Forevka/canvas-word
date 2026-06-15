@@ -5,6 +5,7 @@
 
 import type { CellBorder } from "@cw/shared";
 import type { BorderEdgeFlags } from "../editor/commands";
+import { injectCssOnce } from "./styles";
 
 export type BorderStyleName = NonNullable<CellBorder["style"]> | "single";
 
@@ -32,12 +33,7 @@ export interface TablePropertiesHandle {
 
 const STYLES: BorderStyleName[] = ["single", "double", "dashed", "dotted"];
 
-let cssInjected = false;
-function injectCss(): void {
-  if (cssInjected) return;
-  cssInjected = true;
-  const style = document.createElement("style");
-  style.textContent = `
+const TBL_CSS = `
 .cw-tbl-backdrop{position:fixed;inset:0;z-index:1100;background:rgba(20,22,26,.38);
   display:flex;align-items:center;justify-content:center;}
 .cw-tbl-modal{width:min(560px,94vw);max-height:90vh;display:flex;flex-direction:column;
@@ -67,8 +63,6 @@ function injectCss(): void {
 .cw-tbl-foot{display:flex;justify-content:flex-end;gap:8px;padding:11px 16px;border-top:1px solid #e6e8eb;}
 .cw-tbl-foot .cw-tbl-btn.primary{border-color:#1a73e8;background:#1a73e8;color:#fff;}
 .cw-tbl-foot .cw-tbl-btn.primary:hover{background:#1864cc;}`;
-  document.head.appendChild(style);
-}
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -81,7 +75,7 @@ const cssBorderStyle = (s: BorderStyleName): string =>
   s === "double" ? "double" : s === "dashed" ? "dashed" : s === "dotted" ? "dotted" : "solid";
 
 export function showTableProperties(init: TablePropertiesInit, cb: TablePropertiesCallbacks): TablePropertiesHandle {
-  injectCss();
+  injectCssOnce("cw-tbl-styles", TBL_CSS);
 
   // Live border spec the buttons apply.
   let color = init.color;
@@ -226,20 +220,24 @@ export function showTableProperties(init: TablePropertiesInit, cb: TableProperti
   backdrop.appendChild(modal);
   document.body.appendChild(backdrop);
 
+  const ac = new AbortController();
   const handle: TablePropertiesHandle = {
     close(): void {
       backdrop.remove();
-      window.removeEventListener("keydown", onKey, true);
+      ac.abort(); // detaches every listener registered with ac.signal
     },
   };
-  const onKey = (ev: KeyboardEvent): void => {
-    if (ev.key === "Escape") {
-      ev.preventDefault();
-      ev.stopPropagation();
-      handle.close();
-    }
-  };
-  window.addEventListener("keydown", onKey, true);
+  window.addEventListener(
+    "keydown",
+    (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        handle.close();
+      }
+    },
+    { capture: true, signal: ac.signal },
+  );
   backdrop.addEventListener("mousedown", () => handle.close());
   xBtn.addEventListener("click", () => handle.close());
   doneBtn.addEventListener("click", () => handle.close());

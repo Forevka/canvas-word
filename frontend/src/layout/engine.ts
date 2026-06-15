@@ -37,10 +37,15 @@ export function createLayoutEngine(): LayoutEngine {
   // Second cache tier: LineBox[] per (block revision, width). A keystroke
   // re-breaks ONE paragraph; every other block's lines are reused as-is and
   // re-layout degenerates to the pagination walk (pure arithmetic).
-  // TODO: evict entries for deleted blocks; harmless growth until then.
   const linesCache = new Map<string, { revision: number; width: number; lines: LineBox[] }>();
 
+  // Ids visited during the current FULL layout (null during a partial rawBand
+  // pass, which only touches one band and must not evict the rest). After a full
+  // layout we prune both caches to this set, so deleted blocks can't leak.
+  let touched: Set<string> | null = null;
+
   const getLines = (p: Paragraph, width: number): LineBox[] => {
+    touched?.add(p.id);
     const hit = linesCache.get(p.id);
     if (hit && hit.revision === p.revision && hit.width === width) return hit.lines;
     const lines = paragraphLines(p, width, prepCache);
@@ -50,7 +55,21 @@ export function createLayoutEngine(): LayoutEngine {
 
   return {
     layout(doc: Document, _dirtyBlockIds?: string[], options?: LayoutOptions): LayoutTree {
-      return layoutDocument(doc, getLines, (p) => prepCache.get(p), options?.rawBand ?? null);
+      const rawBand = options?.rawBand ?? null;
+      touched = rawBand === null ? new Set<string>() : null;
+      try {
+        const tree = layoutDocument(doc, getLines, (p) => {
+          touched?.add(p.id);
+          return prepCache.get(p);
+        }, rawBand);
+        if (touched) {
+          for (const id of linesCache.keys()) if (!touched.has(id)) linesCache.delete(id);
+          prepCache.retainOnly(touched);
+        }
+        return tree;
+      } finally {
+        touched = null;
+      }
     },
     evict(blockId: string): void {
       prepCache.evict(blockId);

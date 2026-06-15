@@ -3,19 +3,68 @@
 // each w:* element into a patch field, so absent elements stay absent.
 
 import type { CharStyle, ParaStyle } from "@cw/shared";
-import { multiplierToLine, pxToTwips } from "../units";
+import { multiplierToLine, pxToHalfPoints, pxToTwips } from "../units";
+import { HIGHLIGHT_NAME, hexColor as hex, JC, TAB_LEADER, TAB_VAL } from "./mappings";
 import { el } from "./xmlWrite";
 
-const HIGHLIGHT_NAME: Record<string, string> = {
-  "#ffff00": "yellow", "#00ff00": "green", "#00ffff": "cyan", "#ff00ff": "magenta",
-  "#0000ff": "blue", "#ff0000": "red", "#000080": "darkBlue", "#008080": "darkCyan",
-  "#008000": "darkGreen", "#800080": "darkMagenta", "#800000": "darkRed", "#808000": "darkYellow",
-  "#808080": "darkGray", "#c0c0c0": "lightGray", "#000000": "black", "#ffffff": "white",
-};
-const JC: Record<string, string> = { left: "left", center: "center", right: "right", justify: "both" };
-const TAB_VAL: Record<string, string> = { left: "left", center: "center", right: "right", decimal: "decimal" };
-const TAB_LEADER: Record<string, string> = { dot: "dot", dash: "hyphen", underscore: "underscore" };
-const hex = (c: string): string => c.replace(/^#/, "").toLowerCase();
+// Full rPr serializer: every toggle written explicitly (on/off) so a run's
+// direct formatting fully overrides any inherited paragraph/named style on
+// re-import. Shared by the main exporter (documentXml) and the headless TOC
+// generator (recalc/generateTocDocx) so they can't drift.
+export function runPropsXml(s: CharStyle): string {
+  const family = (s.fontFamily.split(",")[0] ?? "").trim();
+  const children: string[] = [];
+  if (family) children.push(el("w:rFonts", { "w:ascii": family, "w:hAnsi": family, "w:cs": family }));
+  children.push(el("w:b", { "w:val": s.bold ? "1" : "0" }));
+  children.push(el("w:i", { "w:val": s.italic ? "1" : "0" }));
+  if (s.strikethrough) children.push(el("w:strike", { "w:val": "1" }));
+  if (s.hidden) children.push(el("w:vanish", { "w:val": "1" })); // preserved hidden text
+  children.push(el("w:color", { "w:val": hex(s.color) }));
+  children.push(el("w:sz", { "w:val": pxToHalfPoints(s.fontSizePx) }));
+  children.push(el("w:szCs", { "w:val": pxToHalfPoints(s.fontSizePx) }));
+  children.push(el("w:u", { "w:val": s.underline ? "single" : "none" }));
+  if (s.letterSpacingPx !== undefined) children.push(el("w:spacing", { "w:val": pxToTwips(s.letterSpacingPx) }));
+  if (s.highlightColor) {
+    const name = HIGHLIGHT_NAME[s.highlightColor.toLowerCase()];
+    if (name) children.push(el("w:highlight", { "w:val": name }));
+  }
+  if (s.verticalAlign) children.push(el("w:vertAlign", { "w:val": s.verticalAlign === "super" ? "superscript" : "subscript" }));
+  return el("w:rPr", undefined, children.join(""));
+}
+
+// The spacing/indent/jc/tabs core shared by every full pPr: returned as
+// concatenated child elements (NOT wrapped in w:pPr) so the main exporter can
+// interleave it with pStyle/numPr/breaks/section props, while the TOC generator
+// wraps it directly. Emission order matches OOXML's tolerant exporter convention.
+export function paraCoreXml(style: ParaStyle): string {
+  const c: string[] = [];
+  c.push(el("w:spacing", {
+    "w:before": pxToTwips(style.spaceBeforePx),
+    "w:after": pxToTwips(style.spaceAfterPx),
+    "w:line": multiplierToLine(style.lineHeight),
+    "w:lineRule": "auto",
+  }));
+  const ind: Record<string, number> = {};
+  if (style.indentLeftPx) ind["w:left"] = pxToTwips(style.indentLeftPx);
+  if (style.indentRightPx) ind["w:right"] = pxToTwips(style.indentRightPx);
+  if (style.indentFirstLinePx > 0) ind["w:firstLine"] = pxToTwips(style.indentFirstLinePx);
+  else if (style.indentFirstLinePx < 0) ind["w:hanging"] = pxToTwips(-style.indentFirstLinePx);
+  if (Object.keys(ind).length > 0) c.push(el("w:ind", ind));
+  c.push(el("w:jc", { "w:val": JC[style.align] }));
+  if (style.tabStops && style.tabStops.length > 0) {
+    const tabs = style.tabStops
+      .map((t) =>
+        el("w:tab", {
+          "w:val": t.align ? (TAB_VAL[t.align] ?? "left") : "left",
+          "w:pos": pxToTwips(t.posPx),
+          "w:leader": t.leader && t.leader !== "none" ? TAB_LEADER[t.leader] : undefined,
+        }),
+      )
+      .join("");
+    c.push(el("w:tabs", undefined, tabs));
+  }
+  return c.join("");
+}
 
 export function partialRPrXml(c: Partial<CharStyle>): string {
   const out: string[] = [];

@@ -21,28 +21,12 @@ import type {
   TableCell,
 } from "@cw/shared";
 import { inRange, parseTocInstruction } from "@cw/shared";
-import {
-  multiplierToLine,
-  pxToEighthPoints,
-  pxToEmu,
-  pxToHalfPoints,
-  pxToTwips,
-} from "../units";
+import { pxToEighthPoints, pxToEmu, pxToTwips } from "../units";
+import { hexColor as hex } from "./mappings";
 import { MediaManager } from "./mediaPack";
 import { REL, RelManager } from "./relationships";
+import { paraCoreXml, runPropsXml as rPrXml } from "./styleProps";
 import { el, escapeText, textEl, WML_NS, XML_DECL } from "./xmlWrite";
-
-// model verticalAlign -> w:vertAlign; jc; highlight hex -> Word color name.
-const HIGHLIGHT_NAME: Record<string, string> = {
-  "#ffff00": "yellow", "#00ff00": "green", "#00ffff": "cyan", "#ff00ff": "magenta",
-  "#0000ff": "blue", "#ff0000": "red", "#000080": "darkBlue", "#008080": "darkCyan",
-  "#008000": "darkGreen", "#800080": "darkMagenta", "#800000": "darkRed", "#808000": "darkYellow",
-  "#808080": "darkGray", "#c0c0c0": "lightGray", "#000000": "black", "#ffffff": "white",
-};
-const JC: Record<ParaStyle["align"], string> = { left: "left", center: "center", right: "right", justify: "both" };
-const TAB_VAL: Record<string, string> = { left: "left", center: "center", right: "right", decimal: "decimal" };
-const TAB_LEADER: Record<string, string> = { dot: "dot", dash: "hyphen", underscore: "underscore" };
-
 export interface ExportBookmarkMark {
   id: number;
   name?: string;
@@ -85,32 +69,8 @@ export interface PartCtx {
   fields?: Record<string, FieldDef>;
 }
 
-const hex = (color: string): string => color.replace(/^#/, "").toLowerCase();
-
 // ---------------------------------------------------------------------------
 // Runs
-
-function rPrXml(s: CharStyle): string {
-  const family = (s.fontFamily.split(",")[0] ?? "").trim();
-  const children: string[] = [];
-  if (family) children.push(el("w:rFonts", { "w:ascii": family, "w:hAnsi": family, "w:cs": family }));
-  // Toggles explicit on/off so they fully override any inherited style.
-  children.push(el("w:b", { "w:val": s.bold ? "1" : "0" }));
-  children.push(el("w:i", { "w:val": s.italic ? "1" : "0" }));
-  if (s.strikethrough) children.push(el("w:strike", { "w:val": "1" }));
-  if (s.hidden) children.push(el("w:vanish", { "w:val": "1" })); // preserved hidden text
-  children.push(el("w:color", { "w:val": hex(s.color) }));
-  children.push(el("w:sz", { "w:val": pxToHalfPoints(s.fontSizePx) }));
-  children.push(el("w:szCs", { "w:val": pxToHalfPoints(s.fontSizePx) }));
-  children.push(el("w:u", { "w:val": s.underline ? "single" : "none" }));
-  if (s.letterSpacingPx !== undefined) children.push(el("w:spacing", { "w:val": pxToTwips(s.letterSpacingPx) }));
-  if (s.highlightColor) {
-    const name = HIGHLIGHT_NAME[s.highlightColor.toLowerCase()];
-    if (name) children.push(el("w:highlight", { "w:val": name }));
-  }
-  if (s.verticalAlign) children.push(el("w:vertAlign", { "w:val": s.verticalAlign === "super" ? "superscript" : "subscript" }));
-  return el("w:rPr", undefined, children.join(""));
-}
 
 /** w:t / w:tab content for a run's text. */
 function runContent(text: string): string {
@@ -248,37 +208,8 @@ function pPrXml(style: ParaStyle, ctx: PartCtx, markRun?: CharStyle): string {
   if (style.keepWithNext) c.push(el("w:keepNext"));
   if (style.keepLinesTogether) c.push(el("w:keepLines"));
 
-  // w:spacing folds before/after/line into one element.
-  const sp: Record<string, number | string> = {
-    "w:before": pxToTwips(style.spaceBeforePx),
-    "w:after": pxToTwips(style.spaceAfterPx),
-    "w:line": multiplierToLine(style.lineHeight),
-    "w:lineRule": "auto",
-  };
-  c.push(el("w:spacing", sp));
-
-  // indent: hanging is a negative first-line indent.
-  const ind: Record<string, number> = {};
-  if (style.indentLeftPx) ind["w:left"] = pxToTwips(style.indentLeftPx);
-  if (style.indentRightPx) ind["w:right"] = pxToTwips(style.indentRightPx);
-  if (style.indentFirstLinePx > 0) ind["w:firstLine"] = pxToTwips(style.indentFirstLinePx);
-  else if (style.indentFirstLinePx < 0) ind["w:hanging"] = pxToTwips(-style.indentFirstLinePx);
-  if (Object.keys(ind).length > 0) c.push(el("w:ind", ind));
-
-  c.push(el("w:jc", { "w:val": JC[style.align] }));
-
-  if (style.tabStops && style.tabStops.length > 0) {
-    const tabs = style.tabStops
-      .map((t) =>
-        el("w:tab", {
-          "w:val": t.align ? (TAB_VAL[t.align] ?? "left") : "left",
-          "w:pos": pxToTwips(t.posPx),
-          "w:leader": t.leader && t.leader !== "none" ? TAB_LEADER[t.leader] : undefined,
-        }),
-      )
-      .join("");
-    c.push(el("w:tabs", undefined, tabs));
-  }
+  // spacing / indent / jc / tabs — shared with the TOC generator.
+  c.push(paraCoreXml(style));
 
   // The paragraph mark's run props size empty lines on re-import.
   if (markRun) c.push(rPrXml(markRun));
@@ -348,9 +279,12 @@ function bordersXml(tag: string, b: NonNullable<TableCell["borders"]>): string {
   return el(tag, undefined, inner);
 }
 
-function cellXml(cell: TableCell, ctx: PartCtx): string {
+function cellXml(cell: TableCell, ctx: PartCtx, vMergeRestart = false): string {
   const pr: string[] = [];
   if (cell.colSpan && cell.colSpan > 1) pr.push(el("w:gridSpan", { "w:val": cell.colSpan }));
+  // vMerge restart opens a vertical merge whose continue cells are synthesized in
+  // the rows below (see tableXml). gridSpan precedes vMerge per CT_TcPr.
+  if (vMergeRestart) pr.push(el("w:vMerge", { "w:val": "restart" }));
   if (cell.shading) pr.push(el("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": hex(cell.shading) }));
   if (cell.borders) pr.push(bordersXml("w:tcBorders", cell.borders));
   // Cell padding (w:tcMar). The importer resolves every side onto cell.margin, so
@@ -442,7 +376,7 @@ function tableXml(table: TableBlock, ctx: PartCtx): string {
       col = emitContinues(col, out);
       const span = cell.colSpan ?? 1;
       if (cell.rowSpan && cell.rowSpan > 1) {
-        out.push(injectVMergeRestart(cellXml(cell, ctx)));
+        out.push(cellXml(cell, ctx, true));
         pending[col] = { remaining: cell.rowSpan - 1, span, borders: cell.borders };
       } else {
         out.push(cellXml(cell, ctx));
@@ -460,18 +394,6 @@ function tableXml(table: TableBlock, ctx: PartCtx): string {
     el("w:tblW", { "w:w": 0, "w:type": "auto" }) + el("w:tblLayout", { "w:type": "fixed" }),
   );
   return el("w:tbl", undefined, tblPr + el("w:tblGrid", undefined, grid) + rowsXml.join(""));
-}
-
-/** Splice a w:vMerge restart into a cell's existing w:tcPr (or add one). */
-function injectVMergeRestart(tc: string): string {
-  const merge = el("w:vMerge", { "w:val": "restart" });
-  if (tc.startsWith("<w:tc><w:tcPr>")) {
-    return tc.replace("<w:tc><w:tcPr>", `<w:tc><w:tcPr>${merge}`);
-  }
-  if (tc.startsWith("<w:tc><w:tcPr/>")) {
-    return tc.replace("<w:tc><w:tcPr/>", `<w:tc><w:tcPr>${merge}</w:tcPr>`);
-  }
-  return tc.replace("<w:tc>", `<w:tc>${el("w:tcPr", undefined, merge)}`);
 }
 
 // ---------------------------------------------------------------------------

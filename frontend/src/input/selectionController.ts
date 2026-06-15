@@ -156,13 +156,16 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
 
   // ---- mouse -------------------------------------------------------------
 
-  let dragging = false;
   let autoScrollDir = 0;
   let autoScrollRaf: number | null = null;
-  // Cross-cell drag: the table + anchor cell captured on mousedown, and whether
-  // the drag has crossed into another cell (switching from text to cell selection).
-  let cellDragTable: string | null = null;
-  let cellDragAnchor: { row: number; col: number } | null = null;
+  // The active drag session, or null when idle. `cellTable`/`cellAnchor` are the
+  // table + anchor cell captured on mousedown for a potential cross-cell drag
+  // (crossing into another cell switches text selection → rectangular cell select).
+  interface DragSession {
+    cellTable: string | null;
+    cellAnchor: { row: number; col: number } | null;
+  }
+  let drag: DragSession | null = null;
 
   const posFromEvent = (ev: MouseEvent): DocPosition | null => {
     const pt = deps.clientToPage(ev.clientX, ev.clientY);
@@ -297,10 +300,11 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
     // Capture a potential cross-cell drag origin (body tables only). Dragging
     // into another cell of the same table switches to rectangular cell selection.
     const startCell = !story && !band ? hitTestCell(deps.getTree(), pt.pageIndex, pt.x, pt.y) : null;
-    cellDragTable = startCell?.tableId ?? null;
-    cellDragAnchor = startCell ? { row: startCell.row, col: startCell.col } : null;
+    drag = {
+      cellTable: startCell?.tableId ?? null,
+      cellAnchor: startCell ? { row: startCell.row, col: startCell.col } : null,
+    };
     deps.setCellSelection(null); // a fresh press clears any prior cell selection
-    dragging = true;
     applyMove(pos, ev.shiftKey);
   };
 
@@ -314,13 +318,13 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
 
   const autoScrollTick = (): void => {
     autoScrollRaf = null;
-    if (!dragging || autoScrollDir === 0) return;
+    if (!drag || autoScrollDir === 0) return;
     container.scrollTop += autoScrollDir;
     autoScrollRaf = requestAnimationFrame(autoScrollTick);
   };
 
   const onMouseMove = (ev: MouseEvent): void => {
-    if (!dragging) return;
+    if (!drag) return;
     const rect = container.getBoundingClientRect();
     const margin = 28;
     autoScrollDir =
@@ -332,13 +336,13 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
     if (autoScrollDir !== 0 && autoScrollRaf === null) autoScrollTick();
     // Cross-cell drag: once the pointer enters a different cell of the same
     // table, paint a rectangular cell selection instead of a text selection.
-    if (cellDragTable && cellDragAnchor) {
+    if (drag.cellTable && drag.cellAnchor) {
       const pt = deps.clientToPage(ev.clientX, ev.clientY);
       const cur = pt ? hitTestCell(deps.getTree(), pt.pageIndex, pt.x, pt.y) : null;
-      if (cur && cur.tableId === cellDragTable) {
-        const crossed = cur.row !== cellDragAnchor.row || cur.col !== cellDragAnchor.col;
+      if (cur && cur.tableId === drag.cellTable) {
+        const crossed = cur.row !== drag.cellAnchor.row || cur.col !== drag.cellAnchor.col;
         if (crossed) {
-          deps.setCellSelection({ tableId: cellDragTable, anchor: cellDragAnchor, focus: { row: cur.row, col: cur.col } });
+          deps.setCellSelection({ tableId: drag.cellTable, anchor: drag.cellAnchor, focus: { row: cur.row, col: cur.col } });
           return; // suppress text selection while spanning cells
         }
       }
@@ -348,9 +352,7 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
   };
 
   const onMouseUp = (): void => {
-    dragging = false;
-    cellDragTable = null;
-    cellDragAnchor = null;
+    drag = null;
     stopAutoScroll();
   };
 
@@ -393,7 +395,7 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
 
   // Hover affordances: col-resize over column grips, pointer + tooltip over links.
   const onHoverMove = (ev: MouseEvent): void => {
-    if (dragging) return;
+    if (drag) return;
     if (container.dataset["painter"]) {
       container.style.cursor = "copy"; // format painter armed
       return;

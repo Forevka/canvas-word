@@ -7,7 +7,7 @@
 // module only registers tools, so it stays trivially testable with a fake context.
 
 import type { CharStyle, Document, DocSelection, Fragment, ParaStyle } from "@cw/shared";
-import { paragraphsOf, textOfRuns } from "@cw/shared";
+import { blockById, paragraphsOf, textOfBlock, textOfRuns } from "@cw/shared";
 import type { Editor } from "../index";
 import { dumpLayout, type LayoutDumpOptions } from "./layoutDump";
 
@@ -503,7 +503,13 @@ export function registerAgentTools(
         const fb = str(args.focusBlockId);
         const fo = num(args.focusOffset);
         if (ab === undefined || ao === undefined || fb === undefined || fo === undefined) return fail("anchor/focus block id + offset are required");
-        editor.setSelection({ anchor: { blockId: ab, offset: ao }, focus: { blockId: fb, offset: fo } });
+        // Validate against the live model — agents can hallucinate ids/offsets, and
+        // an out-of-range selection breaks layout/paint downstream.
+        const doc = editor.getDocument();
+        if (!blockById(doc, ab)) return fail(`anchor block '${ab}' not found`);
+        if (!blockById(doc, fb)) return fail(`focus block '${fb}' not found`);
+        const clamp = (o: number, bid: string): number => Math.max(0, Math.min(o, textOfBlock(doc, bid).length));
+        editor.setSelection({ anchor: { blockId: ab, offset: clamp(ao, ab) }, focus: { blockId: fb, offset: clamp(fo, fb) } });
         return ok("selection set");
       },
     });

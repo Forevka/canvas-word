@@ -454,11 +454,18 @@ const CSS = `
 }
 `;
 
+/** Append a <style id> with the given css once per document, keyed by `id`
+ *  (idempotent across calls and hot-reloads). Shared by the editor chrome and
+ *  the on-demand modal/menu components so the inject-once pattern lives once. */
+export function injectCssOnce(id: string, css: string): void {
+  if (document.getElementById(id)) return;
+  const style = document.createElement("style");
+  style.id = id;
+  style.textContent = css;
+  document.head.appendChild(style);
+}
+
 /** Inject the component stylesheet once per document (idempotent). */
 export function ensureWordCanvasStyles(): void {
-  if (document.getElementById(STYLE_ID)) return;
-  const style = document.createElement("style");
-  style.id = STYLE_ID;
-  style.textContent = CSS;
-  document.head.appendChild(style);
+  injectCssOnce(STYLE_ID, CSS);
 }

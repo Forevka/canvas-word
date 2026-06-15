@@ -6,6 +6,8 @@
 // destructive styling, optional leading icons. Dismisses on outside-press,
 // Escape, blur, or after an item runs. Clamps inside the viewport.
 
+import { injectCssOnce } from "./styles";
+
 export interface MenuItem {
   kind: "item";
   label: string;
@@ -33,12 +35,7 @@ export interface ContextMenuHandle {
   close(): void;
 }
 
-let menuCssInjected = false;
-function injectMenuCss(): void {
-  if (menuCssInjected) return;
-  menuCssInjected = true;
-  const style = document.createElement("style");
-  style.textContent = `
+const MENU_CSS = `
 .cw-menu{position:fixed;z-index:1000;min-width:200px;max-width:320px;background:#fff;
   border:1px solid #c8ccd1;border-radius:8px;padding:5px;
   box-shadow:0 6px 22px rgba(0,0,0,.22);font:13px Arial,sans-serif;color:#2b2f33;
@@ -56,8 +53,6 @@ function injectMenuCss(): void {
 .cw-menu-arrow{color:#9aa0a6;margin-left:10px;}
 .cw-menu-sep{height:1px;background:#e6e8eb;margin:5px 8px;}
 .cw-menu-header{padding:5px 10px 2px;font-size:11px;color:#80868b;text-transform:uppercase;letter-spacing:.04em;}`;
-  document.head.appendChild(style);
-}
 
 /** Render `entries` as a popup at (clientX, clientY). */
 export function showContextMenu(
@@ -65,7 +60,7 @@ export function showContextMenu(
   clientY: number,
   entries: MenuEntry[],
 ): ContextMenuHandle {
-  injectMenuCss();
+  injectCssOnce("cw-menu-styles", MENU_CSS);
   let submenuEl: HTMLElement | null = null;
 
   const root = buildPanel(entries, () => close(), true);
