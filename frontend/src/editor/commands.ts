@@ -685,12 +685,18 @@ export function buildTocParagraphs(doc: EditorState["doc"], opts: TocOptions = {
   return out;
 }
 
-/** Insert a TOC at the caret, or REGENERATE the existing one (Word's F9). */
+/** Insert a TOC at the caret, or REGENERATE the existing one (Word's F9). When
+ *  regenerating WITHOUT an explicit look, the existing TOC's title presence and
+ *  per-level styling are preserved (same fix as the "Update Field (TOC)" context
+ *  action) — so the ribbon's insert/update button no longer clobbers an imported
+ *  TOC with the editor defaults. An explicit `opts` (the headless backend route)
+ *  still wins. */
 export function insertTocCmd(opts?: TocOptions): Command {
   return (state) => {
-    const fresh = buildTocParagraphs(state.doc, opts);
-    if (fresh.length <= 1) return null; // no headings -> nothing to list
     const existing = tocEntryBlocks(state.doc);
+    const effectiveOpts = opts ?? (existing.length > 0 ? tocOptionsFromExisting(state.doc) : undefined);
+    const fresh = buildTocParagraphs(state.doc, effectiveOpts);
+    if (fresh.length <= 1) return null; // no headings -> nothing to list
     const ops: Op[] = [];
     let insertIndex: number;
     if (existing.length > 0) {

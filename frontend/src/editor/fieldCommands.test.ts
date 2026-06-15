@@ -4,7 +4,7 @@ import { applyOp } from "@cw/shared";
 import { runImport } from "../import/docx/pipeline";
 import { CONTENT_TYPES_XML, documentXml, drawingXml, makeDocx, PNG_1PX, REL_TYPES, relsXml, simpleDocx } from "../import/docx/fixture";
 import { parseOoxmlFragment } from "../import/docx/fragment";
-import { fieldAtBlock, replaceFieldResultCmd, updateTocFieldCmd } from "./commands";
+import { fieldAtBlock, insertTocCmd, replaceFieldResultCmd, updateTocFieldCmd } from "./commands";
 import type { EditorState } from "./state";
 
 const fld = (t: string): string => `<w:r><w:fldChar w:fldCharType="${t}"/></w:r>`;
@@ -136,5 +136,29 @@ describe("updateTocFieldCmd (Word F9) preserves the imported TOC look", () => {
     expect(tocEntries[0]!.runs[0]!.style.fontFamily).toContain("Verdana");
     expect(tocEntries[0]!.runs[0]!.style.fontSizePx).toBe(20); // sz 30 = 15pt = 20px (preserved, not the 14px default)
     expect(tocEntries[0]!.runs[0]!.style.link).toBeUndefined(); // stale #anchor stripped
+  });
+
+  it("the ribbon insert/update (insertTocCmd, no opts) also preserves the look", () => {
+    // Regression: the ribbon "Insert / update table of contents" button calls
+    // insertTocCmd() with NO options. Regenerating an existing imported TOC must
+    // preserve its title presence + entry styling, not clobber it with the editor
+    // defaults — the same fix the context-menu "Update Field (TOC)" already had.
+    const body =
+      `<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+      `<w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" \\h </w:instrText></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="separate"/></w:r></w:p>` +
+      entry("_Toc1", "Chapter One", "3") +
+      entry("_Toc2", "Chapter Two", "5") +
+      head("_Toc1", "Chapter One") +
+      head("_Toc2", "Chapter Two");
+    const doc = runImport(simpleDocx(body)).doc;
+
+    const out = apply2({ doc, selection: null }, insertTocCmd());
+    const ps = out.blocks.filter((b): b is Paragraph => b.kind === "paragraph");
+    expect(ps.some((p) => p.style.namedStyle === "tocTitle" || p.runs.map((r) => r.text).join("") === "Table of Contents")).toBe(false);
+    const tocEntries = ps.filter((p) => p.style.tocEntry);
+    expect(tocEntries.length).toBe(2);
+    expect(tocEntries[0]!.runs[0]!.style.fontFamily).toContain("Verdana");
+    expect(tocEntries[0]!.runs[0]!.style.fontSizePx).toBe(20); // preserved, not the 14px default
   });
 });
