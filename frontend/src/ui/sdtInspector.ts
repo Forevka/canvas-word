@@ -7,6 +7,7 @@
 // the control's content) and handles persistence.
 
 import type { SdtProps } from "@cw/shared";
+import { injectCssOnce } from "./styles";
 
 export interface SdtInspectorData {
   id: string;
@@ -42,12 +43,7 @@ const SDT_TYPE_LABEL: Record<SdtProps["type"], string> = {
   date: "Date Picker",
 };
 
-let cssInjected = false;
-function injectCss(): void {
-  if (cssInjected) return;
-  cssInjected = true;
-  const style = document.createElement("style");
-  style.textContent = `
+const SDT_CSS = `
 .cw-sdt-backdrop{position:fixed;inset:0;z-index:1100;background:rgba(20,22,26,.38);
   display:flex;align-items:center;justify-content:center;}
 .cw-sdt-modal{width:min(960px,94vw);max-height:88vh;display:flex;flex-direction:column;
@@ -87,14 +83,12 @@ function injectCss(): void {
 .cw-sdt-btn.primary{border-color:#1a73e8;background:#1a73e8;color:#fff;}
 .cw-sdt-btn.primary:hover{background:#1864cc;}
 .cw-sdt-btn:disabled{opacity:.5;cursor:default;}`;
-  document.head.appendChild(style);
-}
 
 export function showSdtInspector(
   data: SdtInspectorData,
   opts: SdtInspectorOptions = {},
 ): SdtInspectorHandle {
-  injectCss();
+  injectCssOnce("cw-sdt-styles", SDT_CSS);
   const { props } = data;
   const editable = opts.editable === true && typeof opts.onSave === "function";
   const title = props.alias?.trim() || SDT_TYPE_LABEL[props.type];
@@ -234,20 +228,24 @@ export function showSdtInspector(
   backdrop.appendChild(modal);
   document.body.appendChild(backdrop);
 
+  const ac = new AbortController();
   const handle: SdtInspectorHandle = {
     close(): void {
       backdrop.remove();
-      window.removeEventListener("keydown", onKey, true);
+      ac.abort(); // detaches every listener registered with ac.signal
     },
   };
-  const onKey = (ev: KeyboardEvent): void => {
-    if (ev.key === "Escape") {
-      ev.preventDefault();
-      ev.stopPropagation();
-      handle.close();
-    }
-  };
-  window.addEventListener("keydown", onKey, true);
+  window.addEventListener(
+    "keydown",
+    (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        handle.close();
+      }
+    },
+    { capture: true, signal: ac.signal },
+  );
   backdrop.addEventListener("mousedown", () => handle.close());
   xBtn.addEventListener("click", () => handle.close());
   if (editable) preview.focus();

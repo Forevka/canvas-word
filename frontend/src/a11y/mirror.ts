@@ -19,8 +19,10 @@ export function createA11yMirror(proxyEl: HTMLElement): A11yMirror {
   // Pinned to the origin (top/left:0) so the out-of-flow node can't sit past the
   // page content and add ~1px of scroll height; margin:0 keeps it from nudging
   // layout. Still visually hidden (1px + clip) but present for assistive tech.
+  // Uses the broadly-supported `clip: rect(...)` sr-only idiom rather than
+  // `clip-path: inset(50%)`, which some older assistive tech doesn't honor.
   live.style.cssText =
-    "position:absolute;top:0;left:0;width:1px;height:1px;margin:0;overflow:hidden;clip-path:inset(50%);";
+    "position:absolute;top:0;left:0;width:1px;height:1px;margin:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;";
   document.body.appendChild(live);
 
   return {
