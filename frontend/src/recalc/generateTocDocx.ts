@@ -16,9 +16,7 @@ import {
   parseTocInstruction,
   textOfRuns,
   tocEntryStyle,
-  type CharStyle,
   type Document,
-  type ParaStyle,
   type TocOptions,
   type TocSwitches,
 } from "@cw/shared";
@@ -26,52 +24,11 @@ import { findMainDocumentPart } from "../import/docx/contentTypes";
 import { runImport } from "../import/docx/pipeline";
 import { createLayoutEngine } from "../layout/engine";
 import { pageOfBlockMap } from "./recalcToc";
+import { paraCoreXml, runPropsXml } from "../export/docx/styleProps";
 import { el, escapeText, textEl } from "../export/docx/xmlWrite";
-import { multiplierToLine, pxToHalfPoints, pxToTwips } from "../export/units";
 
-// --- minimal, self-contained OOXML serialization for the generated entries -----
-
-const hex = (c: string): string => c.replace(/^#/, "").toLowerCase();
-const JC: Record<ParaStyle["align"], string> = { left: "left", center: "center", right: "right", justify: "both" };
-const TAB_LEADER: Record<string, string> = { dot: "dot", dash: "hyphen", underscore: "underscore" };
-
-function rPrXml(s: CharStyle): string {
-  const fam = (s.fontFamily.split(",")[0] ?? "").trim();
-  const c: string[] = [];
-  if (fam) c.push(el("w:rFonts", { "w:ascii": fam, "w:hAnsi": fam, "w:cs": fam }));
-  c.push(el("w:b", { "w:val": s.bold ? "1" : "0" }));
-  c.push(el("w:i", { "w:val": s.italic ? "1" : "0" }));
-  c.push(el("w:color", { "w:val": hex(s.color) }));
-  c.push(el("w:sz", { "w:val": pxToHalfPoints(s.fontSizePx) }));
-  c.push(el("w:szCs", { "w:val": pxToHalfPoints(s.fontSizePx) }));
-  c.push(el("w:u", { "w:val": s.underline ? "single" : "none" }));
-  return el("w:rPr", undefined, c.join(""));
-}
-
-function pPrXml(s: ParaStyle): string {
-  const c: string[] = [];
-  c.push(el("w:spacing", {
-    "w:before": pxToTwips(s.spaceBeforePx), "w:after": pxToTwips(s.spaceAfterPx),
-    "w:line": multiplierToLine(s.lineHeight), "w:lineRule": "auto",
-  }));
-  const ind: Record<string, number> = {};
-  if (s.indentLeftPx) ind["w:left"] = pxToTwips(s.indentLeftPx);
-  if (s.indentRightPx) ind["w:right"] = pxToTwips(s.indentRightPx);
-  if (s.indentFirstLinePx > 0) ind["w:firstLine"] = pxToTwips(s.indentFirstLinePx);
-  else if (s.indentFirstLinePx < 0) ind["w:hanging"] = pxToTwips(-s.indentFirstLinePx);
-  if (Object.keys(ind).length) c.push(el("w:ind", ind));
-  c.push(el("w:jc", { "w:val": JC[s.align] }));
-  if (s.tabStops?.length) {
-    const tabs = s.tabStops
-      .map((t) => el("w:tab", {
-        "w:val": t.align ?? "left", "w:pos": pxToTwips(t.posPx),
-        "w:leader": t.leader && t.leader !== "none" ? TAB_LEADER[t.leader] : undefined,
-      }))
-      .join("");
-    c.push(el("w:tabs", undefined, tabs));
-  }
-  return el("w:pPr", undefined, c.join(""));
-}
+// --- OOXML serialization for the generated entries (full rPr/pPr shared with the
+// main exporter via styleProps so the two can't drift) -------------------------
 
 const fld = (t: "begin" | "separate" | "end"): string => el("w:r", undefined, el("w:fldChar", { "w:fldCharType": t }));
 const instrRun = (i: string): string => el("w:r", undefined, el("w:instrText", { "xml:space": "preserve" }, escapeText(i)));
@@ -94,8 +51,8 @@ function entryXml(
   ctx: { instr: string; first: boolean; last: boolean; hyperlink: boolean; separator?: string },
 ): string {
   const { char, para } = tocEntryStyle(opts, e.level, contentWidthPx);
-  const rPr = rPrXml(char);
-  let body = pPrXml(para);
+  const rPr = runPropsXml(char);
+  let body = el("w:pPr", undefined, paraCoreXml(para));
   if (ctx.first) body += fld("begin") + instrRun(ctx.instr) + fld("separate");
   const sep = ctx.separator && ctx.separator !== "\t" ? el("w:r", undefined, rPr + textEl(ctx.separator)) : el("w:r", undefined, rPr + el("w:tab"));
   const num = e.numText

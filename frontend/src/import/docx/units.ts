@@ -19,3 +19,14 @@ export const lineAutoToMultiplier = (line: number): number => line / 240;
 
 /** Round to 2 decimals — keeps layout math in floats but model JSON readable. */
 export const round2 = (v: number): number => Math.round(v * 100) / 100;
+
+/** A four-sided box in twips. */
+export interface TwipsBox { top: number; right: number; bottom: number; left: number }
+
+/** Convert a four-sided twips box (page/cell margins) to rounded px. */
+export const marginTwipsToPx = (m: TwipsBox): TwipsBox => ({
+  top: round2(twipsToPx(m.top)),
+  right: round2(twipsToPx(m.right)),
+  bottom: round2(twipsToPx(m.bottom)),
+  left: round2(twipsToPx(m.left)),
+});

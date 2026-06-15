@@ -47,7 +47,7 @@ import type {
   IRTableCell,
 } from "./types";
 import { WarningSink } from "./types";
-import { emuToPx, halfPointsToPx, round2, twipsToPx } from "./units";
+import { emuToPx, halfPointsToPx, marginTwipsToPx, round2, twipsToPx } from "./units";
 
 /** Resolves a hyperlink relationship id to a URL (the part's external rels). */
 export type LinkResolver = (relId: string) => string | undefined;
@@ -207,13 +207,7 @@ export function createMapper(
       patch.pageHeightPx = round2(twipsToPx(props.sectionPgSize.h));
     }
     if (props.sectionMarginTwips) {
-      const m = props.sectionMarginTwips;
-      patch.marginPx = {
-        top: round2(twipsToPx(m.top)),
-        right: round2(twipsToPx(m.right)),
-        bottom: round2(twipsToPx(m.bottom)),
-        left: round2(twipsToPx(m.left)),
-      };
+      patch.marginPx = marginTwipsToPx(props.sectionMarginTwips);
     }
     if (props.sectionColumns) {
       patch.columns = { count: props.sectionColumns.count, gapPx: round2(twipsToPx(props.sectionColumns.spaceTwips ?? 720)) };
@@ -634,12 +628,7 @@ export function createMapper(
       // over Word's defaults, resolved per side (a cell may set only top/bottom).
       const side = (s: "top" | "right" | "bottom" | "left"): number =>
         irCell.marginTwips?.[s] ?? ir.cellMarginTwips?.[s] ?? WORD_CELL_MARGIN_TWIPS[s];
-      cell.margin = {
-        top: round2(twipsToPx(side("top"))),
-        right: round2(twipsToPx(side("right"))),
-        bottom: round2(twipsToPx(side("bottom"))),
-        left: round2(twipsToPx(side("left"))),
-      };
+      cell.margin = marginTwipsToPx({ top: side("top"), right: side("right"), bottom: side("bottom"), left: side("left") });
       return cell;
     };
 
@@ -711,14 +700,7 @@ export function createMapper(
         ir.pageWidthTwips !== undefined ? round2(twipsToPx(ir.pageWidthTwips)) : DEFAULT_SECTION.pageWidthPx,
       pageHeightPx:
         ir.pageHeightTwips !== undefined ? round2(twipsToPx(ir.pageHeightTwips)) : DEFAULT_SECTION.pageHeightPx,
-      marginPx: ir.marginTwips
-        ? {
-            top: round2(twipsToPx(ir.marginTwips.top)),
-            right: round2(twipsToPx(ir.marginTwips.right)),
-            bottom: round2(twipsToPx(ir.marginTwips.bottom)),
-            left: round2(twipsToPx(ir.marginTwips.left)),
-          }
-        : { ...DEFAULT_SECTION.marginPx },
+      marginPx: ir.marginTwips ? marginTwipsToPx(ir.marginTwips) : { ...DEFAULT_SECTION.marginPx },
     };
     if (ir.columns) {
       // OOXML default column gap is 720 twips (0.5") when w:space is absent.
@@ -812,6 +794,9 @@ function buildListLevel(ir: IRListDefinition["levels"][number] | undefined, i: n
   return level;
 }
 
+// Import-side (OOXML w:val → model enum) maps. Intentionally many-to-one
+// (start/num→left, end→right, middleDot→dot, hyphen→dash) and NOT the inverse of
+// the exporter's TAB_VAL/TAB_LEADER in export/docx/mappings.ts — do not merge.
 const TAB_ALIGN: Record<string, TabAlign> = {
   left: "left",
   start: "left",
