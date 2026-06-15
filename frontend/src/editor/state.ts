@@ -15,6 +15,9 @@ export interface CellSelection {
   focus: { row: number; col: number };
 }
 
+/** Editing mode: full editing, suggestion/track-changes, or read-only view. */
+export type EditMode = "edit" | "suggest" | "view";
+
 export interface EditorState {
   doc: Document;
   selection: DocSelection | null;

@@ -27,6 +27,8 @@ import {
 } from "./layout/geometry";
 import type { LayoutTree, Page, PlacedBlock } from "./layout/layoutTree";
 import { computeTocEdits } from "./recalc/recalcToc";
+import { createSdtPopup } from "./editor/sdtPopup";
+import { createCommentController } from "./editor/commentController";
 import { createPaintLayer, type RemoteCaret } from "./paint/renderer";
 import { createSelectionController } from "./input/selectionController";
 import { createObjectFrame } from "./input/objectController";
@@ -81,7 +83,7 @@ import {
 } from "./editor/commands";
 import type { SdtType } from "@cw/shared";
 import { ICONS } from "./ui/icons";
-import type { CellSelection, Command, EditorState, Transaction } from "./editor/state";
+import type { CellSelection, Command, EditMode, EditorState, Transaction } from "./editor/state";
 import { UndoManager } from "./editor/undo";
 import { ChangeRecorder, type ChangeSink } from "./sync/changeRecorder";
 import type { Change, ChangeOrigin } from "@cw/shared";
@@ -96,12 +98,12 @@ import {
 } from "@cw/shared";
 import { intercept } from "./review/intercept";
 import { decorate } from "./review/decorate";
-import { attachMentionAutocomplete } from "./review/mentions";
 import { acceptSuggestion, rejectSuggestion, acceptAllSuggestions, rejectAllSuggestions, type Resolution } from "@cw/shared";
 
 /** Editor mode: edit (normal), suggest (edits become tracked-change records), or
- *  view (read-only — every mutation is a no-op; the old `readonly:true`). */
-export type EditMode = "edit" | "suggest" | "view";
+ *  view (read-only — every mutation is a no-op; the old `readonly:true`).
+ *  Defined in ./editor/state (imported above) and re-exported for the public API. */
+export type { EditMode };
 
 export type { ReviewOpEnvelope };
 
@@ -1033,125 +1035,24 @@ export function createEditor(
   // Google-Docs-style comment affordance: in suggest mode, selecting text shows a
   // small floating "comment" chip next to the selection; clicking it expands into
   // the full composer. No ribbon icon needed.
-  let commentBubble: HTMLDivElement | null = null;
-  let commentChip: HTMLButtonElement | null = null;
-  const closeCommentComposer = (): void => {
-    commentBubble?.remove();
-    commentBubble = null;
-  };
-  const hideCommentChip = (): void => {
-    commentChip?.remove();
-    commentChip = null;
-  };
-
-  /** Container-relative anchor (top-right of the selection's first line) for the
-   *  comment chip + composer, or null if there's no usable ranged selection. */
-  const commentAnchorAt = (): { left: number; top: number; lineH: number } | null => {
-    if (!selection || isCollapsed(selection) || cellSelection) return null;
-    const rects = selectionRects(tree, selection, scope());
-    if (rects.length === 0) return null;
-    const r = rects[0]!;
-    const at = paint.caretToContainer({ pageIndex: r.pageIndex, x: r.x + r.width, y: r.y, height: r.height });
-    return at ? { left: at.left, top: at.top, lineH: r.height } : null;
-  };
-
-  const styleForComment = (): CharStyle => {
-    const block = selection ? blockById(doc, selection.focus.blockId) : undefined;
-    return (
-      (block && styleAtRuns(block.runs, selection!.focus.offset)) ?? {
-        fontFamily: "Georgia, serif", fontSizePx: 16, bold: false, italic: false, underline: false, strikethrough: false, color: "#202124",
-      }
-    );
-  };
-
-  /** Expand the full composer at the current selection (chip click, or API). */
-  const openComposer = (): void => {
-    if (mode === "view") return;
-    const anchor = commentAnchorAt();
-    if (!anchor) return;
-    hideCommentChip();
-    closeCommentComposer();
-    const style = styleForComment();
-
-    const bubble = document.createElement("div");
-    bubble.className = "cw-comment-bubble";
-    const maxLeft = container.clientWidth - 312;
-    bubble.style.left = `${Math.max(8, Math.min(anchor.left + 6, maxLeft))}px`;
-    bubble.style.top = `${anchor.top + anchor.lineH + 8}px`;
-    bubble.addEventListener("mousedown", (e) => e.stopPropagation());
-
-    const who = reviewAuthor();
-    const row = document.createElement("div");
-    row.className = "cw-bubble-row";
-    const av = document.createElement("div");
-    av.className = "cw-avatar";
-    av.style.background = colorForId(who.id);
-    av.textContent = (who.firstName[0] ?? "?") + (who.lastName[0] ?? "");
-    const ta = document.createElement("textarea");
-    ta.placeholder = "Add a comment…  (@ to mention)";
-    row.append(av, ta);
-    const mentions = attachMentionAutocomplete(ta, mentionableUsers);
-
-    const actions = document.createElement("div");
-    actions.className = "cw-bubble-actions";
-    const cancel = document.createElement("button");
-    cancel.className = "cw-btn cw-btn-sm";
-    cancel.textContent = "Cancel";
-    const submit = document.createElement("button");
-    submit.className = "cw-btn cw-btn-primary cw-btn-sm";
-    submit.textContent = "Comment";
-    submit.disabled = true;
-    actions.append(cancel, submit);
-    bubble.append(row, actions);
-    container.appendChild(bubble);
-    commentBubble = bubble;
-    setTimeout(() => ta.focus(), 0);
-
-    ta.addEventListener("input", () => {
-      submit.disabled = ta.value.trim().length === 0;
-    });
-    const send = (): void => {
-      const text = ta.value.trim();
-      if (!text) return;
-      addComment([{ text, style }], mentions.getMentions());
-      mentions.destroy();
-      closeCommentComposer();
-      proxy.focus();
-    };
-    ta.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") { e.preventDefault(); mentions.destroy(); closeCommentComposer(); proxy.focus(); }
-      else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
-    });
-    cancel.addEventListener("click", () => { mentions.destroy(); closeCommentComposer(); proxy.focus(); });
-    submit.addEventListener("click", send);
-  };
-
+  const comments = createCommentController({
+    container,
+    caretToContainer: (rect) => paint.caretToContainer(rect),
+    getSelection: () => selection,
+    getCellSelection: () => cellSelection,
+    getTree: () => tree,
+    getDoc: () => doc,
+    getMode: () => mode,
+    scope,
+    reviewAuthor,
+    mentionableUsers,
+    addComment,
+    focusProxy: () => proxy.focus(),
+  });
   // Public: open the composer directly (kept for API parity).
-  const startComment = openComposer;
-
-  /** Show/hide the floating comment chip as the selection changes (suggest mode
-   *  only). Called from refreshSelectionVisuals + setMode. */
-  updateCommentAffordance = (): void => {
-    if (commentBubble) return; // composer open → leave it; chip is irrelevant
-    const anchor = mode === "suggest" ? commentAnchorAt() : null;
-    if (!anchor) {
-      hideCommentChip();
-      return;
-    }
-    if (!commentChip) {
-      commentChip = document.createElement("button");
-      commentChip.className = "cw-comment-chip";
-      commentChip.title = "Leave a comment";
-      commentChip.textContent = "💬";
-      // stopPropagation is essential: without it the selection controller sees the
-      // mousedown and collapses the selection, so openComposer finds nothing.
-      commentChip.addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); });
-      commentChip.addEventListener("click", (e) => { e.stopPropagation(); openComposer(); });
-      container.appendChild(commentChip);
-    }
-    commentChip.style.left = `${anchor.left + 6}px`;
-    commentChip.style.top = `${anchor.top - 4}px`;
-  };
+  const startComment = comments.openComposer;
+  // The chip refresh is forward-declared (called from refreshSelectionVisuals + setMode).
+  updateCommentAffordance = comments.updateAffordance;
 
   const applyRemoteReviewOp = (op: ReviewOp): void => {
     review = applyReviewOp(review, op).layer;
@@ -1171,8 +1072,8 @@ export function createEditor(
     mode = next;
     pendingStyle = null; // clear pending preview on switch
     if (mode !== "suggest") {
-      hideCommentChip();
-      closeCommentComposer();
+      comments.hideChip();
+      comments.closeComposer();
     }
     updateCommentAffordance(); // reflect the new mode immediately
     options.onModeChanged?.(mode);
@@ -1207,91 +1108,17 @@ export function createEditor(
     return id && props ? { id, props } : null;
   };
 
-  let sdtPopup: HTMLDivElement | null = null;
-  const closeSdtPopup = (): void => {
-    sdtPopup?.remove();
-    sdtPopup = null;
-  };
-
-  /** Dropdown list / combo / date picker beside the control (Word's chooser). */
-  const openSdtPopup = (id: string): void => {
-    closeSdtPopup();
-    const props = doc.sdts?.[id];
-    const range = findSdtRanges(doc, id)[0];
-    if (!props || !range) return;
-    const rect = caretRect(tree, { blockId: range.blockId, offset: range.start }, scope());
-    if (!rect) return;
-    const at = paint.caretToContainer(rect);
-    if (!at) return;
-    const panel = document.createElement("div");
-    panel.style.cssText =
-      `position:absolute;left:${at.left}px;top:${at.top + rect.height + 4}px;z-index:30;` +
-      "background:#fff;border:1px solid #c8c8c8;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.22);" +
-      "font:13px Arial;min-width:160px;max-height:240px;overflow:auto;padding:4px;";
-    panel.addEventListener("mousedown", (e) => {
-      e.stopPropagation(); // keep the press away from the selection controller
-    });
-    if (props.type === "date") {
-      const input = document.createElement("input");
-      input.type = "date";
-      input.style.cssText = "font:13px Arial;border:1px solid #c8c8c8;border-radius:4px;padding:3px 6px;";
-      const pick = (): void => {
-        if (!input.value) return;
-        const [y, m, d] = input.value.split("-").map(Number);
-        const fmt = props.dateFormat ?? "M/d/yyyy";
-        const text = fmt
-          .replace(/yyyy/g, String(y))
-          .replace(/MM/g, String(m!).padStart(2, "0"))
-          .replace(/M(?!M)/g, String(m))
-          .replace(/dd/g, String(d!).padStart(2, "0"))
-          .replace(/d(?!d)/g, String(d));
-        dispatch(setSdtContent(id, text));
-        closeSdtPopup();
-        proxy.focus();
-      };
-      input.addEventListener("change", pick);
-      panel.appendChild(input);
-    } else {
-      for (const item of props.listItems ?? []) {
-        const row = document.createElement("div");
-        row.textContent = item.display;
-        row.style.cssText = "padding:4px 10px;border-radius:4px;cursor:pointer;";
-        row.addEventListener("mouseenter", () => (row.style.background = "#e8eaed"));
-        row.addEventListener("mouseleave", () => (row.style.background = ""));
-        row.addEventListener("click", () => {
-          dispatch(setSdtContent(id, item.display));
-          closeSdtPopup();
-          proxy.focus();
-        });
-        panel.appendChild(row);
-      }
-      if ((props.listItems ?? []).length === 0) {
-        const empty = document.createElement("div");
-        empty.textContent = "(no list items)";
-        empty.style.cssText = "padding:4px 10px;color:#80868b;";
-        panel.appendChild(empty);
-      }
-    }
-    container.appendChild(panel);
-    sdtPopup = panel;
-  };
-
-  const onSdtPress = (pos: DocPosition): boolean => {
-    closeSdtPopup();
-    const id = sdtAtPosition(doc, pos);
-    const props = id ? doc.sdts?.[id] : undefined;
-    if (!id || !props) return false;
-    if (props.type === "checkbox") {
-      dispatch(toggleSdtCheckbox(id));
-      return true; // consume: the click IS the toggle
-    }
-    if (props.type === "dropDown" || props.type === "comboBox" || props.type === "date") {
-      // Open after the controller places the caret (same frame ordering).
-      requestAnimationFrame(() => openSdtPopup(id));
-    }
-    return false;
-  };
-  container.addEventListener("mousedown", () => closeSdtPopup());
+  // Dropdown / combo / date chooser shown beside a content control (see ./sdtPopup).
+  const sdtPopupCtl = createSdtPopup({
+    container,
+    caretToContainer: (rect) => paint.caretToContainer(rect),
+    getDoc: () => doc,
+    getTree: () => tree,
+    scope,
+    dispatch,
+    focusProxy: () => proxy.focus(),
+  });
+  container.addEventListener("mousedown", () => sdtPopupCtl.close());
 
   const insertWithAutoCorrect = (data: string): void => {
     const sdt = sdtAtCaret();
@@ -1628,7 +1455,7 @@ export function createEditor(
     },
     startColumnDrag,
     onTab: tabInTable,
-    onSdtPress,
+    onSdtPress: sdtPopupCtl.handlePress,
     jumpToBlock: (blockId: string): void => {
       // Word: Ctrl+click on a TOC entry moves the caret to the heading.
       if (!blockById(doc, blockId)) return;
