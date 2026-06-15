@@ -5,6 +5,25 @@ All notable changes to **`@forevka/wordcanvas`** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] — 2026-06-15
+
+### Changed
+- Internal maintainability refactor with no public API or behavior change:
+  consolidated the duplicated OOXML value maps and run/paragraph serialization,
+  extracted the SDT chooser and comment composer into dedicated controllers, added
+  a shared `injectCssOnce` helper, and switched modal Escape handling to
+  `AbortController`-based listener cleanup.
+
+### Fixed
+- **Layout caches** now evict entries for deleted blocks instead of growing
+  unbounded across a long editing session.
+- **Export**: non-finite style values can no longer serialize to an invalid
+  `w:val="NaN"`; the cell `w:vMerge` restart is emitted in-place rather than via
+  fragile string patching.
+- **Suggestions / agent input**: the track-changes interceptor no longer anchors a
+  suggestion to a missing block, and the WebMCP `select_range` tool validates block
+  ids against the live document and clamps offsets.
+
 ## [0.6.0] — 2026-06-15
 
 ### Added
