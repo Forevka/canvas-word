@@ -148,6 +148,7 @@ export function intercept(trn: Transaction, review: ReviewLayer, doc: Document, 
     case "insertRuns": {
       const blockId = op.at.blockId;
       const offset = op.at.offset;
+      if (!blockById(doc, blockId)) return passThrough(trn); // dangling target → don't anchor a suggestion
       const len = op.type === "insertText" ? op.text.length : textOfRuns(op.runs).length;
       if (len === 0) return passThrough(trn);
       // Contiguous typing extends an existing record via rebase — no new record.
@@ -159,7 +160,7 @@ export function intercept(trn: Transaction, review: ReviewLayer, doc: Document, 
 
     case "deleteRange": {
       const { blockId, start, end } = op;
-      if (start >= end) return passThrough(trn);
+      if (start >= end || !blockById(doc, blockId)) return passThrough(trn);
       const covered = fullyCovered(start, end, authorInsertsIn(review, blockId, author.id));
       if (covered) {
         // Deleting only the author's own pending insertion → REAL delete; rebase
