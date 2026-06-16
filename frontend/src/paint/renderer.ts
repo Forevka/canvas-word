@@ -484,7 +484,15 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
       }
       for (const row of rows) {
         for (const cell of row.cells) {
+          const clip = cell.contentClip;
+          if (clip) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(clip.x, clip.y, clip.width, clip.height);
+            ctx.clip();
+          }
           for (const cb of cell.blocks) paintBlock(ctx, cb, pageIndex);
+          if (clip) ctx.restore();
         }
       }
       for (const row of rows) {

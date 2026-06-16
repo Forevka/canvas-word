@@ -76,7 +76,13 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
     }
     for (const row of rows) {
       for (const cell of row.cells) {
+        const clip = cell.contentClip;
+        if (clip) {
+          doc.save();
+          doc.rect(clip.x, clip.y, clip.width, clip.height).clip();
+        }
         for (const cb of cell.blocks) paintBlock(ctx, cb);
+        if (clip) doc.restore();
       }
     }
     for (const row of rows) {

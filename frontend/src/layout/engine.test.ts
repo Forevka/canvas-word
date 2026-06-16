@@ -245,6 +245,46 @@ describe("engine — cell shading and borders", () => {
     expect(c.borders?.top?.color).toBe("#c00000");
     expect(c.borders?.bottom?.widthPx).toBe(2);
   });
+
+  it("clips cell content to the inner box so over-wide text can't paint past the border", () => {
+    // Default Word cell margin is 7.2px left/right; the content clip must sit
+    // inside those insets and span the full cell height.
+    const t = table([[cell("a"), cell("b"), cell("c")]]);
+    const placed = placedOf(layout(doc([t])), t.id)!.pb.table!;
+    const mid = placed.rows[0]!.cells[1]!;
+    const clip = mid.contentClip!;
+    expect(clip).toBeDefined();
+    expect(clip.x).toBeCloseTo(mid.x + 7.2, 1);
+    expect(clip.x + clip.width).toBeCloseTo(mid.x + mid.width - 7.2, 1);
+    expect(clip.y).toBeCloseTo(mid.y, 1);
+    expect(clip.height).toBeCloseTo(mid.height, 1);
+    // The clip is strictly inside the cell on both horizontal edges.
+    expect(clip.x).toBeGreaterThan(mid.x);
+    expect(clip.x + clip.width).toBeLessThan(mid.x + mid.width);
+  });
+
+  it("wraps cell text within the inner box when the cell paragraph has left/right indent", () => {
+    // The wrap width must exclude the paragraph's own indents; otherwise the
+    // text is painted shifted right but measured at the full inner width, so it
+    // overflows the content box (and gets clipped) by the indent amount.
+    const longText = "Seller financing or assumption of existing financing at non market terms";
+    const c: TableCell = { id: fresh(), blocks: [para(longText, { indentLeftPx: 100, indentRightPx: 100 })] };
+    const t = table([[c]]);
+    const placed = placedOf(layout(doc([t])), t.id)!.pb.table!;
+    const cell0 = placed.rows[0]!.cells[0]!;
+    const pb = cell0.blocks[0]!;
+    const clipRight = cell0.contentClip!.x + cell0.contentClip!.width;
+    // Every painted glyph stays within the cell's inner content box (paint x is
+    // block.x + frag.x, matching the renderer).
+    for (const line of pb.lines) {
+      for (const f of line.fragments) {
+        expect(pb.x + f.x + f.width).toBeLessThanOrEqual(clipRight + 0.5);
+      }
+    }
+    // Sanity: the text actually wrapped (more than one line), so the assertion
+    // above is meaningful rather than vacuously true on a single short line.
+    expect(pb.lines.length).toBeGreaterThan(1);
+  });
 });
 
 describe("engine — hidden paragraphs", () => {

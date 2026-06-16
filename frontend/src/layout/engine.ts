@@ -1661,9 +1661,14 @@ function measureTable(
       let h = 0;
       const items: MeasuredCellItem[] = cell.blocks.map((b) => {
         if (b.kind === "paragraph") {
-          // A list paragraph reserves its marker's hanging indent: measure the
-          // text at the cell width minus the list indent so it wraps in-cell.
-          const lines = getLines(b, Math.max(8, innerWidth - listCtx.indentOf(b)));
+          // Wrap at the cell's inner width minus the paragraph's own left/right
+          // indent and the list-level indent — mirroring the body wrap width
+          // (box.width - indentOf - rightIndentOf). Placement shifts the text
+          // right by indentLeftPx + the list indent, so omitting them here would
+          // measure at a wider box than is painted and the text would overflow
+          // (now clipped) by exactly that indent.
+          const avail = innerWidth - b.style.indentLeftPx - listCtx.indentOf(b) - (b.style.indentRightPx ?? 0);
+          const lines = getLines(b, Math.max(8, avail));
           h += b.style.spaceBeforePx + totalLinesHeight(lines) + b.style.spaceAfterPx;
           return { kind: "para", block: b, lines };
         }
@@ -1808,6 +1813,9 @@ function placeTable(
         blocks,
         ...(mc.cell.shading !== undefined ? { shading: mc.cell.shading } : {}),
         ...(mc.cell.borders !== undefined ? { borders: mc.cell.borders } : {}),
+        // Horizontal content band (full cell height): clips over-wide text to the
+        // inner box so it never paints onto the border or into the next column.
+        contentClip: { x: cx + mgn.left, y: ry, width: innerWidth, height: cellHeight },
       });
     }
     placedRows.push({ y: ry, height: row.height, cells });

@@ -57,6 +57,11 @@ export interface PlacedTableCell {
   shading?: string;
   /** Resolved per-edge borders; absent = renderer's default light grid. */
   borders?: CellBorders;
+  /** Inner content box (absolute coords) the renderer clips cell content to, so
+   *  over-wide text never paints onto the border or into the neighbour column —
+   *  matches Word. Horizontal band only (full cell height) so descenders and
+   *  rowspan-straddling content are never cut. */
+  contentClip?: { x: number; y: number; width: number; height: number };
 }
 
 export interface PlacedTableRow {
