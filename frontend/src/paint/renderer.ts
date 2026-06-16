@@ -111,7 +111,13 @@ export interface PaintScheduler {
 }
 
 const PAGE_GAP_PX = 24;
-const SELECTION_COLOR = "rgba(38, 111, 219, 0.28)";
+// Selection is painted with a "difference" blend over a dark-gray source at
+// partial alpha — so it adapts to whatever is beneath it: a soft cool tint on
+// the white page, a clearly lighter/inverted band on a shaded cell (e.g. a blue
+// table header), always visible without burying the text (it paints UNDER the
+// glyphs, above cell fills).
+const SELECTION_DIFF_COLOR = "rgb(64, 64, 64)";
+const SELECTION_DIFF_ALPHA = 0.5;
 
 /** A remote collaborator's presence to render: their caret (focus) + any
  *  selection highlight rects, in page-local coords, with their color/name. */
@@ -315,16 +321,29 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, page.widthPx, page.heightPx);
 
-    // 2a. search-match highlights (under everything)
+    // 1b. table cell background fills — the bottom layer, hoisted out of the
+    // block painter so the highlight layers below sit ON TOP of them. Otherwise
+    // an opaque cell fill (e.g. a blue header) paints over and buries the
+    // selection/search highlights drawn before the blocks.
+    for (const block of page.blocks) paintCellFills(ctx, block, page.index);
+    if (page.header) for (const b of page.header) paintCellFills(ctx, b, page.index);
+    if (page.footer) for (const b of page.footer) paintCellFills(ctx, b, page.index);
+
+    // 2a. search-match highlights (over fills, under text)
     ctx.fillStyle = "rgba(251, 188, 4, 0.45)";
     for (const r of searchRects) {
       if (r.pageIndex === page.index) ctx.fillRect(r.x, r.y, r.width, r.height);
     }
-    // 2b. selection highlights (under text)
-    ctx.fillStyle = SELECTION_COLOR;
+    // 2b. selection highlights (over fills, under text) — adaptive "difference"
+    // blend so the band stays visible on shaded cells, not just the white page.
+    ctx.save();
+    ctx.globalCompositeOperation = "difference";
+    ctx.globalAlpha = SELECTION_DIFF_ALPHA;
+    ctx.fillStyle = SELECTION_DIFF_COLOR;
     for (const r of selectionRects) {
       if (r.pageIndex === page.index) ctx.fillRect(r.x, r.y, r.width, r.height);
     }
+    ctx.restore();
 
     // 2c. comment highlight bands (under text, author-tinted)
     ctx.globalAlpha = 0.16;
@@ -451,6 +470,22 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
     return img;
   }
 
+  // Paint only the table cell background fills for a block tree (recursing into
+  // nested tables). Hoisted ahead of the highlight layers so opaque fills sit
+  // beneath the selection/search highlights instead of burying them.
+  function paintCellFills(ctx: CanvasRenderingContext2D, block: PlacedBlock, pageIndex: number): void {
+    if (!block.table) return;
+    for (const row of block.table.rows) {
+      for (const cell of row.cells) {
+        if (cell.shading) {
+          ctx.fillStyle = cell.shading;
+          ctx.fillRect(cell.x, cell.y, cell.width, cell.height);
+        }
+        for (const cb of cell.blocks) paintCellFills(ctx, cb, pageIndex);
+      }
+    }
+  }
+
   function paintBlock(ctx: CanvasRenderingContext2D, block: PlacedBlock, pageIndex: number): void {
     if (block.image) {
       const img = getImage(block.image.src);
@@ -472,16 +507,9 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
     }
     if (block.table) {
       const rows = block.table.rows;
-      // 1) cell fills (under everything), 2) cell contents, 3) borders on top —
+      // Cell fills are painted earlier (paintCellFills) so the highlight layers
+      // land on top of them; here we paint 1) cell contents, 2) borders on top —
       // so a neighbour's fill never clips an already-drawn shared edge.
-      for (const row of rows) {
-        for (const cell of row.cells) {
-          if (cell.shading) {
-            ctx.fillStyle = cell.shading;
-            ctx.fillRect(cell.x, cell.y, cell.width, cell.height);
-          }
-        }
-      }
       for (const row of rows) {
         for (const cell of row.cells) {
           const clip = cell.contentClip;
