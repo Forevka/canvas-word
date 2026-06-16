@@ -39,7 +39,7 @@
   ],
   "module": "./dist-lib/wordcanvas.js",
   "types": "./types/wordcanvas.d.ts",
-  "//exports": "Only the surface that is actually shipped (files: dist-lib + types). The frontend's import/export pipelines are consumed in-workspace by the backend via its tsconfig paths + vitest aliases, NOT through this map, so they are intentionally not published. Note: npm's publishConfig does NOT override `exports`, so this committed map is what ships — keep it pointing at dist, not src.",
+  "//exports": "Dual-target, all compiled — no raw src ships. `.`/`./builder` are the browser editor (Vite → dist-lib). The headless pipelines (import/export/measure/recalc-docx/generate-toc) are isomorphic and exposed via conditional exports: the `node` condition resolves a self-contained, Node-targeted bundle (scripts/build-node.mjs → dist-node, with disk fonts + bundled pdfkit) for server/headless use; the `default` condition resolves the browser variant (Vite → dist-lib). Hand-written types/ keeps the published .d.ts self-contained (no @cw/shared import). The in-repo backend consumes the `node` build through this map (no tsconfig path aliases).",
   "exports": {
     ".": {
       "types": "./types/wordcanvas.d.ts",
@@ -49,28 +49,50 @@
       "types": "./types/builder.d.ts",
       "import": "./dist-lib/builder.js"
     },
-    "./import": "./src/import/docx/pipeline.ts",
-    "./export": "./src/export/pipeline.ts",
-    "./export/measure": "./src/export/shared/measureHost.ts",
-    "./recalc": "./src/recalc/recalcToc.ts",
-    "./recalc-docx": "./src/recalc/patchTocDocx.ts",
-    "./generate-toc": "./src/recalc/generateTocDocx.ts"
+    "./import": {
+      "types": "./types/import.d.ts",
+      "node": "./dist-node/import.js",
+      "default": "./dist-lib/import.js"
+    },
+    "./export": {
+      "types": "./types/export.d.ts",
+      "node": "./dist-node/export.js",
+      "default": "./dist-lib/export.js"
+    },
+    "./export/measure": {
+      "types": "./types/measure.d.ts",
+      "node": "./dist-node/measure.js",
+      "default": "./dist-lib/measure.js"
+    },
+    "./recalc-docx": {
+      "types": "./types/recalc-docx.d.ts",
+      "node": "./dist-node/recalc-docx.js",
+      "default": "./dist-lib/recalc-docx.js"
+    },
+    "./generate-toc": {
+      "types": "./types/generate-toc.d.ts",
+      "node": "./dist-node/generate-toc.js",
+      "default": "./dist-lib/generate-toc.js"
+    }
   },
   "publishConfig": {
     "access": "public"
   },
   "files": [
     "dist-lib",
-    "types",
-    "src"
+    "dist-node",
+    "types"
   ],
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "build:lib": "vite build --mode lib",
+    "build:node": "node scripts/build-node.mjs",
+    "build:node:watch": "node scripts/build-node.mjs --watch",
+    "build:dist": "npm run build:lib && npm run build:node",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "prepublishOnly": "npm run typecheck && npm run build:lib"
+    "prepublishOnly": "npm run typecheck && npm run build:dist"
   },
   "devDependencies": {
     "@chenglou/pretext": "latest",
@@ -78,6 +100,7 @@
     "@mcp-b/global": "^3.0.0",
     "@types/fontkit": "^2.0.9",
     "@types/pdfkit": "^0.17.6",
+    "esbuild": "^0.25.0",
     "fflate": "^0.8.3",
     "fontkit": "^2.0.4",
     "pdfkit": "^0.19.0",

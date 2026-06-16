@@ -3,25 +3,21 @@ import { defineConfig } from "vitest/config";
 
 const at = (p: string): string => fileURLToPath(new URL(p, import.meta.url));
 
-// Vitest (Vite) does NOT read tsconfig `paths`, so mirror backend/tsconfig.json's
-// paths here. The backend reuses the frontend's pure, DOM-free import/export
-// pipelines and the shared document model straight from source. (`tsx` honors
-// tsconfig paths at runtime and `tsc` honors them for typecheck; only the test
-// runner needs this.) These subpaths are intentionally NOT in the published
-// @forevka/wordcanvas `exports` — they are a workspace-internal convenience.
-//
-// Order matters: Vite alias entries match in order and a bare string match is a
-// prefix match, so the more specific `/export/measure` MUST precede `/export`.
+// @cw/shared is consumed straight from source (Vite doesn't read tsconfig paths,
+// so mirror that one alias here). The @forevka/wordcanvas pipelines are NOT aliased
+// to source any more — the backend exercises the published package exactly as an
+// external consumer does, resolving them through its `exports` map. `conditions`
+// pins the `node` condition so we get the Node bundle (dist-node, real fs + bundled
+// pdfkit), not the browser `default` build; `deps.external` keeps that compiled
+// ESM bundle on Node's own loader instead of routing it through Vite's transform.
+// (`build:node` rebuilds dist-node first — see the pretest script.)
 export default defineConfig({
   resolve: {
-    alias: [
-      { find: "@cw/shared", replacement: at("../shared/src/index.ts") },
-      { find: "@forevka/wordcanvas/import", replacement: at("../frontend/src/import/docx/pipeline.ts") },
-      { find: "@forevka/wordcanvas/export/measure", replacement: at("../frontend/src/export/shared/measureHost.ts") },
-      { find: "@forevka/wordcanvas/export", replacement: at("../frontend/src/export/pipeline.ts") },
-      { find: "@forevka/wordcanvas/generate-toc", replacement: at("../frontend/src/recalc/generateTocDocx.ts") },
-      { find: "@forevka/wordcanvas/recalc-docx", replacement: at("../frontend/src/recalc/patchTocDocx.ts") },
-      { find: "@forevka/wordcanvas/recalc", replacement: at("../frontend/src/recalc/recalcToc.ts") },
-    ],
+    alias: [{ find: "@cw/shared", replacement: at("../shared/src/index.ts") }],
+    conditions: ["node", "import", "default"],
+  },
+  test: {
+    environment: "node",
+    server: { deps: { external: [/@forevka\/wordcanvas/] } },
   },
 });

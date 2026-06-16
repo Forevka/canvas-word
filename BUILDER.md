@@ -163,17 +163,23 @@ import { DocumentBuilder } from "@forevka/wordcanvas/builder";
 const doc = DocumentBuilder.create().paragraph("hi").build();
 ```
 
-Inside this workspace, pair it with the export pipeline to produce binaries:
+Pair it with the export pipeline to produce binaries. On Node you must install
+the headless measurement host once (it loads the bundled clone fonts) before the
+first export/layout:
 
 ```ts
-import { runExport } from "@forevka/wordcanvas/export";          // workspace subpath
-const { bytes } = await runExport(doc, "docx", {});              // or "pdf"
+import { installMeasureHost } from "@forevka/wordcanvas/export/measure";
+import { runExport } from "@forevka/wordcanvas/export";
+await installMeasureHost();
+const { bytes } = await runExport(doc, "docx", {});             // or "pdf"
 ```
 
-(The published npm package does not yet ship a compiled export entry — the
-export pipeline bundles pdfkit + fonts (~11 MB). Publishing it is on the
-roadmap below; browser embedders export via the editor toolbar or
-`exportDocument` today.)
+These pipeline subpaths (`./import`, `./export`, `./export/measure`,
+`./recalc-docx`, `./generate-toc`) are published as **conditional exports**: the
+`node` condition resolves a self-contained, Node-targeted bundle (bundled pdfkit +
+fonts on disk, zero runtime deps) for server/headless rendering, and the `default`
+condition resolves a browser variant. The same import works in both environments;
+browser embedders can still export via the editor toolbar or `exportDocument`.
 
 ## Testing
 
@@ -204,5 +210,3 @@ already; the builder just doesn't author them:
   binding model)
 - Charts, shapes, text boxes; tracked changes; comments
 - Image natural-size auto-measure (explicit `widthPx`/`heightPx` required)
-- Compiled `./export` entry in the published package (server-side DOCX/PDF
-  outside the workspace)

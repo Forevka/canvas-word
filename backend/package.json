@@ -4,9 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "//deps": "The backend reuses @forevka/wordcanvas's compiled Node pipelines (dist-node). The pre* hooks rebuild that bundle before any command so typecheck/test/run exercise the same output external consumers get. For a fast inner loop, run `npm run build:node:watch -w @forevka/wordcanvas` alongside `tsx watch`.",
+    "predev": "npm run build:node --workspace @forevka/wordcanvas",
     "dev": "tsx watch src/server.ts",
+    "prestart": "npm run build:node --workspace @forevka/wordcanvas",
     "start": "tsx src/server.ts",
+    "pretypecheck": "npm run build:node --workspace @forevka/wordcanvas",
     "typecheck": "tsc --noEmit",
+    "pretest": "npm run build:node --workspace @forevka/wordcanvas",
     "test": "vitest run"
   },
   "dependencies": {

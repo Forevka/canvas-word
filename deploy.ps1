@@ -77,6 +77,7 @@ $excludes = @(
     '--exclude=./dist',
     '--exclude=./*/dist',
     '--exclude=./*/dist-lib',
+    '--exclude=./*/dist-node',
     '--exclude=./examples/*/dist',
     '--exclude=./examples/*/node_modules',
     '--exclude=./local-db-data',

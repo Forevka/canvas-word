@@ -9,13 +9,13 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "baseUrl": ".",
     "paths": {
-      "@cw/shared": ["../shared/src/index.ts"],
-      "@forevka/wordcanvas/import": ["../frontend/src/import/docx/pipeline.ts"],
-      "@forevka/wordcanvas/export": ["../frontend/src/export/pipeline.ts"],
-      "@forevka/wordcanvas/export/measure": ["../frontend/src/export/shared/measureHost.ts"],
-      "@forevka/wordcanvas/recalc": ["../frontend/src/recalc/recalcToc.ts"],
-      "@forevka/wordcanvas/recalc-docx": ["../frontend/src/recalc/patchTocDocx.ts"],
-      "@forevka/wordcanvas/generate-toc": ["../frontend/src/recalc/generateTocDocx.ts"]
+      // @cw/shared is a private workspace package consumed straight from source.
+      // The @forevka/wordcanvas pipelines, by contrast, resolve through the
+      // package's own `exports` map (the `node` condition → dist-node for runtime,
+      // the `types` condition → its hand-written .d.ts for typecheck) — the same
+      // surface external consumers get. No path aliases for them on purpose; the
+      // build is produced by `build:node` via the pre* scripts in package.json.
+      "@cw/shared": ["../shared/src/index.ts"]
     }
   },
   "include": ["src"]

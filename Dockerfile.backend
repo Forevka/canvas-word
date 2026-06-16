@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1.7
 #
 # @cw/backend — the collaboration server (HTTP + WebSocket) run with tsx.
-# Monorepo-aware: npm workspaces wire node_modules/@cw/shared -> ../shared, so
-# we install once from the repo root, then copy only shared + backend sources.
+# Monorepo-aware: npm workspaces wire node_modules/@cw/shared -> ../shared and
+# node_modules/@forevka/wordcanvas -> ../frontend, so we install once from the
+# repo root, then copy only what the runtime needs.
 
 # 1. Install workspace deps (cacheable: only package manifests change rarely).
 FROM node:22-bookworm-slim AS deps
@@ -17,7 +18,18 @@ COPY backend/package.json ./backend/
 COPY dashboard/package.json ./dashboard/
 RUN npm ci
 
-# 2. Runtime image: deps + the TS sources tsx executes directly.
+# 2. Build the frontend's compiled Node pipeline bundle (dist-node) — the headless
+#    import/export/recalc code the backend reuses, with bundled pdfkit/fontkit/fflate
+#    and the clone fonts on disk. The backend resolves it through the package's
+#    `node` export condition, exactly like an external server consumer.
+FROM deps AS build
+WORKDIR /app
+COPY shared ./shared
+COPY frontend ./frontend
+RUN npm run build:node --workspace @forevka/wordcanvas
+
+# 3. Runtime image: deps + backend/shared sources (tsx runs them directly) + ONLY
+#    the frontend's compiled bundle and manifest (no raw frontend src ships).
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
@@ -26,10 +38,12 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json tsconfig.base.json ./
 COPY shared ./shared
 COPY backend ./backend
-# The backend reuses the frontend's pure import/export pipelines (parse on
-# upload, .docx/.pdf export) via tsx — so the frontend TS source + bundled fonts
-# must be present at runtime (resolved through the @forevka/wordcanvas workspace link).
-COPY frontend ./frontend
+# The @forevka/wordcanvas workspace link resolves to ./frontend; give it just the
+# package manifest (for the `exports` map), the compiled Node bundle, and the
+# published types. The pipelines + bundled fonts live entirely in dist-node.
+COPY --from=build /app/frontend/package.json ./frontend/package.json
+COPY --from=build /app/frontend/dist-node ./frontend/dist-node
+COPY --from=build /app/frontend/types ./frontend/types
 USER node
 EXPOSE 8787
 # argv[1] ends with "server.ts" so the entry-point guard in server.ts fires.

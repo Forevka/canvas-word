@@ -38,12 +38,24 @@ export default defineConfig(({ mode }) => {
           outDir: "dist-lib",
           emptyOutDir: true,
           lib: {
-            // Multi-entry (ES-only, which we already are): the editor package
-            // plus the standalone builder (@forevka/wordcanvas/builder), which
-            // pulls in the import pipeline but none of the editor UI.
+            // Multi-entry (ES-only, which we already are): the editor package,
+            // the standalone builder (@forevka/wordcanvas/builder, which pulls in
+            // the import pipeline but none of the editor UI), and the BROWSER
+            // variants of the headless pipelines. The pipelines are isomorphic;
+            // their Node variants are built separately by scripts/build-node.mjs
+            // into dist-node (the `node` export condition), and these browser
+            // builds back the `default` condition so the same subpath import
+            // (e.g. "@forevka/wordcanvas/export") resolves in a browser bundler
+            // too — with pdfkit's Node globals polyfilled and the bundled fonts
+            // emitted as assets, exactly like the editor's own export worker.
             entry: {
               wordcanvas: fileURLToPath(new URL("src/wordcanvas.ts", import.meta.url)),
               builder: fileURLToPath(new URL("src/builder/index.ts", import.meta.url)),
+              import: fileURLToPath(new URL("src/import/docx/pipeline.ts", import.meta.url)),
+              export: fileURLToPath(new URL("src/export/pipeline.ts", import.meta.url)),
+              measure: fileURLToPath(new URL("src/export/shared/measureHost.ts", import.meta.url)),
+              "recalc-docx": fileURLToPath(new URL("src/recalc/patchTocDocx.ts", import.meta.url)),
+              "generate-toc": fileURLToPath(new URL("src/recalc/generateTocDocx.ts", import.meta.url)),
             },
             formats: ["es"],
           },

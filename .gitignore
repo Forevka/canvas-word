@@ -18,4 +18,5 @@ RenderedReportsDocx_*
 # Office lock files
 ~$*
 frontend/dist-lib/
+frontend/dist-node/
 .codegraph/
