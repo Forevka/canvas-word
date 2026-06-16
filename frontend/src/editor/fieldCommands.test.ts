@@ -4,7 +4,7 @@ import { applyOp } from "@cw/shared";
 import { runImport } from "../import/docx/pipeline";
 import { CONTENT_TYPES_XML, documentXml, drawingXml, makeDocx, PNG_1PX, REL_TYPES, relsXml, simpleDocx } from "../import/docx/fixture";
 import { parseOoxmlFragment } from "../import/docx/fragment";
-import { fieldAtBlock, insertTocCmd, replaceFieldResultCmd, updateTocFieldCmd } from "./commands";
+import { editFieldCmd, fieldAtBlock, insertFieldCmd, insertTocCmd, replaceFieldResultCmd, setTocSwitchesCmd, updateTocFieldCmd } from "./commands";
 import type { EditorState } from "./state";
 
 const fld = (t: string): string => `<w:r><w:fldChar w:fldCharType="${t}"/></w:r>`;
@@ -160,5 +160,75 @@ describe("updateTocFieldCmd (Word F9) preserves the imported TOC look", () => {
     expect(tocEntries.length).toBe(2);
     expect(tocEntries[0]!.runs[0]!.style.fontFamily).toContain("Verdana");
     expect(tocEntries[0]!.runs[0]!.style.fontSizePx).toBe(20); // preserved, not the 14px default
+  });
+
+  it("setTocSwitchesCmd persists the new instruction and regenerates honoring the \\o range", () => {
+    const headLvl = (anchor: string, label: string, lvl: number): string => {
+      const id = anchor.replace(/\D/g, "");
+      return `<w:p><w:pPr><w:pStyle w:val="Heading${lvl}"/></w:pPr><w:bookmarkStart w:id="${id}" w:name="${anchor}"/>` +
+        `<w:r><w:t>${label}</w:t></w:r><w:bookmarkEnd w:id="${id}"/></w:p>`;
+    };
+    const body =
+      `<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+      `<w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" \\h </w:instrText></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="separate"/></w:r></w:p>` +
+      entry("_Toc1", "Alpha", "1") +
+      headLvl("_Toc1", "Alpha", 1) +
+      headLvl("_Toc2", "Beta", 2) +
+      headLvl("_Toc3", "Gamma", 3);
+    const doc = runImport(simpleDocx(body)).doc;
+
+    // Narrow to levels 1-2 and add \z: Gamma (level 3) must drop out.
+    const out = apply2({ doc, selection: null }, setTocSwitchesCmd({
+      outlineRange: { from: 1, to: 2 }, useOutlineLevels: false, hyperlinks: true, hideInWeb: true,
+    }));
+    expect(out.tocInstruction).toBe(' TOC \\o "1-2" \\h \\z ');
+    const labels = out.blocks
+      .filter((b): b is Paragraph => b.kind === "paragraph" && !!b.style.tocEntry)
+      .map((p) => p.runs.map((r) => r.text).join(""));
+    expect(labels).toEqual(["Alpha", "Beta"]); // Gamma (level 3) excluded by the narrowed range
+  });
+});
+
+describe("insertFieldCmd / editFieldCmd (inline built-in fields)", () => {
+  const para0 = (doc: Document): Paragraph => doc.blocks.find((b): b is Paragraph => b.kind === "paragraph")!;
+  const helloDoc = (): Document => runImport(simpleDocx(`<w:p>${txt("Hello")}</w:p>`)).doc;
+  const caretEnd = (doc: Document) => {
+    const pid = para0(doc).id;
+    return { anchor: { blockId: pid, offset: 5 }, focus: { blockId: pid, offset: 5 } };
+  };
+
+  it("PAGE inserts a fieldId-tagged {page} run and registers a builtin def", () => {
+    const doc = helloDoc();
+    const out = apply({ doc, selection: caretEnd(doc) }, insertFieldCmd({ type: "PAGE" }));
+    const r = para0(out).runs.find((x) => x.text === "{page}");
+    expect(r?.style.fieldId).toBeDefined();
+    const def = out.fields?.[r!.style.fieldId!];
+    expect(def?.kind).toBe("builtin");
+    expect(def?.name).toBe("PAGE");
+    expect(def?.instruction).toContain("PAGE");
+  });
+
+  it("DATE materializes formatted text tagged with the field id", () => {
+    const doc = helloDoc();
+    const out = apply({ doc, selection: caretEnd(doc) }, insertFieldCmd({ type: "DATE", format: "yyyy" }));
+    const yr = String(new Date().getFullYear());
+    expect(para0(out).runs.find((x) => x.text === yr)?.style.fieldId).toBeDefined();
+  });
+
+  it("IF inserts the chosen rich branch as the result", () => {
+    const doc = helloDoc();
+    const ifSpec = { type: "IF" as const, operandA: "2", op: ">" as const, operandB: "1", trueRuns: [{ text: "BIG", style: para0(doc).runs[0]!.style }], falseRuns: [{ text: "small", style: para0(doc).runs[0]!.style }] };
+    const out = apply({ doc, selection: caretEnd(doc) }, insertFieldCmd(ifSpec));
+    expect(para0(out).runs.some((x) => x.text === "BIG" && x.style.fieldId)).toBe(true);
+  });
+
+  it("editFieldCmd changes a PAGE field's format to roman in place", () => {
+    const doc = helloDoc();
+    const doc1 = apply({ doc, selection: caretEnd(doc) }, insertFieldCmd({ type: "PAGE" }));
+    const fid = para0(doc1).runs.find((x) => x.text === "{page}")!.style.fieldId!;
+    const doc2 = apply({ doc: doc1, selection: null }, editFieldCmd(fid, { type: "PAGE", numFmt: "roman" }));
+    expect(para0(doc2).runs.some((x) => x.text === "{page:roman}" && x.style.fieldId === fid)).toBe(true);
+    expect(doc2.fields?.[fid]?.instruction).toContain("roman");
   });
 });

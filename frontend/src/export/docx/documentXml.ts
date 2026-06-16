@@ -146,8 +146,9 @@ function singleRun(run: Run, ctx: PartCtx): string {
   return r;
 }
 
-/** Serialize a run list, grouping consecutive runs that share an sdtId into one
- *  w:sdt content control. */
+/** Serialize a run list: group consecutive runs sharing an sdtId into a w:sdt
+ *  content control (outer), and within each segment group runs sharing a built-in
+ *  field's id into a complex field (inner). */
 function runsXml(runs: Run[], ctx: PartCtx): string {
   let out = "";
   let i = 0;
@@ -155,9 +156,39 @@ function runsXml(runs: Run[], ctx: PartCtx): string {
     const sdtId = runs[i]!.style.sdtId;
     if (sdtId) {
       let j = i;
-      let inner = "";
-      while (j < runs.length && runs[j]!.style.sdtId === sdtId) inner += singleRun(runs[j++]!, ctx);
-      out += el("w:sdt", undefined, sdtPrXml(ctx.sdts[sdtId]) + el("w:sdtContent", undefined, inner));
+      const seg: Run[] = [];
+      while (j < runs.length && runs[j]!.style.sdtId === sdtId) seg.push(runs[j++]!);
+      out += el("w:sdt", undefined, sdtPrXml(ctx.sdts[sdtId]) + el("w:sdtContent", undefined, fieldRunsXml(seg, ctx)));
+      i = j;
+    } else {
+      let j = i;
+      const seg: Run[] = [];
+      while (j < runs.length && !runs[j]!.style.sdtId) seg.push(runs[j++]!);
+      out += fieldRunsXml(seg, ctx);
+      i = j;
+    }
+  }
+  return out;
+}
+
+/** Group runs sharing a built-in field's id into a complex field
+ *  (begin/instrText/separate/result/end). PAGE/NUMPAGES emit an EMPTY cached
+ *  result (their run text is our internal {page} token — Word recomputes; on
+ *  re-import we re-materialize the token); DATE/TIME/IF emit the materialized
+ *  result text. Untagged runs pass through as plain runs. */
+function fieldRunsXml(runs: Run[], ctx: PartCtx): string {
+  let out = "";
+  let i = 0;
+  while (i < runs.length) {
+    const fid = runs[i]!.style.fieldId;
+    const def = fid ? ctx.fields?.[fid] : undefined;
+    if (fid && def && def.kind === "builtin") {
+      let j = i;
+      const seg: Run[] = [];
+      while (j < runs.length && runs[j]!.style.fieldId === fid) seg.push(runs[j++]!);
+      const isToken = def.spec?.type === "PAGE" || def.spec?.type === "NUMPAGES";
+      const result = seg.map((r) => el("w:r", undefined, rPrXml(r.style) + (isToken ? "" : runContent(r.text)))).join("");
+      out += fldRun("begin") + instrRun(def.instruction) + fldRun("separate") + result + fldRun("end");
       i = j;
     } else {
       out += singleRun(runs[i]!, ctx);
@@ -252,10 +283,26 @@ function paragraphXml(p: Paragraph, ctx: PartCtx): string {
   const flush = (upto: number): void => {
     while (mi < sorted.length && sorted[mi]!.offset <= upto) body += bookmarkEl(sorted[mi++]!);
   };
-  for (const run of runs) {
+  let ri = 0;
+  while (ri < runs.length) {
     flush(cum);
-    body += singleRun(run, ctx);
-    cum += run.text.length;
+    // Keep built-in inline fields whole: emit the contiguous fieldId-tagged runs as
+    // one complex field (begin/instr/separate/result/end) via fieldRunsXml, exactly
+    // as the no-marker path does — otherwise splicing run-by-run drops the field
+    // wrapping and the result re-imports as plain text. A bookmark that falls
+    // between fields still lands at the right boundary; one inside a field result is
+    // flushed just after it (a field result is atomic on re-import anyway).
+    const fid = runs[ri]!.style.fieldId;
+    const def = fid ? ctx.fields?.[fid] : undefined;
+    if (fid && def && def.kind === "builtin") {
+      const seg: Run[] = [];
+      while (ri < runs.length && runs[ri]!.style.fieldId === fid) { seg.push(runs[ri]!); cum += runs[ri]!.text.length; ri++; }
+      body += fieldRunsXml(seg, ctx);
+    } else {
+      body += singleRun(runs[ri]!, ctx);
+      cum += runs[ri]!.text.length;
+      ri++;
+    }
   }
   flush(cum);
   while (mi < sorted.length) body += bookmarkEl(sorted[mi++]!); // trailing markers past text end

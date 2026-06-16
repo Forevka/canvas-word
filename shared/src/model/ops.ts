@@ -9,6 +9,7 @@ import type {
   BookmarkRange,
   CharStyle,
   Document,
+  FieldDef,
   ImageBlock,
   ParaStyle,
   Paragraph,
@@ -53,6 +54,8 @@ export type Op =
   | { type: "setSectionBand"; band: BandContainer; blocks: Block[] | null }
   | { type: "setFootnote"; noteId: string; paras: Paragraph[] | null }
   | { type: "setSdtProps"; id: string; props: SdtProps | null }
+  | { type: "setField"; id: string; def: FieldDef | null }
+  | { type: "setTocInstruction"; instruction: string | null }
   | { type: "setBookmark"; name: string; range: BookmarkRange | null };
 
 /** Page-setup fields of the final section (`doc.section`). Bands are NOT here —
@@ -99,7 +102,8 @@ export function styleEq(a: CharStyle, b: CharStyle): boolean {
     a.verticalAlign === b.verticalAlign &&
     a.link === b.link &&
     a.footnoteRef === b.footnoteRef && // adjacent refs must never merge into one run
-    a.sdtId === b.sdtId // content-control boundaries survive normalization
+    a.sdtId === b.sdtId && // content-control boundaries survive normalization
+    a.fieldId === b.fieldId // inline-field boundaries survive normalization
   );
 }
 
@@ -802,6 +806,32 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
         inverse: { type: "setSdtProps", id: op.id, props: old },
         mapPosition: identity,
         dirtyBlockIds: [], // run markers change via setRuns/applyStylePatch ops
+      };
+    }
+
+    case "setField": {
+      const old = doc.fields?.[op.id] ?? null;
+      const fields = { ...(doc.fields ?? {}) };
+      if (op.def) fields[op.id] = op.def;
+      else delete fields[op.id];
+      return {
+        doc: { ...doc, fields },
+        inverse: { type: "setField", id: op.id, def: old },
+        mapPosition: identity,
+        dirtyBlockIds: [], // run/block fieldId markers change via setRuns/insert ops
+      };
+    }
+
+    case "setTocInstruction": {
+      const old = doc.tocInstruction ?? null;
+      const next = { ...doc };
+      if (op.instruction !== null) next.tocInstruction = op.instruction;
+      else delete next.tocInstruction;
+      return {
+        doc: next,
+        inverse: { type: "setTocInstruction", instruction: old },
+        mapPosition: identity,
+        dirtyBlockIds: [], // entries are regenerated via insert/removeBlock ops in the same tx
       };
     }
 

@@ -302,13 +302,15 @@ describe("docx pipeline — lossy policies emit warnings", () => {
     expect(runs[2]!.style.verticalAlign).toBe("sub");
   });
 
-  it("keeps cached field results, drops instructions", () => {
+  it("captures a body PAGE field as a {page} token field object, dropping the instruction", () => {
     const r = importBody(
       `<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGE </w:instrText></w:r>` +
         `<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>7</w:t></w:r>` +
         `<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>`,
     );
-    expect(para(r.doc.blocks[0]).runs[0]!.text).toBe("7");
+    const p = para(r.doc.blocks[0]);
+    expect(p.runs[0]!.text).toBe("{page}"); // instruction dropped; result is the live token, not the stale "7"
+    expect(p.runs[0]!.style.fieldId).toBeDefined();
   });
 
   it("preserves hidden text (w:vanish) as a hidden run, not dropped", () => {

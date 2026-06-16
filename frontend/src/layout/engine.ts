@@ -1105,7 +1105,14 @@ function layoutDocument(
       if (placed === null) {
         placed = { blockId: p.id, x: colX() + indentOf(p), y, firstLineIndex: lineIdx, lines: [] };
         const marker = lineIdx === 0 ? markers.get(p.id) : undefined;
-        if (marker) placed.marker = { text: marker.text, style: marker.style, x: placed.x - marker.hangingPx };
+        if (marker) {
+          // Beside a float the line text is shifted right (frag.x carries the float
+          // offset); hang the marker off the FIRST line's actual start so it tracks
+          // the text instead of stranding at the left margin ON TOP of the float.
+          // Equals placed.x - hangingPx when there's no shift (frag.x === 0).
+          const firstX = frags[0]?.frag.x ?? 0;
+          placed.marker = { text: marker.text, style: marker.style, x: placed.x + firstX - marker.hangingPx };
+        }
         page.blocks.push(placed);
       }
       const box: LineBox = { y: y - placed.y, height, ascent, fragments: frags.map((rf) => rf.frag) };
@@ -1394,6 +1401,49 @@ function layoutDocument(
       pageNumbers.push(n);
       pages[i]!.number = n;
     }
+  }
+
+  // Inline body PAGE/NUMPAGES fields: their result run carries a {page}/{pages}
+  // token (the marker that tells a real field from literal text). The body is
+  // laid out ONCE, so — unlike per-page header/footer bands — these tokens were
+  // never substituted and would paint literally ("page {page}"). Resolve them
+  // here against the final page map, paint-only: the token run is isolated by its
+  // fieldId so it's its own fragment — rewrite that fragment's text, re-measure
+  // its (always shorter) width, map the shorter text back onto the model range via
+  // offsetMap so caret/hit-testing stay exact, and slide the rest of the line left
+  // to close the gap the wider token left. Never stale, no relayout, no painter
+  // change. Untagged literal "{page}" body text is left alone (fieldId-gated).
+  const fieldDefs = doc.fields;
+  if (fieldDefs) {
+    const isPageNumField = (fid: string | undefined): boolean => {
+      if (fid === undefined) return false;
+      const def = fieldDefs[fid];
+      const t = def && def.kind === "builtin" ? def.spec?.type : undefined;
+      return t === "PAGE" || t === "NUMPAGES";
+    };
+    const resolveLineTokens = (line: LineBox, pageNum: number): void => {
+      let dx = 0;
+      for (const frag of line.fragments) {
+        if (dx !== 0) frag.x += dx; // close the gap left by an earlier token on this line
+        if (!isPageNumField(frag.style.fieldId)) continue;
+        const sub = substituteTokens(frag.text, pageNum, pages.length);
+        if (sub === frag.text) continue;
+        const modelLen = frag.endOffset - frag.startOffset;
+        const oldWidth = frag.width;
+        frag.text = sub;
+        frag.width = measureTextWidth(sub, charStyleToFont(frag.style));
+        // Displayed text ({page} -> "3") is shorter than the model run: collapse
+        // every displayed cluster onto the field's model range so a caret lands at
+        // the field's start/end, never mid-token (reuses the pretext offsetMap path).
+        frag.offsetMap = Array.from({ length: sub.length + 1 }, (_v, i) => (i === sub.length ? modelLen : 0));
+        dx += frag.width - oldWidth;
+      }
+    };
+    const resolveBlockTokens = (b: PlacedBlock, pageNum: number): void => {
+      for (const line of b.lines) resolveLineTokens(line, pageNum);
+      if (b.table) for (const row of b.table.rows) for (const cell of row.cells) for (const cb of cell.blocks) resolveBlockTokens(cb, pageNum);
+    };
+    for (const pg of pages) for (const b of pg.blocks) resolveBlockTokens(b, pageNumbers[pg.index]!);
   }
 
   // TOC page numbers: PAINT-ONLY decorations resolved against the final page

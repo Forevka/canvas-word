@@ -1,8 +1,8 @@
 // Commands: pure (state) -> Transaction | null. The keymap, the IME proxy, and
 // (later) toolbar buttons all dispatch through these.
 
-import type { Block, CellBorder, CellBorders, CharStyle, ImageBlock, ParaStyle, Paragraph, Run, SdtProps, SdtType, TableBlock, TableCell, TableRow, TocOptions } from "@cw/shared";
-import { buildTocParagraphs } from "@cw/shared";
+import type { Block, CellBorder, CellBorders, CharStyle, FieldDef, FieldSpec, ImageBlock, ParaStyle, Paragraph, Run, SdtProps, SdtType, TableBlock, TableCell, TableRow, TocOptions, TocSwitches } from "@cw/shared";
+import { buildTocParagraphs, buildTocInstruction, buildInstruction, evaluateField } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, GridRect } from "@cw/shared";
 import { isCollapsed, BAND_CONTAINERS } from "@cw/shared";
 import type { Op, SectionGeometry } from "@cw/shared";
@@ -725,6 +725,25 @@ export function updateTocFieldCmd(): Command {
   return (state) => insertTocCmd(tocOptionsFromExisting(state.doc))(state);
 }
 
+/** Apply edited TOC field switches (`\o` level range, `\h`, `\z`, `\u`, `\p`, …):
+ *  persist them on `doc.tocInstruction` AND regenerate the entries so the change
+ *  takes visible effect (a wider `\o` range lists more levels), preserving the
+ *  current TOC's look. The instruction is the export source of truth, so this also
+ *  round-trips to `.docx`. */
+export function setTocSwitchesCmd(sw: TocSwitches): Command {
+  return (state) => {
+    const instruction = buildTocInstruction(sw);
+    const setInstr: Op = { type: "setTocInstruction", instruction };
+    // buildTocParagraphs reads tocInstruction for the level range, so regenerate
+    // against a copy that already has the new instruction; the resulting block ops
+    // are independent of it and ride in the same transaction after setInstr.
+    const withInstr: EditorState = { ...state, doc: { ...state.doc, tocInstruction: instruction } };
+    const regen = insertTocCmd(tocOptionsFromExisting(withInstr.doc))(withInstr);
+    if (!regen) return tr([setInstr], state.selection, "command");
+    return tr([setInstr, ...regen.ops], regen.selectionAfter, "command");
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Generic custom fields (Document.fields). A contiguous run of body blocks
 // sharing a `fieldId` is the field's result region; "Update Field" replaces it
@@ -816,6 +835,111 @@ export function sdtAtPosition(doc: EditorState["doc"], pos: DocPosition): string
   if (loc?.kind !== "cell") return null;
   const table = containerBlocks(doc, loc.where)[loc.bi];
   return table && table.kind === "table" ? dominantCellSdt(table) : null;
+}
+
+// Inline fields (OOXML complex field) — contiguous runs sharing a CharStyle.fieldId
+// form one inline field's RESULT; the definition lives in Document.fields. Mirrors
+// the SDT helpers above (block-region fields use Block.fieldId + fieldAtBlock).
+
+/** Every contiguous run span carrying this inline fieldId, document order. */
+export function findFieldRanges(doc: EditorState["doc"], id: string): SdtRange[] {
+  const out: SdtRange[] = [];
+  for (const p of paragraphsOf(doc)) {
+    let off = 0;
+    let open: SdtRange | null = null;
+    for (const r of p.runs) {
+      if (r.style.fieldId === id) {
+        if (open) open.end = off + r.text.length;
+        else open = { blockId: p.id, start: off, end: off + r.text.length };
+      } else if (open) {
+        out.push(open);
+        open = null;
+      }
+      off += r.text.length;
+    }
+    if (open) out.push(open);
+  }
+  return out;
+}
+
+/** The inline field id at a position (the run on either side of the caret), or null. */
+export function fieldAtPosition(doc: EditorState["doc"], pos: DocPosition): string | null {
+  const block = blockById(doc, pos.blockId);
+  if (!block) return null;
+  let off = 0;
+  let before: string | null = null;
+  let after: string | null = null;
+  for (const r of block.runs) {
+    const end = off + r.text.length;
+    if (pos.offset > off && pos.offset <= end) before = r.style.fieldId ?? null;
+    if (pos.offset >= off && pos.offset < end) after = r.style.fieldId ?? null;
+    off = end;
+  }
+  return after ?? before;
+}
+
+const runsTextLen = (runs: Run[]): number => runs.reduce((n, r) => n + r.text.length, 0);
+
+/** Evaluate a field spec to its result runs, all tagged with the field id (a
+ *  `{token}` run for PAGE/NUMPAGES, materialized text for DATE/TIME/IF). */
+function fieldResultRuns(spec: FieldSpec, baseStyle: CharStyle, id: string): Run[] {
+  const res = evaluateField(spec, baseStyle, { now: new Date() });
+  const runs = res.kind === "token" ? [{ text: res.token, style: baseStyle }] : res.runs;
+  return runs.map((r) => ({ text: r.text, style: { ...r.style, fieldId: id } }));
+}
+
+const fieldBaseStyle = (doc: EditorState["doc"], blockId: string, offset: number): CharStyle | undefined => {
+  const block = blockById(doc, blockId);
+  return block ? styleAtRuns(block.runs, offset) ?? block.runs[0]?.style : undefined;
+};
+
+/** Insert a built-in field at the caret: register its FieldDef and insert the
+ *  fieldId-tagged result runs. */
+export function insertFieldCmd(spec: FieldSpec): Command {
+  return (state) => {
+    const base = withSelectionDeleted(state);
+    if (!base) return null;
+    const baseStyle = fieldBaseStyle(state.doc, base.at.blockId, base.at.offset);
+    if (!baseStyle) return null;
+    const id = freshBlockId();
+    const def: FieldDef = { id, instruction: buildInstruction(spec), name: spec.type, kind: "builtin", spec };
+    const runs = fieldResultRuns(spec, baseStyle, id);
+    if (runs.length === 0) return null;
+    base.ops.push({ type: "setField", id, def }, { type: "insertRuns", at: base.at, runs });
+    return tr(base.ops, caret(base.at.blockId, base.at.offset + runsTextLen(runs)), "command");
+  };
+}
+
+/** Re-define an existing inline field and replace its result in place. */
+export function editFieldCmd(fieldId: string, spec: FieldSpec): Command {
+  return (state) => {
+    const ranges = findFieldRanges(state.doc, fieldId);
+    if (ranges.length === 0) return null;
+    const blockId = ranges[0]!.blockId;
+    const same = ranges.filter((r) => r.blockId === blockId);
+    const start = Math.min(...same.map((r) => r.start));
+    const end = Math.max(...same.map((r) => r.end));
+    const baseStyle = fieldBaseStyle(state.doc, blockId, start);
+    if (!baseStyle) return null;
+    const def: FieldDef = { id: fieldId, instruction: buildInstruction(spec), name: spec.type, kind: "builtin", spec };
+    const runs = fieldResultRuns(spec, baseStyle, fieldId);
+    const ops: Op[] = [
+      { type: "setField", id: fieldId, def },
+      { type: "deleteRange", blockId, start, end },
+      { type: "insertRuns", at: { blockId, offset: start }, runs },
+    ];
+    return tr(ops, caret(blockId, start + runsTextLen(runs)), "command");
+  };
+}
+
+/** Recompute an existing field's result (Word's F9): DATE/TIME refresh to now, IF
+ *  re-evaluates. PAGE/NUMPAGES are layout-resolved per page, so they're a no-op. */
+export function updateFieldCmd(fieldId: string): Command {
+  return (state) => {
+    const def = state.doc.fields?.[fieldId];
+    if (!def?.spec || def.spec.type === "PAGE" || def.spec.type === "NUMPAGES") return null;
+    return editFieldCmd(fieldId, def.spec)(state);
+  };
 }
 
 /** The control wrapping the most cells of a table — the block-level container,

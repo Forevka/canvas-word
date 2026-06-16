@@ -8,6 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.7.1] — 2026-06-16
 
 ### Added
+- **First-class field objects** — built-in Word fields are now real objects, not
+  literal text. PAGE, NUMPAGES, DATE, TIME and IF carry a typed definition (parsed
+  switches/arguments) and render as a result region **outlined in the editor like a
+  content control** (gray field shading + a labelled tab). Right-click gives **Insert
+  Field…**, **Edit Field…**, and **Update Field** (Word's F9): a visual **field
+  constructor** picks the type and its format/switches/operands with a live preview.
+  - Inline fields are marked per-run (`CharStyle.fieldId`, mirroring `sdtId`); the
+    definition lives in `Document.fields` (now `kind: "builtin" | "custom"` + a typed
+    `FieldSpec`). PAGE/NUMPAGES keep a `{page}`/`{pages}` token re-resolved per page;
+    DATE/TIME/IF materialize their result. A new collab-safe `setField` op + a shared
+    `@cw/shared` evaluator (`evaluateField`, `formatFieldDate`, `evaluateIf`).
+  - **`.docx` round-trip**: built-in inline fields import as field objects and export
+    back as real complex fields (instruction preserved verbatim). This also fixes the
+    body/footer asymmetry — a body PAGE field is now a live field, not stale cached
+    text. Untagged literal `{page}` text and existing header/footer behavior are
+    unchanged.
+- **Flagship showcase document** — the editor's initial state (no `docId`) is now a
+  feature tour: a generated TOC, all field types (incl. inside table cells), every
+  content-control kind, merged-cell and cross-page tables, images (block + square
+  wrap), lists, footnotes, bookmarks, hidden text, and headers/footers.
+- **Table-of-contents field options dialog.** Right-clicking a TOC now offers
+  **Table of Contents options…** beside Update Field — a dialog to review and edit
+  the field's switches (`\o` heading-level range, `\u`, `\h`, `\z`, `\p` separator)
+  with a live field-instruction preview. Applying persists the instruction and
+  regenerates the entries (a narrower `\o` range lists fewer levels), so it round-trips
+  to `.docx`. Backed by a new collab-safe `setTocInstruction` op.
 - **Headless PDF render — `POST /render.pdf`.** Stateless backend route: a raw `.docx`
   in, a rendered PDF out, for a producer that has no layout engine (e.g. a C# pipeline
   that emits Word fields it can't compute). It builds the table of contents from the
@@ -37,6 +63,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged.
 
 ### Fixed
+- **Body PAGE/NUMPAGES fields now render their number, not the raw `{page}` token.**
+  Inline page-number fields in body text (and table cells) are resolved against the
+  final page map in a paint-only layout post-pass — the same path that already
+  resolves TOC page numbers — so they show the page they land on and stay correct
+  in both the on-screen canvas and the headless PDF render.
+- **A bookmark in the same paragraph as an inline field no longer drops the field
+  on export.** The `.docx` writer's bookmark-splicing path emitted runs one-by-one
+  and bypassed the complex-field wrapping, so the field re-imported as plain text;
+  it now groups field runs while still splicing bookmark markers at run boundaries.
+- **List markers no longer draw on top of a floated image.** A numbered/bulleted
+  list item flowing beside a square-wrapped (left/right floated) image had its text
+  pushed clear of the image but its marker ("1.", "•") stranded at the margin, over
+  the image. The marker now hangs off the first line's float-shifted start, tracking
+  the text beside the float.
 - **Opening a second document no longer merges it with the previous one.** The layout
   engine is shared across documents and caches laid-out lines by block id; because the
   docx importer re-mints block ids from `i0` on every import, the freshly opened
@@ -203,6 +243,7 @@ implementation history in [README.md](./README.md)):
   docId, integration tokens for third-party `/upload`, and session webhooks.
 - Mobile/touch input and a responsive ribbon.
 
+[0.7.1]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.1
 [0.7.0]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.0
 [0.6.1]: https://github.com/Forevka/canvas-word/releases/tag/v0.6.1
 [0.6.0]: https://github.com/Forevka/canvas-word/releases/tag/v0.6.0

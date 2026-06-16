@@ -87,6 +87,9 @@ export interface PaintScheduler {
   /** Content-control focus adornment: bounding boxes + a title tab (Word's
    *  gray frame around the active control). Null clears. */
   setSdtAdornment(adorn: { rects: Rect[]; label: string } | null): void;
+  /** Inline/block FIELD focus adornment: gray field-shading fill + a labelled tab
+   *  (Word's field highlight). Distinct from the SDT frame. Null clears. */
+  setFieldAdornment(adorn: { rects: Rect[]; label: string } | null): void;
   setCaret(caret: CaretRect | null): void;
   /** Remote collaborators' carets (DOM overlays with name flags). Replaces the
    *  whole set each call; pass [] to clear. */
@@ -151,6 +154,7 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
   let searchRects: Rect[] = [];
   let reviewDecos: ReviewDecorations = EMPTY_REVIEW_DECOS;
   let sdtAdorn: { rects: Rect[]; label: string } | null = null;
+  let fieldAdorn: { rects: Rect[]; label: string } | null = null;
   let bandEditMode: "header" | "footer" | null = null;
 
   const pagesWrap = document.createElement("div");
@@ -377,6 +381,33 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
         ctx.fill();
         ctx.fillStyle = "#3c4043";
         ctx.fillText(sdtAdorn.label, tx + 5, ty + 11);
+      }
+    }
+
+    // 2d. field adornment: Word's gray field shading + a labelled tab. Distinct
+    // from the SDT frame (a filled shade vs a stroked frame) so fields read apart.
+    if (fieldAdorn) {
+      const onPage = fieldAdorn.rects.filter((r) => r.pageIndex === page.index);
+      for (const r of onPage) {
+        ctx.fillStyle = "rgba(200,200,200,0.25)";
+        ctx.fillRect(r.x - 1, r.y - 1, r.width + 2, r.height + 2);
+        ctx.strokeStyle = "#9aa7b8";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(r.x - 1, r.y - 1, r.width + 2, r.height + 2);
+      }
+      const first = onPage[0];
+      if (first && fieldAdorn.label) {
+        ctx.font = "10px Arial";
+        const w = ctx.measureText(fieldAdorn.label).width + 10;
+        const tabH = 15;
+        const tx = first.x - 1;
+        const ty = first.y - 1 - tabH;
+        ctx.fillStyle = "#c7d2e0";
+        ctx.beginPath();
+        ctx.roundRect(tx, ty, w, tabH, [3, 3, 0, 0]);
+        ctx.fill();
+        ctx.fillStyle = "#2b3a4a";
+        ctx.fillText(fieldAdorn.label, tx + 5, ty + 11);
       }
     }
 
@@ -682,6 +713,13 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
     setSdtAdornment(adorn: { rects: Rect[]; label: string } | null): void {
       const affected = new Set([...pagesOf(sdtAdorn?.rects ?? []), ...pagesOf(adorn?.rects ?? [])]);
       sdtAdorn = adorn;
+      for (const i of affected) if (liveCanvases.has(i)) dirty.add(i);
+      schedule();
+    },
+
+    setFieldAdornment(adorn: { rects: Rect[]; label: string } | null): void {
+      const affected = new Set([...pagesOf(fieldAdorn?.rects ?? []), ...pagesOf(adorn?.rects ?? [])]);
+      fieldAdorn = adorn;
       for (const i of affected) if (liveCanvases.has(i)) dirty.add(i);
       schedule();
     },

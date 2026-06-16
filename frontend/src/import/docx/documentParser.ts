@@ -5,8 +5,8 @@
 // properties during mapping. Everything the parser understands goes into the
 // IR; mapToModel decides what the model can hold.
 
-import type { FieldDef } from "@cw/shared";
-import { isCustomFieldInstruction, parseFieldInstruction } from "@cw/shared";
+import type { CharStyle, FieldDef, FieldSpec } from "@cw/shared";
+import { isCustomFieldInstruction, parseFieldInstruction, parseFieldSpec } from "@cw/shared";
 import { ImportError, WarningSink } from "./types";
 import type {
   BandRefs,
@@ -247,6 +247,24 @@ interface FieldState {
   /** The verbatim instrText of a `TOC` field in this paragraph (first one wins) —
    *  surfaced on IRParagraph.tocField so a headless render can anchor a built TOC. */
   tocInstr?: string | undefined;
+  /** Set between "separate" and "end" for a built-in inline field whose cached
+   *  result we keep (DATE/TIME/IF): the field id stamped on those result runs so
+   *  they import as an editable field object. */
+  resultFieldId?: string | undefined;
+}
+
+/** Built-in inline fields the editor models as field objects (PAGE/NUMPAGES emit a
+ *  {page}/{pages} token; DATE/TIME/IF keep their materialized cached result). */
+const BUILTIN_INLINE = new Set(["PAGE", "NUMPAGES", "DATE", "TIME", "IF"]);
+/** Placeholder style for an IF spec's true/false runs parsed from the instruction
+ *  (their text round-trips; the displayed result keeps its own resolved style). */
+const FIELD_SPEC_STYLE: CharStyle = { fontFamily: "", fontSizePx: 16, bold: false, italic: false, underline: false, strikethrough: false, color: "#000000" };
+
+/** The {page}/{pages} token (with format suffix) the layout substitutes per page. */
+function pageTokenFor(spec: FieldSpec): string {
+  if (spec.type === "NUMPAGES") return "{pages}";
+  if (spec.type === "PAGE") return `{page${spec.numFmt && spec.numFmt !== "arabic" ? `:${spec.numFmt}` : ""}}`;
+  return "";
 }
 
 /** " PAGE \\* MERGEFORMAT " → "{page}". Layout substitutes per page. */
@@ -365,7 +383,7 @@ function parseRun(r: XmlNode, out: IRInline[], ctx: ParseCtx, field: FieldState)
       if (field.pagerefAnchor && props.linkAnchor === undefined && props.linkRelId === undefined) {
         props.linkAnchor = field.pagerefAnchor;
       }
-      out.push({ kind: "run", text, props });
+      out.push({ kind: "run", text, props, ...(field.resultFieldId ? { fieldId: field.resultFieldId } : {}) });
     }
     text = "";
   };
@@ -471,6 +489,7 @@ function handleFldChar(
         field.instr = "";
         field.suppressResult = false;
         field.pagerefAnchor = undefined;
+        field.resultFieldId = undefined;
       }
       if (ctx.trackFields) {
         ft.depth++;
@@ -485,6 +504,26 @@ function handleFldChar(
       // result blocks (which follow) get tagged with the field id.
       if (ctx.trackFields && ft.depth === 1) decideCustomField(ctx);
       if (field.depth !== 1) break;
+      // Built-in inline field → a field object (body only; bands keep the token
+      // path below for back-compat). PAGE/NUMPAGES emit a tagged {page}/{pages}
+      // token; DATE/TIME/IF keep their cached result runs, tagged via resultFieldId.
+      if (ctx.trackFields) {
+        const parsed = parseFieldInstruction(field.instr);
+        if (BUILTIN_INLINE.has(parsed.name)) {
+          const spec = parseFieldSpec(parsed, FIELD_SPEC_STYLE);
+          if (spec) {
+            const fid = `field${ft.next.n++}`;
+            ft.registry[fid] = { id: fid, instruction: field.instr, name: parsed.name, kind: "builtin", spec };
+            if (spec.type === "PAGE" || spec.type === "NUMPAGES") {
+              out.push({ kind: "run", text: pageTokenFor(spec), props: runProps, fieldId: fid });
+              field.suppressResult = true;
+            } else {
+              field.resultFieldId = fid;
+            }
+            break;
+          }
+        }
+      }
       const token = ctx.fieldTokens ? fieldToken(field.instr) : undefined;
       if (token) {
         out.push({ kind: "run", text: token, props: runProps });
@@ -511,6 +550,7 @@ function handleFldChar(
         field.instr = "";
         field.suppressResult = false;
         field.pagerefAnchor = undefined;
+        field.resultFieldId = undefined;
       }
       break;
   }

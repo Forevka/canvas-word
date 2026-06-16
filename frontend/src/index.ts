@@ -3,7 +3,7 @@
 // -> incremental layout -> paint + caret + proxy reposition (same frame).
 
 import type { Block, CharStyle, Document, ParaStyle, TableBlock } from "@cw/shared";
-import { BAND_CONTAINERS } from "@cw/shared";
+import { BAND_CONTAINERS, parseTocInstruction } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, UserInfo } from "@cw/shared";
 import { isCollapsed, colorForId, userDisplayName, freshId } from "@cw/shared";
 import { applyOp, containerBlocks, containerOf, effectiveFractions, locateImage, sliceRuns, type Op } from "@cw/shared";
@@ -38,6 +38,8 @@ import { parseOoxmlFragment } from "./import/docx/fragment";
 import { importDocx } from "./import/docx/importDocx";
 import { showContextMenu, type ContextMenuHandle, type MenuEntry } from "./ui/contextMenu";
 import { showSdtInspector, type SdtInspectorData, type SdtInspectorHandle } from "./ui/sdtInspector";
+import { showFieldConstructor } from "./ui/fieldConstructor";
+import { showTocProperties } from "./ui/tocProperties";
 import { showTableProperties, type BorderStyleName, type TablePropertiesHandle } from "./ui/tableProperties";
 import { createA11yMirror } from "./a11y/mirror";
 import {
@@ -46,6 +48,8 @@ import {
   deleteTableColumnCmd,
   deleteTableCmd,
   findSdtRanges,
+  findFieldRanges,
+  fieldAtPosition,
   insertContentControl,
   insertText,
   insertFragment,
@@ -56,7 +60,11 @@ import {
   insertTableColumnCmd,
   insertTableRowCmd,
   fieldAtBlock,
+  insertFieldCmd,
+  editFieldCmd,
+  updateFieldCmd,
   updateTocFieldCmd,
+  setTocSwitchesCmd,
   mergeCellsCmd,
   replaceFieldResultCmd,
   setCellsBordersCmd,
@@ -470,6 +478,54 @@ export function createEditor(
     paint.setSdtAdornment({ rects, label: props.alias ?? SDT_LABELS[props.type] ?? "Content control" });
   };
 
+  /** Block-region field (contiguous top-level blocks sharing Block.fieldId): one
+   *  framed box per page spanning the content column. */
+  const blockLevelFieldRects = (id: string): Rect[] => {
+    const ids = new Set(containerBlocks(doc, "body").filter((b) => b.fieldId === id).map((b) => b.id));
+    if (ids.size === 0) return [];
+    const byPage = new Map<number, { top: number; bot: number; page: Page }>();
+    for (const page of tree.pages) {
+      for (const pb of page.blocks) {
+        if (!ids.has(pb.blockId)) continue;
+        const [t, b] = placedBlockVBounds(pb);
+        const cur = byPage.get(page.index);
+        if (cur) {
+          cur.top = Math.min(cur.top, t);
+          cur.bot = Math.max(cur.bot, b);
+        } else byPage.set(page.index, { top: t, bot: b, page });
+      }
+    }
+    const rects: Rect[] = [];
+    for (const { top, bot, page } of byPage.values()) {
+      rects.push({ pageIndex: page.index, x: page.marginPx.left, y: top, width: page.widthPx - page.marginPx.left - page.marginPx.right, height: bot - top });
+    }
+    return rects;
+  };
+
+  /** Word's field highlight: gray field shading + a labelled tab around the field
+   *  (inline runs, or a block region) containing the caret. Cleared when it leaves. */
+  const updateFieldAdornment = (): void => {
+    const focus = selection?.focus;
+    const inlineId = focus ? fieldAtPosition(doc, focus) : null;
+    const blockFieldId = !inlineId && focus ? blockById(doc, focus.blockId)?.fieldId ?? null : null;
+    const id = inlineId ?? blockFieldId;
+    const def = id ? doc.fields?.[id] : undefined;
+    if (!id || !def) {
+      paint.setFieldAdornment(null);
+      return;
+    }
+    const rects = inlineId
+      ? findFieldRanges(doc, id).flatMap((r) =>
+          selectionRects(
+            tree,
+            { anchor: { blockId: r.blockId, offset: r.start }, focus: { blockId: r.blockId, offset: r.end } },
+            scope(),
+          ),
+        )
+      : blockLevelFieldRects(id);
+    paint.setFieldAdornment({ rects, label: def.name });
+  };
+
   /** Pixel rects for the active cell selection, normalized to whole merged cells. */
   const cellSelectionRects = (): Rect[] => {
     if (!cellSelection) return [];
@@ -490,6 +546,7 @@ export function createEditor(
 
   const applySelectionVisuals = (): void => {
     updateSdtAdornment();
+    updateFieldAdornment();
     // A rectangular cell selection paints filled cell rects and hides the caret;
     // it supersedes any lingering text selection visual.
     if (cellSelection) {
@@ -2020,7 +2077,16 @@ export function createEditor(
     // via the resolveField hook (parse its OOXML, splice in as the new result).
     const field = focus ? fieldAtBlock(doc, focus.blockId) : null;
     if (field?.kind === "toc") {
-      entries.push(sep, item("Update Field (TOC)", () => dispatch(updateTocFieldCmd())));
+      entries.push(
+        sep,
+        item("Update Field (TOC)", () => dispatch(updateTocFieldCmd())),
+        item("Table of Contents options…", () =>
+          showTocProperties({
+            initial: parseTocInstruction(doc.tocInstruction ?? ' TOC \\o "1-3" \\h \\z '),
+            onApply: (sw) => dispatch(setTocSwitchesCmd(sw)),
+          }),
+        ),
+      );
     } else if (field?.kind === "custom") {
       const def = field.def;
       const resolve = options.resolveField;
@@ -2048,6 +2114,33 @@ export function createEditor(
           { disabled: !resolve },
         ),
       );
+    }
+
+    // Inline built-in field (PAGE/NUMPAGES/DATE/TIME/IF) at the caret — edit its
+    // definition in the constructor, or recompute its result (Word's F9).
+    const caretStyle = (pos: { blockId: string; offset: number }): CharStyle => {
+      const b = blockById(doc, pos.blockId);
+      const s = b ? styleAtRuns(b.runs, pos.offset) ?? b.runs[0]?.style : undefined;
+      if (s) return s;
+      for (const blk of doc.blocks) if (blk.kind === "paragraph" && blk.runs[0]) return blk.runs[0]!.style;
+      return { fontFamily: "Arial, sans-serif", fontSizePx: 16, bold: false, italic: false, underline: false, strikethrough: false, color: "#000000" };
+    };
+    const inlineFieldId = focus ? fieldAtPosition(doc, focus) : null;
+    const inlineFieldDef = inlineFieldId ? doc.fields?.[inlineFieldId] : undefined;
+    if (focus && inlineFieldDef?.kind === "builtin" && inlineFieldDef.spec) {
+      const def = inlineFieldDef;
+      const spec = def.spec!;
+      const f = focus;
+      entries.push(sep, item(`Edit Field (${def.name})…`, () =>
+        showFieldConstructor({ initial: spec, baseStyle: caretStyle(f), onApply: (s) => dispatch(editFieldCmd(def.id, s)) }),
+      ));
+      if (spec.type !== "PAGE" && spec.type !== "NUMPAGES") {
+        entries.push(item(`Update Field (${def.name})`, () => dispatch(updateFieldCmd(def.id))));
+      }
+    } else if (focus) {
+      entries.push(sep, item("Insert Field…", () =>
+        showFieldConstructor({ baseStyle: caretStyle(focus), onApply: (s) => dispatch(insertFieldCmd(s)) }),
+      ));
     }
 
     // Image.

@@ -48,13 +48,19 @@ describe("custom field import", () => {
     expect(ps[3]!.fieldId).toBeUndefined(); // outside the field
   });
 
-  it("does NOT capture built-in fields (DATE) as custom fields", () => {
+  it("captures a built-in inline field (DATE) as a field OBJECT, not a custom field", () => {
     const body = `<w:p>${fld("begin")}${instr(" DATE \\@ \"M/d/yyyy\" ")}${fld("separate")}${txt("1/1/2026")}${fld("end")}</w:p>`;
     const doc = runImport(simpleDocx(body)).doc;
 
-    expect(doc.fields).toBeUndefined();
+    const defs = Object.values(doc.fields ?? {});
+    expect(defs.length).toBe(1);
+    expect(defs[0]!.kind).toBe("builtin");
+    expect(defs[0]!.name).toBe("DATE");
+    expect(defs[0]!.spec).toEqual({ type: "DATE", format: "M/d/yyyy" });
+
     const p = paras(doc.blocks)[0]!;
-    expect(p.fieldId).toBeUndefined();
-    expect(text(p)).toBe("1/1/2026");
+    expect(p.fieldId).toBeUndefined(); // inline field — the BLOCK isn't tagged
+    expect(text(p)).toBe("1/1/2026"); // cached result kept…
+    expect(p.runs.find((r) => r.text === "1/1/2026")?.style.fieldId).toBe(defs[0]!.id); // …and tagged on the run
   });
 });

@@ -63,6 +63,24 @@ export function parseTocInstruction(instr: string): TocSwitches {
   return sw;
 }
 
+/** Synthesize a `TOC` field instruction from switches (inverse of
+ *  parseTocInstruction; round-trips the switches it models). Switch order follows
+ *  Word's own emit so a re-parse is stable. */
+export function buildTocInstruction(sw: TocSwitches): string {
+  const parts: string[] = ["TOC"];
+  if (sw.outlineRange) parts.push(`\\o "${sw.outlineRange.from}-${sw.outlineRange.to}"`);
+  if (sw.useOutlineLevels) parts.push("\\u");
+  if (sw.customStyles && Object.keys(sw.customStyles).length > 0) {
+    const t = Object.entries(sw.customStyles).map(([name, lvl]) => `${name},${lvl}`).join(",");
+    parts.push(`\\t "${t}"`);
+  }
+  if (sw.hyperlinks) parts.push("\\h");
+  if (sw.hidePageNumberRange) parts.push(`\\n "${sw.hidePageNumberRange.from}-${sw.hidePageNumberRange.to}"`);
+  if (sw.separator !== undefined) parts.push(`\\p "${sw.separator}"`);
+  if (sw.hideInWeb) parts.push("\\z");
+  return ` ${parts.join(" ")} `;
+}
+
 /** Is `level` covered by an inclusive range (undefined range = no). */
 export const inRange = (r: { from: number; to: number } | undefined, level: number): boolean =>
   !!r && level >= r.from && level <= r.to;

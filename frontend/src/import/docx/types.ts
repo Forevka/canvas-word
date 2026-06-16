@@ -140,7 +140,7 @@ export interface IRSdtProps {
 }
 
 export type IRInline =
-  | { kind: "run"; text: string; props: IRRunProps; sdtId?: string }
+  | { kind: "run"; text: string; props: IRRunProps; sdtId?: string; fieldId?: string }
   /** w:br / w:cr — soft line break (model has none; mapToModel splits the
    *  paragraph). page=true for w:br w:type="page" (→ pageBreakBefore on the
    *  follower); column=true for w:br w:type="column" (→ columnBreakBefore). */

@@ -20,6 +20,7 @@ export * from "./persist/serialize";
 export * from "./change";
 export * from "./toc";
 export * from "./fields";
+export * from "./fieldEval";
 export * from "./replay";
 export * from "./transform";
 

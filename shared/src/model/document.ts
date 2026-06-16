@@ -30,6 +30,13 @@ export interface CharStyle {
    *  sdtId form one inline control; properties live in `Document.sdts`.
    *  `| undefined` so removing a control can strip the marker. */
   sdtId?: string | undefined;
+  /** Inline-field membership (OOXML complex field): contiguous runs sharing a
+   *  fieldId are one inline field's RESULT (e.g. PAGE, DATE, IF); the definition
+   *  lives in `Document.fields`. The marker is what distinguishes a real field
+   *  result from literal text (e.g. a `{page}` token a user merely typed).
+   *  `| undefined` so removing a field can strip the marker. Mirrors `sdtId`;
+   *  block-level fields use `Block.fieldId` instead. */
+  fieldId?: string | undefined;
 }
 
 /** Structured document tag (Word content control) properties — a direct
@@ -230,17 +237,38 @@ export interface TableBlock {
 
 export type Block = Paragraph | ImageBlock | TableBlock;
 
+/** OOXML page-number / list format (the field `\* <fmt>` switch). */
+export type PageNumFmt = "arabic" | "roman" | "Roman" | "alpha" | "Alpha";
+/** IF comparison operators. */
+export type IfOp = "=" | "<>" | "<" | ">" | "<=" | ">=";
+
+/** Typed, parsed form of a BUILT-IN field's definition — drives the field
+ *  constructor UI and the evaluator. `FieldDef.instruction` stays the verbatim
+ *  round-trip source of truth; `spec` is derived from it and re-synthesized back.
+ *  TOC is NOT here — it keeps its own `tocEntry`/`tocInstruction` path. */
+export type FieldSpec =
+  | { type: "PAGE"; numFmt?: PageNumFmt }
+  | { type: "NUMPAGES"; numFmt?: PageNumFmt }
+  | { type: "DATE"; format: string }
+  | { type: "TIME"; format: string }
+  | { type: "IF"; operandA: string; op: IfOp; operandB: string; trueRuns: Run[]; falseRuns: Run[] };
+
 /** A generic OOXML field tracked in the model: its verbatim instruction plus a
- *  classification. Only CUSTOM (host-resolvable, non-built-in) fields are tracked
- *  this way — TOC keeps its own `tocEntry`/`tocInstruction` path. The field's
- *  result is the contiguous run of blocks carrying its `id` as `fieldId`. */
+ *  classification. CUSTOM (host-resolvable) fields and the BUILT-IN fields the
+ *  editor understands (PAGE/NUMPAGES/DATE/TIME/IF) are both tracked this way; TOC
+ *  keeps its own `tocEntry`/`tocInstruction` path. The field's result is the
+ *  contiguous run of BLOCKS carrying its `id` as `Block.fieldId` (region fields)
+ *  OR the contiguous RUNS carrying it as `CharStyle.fieldId` (inline fields). */
 export interface FieldDef {
   id: string;
-  /** Verbatim w:instrText (e.g. ` MYCHART "sales-2026" `), re-emitted on export. */
+  /** Verbatim w:instrText (e.g. ` MYCHART "sales-2026" `, ` PAGE \* roman `), re-emitted on export. */
   instruction: string;
-  /** Field keyword, uppercased — the first instruction token (e.g. "MYCHART"). */
+  /** Field keyword, uppercased — the first instruction token (e.g. "PAGE", "MYCHART"). */
   name: string;
-  kind: "custom";
+  kind: "builtin" | "custom";
+  /** Parsed spec for built-in fields the editor understands; absent for opaque
+   *  custom (host-resolved) fields and built-ins we only round-trip verbatim. */
+  spec?: FieldSpec;
 }
 
 /** The six margin-band stories: default header/footer plus the Word variants

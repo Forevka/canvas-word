@@ -264,13 +264,26 @@ describe("headers and footers", () => {
     expect(text(para(r.doc.section.footer![0]))).toBe("Page {page} of {pages}");
   });
 
-  it("keeps cached field results in the BODY (a TOC's page numbers must not become tokens)", () => {
+  it("captures a BODY PAGE field as a {page} field object (fixes the old cached-text behavior)", () => {
     const body =
       `<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGE </w:instrText></w:r>` +
       `<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>7</w:t></w:r>` +
       `<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>`;
     const r = runImport(docxWithHeaderFooter({ body, headerXml: headerPartXml(`<w:p/>`) }));
-    expect(text(para(r.doc.blocks[0]))).toBe("7");
+    const p = para(r.doc.blocks[0]);
+    expect(text(p)).toBe("{page}"); // a live token, not the stale cached "7"
+    const fid = p.runs.find((rr) => rr.text === "{page}")?.style.fieldId;
+    expect(fid).toBeDefined();
+    expect(r.doc.fields?.[fid!]?.spec).toEqual({ type: "PAGE" });
+  });
+
+  it("keeps a TOC entry's PAGEREF cached number as text (must NOT become a token)", () => {
+    const body =
+      `<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGEREF _Toc1 \\h </w:instrText></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>7</w:t></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>`;
+    const r = runImport(docxWithHeaderFooter({ body, headerXml: headerPartXml(`<w:p/>`) }));
+    expect(text(para(r.doc.blocks[0]))).toBe("7"); // PAGEREF is not a tokenized field
   });
 
   it("resolves header images through the header part's own rels", () => {

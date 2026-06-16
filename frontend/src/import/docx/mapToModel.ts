@@ -488,7 +488,7 @@ export function createMapper(
           // Hidden text (w:vanish) is PRESERVED with style.hidden (set via
           // applyRunProps) — never displayed, never caret-reachable, protected
           // from deletion — so a round-trip re-emits it instead of losing it.
-          runs.push(mapRun(inline.text, effective, resolveLink, inline.sdtId));
+          runs.push(mapRun(inline.text, effective, resolveLink, inline.sdtId, inline.fieldId));
           trailingBreak = false;
           break;
         }
@@ -556,7 +556,7 @@ export function createMapper(
     return image;
   }
 
-  function mapRun(rawText: string, effective: IRRunProps, resolveLink: LinkResolver, sdtId?: string): Run {
+  function mapRun(rawText: string, effective: IRRunProps, resolveLink: LinkResolver, sdtId?: string, fieldId?: string): Run {
     // "\t" is preserved — the layout engine positions it at the paragraph's tab
     // stops (or the default interval); no flattening to spaces.
     let text = rawText;
@@ -585,6 +585,7 @@ export function createMapper(
         style.fontFamily = DEFAULT_CHAR.fontFamily;
       }
     }
+    if (fieldId) style.fieldId = fieldId; // inline built-in field result run
     return { text, style };
   }
 

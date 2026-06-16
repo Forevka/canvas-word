@@ -654,4 +654,21 @@ describe("engine — floats", () => {
     // The table must start at or below the float's bottom edge — never beside it.
     expect(tablePb.y).toBeGreaterThanOrEqual(imgPb.y + 100);
   });
+
+  it("hangs a list marker beside a left float, not stranded on top of it", () => {
+    const img = leftFloat(200, 100);
+    const item = para("Item text that flows beside the floated image and wraps onward", {
+      list: { listId: "numbers", level: 0 },
+    });
+    const d: Document = { ...doc([img, item]), lists: { numbers: defaultListDefinition("decimal") } };
+    const tree = layout(d);
+    const imgPb = placedOf(tree, img.id)!.pb;
+    const imgRight = imgPb.x + imgPb.image!.width;
+    const pb = placedOf(tree, item.id)!.pb;
+    // The first line is pushed right past the float…
+    expect(pb.lines[0]!.fragments[0]!.x).toBeGreaterThan(150);
+    // …and the marker hangs with it, clear of the image — not back at the margin.
+    expect(pb.marker).toBeDefined();
+    expect(pb.marker!.x).toBeGreaterThanOrEqual(imgRight);
+  });
 });
