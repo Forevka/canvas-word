@@ -34,6 +34,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with a live field-instruction preview. Applying persists the instruction and
   regenerates the entries (a narrower `\o` range lists fewer levels), so it round-trips
   to `.docx`. Backed by a new collab-safe `setTocInstruction` op.
+- **Programmatic builder now authors the full feature surface.** `@forevka/wordcanvas/builder`
+  gained fluent methods for everything the model supports: inline **fields**
+  (`pageField`/`numPagesField`/`dateField`/`timeField`/`ifField`/`customField`/`crossReference`),
+  **content controls** (`contentControl` + per-kind sugar), **footnotes**, **bookmarks**
+  (`bookmark`/`bookmarkRange`), super/subscript + letter-spacing + hidden text, a **table of
+  contents** (`tableOfContents`, resolved from the document's headings at `build()`),
+  **section breaks** with newspaper columns (`sectionBreak`/`columnBreak`), and richer styling —
+  `defaultStyle`, custom `listDefinition`s, and reusable `tableStylePreset`s applied via
+  `.table(rows, { style })`. No model changes — the builder mints the same structures the editor
+  and exporter already consume, so it all round-trips to `.docx`. See
+  [BUILDER.md](./BUILDER.md).
 - **Headless PDF render — `POST /render.pdf`.** Stateless backend route: a raw `.docx`
   in, a rendered PDF out, for a producer that has no layout engine (e.g. a C# pipeline
   that emits Word fields it can't compute). It builds the table of contents from the

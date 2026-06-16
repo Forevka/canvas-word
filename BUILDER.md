@@ -132,27 +132,109 @@ DocumentBuilder.fromTemplate(docx, opts?: { keepBody, idSeed })  // async (the o
 
 // block scope (document body, bands, cells):
 .paragraph(text?, charPatch?)        → paragraph scope
-.table(rows2d | callback, { colFractions, headerRow })
+.table(rows2d | callback, { colFractions, headerRow, style })  // style = a preset name
 .image(url | { data, mime }, { widthPx, heightPx, align, wrap })  // dims required
 .list(items, { kind, listId, level }) / .bulletList(items) / .numberedList(items)
 .pageBreak()                         // next block starts a new page
+.columnBreak()                       // next block starts a new newspaper column
+.bookmarkRange(name, s => …)         // bookmark every paragraph the callback adds
 
 // paragraph scope (plus all block-scope methods, which pop back):
 .withStyle(id) .text(t, patch?) .bold() .italic() .underline() .strikethrough()
 .color(c) .highlight(c) .fontSize(px) .font(f) .link(url)
+.superscript() .subscript() .letterSpacing(px) .hidden()
 .align(a) .spacing({ before, after, lineHeight }) .indent({ left, right, firstLine })
 .keepWithNext() .end()
+// inline fields (tagged result run + registered FieldDef):
+.field(spec) .pageField(numFmt?) .numPagesField(numFmt?) .dateField(fmt?) .timeField(fmt?)
+.ifField(a, op, b, ifTrue, ifFalse) .customField(instr, resultText, { name? })
+.crossReference(bookmarkName, { kind: "ref" | "pageRef" })
+// inline content controls (SDT):
+.contentControl(props, text) .richTextControl(t) .plainTextControl(t) .checkbox(checked)
+.dropDown(sel, items) .comboBox(sel, items) .dateControl(t, fmt?)
+// inline notes + bookmarks:
+.footnote(text | (s => …))           // auto-numbered marker + note body
+.bookmark(name, text)                // bookmark exactly the appended run
 
 // document scope only:
 .header(s => …, { variant: "default" | "first" | "even" }) .footer(…)
 .pageSetup({ pageSize, orientation, margins, columns, headerDistancePx, footerDistancePx, pageNumberStart })
-.style(namedStyle)        // register before use
+.tableOfContents({ maxLevel?, hyperlink?, title?, leader?, levels? })  // resolved at build()
+.sectionBreak({ pageSize?, orientation?, margins?, columns?, pageNumberStart?, header?, footer?, … })
+.style(namedStyle)            // register a named style (before use)
+.defaultStyle(id)             // set + inherit the document default style (call early)
+.listDefinition(id, spec)     // custom bullet/number/multilevel/levels list
+.tableStylePreset(name, preset)  // reusable cell formatting for .table({ style })
 .warnings                 // readonly BuilderWarning[]
 .build()                  // → Document (deep clone; builder stays usable)
 ```
 
 Unit helpers: `inches(n)`, `cm(n)`, `pt(n)`, `twips(n)` (all → px @96dpi),
 `PAGE_SIZES` (Letter, Legal, A4, A3, Tabloid), `bytesToDataUrl(bytes, mime)`.
+
+### Computed fields
+
+Built-in fields are first-class objects (a typed `FieldSpec` + a registered
+`FieldDef`), authored inline in a paragraph:
+
+```ts
+b.paragraph("Page ").pageField().text(" of ").numPagesField()    // {page} / {pages} tokens
+ .paragraph("Today is ").dateField("MMMM d, yyyy")                // materialized now
+ .paragraph().ifField("2", ">", "1", "in stock", "back-ordered") // chosen branch
+```
+
+`pageField`/`numPagesField` emit a live `{page}`/`{pages}` token the layout engine
+re-resolves per page (in the body **and** in bands — no more body/footer split);
+`dateField`/`timeField`/`ifField` materialize their result once (pass `{ now }` for
+a deterministic date in tests). `customField(instruction, resultText)` is the escape
+hatch for any other field (`SEQ`, `STYLEREF`, …); `crossReference(name)` is sugar over
+it for `REF`/`PAGEREF` to a bookmark. IF branch results are plain text.
+
+### Content controls (SDT)
+
+```ts
+b.paragraph("Choose: ").dropDown("One", [{ display: "One", value: "1" }], { alias: "Choice" })
+ .paragraph("Agree ").checkbox(true)
+```
+
+`contentControl(props, text)` takes raw `SdtProps`; `richTextControl`/`plainTextControl`/
+`checkbox`/`dropDown`/`comboBox`/`dateControl` are per-kind sugar. (Authoring only —
+in-place data rebinding that preserves user edits across rebuilds is still out of scope.)
+
+### Footnotes & bookmarks
+
+`footnote(text | callback)` appends an auto-numbered marker and registers the note body
+(a string is one paragraph; a `StoryBuilder` callback is rich/multi-paragraph). `bookmark(name, text)`
+bookmarks exactly the appended run; `bookmarkRange(name, callback)` bookmarks every paragraph the
+callback adds (a multi-block span). Footnote numbers follow insertion order — use a fresh builder
+per data-driven rebuild (the documented rebuild model) so numbers don't accumulate.
+
+### Table of contents
+
+`tableOfContents(opts)` is **deferred**: it drops a placeholder anchor and sets the doc's
+`TOC` field instruction now, then `build()` generates the entries from the document's
+headings — so headings added *after* the call are still included. Mark headings with
+`.withStyle("Heading1")` (or an outline level). The entries are live (page numbers resolve
+at layout) and round-trip to `.docx` as a real `TOC` field.
+
+### Sections & columns
+
+`sectionBreak(opts)` ends the current section and starts a new one on the next page, with its
+own page size/orientation/margins, **newspaper columns** (`columns: { count, gapPx? }`),
+page-number restart, and header/footer band callbacks. `columnBreak()` starts the next
+newspaper column (like `pageBreak()`, it applies to the following block).
+
+### Custom styles, list definitions & table-style presets
+
+`style({ id, name, basedOn, char, para })` registers a named style (apply with `.withStyle(id)`);
+`defaultStyle(id)` makes one the document default so later content inherits it (call early).
+`listDefinition(id, spec)` registers a custom list (`{ kind: "bullet", char }`,
+`{ kind: "number", format, suffix? }`, `{ kind: "multilevel" }`, or raw `{ levels }`),
+referenced via `.list(items, { listId: id })`. `tableStylePreset(name, preset)` defines reusable
+cell formatting (header styling, borders, shading, zebra striping) applied with
+`.table(rows, { style: name })` — **builder-only sugar**: it resolves to concrete cell
+properties at build time (explicit per-cell `CellSpec` values win), so nothing style-id-like
+enters the model. Built-in presets: `plain`, `grid`, `headerBand`, `striped`.
 
 ## Server-side (Node)
 
@@ -185,28 +267,24 @@ browser embedders can still export via the editor toolbar or `exportDocument`.
 
 - `frontend/src/builder/builder.test.ts` — model-shape assertions, style
   resolution/precedence, scope semantics, clone isolation, deterministic ids.
+- `frontend/src/builder/builderFeatures.test.ts` — the field/SDT/footnote/bookmark/
+  TOC/section/list/preset surface (per-feature model-shape assertions; `now` injected).
 - `frontend/src/builder/templateRoundtrip.test.ts` — builder → export →
   `fromTemplate` → compose → export → re-import; the exporter manufactures the
   template fixture, so no binary is committed.
+- `frontend/src/builder/featuresRoundtrip.test.ts` — a doc exercising the new
+  features survives export → re-import (fields/SDT/footnotes/bookmarks/TOC persist).
 
 ## Not supported (yet)
 
-Intentionally out of the first version — the model supports several of these
-already; the builder just doesn't author them:
+Intentionally out of scope — the model supports several of these already; the
+builder just doesn't author them:
 
-- Footnotes/endnotes authoring
-- Bookmarks and cross-references
-- TOC generation
-- Content-control (SDT) data binding / in-place partial rebinding that
-  preserves user edits across data changes
-- Section breaks / multi-section page setup (one section per document)
-- Newspaper columns per-block (whole-document `pageSetup.columns` only)
-- Computed fields in the body — PAGE/NUMPAGES/dates/formulas (`{page}`/`{pages}`
-  band tokens are the only computed text)
-- Table styles (direct cell formatting only) and nested tables via the fluent
-  API (possible by composing cells, not first-class)
-- Floating anchored images (only `block` / `square` wrap)
+- Content-control (SDT) **data rebinding** — controls are authored, but in-place
+  partial rebinding that preserves user edits across data changes is not.
+- Nested tables via the fluent API (possible by composing cells, not first-class).
+- Floating anchored images (only `block` / `square` wrap).
 - `{{placeholder}}` merge syntax inside templates (declarative rebuild is the
-  binding model)
-- Charts, shapes, text boxes; tracked changes; comments
-- Image natural-size auto-measure (explicit `widthPx`/`heightPx` required)
+  binding model).
+- Charts, shapes, text boxes; tracked changes; comments.
+- Image natural-size auto-measure (explicit `widthPx`/`heightPx` required).

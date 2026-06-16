@@ -3,8 +3,8 @@
 // table cells — shares this surface. Methods append eagerly and return `this`
 // (or a ParagraphBuilder that delegates back), so chains never need a seal step.
 
-import type { Block, CharStyle } from "@cw/shared";
-import { DEFAULT_BULLET_LIST_ID, DEFAULT_NUMBER_LIST_ID, defaultListDefinition } from "@cw/shared";
+import type { Block, CharStyle, Paragraph, ParaStyle } from "@cw/shared";
+import { DEFAULT_BULLET_LIST_ID, DEFAULT_NUMBER_LIST_ID, defaultListDefinition, textOfRuns } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import { bytesToDataUrl } from "./media";
 import { ParagraphBuilder } from "./paragraphBuilder";
@@ -39,20 +39,29 @@ export class StoryBuilder {
   protected readonly ctx: BuilderContext;
   protected readonly blocks: Block[];
   private pendingPageBreak = false;
+  private pendingColumnBreak = false;
 
   constructor(ctx: BuilderContext, blocks: Block[]) {
     this.ctx = ctx;
     this.blocks = blocks;
   }
 
-  /** Append a block, honoring a pending pageBreak(). Only paragraphs carry
-   *  pageBreakBefore, so a break before a table/image lands on an injected
+  /** Append a block, honoring a pending page/column break(). Only paragraphs
+   *  carry the break flag, so a break before a table/image lands on an injected
    *  empty paragraph (same trick as the docx import mapper). */
   protected push(block: Block): void {
-    if (this.pendingPageBreak) {
-      if (block.kind === "paragraph") block.style.pageBreakBefore = true;
-      else this.blocks.push(this.ctx.paragraph([], { pageBreakBefore: true }));
+    if (this.pendingPageBreak || this.pendingColumnBreak) {
+      if (block.kind === "paragraph") {
+        if (this.pendingPageBreak) block.style.pageBreakBefore = true;
+        if (this.pendingColumnBreak) block.style.columnBreakBefore = true;
+      } else {
+        const patch: Partial<ParaStyle> = {};
+        if (this.pendingPageBreak) patch.pageBreakBefore = true;
+        if (this.pendingColumnBreak) patch.columnBreakBefore = true;
+        this.blocks.push(this.ctx.paragraph([], patch));
+      }
       this.pendingPageBreak = false;
+      this.pendingColumnBreak = false;
     }
     this.blocks.push(block);
   }
@@ -129,11 +138,40 @@ export class StoryBuilder {
     return this;
   }
 
+  /** The NEXT block starts a new newspaper column (Ctrl+Shift+Enter). A trailing
+   *  column break with no following block is a no-op, matching Word. */
+  columnBreak(): this {
+    this.pendingColumnBreak = true;
+    return this;
+  }
+
+  /** Bookmark everything the callback appends to this story (multi-paragraph
+   *  span). For a precise inline span use ParagraphBuilder.bookmark(name, text). */
+  bookmarkRange(name: string, build: (s: this) => void): this {
+    const startIdx = this.blocks.length;
+    build(this);
+    const added = this.blocks.slice(startIdx).filter((b): b is Paragraph => b.kind === "paragraph");
+    if (added.length === 0) {
+      this.ctx.warn(`bookmark-empty:${name}`, `bookmarkRange("${name}") wrapped no paragraphs — no bookmark was recorded.`);
+      return this;
+    }
+    const first = added[0]!;
+    const last = added[added.length - 1]!;
+    const bookmarks = (this.ctx.doc.bookmarks ??= {});
+    bookmarks[name] = {
+      start: { blockId: first.id, offset: 0 },
+      end: { blockId: last.id, offset: textOfRuns(last.runs).length },
+    };
+    return this;
+  }
+
   /** A trailing pageBreak() with no following block still needs to exist —
-   *  materialize it as an empty page-broken paragraph (called by build()). */
+   *  materialize it as an empty page-broken paragraph (called by build()). A
+   *  pending column break alone is dropped (Word ignores a trailing one). */
   protected flushPendingPageBreak(): void {
     if (!this.pendingPageBreak) return;
     this.blocks.push(this.ctx.paragraph([], { pageBreakBefore: true }));
     this.pendingPageBreak = false;
+    this.pendingColumnBreak = false;
   }
 }

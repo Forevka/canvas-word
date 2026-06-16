@@ -7,6 +7,7 @@
 import type { Block, CellBorders, CellMargin, CharStyle, ParaStyle, TableBlock, TableCell, TableRow } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import { StoryBuilder } from "./storyBuilder";
+import type { TableStylePreset } from "./tableStyles";
 
 /** A cell in the data-driven shape: plain text, or text + cell properties. */
 export interface CellSpec {
@@ -35,6 +36,9 @@ export interface TableOptions {
   colFractions?: number[];
   /** Bold every run in the first row. */
   headerRow?: boolean;
+  /** Apply a registered table-style preset (header styling, borders, shading,
+   *  striping). Builder-only sugar; explicit per-cell values win. */
+  style?: string;
 }
 
 /** Cell paragraphs are compact (no after-spacing, tighter leading) — matching
@@ -78,13 +82,28 @@ export class TableBuilder {
       this.ctx.warn("table-empty", "A table was built with no rows — a single empty cell was inserted.");
       this.row([""]);
     }
-    if (this.opts.headerRow) {
-      for (const cell of this.tableRows[0]!.cells) {
-        for (const block of cell.blocks) {
-          if (block.kind === "paragraph") for (const run of block.runs) run.style.bold = true;
+    const preset: TableStylePreset | undefined = this.opts.style ? this.ctx.tableStyle(this.opts.style) : undefined;
+    const headerRow = this.opts.headerRow ?? preset?.headerRow ?? false;
+    // Apply header styling, borders, shading and striping. Explicit per-cell values
+    // (cell.shading/borders set via CellSpec) always win; the preset is the base.
+    this.tableRows.forEach((row, ri) => {
+      const isHeader = headerRow && ri === 0;
+      for (const cell of row.cells) {
+        if (isHeader) {
+          const hc: Partial<CharStyle> = { bold: true, ...preset?.headerChar };
+          for (const block of cell.blocks) {
+            if (block.kind === "paragraph") for (const run of block.runs) Object.assign(run.style, hc);
+          }
         }
+        if (cell.shading === undefined) {
+          const sh = isHeader
+            ? preset?.headerShading
+            : (ri % 2 === 1 ? preset?.stripeShading : undefined) ?? preset?.shading;
+          if (sh !== undefined) cell.shading = sh;
+        }
+        if (cell.borders === undefined && preset?.borders) cell.borders = preset.borders;
       }
-    }
+    });
     const table: TableBlock = { kind: "table", id: this.ctx.ids.next(), revision: 0, rows: this.tableRows };
     if (this.fractions && this.fractions.length > 0) {
       const sum = this.fractions.reduce((a, b) => a + b, 0);

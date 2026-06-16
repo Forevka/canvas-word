@@ -12,14 +12,17 @@
 // via WordCanvas.setDocument) and server-side in Node (DOCX/PDF generation).
 
 export type { Block, CharStyle, Document, NamedStyle, ParaStyle, Stylesheet } from "@cw/shared";
+// Model types an author needs to call the new field/SDT/TOC/list methods.
+export type { FieldSpec, IfOp, PageNumFmt, SdtProps, SdtType, TocOptions } from "@cw/shared";
 export { DocumentBuilder } from "./documentBuilder";
-export type { BandOptions, CreateOptions, PageSetup, TemplateOptions } from "./documentBuilder";
+export type { BandOptions, CreateOptions, ListDefinitionSpec, PageSetup, SectionBreakOptions, TemplateOptions } from "./documentBuilder";
 export { ParagraphBuilder } from "./paragraphBuilder";
 export type { IndentOptions, SpacingOptions } from "./paragraphBuilder";
 export { StoryBuilder } from "./storyBuilder";
 export type { ImageOptions, ListItem, ListOptions } from "./storyBuilder";
 export { RowBuilder, TableBuilder } from "./tableBuilder";
 export type { CellContent, CellOptions, CellSpec, TableOptions } from "./tableBuilder";
+export type { TableStylePreset } from "./tableStyles";
 export type { BuilderWarning } from "./blockFactory";
 export { bytesToDataUrl } from "./media";
 export { cm, inches, PAGE_SIZES, pt, twips } from "./units";

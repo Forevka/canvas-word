@@ -6,6 +6,7 @@
 
 import type { CharStyle, Document, ImageBlock, ParaStyle, Paragraph, Run, Stylesheet } from "@cw/shared";
 import { createIdGenerator, resolveStyle, styleById, type IdGenerator } from "@cw/shared";
+import { builtinTableStyles, type TableStylePreset } from "./tableStyles";
 
 export interface BuilderWarning {
   code: string;
@@ -56,6 +57,10 @@ export class BuilderContext {
   /** Concrete defaults for new runs/paragraphs (default style resolved). */
   charDefault: CharStyle;
   paraDefault: ParaStyle;
+  /** Footnote marker counter — monotonic in insertion order (.footnote()). */
+  private footnoteCounter = 0;
+  /** Builder-only table-style presets (seeded with built-ins; .tableStylePreset adds). */
+  readonly tableStyles = builtinTableStyles();
 
   constructor(doc: Document, idSeed?: string) {
     this.doc = doc;
@@ -63,6 +68,26 @@ export class BuilderContext {
     const resolved = doc.stylesheet ? resolveStyle(doc.stylesheet, doc.stylesheet.defaultStyleId) : { char: {}, para: {} };
     this.charDefault = { ...BASE_CHAR, ...resolved.char };
     this.paraDefault = { ...BASE_PARA, ...resolved.para };
+  }
+
+  /** Next footnote marker number (1-based, insertion order). */
+  nextFootnoteNumber(): number {
+    return ++this.footnoteCounter;
+  }
+
+  /** Recompute the run/paragraph defaults from the current stylesheet's default
+   *  style — called when .defaultStyle() changes which style is the baseline. */
+  refreshDefaults(): void {
+    const resolved = this.doc.stylesheet ? resolveStyle(this.doc.stylesheet, this.doc.stylesheet.defaultStyleId) : { char: {}, para: {} };
+    this.charDefault = { ...BASE_CHAR, ...resolved.char };
+    this.paraDefault = { ...BASE_PARA, ...resolved.para };
+  }
+
+  /** A registered table-style preset by name, or undefined (+ warning). */
+  tableStyle(name: string): TableStylePreset | undefined {
+    const preset = this.tableStyles.get(name);
+    if (!preset) this.warn(`table-style-missing:${name}`, `Table style "${name}" is not registered — .table({ style: "${name}" }) used no preset.`);
+    return preset;
   }
 
   warn(code: string, message: string): void {
