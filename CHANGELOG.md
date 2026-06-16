@@ -5,6 +5,15 @@ All notable changes to **`@forevka/wordcanvas`** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] — 2026-06-16
+
+### Fixed
+- **Resizing a table column no longer scrolls the view back to the caret.** When the
+  caret sat in a paragraph elsewhere (e.g. on another page), dragging a column grip
+  yanked the viewport back to the caret on every drag tick. The editor now only
+  scrolls the caret into view when a mutation actually moves it, so selection-preserving
+  edits like a column resize leave the scroll position untouched.
+
 ## [0.7.0] — 2026-06-16
 
 ### Added

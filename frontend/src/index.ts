@@ -834,6 +834,7 @@ export function createEditor(
   };
 
   const afterMutation = (selectionAfter: DocSelection | null): void => {
+    const prevSelection = selection;
     relayout();
     selection = selectionAfter;
     cellSelection = null; // grid coords are invalidated by any structural change
@@ -843,7 +844,16 @@ export function createEditor(
       runSearch(); // live re-search while the find bar is open
       paintSearch();
     }
-    if (selection && isCollapsed(selection)) {
+    // Only chase the caret into view when the mutation actually MOVED it.
+    // Edits that leave the caret where it is — e.g. dragging a table column
+    // grip, which keeps the selection untouched — must not yank the viewport
+    // back to a caret parked on another page (the resize "scroll jump" bug).
+    const caretMoved =
+      !prevSelection ||
+      !selection ||
+      prevSelection.focus.blockId !== selection.focus.blockId ||
+      prevSelection.focus.offset !== selection.focus.offset;
+    if (selection && isCollapsed(selection) && caretMoved) {
       const caret = caretRect(tree, selection.focus, scope());
       if (caret) paint.ensureVisible(caret);
     }
