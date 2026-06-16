@@ -5,6 +5,26 @@ All notable changes to **`@forevka/wordcanvas`** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-06-16
+
+### Added
+- **Copy a rectangular table-cell selection.** Selecting whole cells and copying now
+  writes an HTML `<table>` (preserving `colspan`/`rowspan`) alongside tab-separated
+  plain text, so it pastes faithfully into Word / Google Docs and into spreadsheets.
+
+### Fixed
+- **Table cell text no longer overflows its column.** Cell paragraphs wrap at the
+  cell's inner width minus their own left/right indent (matching body wrapping), and
+  cell content is clipped to the inner box in both the canvas and PDF painters — so
+  indented text wraps in-cell instead of drawing over the right border or into the
+  neighbouring column.
+- **Cell selection stays visible over shaded cells.** Cell background fills are now
+  painted beneath the selection/search highlights, and the selection uses an adaptive
+  blend, so it no longer disappears on a coloured (e.g. blue) table header.
+- **Whole-cell copy works for column-spanning cells.** Dragging across a merged cell
+  no longer trips a false cross-cell selection that left a partial range, so Ctrl+C
+  copies the full cell content.
+
 ## [0.6.1] — 2026-06-15
 
 ### Changed
@@ -133,6 +153,8 @@ implementation history in [README.md](./README.md)):
   docId, integration tokens for third-party `/upload`, and session webhooks.
 - Mobile/touch input and a responsive ribbon.
 
+[0.7.0]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.0
+[0.6.1]: https://github.com/Forevka/canvas-word/releases/tag/v0.6.1
 [0.6.0]: https://github.com/Forevka/canvas-word/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Forevka/canvas-word/releases/tag/v0.5.0
 [0.4.1]: https://github.com/Forevka/canvas-word/releases/tag/v0.4.1
