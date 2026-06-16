@@ -23,6 +23,7 @@ import {
   nextWordEnd,
   type BandName,
 } from "@cw/shared";
+import { findTableById } from "../editor/commands";
 import type { LayoutTree } from "../layout/layoutTree";
 import {
   comparePositions,
@@ -40,7 +41,7 @@ import {
 } from "../layout/geometry";
 import type { PagePoint } from "../paint/renderer";
 import type { CellSelection } from "../editor/state";
-import { extractFragment, fragmentToHtml, fragmentToPlainText } from "./clipboard";
+import { extractFragment, fragmentToHtml, fragmentToPlainText, tableRectToClipboard } from "./clipboard";
 
 export interface SelectionControllerDeps {
   container: HTMLElement;
@@ -48,6 +49,8 @@ export interface SelectionControllerDeps {
   getDoc(): Document;
   getSelection(): DocSelection | null;
   setSelection(sel: DocSelection | null): void;
+  /** The active rectangular table-cell selection, if any (for copy/cut). */
+  getCellSelection(): CellSelection | null;
   /** Set (or clear) the rectangular table-cell selection during a cross-cell drag. */
   setCellSelection(sel: CellSelection | null): void;
   clientToPage(clientX: number, clientY: number): PagePoint | null;
@@ -505,6 +508,24 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
   // ---- copy / cut (text/html + text/plain flavors) -------------------------
 
   const writeSelectionToClipboard = (ev: ClipboardEvent): boolean => {
+    // A rectangular cell selection serializes the whole grid rectangle as an
+    // HTML table + tab-separated text, ahead of any (stale) text selection.
+    const cell = deps.getCellSelection();
+    if (cell) {
+      const found = findTableById(deps.getDoc(), cell.tableId);
+      if (found) {
+        const { html, text } = tableRectToClipboard(found.table, {
+          r0: cell.anchor.row,
+          c0: cell.anchor.col,
+          r1: cell.focus.row,
+          c1: cell.focus.col,
+        });
+        ev.clipboardData?.setData("text/html", html);
+        ev.clipboardData?.setData("text/plain", text);
+        ev.preventDefault();
+        return true;
+      }
+    }
     const sel = deps.getSelection();
     if (!sel || isCollapsed(sel)) return false;
     const tree = deps.getTree();

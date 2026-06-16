@@ -3,9 +3,9 @@
 // the HTML flavor is what makes paste into real Word / Google Docs keep styles.
 // Paste: whitelist-map incoming HTML onto runs + paragraph styles via DOMParser.
 
-import type { CharStyle, ParaStyle, Paragraph, Run } from "@cw/shared";
+import type { Block, CharStyle, GridRect, ParaStyle, Paragraph, Run, TableBlock } from "@cw/shared";
 import type { DocPosition } from "@cw/shared";
-import { normalizeRuns, sliceRuns } from "@cw/shared";
+import { buildTableGrid, normalizeRect, normalizeRuns, sliceRuns } from "@cw/shared";
 import { textOfRuns } from "@cw/shared";
 
 export interface FragmentBlock {
@@ -98,6 +98,61 @@ export function fragmentToHtml(fragment: DocFragment): string {
 export function fragmentToPlainText(fragment: DocFragment): string {
   // Soft breaks ("\v") read as newlines in plain text.
   return fragment.blocks.map((b) => textOfRuns(b.runs).replace(/\v/g, "\n")).join("\n");
+}
+
+// --- rectangular table-cell selection --------------------------------------
+// A whole-cell / multi-cell copy serializes to an HTML <table> (so paste into
+// Word / Google Docs / Sheets keeps the grid) plus tab-separated plain text
+// (rows on their own line — the de-facto format spreadsheets parse into cells).
+
+const cellParas = (blocks: Block[]): FragmentBlock[] =>
+  blocks.filter((b): b is Paragraph => b.kind === "paragraph").map((p) => ({ runs: p.runs, style: p.style }));
+
+function cellToHtml(blocks: Block[]): string {
+  return fragmentToHtml({ blocks: cellParas(blocks), inline: false });
+}
+
+function cellToPlainText(blocks: Block[]): string {
+  // Multiple paragraphs in one cell collapse to spaces so each table row stays a
+  // single tab-delimited line (keeps columns aligned when pasted into a sheet).
+  return cellParas(blocks)
+    .map((b) => textOfRuns(b.runs).replace(/\v/g, " "))
+    .join(" ")
+    .trim();
+}
+
+/** Serialize a (possibly merged-cell-spanning) grid rectangle of a table to the
+ *  text/html + text/plain clipboard flavors. `rect` is the raw anchor/focus
+ *  rectangle; it is normalized to whole merged cells here. */
+export function tableRectToClipboard(table: TableBlock, rect: GridRect): { html: string; text: string } {
+  const grid = buildTableGrid(table);
+  const r = normalizeRect(grid, rect);
+  const trs: string[] = [];
+  const lines: string[] = [];
+  for (let ri = r.r0; ri <= r.r1; ri++) {
+    const tds: string[] = [];
+    const cells: string[] = [];
+    for (let ci = r.c0; ci <= r.c1; ci++) {
+      const s = grid.slots[ri]![ci];
+      // Emit each cell once, at its grid origin; continuation slots of a
+      // colSpan/rowSpan cell contribute nothing (HTML) / an empty column (text).
+      const atOrigin = s !== undefined && s.originRow === ri && s.originCol === ci;
+      if (atOrigin) {
+        const cspan = s.colSpan > 1 ? ` colspan="${s.colSpan}"` : "";
+        const rspan = s.rowSpan > 1 ? ` rowspan="${s.rowSpan}"` : "";
+        tds.push(`<td${cspan}${rspan}>${cellToHtml(s.cell.blocks)}</td>`);
+        cells.push(cellToPlainText(s.cell.blocks));
+      } else if (!s) {
+        tds.push("<td></td>"); // ragged hole
+        cells.push("");
+      } else {
+        cells.push(""); // continuation slot: blank column keeps tab alignment
+      }
+    }
+    trs.push(`<tr>${tds.join("")}</tr>`);
+    lines.push(cells.join("\t"));
+  }
+  return { html: `<table>${trs.join("")}</table>`, text: lines.join("\n") };
 }
 
 // ---------------------------------------------------------------------------

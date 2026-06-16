@@ -33,7 +33,7 @@ import { createSelectionController } from "./input/selectionController";
 import { createObjectFrame } from "./input/objectController";
 import { createImeProxy } from "./input/imeProxy";
 import { createKeymapHandler, type StyleKey } from "./input/keymap";
-import { extractFragment, fragmentToHtml, fragmentToPlainText, htmlToFragment, type DocFragment } from "./input/clipboard";
+import { extractFragment, fragmentToHtml, fragmentToPlainText, htmlToFragment, tableRectToClipboard, type DocFragment } from "./input/clipboard";
 import { parseOoxmlFragment } from "./import/docx/fragment";
 import { importDocx } from "./import/docx/importDocx";
 import { showContextMenu, type ContextMenuHandle, type MenuEntry } from "./ui/contextMenu";
@@ -1438,6 +1438,7 @@ export function createEditor(
     getDoc: () => doc,
     getSelection: () => selection,
     setSelection,
+    getCellSelection: () => cellSelection,
     setCellSelection,
     clientToPage: (x, y) => paint.clientToPage(x, y),
     focusProxy: () => proxy.focus(),
@@ -1485,12 +1486,29 @@ export function createEditor(
     return cmp <= 0 ? [selection.anchor, selection.focus] : [selection.focus, selection.anchor];
   };
 
-  const copySelection = async (): Promise<void> => {
+  // The clipboard flavors for the active selection: a rectangular cell selection
+  // serializes as an HTML table + tab-separated text; otherwise the text range.
+  const clipboardPayload = (): { html: string; text: string } | null => {
+    if (cellSelection) {
+      const found = findTableById(doc, cellSelection.tableId);
+      if (!found) return null;
+      return tableRectToClipboard(found.table, {
+        r0: cellSelection.anchor.row,
+        c0: cellSelection.anchor.col,
+        r1: cellSelection.focus.row,
+        c1: cellSelection.focus.col,
+      });
+    }
     const o = orderedSelection();
-    if (!o) return;
+    if (!o) return null;
     const fragment = extractFragment(paragraphsOf(doc), o[0], o[1]);
-    const html = fragmentToHtml(fragment);
-    const text = fragmentToPlainText(fragment);
+    return { html: fragmentToHtml(fragment), text: fragmentToPlainText(fragment) };
+  };
+
+  const copySelection = async (): Promise<void> => {
+    const payload = clipboardPayload();
+    if (!payload) return;
+    const { html, text } = payload;
     try {
       await navigator.clipboard.write([
         new ClipboardItem({
@@ -1920,7 +1938,7 @@ export function createEditor(
     ): MenuEntry => ({ kind: "item", label, onClick, ...opts });
     const sep: MenuEntry = { kind: "sep" };
 
-    const hasSel = !!selection && !isCollapsed(selection);
+    const hasSel = (!!selection && !isCollapsed(selection)) || !!cellSelection;
 
     // View-only (checked dynamically so a runtime switch to view mode applies):
     // only the non-mutating actions (copy text, follow a link).
