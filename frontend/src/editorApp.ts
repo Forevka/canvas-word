@@ -338,10 +338,16 @@ const goOnlineWithCurrentDoc = async (): Promise<string> => {
   return shareLink;
 };
 
-// Replace the open document (docx import): tear down and rebuild the editor —
-// the layout engine is reused so its caches survive across documents.
+// Replace the open document (docx import): tear down and rebuild the editor.
+// The layout engine instance is reused (cheap to keep its allocations), but its
+// caches MUST be dropped first — see engine.reset() below.
 const replaceDocument = (next: typeof doc): void => {
   editor.destroy();
+  // Drop the outgoing document's layout caches. The shared engine keys cached
+  // lines by (block id, revision, width); the docx importer re-mints ids from i0
+  // at revision 0, so the new document collides with the old one and would render
+  // the two merged unless we clear first.
+  engine.reset();
   doc = next;
   editor = createEditor(app, doc, editorOpts);
   refreshOutline();

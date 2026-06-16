@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.7.1] — 2026-06-16
 
 ### Fixed
+- **Opening a second document no longer merges it with the previous one.** The layout
+  engine is shared across documents and caches laid-out lines by block id; because the
+  docx importer re-mints block ids from `i0` on every import, the freshly opened
+  document collided with the prior one's cache and rendered the two merged. Replacing
+  the document now clears the engine's caches first, so each opened document renders on
+  its own.
 - **Resizing a table column no longer scrolls the view back to the caret.** When the
   caret sat in a paragraph elsewhere (e.g. on another page), dragging a column grip
   yanked the viewport back to the caret on every drag tick. The editor now only

@@ -93,6 +93,40 @@ const placedOf = (tree: ReturnType<typeof layout>, id: string): { page: number; 
   return null;
 };
 
+// --- full-document swap ---------------------------------------------------
+
+describe("engine — full-document swap (cache reset)", () => {
+  it("reset() clears stale lines so a new doc reusing block ids doesn't leak the old content", () => {
+    // The docx importer re-mints block ids from i0 at revision 0 on EVERY import,
+    // so two unrelated documents collide on (id, revision). The shared engine
+    // keys its line cache on (id, revision, width) — without a reset between
+    // documents, the second doc's paragraph hits the first doc's cached lines and
+    // the two render merged. Model that collision directly.
+    const engine = createLayoutEngine();
+    const longPara = (): Paragraph => ({
+      kind: "paragraph", id: "i0", revision: 0,
+      runs: [{ text: "x".repeat(400), style: CHAR }], style: PARA,
+    });
+    const shortPara = (): Paragraph => ({
+      kind: "paragraph", id: "i0", revision: 0,
+      runs: [{ text: "hi", style: CHAR }], style: PARA,
+    });
+
+    const first = engine.layout(doc([longPara()]));
+    const longLines = placedOf(first, "i0")!.pb.lines.length;
+    expect(longLines).toBeGreaterThan(1);
+
+    // Without reset the colliding id hits the cached multi-line layout (the bug).
+    const leaked = engine.layout(doc([shortPara()]));
+    expect(placedOf(leaked, "i0")!.pb.lines.length).toBe(longLines);
+
+    // After reset the same short paragraph lays out fresh — a single line.
+    engine.reset();
+    const fixed = engine.layout(doc([shortPara()]));
+    expect(placedOf(fixed, "i0")!.pb.lines.length).toBe(1);
+  });
+});
+
 // --- basic pagination -----------------------------------------------------
 
 describe("engine — pagination", () => {

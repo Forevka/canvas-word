@@ -30,6 +30,11 @@ export interface LayoutEngine {
   /** Full or incremental relayout. Pass dirty ids from ApplyResult; omit for full. */
   layout(doc: Document, dirtyBlockIds?: string[], options?: LayoutOptions): LayoutTree;
   evict(blockId: string): void;
+  /** Drop ALL cached layout — call when swapping in a wholly different document.
+   *  The importer re-mints block ids from i0 at revision 0, so without a reset the
+   *  new document's paragraphs hit the previous document's cached lines (same
+   *  id+revision+width) and the two documents render merged. */
+  reset(): void;
 }
 
 export function createLayoutEngine(): LayoutEngine {
@@ -74,6 +79,10 @@ export function createLayoutEngine(): LayoutEngine {
     evict(blockId: string): void {
       prepCache.evict(blockId);
       linesCache.delete(blockId);
+    },
+    reset(): void {
+      prepCache.clear();
+      linesCache.clear();
     },
   };
 }

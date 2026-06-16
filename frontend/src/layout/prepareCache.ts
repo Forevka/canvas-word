@@ -95,6 +95,13 @@ export class PrepareCache {
     this.map.delete(blockId);
   }
 
+  /** Drop every entry — used when the whole document is replaced (the importer
+   *  re-mints block ids from i0, so a stale entry at the same id+revision would
+   *  otherwise leak the previous document's prepared text into the new one). */
+  clear(): void {
+    this.map.clear();
+  }
+
   /** Drop every entry whose id is NOT in `keep` (paragraphs no longer in the
    *  document). Called after a full layout to bound the cache to live blocks. */
   retainOnly(keep: ReadonlySet<string>): void {
