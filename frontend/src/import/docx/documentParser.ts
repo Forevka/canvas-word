@@ -229,6 +229,7 @@ function parseParagraph(p: XmlNode, ctx: ParseCtx): IRParagraph {
   const para: IRParagraph = { kind: "paragraph", props, inlines };
   if (bookmarks.length > 0) para.bookmarks = bookmarks;
   if (markers.length > 0) para.bookmarkMarkers = markers;
+  if (field.tocInstr !== undefined) para.tocField = field.tocInstr;
   return para;
 }
 
@@ -243,6 +244,9 @@ interface FieldState {
    *  anchor so a TOC whose entries are plain text + a PAGEREF (no surrounding
    *  hyperlink) still maps each entry to its heading for "recalculate TOC". */
   pagerefAnchor?: string | undefined;
+  /** The verbatim instrText of a `TOC` field in this paragraph (first one wins) —
+   *  surfaced on IRParagraph.tocField so a headless render can anchor a built TOC. */
+  tocInstr?: string | undefined;
 }
 
 /** " PAGE \\* MERGEFORMAT " → "{page}". Layout substitutes per page. */
@@ -412,6 +416,10 @@ function parseRun(r: XmlNode, out: IRInline[], ctx: ParseCtx, field: FieldState)
             // even when nested (Word nests PAGEREF inside the entry's HYPERLINK).
             const anchor = anchorFromInstr(field.instr);
             if (anchor) field.pagerefAnchor = anchor;
+            // The paragraph's own TOC field instruction (first wins) — drives the
+            // headless TOC build's anchor + the re-emitted instruction on export.
+            const t = textOf(node);
+            if (field.tocInstr === undefined && /\bTOC\b/.test(t)) field.tocInstr = t;
           }
           // Block-scoped custom-field tracker: accumulate the TOP-level field's
           // instruction (nested fields' instrText belongs to them, not the field

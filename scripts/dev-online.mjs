@@ -1,13 +1,14 @@
-// One-command local "online" dev: Postgres (docker) + backend (:8787) + frontend
-// with VITE_BACKEND preset, so the editor mounts in online mode (Share button,
-// live collaboration, track-changes + comments sync) without appending
-// ?backend=… to the URL. Dependency-free (just node + docker + npm).
+// One-command local "online" dev: Postgres (docker) + backend (:8787) + editor
+// (:5173, VITE_BACKEND preset → online mode: Share, live collaboration, track
+// changes + comments sync) + admin dashboard (:5174, for login + minting API
+// tokens / managing webhooks). Dependency-free (just node + docker + npm).
 //
-//   npm run dev:online      → open http://localhost:5173/
+//   npm run dev:online   → editor http://localhost:5173/ · dashboard http://localhost:5174/
 //
 import { spawn, spawnSync } from "node:child_process";
 
 const BACKEND = process.env.BACKEND_URL ?? "http://localhost:8787";
+const EDITOR = process.env.EDITOR_URL ?? "http://localhost:5173";
 const sh = (cmd, opts = {}) => spawn(cmd, { stdio: "inherit", shell: true, ...opts });
 
 console.log("[dev:online] starting Postgres (docker compose up -d)…");
@@ -17,22 +18,27 @@ if (db.status !== 0) {
   process.exit(1);
 }
 
-console.log(`[dev:online] backend → ${BACKEND}`);
-console.log("[dev:online] frontend → http://localhost:5173/ (VITE_BACKEND preset)");
+console.log(`[dev:online] backend   → ${BACKEND}`);
+console.log(`[dev:online] editor    → ${EDITOR}/ (VITE_BACKEND preset)`);
+console.log("[dev:online] dashboard → http://localhost:5174/ (admin login + API tokens)");
 const backend = sh("npm run dev --workspace @cw/backend");
 const frontend = sh("npm run dev --workspace @forevka/wordcanvas", {
   env: { ...process.env, VITE_BACKEND: BACKEND },
 });
+const dashboard = sh("npm run dev --workspace @cw/dashboard", {
+  env: { ...process.env, VITE_BACKEND_URL: BACKEND, VITE_EDITOR_URL: EDITOR },
+});
 
+const procs = { backend, frontend, dashboard };
 let exiting = false;
 const stop = (code = 0) => {
   if (exiting) return;
   exiting = true;
-  backend.kill();
-  frontend.kill();
+  for (const p of Object.values(procs)) p.kill();
   process.exit(code);
 };
 process.on("SIGINT", () => stop(0));
 process.on("SIGTERM", () => stop(0));
-backend.on("exit", (c) => { console.log(`[dev:online] backend exited (${c})`); stop(c ?? 0); });
-frontend.on("exit", (c) => { console.log(`[dev:online] frontend exited (${c})`); stop(c ?? 0); });
+for (const [name, p] of Object.entries(procs)) {
+  p.on("exit", (c) => { console.log(`[dev:online] ${name} exited (${c})`); stop(c ?? 0); });
+}

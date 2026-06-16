@@ -340,6 +340,11 @@ export interface Document {
    *  captured on import so export re-emits it verbatim (honoring its switches)
    *  instead of a hardcoded default. Absent when the document has no TOC field. */
   tocInstruction?: string;
+  /** Block id of the paragraph holding the (empty/placeholder) `TOC` field, captured
+   *  on import so a headless render can BUILD the entries at the right spot. Absent
+   *  when there's no TOC field, or when the TOC already has entries (then the
+   *  existing tocEntry blocks mark the location). */
+  tocAnchorBlockId?: string;
   /** Generic custom fields keyed by id (blocks carry the membership via
    *  `fieldId`). Populated on import for non-built-in fields; export re-emits each
    *  region as a real complex field; the editor refreshes it via `resolveField`.

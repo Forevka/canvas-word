@@ -103,6 +103,8 @@ export interface Mapper {
   /** Footnotes referenced (in document order) — the pipeline maps their bodies
    *  into Document.footnotes. `noteId` is the model key, `docxId` the source id. */
   footnoteRefs(): { docxId: string; noteId: string }[];
+  /** The first `TOC` field's block id + verbatim instruction, or undefined. */
+  tocField(): { blockId: string; instruction: string } | undefined;
 }
 
 export function createMapper(
@@ -220,6 +222,10 @@ export function createMapper(
     return undefined;
   };
 
+  // The first TOC field's anchor (block id + instruction), captured as blocks are
+  // mapped (a paragraph may split into several blocks, so an ordinal can't find it).
+  let tocAnchor: { blockId: string; instruction: string } | undefined;
+
   const mapBlocks = (blocks: IRBlock[], media: MediaStore, resolveLink: LinkResolver = NO_LINKS): Block[] => {
     const out: Block[] = [];
     // A paragraph carrying w:sectPr ends a section (OOXML: its props describe the
@@ -289,6 +295,13 @@ export function createMapper(
       // Custom-field membership: an IR block in a field's result region stamps its
       // fieldId onto every model block it produced (a paragraph may split).
       if (irBlock.fieldId) for (const b of mapped) b.fieldId = irBlock.fieldId;
+
+      // TOC field anchor: record the real model block (first one this paragraph
+      // produced) so a headless render places the built TOC exactly here.
+      if (irBlock.kind === "paragraph" && irBlock.tocField !== undefined && tocAnchor === undefined) {
+        const p = mapped.find((b): b is Paragraph => b.kind === "paragraph") ?? mapped[0];
+        if (p) tocAnchor = { blockId: p.id, instruction: irBlock.tocField };
+      }
 
       // Resolve a pending (same-geometry) section break against this block.
       // Blank/hidden lead-in paragraphs are skipped so the break lands on the
@@ -724,6 +737,7 @@ export function createMapper(
       return out;
     },
     footnoteRefs: () => footnoteOrder.map((docxId) => ({ docxId, noteId: `fn${docxId}` })),
+    tocField: () => tocAnchor,
   };
 }
 

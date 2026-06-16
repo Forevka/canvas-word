@@ -8,6 +8,7 @@
 import type { CharStyle, Document, ParaStyle, Paragraph } from "./model/document";
 import { bodyParagraphs, textOfRuns } from "./model/text";
 import { sliceRuns } from "./model/ops";
+import { freshId } from "./ids";
 
 /** Parsed `TOC` field switches. See ECMA-376 §17.16.5.68. */
 export interface TocSwitches {
@@ -171,24 +172,41 @@ const TOC_BASE_CHAR: CharStyle = {
   underline: false, strikethrough: false, color: "#202124",
 };
 
-/** Resolve the char + paragraph style for a TOC entry at `level`, merging the
- *  caller's `TocOptions` over the built-in defaults. Shared by the editor's
- *  buildTocParagraphs and the headless generator so they look identical. The para
- *  carries the right-aligned dot-leader tab stop (callers add `tocEntry`). */
+/** Resolve the char + paragraph style for a TOC entry at `level`. Precedence:
+ *  built-in defaults < the document's own TOC style (`inherit`, from its TOC field
+ *  paragraph) < caller `TocOptions`. When `inherit` is given we DON'T impose the
+ *  built-in level-1 bold / size bumps — we respect the document's look (matching the
+ *  source Word doc); without it, the editor's default look is used. The para carries
+ *  the right-aligned leader tab stop (callers add `tocEntry`). */
 export function tocEntryStyle(
   opts: TocOptions,
   level: number,
   contentWidthPx: number,
+  inherit?: { char?: CharStyle | undefined; para?: ParaStyle | undefined },
 ): { char: CharStyle; para: ParaStyle } {
   const indentStep = opts.indentStepPx ?? 20;
   const leader = opts.leader ?? "dot";
-  const base = { ...TOC_BASE_CHAR, ...opts.baseChar };
-  const char: CharStyle = { ...base, fontSizePx: level === 1 ? 14 : 13, bold: level === 1, ...opts.levels?.[level]?.char };
-  const para: ParaStyle = {
-    align: "left", lineHeight: 1.5, spaceBeforePx: 0, spaceAfterPx: 2,
-    indentFirstLinePx: 0, indentLeftPx: (level - 1) * indentStep, ...opts.levels?.[level]?.para,
-  };
+  let char: CharStyle;
+  let para: ParaStyle;
+  if (inherit && (inherit.char || inherit.para)) {
+    char = { ...TOC_BASE_CHAR, ...inherit.char, ...opts.baseChar, ...opts.levels?.[level]?.char };
+    const baseIndent = inherit.para?.indentLeftPx ?? 0;
+    para = {
+      align: "left", lineHeight: 1.5, spaceBeforePx: 0, spaceAfterPx: 2, indentFirstLinePx: 0,
+      ...inherit.para,
+      indentLeftPx: baseIndent + (level - 1) * indentStep,
+      ...opts.levels?.[level]?.para,
+    };
+  } else {
+    const base = { ...TOC_BASE_CHAR, ...opts.baseChar };
+    char = { ...base, fontSizePx: level === 1 ? 14 : 13, bold: level === 1, ...opts.levels?.[level]?.char };
+    para = {
+      align: "left", lineHeight: 1.5, spaceBeforePx: 0, spaceAfterPx: 2,
+      indentFirstLinePx: 0, indentLeftPx: (level - 1) * indentStep, ...opts.levels?.[level]?.para,
+    };
+  }
   if (leader !== "none" && contentWidthPx > 0) para.tabStops = [{ posPx: contentWidthPx, align: "right", leader }];
+  else delete para.tabStops; // leader:"none" overrides any inherited leader tab
   return { char, para };
 }
 
@@ -224,4 +242,93 @@ export interface TocOptions {
   includePageNumbers?: boolean;
   /** Emit entries as hyperlinks (default true). */
   hyperlink?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// TOC generation — entries are REAL paragraphs tagged with `tocEntry` (so they
+// lay out, paint, hit-test, and export as a live field for free). Page numbers
+// are paint-only: the layout engine resolves each entry's number per relayout,
+// so they never go stale. Shared by the editor (insertTocCmd) and the headless
+// PDF/DOCX render path.
+
+const TOC_LEVELS = 3;
+
+/** Build TOC paragraphs (optional title + one entry per heading) from a document's
+ *  headings. Every hardcoded look is an overridable `TocOptions` default. The page
+ *  number is paint-only (layout post-pass); a right-aligned dot-leader tab stop
+ *  right-aligns it. Mutates nothing. */
+export function buildTocParagraphs(doc: Document, opts: TocOptions = {}): Paragraph[] {
+  // Honor the document's own TOC field switches (\o level range, \t custom styles, …)
+  // so a C#-emitted ` TOC \o "1-5" ` lists all five levels, not the default three.
+  const sw = doc.tocInstruction ? parseTocInstruction(doc.tocInstruction) : undefined;
+  const maxLevel = opts.maxLevel ?? sw?.outlineRange?.to ?? TOC_LEVELS;
+  const contentWidthPx = doc.section.pageWidthPx - doc.section.marginPx.left - doc.section.marginPx.right;
+
+  // Inherit the document's own TOC styling from the TOC field's paragraph (its pStyle,
+  // e.g. "TOC 1", resolved on import → the doc's intended font/size/indent). Absent for
+  // an editor-inserted TOC in a doc with no TOC field → the built-in default look.
+  const anchor = doc.tocAnchorBlockId
+    ? doc.blocks.find((b): b is Paragraph => b.kind === "paragraph" && b.id === doc.tocAnchorBlockId)
+    : undefined;
+  const inherit = anchor ? { char: anchor.runs[0]?.style, para: anchor.style } : undefined;
+
+  const out: Paragraph[] = [];
+
+  // Title: an explicit opts.title wins; otherwise add the default title only when we're
+  // NOT filling an existing TOC field (a doc with a TOC field usually has its own title
+  // heading already, so a generated one would duplicate it).
+  const wantTitle = opts.title !== undefined ? opts.title !== null : anchor === undefined;
+  if (wantTitle) {
+    const title = tocTitleStyle(opts);
+    if (title) {
+      out.push({
+        kind: "paragraph", id: freshId(), revision: 0,
+        runs: [{ text: title.text, style: title.char }],
+        style: title.para,
+      });
+    }
+  }
+
+  // Scan body AND table-cell paragraphs so headings inside tables are listed.
+  for (const { block, level } of detectTocHeadings(doc, sw, maxLevel)) {
+    const text = textOfRuns(block.runs).replace(/\v/g, " ").trim();
+    if (text.length === 0) continue;
+    const { char, para } = tocEntryStyle(opts, level, contentWidthPx, inherit);
+    out.push({
+      kind: "paragraph", id: freshId(), revision: 0,
+      runs: [{ text, style: char }],
+      style: { ...para, tocEntry: { targetId: block.id, level } },
+    });
+  }
+  return out;
+}
+
+/** Fill an EMPTY TOC field: build entries from the document's headings and splice
+ *  them at the captured field location (`doc.tocAnchorBlockId`). Page numbers stay
+ *  paint-only — the layout engine resolves them on render. Returns a NEW doc (input
+ *  not mutated).
+ *
+ *  If the TOC field ALREADY has entries (imported and marked as `tocEntry`), they are
+ *  PRESERVED untouched — they carry the source document's own styling and their page
+ *  numbers are recomputed by layout, so rebuilding from headings (with our defaults)
+ *  would only throw the author's TOC away. No headings / nowhere to anchor → unchanged. */
+export function generateTocIntoDoc(
+  doc: Document,
+  opts: TocOptions = {},
+): { doc: Document; generated: number; headings: number } {
+  // Already populated (e.g. a Word/C#-rendered TOC) → keep it as-is.
+  if (doc.blocks.some((b) => b.kind === "paragraph" && b.style.tocEntry)) {
+    return { doc, generated: 0, headings: 0 };
+  }
+  if (doc.tocAnchorBlockId === undefined) return { doc, generated: 0, headings: 0 };
+  const at = doc.blocks.findIndex((b) => b.id === doc.tocAnchorBlockId);
+  if (at < 0) return { doc, generated: 0, headings: 0 };
+
+  const fresh = buildTocParagraphs(doc, opts);
+  const headings = fresh.reduce((n, p) => n + (p.style.tocEntry ? 1 : 0), 0);
+  if (headings === 0) return { doc, generated: 0, headings: 0 };
+
+  const blocks = [...doc.blocks];
+  blocks.splice(at, 1, ...fresh); // replace the empty TOC field paragraph
+  return { doc: { ...doc, blocks }, generated: headings, headings };
 }

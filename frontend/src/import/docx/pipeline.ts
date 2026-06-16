@@ -146,10 +146,13 @@ export function runImport(
   // TOC field: capture its instruction (for verbatim re-emit) and mark the
   // flattened entry paragraphs as live tocEntry (stripping their cached numbers)
   // so export round-trips them as a real, F9-refreshable field, not frozen text.
-  const tocInstr = captureTocInstruction(documentXml);
-  if (tocInstr !== undefined) {
-    doc.tocInstruction = tocInstr;
-    markImportedTocEntries(doc);
+  // When the field has NO entries (e.g. a C# pipeline emitting an empty TOC field),
+  // record the field's block (captured at map time, not by ordinal) so a headless
+  // render can BUILD the entries in place.
+  const toc = mapper.tocField();
+  if (toc) {
+    doc.tocInstruction = toc.instruction;
+    if (markImportedTocEntries(doc) === 0) doc.tocAnchorBlockId = toc.blockId;
   }
 
   // Custom (non-built-in) fields captured during the body walk — their result
@@ -162,14 +165,6 @@ export function runImport(
     mediaUrls: mediaStores.flatMap((s) => s.urls()),
     media: mediaRecords,
   };
-}
-
-/** The first `TOC` field instruction in the body XML (verbatim, spaces kept). */
-function captureTocInstruction(xml: string): string | undefined {
-  const re = /<w:instrText[^>]*>([\s\S]*?)<\/w:instrText>/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(xml)) !== null) if (/\bTOC\b/.test(m[1]!)) return m[1];
-  return undefined;
 }
 
 function mapStory(

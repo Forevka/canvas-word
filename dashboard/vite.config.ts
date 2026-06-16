@@ -6,5 +6,7 @@ import { defineConfig } from "vite";
 // come from VITE_BACKEND_URL / VITE_EDITOR_URL (see src/api.ts).
 export default defineConfig(({ command }) => ({
   base: command === "build" ? "/dashboard/" : "/",
-  server: { port: 5174 },
+  // strictPort: fail loudly if 5174 is taken rather than silently drifting to a
+  // random port — dev:online advertises "dashboard → :5174", so it must stay put.
+  server: { port: 5174, strictPort: true },
 }));

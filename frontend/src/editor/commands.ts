@@ -2,7 +2,7 @@
 // (later) toolbar buttons all dispatch through these.
 
 import type { Block, CellBorder, CellBorders, CharStyle, ImageBlock, ParaStyle, Paragraph, Run, SdtProps, SdtType, TableBlock, TableCell, TableRow, TocOptions } from "@cw/shared";
-import { detectTocHeadings, tocEntryStyle, tocTitleStyle } from "@cw/shared";
+import { buildTocParagraphs } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, GridRect } from "@cw/shared";
 import { isCollapsed, BAND_CONTAINERS } from "@cw/shared";
 import type { Op, SectionGeometry } from "@cw/shared";
@@ -637,8 +637,6 @@ export function setBandVariantEnabled(kind: "first" | "even", enabled: boolean):
 // resolved per relayout, so numbers never go stale. Entry TEXT goes stale when
 // headings are renamed — `insertTocCmd` regenerates (Word's update-field).
 
-const TOC_LEVELS = 3;
-
 function tocEntryBlocks(doc: EditorState["doc"]): Paragraph[] {
   const out: Paragraph[] = [];
   for (let i = 0; i < doc.blocks.length; i++) {
@@ -649,38 +647,6 @@ function tocEntryBlocks(doc: EditorState["doc"]): Paragraph[] {
     }
     // The generated title travels with the entries (regeneration replaces it).
     if (b.kind === "paragraph" && b.style.namedStyle === "tocTitle") out.push(b);
-  }
-  return out;
-}
-
-/** Build TOC paragraphs (title + entries) from the document's headings. Every
- *  hardcoded look is an overridable `TocOptions` default, so the editor and the
- *  headless backend route share one generator. The page number is paint-only
- *  (layout post-pass); a right-aligned dot-leader tab stop right-aligns it. */
-export function buildTocParagraphs(doc: EditorState["doc"], opts: TocOptions = {}): Paragraph[] {
-  const maxLevel = opts.maxLevel ?? TOC_LEVELS;
-  const contentWidthPx = doc.section.pageWidthPx - doc.section.marginPx.left - doc.section.marginPx.right;
-  const out: Paragraph[] = [];
-
-  const title = tocTitleStyle(opts);
-  if (title) {
-    out.push({
-      kind: "paragraph", id: freshBlockId(), revision: 0,
-      runs: [{ text: title.text, style: title.char }],
-      style: title.para,
-    });
-  }
-
-  // Scan body AND table-cell paragraphs so headings inside tables are listed.
-  for (const { block, level } of detectTocHeadings(doc, undefined, maxLevel)) {
-    const text = textOfRuns(block.runs).replace(/\v/g, " ").trim();
-    if (text.length === 0) continue;
-    const { char, para } = tocEntryStyle(opts, level, contentWidthPx);
-    out.push({
-      kind: "paragraph", id: freshBlockId(), revision: 0,
-      runs: [{ text, style: char }],
-      style: { ...para, tocEntry: { targetId: block.id, level } },
-    });
   }
   return out;
 }

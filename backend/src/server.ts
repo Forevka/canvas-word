@@ -11,10 +11,8 @@ import { reconstruct, rehydrateReview, type Change, type ReviewOpEnvelope, type 
 import { authFromRequest, checkCredentials, issueToken, requireAdmin } from "./admin/auth";
 import { hashToken, newApiToken } from "./auth/apiToken";
 import { createPool } from "./db";
-import { exportDoc } from "./export/serverExport";
+import { exportDoc, renderPdfFromDocx } from "./export/serverExport";
 import { parseAndStore } from "./import/serverImport";
-import { recalcDocxBytes } from "./recalc/serverRecalc";
-import { generateTocBytes } from "./recalc/serverGenerateToc";
 import type { TocOptions } from "@cw/shared";
 import { OPENAPI_SPEC, SWAGGER_HTML } from "./openapi";
 import { PgChangeStore, type ChangeStore } from "./store/ChangeStore";
@@ -407,37 +405,13 @@ async function handle(
     }
   }
 
-  // POST /recalc.docx — stateless: take a .docx whose TOC field has stale/placeholder
-  // page numbers (a caller with no layout engine can't compute them), run our layout
-  // engine, and return the .docx with each TOC entry's page number corrected. Body =
-  // raw .docx bytes; response = the updated .docx (x-toc-entries-updated counts them).
-  if (method === "POST" && parts.length === 1 && parts[0] === "recalc.docx") {
-    if (UPLOAD_REQUIRES_AUTH && !(await authorizeUpload(req, store))) {
-      return sendJson(res, 401, { error: "unauthorized" });
-    }
-    const bytes = await readBody(req);
-    try {
-      const { bytes: out, changed, skipped } = await recalcDocxBytes(new Uint8Array(bytes));
-      res.writeHead(200, {
-        "content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "content-disposition": `attachment; filename="recalc.docx"`,
-        "x-toc-entries-updated": String(changed),
-        "x-toc-entries-skipped": String(skipped),
-        "access-control-allow-origin": "*",
-        "access-control-expose-headers": "x-toc-entries-updated, x-toc-entries-skipped",
-      });
-      res.end(Buffer.from(out));
-      return;
-    } catch (e) {
-      return sendJson(res, 400, { error: String(e instanceof Error ? e.message : e) });
-    }
-  }
-
-  // POST /generate-toc.docx — multipart (file=docx, toc=JSON TocOptions): generate
-  // the TOC field's RESULT (the entries Word renders on F9) using our layout engine
-  // and splice it into the original file in place (drift-free). Also accepts a raw
-  // .docx body (no options). Returns the patched .docx.
-  if (method === "POST" && parts.length === 1 && parts[0] === "generate-toc.docx") {
+  // POST /render.pdf — stateless headless render for a renderer-less producer (e.g. a
+  // C# pipeline that emits raw .docx but has no layout engine). We run our layout
+  // engine to: BUILD the TOC field's entries from the document's headings (styled via
+  // the optional `toc` part) and auto-compute footer PAGE/NUMPAGES per page, then
+  // return a PDF. Accepts multipart (file=docx, toc=JSON TocOptions) OR a raw .docx
+  // body. Nothing is stored.
+  if (method === "POST" && parts.length === 1 && parts[0] === "render.pdf") {
     if (UPLOAD_REQUIRES_AUTH && !(await authorizeUpload(req, store))) {
       return sendJson(res, 401, { error: "unauthorized" });
     }
@@ -461,17 +435,13 @@ async function handle(
     }
     if (!docx || docx.length === 0) return sendJson(res, 400, { error: "missing docx (multipart 'file' part or raw body)" });
     try {
-      const r = await generateTocBytes(new Uint8Array(docx), opts);
+      const out = await renderPdfFromDocx(new Uint8Array(docx), opts);
       res.writeHead(200, {
-        "content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "content-disposition": `attachment; filename="toc.docx"`,
-        "x-toc-entries-generated": String(r.generated),
-        "x-headings-found": String(r.headings),
-        "x-bookmarks-synthesized": String(r.bookmarksSynthesized),
+        "content-type": "application/pdf",
+        "content-disposition": `attachment; filename="render.pdf"`,
         "access-control-allow-origin": "*",
-        "access-control-expose-headers": "x-toc-entries-generated, x-headings-found, x-bookmarks-synthesized",
       });
-      res.end(Buffer.from(r.bytes));
+      res.end(Buffer.from(out));
       return;
     } catch (e) {
       return sendJson(res, 400, { error: String(e instanceof Error ? e.message : e) });

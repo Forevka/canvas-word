@@ -222,4 +222,10 @@ export interface Document {
   sdts?: Record<string, SdtProps>;
   /** Bookmark name → character range. */
   bookmarks?: Record<string, BookmarkRange>;
+  /** The document's `TOC` field instruction (e.g. ` TOC \o "1-3" \h `), captured
+   *  on import. Absent when the document has no TOC field. */
+  tocInstruction?: string;
+  /** Block id of the paragraph holding the (empty/placeholder) `TOC` field, captured
+   *  on import so a headless render can build the entries at the right spot. */
+  tocAnchorBlockId?: string;
 }

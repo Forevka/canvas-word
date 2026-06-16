@@ -228,6 +228,10 @@ export interface IRParagraph {
   bookmarkMarkers?: BookmarkMarker[];
   /** Custom-field result membership — mapped onto Block.fieldId. */
   fieldId?: string;
+  /** Set when this paragraph holds a `TOC` field — its verbatim instrText. Lets a
+   *  headless render anchor a freshly-built TOC at this exact block (mapToModel
+   *  records the resulting block id), instead of fragile ordinal counting. */
+  tocField?: string;
 }
 
 /** One raw border edge (w:top/w:left/… inside w:tblBorders or w:tcBorders).

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.7.1] — 2026-06-16
 
+### Added
+- **Headless PDF render — `POST /render.pdf`.** Stateless backend route: a raw `.docx`
+  in, a rendered PDF out, for a producer that has no layout engine (e.g. a C# pipeline
+  that emits Word fields it can't compute). It builds the table of contents from the
+  document's headings, computes footer "Page X of Y" per page, then renders. Accepts
+  multipart (`file` + optional `toc` JSON `TocOptions`) or a raw `.docx` body. Behavior
+  is documented in
+  [TOC-RENDERING.md](./frontend/src/export/pdf/TOC-RENDERING.md). The Swagger UI now
+  exposes an **Authorize** control (integration API key via `X-API-Key`, or Bearer).
+
+### Changed
+- **Headless TOC generation now matches the source document.** The TOC builder moved
+  into `@cw/shared` (shared by the editor and the headless render), honors the `TOC`
+  field's `\o`/`\t` switches (level range, custom styles), and inherits the document's
+  own TOC paragraph style — so an emitted `TOC \o "1-5"` reproduces the source's look
+  with no per-level config. A TOC field that **already has entries is preserved** (only
+  its page numbers are recomputed by layout); only an **empty** TOC field is built from
+  the headings. Images and tables are never pulled into entries, even if mis-styled as a
+  heading.
+- `dev:online` now also launches the admin dashboard (port 5174, pinned via
+  `strictPort`) alongside the backend and editor, so you can log in and mint integration
+  tokens for the API.
+
+### Removed
+- The `POST /recalc.docx` and `POST /generate-toc.docx` backend routes, superseded by
+  `POST /render.pdf` (the deliverable is a rendered PDF, not a field-baked `.docx`). The
+  `@forevka/wordcanvas/recalc-docx`, `/generate-toc`, and `/recalc` library exports are
+  unchanged.
+
 ### Fixed
 - **Opening a second document no longer merges it with the previous one.** The layout
   engine is shared across documents and caches laid-out lines by block id; because the

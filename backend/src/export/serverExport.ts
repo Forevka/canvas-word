@@ -8,7 +8,8 @@
 
 import { runExport } from "@forevka/wordcanvas/export";
 import { installMeasureHost } from "@forevka/wordcanvas/export/measure";
-import { applyReviewOp, bakeReview, emptyReview, forEachImage, reconstruct, type BakeMode } from "@cw/shared";
+import { runImport } from "@forevka/wordcanvas/import";
+import { applyReviewOp, bakeReview, emptyReview, forEachImage, generateTocIntoDoc, reconstruct, type BakeMode, type TocOptions } from "@cw/shared";
 import type { ChangeStore } from "../store/ChangeStore";
 
 export type ExportFormat = "docx" | "pdf";
@@ -82,6 +83,29 @@ export async function exportDoc(
     const { bytes } = await runExport(doc, format, images);
     const title = await store.getDocumentTitle(docId);
     return { bytes, title };
+  } finally {
+    release();
+  }
+}
+
+/** Stateless headless render: a raw .docx in, a PDF out — the "calculate layout +
+ *  fields" path for a renderer-less producer (e.g. a C# pipeline). We import the
+ *  bytes (collecting embedded media so images render), BUILD the TOC field's entries
+ *  from the document's headings styled by `tocOpts` (page numbers resolve during
+ *  layout), then render. Footer PAGE/NUMPAGES are substituted per page by the layout
+ *  engine, so "Page X of Y" is correct on every page. Nothing is stored. */
+export async function renderPdfFromDocx(bytes: Uint8Array, tocOpts: TocOptions = {}): Promise<Uint8Array> {
+  const { doc, media } = runImport(bytes, undefined, { collectMediaBytes: true });
+  // Build the TOC entries in place (no-op when the document has no TOC field).
+  const rendered = doc.tocInstruction !== undefined ? generateTocIntoDoc(doc, tocOpts).doc : doc;
+  const images: Record<string, Uint8Array> = {};
+  for (const m of media) images[m.src] = m.bytes;
+
+  await acquire();
+  try {
+    await installMeasureHost();
+    const { bytes: out } = await runExport(rendered, "pdf", images);
+    return out;
   } finally {
     release();
   }

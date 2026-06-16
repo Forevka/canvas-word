@@ -173,61 +173,17 @@ export const OPENAPI_SPEC = {
         },
       },
     },
-    "/recalc.docx": {
+    "/render.pdf": {
       post: {
-        summary: "Recalculate a .docx's TOC page numbers (stateless)",
+        summary: "Render a .docx to PDF headlessly (TOC + page numbers computed)",
+        security: [{ ApiKeyAuth: [] }, { BearerAuth: [] }],
         description:
-          "Recompute every TOC/cross-reference page number with the server's layout engine and return the " +
-          "updated .docx — no document is stored. The original file is preserved and PATCHED IN PLACE " +
-          "(only the cached PAGEREF result digits change), so the live TOC field, PAGEREF fields, and " +
-          "footer PAGE/NUMPAGES fields all stay intact and Word can still F9-refresh them. For a render " +
-          "pipeline that emits a real Word TOC field but has no layout engine to fill in real page numbers. " +
-          "Limitation: only arabic page numbers are recalculated — roman/alpha cached values are left as-is " +
-          "(reported via X-TOC-Entries-Skipped). Auth: dashboard admin token OR an integration API key " +
-          "(X-API-Key or Bearer). Body is the raw .docx bytes.",
-        requestBody: {
-          required: true,
-          content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } },
-        },
-        responses: {
-          "200": {
-            description:
-              "The updated .docx. The X-TOC-Entries-Updated response header reports how many entries changed.",
-            headers: {
-              "X-TOC-Entries-Updated": {
-                description: "number of TOC entries whose page number changed",
-                schema: { type: "integer" },
-              },
-              "X-TOC-Entries-Skipped": {
-                description: "PAGEREF entries left untouched because the cached page number was non-arabic (roman/alpha)",
-                schema: { type: "integer" },
-              },
-            },
-            content: {
-              "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
-                schema: { type: "string", format: "binary" },
-              },
-            },
-          },
-          "400": {
-            description: "The body was not a valid .docx",
-            content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
-          },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-        },
-      },
-    },
-    "/generate-toc.docx": {
-      post: {
-        summary: "Generate a TOC field's result (headless, drift-free)",
-        description:
-          "For a .docx that contains a Word `TOC` field with an empty/placeholder result: detect the " +
-          "document's headings, compute their real pages with the server's layout engine, and splice the " +
-          "generated entries (styled, with live PAGEREF page numbers + hyperlinks) into the field's result " +
-          "region IN PLACE — the rest of the file is byte-preserved, so there is no pagination drift. " +
-          "Honors the field instruction's \\o/\\u/\\t/\\h/\\n/\\p switches. All entry styling is overridable " +
-          "via the `toc` part (see TocOptions in @cw/shared). Heading bookmarks are reused when present or " +
-          "synthesized. Auth: dashboard admin token OR an integration API key (X-API-Key or Bearer).",
+          "Render a raw .docx to PDF with the server's layout engine — the path for a renderer-less producer " +
+          "(e.g. a C# pipeline that emits .docx but cannot compute layout). The engine BUILDS the TOC field's " +
+          "entries from the document's headings (styled by the optional `toc` part — see TocOptions in " +
+          "@cw/shared) and auto-computes footer PAGE/NUMPAGES per page, so the TOC and \"Page X of Y\" are " +
+          "correct on every page. No document is stored. Auth: dashboard admin token OR an integration API " +
+          "key (X-API-Key or Bearer). Accepts multipart (file + optional toc) OR a raw .docx body.",
         requestBody: {
           required: true,
           content: {
@@ -236,7 +192,7 @@ export const OPENAPI_SPEC = {
                 type: "object",
                 properties: {
                   file: { type: "string", format: "binary", description: "the .docx" },
-                  toc: { type: "string", description: "optional JSON TocOptions (title/levels/leader/…)" },
+                  toc: { type: "string", description: "optional JSON TocOptions (title/levels/leader/…) styling the built TOC" },
                 },
                 required: ["file"],
               },
@@ -248,20 +204,11 @@ export const OPENAPI_SPEC = {
         },
         responses: {
           "200": {
-            description: "The patched .docx. Response headers report what was generated.",
-            headers: {
-              "X-TOC-Entries-Generated": { description: "entries written into the field result", schema: { type: "integer" } },
-              "X-Headings-Found": { description: "headings detected in the document", schema: { type: "integer" } },
-              "X-Bookmarks-Synthesized": { description: "heading bookmarks created (those that had none)", schema: { type: "integer" } },
-            },
-            content: {
-              "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
-                schema: { type: "string", format: "binary" },
-              },
-            },
+            description: "The rendered PDF.",
+            content: { "application/pdf": { schema: { type: "string", format: "binary" } } },
           },
           "400": {
-            description: "Missing docx or invalid toc JSON",
+            description: "Missing docx, invalid toc JSON, or not a valid .docx",
             content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
           },
           "401": { $ref: "#/components/responses/Unauthorized" },
@@ -294,6 +241,19 @@ export const OPENAPI_SPEC = {
     },
   },
   components: {
+    securitySchemes: {
+      ApiKeyAuth: {
+        type: "apiKey",
+        in: "header",
+        name: "X-API-Key",
+        description: "Integration API key. Mint one via POST /admin/tokens (admin-only). Click Authorize and paste it.",
+      },
+      BearerAuth: {
+        type: "http",
+        scheme: "bearer",
+        description: "An admin token (from POST /admin/login) OR an integration API key, sent as `Authorization: Bearer <token>`.",
+      },
+    },
     parameters: {
       DocId: { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
       MediaHash: { name: "hash", in: "path", required: true, schema: { type: "string" }, description: "sha256 hex of the bytes" },
