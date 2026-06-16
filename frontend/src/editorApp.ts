@@ -10,6 +10,7 @@ import { stressDoc } from "./model/stressDoc";
 import { importDocx, type ImportResult, type ImportPhase } from "./import/docx/importDocx";
 import { exportDocument, type ExportFormat } from "./export/exportDocument";
 import { loadEditorFonts } from "./export/shared/editorFonts";
+import { fontsProgress } from "./app/loadProgress";
 import { TOOLBAR_FONTS } from "./fonts/clones";
 import type { EditorHandle, WordCanvasRuntime } from "./app/runtime";
 import { buildShell } from "./app/shell";
@@ -82,7 +83,7 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
   // font strings the paint layer draws with, so a late font swap would desync them.
   // The editor renders the bundled metric clones (Calibri→Carlito, …) so layout
   // matches the PDF/DOCX exporters exactly, with no dependency on system fonts.
-  await loadEditorFonts();
+  await loadEditorFonts((loaded, total) => runtime.onLoadProgress?.(fontsProgress(loaded, total)));
   await document.fonts.ready;
 
   // Give this editor session a unique siteId so every block/cell id it mints is
@@ -2514,6 +2515,7 @@ const handle: EditorHandle = {
     shell.root.remove();
   },
 };
+runtime.onLoadProgress?.({ phase: "ready", percent: 1, loaded: 0, total: 0 });
 runtime.onReady?.(handle);
 runtime.onEvent?.({ type: "ready" });
 

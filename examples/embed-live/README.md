@@ -30,7 +30,10 @@ to join the same document and see live collaboration + presence.
 ## What to look at
 
 - `src/main.ts` — `import { WordCanvas } from "@forevka/wordcanvas"`, mount with
-  `backendUrl` + `user`, join via `?collab`.
+  `backendUrl` + `user`, join via `?collab`. It also wires **`onLoadProgress`** to a
+  `#loader` overlay (typed via the exported `LoadProgress`): the callback reports an
+  overall `percent` (0..1) across the cold-load of the editor chunk + bundled fonts,
+  so the bar fills and the overlay fades out on `phase: "ready"`.
 - `src/identity.ts` — a demo-only identity prompt. The package ships none on
   purpose: a real embedder passes `user` directly (it owns auth).
 - `vite.config.ts` — minimal; `optimizeDeps.exclude` serves the pre-built,

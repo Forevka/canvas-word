@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Copy a rectangular table-cell selection.** Selecting whole cells and copying now
   writes an HTML `<table>` (preserving `colspan`/`rowspan`) alongside tab-separated
   plain text, so it pastes faithfully into Word / Google Docs and into spreadsheets.
+- **First-load progress callback.** New optional `onLoadProgress` option (and exported
+  `LoadProgress` type) reports cold-load progress so embedders can show a loader while
+  the big chunks stream: the editor JS chunk download (`phase: "bundle"`) and the
+  bundled ~9 MB font fetch (`phase: "fonts"`, a smooth size-weighted bar), finishing
+  with `phase: "ready"`. `percent` is an overall 0..1 monotonic value to drive a
+  progress bar. Wired into the bundled examples and the root demo page.
 
 ### Fixed
 - **Table cell text no longer overflows its column.** Cell paragraphs wrap at the

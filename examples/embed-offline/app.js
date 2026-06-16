@@ -3,8 +3,25 @@
 // import, one container, one `new`.
 import { WordCanvas } from "@forevka/wordcanvas";
 
+// First-load loading bar. On a cold load the editor JS chunk and the bundled
+// fonts (~9 MB) stream before the editor is interactive; `onLoadProgress` lets us
+// show progress instead of a blank container. See the #loader markup in index.html.
+const loader = document.getElementById("loader");
+const bar = loader.querySelector(".bar");
+const label = loader.querySelector(".label");
+const PHASE_LABEL = { bundle: "Loading editor…", fonts: "Loading fonts…", ready: "Ready" };
+
 const editor = new WordCanvas({
   container: document.getElementById("editor"),
+  // Drive the loading bar. `percent` is an overall 0..1 across the whole startup
+  // (bundle download → font fetch → ready), so it maps straight onto a bar width.
+  // `phase` is a coarse stage label; `loaded`/`total` are byte counts for the
+  // measurable (fonts) phase if you want to show "3.2 / 9.1 MB".
+  onLoadProgress: ({ phase, percent }) => {
+    bar.style.width = `${Math.round(percent * 100)}%`;
+    label.textContent = PHASE_LABEL[phase];
+    if (phase === "ready") loader.classList.add("done"); // CSS fades it out
+  },
   // Expose the editor to AI agents over WebMCP (the standard navigator.modelContext
   // API). This is exactly the local-debugging workflow: open a document a user
   // reported as "rendering weirdly", then connect an agent (WebMCP browser

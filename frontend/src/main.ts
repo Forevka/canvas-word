@@ -3,7 +3,24 @@
 // embedders instead do `new WordCanvas({ container, backendUrl })` themselves.
 
 import { showIdentityPopup } from "./app/identityPopup";
-import { WordCanvas } from "./wordcanvas";
+import { WordCanvas, type LoadProgress } from "./wordcanvas";
+
+// First-load loading bar. On a cold load the editor JS chunk and the bundled
+// fonts (~9 MB) stream before the editor is interactive; `onLoadProgress` drives
+// the #loader overlay (see index.html) so the page shows motion, not a blank box.
+const loader = document.getElementById("loader");
+const bar = loader?.querySelector<HTMLElement>(".bar");
+const label = loader?.querySelector<HTMLElement>(".label");
+const PHASE_LABEL: Record<LoadProgress["phase"], string> = {
+  bundle: "Loading editor…",
+  fonts: "Loading fonts…",
+  ready: "Ready",
+};
+const onLoadProgress = ({ phase, percent }: LoadProgress): void => {
+  if (bar) bar.style.width = `${Math.round(percent * 100)}%`;
+  if (label) label.textContent = PHASE_LABEL[phase];
+  if (phase === "ready") loader?.classList.add("done"); // CSS fades it out
+};
 
 const params = new URLSearchParams(location.search);
 // `?backend=` wins; otherwise fall back to VITE_BACKEND (set by `npm run
@@ -33,6 +50,7 @@ const editor = new WordCanvas({
   ...(collab ? { collabId: collab } : {}),
   ...(user ? { user } : {}),
   knownUsers,
+  onLoadProgress,
 });
 
 // Expose for in-browser verification (Playwright).

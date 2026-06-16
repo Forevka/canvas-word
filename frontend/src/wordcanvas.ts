@@ -12,8 +12,9 @@
 import type { AgentToolsOptions, EditMode, EditorHandle, FieldResolver, Participant, WordCanvasEvent, WordCanvasRuntime } from "./app/runtime";
 import type { FieldResolveRequest, FieldResult } from "./index";
 import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
+import { BUNDLE_SHARE, type LoadProgress } from "./app/loadProgress";
 
-export type { Document, UserInfo, Participant, EditMode, ReviewLayer, Fragment, FieldResolver, FieldResolveRequest, FieldResult, AgentToolsOptions };
+export type { Document, UserInfo, Participant, EditMode, ReviewLayer, Fragment, FieldResolver, FieldResolveRequest, FieldResult, AgentToolsOptions, LoadProgress };
 
 export interface WordCanvasOptions {
   /** Element to mount the editor into. */
@@ -57,6 +58,12 @@ export interface WordCanvasOptions {
    *  don't opt in. Connect an agent via the WebMCP browser extension / Chrome
    *  DevTools MCP. */
   agentTools?: boolean | AgentToolsOptions;
+  /** Track first-load progress so you can show a loader while the big chunks
+   *  stream. Fires for the editor JS chunk download (`phase: "bundle"`,
+   *  indeterminate) and the bundled font fetch (`phase: "fonts"`, the dominant
+   *  ~9 MB cost — a smooth, size-weighted bar), then once at `phase: "ready"`
+   *  with `percent: 1`. Read `percent` (0..1, monotonic) to drive a progress bar. */
+  onLoadProgress?: (progress: LoadProgress) => void;
 }
 
 /** Event name → payload, for `on(...)`. */
@@ -95,6 +102,7 @@ export class WordCanvas {
         knownUsers: opts.knownUsers,
         resolveField: opts.resolveField,
         agentTools: opts.agentTools,
+        onLoadProgress: opts.onLoadProgress,
         onReady: (h) => {
           this.handle = h;
           resolve(h);
@@ -104,7 +112,14 @@ export class WordCanvas {
       // Lazy-load the editor chunk, then mount this instance. Each call mounts an
       // independent editor (the chunk's module-eval cost is shared, the mount is
       // per-instance), so multiple WordCanvas instances coexist on one page.
-      void import("./editorApp").then((m) => m.mountEditorApp(runtime));
+      // Bracket the chunk download for the loading bar: a dynamic import() can't
+      // be byte-measured, so report 0 here and snap to BUNDLE_SHARE on resolve;
+      // mountEditorApp then drives the measurable fonts → ready progress.
+      opts.onLoadProgress?.({ phase: "bundle", percent: 0, loaded: 0, total: 0 });
+      void import("./editorApp").then((m) => {
+        opts.onLoadProgress?.({ phase: "bundle", percent: BUNDLE_SHARE, loaded: 0, total: 0 });
+        return m.mountEditorApp(runtime);
+      });
     });
   }
 

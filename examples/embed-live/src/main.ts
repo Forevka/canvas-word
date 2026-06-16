@@ -3,8 +3,25 @@
 // integrator would: import the class, mount it into a sized container, and pass a
 // backend URL plus a user identity.
 
-import { WordCanvas } from "@forevka/wordcanvas";
+import { WordCanvas, type LoadProgress } from "@forevka/wordcanvas";
 import { promptIdentity } from "./identity";
+
+// First-load loading bar. On a cold load the editor JS chunk and the bundled
+// fonts (~9 MB) stream before the editor is interactive; `onLoadProgress` lets us
+// show progress instead of a blank container. See the #loader markup in index.html.
+const loader = document.getElementById("loader")!;
+const bar = loader.querySelector<HTMLElement>(".bar")!;
+const label = loader.querySelector<HTMLElement>(".label")!;
+const PHASE_LABEL: Record<LoadProgress["phase"], string> = {
+  bundle: "Loading editor…",
+  fonts: "Loading fonts…",
+  ready: "Ready",
+};
+const onLoadProgress = ({ phase, percent }: LoadProgress): void => {
+  bar.style.width = `${Math.round(percent * 100)}%`;
+  label.textContent = PHASE_LABEL[phase];
+  if (phase === "ready") loader.classList.add("done"); // CSS fades it out
+};
 
 // Point this at your backend. In dev we hit the local docker-compose backend
 // directly; a production deploy behind one origin (Caddy) can derive it from the
@@ -22,6 +39,7 @@ const editor = new WordCanvas({
   container: document.getElementById("editor")!,
   backendUrl: BACKEND_URL,
   user,
+  onLoadProgress,
   // Expose this (online/collab) document to AI agents over WebMCP — the
   // "connect an agent as reviewer/editor to a live document" workflow. Connect via
   // the WebMCP browser extension / Chrome DevTools MCP, then have the agent read,

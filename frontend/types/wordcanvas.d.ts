@@ -48,6 +48,26 @@ export interface WordCanvasOptions {
    *  embedders that don't opt in. Connect an agent via the WebMCP browser
    *  extension / Chrome DevTools MCP. */
   agentTools?: boolean | AgentToolsOptions;
+  /** Track first-load progress so you can show a loader while the big chunks
+   *  stream. Fires for the editor JS chunk download (`phase: "bundle"`,
+   *  indeterminate) and the bundled font fetch (`phase: "fonts"`, the dominant
+   *  ~9 MB cost — a smooth, size-weighted bar), then once at `phase: "ready"`
+   *  with `percent: 1`. Read `percent` (0..1, monotonic) to drive a progress bar. */
+  onLoadProgress?: (progress: LoadProgress) => void;
+}
+
+/** First-load progress (see WordCanvasOptions.onLoadProgress). */
+export interface LoadProgress {
+  /** Coarse stage: "bundle" = downloading the editor JS chunk (indeterminate —
+   *  a dynamic import can't be byte-measured); "fonts" = fetching the bundled
+   *  fonts (measurable); "ready" = mount complete. */
+  phase: "bundle" | "fonts" | "ready";
+  /** Overall startup progress, 0..1, monotonic. Drive a progress bar with this. */
+  percent: number;
+  /** Bytes fetched / total for the current measurable phase (fonts). Both 0 when
+   *  the phase is indeterminate (bundle). Informational. */
+  loaded: number;
+  total: number;
 }
 
 /** Opt-in WebMCP agent tooling (see WordCanvasOptions.agentTools). */

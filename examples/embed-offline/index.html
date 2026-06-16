@@ -16,6 +16,45 @@
         position: fixed;
         inset: 0;
       }
+
+      /* First-load overlay. The editor JS chunk + ~9 MB of bundled fonts take a
+         moment to stream on a cold load; `onLoadProgress` (see app.js) drives this
+         bar so the user sees motion instead of a blank box. Hidden on "ready". */
+      #loader {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: #fafafa;
+        font: 14px/1.4 system-ui, sans-serif;
+        color: #444;
+        transition: opacity 0.3s ease;
+      }
+      #loader.done {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #loader .track {
+        width: 280px;
+        height: 6px;
+        border-radius: 3px;
+        background: #e4e4e4;
+        overflow: hidden;
+      }
+      #loader .bar {
+        height: 100%;
+        width: 0;
+        border-radius: 3px;
+        background: #2563eb;
+        transition: width 0.15s ease;
+      }
+      #loader .label {
+        font-variant-numeric: tabular-nums;
+      }
     </style>
 
     <!--
@@ -33,6 +72,10 @@
     </script>
   </head>
   <body>
+    <div id="loader">
+      <div class="label">Loading editor…</div>
+      <div class="track"><div class="bar"></div></div>
+    </div>
     <div id="editor"></div>
     <script type="module" src="./app.js"></script>
   </body>

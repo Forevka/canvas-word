@@ -19,8 +19,15 @@ static server).
 
 ## What to look at
 
-- `index.html` — the import map mapping `@forevka/wordcanvas` to the built bundle.
+- `index.html` — the import map mapping `@forevka/wordcanvas` to the built bundle,
+  plus a `#loader` overlay (a label + a progress bar).
 - `app.js` — `import { WordCanvas } from "@forevka/wordcanvas"; new WordCanvas({ container })`.
+- `app.js` also wires **`onLoadProgress`** to drive that overlay. On a cold load the
+  editor JS chunk and the bundled fonts (~9 MB) stream before the editor is
+  interactive; the callback reports an overall `percent` (0..1, monotonic) plus a
+  coarse `phase` (`"bundle"` → `"fonts"` → `"ready"`), so the bar fills smoothly and
+  the overlay fades out on `"ready"`. To see it on a slow connection, hard-reload
+  with DevTools → Network throttled to *Slow 3G* and *Disable cache* checked.
 - `app.js` also wires a **`resolveField`** callback. Open a `.docx` containing a
   developer-defined field — a paragraph whose `w:instrText` is something like
   ` MYCHART "sales-2026" ` — then right-click it and choose **Update Field

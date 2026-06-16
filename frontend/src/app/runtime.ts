@@ -5,6 +5,7 @@
 
 import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
 import type { EditMode, FieldResolver } from "../index";
+import type { LoadProgress } from "./loadProgress";
 
 export type { EditMode, FieldResolver };
 
@@ -88,6 +89,9 @@ export interface WordCanvasRuntime {
   knownUsers?: UserInfo[] | undefined;
   /** Called once the editor is mounted and ready. */
   onReady?: ((handle: EditorHandle) => void) | undefined;
+  /** First-load progress sink (JS-chunk download + font fetch). Lets the embedder
+   *  drive a loading bar; fires until `phase: "ready"` at `percent: 1`. */
+  onLoadProgress?: ((p: LoadProgress) => void) | undefined;
   /** Sink for collaboration events (presence, share, ready) → WordCanvas.on(...). */
   onEvent?: ((ev: WordCanvasEvent) => void) | undefined;
   /** Resolve a custom field's content from the host backend. When set, right-
