@@ -8,7 +8,8 @@ multi-user collaboration with presence.
 The published bundle is **self-contained**: it has **zero runtime dependencies**
 (the layout engine, font tooling, and DOCX/PDF pipelines are all inlined and
 code-split). You can drop it onto a page with a plain `<script type="module">` or
-import it from any bundler.
+import it from any bundler. The same package also runs **headless on Node** for
+server-side `.docx`/`.pdf` generation — see [Server-side (Node)](#server-side-node).
 
 ## How it compares
 
@@ -149,6 +150,52 @@ ribbon or ruler; the find bar drops Replace) and **every mutation is a no-op** �
 typing, paste, undo/redo, drag-resize, and the programmatic editing paths all
 short-circuit. In an online session a read-only client still joins the
 collaboration and receives live remote edits; it just can't author them.
+
+## Server-side (Node)
+
+The same package runs **headless on Node** — build or import a document, then
+export it to `.docx`/`.pdf` with no browser and no DOM. This is the same pipeline
+the editor uses, so a server-rendered file paginates identically to the on-screen
+document. The pipeline subpaths are isomorphic via [conditional exports](https://nodejs.org/api/packages.html#conditional-exports):
+the `node` condition resolves a self-contained Node build (bundled clone fonts +
+PDF engine, still zero runtime dependencies), and a browser bundler gets the
+browser build automatically — the same `import` works in both.
+
+Compose a document with the fluent [builder](../BUILDER.md), install the
+measurement host once (it loads the bundled fonts), then export:
+
+```ts
+import { writeFile } from "node:fs/promises";
+import { DocumentBuilder } from "@forevka/wordcanvas/builder";
+import { installMeasureHost } from "@forevka/wordcanvas/export/measure";
+import { runExport } from "@forevka/wordcanvas/export";
+
+const doc = DocumentBuilder.create()
+  .paragraph("Quarterly report").withStyle("Heading1")
+  .paragraph("Generated on the server — no browser, no DOM.")
+  .build();
+
+await installMeasureHost();                    // once per process, before exporting
+const { bytes } = await runExport(doc, "pdf"); // or "docx"
+await writeFile("report.pdf", bytes);
+```
+
+Parse an uploaded `.docx` back into the editable model:
+
+```ts
+import { runImport } from "@forevka/wordcanvas/import";
+
+const { doc, warnings } = runImport(new Uint8Array(uploadedBytes));
+```
+
+| Subpath                              | Purpose                                                        |
+| ------------------------------------ | ------------------------------------------------------------- |
+| `@forevka/wordcanvas/builder`        | Fluent, programmatic document composer (see [BUILDER.md](../BUILDER.md)). |
+| `@forevka/wordcanvas/import`         | `.docx` → document model.                                     |
+| `@forevka/wordcanvas/export`         | Document model → `.docx`/`.pdf` bytes.                        |
+| `@forevka/wordcanvas/export/measure` | Install the headless font/measurement host (await once first). |
+| `@forevka/wordcanvas/recalc-docx`    | Patch a `.docx`'s cached TOC page numbers in place.           |
+| `@forevka/wordcanvas/generate-toc`   | Generate a Word TOC field result headless.                   |
 
 ## Notes & limitations
 
