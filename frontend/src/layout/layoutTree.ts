@@ -50,6 +50,11 @@ export interface PlacedTableCell {
   y: number;
   width: number;
   height: number;
+  /** Grid origin of this (possibly merged) cell — its top row and left column in
+   *  the table grid. Hit-testing returns these so a drag stays anchored to one
+   *  merged cell instead of flipping columns/rows across its colSpan/rowSpan. */
+  originRow: number;
+  originCol: number;
   /** Cell paragraphs as regular PlacedBlocks — geometry indexes them, so
    *  click/caret/selection/typing work inside cells with zero special cases. */
   blocks: PlacedBlock[];

@@ -520,10 +520,11 @@ export function hitTestColumnBoundary(
   return null;
 }
 
-/** A point's table cell, in GRID coordinates (body tables only). Grid row is the
- *  table chunk's first row index (PlacedBlock.firstLineIndex) plus the local row
- *  band containing y; grid column comes from the cumulative colWidths, so merged
- *  cells and rowSpan holes don't distort it. */
+/** A point's table cell, in GRID coordinates (body tables only). Returns the
+ *  ORIGIN (top-left grid slot) of the merged cell the point lands in, so a point
+ *  anywhere inside a colSpan/rowSpan cell maps to one stable coordinate — a drag
+ *  across a spanning cell (e.g. a full-width header) stays in that single cell
+ *  instead of flipping columns and tripping a false cross-cell selection. */
 export interface CellHit {
   tableId: string;
   row: number;
@@ -537,27 +538,16 @@ export function hitTestCell(tree: LayoutTree, pageIndex: number, x: number, y: n
     const t = block.table;
     if (!t) continue;
     if (x < t.x || x > t.x + t.width || y < t.y || y > t.y + t.height) continue;
-    // Local row band (placed rows are grid rows; this chunk starts at firstLineIndex).
-    let localRow = t.rows.length - 1;
-    for (let i = 0; i < t.rows.length; i++) {
-      const r = t.rows[i]!;
-      if (y < r.y + r.height) {
-        localRow = i;
-        break;
+    // Placed cell boxes tile the table (a merged cell covers its whole
+    // rectangle, including rowSpan holes), so the box containing the point is
+    // the merged cell itself — its origin is the stable grid coordinate.
+    for (const row of t.rows) {
+      for (const cell of row.cells) {
+        if (x >= cell.x && x < cell.x + cell.width && y >= cell.y && y < cell.y + cell.height) {
+          return { tableId: block.blockId, row: cell.originRow, col: cell.originCol };
+        }
       }
     }
-    const row = block.firstLineIndex + localRow;
-    // Column band from cumulative widths.
-    let col = t.colWidths.length - 1;
-    let edge = t.x;
-    for (let i = 0; i < t.colWidths.length; i++) {
-      if (x < edge + t.colWidths[i]!) {
-        col = i;
-        break;
-      }
-      edge += t.colWidths[i]!;
-    }
-    return { tableId: block.blockId, row, col };
   }
   return null;
 }

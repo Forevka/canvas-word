@@ -1810,6 +1810,8 @@ function placeTable(
         y: ry,
         width: mc.width,
         height: cellHeight,
+        originRow: firstRowIndex + lr,
+        originCol: mc.colStart,
         blocks,
         ...(mc.cell.shading !== undefined ? { shading: mc.cell.shading } : {}),
         ...(mc.cell.borders !== undefined ? { borders: mc.cell.borders } : {}),

@@ -50,6 +50,32 @@ describe("hitTestCell", () => {
     expect(hitTestCell(tree, page, pb.table!.x - 20, pb.table!.y - 20)).toBeNull();
   });
 
+  it("maps every x across a colSpan cell to the same origin (no false column flip)", () => {
+    // A full-width title cell spanning all 3 columns, then a normal row. Dragging
+    // horizontally across the title must report ONE stable (row,col) — otherwise
+    // the cursor crossing an internal column boundary trips a false cross-cell
+    // selection and Ctrl+C copies only a partial range.
+    const t = table([
+      [cell("Sales Comparable Adjustment Summary", { colSpan: 3 })],
+      [cell("a"), cell("b"), cell("c")],
+    ]);
+    const tree = layout(doc([t]));
+    const { page, pb } = placedTable(tree, "tbl");
+    const pt = pb.table!;
+    const titleRow = pt.rows[0]!;
+    const y = titleRow.y + titleRow.height / 2;
+    // Sample across the full width of the spanning cell.
+    for (let frac = 0.05; frac < 1; frac += 0.1) {
+      const x = pt.x + pt.width * frac;
+      expect(hitTestCell(tree, page, x, y)).toEqual({ tableId: "tbl", row: 0, col: 0 });
+    }
+    // The normal row below still maps each column distinctly.
+    const r1 = pt.rows[1]!;
+    const midY = r1.y + r1.height / 2;
+    expect(hitTestCell(tree, page, pt.x + pt.colWidths[1]! / 2, midY)!.col).toBe(0);
+    expect(hitTestCell(tree, page, pt.x + pt.colWidths[0]! + pt.colWidths[1]! / 2, midY)!.col).toBe(1);
+  });
+
   it("maps a rowSpan column past the merge hole", () => {
     // row0: [A(rowSpan2), B] ; row1: [C at grid col 1]
     const t = table([[cell("A", { rowSpan: 2 }), cell("B")], [cell("C")]]);
