@@ -36,9 +36,25 @@ export function decorate(review: ReviewLayer, tree: LayoutTree, scope?: GeoScope
     }
   };
 
+  // A structural record has no text range — mark its whole block with a coarse
+  // change-bar spanning the placed block's vertical extent on its page.
+  const addStructuralBar = (blockId: string, color: string): void => {
+    for (const page of tree.pages) {
+      const b = page.blocks.find((pb) => pb.blockId === blockId);
+      if (!b) continue;
+      const height = b.table ? b.table.height : b.lines.reduce((h, l) => Math.max(h, l.y + l.height), 0);
+      changeBars.push({ pageIndex: page.index, x: page.marginPx.left - 9, y: b.y, width: 2.5, height: Math.max(height, 6), color });
+      return;
+    }
+  };
+
   for (const s of review.suggestions) {
-    if (collapsed(s.anchor.start, s.anchor.end)) continue;
     const color = colorForId(s.author.id);
+    if (s.kind === "structural") {
+      if (s.structural) addStructuralBar(s.structural.blockId, color);
+      continue;
+    }
+    if (collapsed(s.anchor.start, s.anchor.end)) continue;
     const rects = selectionRects(tree, { anchor: s.anchor.start, focus: s.anchor.end }, scope);
     if (rects.length === 0) continue;
     const boxes = rects.map((r) => ({ ...r, color }));

@@ -6,6 +6,8 @@
 // whose text was removed.
 
 import type { DocPosition } from "../model/position";
+import type { Document } from "../model/document";
+import { blockExists } from "../model/text";
 import type { ReviewAnchor, ReviewLayer } from "./model";
 import { isCollapsedAnchor } from "./model";
 
@@ -39,7 +41,22 @@ export function mapReviewAnchorsAll(layer: ReviewLayer, mappers: readonly MapPos
  *  anchor is a legitimate point comment (and removeBlock maps it to a neighbor,
  *  same as bookmarks), so comments survive. */
 export function gcReviewLayer(layer: ReviewLayer): ReviewLayer {
-  const suggestions = layer.suggestions.filter((s) => !isCollapsedAnchor(s.anchor));
+  // structural records carry no text range — their anchor is a degenerate point
+  // on a block, so a collapsed anchor is NORMAL for them, not death. They are
+  // GC'd by block existence instead (gcStructuralReviewLayer), so skip them here.
+  const suggestions = layer.suggestions.filter((s) => s.kind === "structural" || !isCollapsedAnchor(s.anchor));
+  if (suggestions.length === layer.suggestions.length) return layer;
+  return { ...layer, suggestions };
+}
+
+/** Drop structural records whose anchored block no longer exists in the doc
+ *  (e.g. a paste's inserted block was rejected/removed, killing the record).
+ *  Keyed on whole-block identity, not a text offset, so it needs the live doc —
+ *  the runtime runs it after applying core ops, next to gcReviewLayer. */
+export function gcStructuralReviewLayer(layer: ReviewLayer, doc: Document): ReviewLayer {
+  const suggestions = layer.suggestions.filter(
+    (s) => s.kind !== "structural" || !s.structural || blockExists(doc, s.structural.blockId),
+  );
   if (suggestions.length === layer.suggestions.length) return layer;
   return { ...layer, suggestions };
 }

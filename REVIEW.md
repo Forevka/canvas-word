@@ -239,9 +239,28 @@ Per-op rewrite rules:
     `addSuggestion{delete}` over them. Caret moves to the range start; text stays.
 - **setParaStyle / char-style (setRuns over a range)** → applied; emit
   `addSuggestion{format, patch, inverse}`.
-- **splitParagraph / mergeParagraphs / insertBlock / removeBlock / table\*** →
-  V1: applied unchanged and attributed coarsely (author + timestamp on the
-  block), with accept/reject limited; **structural suggestions are V2** (§8).
+- **splitParagraph / mergeParagraphs / insertBlock / removeBlock /
+  insert·removeTableRow / insert·removeTableColumn** → applied unchanged (the doc
+  stays live) and emit `addSuggestion{structural, structural:{op, inverse,
+  blockId}}`. The op's exact inverse is harvested from `applyOp` at intercept
+  time. Accept drops the record (already applied); reject re-applies the stored
+  inverse. The record hangs on `blockId` (the created/merged/removed block, or
+  the host table) and is GC'd when that block no longer exists. Paint marks it
+  with a block-level change-bar (there is no text range to highlight).
+
+**Multi-op transactions (paste, cross-paragraph delete)** are decomposed: each op
+is routed through the SAME per-op logic against a *running* doc + review, so a
+multi-block paste applies its structure + text to core and emits an `insert` +
+`structural` record covering all pasted content, and a cross-paragraph delete
+becomes a set of tracked delete + structural (merge) records. All records from
+one transaction share a `groupId` so the whole action accepts/rejects as a unit.
+Coordinate drift is handled exactly as the commit pipeline does: ops within a
+transaction apply in sequence, and each already-emitted record's anchor is
+rebased forward through the later ops' position-mappers (a record is never
+rebased through the op that created it — its anchor is already in that op's
+post-coordinates). `acceptAll`/`rejectAll` resolve against a running doc too, so a
+structural reject that re-merges/re-inserts whole blocks composes with the text
+rejects whose anchors live on them.
 
 The runtime applies `core` through the normal `commit` path (so it is undoable,
 recorded, and synced exactly as today) and applies `reviewOps` to the sidecar +
@@ -413,17 +432,23 @@ verbatim.
 
 ## 8. Scope & honest hard cases
 
-**V1 (this spec):** text insertions, text deletions, character/paragraph format
-changes, threaded comments (open/resolve), accept/reject (one + all), author
-attribution + colors, live collab of both channels, paint decorations, separate
-persistence, default-bake export.
+- **Structural suggestions** — tracked paragraph split/merge, block add/remove,
+  and table row/column add/remove. A `structural` record carries the applied
+  `op` + its exact `inverse` (harvested from `applyOp` at intercept time) + the
+  `blockId` it hangs on; accept drops the record, reject re-applies the inverse.
+  The record is block-keyed (its degenerate point anchor still rides
+  `mapPosition`) and GC'd by block existence (`gcStructuralReviewLayer`) rather
+  than by anchor collapse. `acceptAll`/`rejectAll` resolve structural records
+  newest-first (reverse application order — a paste's split then insert unwinds
+  correctly) before the positionally-folded text records, against a running doc
+  so structural and text rejects compose. See §5.2.
+- **Tracked paste & cross-paragraph delete** — multi-op transactions are
+  decomposed per-op through the same tracked/structural logic and bundled under
+  one `groupId`. A multi-block paste emits insert + structural records for all
+  pasted content; a cross-paragraph delete becomes tracked delete + merge
+  records. Reject reverses the whole action. See §5.2.
 
 **Deferred / called out:**
-- **Structural suggestions** (tracked paragraph split/merge, block & table-row
-  add/remove). Sketch: a `structural` record keyed by `blockId` rather than a
-  text range; accept/reject maps to `insertBlock`/`removeBlock`/`split`/`merge`
-  inverses. Split/merge anchors are fragile under concurrent edits — needs its
-  own rebase rules; **V2**.
 - **Overlapping suggestions** (a delete inside an insert; a format over a
   delete). V1 precedence: an insertion fully inside a deletion is hard-removed on
   accept-delete; a format over deleted text is dropped when the deletion is

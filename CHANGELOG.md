@@ -5,6 +5,26 @@ All notable changes to **`@forevka/wordcanvas`** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Tracked structural edits (suggestion mode).** Paragraph split/merge, block
+  add/remove, and table row/column add/remove are now recorded as **structural
+  suggestions** instead of passing through untracked. The edit still applies to
+  the live document; a `structural` record carries the applied op plus its exact
+  inverse, so **reject** restores the original structure (re-merge a split,
+  re-insert a removed block, etc.) and **accept** simply clears the record.
+  Structural records show a block-level change-bar in the margin and are
+  garbage-collected when their block no longer exists. `Accept all` / `Reject
+  all` order structural records correctly relative to text changes.
+- **Tracked paste & cross-paragraph delete (suggestion mode).** Multi-operation
+  edits — a multi-block paste, or a deletion spanning paragraphs — are no longer
+  passed through untracked. They are decomposed into their constituent text and
+  structural changes, each tracked as a suggestion, and bundled under one group
+  so the whole action accepts or rejects as a single unit. Rejecting a pasted
+  block removes its text and reverses the paragraph splits; rejecting a
+  cross-paragraph delete restores both the text and the paragraph break.
+
 ## [0.7.1] — 2026-06-16
 
 ### Added
