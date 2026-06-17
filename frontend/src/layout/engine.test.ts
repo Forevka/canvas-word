@@ -772,6 +772,54 @@ describe("engine — behind-text anchored images", () => {
     expect(tree.pages[0]!.blocks.map((bl) => bl.blockId)).toEqual([a.id, t.id, b.id]);
   });
 
+  // --- anchored images INSIDE table cells ---------------------------------
+
+  const cellBehindImage = (): ImageBlock => ({
+    ...image(120, 120),
+    anchor: { behind: true, offsetXPx: 5, offsetYPx: 7, relFromH: "column", relFromV: "paragraph" },
+  });
+
+  it("carries the behind flag and lifts a cell anchored image into the cell's behind layer", () => {
+    const bg = cellBehindImage();
+    const txt = para("over the image");
+    const t: TableBlock = { ...table([[cell("placeholder")]]) };
+    t.rows[0]!.cells[0]!.blocks = [bg, txt];
+    const tree = layout(doc([t]));
+    const cellBlocks = tree.pages[0]!.blocks[0]!.table!.rows[0]!.cells[0]!.blocks;
+    const imgIdx = cellBlocks.findIndex((b) => b.image?.behind);
+    const textIdx = cellBlocks.findIndex((b) => b.lines.length > 0);
+    expect(imgIdx).toBeGreaterThanOrEqual(0);
+    expect(cellBlocks[imgIdx]!.image!.behind).toBe(true);
+    expect(cellBlocks[imgIdx]!.image!.width).toBe(120); // native size, not scaled to cell
+    expect(imgIdx).toBeLessThan(textIdx); // behind layer paints before the text
+  });
+
+  it("does not consume cell height for a behind cell image (text sits at the cell top)", () => {
+    const textY = (blocks: Block[]): number => {
+      const t: TableBlock = { ...table([[cell("placeholder")]]) };
+      t.rows[0]!.cells[0]!.blocks = blocks;
+      const cellBlocks = layout(doc([t])).pages[0]!.blocks[0]!.table!.rows[0]!.cells[0]!.blocks;
+      return cellBlocks.find((b) => b.lines.length > 0)!.y;
+    };
+    // The 120px behind image must add no vertical space: the text lands at the
+    // same y whether or not the behind image precedes it.
+    expect(textY([cellBehindImage(), para("hello")])).toBe(textY([para("hello")]));
+  });
+
+  it("leaves a cell's block order untouched when it has no anchored images (no PDF drift)", () => {
+    // An ordinary image cell must keep document order and scale to the cell — the
+    // recursive z-order pass is a no-op without behind/front images in the cell.
+    const flow = image(2000, 1000); // wider than the cell → scaled down in-flow
+    const txt = para("caption");
+    const t: TableBlock = { ...table([[cell("placeholder")]]) };
+    t.rows[0]!.cells[0]!.blocks = [flow, txt];
+    const cellBlocks = layout(doc([t])).pages[0]!.blocks[0]!.table!.rows[0]!.cells[0]!.blocks;
+    expect(cellBlocks[0]!.blockId).toBe(flow.id); // unchanged order
+    expect(cellBlocks[0]!.image!.behind).toBeUndefined();
+    expect(cellBlocks[0]!.image!.width).toBeLessThan(2000); // still scaled to fit the cell
+    expect(cellBlocks[1]!.blockId).toBe(txt.id);
+  });
+
   it("makes a behind image selectable only where no text covers it", () => {
     const bg = bgImage(); // full page (0,0)–(816,1056), behind text
     const title = para("hello");

@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll } from "vitest";
-import type { Block, CharStyle, Document, Paragraph, ParaStyle } from "@cw/shared";
+import type { Block, CharStyle, Document, ImageBlock, Paragraph, ParaStyle } from "@cw/shared";
 import { defaultListDefinition } from "@cw/shared";
 import { sampleDoc } from "../../model/sampleDoc";
 import { installMeasureHost } from "../shared/measureHost";
@@ -168,5 +168,100 @@ describe("PDF export — internal navigation", () => {
     const p = para("link", { link: "https://example.com", color: "#0563c1", underline: true });
     const text = latin1((await renderPdf(docOf(p))).bytes);
     expect(text).toContain("/URI");
+  });
+});
+
+// A 1x1 opaque (no alpha) PNG, color-type 2 — pdfkit's png-js decodes it cleanly,
+// so a working image emits an XObject and never the "image-format-unsupported" warning.
+const PNG_1x1 = Uint8Array.from(
+  atob(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  ),
+  (c) => c.charCodeAt(0),
+);
+
+let iid = 0;
+const anchoredImage = (behind: boolean): ImageBlock => ({
+  kind: "image",
+  id: `img${iid++}`,
+  revision: 0,
+  src: "blob:behind",
+  widthPx: 100,
+  heightPx: 100,
+  align: "left",
+  anchor: {
+    behind,
+    offsetXPx: 10,
+    offsetYPx: 10,
+    relFromH: "page",
+    relFromV: "page",
+  },
+});
+
+describe("PDF export — anchored images", () => {
+  it("emits the behind-text image XObject for a BODY-level anchored image", async () => {
+    const img = anchoredImage(true);
+    const doc = docOf(para("Body text over the image."));
+    doc.blocks.unshift(img as unknown as Paragraph);
+    const { bytes, warnings } = await renderPdf(doc, { images: { "blob:behind": PNG_1x1 } });
+    expect(isPdf(bytes)).toBe(true);
+    expect(warnings.find((w) => w.code === "image-format-unsupported")).toBeUndefined();
+    // A successfully placed image becomes an /Image XObject in the PDF.
+    expect(latin1(bytes)).toContain("/Subtype /Image");
+  });
+
+  it("places the BODY behind image in the behind layer (before text in paint order)", async () => {
+    const { createLayoutEngine } = await import("../../layout/engine");
+    const img = anchoredImage(true);
+    const doc = docOf(para("Body text."));
+    doc.blocks.unshift(img as unknown as Paragraph);
+    const tree = createLayoutEngine().layout(doc);
+    const blocks = tree.pages[0]!.blocks;
+    const imgIdx = blocks.findIndex((b) => b.image?.behind);
+    const textIdx = blocks.findIndex((b) => b.lines.length > 0);
+    expect(imgIdx).toBeGreaterThanOrEqual(0);
+    expect(blocks[imgIdx]!.image!.behind).toBe(true);
+    // Behind layer paints first → must precede the text block in array order.
+    expect(imgIdx).toBeLessThan(textIdx);
+  });
+
+  it("emits the behind-text image XObject for a CELL anchored image", async () => {
+    const img = anchoredImage(true);
+    const table: Block = {
+      kind: "table",
+      id: "t",
+      revision: 0,
+      rows: [{ cells: [{ id: "c", blocks: [img, para("Cell text over image.")] }] }],
+    };
+    const doc: Document = {
+      section: { pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } },
+      blocks: [table],
+    };
+    const { bytes, warnings } = await renderPdf(doc, { images: { "blob:behind": PNG_1x1 } });
+    expect(isPdf(bytes)).toBe(true);
+    expect(warnings.find((w) => w.code === "image-format-unsupported")).toBeUndefined();
+    expect(latin1(bytes)).toContain("/Subtype /Image");
+  });
+
+  it("places a CELL behind image in the cell's behind layer (before text)", async () => {
+    const { createLayoutEngine } = await import("../../layout/engine");
+    const img = anchoredImage(true);
+    const table: Block = {
+      kind: "table",
+      id: "t",
+      revision: 0,
+      rows: [{ cells: [{ id: "c", blocks: [img, para("Cell text.")] }] }],
+    };
+    const doc: Document = {
+      section: { pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } },
+      blocks: [table],
+    };
+    const tree = createLayoutEngine().layout(doc);
+    const cellBlocks = tree.pages[0]!.blocks[0]!.table!.rows[0]!.cells[0]!.blocks;
+    const imgIdx = cellBlocks.findIndex((b) => b.image?.behind);
+    const textIdx = cellBlocks.findIndex((b) => b.lines.length > 0);
+    expect(imgIdx, "cell image should carry the behind flag").toBeGreaterThanOrEqual(0);
+    expect(cellBlocks[imgIdx]!.image!.behind).toBe(true);
+    expect(imgIdx).toBeLessThan(textIdx);
   });
 });
