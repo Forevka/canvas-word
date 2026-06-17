@@ -1433,16 +1433,20 @@ function layoutDocument(
 
   // Z-order: anchored images are lifted out of the flow into a behind-text or
   // in-front-of-text layer. Both the canvas renderer and the PDF painter draw
-  // page.blocks in array order, so the FINAL paint order IS this array order —
+  // blocks in array order, so the FINAL paint order IS this array order —
   // making this the single source of truth means the two renderers can never
-  // drift. Pages with no anchored images are left untouched (byte-identical
-  // output for every ordinary document — no PDF drift risk).
-  for (const pg of pages) {
-    if (!pg.blocks.some((b) => b.image?.behind || b.image?.front)) continue;
+  // drift. Block lists with no anchored images are left untouched (byte-identical
+  // output for every ordinary document — no PDF drift risk). Recurses into table
+  // cells (and nested tables) so behind/front layering works inside cells too.
+  const reorderAnchoredLayers = (blocks: PlacedBlock[]): PlacedBlock[] => {
+    for (const b of blocks) {
+      if (b.table) for (const row of b.table.rows) for (const cell of row.cells) cell.blocks = reorderAnchoredLayers(cell.blocks);
+    }
+    if (!blocks.some((b) => b.image?.behind || b.image?.front)) return blocks;
     // Stable layer partition (behind → flow/text → front); within an anchored
     // layer, higher z paints later (on top). Flow blocks keep document order.
     const layer = (b: PlacedBlock): number => (b.image?.behind ? 0 : b.image?.front ? 2 : 1);
-    pg.blocks = pg.blocks
+    return blocks
       .map((b, i) => ({ b, i }))
       .sort((p, q) => {
         const dl = layer(p.b) - layer(q.b);
@@ -1454,7 +1458,8 @@ function layoutDocument(
         return p.i - q.i; // stable within a layer / equal z
       })
       .map((x) => x.b);
-  }
+  };
+  for (const pg of pages) pg.blocks = reorderAnchoredLayers(pg.blocks);
 
   // Displayed page numbers: continue counting across sections unless a
   // section restarts the sequence (Word's "start at"). {page} tokens and the
@@ -1801,6 +1806,11 @@ function measureTable(
           return { kind: "para", block: b, lines };
         }
         if (b.kind === "image") {
+          // Anchored (behind/in-front) images are lifted out of the flow: they do
+          // NOT advance the cursor or consume cell height — exactly like a
+          // body-level anchored image. Carry the native size; placement positions
+          // them by their anchor offsets.
+          if (b.anchor) return { kind: "image", block: b, width: b.widthPx, height: b.heightPx };
           // Photo-grid cells: scale wide images down to the cell's inner width.
           const scale = Math.min(1, innerWidth / Math.max(1, b.widthPx));
           const w = b.widthPx * scale;
@@ -1893,6 +1903,30 @@ function placeTable(
           blocks.push(placedPara);
           py += totalLinesHeight(it.lines) + it.block.style.spaceAfterPx;
         } else if (it.kind === "image") {
+          const anchor = it.block.anchor;
+          if (anchor) {
+            // Anchored (behind/in-front) cell image: positioned absolutely from the
+            // cell's content origin by its offsets, carrying behind/front/z so the
+            // z-order pass can lift it into the right layer. Does NOT advance py —
+            // text flows over/under it, mirroring placeAnchoredImage at body level.
+            const placedImage: PlacedImage = {
+              src: it.block.src,
+              width: it.block.widthPx,
+              height: it.block.heightPx,
+              z: anchor.z ?? 0,
+            };
+            if (anchor.behind) placedImage.behind = true;
+            else placedImage.front = true;
+            blocks.push({
+              blockId: it.block.id,
+              x: cx + mgn.left + anchor.offsetXPx,
+              y: ry + mgn.top + anchor.offsetYPx,
+              firstLineIndex: 0,
+              lines: [],
+              image: placedImage,
+            });
+            continue;
+          }
           const innerH = cellHeight - mgn.top - mgn.bottom;
           // A lone photo in a cell taller than it fits (e.g. a rowSpan comp-photo
           // column) is filled object-fit:cover — scaled to cover the cell box,
