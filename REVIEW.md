@@ -248,6 +248,20 @@ Per-op rewrite rules:
   the host table) and is GC'd when that block no longer exists. Paint marks it
   with a block-level change-bar (there is no text range to highlight).
 
+**Multi-op transactions (paste, cross-paragraph delete)** are decomposed: each op
+is routed through the SAME per-op logic against a *running* doc + review, so a
+multi-block paste applies its structure + text to core and emits an `insert` +
+`structural` record covering all pasted content, and a cross-paragraph delete
+becomes a set of tracked delete + structural (merge) records. All records from
+one transaction share a `groupId` so the whole action accepts/rejects as a unit.
+Coordinate drift is handled exactly as the commit pipeline does: ops within a
+transaction apply in sequence, and each already-emitted record's anchor is
+rebased forward through the later ops' position-mappers (a record is never
+rebased through the op that created it — its anchor is already in that op's
+post-coordinates). `acceptAll`/`rejectAll` resolve against a running doc too, so a
+structural reject that re-merges/re-inserts whole blocks composes with the text
+rejects whose anchors live on them.
+
 The runtime applies `core` through the normal `commit` path (so it is undoable,
 recorded, and synced exactly as today) and applies `reviewOps` to the sidecar +
 broadcasts them (§5.4).
@@ -432,7 +446,13 @@ persistence, default-bake export.
   `mapPosition`) and GC'd by block existence (`gcStructuralReviewLayer`) rather
   than by anchor collapse. `acceptAll`/`rejectAll` resolve structural records
   newest-first (reverse application order — a paste's split then insert unwinds
-  correctly) before the positionally-folded text records. See §5.2.
+  correctly) before the positionally-folded text records, against a running doc
+  so structural and text rejects compose. See §5.2.
+- **Tracked paste & cross-paragraph delete** — multi-op transactions are
+  decomposed per-op through the same tracked/structural logic and bundled under
+  one `groupId`. A multi-block paste emits insert + structural records for all
+  pasted content; a cross-paragraph delete becomes tracked delete + merge
+  records. Reject reverses the whole action. See §5.2.
 
 **Deferred / called out:**
 - **Overlapping suggestions** (a delete inside an insert; a format over a

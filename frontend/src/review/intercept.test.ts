@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyOp,
+  applyReviewOps,
   applyStylePatchToRuns,
   emptyReview,
+  rejectAllSuggestions,
+  textOfRuns,
   type CharStyle,
   type Document,
+  type Op,
   type Paragraph,
   type ReviewLayer,
   type SectionProps,
@@ -158,5 +163,92 @@ describe("intercept — structural suggestions", () => {
     const r = intercept(t, emptyReview("d"), doc, alice, 100);
     expect(r.core).toBe(t);
     expect(r.reviewOps).toHaveLength(0);
+  });
+});
+
+// Mirror the runtime commit: apply the rewritten core ops to the doc (the
+// review layer is review-op-only here, so no anchor rebase is needed beyond what
+// intercept already baked in), then apply the emitted review ops. Returns the
+// committed doc + layer the reviewer acts on.
+const commitInterceptResult = (doc: Document, r: ReturnType<typeof intercept>): { doc: Document; review: ReviewLayer } => {
+  let d = doc;
+  for (const op of r.core.ops) d = applyOp(d, op).doc;
+  const review = applyReviewOps(emptyReview("d"), r.reviewOps);
+  return { doc: d, review };
+};
+const bodyText = (d: Document): string[] =>
+  d.blocks.map((b) => (b.kind === "paragraph" ? textOfRuns(b.runs) : `<${b.kind}>`));
+const run = (text: string): Paragraph["runs"][number] => ({ text, style: CHAR });
+
+describe("intercept — multi-op transactions (paste / cross-paragraph delete)", () => {
+  it("a multi-block paste applies structure+text to core and emits grouped suggestions", () => {
+    const doc = docOf(para("p", "hello world"));
+    // Paste "FOO\nBAR" at offset 5: split, insert into the new tail, then more.
+    const t = tr(
+      [
+        { type: "splitParagraph", at: { blockId: "p", offset: 5 }, newBlockId: "p2" },
+        { type: "insertRuns", at: { blockId: "p", offset: 5 }, runs: [run("FOO")] },
+        { type: "insertRuns", at: { blockId: "p2", offset: 0 }, runs: [run("BAR")] },
+      ],
+      "p2",
+      3,
+    );
+    const r = intercept(t, emptyReview("d"), doc, alice, 100);
+    expect(r.core.ops.length).toBe(3); // all structure+text really applied
+    expect(r.reviewOps.length).toBe(3); // one structural + two inserts
+    const groups = new Set(r.reviewOps.map((o) => (o.type === "addSuggestion" ? o.s.groupId : undefined)));
+    expect(groups.size).toBe(1); // one shared groupId — accept/reject as a unit
+    expect([...groups][0]).toBeTruthy();
+  });
+
+  it("paste then reject-all restores the original single paragraph", () => {
+    const original = docOf(para("p", "hello world"));
+    const t = tr(
+      [
+        { type: "splitParagraph", at: { blockId: "p", offset: 5 }, newBlockId: "p2" },
+        { type: "insertRuns", at: { blockId: "p", offset: 5 }, runs: [run("FOO")] },
+        { type: "insertRuns", at: { blockId: "p2", offset: 0 }, runs: [run("BAR")] },
+      ],
+      "p2",
+      3,
+    );
+    const r = intercept(t, emptyReview("d"), original, alice, 100);
+    const { doc, review } = commitInterceptResult(original, r);
+    expect(bodyText(doc)).toEqual(["helloFOO", "BAR world"]); // pasted live
+
+    const res = rejectAllSuggestions(doc, review);
+    let d = doc;
+    for (const op of res.ops) d = applyOp(d, op).doc;
+    expect(bodyText(d)).toEqual(["hello world"]); // fully reverted
+  });
+
+  it("cross-paragraph delete is tracked: text stays, reject-all is a no-op leaving it", () => {
+    // Select from p:2 to q:2 and delete: deleteRange p[2..5], deleteRange q[0..2],
+    // mergeParagraphs(p). Tracked → text kept, paragraphs unmerged in core.
+    const original = docOf(para("p", "hello"), para("q", "world"));
+    const t = tr(
+      [
+        { type: "deleteRange", blockId: "p", start: 2, end: 5 },
+        { type: "deleteRange", blockId: "q", start: 0, end: 2 },
+        { type: "mergeParagraphs", firstBlockId: "p" } as Op,
+      ],
+      "p",
+      2,
+    );
+    const r = intercept(t, emptyReview("d"), original, alice, 100);
+    // Both deletes became overlay records (dropped from core); only the merge runs.
+    const adds = r.reviewOps.filter((o) => o.type === "addSuggestion");
+    expect(adds.length).toBe(3); // two delete records + one structural (merge)
+    const kinds = adds.map((o) => (o.type === "addSuggestion" ? o.s.kind : "")).sort();
+    expect(kinds).toEqual(["delete", "delete", "structural"]);
+
+    const { doc, review } = commitInterceptResult(original, r);
+    // Merge ran (one paragraph) but no text was destroyed.
+    expect(bodyText(doc)).toEqual(["helloworld"]);
+
+    const res = rejectAllSuggestions(doc, review);
+    let d = doc;
+    for (const op of res.ops) d = applyOp(d, op).doc;
+    expect(bodyText(d)).toEqual(["hello", "world"]); // structure + text restored
   });
 });

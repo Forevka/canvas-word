@@ -18,14 +18,17 @@
 //    shrinks that record (and GC drops it if it collapses) — we just emit the
 //    core delete and add nothing.
 //
-// V1 scope (documented in REVIEW.md §8): single insertText/insertRuns, single
-// deleteRange, and single style-only setRuns are tracked. Structural ops
-// (split/merge/block/table) and multi-op transactions (cross-paragraph deletes,
-// paste) pass through to core UNTRACKED — finer handling is V2.
+// Tracked (see REVIEW.md §5.2): text insert/delete, style-only setRuns, the
+// structural ops (split/merge/block/table row+column), AND multi-op transactions
+// — paste and cross-paragraph deletes are decomposed per-op through the same
+// logic and bundled under one groupId. Only non-tracked op kinds (e.g.
+// setParaStyle, table-structure, props) and ops on missing blocks pass through.
 
 import {
   applyOp,
+  applyReviewOp,
   blockById,
+  rebaseReview,
   textOfRuns,
   type CharStyle,
   type Document,
@@ -182,55 +185,57 @@ function mkStructural(op: Op, doc: Document, author: UserInfo, now: number, grou
 /** The pass-through result (no tracking). */
 const passThrough = (trn: Transaction): InterceptResult => ({ core: trn, reviewOps: [] });
 
-export function intercept(trn: Transaction, review: ReviewLayer, doc: Document, author: UserInfo, now: number): InterceptResult {
-  // Only single-op transactions of the tracked kinds are rewritten; everything
-  // else passes through untracked (V1 boundary, REVIEW.md §8).
-  if (trn.ops.length !== 1) return passThrough(trn);
-  const op: Op = trn.ops[0]!;
+/** One op's contribution to the rewrite: the core ops to actually run (the op
+ *  itself, or [] when it became a non-destructive overlay) and the review ops to
+ *  emit. Anchors are in the CURRENT running-doc coordinates; the driver rebases
+ *  them forward through later ops (mirroring commitCore's per-op rebase). */
+interface OpRewrite {
+  coreOps: Op[];
+  reviewOps: ReviewOp[];
+}
 
+/** Route ONE op through the tracked/structural logic against the running doc +
+ *  running review. Pure: returns the rewrite; the driver advances the run state.
+ *  `groupId` (multi-op transactions) bundles every record from one user action. */
+function interceptOne(op: Op, review: ReviewLayer, doc: Document, author: UserInfo, now: number, groupId?: string): OpRewrite {
+  const grouped: Partial<Suggestion> = groupId !== undefined ? { groupId } : {};
   switch (op.type) {
     case "insertText":
     case "insertRuns": {
       const blockId = op.at.blockId;
       const offset = op.at.offset;
-      if (!blockById(doc, blockId)) return passThrough(trn); // dangling target → don't anchor a suggestion
+      if (!blockById(doc, blockId)) return { coreOps: [op], reviewOps: [] }; // dangling target → don't anchor
       const len = op.type === "insertText" ? op.text.length : textOfRuns(op.runs).length;
-      if (len === 0) return passThrough(trn);
+      if (len === 0) return { coreOps: [op], reviewOps: [] };
       // Contiguous typing extends an existing record via rebase — no new record.
-      if (extendsAuthorInsert(review, blockId, offset, author.id)) return { core: trn, reviewOps: [] };
+      if (extendsAuthorInsert(review, blockId, offset, author.id)) return { coreOps: [op], reviewOps: [] };
       // Fresh insertion point: anchor is the inserted span in POST-insert coords.
-      const s = mkSuggestion("insert", blockId, offset, offset + len, author, now);
-      return { core: trn, reviewOps: [{ type: "addSuggestion", s }] };
+      const s = mkSuggestion("insert", blockId, offset, offset + len, author, now, grouped);
+      return { coreOps: [op], reviewOps: [{ type: "addSuggestion", s }] };
     }
 
     case "deleteRange": {
       const { blockId, start, end } = op;
-      if (start >= end || !blockById(doc, blockId)) return passThrough(trn);
+      if (start >= end || !blockById(doc, blockId)) return { coreOps: [op], reviewOps: [] };
       const covered = fullyCovered(start, end, authorInsertsIn(review, blockId, author.id));
       if (covered) {
         // Deleting only the author's own pending insertion → REAL delete; rebase
         // shrinks/drops those insertion records automatically.
-        return { core: trn, reviewOps: [] };
+        return { coreOps: [op], reviewOps: [] };
       }
       // Touches original / others' text → non-destructive: drop the core delete,
-      // keep the text, mark it deleted. Caret already moves to `start`
-      // (deleteBackward set selectionAfter there).
-      const s = mkSuggestion("delete", blockId, start, end, author, now);
-      return {
-        core: { ops: [], selectionAfter: trn.selectionAfter, origin: trn.origin },
-        reviewOps: [{ type: "addSuggestion", s }],
-      };
+      // keep the text, mark it deleted.
+      const s = mkSuggestion("delete", blockId, start, end, author, now, grouped);
+      return { coreOps: [], reviewOps: [{ type: "addSuggestion", s }] };
     }
 
     case "setRuns": {
       const block = blockById(doc, op.blockId);
-      if (!block) return passThrough(trn);
+      if (!block) return { coreOps: [op], reviewOps: [] };
       const fmt = detectFormat(block.runs, op.runs);
-      if (!fmt) return passThrough(trn); // text change (case/sdt) → untracked V1
-      const s = mkSuggestion("format", op.blockId, fmt.start, fmt.end, author, now, { patch: fmt.patch, inverse: fmt.inverse });
-      // The restyle is length-preserving and applied as-is (so it shows); the
-      // record drives the change-bar + reject (re-apply inverse).
-      return { core: trn, reviewOps: [{ type: "addSuggestion", s }] };
+      if (!fmt) return { coreOps: [op], reviewOps: [] }; // text change (case/sdt) → untracked
+      const s = mkSuggestion("format", op.blockId, fmt.start, fmt.end, author, now, { patch: fmt.patch, inverse: fmt.inverse, ...grouped });
+      return { coreOps: [op], reviewOps: [{ type: "addSuggestion", s }] };
     }
 
     case "splitParagraph":
@@ -244,12 +249,66 @@ export function intercept(trn: Transaction, review: ReviewLayer, doc: Document, 
       // Structural edits stay in core (the doc stays live) and are tracked as a
       // structural suggestion carrying the op + its exact inverse. Reject
       // re-applies the inverse; accept just drops the record.
-      const s = mkStructural(op, doc, author, now);
-      if (!s) return passThrough(trn);
-      return { core: trn, reviewOps: [{ type: "addSuggestion", s }] };
+      const s = mkStructural(op, doc, author, now, groupId);
+      if (!s) return { coreOps: [op], reviewOps: [] };
+      return { coreOps: [op], reviewOps: [{ type: "addSuggestion", s }] };
     }
 
     default:
-      return passThrough(trn); // remaining ops (setParaStyle, table-structure, props…): untracked
+      return { coreOps: [op], reviewOps: [] }; // setParaStyle, table-structure, props…: untracked
   }
+}
+
+/** Rebase an addSuggestion review op's anchor forward through a core op's
+ *  position-mapper. Only addSuggestion carries an anchor that drifts; the others
+ *  intercept emits (it emits none here) are id-keyed and immune. */
+function rebaseReviewOp(rop: ReviewOp, mapPosition: (p: { blockId: string; offset: number }) => { blockId: string; offset: number }): ReviewOp {
+  if (rop.type !== "addSuggestion") return rop;
+  const a = rop.s.anchor;
+  return { ...rop, s: { ...rop.s, anchor: { start: mapPosition(a.start), end: mapPosition(a.end) } } };
+}
+
+export function intercept(trn: Transaction, review: ReviewLayer, doc: Document, author: UserInfo, now: number): InterceptResult {
+  if (trn.ops.length === 0) return passThrough(trn);
+
+  // Single-op fast path: no coordinate drift, no group needed — keep the original
+  // transaction object so callers/tests that identity-compare `r.core` still see it.
+  if (trn.ops.length === 1) {
+    const rw = interceptOne(trn.ops[0]!, review, doc, author, now);
+    if (rw.reviewOps.length === 0 && rw.coreOps.length === 1 && rw.coreOps[0] === trn.ops[0]) {
+      return passThrough(trn); // untracked → unchanged transaction
+    }
+    return { core: { ops: rw.coreOps, selectionAfter: trn.selectionAfter, origin: trn.origin }, reviewOps: rw.reviewOps };
+  }
+
+  // Multi-op (paste, cross-paragraph delete): decompose. Route each op through the
+  // SAME logic against a RUNNING doc + review so later ops see earlier ones'
+  // post-state, and rebase already-emitted record anchors forward through each
+  // applied core op (coordinate drift — mirrors commitCore's per-op rebase). One
+  // shared groupId bundles the whole transaction into a single accept/reject unit.
+  const groupId = freshId();
+  let runDoc = doc;
+  let runReview = review;
+  const coreOps: Op[] = [];
+  let reviewOps: ReviewOp[] = [];
+
+  for (const op of trn.ops) {
+    const rw = interceptOne(op, runReview, runDoc, author, now, groupId);
+    // Advance the running doc by the CORE ops this op contributed (a dropped
+    // delete leaves the text in place — runDoc must not move past it). Rebase the
+    // PREVIOUSLY-emitted records through each — but NOT this op's own new records:
+    // interceptOne already expressed those in post-core coordinates.
+    for (const cop of rw.coreOps) {
+      const res = applyOp(runDoc, cop);
+      runDoc = res.doc;
+      runReview = rebaseReview(runReview, res.mapPosition);
+      reviewOps = reviewOps.map((r) => rebaseReviewOp(r, res.mapPosition));
+      coreOps.push(cop);
+    }
+    // Now stage this op's new records (post-core coords) into both accumulators.
+    for (const rop of rw.reviewOps) runReview = applyReviewOp(runReview, rop).layer;
+    reviewOps.push(...rw.reviewOps);
+  }
+
+  return { core: { ops: coreOps, selectionAfter: trn.selectionAfter, origin: trn.origin }, reviewOps };
 }

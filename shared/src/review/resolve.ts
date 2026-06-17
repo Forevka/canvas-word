@@ -9,11 +9,12 @@
 // acceptAll/rejectAll fold back-to-front in document order so earlier anchors
 // stay valid as later ranges collapse — one Transaction, one undo step.
 
-import { applyStylePatchToRuns, containerOf, type Op } from "../model/ops";
+import { applyOp, applyStylePatchToRuns, containerOf, type Op } from "../model/ops";
 import type { Document } from "../model/document";
 import { blockById, blockIndexOf } from "../model/text";
 import type { ReviewLayer, Suggestion } from "./model";
-import type { ReviewOp } from "./ops";
+import { applyReviewOp, type ReviewOp } from "./ops";
+import { rebaseReview } from "./rebase";
 
 export interface Resolution {
   ops: Op[];
@@ -85,12 +86,28 @@ function resolveAll(
   // TEXT records back-to-front in document order so earlier ranges stay valid as
   // later ones collapse.
   const text = review.suggestions.filter((s) => s.kind !== "structural").sort((a, b) => orderKey(doc, b) - orderKey(doc, a));
+  const order = [...structural, ...text].map((s) => s.id);
+
+  // Resolve against a RUNNING doc + review: each resolution's core ops are applied
+  // to the running doc and the remaining record anchors are rebased through them
+  // (mirroring the commit pipeline). This is what makes a structural reject — which
+  // re-merges/re-inserts whole blocks — compose with the text rejects whose anchors
+  // live on those blocks (e.g. rejecting a multi-block paste). One Transaction is
+  // still emitted: the ops accumulate in resolution order.
+  let runDoc = doc;
+  let runReview = review;
   const ops: Op[] = [];
   const reviewOps: ReviewOp[] = [];
-  for (const s of [...structural, ...text]) {
-    const r = one(doc, review, s.id);
+  for (const id of order) {
+    const r = one(runDoc, runReview, id);
     if (!r) continue;
-    ops.push(...r.ops);
+    for (const op of r.ops) {
+      const res = applyOp(runDoc, op);
+      runDoc = res.doc;
+      runReview = rebaseReview(runReview, res.mapPosition); // remaining anchors travel
+      ops.push(op);
+    }
+    for (const rop of r.reviewOps) runReview = applyReviewOp(runReview, rop).layer;
     reviewOps.push(...r.reviewOps);
   }
   return { ops, reviewOps };
