@@ -424,7 +424,6 @@ Everything in it is done; the editor covers ~95% of everyday Word usage.
 - Only Latin metric-clone fonts are bundled, so CJK/complex scripts render as
   tofu in PDF export (same gap as the importer).
 - Raster browser-print was skipped — use PDF export instead.
-- Layout caches don't evict deleted blocks (bounded, harmless, tracked).
 - `font-feature-settings` / optical sizing unsupported (pretext limitation).
 - Track-changes V1 tracks single insert/delete/format edits; structural edits
   (paragraph split/merge, table ops) and paste pass through untracked in suggest
