@@ -93,6 +93,31 @@ describe("images — embedded", () => {
     expect(codes(r)).not.toContain("images-anchored"); // faithful float, no warning
   });
 
+  it("maps a wrapNone behindDoc anchor to a behind-text background image (not block flow)", () => {
+    // A full-page decorative background, as Word ships PARTY INVITATION.docx:
+    // behindDoc + wrapNone + posOffset positioning. Must NOT become a flow block.
+    const anchor =
+      `<w:drawing><wp:anchor behindDoc="1">` +
+      `<wp:positionH relativeFrom="margin"><wp:posOffset>-933450</wp:posOffset></wp:positionH>` +
+      `<wp:positionV relativeFrom="paragraph"><wp:posOffset>-2266950</wp:posOffset></wp:positionV>` +
+      `<wp:extent cx="7772400" cy="10058400"/><wp:wrapNone/>` +
+      `<wp:docPr id="18" name="Picture 18"><a:extLst><a:ext><adec:decorative val="1"/></a:ext></a:extLst></wp:docPr>` +
+      `<a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic></a:graphicData></a:graphic>` +
+      `</wp:anchor></w:drawing>`;
+    const r = runImport(docxWithImage(`<w:p><w:r>${anchor}</w:r></w:p>`));
+    const img = image(r.doc.blocks[0]);
+    expect(img.wrap).toBeUndefined(); // not a flow/float image
+    expect(img.anchor).toEqual({
+      behind: true,
+      offsetXPx: -98, // -933450 EMU / 9525
+      offsetYPx: -238, // -2266950 EMU / 9525
+      relFromH: "margin",
+      relFromV: "paragraph",
+      decorative: true,
+    });
+    expect(codes(r)).not.toContain("images-anchored"); // faithfully placed, no warning
+  });
+
   it("reuses one blob URL when the same media part is referenced twice", () => {
     const r = runImport(
       docxWithImage(

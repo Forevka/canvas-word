@@ -43,6 +43,14 @@ export interface PlacedImage {
   /** Clip rect (block-absolute) for object-fit:cover — a sole image filling a
    *  tall cell is scaled to cover and clipped to the cell box. Absent = no clip. */
   clip?: { x: number; y: number; width: number; height: number };
+  /** Behind-text anchored image (ImageBlock.anchor.behind): painted under the
+   *  text and ignored by hit-testing so the text beneath stays selectable. */
+  behind?: boolean;
+  /** In-front-of-text anchored image (anchored, not behind): painted ABOVE the
+   *  text layer (the engine's z-order pass moves it last in the page block list). */
+  front?: boolean;
+  /** Stacking order within the behind/front layer (ImageBlock.anchor.z). */
+  z?: number;
 }
 
 export interface PlacedTableCell {

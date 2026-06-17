@@ -18,6 +18,7 @@ import type {
 } from "@cw/shared";
 import { createLayoutEngine, effectiveSection, resolveSections } from "./engine";
 import { gridColumnCount, effectiveFractions, defaultListDefinition } from "@cw/shared";
+import { hitTestObject, hitTestSelectableObject } from "./geometry";
 import type { PlacedBlock } from "./layoutTree";
 
 // --- builders -------------------------------------------------------------
@@ -670,5 +671,122 @@ describe("engine — floats", () => {
     // …and the marker hangs with it, clear of the image — not back at the margin.
     expect(pb.marker).toBeDefined();
     expect(pb.marker!.x).toBeGreaterThanOrEqual(imgRight);
+  });
+});
+
+// --- behind-text anchored images (wrapNone backgrounds) -------------------
+
+describe("engine — behind-text anchored images", () => {
+  // A full-page (816×1056) background anchored to the page origin, behind text —
+  // the PARTY INVITATION.docx case. In Word it sits behind the text on one page.
+  const bgImage = (): ImageBlock => ({
+    ...image(816, 1056),
+    anchor: { behind: true, offsetXPx: 0, offsetYPx: 0, relFromH: "page", relFromV: "page" },
+  });
+
+  it("keeps the whole document on one page (background consumes no flow height)", () => {
+    const bg = bgImage();
+    const body = ["Title", "Saturday, 21 August", "Address", "Please bring", "RSVP"].map((t) => para(t));
+    const tree = layout(doc([bg, ...body]));
+    expect(tree.pages).toHaveLength(1); // a flow-block 1056px image would force page 2
+  });
+
+  it("positions the background at its origin, behind text, first in the page block list", () => {
+    const bg = bgImage();
+    const title = para("Title");
+    const tree = layout(doc([bg, title]));
+    const page0 = tree.pages[0]!;
+    expect(page0.blocks[0]!.blockId).toBe(bg.id); // first → painted under the text
+    expect(page0.blocks[0]!.image!.behind).toBe(true);
+    expect(page0.blocks[0]!.x).toBe(0); // page-relative origin + 0 offset
+    expect(page0.blocks[0]!.y).toBe(0);
+    // The title is NOT pushed down by the image's full-page height.
+    const titlePb = placedOf(tree, title.id)!.pb;
+    expect(titlePb.y).toBeLessThan(150); // near content top (96), not below a page of image
+  });
+
+  it("does not reflow surrounding text (registers no float)", () => {
+    const bg = bgImage();
+    const body = para("word ".repeat(120).trim());
+    const withBg = placedOf(layout(doc([bg, body])), body.id)!.pb;
+    const without = placedOf(layout(doc([body])), body.id)!.pb;
+    // Same left edge and same wrapping as if the background weren't there.
+    expect(withBg.lines[0]!.fragments[0]!.x).toBe(without.lines[0]!.fragments[0]!.x);
+    expect(withBg.lines.length).toBe(without.lines.length);
+  });
+
+  it("honors a paragraph-relative negative offset (bleed toward the page corner)", () => {
+    const bg: ImageBlock = {
+      ...image(816, 1056),
+      anchor: { behind: true, offsetXPx: -90, offsetYPx: -90, relFromH: "margin", relFromV: "paragraph" },
+    };
+    const tree = layout(doc([bg, para("Title")]));
+    const pb = tree.pages[0]!.blocks[0]!;
+    // margin origin (left/top = 96) shifted by -90 → 6, just inside the page corner.
+    expect(pb.x).toBe(6);
+    expect(pb.y).toBe(6);
+  });
+
+  // A front-of-text anchor authored BEFORE the text must still paint over it.
+  const frontImage = (z = 0): ImageBlock => ({
+    ...image(200, 100),
+    anchor: { behind: false, offsetXPx: 0, offsetYPx: 0, relFromH: "page", relFromV: "page", z },
+  });
+
+  it("moves an in-front anchored image to the END of the page block list (paints over text)", () => {
+    const fg = frontImage();
+    const body = para("hello");
+    const tree = layout(doc([fg, body])); // authored first…
+    const blocks = tree.pages[0]!.blocks;
+    expect(blocks[blocks.length - 1]!.blockId).toBe(fg.id); // …but painted last (on top)
+    expect(blocks[blocks.length - 1]!.image!.front).toBe(true);
+  });
+
+  it("orders the layers behind → flow → front regardless of document order", () => {
+    const behind = bgImage();
+    const front = frontImage();
+    const body = para("middle");
+    // Document order deliberately scrambled: front, body, behind.
+    const tree = layout(doc([front, body, behind]));
+    const ids = tree.pages[0]!.blocks.map((b) => b.blockId);
+    expect(ids.indexOf(behind.id)).toBeLessThan(ids.indexOf(body.id));
+    expect(ids.indexOf(body.id)).toBeLessThan(ids.indexOf(front.id));
+  });
+
+  it("stacks same-layer anchored images by z (higher paints later)", () => {
+    const lo = frontImage(1);
+    const hi = frontImage(5);
+    // hi authored first, but its higher z must place it after lo.
+    const tree = layout(doc([hi, lo, para("x")]));
+    const ids = tree.pages[0]!.blocks.map((b) => b.blockId);
+    expect(ids.indexOf(lo.id)).toBeLessThan(ids.indexOf(hi.id));
+  });
+
+  it("leaves the block order untouched when no anchored images exist (no PDF drift)", () => {
+    const a = para("a");
+    const t = table([[cell("x")]]);
+    const b = para("b");
+    const tree = layout(doc([a, t, b]));
+    // Plain flow documents must keep exact document order — the z-order pass is
+    // skipped entirely, so canvas and PDF output are byte-identical to before.
+    expect(tree.pages[0]!.blocks.map((bl) => bl.blockId)).toEqual([a.id, t.id, b.id]);
+  });
+
+  it("makes a behind image selectable only where no text covers it", () => {
+    const bg = bgImage(); // full page (0,0)–(816,1056), behind text
+    const title = para("hello");
+    const tree = layout(doc([bg, title]));
+    const titlePb = placedOf(tree, title.id)!.pb;
+
+    // Foreground hit-testing never returns the background.
+    expect(hitTestObject(tree, 0, 400, 400)).toBeNull();
+    // A click on the text falls through (caret), selecting no object.
+    expect(hitTestSelectableObject(tree, 0, titlePb.x + 4, titlePb.y + 2)).toBeNull();
+    // A click on the bare background (no text under it) selects the background.
+    expect(hitTestSelectableObject(tree, 0, 400, titlePb.y + 300)?.blockId).toBe(bg.id);
+    // A background bleeding into the TOP MARGIN (above the content box) is still
+    // found there — the controller must not let the header band gate it out.
+    expect(30).toBeLessThan(tree.pages[0]!.contentTopPx);
+    expect(hitTestSelectableObject(tree, 0, 400, 30)?.blockId).toBe(bg.id);
   });
 });

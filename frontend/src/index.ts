@@ -16,7 +16,7 @@ import {
   comparePositions,
   hitTest,
   hitTestCell,
-  hitTestObject,
+  hitTestSelectableObject,
   linkAt,
   objectRect,
   selectionRects,
@@ -78,6 +78,10 @@ import {
   setAlignment,
   setCharStyle as setCharStyleCmd,
   setImageProps,
+  setImageLayer,
+  bringImageToFront,
+  sendImageToBack,
+  moveAnchoredImage,
   setLinkCmd,
   setParaProps,
   setSdtContent,
@@ -720,7 +724,11 @@ export function createEditor(
       objectFrame.hide();
       return;
     }
-    objectFrame.show(rect, contentWidth());
+    // Anchored (out-of-flow) images may bleed past the margins, so they resize up
+    // to the full page width; in-flow images stay within the content box.
+    const sel = doc.blocks.find((b) => b.id === selectedObject);
+    const maxW = sel?.kind === "image" && sel.anchor ? doc.section.pageWidthPx : contentWidth();
+    objectFrame.show(rect, maxW);
   };
 
   const selectObject = (blockId: string | null): void => {
@@ -1521,6 +1529,8 @@ export function createEditor(
       dispatch(deleteImage(id));
     },
     startColumnDrag,
+    applyObjectMove: (blockId, x, y, transient) =>
+      dispatch(moveAnchoredImage(blockId, x, y, transient ? "transient" : "command")),
     onTab: tabInTable,
     onSdtPress: sdtPopupCtl.handlePress,
     jumpToBlock: (blockId: string): void => {
@@ -2152,8 +2162,11 @@ export function createEditor(
           label: "Wrap Text",
           icon: ICONS.wrapSquare,
           items: [
-            { kind: "item", label: "In Line with Text", icon: ICONS.wrapInline, onClick: () => dispatch(setImageProps(imgId, { wrap: "block", align: "center" })) },
-            { kind: "item", label: "Square", icon: ICONS.wrapSquare, onClick: () => dispatch(setImageProps(imgId, { wrap: "square", align: "left" })) },
+            { kind: "item", label: "In Line with Text", icon: ICONS.wrapInline, onClick: () => dispatch(setImageProps(imgId, { wrap: "block", align: "center", anchor: null })) },
+            { kind: "item", label: "Square", icon: ICONS.wrapSquare, onClick: () => dispatch(setImageProps(imgId, { wrap: "square", align: "left", anchor: null })) },
+            { kind: "sep" },
+            { kind: "item", label: "Behind Text", onClick: () => dispatch(setImageLayer(imgId, true)) },
+            { kind: "item", label: "In Front of Text", onClick: () => dispatch(setImageLayer(imgId, false)) },
           ],
         },
         {
@@ -2166,6 +2179,8 @@ export function createEditor(
             { kind: "item", label: "Right", icon: ICONS.alignRight, onClick: () => dispatch(setImageProps(imgId, { align: "right" })) },
           ],
         },
+        item("Bring to Front", () => dispatch(bringImageToFront(imgId))),
+        item("Send to Back", () => dispatch(sendImageToBack(imgId))),
         item("Delete Image", () => {
           selectObject(null);
           dispatch(deleteImage(imgId));
@@ -2346,7 +2361,9 @@ export function createEditor(
     // including a rectangular cell selection, which must survive so Merge /
     // Borders act on the whole dragged block, not just the clicked cell.
     if (!pointInCellSelection(pt)) {
-      const imageId = hitTestObject(tree, pt.pageIndex, pt.x, pt.y)?.blockId ?? null;
+      // Off-page right-clicks are clamped onto the edge — don't let them "hit" a
+      // background image there (mirrors the left-click rule).
+      const imageId = pt.inside ? hitTestSelectableObject(tree, pt.pageIndex, pt.x, pt.y, scope())?.blockId ?? null : null;
       if (imageId) {
         selectObject(imageId);
         caretIntoImageCell(imageId); // lets the Table section act on the image's cell

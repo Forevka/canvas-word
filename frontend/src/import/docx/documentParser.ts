@@ -578,22 +578,59 @@ function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
   const cy = numAttr(extent, "cy");
   if (cy !== undefined) image.heightEmu = cy;
   if (anchor) {
-    // Square/tight/through wrap maps onto the model's "square" float; the rest
-    // (wrapNone = behind/in-front, topAndBottom) fall back to block flow.
+    // Square/tight/through wrap maps onto the model's "square" float; wrapNone
+    // (behind/in-front of text) becomes an absolutely-positioned anchor; only
+    // topAndBottom/none-without-wrapNone fall back to block flow.
     const square = el(anchor, "wp:wrapSquare") ?? el(anchor, "wp:wrapTight") ?? el(anchor, "wp:wrapThrough");
+    const wrapNone = el(anchor, "wp:wrapNone");
     image.anchorWrap = square ? "square" : "block";
-    if (!square) {
+    const posH = el(anchor, "wp:positionH");
+    const posV = el(anchor, "wp:positionV");
+    const alignText = posH && el(posH, "wp:align");
+    const align = alignText && textOf(alignText);
+    if (align === "left" || align === "right" || align === "center") image.anchorAlign = align;
+    if (wrapNone) {
+      const dec = findDeep(anchor, "adec:decorative");
+      const z = numAttr(anchor, "relativeHeight");
+      image.anchorFloat = {
+        behind: attr(anchor, "behindDoc") === "1",
+        offsetXEmu: posOffsetEmu(posH),
+        offsetYEmu: posOffsetEmu(posV),
+        relFromH: relFromH(posH),
+        relFromV: relFromV(posV),
+        decorative: !!dec && attr(dec, "val") !== "0",
+        ...(z !== undefined ? { z } : {}),
+      };
+    } else if (!square) {
       ctx.warnings.add(
         "images-anchored",
         "Some floating images (overlapping or top-and-bottom wrap) were placed in the text flow.",
       );
     }
-    const posH = el(anchor, "wp:positionH");
-    const alignText = posH && el(posH, "wp:align");
-    const align = alignText && textOf(alignText);
-    if (align === "left" || align === "right" || align === "center") image.anchorAlign = align;
   }
   return image;
+}
+
+/** wp:positionH|V → wp:posOffset (EMU, signed). Absent/non-numeric → 0. */
+function posOffsetEmu(pos: XmlNode | undefined): number {
+  const off = pos && el(pos, "wp:posOffset");
+  const n = off ? Number(textOf(off).trim()) : NaN;
+  return Number.isFinite(n) ? n : 0;
+}
+
+const REL_FROM_H = new Set(["page", "margin", "column", "leftMargin", "rightMargin", "character"]);
+const REL_FROM_V = new Set(["page", "margin", "paragraph", "line", "topMargin", "bottomMargin"]);
+
+/** wp:positionH/@relativeFrom — OOXML default is "column". Unknown → "column". */
+function relFromH(pos: XmlNode | undefined): NonNullable<Extract<IRInline, { kind: "image" }>["anchorFloat"]>["relFromH"] {
+  const v = pos && attr(pos, "relativeFrom");
+  return v && REL_FROM_H.has(v) ? (v as never) : "column";
+}
+
+/** wp:positionV/@relativeFrom — OOXML default is "paragraph". Unknown → "paragraph". */
+function relFromV(pos: XmlNode | undefined): NonNullable<Extract<IRInline, { kind: "image" }>["anchorFloat"]>["relFromV"] {
+  const v = pos && attr(pos, "relativeFrom");
+  return v && REL_FROM_V.has(v) ? (v as never) : "paragraph";
 }
 
 /** Legacy VML (w:pict → v:shape → v:imagedata r:id), still produced for some

@@ -30,6 +30,18 @@ import {
   type ParaLocation,
 } from "./text";
 
+/** setImageProps payload. `wrap` and `anchor` are mutually-exclusive states, so
+ *  each accepts `null` as an explicit "clear this field" sentinel (plain
+ *  `undefined` means "leave unchanged", which exactOptionalPropertyTypes also
+ *  needs to keep these distinguishable). */
+export interface ImagePropsPatch {
+  widthPx?: number;
+  heightPx?: number;
+  align?: ImageBlock["align"];
+  wrap?: ImageBlock["wrap"] | null;
+  anchor?: ImageBlock["anchor"] | null;
+}
+
 export type Op =
   | { type: "insertText"; at: DocPosition; text: string; style?: CharStyle }
   | { type: "insertRuns"; at: DocPosition; runs: Run[] }
@@ -40,7 +52,7 @@ export type Op =
   | { type: "mergeParagraphs"; firstBlockId: string }
   | { type: "insertBlock"; index: number; block: Block; where?: Container }
   | { type: "removeBlock"; blockId: string }
-  | { type: "setImageProps"; blockId: string; patch: Partial<Pick<ImageBlock, "widthPx" | "heightPx" | "align" | "wrap">> }
+  | { type: "setImageProps"; blockId: string; patch: ImagePropsPatch }
   | { type: "setTableRow"; tableId: string; rowIndex: number; row: TableRow }
   | { type: "setTableStructure"; tableId: string; rows: TableRow[]; colFractions?: number[] }
   | { type: "setTableColFractions"; blockId: string; fractions: number[] }
@@ -566,12 +578,26 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       const loc = locateImage(doc, op.blockId);
       if (!loc) throw new Error(`image ${op.blockId} not found`);
       const block = loc.image;
-      const oldPatch: typeof op.patch = {};
-      for (const key of Object.keys(op.patch) as (keyof typeof op.patch)[]) {
-        // @ts-expect-error — keyed copy of previous values for the inverse
-        oldPatch[key] = block[key];
+      // Inverse restores prior values; a field absent before is cleared (null)
+      // on undo. wrap/anchor use null to mean "clear" (they're exclusive states).
+      const oldPatch: ImagePropsPatch = {};
+      if (op.patch.widthPx !== undefined) oldPatch.widthPx = block.widthPx;
+      if (op.patch.heightPx !== undefined) oldPatch.heightPx = block.heightPx;
+      if (op.patch.align !== undefined) oldPatch.align = block.align;
+      if (op.patch.wrap !== undefined) oldPatch.wrap = block.wrap ?? null;
+      if (op.patch.anchor !== undefined) oldPatch.anchor = block.anchor ?? null;
+      const updated: ImageBlock = { ...block, revision: block.revision + 1 };
+      if (op.patch.widthPx !== undefined) updated.widthPx = op.patch.widthPx;
+      if (op.patch.heightPx !== undefined) updated.heightPx = op.patch.heightPx;
+      if (op.patch.align !== undefined) updated.align = op.patch.align;
+      if (op.patch.wrap !== undefined) {
+        if (op.patch.wrap === null) delete updated.wrap;
+        else updated.wrap = op.patch.wrap;
       }
-      const updated: ImageBlock = { ...block, ...op.patch, revision: block.revision + 1 };
+      if (op.patch.anchor !== undefined) {
+        if (op.patch.anchor === null) delete updated.anchor;
+        else updated.anchor = op.patch.anchor;
+      }
       let next: Document;
       if (loc.kind === "top") {
         const blocks = containerBlocks(doc, loc.where).slice();

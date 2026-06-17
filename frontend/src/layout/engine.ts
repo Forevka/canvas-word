@@ -12,7 +12,7 @@ import {
 import type { Block, CharStyle, Document, ImageBlock, Paragraph, Run, SectionPatch, SectionProps, TableBlock, TableCell, TabStop } from "@cw/shared";
 import { effectiveFractions, isHiddenParagraph } from "@cw/shared";
 import { formatListNumber, markerText, type ListDefinition, type ListLevel } from "@cw/shared";
-import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock } from "./layoutTree";
+import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock, PlacedImage } from "./layoutTree";
 import { PrepareCache, prepareRuns, type PreparedSegment } from "./prepareCache";
 import { charStyleToFont, fontMetrics, measureTextWidth } from "./metrics";
 
@@ -756,7 +756,8 @@ function layoutDocument(
         lines: getLines(block, colWidth - indentOf(block) - rightIndentOf(block) - gutter),
       });
     } else if (block.kind === "image") {
-      measured.push({ kind: "image", block, height: block.heightPx });
+      // Anchored (out-of-flow) images contribute no flow height.
+      measured.push({ kind: "image", block, height: block.anchor ? 0 : block.heightPx });
     } else {
       const t = measureTable(block, colWidth, getLines, cellListCtx);
       measured.push({ kind: "table", block, ...t });
@@ -1062,7 +1063,45 @@ function layoutDocument(
 
   const floatsActiveAt = (yy: number): boolean => floats.some((f) => f.bottom > yy);
 
+  /** wp:anchor + wp:wrapNone: an absolutely-positioned behind/in-front image.
+   *  Positioned at its offset from the relativeFrom origin; it does NOT advance
+   *  the flow cursor and registers NO float (text flows OVER it, not around).
+   *  Z-order falls out of document order — a background image precedes the body
+   *  in the block list, so it paints first (behind). */
+  const placeAnchoredImage = (img: ImageBlock): void => {
+    const a = img.anchor!;
+    let ox: number;
+    switch (a.relFromH) {
+      case "page":
+      case "leftMargin": ox = 0; break;
+      case "rightMargin": ox = sec.pageWidthPx - sec.marginPx.right; break;
+      case "column": ox = colX(); break;
+      default: ox = sec.marginPx.left; break; // margin / character
+    }
+    let oy: number;
+    switch (a.relFromV) {
+      case "page":
+      case "topMargin": oy = 0; break;
+      case "bottomMargin": oy = sec.pageHeightPx - sec.marginPx.bottom; break;
+      case "paragraph":
+      case "line": oy = y; break; // current flow position
+      default: oy = sec.marginPx.top; break; // margin
+    }
+    const placedImage: PlacedImage = { src: img.src, width: img.widthPx, height: img.heightPx, z: a.z ?? 0 };
+    if (a.behind) placedImage.behind = true;
+    else placedImage.front = true;
+    page.blocks.push({
+      blockId: img.id,
+      x: ox + a.offsetXPx,
+      y: oy + a.offsetYPx,
+      firstLineIndex: 0,
+      lines: [],
+      image: placedImage,
+    });
+  };
+
   const placeImage = (img: ImageBlock): void => {
+    if (img.anchor) { placeAnchoredImage(img); return; }
     if (y + img.heightPx > bottomY() && colHasContent()) newPage();
     const floating = img.wrap === "square" && img.align !== "center";
     const slack = colWidth - img.widthPx;
@@ -1250,11 +1289,16 @@ function layoutDocument(
     // Two directly-adjacent atomics (a title-bar table stacked on its data grid,
     // back-to-back images) sit FLUSH — the gap belongs between an atomic and
     // surrounding text, not between atomics, so don't double it into an empty line.
-    const atomicKind = (x: Measured | undefined): boolean => x?.kind === "table" || x?.kind === "image";
+    // Anchored (behind/in-front) images are out of flow — transparent to the
+    // gap logic so they neither take a gap nor suppress one between neighbours.
+    const atomicKind = (x: Measured | undefined): boolean =>
+      x?.kind === "table" || (x?.kind === "image" && x.block.anchor === undefined);
     const prevAtomic = atomicKind(measured[bi - 1]);
     const nextAtomic = atomicKind(measured[bi + 1]);
 
     if (m.kind === "image") {
+      // Out-of-flow anchor: place absolutely, advance nothing, no gap.
+      if (m.block.anchor) { placeImage(m.block); continue; }
       if (!prevAtomic) y += ATOMIC_GAP;
       placeImage(m.block);
       if (!nextAtomic && (m.block.wrap !== "square" || m.block.align === "center")) y += ATOMIC_GAP;
@@ -1385,6 +1429,31 @@ function layoutDocument(
         ny += totalHeight(np.lines) + np.p.style.spaceAfterPx;
       }
     }
+  }
+
+  // Z-order: anchored images are lifted out of the flow into a behind-text or
+  // in-front-of-text layer. Both the canvas renderer and the PDF painter draw
+  // page.blocks in array order, so the FINAL paint order IS this array order —
+  // making this the single source of truth means the two renderers can never
+  // drift. Pages with no anchored images are left untouched (byte-identical
+  // output for every ordinary document — no PDF drift risk).
+  for (const pg of pages) {
+    if (!pg.blocks.some((b) => b.image?.behind || b.image?.front)) continue;
+    // Stable layer partition (behind → flow/text → front); within an anchored
+    // layer, higher z paints later (on top). Flow blocks keep document order.
+    const layer = (b: PlacedBlock): number => (b.image?.behind ? 0 : b.image?.front ? 2 : 1);
+    pg.blocks = pg.blocks
+      .map((b, i) => ({ b, i }))
+      .sort((p, q) => {
+        const dl = layer(p.b) - layer(q.b);
+        if (dl !== 0) return dl;
+        if (layer(p.b) !== 1) {
+          const dz = (p.b.image!.z ?? 0) - (q.b.image!.z ?? 0);
+          if (dz !== 0) return dz;
+        }
+        return p.i - q.i; // stable within a layer / equal z
+      })
+      .map((x) => x.b);
   }
 
   // Displayed page numbers: continue counting across sections unless a

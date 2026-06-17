@@ -425,21 +425,77 @@ function scanImages(
   return false;
 }
 
-/** Image block under a page point — including images inside table cells.
- *  (Band objects stay read-only.) */
-export function hitTestObject(tree: LayoutTree, pageIndex: number, x: number, y: number): ObjectHit | null {
+/** Topmost image under a page point matching `want` — including images inside
+ *  table cells. page.blocks is in paint order, so keeping the LAST match yields
+ *  the visually-topmost image. (Band objects stay read-only.) */
+function hitImage(
+  tree: LayoutTree,
+  pageIndex: number,
+  x: number,
+  y: number,
+  want: (im: { behind?: boolean }) => boolean,
+): ObjectHit | null {
   const page = tree.pages[pageIndex];
   if (!page) return null;
   let hit: ObjectHit | null = null;
   scanImages(page.blocks, (block) => {
-    const { width, height } = block.image!;
+    const im = block.image!;
+    if (!want(im)) return false;
+    const { width, height } = im;
     if (x >= block.x && x <= block.x + width && y >= block.y && y <= block.y + height) {
       hit = { blockId: block.blockId, rect: { pageIndex, x: block.x, y: block.y, width, height } };
-      return true;
     }
     return false;
   });
   return hit;
+}
+
+/** Foreground image (inline or in-front-of-text anchor) under a page point.
+ *  Behind-text backgrounds are excluded — those select only via the gaps (see
+ *  hitTestSelectableObject), so clicks on the text in front fall through. */
+export function hitTestObject(tree: LayoutTree, pageIndex: number, x: number, y: number): ObjectHit | null {
+  return hitImage(tree, pageIndex, x, y, (im) => im.behind !== true);
+}
+
+/** Behind-text image under a page point (full-page backgrounds). */
+export function hitTestBehindObject(tree: LayoutTree, pageIndex: number, x: number, y: number): ObjectHit | null {
+  return hitImage(tree, pageIndex, x, y, (im) => im.behind === true);
+}
+
+/** True when (x,y) lands on the painted glyphs of some text line on the page.
+ *  Lets a behind-text image stay selectable in its empty regions without ever
+ *  stealing a click meant for the text drawn on top of it. */
+export function pointOnText(tree: LayoutTree, pageIndex: number, x: number, y: number, scope?: GeoScope): boolean {
+  const idx = getIndex(tree, scope);
+  for (const e of idx.entries) {
+    if (e.pageIndex !== pageIndex) continue;
+    const top = e.block.y + e.line.y;
+    const bottom = top + e.line.height;
+    if (y < top || y >= bottom) continue;
+    const first = e.line.fragments[0];
+    const last = e.line.fragments[e.line.fragments.length - 1];
+    if (!first || !last) continue; // blank line — no glyphs, let the click pass through
+    const left = e.block.x + first.x;
+    const right = e.block.x + last.x + last.width;
+    if (x >= left && x <= right) return true;
+  }
+  return false;
+}
+
+/** Object to select for a click/right-click at a page point: a foreground image
+ *  wins anywhere it's hit; a behind-text image is selectable only where no text
+ *  covers it (so text on top stays clickable). */
+export function hitTestSelectableObject(
+  tree: LayoutTree,
+  pageIndex: number,
+  x: number,
+  y: number,
+  scope?: GeoScope,
+): ObjectHit | null {
+  const fg = hitTestObject(tree, pageIndex, x, y);
+  if (fg) return fg;
+  if (pointOnText(tree, pageIndex, x, y, scope)) return null;
+  return hitTestBehindObject(tree, pageIndex, x, y);
 }
 
 /** Where the selection frame for an image block lives right now (post-relayout). */

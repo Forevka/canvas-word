@@ -39,6 +39,11 @@ export interface PagePoint {
   pageIndex: number;
   x: number;
   y: number;
+  /** False when the click fell OUTSIDE the page rect and x/y were clamped to the
+   *  nearest edge. Caret placement still uses the clamp (click-below → caret at
+   *  end); object selection must NOT (an off-page click should deselect, never
+   *  "hit" a background image snapped onto the edge). */
+  inside: boolean;
 }
 
 /** A colored rect for review overlays (insertion underline, deletion strike,
@@ -772,10 +777,13 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
       const pg = tree.pages[pageIndex]!;
       const pageLeft = wrapRect.left + (wrapRect.width - pg.widthPx * zoom) / 2;
       // Return DOCUMENT coords (÷ zoom) so all hit-testing stays zoom-agnostic.
+      const rawX = (clientX - pageLeft) / zoom;
+      const rawY = (yIn - top) / zoom;
       return {
         pageIndex,
-        x: Math.min(pg.widthPx, Math.max(0, (clientX - pageLeft) / zoom)),
-        y: Math.min(pg.heightPx, Math.max(0, (yIn - top) / zoom)),
+        x: Math.min(pg.widthPx, Math.max(0, rawX)),
+        y: Math.min(pg.heightPx, Math.max(0, rawY)),
+        inside: rawX >= 0 && rawX <= pg.widthPx && rawY >= 0 && rawY <= pg.heightPx,
       };
     },
 

@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.7.1] — 2026-06-16
 
 ### Added
+- **Behind-text & in-front-of-text images (DOCX backgrounds).** Anchored drawings with
+  `wrapNone`/`behindDoc` — e.g. a full-page decorative background — now import as
+  absolutely-positioned images on a *behind-* or *in-front-of-text* layer instead of being
+  forced into the text flow. They sit at their anchor offset (honoring `relativeFrom`
+  page/margin/paragraph and negative offsets that bleed to the page edge), take **no flow
+  height**, and don't reflow surrounding text. The engine paints layers in a fixed order
+  (behind → text → front) that is the single source of truth for **both the canvas and the
+  PDF renderer**, so they can't drift; pages with no anchored images are left untouched. New
+  `ImageBlock.anchor` model field, and the anchor (incl. `relativeHeight` stacking order)
+  round-trips back to `wp:anchor` on `.docx` export.
+  - **Manipulation UI**: right-click an image for **Behind Text / In Front of Text** and
+    **Bring to Front / Send to Back**; **click-drag** to reposition an anchored image; and
+    resize a background up to the full page width. Gap-aware hit-testing makes a background
+    selectable where text doesn't cover it (with a move cursor) while keeping the text on top
+    clickable, and clicks outside the page deselect rather than snapping onto the background.
 - **First-class field objects** — built-in Word fields are now real objects, not
   literal text. PAGE, NUMPAGES, DATE, TIME and IF carry a typed definition (parsed
   switches/arguments) and render as a result region **outlined in the editor like a
@@ -74,6 +89,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged.
 
 ### Fixed
+- **A full-page background image no longer pushes the document onto a second page.** A
+  `wrapNone`/`behindDoc` drawing (e.g. a decorative 8.5×11" page background) was laid out as
+  a flow block, so it consumed the entire first page and shoved every paragraph onto page 2 —
+  while Word keeps it on one page, behind the text. Such drawings are now out-of-flow
+  background images (see Added), so the document paginates as authored.
 - **Body PAGE/NUMPAGES fields now render their number, not the raw `{page}` token.**
   Inline page-number fields in body text (and table cells) are resolved against the
   final page map in a paint-only layout post-pass — the same path that already

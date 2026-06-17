@@ -160,6 +160,23 @@ export interface ImageBlock {
    *  'square': floats at the left/right margin (per align) and following text
    *  flows around it — pretext's per-line maxWidth makes this affordable. */
   wrap?: "block" | "square";
+  /** Absolutely-positioned anchored image (DOCX wp:anchor + wp:wrapNone) that
+   *  sits BEHIND (behind=true) or in front of the text. Unlike `wrap`, it does
+   *  NOT occupy vertical flow space and does NOT reflow surrounding text — it is
+   *  painted at `offset{X,Y}Px` from the `relFrom{H,V}` origin. Mutually
+   *  exclusive with `wrap`; absent = ordinary flow image. */
+  anchor?: {
+    behind: boolean;
+    offsetXPx: number;
+    offsetYPx: number;
+    relFromH: "page" | "margin" | "column" | "leftMargin" | "rightMargin" | "character";
+    relFromV: "page" | "margin" | "paragraph" | "line" | "topMargin" | "bottomMargin";
+    decorative?: boolean;
+    /** Stacking order among anchored images in the SAME layer (behind/front):
+     *  higher paints later (on top). Drives "bring to front"/"send to back";
+     *  maps to/from OOXML wp:anchor @relativeHeight. Default 0. */
+    z?: number;
+  };
   /** Field result membership — see Paragraph.fieldId. */
   fieldId?: string | undefined;
 }

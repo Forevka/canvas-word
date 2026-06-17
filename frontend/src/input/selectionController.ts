@@ -8,7 +8,7 @@
 //   (a layout query, not a model one), Up/Down preserve goalX, shift extends,
 //   Ctrl+A selects all, Ctrl+C copies plain text (HTML flavor lands in milestone 5).
 
-import type { Document, Paragraph } from "@cw/shared";
+import type { Document, ImageBlock, Paragraph } from "@cw/shared";
 import { BAND_CONTAINERS } from "@cw/shared";
 import type { DocPosition, DocSelection } from "@cw/shared";
 import { isCollapsed } from "@cw/shared";
@@ -30,7 +30,7 @@ import {
   documentEdges,
   hitTest,
   hitTestCell,
-  hitTestObject,
+  hitTestSelectableObject,
   hitTestColumnBoundary,
   caretRect,
   lineEdges,
@@ -69,6 +69,9 @@ export interface SelectionControllerDeps {
   deleteSelectedObject(): void;
   /** Begin a table column-boundary drag (wiring owns the transient/commit loop). */
   startColumnDrag(hit: ColumnBoundaryHit, ev: MouseEvent): void;
+  /** Reposition an anchored image during a drag. `transient` = live preview
+   *  (outside undo); false = the committed drop (one undoable step). */
+  applyObjectMove(blockId: string, offsetXPx: number, offsetYPx: number, transient: boolean): void;
   /** Tab/Shift+Tab cell navigation; returns true when consumed. */
   onTab(backward: boolean): boolean;
   /** Move the caret to a block's start and scroll it into view (TOC jump). */
@@ -170,6 +173,28 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
   }
   let drag: DragSession | null = null;
 
+  // An in-progress drag of an anchored image. startX/startY are the page-space
+  // grab point; baseX/baseY the image's anchor offsets at grab; lastX/lastY the
+  // most recent previewed offsets (committed on mouseup). `moved` gates the first
+  // few pixels so a plain click stays a select, not a (no-op, undoable) move.
+  interface ObjectDrag {
+    blockId: string;
+    startX: number;
+    startY: number;
+    baseX: number;
+    baseY: number;
+    lastX: number;
+    lastY: number;
+    moved: boolean;
+  }
+  let objectDrag: ObjectDrag | null = null;
+
+  /** The top-level anchored (out-of-flow, draggable) image with this id, if any. */
+  const movableImage = (blockId: string): ImageBlock | null => {
+    const b = deps.getDoc().blocks.find((x) => x.id === blockId);
+    return b?.kind === "image" && b.anchor ? b : null;
+  };
+
   const posFromEvent = (ev: MouseEvent): DocPosition | null => {
     const pt = deps.clientToPage(ev.clientX, ev.clientY);
     if (!pt) return null;
@@ -247,21 +272,51 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
     const band = bandAtPoint(pt);
     const story = deps.getStory();
 
-    // ---- object layer: column grips and image selection (body mode only) ----
-    if (!story && !band) {
-      const colHit = hitTestColumnBoundary(deps.getTree(), pt.pageIndex, pt.x, pt.y);
-      if (colHit) {
-        ev.preventDefault();
-        deps.startColumnDrag(colHit, ev);
-        return;
+    // ---- object layer: body images, incl. ones bleeding into the margins ----
+    if (!story) {
+      // A resize handle runs its own pointer-capture loop; the synthetic mousedown
+      // it also emits must not re-run selection/caret logic here.
+      if ((ev.target as HTMLElement | null)?.classList?.contains("cw-obj-handle")) return;
+      // Try to grab an object ONLY for a click genuinely inside the page (a gray-
+      // area click is clamped onto the edge and must never "hit" a background
+      // there — it should deselect, like Word). A background/floating image that
+      // overlaps the header/footer margin still selects, since that's inside the
+      // page. A double-click in a band falls through to enter the band story.
+      if (pt.inside && !(band && ev.detail >= 2)) {
+        // Column grips live only in the body content area, never the margins.
+        if (!band) {
+          const colHit = hitTestColumnBoundary(deps.getTree(), pt.pageIndex, pt.x, pt.y);
+          if (colHit) {
+            ev.preventDefault();
+            deps.startColumnDrag(colHit, ev);
+            return;
+          }
+        }
+        const objHit = hitTestSelectableObject(deps.getTree(), pt.pageIndex, pt.x, pt.y, scope());
+        if (objHit) {
+          ev.preventDefault();
+          deps.selectObject(objHit.blockId);
+          // Anchored images can be dragged to reposition: arm a move from here.
+          const mv = movableImage(objHit.blockId);
+          if (mv) {
+            objectDrag = {
+              blockId: objHit.blockId,
+              startX: pt.x,
+              startY: pt.y,
+              baseX: mv.anchor!.offsetXPx,
+              baseY: mv.anchor!.offsetYPx,
+              lastX: mv.anchor!.offsetXPx,
+              lastY: mv.anchor!.offsetYPx,
+              moved: false,
+            };
+          }
+          return;
+        }
       }
-      const objHit = hitTestObject(deps.getTree(), pt.pageIndex, pt.x, pt.y);
-      if (objHit) {
-        ev.preventDefault();
-        deps.selectObject(objHit.blockId);
-        return;
-      }
-      deps.selectObject(null); // clicking text/empty space deselects objects
+      // Nothing grabbed the click (empty space, off-page, or a band region) → drop
+      // any object selection. The body then falls through to caret placement; a
+      // band double-click proceeds to enter the band story below.
+      deps.selectObject(null);
     }
     if (story) {
       if (band === story.band) {
@@ -327,6 +382,19 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
   };
 
   const onMouseMove = (ev: MouseEvent): void => {
+    // Anchored-image drag takes priority over (and is exclusive with) text drag.
+    if (objectDrag) {
+      const pt = deps.clientToPage(ev.clientX, ev.clientY);
+      if (!pt) return;
+      const dx = pt.x - objectDrag.startX;
+      const dy = pt.y - objectDrag.startY;
+      if (!objectDrag.moved && Math.hypot(dx, dy) < 3) return; // a plain click stays a select
+      objectDrag.moved = true;
+      objectDrag.lastX = Math.round(objectDrag.baseX + dx);
+      objectDrag.lastY = Math.round(objectDrag.baseY + dy);
+      deps.applyObjectMove(objectDrag.blockId, objectDrag.lastX, objectDrag.lastY, true);
+      return;
+    }
     if (!drag) return;
     const rect = container.getBoundingClientRect();
     const margin = 28;
@@ -355,6 +423,15 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
   };
 
   const onMouseUp = (): void => {
+    if (objectDrag) {
+      if (objectDrag.moved) {
+        // Revert the transient preview to the grab offset, then commit the whole
+        // drag as ONE undoable op (mirrors the resize commit).
+        deps.applyObjectMove(objectDrag.blockId, objectDrag.baseX, objectDrag.baseY, true);
+        deps.applyObjectMove(objectDrag.blockId, objectDrag.lastX, objectDrag.lastY, false);
+      }
+      objectDrag = null;
+    }
     drag = null;
     stopAutoScroll();
   };
@@ -413,7 +490,14 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
     // even with no run link — match the cursor to that click affordance, so
     // regenerated/link-free entries still read as clickable.
     const overTocEntry = !hit && !href && pt ? isTocEntryAt(pt) : false;
-    container.style.cursor = hit ? "col-resize" : href || overTocEntry ? "pointer" : "text";
+    // Over an image, swap the I-beam for an object cursor: a move cursor on a
+    // draggable anchored image, an arrow on an in-flow one.
+    let objCursor: string | null = null;
+    if (!hit && !href && !overTocEntry && pt?.inside && !deps.getStory()) {
+      const oh = hitTestSelectableObject(deps.getTree(), pt.pageIndex, pt.x, pt.y, scope());
+      if (oh) objCursor = movableImage(oh.blockId) ? "move" : "default";
+    }
+    container.style.cursor = hit ? "col-resize" : href || overTocEntry ? "pointer" : objCursor ?? "text";
     if ((container.title || "") !== (href ?? "")) container.title = href ?? "";
   };
 

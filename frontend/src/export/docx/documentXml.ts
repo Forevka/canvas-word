@@ -559,38 +559,62 @@ function imageParagraphXml(img: Extract<Block, { kind: "image" }>, ctx: PartCtx)
   const relId = ctx.rels.add(REL.image, target);
   const cx = pxToEmu(img.widthPx);
   const cy = pxToEmu(img.heightPx);
+  const graphic = el(
+    "a:graphic",
+    undefined,
+    el(
+      "a:graphicData",
+      { uri: "http://schemas.openxmlformats.org/drawingml/2006/picture" },
+      el(
+        "pic:pic",
+        undefined,
+        el(
+          "pic:nvPicPr",
+          undefined,
+          el("pic:cNvPr", { id: 0, name: "image" }) + el("pic:cNvPicPr"),
+        ) +
+          el("pic:blipFill", undefined, el("a:blip", { "r:embed": relId }) + el("a:stretch", undefined, el("a:fillRect"))) +
+          el(
+            "pic:spPr",
+            undefined,
+            el("a:xfrm", undefined, el("a:off", { x: 0, y: 0 }) + el("a:ext", { cx, cy })) +
+              el("a:prstGeom", { prst: "rect" }, el("a:avLst")),
+          ),
+      ),
+    ),
+  );
+
+  // Anchored behind/in-front image (wrapNone): re-emit as a wp:anchor so the
+  // absolute position and z-order survive the round-trip (inline would lose them).
+  if (img.anchor) {
+    const a = img.anchor;
+    const anchor = el(
+      "wp:anchor",
+      {
+        distT: 0, distB: 0, distL: 0, distR: 0, simplePos: 0,
+        // relativeHeight is an unsigned int in OOXML; clamp the (possibly
+        // negative, from repeated "send to back") z into the valid range.
+        relativeHeight: Math.max(0, Math.round(a.z ?? 0)), behindDoc: a.behind ? 1 : 0, locked: 0,
+        layoutInCell: 1, allowOverlap: 1,
+      },
+      el("wp:simplePos", { x: 0, y: 0 }) +
+        el("wp:positionH", { relativeFrom: a.relFromH }, el("wp:posOffset", undefined, String(pxToEmu(a.offsetXPx)))) +
+        el("wp:positionV", { relativeFrom: a.relFromV }, el("wp:posOffset", undefined, String(pxToEmu(a.offsetYPx)))) +
+        el("wp:extent", { cx, cy }) +
+        el("wp:wrapNone") +
+        el("wp:docPr", { id: ctx.nextId(), name: "image" }) +
+        graphic,
+    );
+    return el("w:p", undefined, el("w:r", undefined, el("w:drawing", undefined, anchor)));
+  }
+
   const drawing = el(
     "w:drawing",
     undefined,
     el(
       "wp:inline",
       { distT: 0, distB: 0, distL: 0, distR: 0 },
-      el("wp:extent", { cx, cy }) +
-        el("wp:docPr", { id: ctx.nextId(), name: "image" }) +
-        el(
-          "a:graphic",
-          undefined,
-          el(
-            "a:graphicData",
-            { uri: "http://schemas.openxmlformats.org/drawingml/2006/picture" },
-            el(
-              "pic:pic",
-              undefined,
-              el(
-                "pic:nvPicPr",
-                undefined,
-                el("pic:cNvPr", { id: 0, name: "image" }) + el("pic:cNvPicPr"),
-              ) +
-                el("pic:blipFill", undefined, el("a:blip", { "r:embed": relId }) + el("a:stretch", undefined, el("a:fillRect"))) +
-                el(
-                  "pic:spPr",
-                  undefined,
-                  el("a:xfrm", undefined, el("a:off", { x: 0, y: 0 }) + el("a:ext", { cx, cy })) +
-                    el("a:prstGeom", { prst: "rect" }, el("a:avLst")),
-                ),
-            ),
-          ),
-        ),
+      el("wp:extent", { cx, cy }) + el("wp:docPr", { id: ctx.nextId(), name: "image" }) + graphic,
     ),
   );
   const align = img.align === "center" ? "center" : img.align === "right" ? "right" : "left";

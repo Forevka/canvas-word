@@ -157,6 +157,19 @@ export type IRInline =
       anchorWrap?: "square" | "block";
       /** wp:positionH/wp:align when present. */
       anchorAlign?: "left" | "right" | "center";
+      /** Set for wrapNone anchors (image sits behind/in-front of text, not in
+       *  the flow). Maps to ImageBlock.anchor — positioned absolutely, no flow
+       *  height, no text reflow. */
+      anchorFloat?: {
+        behind: boolean;
+        offsetXEmu: number;
+        offsetYEmu: number;
+        relFromH: "page" | "margin" | "column" | "leftMargin" | "rightMargin" | "character";
+        relFromV: "page" | "margin" | "paragraph" | "line" | "topMargin" | "bottomMargin";
+        decorative?: boolean;
+        /** wp:anchor @relativeHeight — stacking order within the layer. */
+        z?: number;
+      };
     };
 
 export interface IRParaProps {

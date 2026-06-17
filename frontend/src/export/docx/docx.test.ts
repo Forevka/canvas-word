@@ -270,6 +270,44 @@ describe("DOCX export — round trip", () => {
     expect((img as Extract<Block, { kind: "image" }>).widthPx).toBeCloseTo(96, 0);
   });
 
+  it("round-trips a behind-text anchored (wrapNone) background image as wp:anchor", () => {
+    const png = Uint8Array.from(
+      atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="),
+      (c) => c.charCodeAt(0),
+    );
+    const char = { fontFamily: "Georgia", fontSizePx: 16, bold: false, italic: false, underline: false, strikethrough: false, color: "#000" };
+    const paraStyle = { align: "left" as const, lineHeight: 1.2, spaceBeforePx: 0, spaceAfterPx: 0, indentFirstLinePx: 0, indentLeftPx: 0 };
+    const doc: Document = {
+      section: { pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } },
+      blocks: [
+        {
+          kind: "image", id: "bg", revision: 0, src: "blob:fake", widthPx: 816, heightPx: 1056, align: "left",
+          anchor: { behind: true, offsetXPx: -98, offsetYPx: -238, relFromH: "margin", relFromV: "paragraph", decorative: true, z: 42 },
+        },
+        { kind: "paragraph", id: "p1", revision: 0, runs: [{ text: "PARTY INVITATION", style: char }], style: paraStyle },
+      ],
+    };
+    const { bytes } = writeDocx(doc, { "blob:fake": png });
+    // Exported as a floating anchor, not inline.
+    const xml = strFromU8(unzipSync(bytes)["word/document.xml"]!);
+    expect(xml).toContain("wp:anchor");
+    expect(xml).toContain('behindDoc="1"');
+    expect(xml).toContain("wp:wrapNone");
+    expect(xml).not.toContain("wp:inline");
+    // Re-import keeps the anchor + the body text.
+    const b = runImport(bytes).doc;
+    const img = b.blocks.find((bl) => bl.kind === "image") as Extract<Block, { kind: "image" }>;
+    expect(img.anchor).toBeDefined();
+    expect(img.anchor!.behind).toBe(true);
+    expect(img.anchor!.offsetXPx).toBeCloseTo(-98, 0);
+    expect(img.anchor!.offsetYPx).toBeCloseTo(-238, 0);
+    expect(img.anchor!.relFromH).toBe("margin");
+    expect(img.anchor!.relFromV).toBe("paragraph");
+    expect(img.anchor!.z).toBe(42); // relativeHeight round-trips the stacking order
+    expect(img.wrap).toBeUndefined();
+    expect(b.blocks.some((bl) => bl.kind === "paragraph")).toBe(true);
+  });
+
   it("preserves bookmarks", () => {
     const docx = makeDocx({
       "[Content_Types].xml": CONTENT_TYPES_XML,

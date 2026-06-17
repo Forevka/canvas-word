@@ -6,6 +6,7 @@ dist/
 .omc/
 shots/
 .playwright-mcp/
+*.docx
 
 # local Postgres data volume (docker-compose) and env secrets
 /local-db-data/

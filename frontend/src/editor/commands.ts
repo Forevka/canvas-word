@@ -5,7 +5,7 @@ import type { Block, CellBorder, CellBorders, CharStyle, FieldDef, FieldSpec, Im
 import { buildTocParagraphs, buildTocInstruction, buildInstruction, evaluateField } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, GridRect } from "@cw/shared";
 import { isCollapsed, BAND_CONTAINERS } from "@cw/shared";
-import type { Op, SectionGeometry } from "@cw/shared";
+import type { ImagePropsPatch, Op, SectionGeometry } from "@cw/shared";
 import { sliceRuns, applyStylePatchToRuns, mapTextInRuns, containerOf, containerBlocks, containerListOf, locateImage, freshId } from "@cw/shared";
 import { buildTableGrid, cellsInRect, gridOriginOfCell, mergeRows, normalizeRect, rebuildRows, unmergeRows } from "@cw/shared";
 import type { CellSelection } from "./state";
@@ -1825,13 +1825,90 @@ export function deleteTableCmd(): Command {
 
 export function setImageProps(
   blockId: string,
-  patch: Partial<Pick<ImageBlock, "widthPx" | "heightPx" | "align" | "wrap">>,
+  patch: ImagePropsPatch,
   origin: TransactionOrigin = "command",
 ): Command {
   return (state) => {
     const exists = state.doc.blocks.some((b) => b.id === blockId && b.kind === "image");
     if (!exists) return null;
     return tr([{ type: "setImageProps", blockId, patch }], state.selection, origin);
+  };
+}
+
+type ImageAnchor = NonNullable<ImageBlock["anchor"]>;
+
+/** Anchor for an image being lifted out of the flow into the behind/front layer:
+ *  keep its existing anchor (just flip the layer) or seed one at the margin. */
+function anchorFor(img: ImageBlock, behind: boolean): ImageAnchor {
+  return img.anchor
+    ? { ...img.anchor, behind }
+    : { behind, offsetXPx: 0, offsetYPx: 0, relFromH: "margin", relFromV: "paragraph" };
+}
+
+/** z extremes across every anchored image in the document (body + cells). */
+function anchorZRange(doc: EditorState["doc"]): { min: number; max: number } {
+  let min = 0;
+  let max = 0;
+  const walk = (blocks: Block[]): void => {
+    for (const b of blocks) {
+      if (b.kind === "image" && b.anchor) {
+        const z = b.anchor.z ?? 0;
+        if (z < min) min = z;
+        if (z > max) max = z;
+      } else if (b.kind === "table") {
+        for (const row of b.rows) for (const cell of row.cells) walk(cell.blocks);
+      }
+    }
+  };
+  walk(doc.blocks);
+  return { min, max };
+}
+
+/** Toggle an image between the behind-text and in-front-of-text layers (lifting
+ *  an in-line image into an anchored one). Clears `wrap` — the two are exclusive. */
+export function setImageLayer(blockId: string, behind: boolean): Command {
+  return (state) => {
+    const loc = locateImage(state.doc, blockId);
+    if (!loc) return null;
+    const anchor = anchorFor(loc.image, behind);
+    return tr([{ type: "setImageProps", blockId, patch: { anchor, wrap: null } }], state.selection, "command");
+  };
+}
+
+/** Raise an image above every other object AND the text (in-front layer, top z). */
+export function bringImageToFront(blockId: string): Command {
+  return (state) => {
+    const loc = locateImage(state.doc, blockId);
+    if (!loc) return null;
+    const anchor: ImageAnchor = { ...anchorFor(loc.image, false), z: anchorZRange(state.doc).max + 1 };
+    return tr([{ type: "setImageProps", blockId, patch: { anchor, wrap: null } }], state.selection, "command");
+  };
+}
+
+/** Drop an image below every other object AND the text (behind layer, bottom z). */
+export function sendImageToBack(blockId: string): Command {
+  return (state) => {
+    const loc = locateImage(state.doc, blockId);
+    if (!loc) return null;
+    const anchor: ImageAnchor = { ...anchorFor(loc.image, true), z: anchorZRange(state.doc).min - 1 };
+    return tr([{ type: "setImageProps", blockId, patch: { anchor, wrap: null } }], state.selection, "command");
+  };
+}
+
+/** Reposition an anchored image to absolute anchor offsets (drag-move). Pass
+ *  origin "transient" for the live drag preview and "command" for the committed
+ *  drop — the same revert-then-commit dance as resize keeps a drag = one undo step. */
+export function moveAnchoredImage(
+  blockId: string,
+  offsetXPx: number,
+  offsetYPx: number,
+  origin: TransactionOrigin = "command",
+): Command {
+  return (state) => {
+    const loc = locateImage(state.doc, blockId);
+    if (!loc?.image.anchor) return null; // only anchored (out-of-flow) images move
+    const anchor: ImageAnchor = { ...loc.image.anchor, offsetXPx, offsetYPx };
+    return tr([{ type: "setImageProps", blockId, patch: { anchor } }], state.selection, origin);
   };
 }
 

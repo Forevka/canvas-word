@@ -553,6 +553,20 @@ export function createMapper(
     // Anchored with square/tight wrap → an honest float; the model flows
     // following text around it.
     if (inline.anchored && inline.anchorWrap === "square") image.wrap = "square";
+    // wrapNone anchor → absolutely-positioned behind/in-front image: no flow
+    // height, no reflow. Mutually exclusive with `wrap` (parser sets at most one).
+    if (inline.anchorFloat) {
+      const a = inline.anchorFloat;
+      image.anchor = {
+        behind: a.behind,
+        offsetXPx: round2(emuToPx(a.offsetXEmu)),
+        offsetYPx: round2(emuToPx(a.offsetYEmu)),
+        relFromH: a.relFromH,
+        relFromV: a.relFromV,
+        ...(a.decorative ? { decorative: true } : {}),
+        ...(a.z !== undefined ? { z: a.z } : {}),
+      };
+    }
     return image;
   }
 
