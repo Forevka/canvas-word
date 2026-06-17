@@ -10,9 +10,9 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { newApiToken } from "./auth/apiToken";
 import { MemoryChangeStore } from "./store/memoryStore";
 
-let createApp: typeof import("./server").createApp;
+let createApp: typeof import("./app").createApp;
 beforeAll(async () => {
-  ({ createApp } = await import("./server"));
+  ({ createApp } = await import("./app"));
   await installMeasureHost();
 });
 
@@ -48,7 +48,7 @@ describe("/upload integration-token auth", () => {
     const { token, tokenHash, prefix } = newApiToken();
     await store.createApiToken({ name: "partner-crm", tokenHash, prefix });
 
-    const { server } = createApp(store);
+    const { server } = await createApp(store);
     servers.push(server);
     const port = await listen(server);
     const url = `http://127.0.0.1:${port}/upload`;

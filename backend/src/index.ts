@@ -3,4 +3,4 @@
 
 export { createPool, DATABASE_URL } from "./db";
 export { PgChangeStore, type ChangeStore, type DocSnapshotRecord, type MediaRecord } from "./store/ChangeStore";
-export { createApp } from "./server";
+export { createApp } from "./app";

@@ -15,9 +15,9 @@ import { MemoryChangeStore } from "../store/memoryStore";
 // Broadcaster (its default reads this env at construction).
 process.env.SESSION_END_DEBOUNCE_MS = "40";
 
-let createApp: typeof import("../server").createApp;
+let createApp: typeof import("../app").createApp;
 beforeAll(async () => {
-  ({ createApp } = await import("../server"));
+  ({ createApp } = await import("../app"));
 });
 
 const section = (): SectionProps => ({
@@ -85,7 +85,7 @@ describe("session-end webhook", () => {
     const secret = "test-secret";
     await store.createWebhook({ url: `http://127.0.0.1:${catcherPort}/hook`, secret, events: ["document.session_ended"] });
 
-    const { server } = createApp(store);
+    const { server } = await createApp(store);
     servers.push(server);
     const port = await listen(server);
 
@@ -157,7 +157,7 @@ describe("comment.mention webhook", () => {
     const secret = "mention-secret";
     await store.createWebhook({ url: `http://127.0.0.1:${catcherPort}/hook`, secret, events: ["comment.mention"] });
 
-    const { server } = createApp(store);
+    const { server } = await createApp(store);
     servers.push(server);
     const port = await listen(server);
 

@@ -11,7 +11,10 @@
 //   ADMIN_TOKEN_SECRET  (default a fixed dev string)
 
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type { IncomingHttpHeaders } from "node:http";
+
+/** Anything carrying request headers — a raw IncomingMessage or a Fastify request. */
+type HasHeaders = { headers: IncomingHttpHeaders };
 
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME ?? "admin";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "admin";
@@ -72,19 +75,10 @@ export function verifyToken(token: string): AdminToken | null {
 }
 
 /** Extract a bearer token from the Authorization header and verify it. */
-export function authFromRequest(req: IncomingMessage): AdminToken | null {
+export function authFromRequest(req: HasHeaders): AdminToken | null {
   const header = req.headers["authorization"];
   if (!header || Array.isArray(header)) return null;
   const m = /^Bearer\s+(.+)$/i.exec(header.trim());
   if (!m) return null;
   return verifyToken(m[1]!);
-}
-
-/** Gate an admin route. Returns true if authorized; otherwise writes 401 and
- *  returns false (the caller should stop). */
-export function requireAdmin(req: IncomingMessage, res: ServerResponse): boolean {
-  if (authFromRequest(req)) return true;
-  res.writeHead(401, { "content-type": "application/json", "access-control-allow-origin": "*" });
-  res.end(JSON.stringify({ error: "unauthorized" }));
-  return false;
 }
