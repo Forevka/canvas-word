@@ -12,6 +12,7 @@
 
 import type { DocPosition } from "../model/position";
 import type { CharStyle, Run } from "../model/document";
+import type { Op } from "../model/ops";
 import type { UserInfo } from "../change";
 
 /** Rich-text comment body: the same style-homogeneous run list the document
@@ -28,7 +29,22 @@ export interface ReviewAnchor {
   end: DocPosition;
 }
 
-export type SuggestionKind = "insert" | "delete" | "format";
+export type SuggestionKind = "insert" | "delete" | "format" | "structural";
+
+/** A tracked structural edit (split/merge/block/table op). The forward `op` was
+ *  already applied to the live core doc when the suggestion was recorded; reject
+ *  applies `inverse` to undo it. Both are captured at intercept time (the inverse
+ *  is harvested from applyOp's exact inverse), so resolve never reconstructs it.
+ *  `blockId` is the doc block this record hangs on — when that block no longer
+ *  exists the record is dead (GC drops it), mirroring how a collapsed text anchor
+ *  signals a dead insert/delete record. */
+export interface StructuralChange {
+  op: Op;
+  inverse: Op;
+  /** Block whose disappearance kills the record (created/merged/removed block,
+   *  or the host table for table ops). */
+  blockId: string;
+}
 
 export interface Suggestion {
   /** Client-minted, globally unique (freshId). */
@@ -44,6 +60,11 @@ export interface Suggestion {
    *  inverse so reject can undo it (captured via applyStylePatchToRuns). */
   patch?: Partial<CharStyle>;
   inverse?: Partial<CharStyle>;
+  /** structural only: the applied core op + its inverse + the block the record
+   *  hangs on. The `anchor` of a structural record is a degenerate point on its
+   *  block (there is no text range to highlight) — paint draws a coarse
+   *  block-level change-bar instead. */
+  structural?: StructuralChange;
   /** Optional grouping: one continuous authoring action (typing a word) is one
    *  suggestion that grows; groupId lets the reviewer accept/reject related
    *  records as a unit. */

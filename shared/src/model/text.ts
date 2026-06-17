@@ -59,6 +59,29 @@ export const blockById = (doc: Document, blockId: string): Paragraph | undefined
 export const blockIndexOf = (doc: Document, blockId: string): number =>
   paragraphsOf(doc).findIndex((b) => b.id === blockId);
 
+/** Every block id present anywhere in the doc — top-level blocks (paragraph,
+ *  image, table) in body + bands, table ids, and paragraph/image ids nested in
+ *  table cells. Used by the review layer's structural-suggestion GC, which keys
+ *  on whole-block identity rather than a text offset range. */
+const collectBlockIds = (blocks: Block[], into: Set<string>): void => {
+  for (const b of blocks) {
+    into.add(b.id);
+    if (b.kind === "table") {
+      for (const row of b.rows) for (const cell of row.cells) collectBlockIds(cell.blocks, into);
+    }
+  }
+};
+
+/** Does a block with this id exist anywhere in the document (any kind, any
+ *  container, including table cells)? */
+export const blockExists = (doc: Document, blockId: string): boolean => {
+  const ids = new Set<string>();
+  collectBlockIds(doc.blocks, ids);
+  for (const band of BAND_CONTAINERS) collectBlockIds(doc.section[band] ?? [], ids);
+  for (const paras of Object.values(doc.footnotes ?? {})) for (const p of paras) ids.add(p.id);
+  return ids.has(blockId);
+};
+
 // ---------------------------------------------------------------------------
 // Paragraph locator — content ops work on any paragraph, wherever it lives.
 

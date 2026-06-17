@@ -9,7 +9,7 @@
 // acceptAll/rejectAll fold back-to-front in document order so earlier anchors
 // stay valid as later ranges collapse — one Transaction, one undo step.
 
-import { applyStylePatchToRuns, type Op } from "../model/ops";
+import { applyStylePatchToRuns, containerOf, type Op } from "../model/ops";
 import type { Document } from "../model/document";
 import { blockById, blockIndexOf } from "../model/text";
 import type { ReviewLayer, Suggestion } from "./model";
@@ -43,6 +43,8 @@ const drop = (id: string): ReviewOp => ({ type: "removeSuggestion", id });
 export function acceptSuggestion(doc: Document, review: ReviewLayer, id: string): Resolution | null {
   const s = review.suggestions.find((x) => x.id === id);
   if (!s) return null;
+  // structural + format + insert are already applied to the live doc → accept is
+  // a pure record drop. Only a tracked DELETE still needs its destructive op.
   return s.kind === "delete" ? { ops: deleteAnchorOp(s), reviewOps: [drop(id)] } : { ops: [], reviewOps: [drop(id)] };
 }
 
@@ -51,13 +53,22 @@ export function rejectSuggestion(doc: Document, review: ReviewLayer, id: string)
   if (!s) return null;
   if (s.kind === "insert") return { ops: deleteAnchorOp(s), reviewOps: [drop(id)] };
   if (s.kind === "format") return { ops: formatRejectOp(doc, s), reviewOps: [drop(id)] };
+  // structural reject re-applies the exact inverse captured at intercept time.
+  if (s.kind === "structural") return { ops: s.structural ? [s.structural.inverse] : [], reviewOps: [drop(id)] };
   return { ops: [], reviewOps: [drop(id)] }; // delete → keep text, drop record
 }
 
-/** Document-order key for back-to-front folding (later blocks/offsets first). */
+/** Document-order key for back-to-front folding of TEXT records (later
+ *  blocks/offsets first). Structural records are NOT ordered this way — their
+ *  anchored block moved/changed shape, so a positional key is meaningless; they
+ *  fold by creation order instead (see resolveAll). */
 function orderKey(doc: Document, s: Suggestion): number {
-  const bi = blockIndexOf(doc, s.anchor.start.blockId);
-  return (bi < 0 ? 1e9 : bi) * 1e7 + s.anchor.start.offset;
+  let bi = blockIndexOf(doc, s.anchor.start.blockId);
+  if (bi < 0) {
+    const top = containerOf(doc, s.anchor.start.blockId);
+    bi = top ? top.index : 1e5;
+  }
+  return bi * 1e7 + s.anchor.start.offset;
 }
 
 function resolveAll(
@@ -65,13 +76,21 @@ function resolveAll(
   review: ReviewLayer,
   one: (doc: Document, review: ReviewLayer, id: string) => Resolution | null,
 ): Resolution {
-  const ordered = review.suggestions.slice().sort((a, b) => orderKey(doc, b) - orderKey(doc, a));
+  // STRUCTURAL records first, newest-first: each structural op was applied on the
+  // post-state of the previous (a paste = split then insert), so its inverse must
+  // unwind in reverse creation order — exactly like undo. Doing them before the
+  // text records keeps block indices/identities the text anchors reference valid
+  // (a structural reject can re-add or remove whole blocks).
+  const structural = review.suggestions.filter((s) => s.kind === "structural").sort((a, b) => b.createdAt - a.createdAt);
+  // TEXT records back-to-front in document order so earlier ranges stay valid as
+  // later ones collapse.
+  const text = review.suggestions.filter((s) => s.kind !== "structural").sort((a, b) => orderKey(doc, b) - orderKey(doc, a));
   const ops: Op[] = [];
   const reviewOps: ReviewOp[] = [];
-  for (const s of ordered) {
+  for (const s of [...structural, ...text]) {
     const r = one(doc, review, s.id);
     if (!r) continue;
-    ops.push(...r.ops); // back-to-front → earlier anchors stay valid
+    ops.push(...r.ops);
     reviewOps.push(...r.reviewOps);
   }
   return { ops, reviewOps };

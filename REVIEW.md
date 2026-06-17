@@ -239,9 +239,14 @@ Per-op rewrite rules:
     `addSuggestion{delete}` over them. Caret moves to the range start; text stays.
 - **setParaStyle / char-style (setRuns over a range)** → applied; emit
   `addSuggestion{format, patch, inverse}`.
-- **splitParagraph / mergeParagraphs / insertBlock / removeBlock / table\*** →
-  V1: applied unchanged and attributed coarsely (author + timestamp on the
-  block), with accept/reject limited; **structural suggestions are V2** (§8).
+- **splitParagraph / mergeParagraphs / insertBlock / removeBlock /
+  insert·removeTableRow / insert·removeTableColumn** → applied unchanged (the doc
+  stays live) and emit `addSuggestion{structural, structural:{op, inverse,
+  blockId}}`. The op's exact inverse is harvested from `applyOp` at intercept
+  time. Accept drops the record (already applied); reject re-applies the stored
+  inverse. The record hangs on `blockId` (the created/merged/removed block, or
+  the host table) and is GC'd when that block no longer exists. Paint marks it
+  with a block-level change-bar (there is no text range to highlight).
 
 The runtime applies `core` through the normal `commit` path (so it is undoable,
 recorded, and synced exactly as today) and applies `reviewOps` to the sidecar +
@@ -418,12 +423,18 @@ changes, threaded comments (open/resolve), accept/reject (one + all), author
 attribution + colors, live collab of both channels, paint decorations, separate
 persistence, default-bake export.
 
+**Shipped in V2:**
+- **Structural suggestions** — tracked paragraph split/merge, block add/remove,
+  and table row/column add/remove. A `structural` record carries the applied
+  `op` + its exact `inverse` (harvested from `applyOp` at intercept time) + the
+  `blockId` it hangs on; accept drops the record, reject re-applies the inverse.
+  The record is block-keyed (its degenerate point anchor still rides
+  `mapPosition`) and GC'd by block existence (`gcStructuralReviewLayer`) rather
+  than by anchor collapse. `acceptAll`/`rejectAll` resolve structural records
+  newest-first (reverse application order — a paste's split then insert unwinds
+  correctly) before the positionally-folded text records. See §5.2.
+
 **Deferred / called out:**
-- **Structural suggestions** (tracked paragraph split/merge, block & table-row
-  add/remove). Sketch: a `structural` record keyed by `blockId` rather than a
-  text range; accept/reject maps to `insertBlock`/`removeBlock`/`split`/`merge`
-  inverses. Split/merge anchors are fragile under concurrent edits — needs its
-  own rebase rules; **V2**.
 - **Overlapping suggestions** (a delete inside an insert; a format over a
   delete). V1 precedence: an insertion fully inside a deletion is hard-removed on
   accept-delete; a format over deleted text is dropped when the deletion is

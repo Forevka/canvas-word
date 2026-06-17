@@ -101,6 +101,7 @@ import type { Change, ChangeOrigin } from "@cw/shared";
 import {
   applyReviewOp,
   emptyReview,
+  gcStructuralReviewLayer,
   rebaseReview,
   type Fragment,
   type ReviewLayer,
@@ -895,6 +896,9 @@ export function createEditor(
       rebaseReviewLayer(res.mapPosition); // suggestion/comment anchors travel too
       inverses.unshift(res.inverse);
     }
+    // Structural records are block-keyed (no text range to ride mapPosition), so
+    // GC them by block existence once the doc reaches its new shape.
+    review = gcStructuralReviewLayer(review, doc);
     return inverses;
   };
 
@@ -1024,6 +1028,7 @@ export function createEditor(
         };
       }
     }
+    review = gcStructuralReviewLayer(review, doc); // remote removeBlock kills its record
     if (ops.length > 0) notifyReviewChanged();
     afterMutation(sel);
   };

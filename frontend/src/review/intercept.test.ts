@@ -121,25 +121,40 @@ describe("intercept — format", () => {
   });
 });
 
-describe("intercept — pass-through (untracked V1 boundary)", () => {
-  it("structural ops pass through untracked", () => {
+describe("intercept — structural suggestions", () => {
+  it("splitParagraph stays in core and yields one structural suggestion carrying op + inverse", () => {
     const doc = docOf(para("p", "hello"));
     const t = tr([{ type: "splitParagraph", at: { blockId: "p", offset: 2 }, newBlockId: "p2" }], "p2", 0);
     const r = intercept(t, emptyReview("d"), doc, alice, 100);
-    expect(r.core).toBe(t);
-    expect(r.reviewOps).toHaveLength(0);
+    expect(r.core.ops).toEqual(t.ops); // split really applied (doc stays live)
+    expect(r.reviewOps).toHaveLength(1);
+    const op = r.reviewOps[0]!;
+    expect(op.type).toBe("addSuggestion");
+    if (op.type === "addSuggestion") {
+      expect(op.s.kind).toBe("structural");
+      expect(op.s.structural?.op).toEqual(t.ops[0]);
+      expect(op.s.structural?.blockId).toBe("p2"); // hangs on the created block
+      expect(op.s.structural?.inverse).toEqual({ type: "mergeParagraphs", firstBlockId: "p" });
+    }
   });
 
-  it("multi-op transactions pass through untracked", () => {
-    const doc = docOf(para("p", "hello"), para("q", "world"));
-    const t = tr(
-      [
-        { type: "deleteRange", blockId: "p", start: 2, end: 5 },
-        { type: "deleteRange", blockId: "q", start: 0, end: 2 },
-      ],
-      "p",
-      2,
-    );
+  it("removeBlock keeps the text in core (no destructive op dropped) and tracks it", () => {
+    const doc = docOf(para("p", "keep"), para("q", "gone"));
+    const t = tr([{ type: "removeBlock", blockId: "q" }], "p", 0);
+    const r = intercept(t, emptyReview("d"), doc, alice, 100);
+    // The remove still runs in core; rejecting re-inserts via the stored inverse.
+    expect(r.core.ops).toEqual(t.ops);
+    const op = r.reviewOps[0]!;
+    if (op.type === "addSuggestion") {
+      expect(op.s.kind).toBe("structural");
+      expect(op.s.structural?.blockId).toBe("q");
+      expect(op.s.structural?.inverse.type).toBe("insertBlock");
+    }
+  });
+
+  it("a structural op on a missing block passes through untracked", () => {
+    const doc = docOf(para("p", "hello"));
+    const t = tr([{ type: "mergeParagraphs", firstBlockId: "nope" }], "p", 0);
     const r = intercept(t, emptyReview("d"), doc, alice, 100);
     expect(r.core).toBe(t);
     expect(r.reviewOps).toHaveLength(0);

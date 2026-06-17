@@ -24,6 +24,7 @@
 // paste) pass through to core UNTRACKED — finer handling is V2.
 
 import {
+  applyOp,
   blockById,
   textOfRuns,
   type CharStyle,
@@ -32,6 +33,7 @@ import {
   type Run,
   type ReviewOp,
   type ReviewLayer,
+  type StructuralChange,
   type Suggestion,
   type UserInfo,
   freshId,
@@ -134,6 +136,49 @@ function mkSuggestion(kind: Suggestion["kind"], blockId: string, s: number, e: n
   return { id: freshId(), kind, anchor: { start: pos(blockId, s), end: pos(blockId, e) }, author, createdAt: now, ...extra };
 }
 
+/** The block a structural op hangs on for GC (its disappearance kills the
+ *  record). For removeBlock that's the still-present (text kept) block; for the
+ *  others it's the created / merged-into / host-table block. */
+function structuralBlockId(op: Op): string | null {
+  switch (op.type) {
+    case "splitParagraph":
+      return op.newBlockId;
+    case "mergeParagraphs":
+      return op.firstBlockId;
+    case "insertBlock":
+      return op.block.id;
+    case "removeBlock":
+      return op.blockId;
+    case "insertTableRow":
+    case "removeTableRow":
+    case "insertTableColumn":
+    case "removeTableColumn":
+      return op.tableId;
+    default:
+      return null;
+  }
+}
+
+/** Build a structural suggestion for an already-buildable core op, harvesting
+ *  the op's EXACT inverse from applyOp (run against the pre-op doc — the result
+ *  doc is discarded; we only keep the inverse). The forward op stays in core so
+ *  the doc stays live; reject re-applies the stored inverse. */
+function mkStructural(op: Op, doc: Document, author: UserInfo, now: number, groupId?: string): Suggestion | null {
+  const blockId = structuralBlockId(op);
+  if (blockId === null) return null;
+  let inverse: Op;
+  try {
+    inverse = applyOp(doc, op).inverse;
+  } catch {
+    return null; // op can't apply to this doc → don't track (caller passes through)
+  }
+  const structural: StructuralChange = { op, inverse, blockId };
+  const extra: Partial<Suggestion> = { structural };
+  if (groupId !== undefined) extra.groupId = groupId;
+  // Degenerate point anchor on the block; paint uses a block-level change-bar.
+  return mkSuggestion("structural", blockId, 0, 0, author, now, extra);
+}
+
 /** The pass-through result (no tracking). */
 const passThrough = (trn: Transaction): InterceptResult => ({ core: trn, reviewOps: [] });
 
@@ -188,7 +233,23 @@ export function intercept(trn: Transaction, review: ReviewLayer, doc: Document, 
       return { core: trn, reviewOps: [{ type: "addSuggestion", s }] };
     }
 
+    case "splitParagraph":
+    case "mergeParagraphs":
+    case "insertBlock":
+    case "removeBlock":
+    case "insertTableRow":
+    case "removeTableRow":
+    case "insertTableColumn":
+    case "removeTableColumn": {
+      // Structural edits stay in core (the doc stays live) and are tracked as a
+      // structural suggestion carrying the op + its exact inverse. Reject
+      // re-applies the inverse; accept just drops the record.
+      const s = mkStructural(op, doc, author, now);
+      if (!s) return passThrough(trn);
+      return { core: trn, reviewOps: [{ type: "addSuggestion", s }] };
+    }
+
     default:
-      return passThrough(trn); // structural ops: untracked V1
+      return passThrough(trn); // remaining ops (setParaStyle, table-structure, props…): untracked
   }
 }
