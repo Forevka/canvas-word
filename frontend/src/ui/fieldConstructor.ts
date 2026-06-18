@@ -3,18 +3,23 @@
 // the right column shows a live preview of the result. On Apply, the caller turns
 // the FieldSpec into ops (insertFieldCmd / editFieldCmd). Pure presentation.
 
-import type { CharStyle, FieldSpec, IfOp, PageNumFmt } from "@cw/shared";
+import type { CharStyle, FieldSpec, IfOp, PageNumFmt, Run } from "@cw/shared";
 import { evaluateIf, formatFieldDate } from "@cw/shared";
 import { injectCssOnce } from "./styles";
 
 export interface FieldConstructorOptions {
   /** Pre-fill for editing an existing field; omit to insert a new one. */
   initial?: FieldSpec;
-  /** Base run style for IF result text. */
+  /** Base run style for the result preview (and IF result text). */
   baseStyle: CharStyle;
   /** "now" for the DATE/TIME preview. */
   now?: Date;
   onApply: (spec: FieldSpec) => void;
+  /** Paint the result preview into `host` in the document's real font (via a child
+   *  document) instead of plain text. Reuses `host` across refreshes. */
+  renderResult?: (host: HTMLElement, runs: Run[]) => void;
+  /** Called when the dialog closes — tear down the child document. */
+  onClose?: () => void;
 }
 
 export interface FieldConstructorHandle {
@@ -185,12 +190,35 @@ export function showFieldConstructor(opts: FieldConstructorOptions): FieldConstr
     refresh();
   }
 
+  // The field result as styled runs. PAGE/NUMPAGES use sample values (the dialog
+  // has no pagination context); DATE/TIME/IF are materialized from the spec.
+  const resultRuns = (spec: FieldSpec): Run[] => {
+    switch (spec.type) {
+      case "PAGE":
+        return [{ text: "1", style: { ...opts.baseStyle } }];
+      case "NUMPAGES":
+        return [{ text: "12", style: { ...opts.baseStyle } }];
+      case "DATE":
+      case "TIME":
+        return [{ text: formatFieldDate(now, spec.format) || "(empty format)", style: { ...opts.baseStyle } }];
+      default: {
+        const runs = evaluateIf(spec);
+        return runs.length ? runs : [{ text: "(empty)", style: { ...opts.baseStyle } }];
+      }
+    }
+  };
+
   function refresh(): void {
     const spec = readSpec();
-    if (spec.type === "PAGE") { prev.textContent = "1"; note.textContent = "Live — resolves to the current page per page (i, I, a, A per format)."; }
-    else if (spec.type === "NUMPAGES") { prev.textContent = "12"; note.textContent = "Live — resolves to the document's total page count."; }
-    else if (spec.type === "DATE" || spec.type === "TIME") { prev.textContent = formatFieldDate(now, spec.format) || "(empty format)"; note.textContent = "Materialized now; refresh with Update Field."; }
-    else { prev.textContent = evaluateIf(spec).map((r) => r.text).join("") || "(empty)"; note.textContent = "Materialized from the comparison; refresh with Update Field."; }
+    const runs = resultRuns(spec);
+    // renderResult reuses `prev` as its surface host — don't clear it between calls.
+    if (opts.renderResult) opts.renderResult(prev, runs);
+    else prev.textContent = runs.map((r) => r.text).join("") || "(empty)";
+    note.textContent =
+      spec.type === "PAGE" ? "Live — resolves to the current page per page (i, I, a, A per format)."
+      : spec.type === "NUMPAGES" ? "Live — resolves to the document's total page count."
+      : spec.type === "DATE" || spec.type === "TIME" ? "Materialized now; refresh with Update Field."
+      : "Materialized from the comparison; refresh with Update Field.";
   }
 
   typeSel.addEventListener("change", rebuildForm);
@@ -212,6 +240,7 @@ export function showFieldConstructor(opts: FieldConstructorOptions): FieldConstr
     close(): void {
       backdrop.remove();
       ac.abort();
+      opts.onClose?.(); // tear down the child document
     },
   };
   window.addEventListener("keydown", (ev: KeyboardEvent) => {

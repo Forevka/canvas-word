@@ -28,13 +28,16 @@ import type { LayoutTree, Page, PlacedBlock } from "./layout/layoutTree";
 import { computeTocEdits } from "./recalc/recalcToc";
 import { createSdtPopup } from "./editor/sdtPopup";
 import { createCommentController } from "./editor/commentController";
-import { createPaintLayer, type RemoteCaret } from "./paint/renderer";
+import { createPaintLayer, type RemoteCaret, type PaintLayerOptions } from "./paint/renderer";
+import { createChildDocument, type ChildDocument, type StyleContext } from "./child/childDocument";
+export type { ChildDocument, ChildContent, ChildRenderOptions, ChildEditorHandle, StyleContext } from "./child/childDocument";
 import { createSelectionController } from "./input/selectionController";
 import { createObjectFrame } from "./input/objectController";
 import { createImeProxy } from "./input/imeProxy";
 import { createKeymapHandler, type StyleKey } from "./input/keymap";
 import { extractFragment, fragmentToHtml, fragmentToPlainText, htmlToFragment, tableRectToClipboard, type DocFragment } from "./input/clipboard";
 import { parseOoxmlFragment } from "./import/docx/fragment";
+import { mediaUrl, registerMediaBytes } from "./media/store";
 import { importDocx } from "./import/docx/importDocx";
 import { showContextMenu, type ContextMenuHandle, type MenuEntry } from "./ui/contextMenu";
 import { showSdtInspector, type SdtInspectorData, type SdtInspectorHandle } from "./ui/sdtInspector";
@@ -159,6 +162,12 @@ export interface Editor {
    *  page-local geometry). Read-only snapshot for diagnostics/agent inspection of
    *  text placement and rendering. */
   getLayoutTree(): LayoutTree;
+  /** A live snapshot of this document's style context (stylesheet, list defs,
+   *  content-control + field maps, page section) — what a child document shares. */
+  getStyleContext(): StyleContext;
+  /** Create a child document that shares this editor's live styles/fonts/theme and
+   *  renders or edits a content slice on canvas (see ./child/childDocument). */
+  createChild(): ChildDocument;
   getSelectedObject(): string | null;
   dispatch(cmd: Command): void;
   toggleStyle(key: StyleKey): void;
@@ -303,6 +312,9 @@ export interface EditorOptions {
    *  the "Update Field" context-menu action for a non-built-in field; the result is
    *  imported and spliced in as the field's new result. Absent ⇒ no refresh. */
   resolveField?: FieldResolver;
+  /** Paint-surface tuning passed to the canvas layer — e.g. `{ chrome: false }`
+   *  to drop page shadow/gaps for an embedded child-document editor. */
+  paintOptions?: PaintLayerOptions;
 }
 
 /** Request passed to a custom-field resolver. */
@@ -340,6 +352,25 @@ async function fieldResultToBlocks(result: FieldResult): Promise<Block[]> {
   return (await importDocx(input)).doc.blocks;
 }
 
+/** Deep-clone a block list with ONE content control's run markers removed, so the
+ *  control's content can be edited as a plain mini-document in a child editor — no
+ *  nested control frame, and no chance of producing a second copy of the SDT. The
+ *  commit (replaceSdt*) re-applies the marker, re-wrapping the whole result. */
+function stripSdtMarker(blocks: Block[], sdtId: string): Block[] {
+  const clone = structuredClone(blocks);
+  const walk = (bs: Block[]): void => {
+    for (const b of bs) {
+      if (b.kind === "paragraph") {
+        for (const r of b.runs) if (r.style.sdtId === sdtId) delete r.style.sdtId;
+      } else if (b.kind === "table") {
+        for (const row of b.rows) for (const c of row.cells) walk(c.blocks);
+      }
+    }
+  };
+  walk(clone);
+  return clone;
+}
+
 export function createEditor(
   container: HTMLElement,
   initialDoc: Document,
@@ -354,7 +385,7 @@ export function createEditor(
   let mode: EditMode = options.mode ?? (options.readonly ? "view" : "edit");
   const allowedModes = options.allowedModes;
   const readonly = mode === "view";
-  const paint = createPaintLayer(container);
+  const paint = createPaintLayer(container, options.paintOptions);
   const undoMgr = new UndoManager();
   // Document history: every committed edit (and undo/redo, as forward ops) is
   // recorded as a Change. The base snapshot + this ordered log reconstructs any
@@ -1667,132 +1698,38 @@ export function createEditor(
   // inline controls render just their run slice.
   let sdtInspector: SdtInspectorHandle | null = null;
 
-  /** Render a block list to preview HTML that mirrors the document — runs with
-   *  their styles, images as <img>, tables as <table>, empty paragraphs kept. */
-  // When `objRefs` is supplied (top-level editable render), each image/table is
-  // captured into it and emitted wrapped in a contenteditable=false div carrying
-  // its ref index — so the Save round-trip restores the object verbatim instead
-  // of dropping it. Nested (cell) renders pass no collector: their objects ride
-  // along inside the parent table's single ref.
-  const renderBlocksHtml = (
-    blocks: Block[],
-    objRefs?: Block[],
-  ): { html: string; text: string; paraCount: number; charCount: number; hasObjects: boolean } => {
-    let html = "";
+  /** Plain-text summary of a block list — drives the inspector's empty check,
+   *  copy button, and char/paragraph counts. The preview itself is canvas-rendered
+   *  by a child document (real fonts/metrics), not an HTML approximation. */
+  const blocksSummary = (blocks: Block[]): { text: string; paraCount: number; charCount: number } => {
     let text = "";
     let paraCount = 0;
     let charCount = 0;
-    let hasObjects = false;
-    const objHtml = (inner: string): string => {
-      if (!objRefs) return inner;
-      const k = objRefs.length;
-      // The referenced block is pushed by the caller; here we only know its slot.
-      return `<div data-cw-ref="${k}" contenteditable="false" style="position:relative;">${inner}</div>`;
-    };
     for (const b of blocks) {
       if (b.kind === "paragraph") {
         paraCount++;
         const t = textOfRuns(b.runs);
         charCount += t.length;
         text += t + "\n";
-        html += t.length === 0
-          ? "<p>&nbsp;</p>"
-          : fragmentToHtml({ blocks: [{ runs: b.runs, style: b.style }], inline: false });
-      } else if (b.kind === "image") {
-        hasObjects = true;
-        const src = b.src.replace(/"/g, "&quot;");
-        const img = `<img src="${src}" style="display:block;margin:6px auto;max-width:100%;width:${Math.round(b.widthPx)}px;height:auto;">`;
-        html += objHtml(img);
-        if (objRefs) objRefs.push(b);
-        text += "[image]\n";
       } else {
-        hasObjects = true;
-        let tbl = `<table style="border-collapse:collapse;width:100%;margin:6px 0;">`;
-        for (const row of b.rows) {
-          tbl += "<tr>";
-          for (const cell of row.cells) {
-            const span = cell.colSpan && cell.colSpan > 1 ? ` colspan="${cell.colSpan}"` : "";
-            tbl += `<td${span} style="border:1px solid #d0d4d9;padding:3px 6px;vertical-align:top;">${renderBlocksHtml(cell.blocks).html}</td>`;
-          }
-          tbl += "</tr>";
-        }
-        tbl += "</table>";
-        html += objHtml(tbl);
-        if (objRefs) objRefs.push(b);
-        text += "[table]\n";
+        text += (b.kind === "image" ? "[image]" : "[table]") + "\n";
       }
     }
-    return { html, text: text.replace(/\n+$/, ""), paraCount, charCount, hasObjects };
+    return { text: text.replace(/\n+$/, ""), paraCount, charCount };
   };
 
-  /** Parse the inspector's edited HTML back into model blocks, restoring the
-   *  preserved objects: a node carrying data-cw-ref re-injects objRefs[k]
-   *  verbatim; everything between objects is parsed as paragraph runs. Block ids
-   *  are left empty — replaceSdtBlockSpan assigns fresh ones and re-tags runs. */
-  const htmlToBlocksPreserving = (html: string, objRefs: Block[]): Block[] => {
-    const parsed = new DOMParser().parseFromString(html, "text/html");
-    const out: Block[] = [];
-    let buffer = "";
-    const flushText = (): void => {
-      const frag = buffer.trim() === "" && !/&nbsp;|<br/i.test(buffer) ? null : htmlToFragment(buffer);
-      buffer = "";
-      if (!frag) return;
-      for (const fb of frag.blocks) {
-        out.push({ kind: "paragraph", id: "", revision: 0, runs: fb.runs, style: fb.style });
-      }
-    };
-    const refOf = (el: HTMLElement): number | null => {
-      const direct = el.getAttribute("data-cw-ref");
-      if (direct !== null) return Number(direct);
-      // contenteditable can wrap the marked div; honor a descendant ref too.
-      const inner = el.querySelector?.("[data-cw-ref]")?.getAttribute("data-cw-ref");
-      return inner != null ? Number(inner) : null;
-    };
-    for (const node of Array.from(parsed.body.childNodes)) {
-      const el = node instanceof HTMLElement ? node : null;
-      const k = el ? refOf(el) : null;
-      if (k !== null && objRefs[k]) {
-        flushText();
-        out.push(objRefs[k]!);
-      } else {
-        buffer += el ? el.outerHTML : escapeForBuffer(node.textContent ?? "");
-      }
-    }
-    flushText();
-    return out;
-  };
-  const escapeForBuffer = (s: string): string => {
-    const d = document.createElement("span");
-    d.textContent = s;
-    return d.innerHTML;
-  };
-
-  /** Split the inspector's edited HTML into one run-list per top-level block
-   *  (paragraph), preserving order and empties — so a cell-hosted control's N
-   *  paragraphs map 1:1 back to its N tagged cell ranges. */
-  const editedBlockRuns = (html: string): import("@cw/shared").Run[][] => {
-    const parsed = new DOMParser().parseFromString(html, "text/html");
-    const out: import("@cw/shared").Run[][] = [];
-    for (const node of Array.from(parsed.body.childNodes)) {
-      if (node instanceof HTMLElement) {
-        out.push(htmlToFragment(node.outerHTML)?.blocks[0]?.runs ?? []);
-      } else if (node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() !== "") {
-        out.push(htmlToFragment(`<p>${escapeForBuffer(node.textContent ?? "")}</p>`)?.blocks[0]?.runs ?? []);
-      }
-    }
-    return out;
-  };
-
-  /** `blockLevel` controls round-trip through whole-block replacement (objects
-   *  preserved by ref); inline controls round-trip through a paragraph fragment.
-   *  `objRefs` holds the block-level span's images/tables in data-cw-ref order. */
-  type SdtData = SdtInspectorData & { hasObjects: boolean; blockLevel: boolean; objRefs: Block[] };
+  /** The control's content as model blocks + how it must be committed. Block-level
+   *  controls preview/edit their whole top-level block span (paragraphs, images,
+   *  tables, blank lines); inline / cell-hosted controls use per-range paragraph
+   *  slices. The blocks are rendered by a child document, and read back from the
+   *  child editor on Save — no HTML round-trip. */
+  type SdtData = SdtInspectorData & { blocks: Block[]; blockLevel: boolean; multiBlock: boolean };
   const sdtInspectorData = (id: string): SdtData | null => {
     const props = doc.sdts?.[id];
     if (!props) return null;
     const ranges = findSdtRanges(doc, id);
     if (ranges.length === 0) {
-      return { id, props, html: "", text: "", paragraphCount: 0, charCount: 0, hasObjects: false, blockLevel: false, objRefs: [] };
+      return { id, props, text: "", paragraphCount: 0, charCount: 0, blocks: [], blockLevel: false, multiBlock: false };
     }
     const first = ranges[0]!;
     const last = ranges[ranges.length - 1]!;
@@ -1801,63 +1738,84 @@ export function createEditor(
       ranges.length === 1 &&
       firstBlock !== undefined &&
       (first.start > 0 || first.end < textOfRuns(firstBlock.runs).length);
-    // Block-level control: render its whole top-level block span (so images and
-    // blank lines between tagged paragraphs survive). Capture objects into
-    // objRefs so an edit can restore them verbatim.
+    // Block-level control: its whole top-level block span (images + blank lines
+    // between tagged paragraphs survive).
     if (!inlinePartial) {
       const fc = containerOf(doc, first.blockId);
       const lc = containerOf(doc, last.blockId);
       if (fc && lc && fc.where === lc.where) {
         const span = containerBlocks(doc, fc.where).slice(fc.index, lc.index + 1);
-        const objRefs: Block[] = [];
-        const r = renderBlocksHtml(span, objRefs);
-        return { id, props, html: r.html, text: r.text, paragraphCount: r.paraCount, charCount: r.charCount, hasObjects: r.hasObjects, blockLevel: true, objRefs };
+        const s = blocksSummary(span);
+        return { id, props, text: s.text, paragraphCount: s.paraCount, charCount: s.charCount, blocks: span, blockLevel: true, multiBlock: false };
       }
     }
-    // Inline / cell-hosted: per-range run slices (text only).
-    const blocks = ranges
-      .map((rr) => {
+    // Inline / cell-hosted: one paragraph per tagged range (text only).
+    const paras: import("@cw/shared").Paragraph[] = ranges
+      .map((rr): import("@cw/shared").Paragraph | null => {
         const block = blockById(doc, rr.blockId);
-        return block ? { runs: sliceRuns(block.runs, rr.start, rr.end), style: { ...block.style } } : null;
+        return block
+          ? { kind: "paragraph", id: `cw-sdt-${rr.blockId}-${rr.start}`, revision: 0, runs: sliceRuns(block.runs, rr.start, rr.end), style: { ...block.style } }
+          : null;
       })
-      .filter((b): b is { runs: import("@cw/shared").Run[]; style: ParaStyle } => b !== null);
-    const fragment: DocFragment = { blocks, inline: blocks.length === 1 };
-    const text = fragmentToPlainText(fragment);
-    return { id, props, html: fragmentToHtml(fragment), text, paragraphCount: blocks.length, charCount: text.length, hasObjects: false, blockLevel: false, objRefs: [] };
+      .filter((b): b is import("@cw/shared").Paragraph => b !== null);
+    const s = blocksSummary(paras);
+    const multiBlock = new Set(ranges.map((r) => r.blockId)).size > 1;
+    return { id, props, text: s.text, paragraphCount: s.paraCount, charCount: s.charCount, blocks: paras, blockLevel: false, multiBlock };
   };
   const openSdtInspector = (id: string): void => {
     const data = sdtInspectorData(id);
     if (!data) return;
     const props = data.props;
-    // Editable for unlocked text controls. Block-level controls (incl. ones with
-    // images/tables) round-trip through whole-block replacement that preserves
-    // objects by ref, so they no longer need the read-only guard. Value-driven
-    // and locked controls stay read-only.
+    // Editable for unlocked text controls; value-driven (checkbox/dropDown) and
+    // locked controls stay read-only.
     const editable =
       !props.lockContent &&
       props.type !== "checkbox" &&
       props.type !== "dropDown";
     sdtInspector?.close();
+    // A child document sharing this editor's live styles renders the preview and
+    // hosts the canvas-native editor; Save reads the edited blocks straight back.
+    const child = createChildDocument({ getStyleContext, makeEditor: createEditor });
+    const commit = (blocks: Block[]): boolean => {
+      const before = doc;
+      const ranges = findSdtRanges(doc, id);
+      if (data.blockLevel) {
+        // Body/band block-level control: whole-span replacement (objects survive).
+        dispatch(replaceSdtBlockSpan(id, blocks));
+      } else if (data.multiBlock) {
+        // Cell-hosted control spanning several cells: rewrite each range in place.
+        dispatch(replaceSdtCellContent(id, ranges.map((_, i) => {
+          const b = blocks[i];
+          return b && b.kind === "paragraph" ? b.runs : [];
+        })));
+      } else {
+        // True inline control (one paragraph): fragment replacement.
+        const paras = blocks.filter((b): b is import("@cw/shared").Paragraph => b.kind === "paragraph");
+        const fragment: DocFragment = paras.length
+          ? { inline: paras.length === 1, blocks: paras.map((p) => ({ runs: p.runs, style: p.style })) }
+          : emptyFragmentLike(id);
+        dispatch(replaceSdtContent(id, fragment));
+      }
+      return doc !== before; // dispatch swapped doc iff the edit applied
+    };
+    // Edit/preview the content in isolation: a clone with THIS control's marker
+    // stripped, so the surface shows plain content (no nested control frame) and
+    // can't yield a second copy of the SDT. The commit re-wraps it.
+    const editBlocks = stripSdtMarker(data.blocks, id);
     sdtInspector = showSdtInspector(data, {
       editable,
-      onSave: (html: string): boolean => {
-        const before = doc;
-        const ranges = findSdtRanges(doc, id);
-        const multiBlock = new Set(ranges.map((r) => r.blockId)).size > 1;
-        if (data.blockLevel) {
-          // Body/band block-level control: whole-span replacement, objects by ref.
-          dispatch(replaceSdtBlockSpan(id, htmlToBlocksPreserving(html, data.objRefs)));
-        } else if (multiBlock) {
-          // Cell-hosted control spanning several cells: rewrite each cell in place.
-          const edited = editedBlockRuns(html);
-          dispatch(replaceSdtCellContent(id, ranges.map((_, i) => edited[i] ?? [])));
-        } else {
-          // True inline control (one paragraph): fragment replacement.
-          const fragment = htmlToFragment(html) ?? emptyFragmentLike(id);
-          dispatch(replaceSdtContent(id, fragment));
-        }
-        return doc !== before; // dispatch swapped doc iff the edit applied
+      // Images only round-trip through the block-level (whole-span) commit path.
+      allowImages: editable && data.blockLevel,
+      renderPreview: (host) => child.render(host, { kind: "blocks", blocks: editBlocks }),
+      mountEditor: (host) => {
+        const h = child.mountEditor(host, { kind: "blocks", blocks: editBlocks });
+        return {
+          getBlocks: (): Block[] => h.getBlocks(),
+          insertImage: (bytes, mime, imgOpts) => h.insertImage(bytes, mime, imgOpts),
+        };
       },
+      onSave: commit,
+      onClose: () => child.destroy(),
     });
   };
   /** A one-empty-run fragment carrying the control's base style — used when the
@@ -1878,6 +1836,18 @@ export function createEditor(
       inline: true,
       blocks: [{ runs: [{ text: "", style: style ?? fallbackChar }], style: para }],
     };
+  };
+  /** Open the field constructor with its result preview rendered by a child
+   *  document (the field's result in the document's real font, not plain text). */
+  const openFieldConstructor = (
+    config: Pick<Parameters<typeof showFieldConstructor>[0], "initial" | "baseStyle" | "onApply">,
+  ): void => {
+    const child = createChildDocument({ getStyleContext, makeEditor: createEditor });
+    showFieldConstructor({
+      ...config,
+      renderResult: (host, runs) => child.render(host, { kind: "runs", runs }),
+      onClose: () => child.destroy(),
+    });
   };
   /** Inspect the control at the caret (ribbon button). Returns false if none. */
   const inspectSdtAtCaret = (): boolean => {
@@ -2147,14 +2117,14 @@ export function createEditor(
       const spec = def.spec!;
       const f = focus;
       entries.push(sep, item(`Edit Field (${def.name})…`, () =>
-        showFieldConstructor({ initial: spec, baseStyle: caretStyle(f), onApply: (s) => dispatch(editFieldCmd(def.id, s)) }),
+        openFieldConstructor({ initial: spec, baseStyle: caretStyle(f), onApply: (s) => dispatch(editFieldCmd(def.id, s)) }),
       ));
       if (spec.type !== "PAGE" && spec.type !== "NUMPAGES") {
         entries.push(item(`Update Field (${def.name})`, () => dispatch(updateFieldCmd(def.id))));
       }
     } else if (focus) {
       entries.push(sep, item("Insert Field…", () =>
-        showFieldConstructor({ baseStyle: caretStyle(focus), onApply: (s) => dispatch(insertFieldCmd(s)) }),
+        openFieldConstructor({ baseStyle: caretStyle(focus), onApply: (s) => dispatch(insertFieldCmd(s)) }),
       ));
     }
 
@@ -2477,6 +2447,21 @@ export function createEditor(
   container.addEventListener("pointerup", onPinchUp);
   container.addEventListener("pointercancel", onPinchUp);
 
+  // Live style context for child documents — read off the CURRENT doc each call
+  // so children reflect edits (e.g. a redefined style) the moment they re-render.
+  const getStyleContext = (): StyleContext => {
+    const ctx: StyleContext = { section: doc.section };
+    if (doc.stylesheet) ctx.stylesheet = doc.stylesheet;
+    if (doc.lists) ctx.lists = doc.lists;
+    if (doc.sdts) ctx.sdts = doc.sdts;
+    if (doc.fields) ctx.fields = doc.fields;
+    ctx.defaultStyleId = doc.stylesheet?.defaultStyleId;
+    // Proxy over this document's media/relationships: the session store is shared,
+    // so a child resolves the parent's images and registers new ones back into it.
+    ctx.media = { resolve: (id) => mediaUrl(id), register: (bytes, mime) => registerMediaBytes(bytes, mime) };
+    return ctx;
+  };
+
   return {
     focus(): void {
       proxy.focus();
@@ -2493,6 +2478,8 @@ export function createEditor(
     getLayoutTree(): LayoutTree {
       return tree;
     },
+    getStyleContext,
+    createChild: (): ChildDocument => createChildDocument({ getStyleContext, makeEditor: createEditor }),
     getSelectedObject(): string | null {
       return selectedObject;
     },

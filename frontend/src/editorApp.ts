@@ -1,6 +1,6 @@
 import { bakeReview, colorForId, configureIds, deserializeDocument, freshId, reconstruct, serializeDocument, type Change, type DocSelection, type Document, type Fragment, type ReviewLayer } from "@cw/shared";
 import { emptyParagraphFor } from "./builder/blockFactory";
-import { mediaStore, rehydrateDocMedia } from "./media/store";
+import { mediaStore, mediaUrl, registerMediaBytes, rehydrateDocMedia } from "./media/store";
 import { SyncClient } from "./sync/SyncClient";
 import { createEditor, type CurrentFormat, type EditMode, type ReviewOpEnvelope } from "./index";
 import type { Command } from "./editor/state";
@@ -62,7 +62,7 @@ import {
   removeContentControl,
   sdtAtPosition,
 } from "./editor/commands";
-import { defaultStylesheet, resolveStyle, styleById } from "@cw/shared";
+import { defaultStylesheet, styleById } from "@cw/shared";
 import { bulletListDefinition, numberListDefinition, paragraphsOf, textOfRuns } from "@cw/shared";
 import { ICONS } from "./ui/icons";
 
@@ -413,14 +413,6 @@ const openDocxFile = async (file: File | ArrayBuffer): Promise<void> => {
 };
 
 // ---- demo toolbar (app chrome, not editor core) ----------------------------
-const TOOLBAR_SVG =
-  "data:image/svg+xml," +
-  encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="280" height="100">` +
-      `<rect width="280" height="100" rx="8" fill="#34a853"/>` +
-      `<text x="140" y="56" font-family="Arial" font-size="18" fill="#fff" text-anchor="middle">inserted image</text>` +
-      `</svg>`,
-  );
 
 // One function assigned by the find-bar block below; the ribbon's Find button
 // and the global Ctrl+F shortcut share it.
@@ -1146,23 +1138,17 @@ if (toolbar) {
   group(home, "Styles");
   const styleGallery = el("div", "rib-gallery");
   const styleCards = new Map<string, HTMLButtonElement>();
+  // One child document renders every card's swatch — a real, document-styled
+  // sample (correct font/weight/size/color) instead of damped CSS. Recreated on
+  // rebuild so removed cards' surfaces are torn down.
+  let galleryChild: ReturnType<typeof editor.createChild> | null = null;
   const addStyleCard = (id: string, name: string): HTMLButtonElement => {
     const c = el("button", "style-card");
     c.title = name;
-    c.innerHTML = `<span class="preview">AaBbCc</span><span class="name"></span>`;
+    c.innerHTML = `<span class="preview"></span><span class="name"></span>`;
     (c.querySelector(".name") as HTMLElement).textContent = name;
-    // Render the preview in the style's resolved character formatting (Word's
-    // gallery). Font size is damped to fit the card while still reading larger
-    // for headings/title.
     const prev = c.querySelector(".preview") as HTMLElement;
-    const ch = resolveStyle(stylesheet(), id).char;
-    if (ch.fontFamily) prev.style.fontFamily = ch.fontFamily;
-    prev.style.fontWeight = ch.bold ? "700" : "400";
-    prev.style.fontStyle = ch.italic ? "italic" : "normal";
-    const deco = `${ch.underline ? "underline " : ""}${ch.strikethrough ? "line-through" : ""}`.trim();
-    if (deco) prev.style.textDecoration = deco;
-    if (ch.color) prev.style.color = ch.color;
-    if (ch.fontSizePx) prev.style.fontSize = `${Math.min(16, Math.max(11, ch.fontSizePx * 0.55))}px`;
+    galleryChild?.render(prev, { kind: "styleSample", styleId: id, sampleText: "AaBbCc" }, { fit: true, widthPx: 70, maxHeightPx: 24 });
     c.addEventListener("mousedown", (e) => e.preventDefault());
     c.addEventListener("click", () => {
       editor.dispatch(applyNamedStyle(id));
@@ -1173,6 +1159,8 @@ if (toolbar) {
     return c;
   };
   const rebuildStyleGallery = (): void => {
+    galleryChild?.destroy();
+    galleryChild = editor.createChild();
     styleGallery.textContent = "";
     styleCards.clear();
     for (const s of stylesheet().styles) addStyleCard(s.id, s.name);
@@ -1226,10 +1214,46 @@ if (toolbar) {
   const insTableBtn = btn(ICONS.table, "Insert table", () => {}, true);
   insTableBtn.addEventListener("click", () => tableGridPopover(insTableBtn));
   group(insert, "Illustrations");
-  btn(ICONS.image, "Insert image", () => {
-    editor.dispatch(insertImage(TOOLBAR_SVG, 280, 100)); // top-level caret
-    editor.dispatch(insertImageInCell(TOOLBAR_SVG, 280, 100)); // table-cell caret
-  });
+  // Pick an image from the device, register its bytes in the shared media store
+  // (content-addressed, so it persists + exports), then insert it at the caret at
+  // its natural size (capped to a sensible width). Both dispatches run — only the
+  // one matching the caret context (body vs table cell) applies.
+  const pickAndInsertImage = (): void => {
+    const input = el("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      void (async () => {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const mime = file.type || "image/png";
+        const mediaId = await registerMediaBytes(bytes, mime);
+        const src = mediaUrl(mediaId);
+        if (!src) return;
+        let w = 320;
+        let h = 200;
+        try {
+          const bmp = await createImageBitmap(new Blob([bytes], { type: mime }));
+          w = bmp.width;
+          h = bmp.height;
+          bmp.close();
+        } catch {
+          /* keep fallback dimensions */
+        }
+        const MAX_W = 480; // don't overflow the page on a large photo
+        if (w > MAX_W) {
+          h = Math.round((h * MAX_W) / w);
+          w = MAX_W;
+        }
+        editor.dispatch(insertImage(src, w, h, mediaId)); // top-level caret
+        editor.dispatch(insertImageInCell(src, w, h, mediaId)); // table-cell caret
+        editor.focus();
+      })();
+    });
+    input.click();
+  };
+  btn(ICONS.image, "Insert image from your device", () => pickAndInsertImage());
   group(insert, "Picture"); // acts on the selected image
   enable(
     btn(ICONS.wrapSquare, "Wrap text around image (square)", () => {
@@ -2495,6 +2519,7 @@ let disposeAgentTools: (() => void) | null = null;
 
 const handle: EditorHandle = {
   getDocument: () => editor.getDocument(),
+  createChild: () => editor.createChild(),
   setDocument: (d) => setDocumentFromApi(d),
   openDocx: (file) => openDocxFile(file),
   share: () => goOnlineWithCurrentDoc(),

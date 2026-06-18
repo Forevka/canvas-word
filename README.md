@@ -149,6 +149,7 @@ collaboration primitives live in `shared` so the Node `backend` can reuse them.
 |---|---|---|
 | `layout/` | pretext integration, line caches, pagination + break rules, floats, tables, bands, footnotes, TOC, geometry queries, font metrics | `engine.ts` `geometry.ts` `prepareCache.ts` `layoutTree.ts` `metrics.ts` |
 | `paint/` | Virtualized per-page canvases, DPR, selection/search rects, caret overlay, band dimming | `renderer.ts` |
+| `child/` | Child documents: render/edit a content slice on canvas sharing the parent's live styles | `childDocument.ts` |
 | `input/` | IME proxy, selection controller, object frames/resize, clipboard (HTML+plain), keymap | `imeProxy.ts` `selectionController.ts` `objectController.ts` `clipboard.ts` `keymap.ts` |
 | `editor/` | Commands (pure), transactions, undo manager | `commands.ts` `state.ts` `undo.ts` |
 | `a11y/` | Screen-reader mirror + live region | `mirror.ts` |
@@ -185,6 +186,23 @@ collaboration primitives live in `shared` so the Node `backend` can reuse them.
   tolerant fragment→model mapper emits a sparse offset map only when collapse
   happened, keeping caret↔pixel math exact (the "backspace deleted 'd' instead
   of 'o'" class of bug, fixed structurally).
+- **Child documents** — `wc.createChild()` (or `editor.createChild()`) mints a
+  lightweight sibling document that shares the parent's *live* style context
+  (stylesheet, list/numbering defs, page section, content-control + field maps).
+  It renders an arbitrary content slice — blocks, a fragment, runs, OOXML, or a
+  named-style sample — through the **real** layout engine + canvas painter, so
+  previews match the page exactly instead of an HTML approximation. The Home →
+  Styles gallery swatches, the content-control inspector (read-only preview *and*
+  the canvas-native editor, which commits edited blocks straight back through the
+  `replaceSdt*` commands — no contentEditable round-trip), and the field
+  constructor's result preview are all powered by it. Each child owns its own
+  layout engine, so its cache can't collide with the parent's. A child also
+  **proxies the parent's media** (its content-addressed "relationships"): it
+  renders the parent's images, and a child editor can *add* new images
+  (`childEditor.insertImage(bytes, mime)`) whose bytes register into the parent's
+  shared store — so they persist, export, and survive commit-back. The
+  content-control inspector exposes this as an "Insert Image…" affordance for
+  block-level rich-text controls.
 
 ---
 
@@ -425,6 +443,13 @@ Everything in it is done; the editor covers ~95% of everyday Word usage.
   tofu in PDF export (same gap as the importer).
 - Raster browser-print was skipped — use PDF export instead.
 - `font-feature-settings` / optical sizing unsupported (pretext limitation).
+- Child-document previews render a single content flow (no pagination, cropped to
+  the surface); live page fields (`{page}`/`{numpages}`) show sample values since a
+  child has no pagination context, and a re-rendered preview can briefly blank for a
+  frame while its page canvas remounts. Images resolve through the parent's shared
+  media store (existing and child-added), but the `kind:"ooxml"` slice path itself
+  is still media-free (a raw fragment has no relationships, so images by `r:id` in
+  that string won't resolve — pass `kind:"blocks"` for media-bearing content).
 - Track-changes covers insert/delete/format, structural edits (paragraph
   split/merge, block & table row/column ops), and paste/cross-paragraph deletes
   (decomposed per-op, bundled as one accept/reject unit). Remaining gaps: comment

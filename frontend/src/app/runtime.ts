@@ -4,7 +4,7 @@
 // per-call value (no module singleton), so multiple editors coexist on one page.
 
 import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
-import type { EditMode, FieldResolver } from "../index";
+import type { ChildDocument, EditMode, FieldResolver } from "../index";
 import type { LoadProgress } from "./loadProgress";
 
 export type { EditMode, FieldResolver };
@@ -40,6 +40,9 @@ export type WordCanvasEvent =
 /** Handle the editor app exposes back to the WordCanvas wrapper. */
 export interface EditorHandle {
   getDocument(): Document;
+  /** Create a child document sharing this editor's live styles/fonts/theme (see
+   *  ChildDocument) — renders or edits a content slice on canvas. */
+  createChild(): ChildDocument;
   /** Replace the open document with a programmatically-built one (e.g. from
    *  the DocumentBuilder). The input is cloned; like openDocx, this is a NEW
    *  document — any live collab session is dropped (the next Share forks).

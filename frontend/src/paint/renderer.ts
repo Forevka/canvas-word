@@ -152,8 +152,20 @@ function injectCaretCss(): void {
   document.head.appendChild(style);
 }
 
-export function createPaintLayer(container: HTMLElement): PaintScheduler {
+/** Optional render-surface tuning. Defaults reproduce the full editor chrome. */
+export interface PaintLayerOptions {
+  /** Draw page chrome — the drop shadow, inter-page gap, and wrap padding. Set
+   *  false for embedded previews / child documents that should render the bare
+   *  page(s) flush in their host element (no shadow, no surrounding gap). */
+  chrome?: boolean;
+}
+
+export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions = {}): PaintScheduler {
   injectCaretCss();
+  // Page chrome (shadow + gaps) is on by default; previews turn it off so the
+  // bare page sits flush in its host. The gap also feeds clientToPage hit-testing.
+  const chrome = opts.chrome !== false;
+  const gap = chrome ? PAGE_GAP_PX : 0;
   let tree: LayoutTree | null = null;
   let selectionRects: Rect[] = [];
   let searchRects: Rect[] = [];
@@ -163,7 +175,7 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
   let bandEditMode: "header" | "footer" | null = null;
 
   const pagesWrap = document.createElement("div");
-  pagesWrap.style.cssText = `display:flex;flex-direction:column;align-items:center;gap:${PAGE_GAP_PX}px;padding:${PAGE_GAP_PX}px 0;`;
+  pagesWrap.style.cssText = `display:flex;flex-direction:column;align-items:center;gap:${gap}px;padding:${gap}px 0;`;
   container.appendChild(pagesWrap);
 
   const caretEl = document.createElement("div");
@@ -210,7 +222,8 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
     for (const page of tree.pages) {
       const ph = document.createElement("div");
       ph.dataset["page"] = String(page.index);
-      ph.style.cssText = `position:relative;width:${page.widthPx * zoom}px;height:${page.heightPx * zoom}px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25);flex-shrink:0;`;
+      const shadow = chrome ? "box-shadow:0 1px 4px rgba(0,0,0,.25);" : "";
+      ph.style.cssText = `position:relative;width:${page.widthPx * zoom}px;height:${page.heightPx * zoom}px;background:#fff;${shadow}flex-shrink:0;`;
       pagesWrap.appendChild(ph);
       placeholders.push(ph);
       observer.observe(ph);
@@ -761,18 +774,18 @@ export function createPaintLayer(container: HTMLElement): PaintScheduler {
     clientToPage(clientX: number, clientY: number): PagePoint | null {
       if (!tree || placeholders.length === 0) return null;
       const wrapRect = pagesWrap.getBoundingClientRect();
-      const yIn = clientY - wrapRect.top - PAGE_GAP_PX;
+      const yIn = clientY - wrapRect.top - gap;
       // Walk cumulative offsets in DISPLAY px (heights × zoom); pages can have
       // per-section heights and the gap is unscaled (it's flex layout, not zoomed).
       let pageIndex = tree.pages.length - 1;
       let top = 0;
       for (let i = 0; i < tree.pages.length; i++) {
         const h = tree.pages[i]!.heightPx * zoom;
-        if (yIn < top + h + PAGE_GAP_PX / 2) {
+        if (yIn < top + h + gap / 2) {
           pageIndex = i;
           break;
         }
-        top += h + PAGE_GAP_PX;
+        top += h + gap;
       }
       const pg = tree.pages[pageIndex]!;
       const pageLeft = wrapRect.left + (wrapRect.width - pg.widthPx * zoom) / 2;

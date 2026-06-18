@@ -1409,17 +1409,23 @@ function insertBlockAtCaret(state: EditorState, makeBlock: () => Block): Transac
   return tr(ops, caret(tailId, 0), "command");
 }
 
-export function insertImage(src: string, widthPx: number, heightPx: number): Command {
+export function insertImage(src: string, widthPx: number, heightPx: number, mediaId?: string): Command {
   return (state) =>
-    insertBlockAtCaret(state, () => ({
-      kind: "image",
-      id: freshBlockId(),
-      revision: 0,
-      src,
-      widthPx,
-      heightPx,
-      align: "center",
-    }));
+    insertBlockAtCaret(state, () => {
+      const img: ImageBlock = {
+        kind: "image",
+        id: freshBlockId(),
+        revision: 0,
+        src,
+        widthPx,
+        heightPx,
+        align: "center",
+      };
+      // Content address (sha256) so the bytes survive serialize/export and resolve
+      // from the shared media store after a commit-back from a child document.
+      if (mediaId) img.mediaId = mediaId;
+      return img;
+    });
 }
 
 export function insertTable(rows: number, cols: number): Command {
@@ -1935,7 +1941,7 @@ export function deleteImage(blockId: string): Command {
 }
 
 /** Insert an image INSIDE the caret's table cell (after the caret paragraph). */
-export function insertImageInCell(src: string, widthPx: number, heightPx: number): Command {
+export function insertImageInCell(src: string, widthPx: number, heightPx: number, mediaId?: string): Command {
   return (state) => {
     const sel = state.selection;
     if (!sel || !isCollapsed(sel)) return null;
@@ -1944,7 +1950,7 @@ export function insertImageInCell(src: string, widthPx: number, heightPx: number
     const table = containerBlocks(state.doc, loc.where)[loc.bi] as TableBlock;
     const row = table.rows[loc.ri]!;
     const cell = row.cells[loc.ci]!;
-    const img: Block = {
+    const img: ImageBlock = {
       kind: "image",
       id: freshBlockId(),
       revision: 0,
@@ -1953,6 +1959,8 @@ export function insertImageInCell(src: string, widthPx: number, heightPx: number
       heightPx,
       align: "center",
     };
+    // Content address so the bytes survive serialize/export (see insertImage).
+    if (mediaId) img.mediaId = mediaId;
     const blocks = cell.blocks.slice();
     blocks.splice(loc.pi + 1, 0, img);
     const cells = row.cells.slice();

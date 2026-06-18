@@ -10,11 +10,12 @@
 // instances can coexist on one page (class-scoped chrome, per-instance runtime).
 
 import type { AgentToolsOptions, EditMode, EditorHandle, FieldResolver, Participant, WordCanvasEvent, WordCanvasRuntime } from "./app/runtime";
-import type { FieldResolveRequest, FieldResult } from "./index";
+import type { ChildContent, ChildDocument, ChildEditorHandle, ChildRenderOptions, FieldResolveRequest, FieldResult } from "./index";
 import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
 import { BUNDLE_SHARE, type LoadProgress } from "./app/loadProgress";
 
 export type { Document, UserInfo, Participant, EditMode, ReviewLayer, Fragment, FieldResolver, FieldResolveRequest, FieldResult, AgentToolsOptions, LoadProgress };
+export type { ChildDocument, ChildContent, ChildRenderOptions, ChildEditorHandle };
 
 export interface WordCanvasOptions {
   /** Element to mount the editor into. */
@@ -144,6 +145,41 @@ export class WordCanvas {
   /** Resolves once the editor is mounted and ready. */
   whenReady(): Promise<EditorHandle> {
     return this.ready;
+  }
+
+  /** Create a child document that shares this editor's live styles, fonts and
+   *  theme. Use it to render a real, document-styled preview of a content slice
+   *  (e.g. a style sample, a field result, or any blocks/fragment/OOXML) onto a
+   *  canvas — instead of an HTML approximation — or to mount a canvas-native
+   *  editor over a slice. Returned synchronously; render() calls before the editor
+   *  is ready are buffered and flush on ready. (mountEditor() requires the editor
+   *  to be ready — await whenReady() first.) */
+  createChild(): ChildDocument {
+    let real: ChildDocument | null = null;
+    let pendingRender: (() => void) | null = null;
+    let destroyed = false;
+    void this.ready.then((h) => {
+      if (destroyed) return;
+      real = h.createChild();
+      pendingRender?.();
+      pendingRender = null;
+    });
+    return {
+      render: (target: HTMLElement, content: ChildContent, opts?: ChildRenderOptions): void => {
+        const op = (): void => real?.render(target, content, opts);
+        if (real) op();
+        else pendingRender = op; // keep only the latest pre-ready render
+      },
+      mountEditor: (target: HTMLElement, content: ChildContent, opts?: ChildRenderOptions): ChildEditorHandle => {
+        if (!real) throw new Error("WordCanvas.createChild(): await whenReady() before mountEditor()");
+        return real.mountEditor(target, content, opts);
+      },
+      destroy: (): void => {
+        destroyed = true;
+        real?.destroy();
+        real = null;
+      },
+    };
   }
 
   /** Open a .docx. When online, auto-publishes it and surfaces a share link. */

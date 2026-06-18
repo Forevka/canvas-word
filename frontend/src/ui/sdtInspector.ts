@@ -6,14 +6,12 @@
 // Pure presentation: index.ts gathers the data (properties + rendered HTML of
 // the control's content) and handles persistence.
 
-import type { SdtProps } from "@cw/shared";
+import type { Block, SdtProps } from "@cw/shared";
 import { injectCssOnce } from "./styles";
 
 export interface SdtInspectorData {
   id: string;
   props: SdtProps;
-  /** Rendered HTML of the control's content (styled spans/paragraphs). */
-  html: string;
   /** Plain-text content (for the empty check + copy + char count). */
   text: string;
   /** How many paragraphs the control spans (block-level controls wrap many). */
@@ -21,13 +19,30 @@ export interface SdtInspectorData {
   charCount: number;
 }
 
+/** Live editor over the control's content, mounted into the preview host. */
+export interface SdtInspectorEditor {
+  getBlocks(): Block[];
+  /** Insert an image (bytes registered in the document's shared media store). */
+  insertImage(bytes: Uint8Array, mime: string, opts?: { widthPx?: number; heightPx?: number }): Promise<void>;
+}
+
 export interface SdtInspectorOptions {
-  /** Commit edited content (the modal's inner HTML). Returns true on success.
-   *  Omit (or pass editable:false) for a read-only inspector. */
-  onSave?: (html: string) => boolean;
   /** When false the content is shown read-only (locked controls, or hosts the
    *  replace command can't restructure). */
   editable?: boolean;
+  /** Paint the control's content into the preview host (read-only path) — a real
+   *  canvas render via a child document, not HTML. */
+  renderPreview?: (host: HTMLElement) => void;
+  /** Mount a canvas-native editor into the preview host (editable path). Save
+   *  reads getBlocks() and hands them to onSave. */
+  mountEditor?: (host: HTMLElement) => SdtInspectorEditor;
+  /** Commit edited content (the child editor's blocks). Returns true on success. */
+  onSave?: (blocks: Block[]) => boolean;
+  /** Show an "Insert image" affordance (block-level rich-text controls only — the
+   *  inline/cell commit paths are text-only). */
+  allowImages?: boolean;
+  /** Called when the inspector closes — tear down the child document. */
+  onClose?: () => void;
 }
 
 export interface SdtInspectorHandle {
@@ -90,7 +105,9 @@ export function showSdtInspector(
 ): SdtInspectorHandle {
   injectCssOnce("cw-sdt-styles", SDT_CSS);
   const { props } = data;
-  const editable = opts.editable === true && typeof opts.onSave === "function";
+  const editable =
+    opts.editable === true && typeof opts.onSave === "function" && typeof opts.mountEditor === "function";
+  let childEditor: SdtInspectorEditor | null = null;
   const title = props.alias?.trim() || SDT_TYPE_LABEL[props.type];
 
   const backdrop = document.createElement("div");
@@ -173,16 +190,9 @@ export function showSdtInspector(
 
   const preview = document.createElement("div");
   preview.className = "cw-sdt-preview";
-  if (data.text.trim() === "" && !editable) {
-    preview.innerHTML = `<span class="cw-sdt-empty">(empty)</span>`;
-  } else {
-    preview.innerHTML = data.html;
-  }
-  if (editable) {
-    preview.classList.add("editable");
-    preview.contentEditable = "true";
-    preview.spellcheck = false;
-  }
+  if (editable) preview.classList.add("editable");
+  // Content is painted (read-only) or an editor mounted (editable) AFTER the modal
+  // is in the DOM, so the host has a measurable width — see the mount step below.
 
   left.append(propsTitle, dl);
   right.append(contentTitle, preview);
@@ -203,10 +213,25 @@ export function showSdtInspector(
   spacer.className = "spacer";
   foot.append(copyBtn, spacer);
 
+  if (editable && opts.allowImages) {
+    const imgBtn = mkBtn("Insert Image…", false);
+    imgBtn.addEventListener("click", () => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.addEventListener("change", () => {
+        const file = input.files?.[0];
+        if (!file || !childEditor) return;
+        void file.arrayBuffer().then((buf) => childEditor!.insertImage(new Uint8Array(buf), file.type || "image/png"));
+      });
+      input.click();
+    });
+    foot.append(imgBtn);
+  }
   if (editable) {
     const saveBtn = mkBtn("Save Changes", true);
     saveBtn.addEventListener("click", () => {
-      const ok = opts.onSave!(preview.innerHTML);
+      const ok = childEditor ? opts.onSave!(childEditor.getBlocks()) : false;
       if (ok) {
         saveBtn.textContent = "Saved ✓";
         setTimeout(() => handle.close(), 450);
@@ -228,11 +253,22 @@ export function showSdtInspector(
   backdrop.appendChild(modal);
   document.body.appendChild(backdrop);
 
+  // Now that the preview host has a measurable width, paint the content (read-only)
+  // or mount the canvas-native editor (editable).
+  if (data.text.trim() === "" && !editable) {
+    preview.innerHTML = `<span class="cw-sdt-empty">(empty)</span>`;
+  } else if (editable && opts.mountEditor) {
+    childEditor = opts.mountEditor(preview);
+  } else {
+    opts.renderPreview?.(preview);
+  }
+
   const ac = new AbortController();
   const handle: SdtInspectorHandle = {
     close(): void {
       backdrop.remove();
       ac.abort(); // detaches every listener registered with ac.signal
+      opts.onClose?.(); // tear down the child document
     },
   };
   window.addEventListener(
@@ -248,7 +284,6 @@ export function showSdtInspector(
   );
   backdrop.addEventListener("mousedown", () => handle.close());
   xBtn.addEventListener("click", () => handle.close());
-  if (editable) preview.focus();
   return handle;
 }
 

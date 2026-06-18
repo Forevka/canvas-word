@@ -2,7 +2,7 @@
 // Hand-written so the published types stay small, self-contained, and stable
 // regardless of internal refactors — no dependency on internal workspace types.
 
-import type { Document } from "./model";
+import type { Block, Document, ParaStyle, Run } from "./model";
 
 export type { Document } from "./model";
 
@@ -107,6 +107,53 @@ export type FieldResult = string | ArrayBuffer | Uint8Array | Blob;
 /** Host hook producing a field's result for a resolve request. */
 export type FieldResolver = (req: FieldResolveRequest) => Promise<FieldResult>;
 
+/** What to render into a child-document surface (see WordCanvas.createChild). */
+export type ChildContent =
+  | { kind: "blocks"; blocks: Block[] }
+  | { kind: "fragment"; fragment: { blocks: { runs: Run[]; style: ParaStyle }[]; inline?: boolean } }
+  | { kind: "runs"; runs: Run[]; paraStyle?: ParaStyle }
+  /** Body OOXML (w:p / w:tbl, or a w:document). Media-free (no images by r:id). */
+  | { kind: "ooxml"; ooxml: string }
+  /** A real sample of a named style ("AaBbCc" in the style's resolved formatting). */
+  | { kind: "styleSample"; styleId: string; sampleText?: string };
+
+export interface ChildRenderOptions {
+  /** Layout/wrap width in CSS px. Default: target.clientWidth. */
+  widthPx?: number;
+  /** Child section margins (all sides), CSS px. Default 0. */
+  padding?: number;
+  /** Cap the displayed height; content beyond it is clipped. */
+  maxHeightPx?: number;
+  /** Fixed presentational scale (1 = 100%). Ignored when `fit` is set. */
+  zoom?: number;
+  /** Auto-scale the content to fit `widthPx` × `maxHeightPx` (compact swatches). */
+  fit?: boolean;
+}
+
+/** A live interactive editor over a child slice (canvas-native editing). */
+export interface ChildEditorHandle {
+  /** The edited content as model blocks (hand back to splice into the parent). */
+  getBlocks(): Block[];
+  getDocument(): Document;
+  /** Insert an image at the caret. The bytes are registered in the parent
+   *  document's shared media store (content-addressed), so the image renders here,
+   *  survives serialize/export, and resolves after commit-back. Dimensions default
+   *  to the image's natural size. */
+  insertImage(bytes: Uint8Array, mime: string, opts?: { widthPx?: number; heightPx?: number }): Promise<void>;
+  destroy(): void;
+}
+
+/** A lightweight sibling document that shares the parent editor's live styles,
+ *  fonts and theme and renders/edits a content slice on canvas. */
+export interface ChildDocument {
+  /** Paint a static preview of `content` into `target`. Safe to call repeatedly. */
+  render(target: HTMLElement, content: ChildContent, opts?: ChildRenderOptions): void;
+  /** Mount an interactive editor over `content` inside `target`. */
+  mountEditor(target: HTMLElement, content: ChildContent, opts?: ChildRenderOptions): ChildEditorHandle;
+  /** Tear down every surface/editor this child created. */
+  destroy(): void;
+}
+
 /** Event name → payload, for `on(...)`/`off(...)`. */
 export interface WordCanvasEventMap {
   ready: Record<string, never>;
@@ -120,6 +167,8 @@ export interface WordCanvasEventMap {
 export interface EditorHandle {
   /** Snapshot of the current document (plain data). */
   getDocument(): Document;
+  /** Create a child document sharing this editor's live styles/fonts/theme. */
+  createChild(): ChildDocument;
   /** Replace the open document with a programmatically-built one (e.g. a
    *  DocumentBuilder result). Cloned; drops undo history and any live collab
    *  session; preserves zoom + scroll. */
@@ -141,6 +190,12 @@ export declare class WordCanvas {
   off<E extends keyof WordCanvasEventMap>(event: E, handler: (data: WordCanvasEventMap[E]) => void): void;
   /** Resolves once the editor is mounted and ready. */
   whenReady(): Promise<EditorHandle>;
+  /** Create a child document that shares this editor's live styles, fonts and
+   *  theme — render a real, document-styled preview of a content slice onto a
+   *  canvas (instead of an HTML approximation), or mount a canvas-native editor
+   *  over a slice. Returned synchronously; render() before ready is buffered.
+   *  (mountEditor() requires the editor to be ready — await whenReady() first.) */
+  createChild(): ChildDocument;
   /** Open a .docx. When online, auto-publishes it and surfaces a share link. */
   openDocx(file: File | ArrayBuffer): Promise<void>;
   /** Replace the open document with a programmatically-built one (e.g. a
