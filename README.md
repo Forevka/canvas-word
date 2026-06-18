@@ -425,9 +425,13 @@ Everything in it is done; the editor covers ~95% of everyday Word usage.
   tofu in PDF export (same gap as the importer).
 - Raster browser-print was skipped — use PDF export instead.
 - `font-feature-settings` / optical sizing unsupported (pretext limitation).
-- Track-changes V1 tracks single insert/delete/format edits; structural edits
-  (paragraph split/merge, table ops) and paste pass through untracked in suggest
-  mode, and comment bodies are plain text (rich + structural suggestions are V2).
+- Track-changes covers insert/delete/format, structural edits (paragraph
+  split/merge, block & table row/column ops), and paste/cross-paragraph deletes
+  (decomposed per-op, bundled as one accept/reject unit). Remaining gaps: comment
+  bodies are plain text (rich is still V2), overlapping suggestions resolve by a
+  documented precedence rather than partial-overlap handling, and a structural
+  suggestion's stored inverse isn't re-indexed under heavy intervening edits
+  before it's resolved.
 
 ## Implementation history
 
