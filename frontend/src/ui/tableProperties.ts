@@ -34,13 +34,18 @@ export interface TablePropertiesHandle {
 const STYLES: BorderStyleName[] = ["single", "double", "dashed", "dotted"];
 
 const TBL_CSS = `
-.cw-tbl-backdrop{position:fixed;inset:0;z-index:1100;background:rgba(20,22,26,.38);
-  display:flex;align-items:center;justify-content:center;}
-.cw-tbl-modal{width:min(560px,94vw);max-height:90vh;display:flex;flex-direction:column;
-  background:#fff;border-radius:10px;box-shadow:0 18px 56px rgba(0,0,0,.34);
-  font:13px/1.5 Arial,sans-serif;color:#202124;overflow:hidden;}
-.cw-tbl-head{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid #e6e8eb;}
-.cw-tbl-head h2{margin:0;font-size:15px;font-weight:600;flex:1 1 auto;}
+/* Non-blocking layer: the panel floats but the document stays visible + interactive
+   so border/shading edits are seen live; clicks outside don't close it. */
+.cw-tbl-backdrop{position:fixed;inset:0;z-index:1100;pointer-events:none;}
+.cw-tbl-modal{position:fixed;width:min(420px,94vw);max-height:88vh;display:flex;flex-direction:column;
+  background:#fff;border-radius:10px;box-shadow:0 18px 56px rgba(0,0,0,.34);border:1px solid #d9dce1;
+  font:13px/1.5 Arial,sans-serif;color:#202124;overflow:hidden;pointer-events:auto;}
+.cw-tbl-head{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid #e6e8eb;
+  cursor:move;user-select:none;background:#f7f8fa;}
+.cw-tbl-head::before{content:"⠿";color:#b0b4ba;font-size:14px;line-height:1;margin-right:-2px;}
+.cw-tbl-head h2{margin:0;font-size:14px;font-weight:600;flex:1 1 auto;}
+.cw-tbl-hint{font-size:11px;color:#9aa0a6;margin:-4px 0 2px;}
+.cw-tbl-caption{font-size:11px;color:#5f6368;font-weight:600;margin:0 0 4px;}
 .cw-tbl-badge{font-size:11px;font-weight:600;color:#0b57d0;background:#e8f0fe;border-radius:10px;padding:2px 9px;}
 .cw-tbl-x{border:none;background:transparent;font-size:20px;line-height:1;color:#5f6368;cursor:pointer;
   width:28px;height:28px;border-radius:6px;}
@@ -82,6 +87,23 @@ export function showTableProperties(init: TablePropertiesInit, cb: TableProperti
   let widthPx = init.widthPx;
   let styleName: BorderStyleName = init.style;
   const spec = (): CellBorder => ({ color, widthPx, ...(styleName !== "single" ? { style: styleName } : {}) });
+
+  // Apply happens live when the user clicks a preset/edge (or Apply Fill). But a
+  // user who just tweaks the spec (e.g. Width=5) and clicks Done expects that to
+  // take effect — so Done commits any spec/fill change they made without having
+  // clicked a preset. These flags track which case we're in.
+  let borderSpecTouched = false; // color/width/style changed
+  let bordersApplied = false; // a preset/edge button was clicked
+  let fillTouched = false; // fill color changed
+  let shadingApplied = false; // Apply Fill / No Fill was clicked
+  const doBorders = (s: CellBorder | null, edges: BorderEdgeFlags): void => {
+    bordersApplied = true;
+    cb.applyBorders(s, edges);
+  };
+  const doShading = (fill: string | null): void => {
+    shadingApplied = true;
+    cb.applyShading(fill);
+  };
 
   const backdrop = el("div", "cw-tbl-backdrop");
   const modal = el("div", "cw-tbl-modal");
@@ -145,16 +167,19 @@ export function showTableProperties(init: TablePropertiesInit, cb: TableProperti
 
   colorInput.addEventListener("input", () => {
     color = colorInput.value;
+    borderSpecTouched = true;
     refreshPreview();
   });
   widthInput.addEventListener("change", () => {
     const v = Number(widthInput.value);
     if (Number.isFinite(v) && v > 0) widthPx = v;
     widthInput.value = String(widthPx);
+    borderSpecTouched = true;
     refreshPreview();
   });
   styleSelect.addEventListener("change", () => {
     styleName = (styleSelect.value as BorderStyleName) || "single";
+    borderSpecTouched = true;
     refreshPreview();
   });
   specRow.append(colorLabel, widthLabel, styleLabel, preview);
@@ -171,16 +196,16 @@ export function showTableProperties(init: TablePropertiesInit, cb: TableProperti
     return b;
   };
   presetRow.append(
-    presetBtn("All", () => cb.applyBorders(spec(), allFlags)),
-    presetBtn("Outside", () => cb.applyBorders(spec(), { top: true, right: true, bottom: true, left: true })),
-    presetBtn("Inside", () => cb.applyBorders(spec(), { insideH: true, insideV: true }), init.multiCell),
-    presetBtn("None", () => cb.applyBorders(null, allFlags)),
+    presetBtn("All", () => doBorders(spec(), allFlags)),
+    presetBtn("Outside", () => doBorders(spec(), { top: true, right: true, bottom: true, left: true })),
+    presetBtn("Inside", () => doBorders(spec(), { insideH: true, insideV: true }), init.multiCell),
+    presetBtn("None", () => doBorders(null, allFlags)),
   );
 
   // Individual edges.
   const edgeRow = el("div", "cw-tbl-row");
   const edgeBtn = (label: string, flag: BorderEdgeFlags, enabled = true): HTMLButtonElement =>
-    presetBtn(label, () => cb.applyBorders(spec(), flag), enabled);
+    presetBtn(label, () => doBorders(spec(), flag), enabled);
   edgeRow.append(
     edgeBtn("Top", { top: true }),
     edgeBtn("Bottom", { bottom: true }),
@@ -190,7 +215,13 @@ export function showTableProperties(init: TablePropertiesInit, cb: TableProperti
     edgeBtn("Inside V", { insideV: true }, init.multiCell),
   );
 
-  bSection.append(specRow, presetRow, edgeRow);
+  const hint = el("div", "cw-tbl-hint");
+  hint.textContent = "Pick a target to apply now — or set the options above and click Done.";
+  const applyToCap = el("div", "cw-tbl-caption");
+  applyToCap.textContent = "Apply borders to";
+  const edgesCap = el("div", "cw-tbl-caption");
+  edgesCap.textContent = "Individual edges";
+  bSection.append(specRow, hint, applyToCap, presetRow, edgesCap, edgeRow);
 
   // ---- Shading section ----------------------------------------------------
   const sSection = el("div");
@@ -201,10 +232,11 @@ export function showTableProperties(init: TablePropertiesInit, cb: TableProperti
   fillInput.type = "color";
   fillInput.className = "cw-tbl-swatch";
   fillInput.value = toHexColor(init.shading ?? "#ffffff");
+  fillInput.addEventListener("input", () => { fillTouched = true; });
   const fillLabel = el("label");
   fillLabel.append("Fill", fillInput);
-  const applyFill = presetBtn("Apply Fill", () => cb.applyShading(fillInput.value));
-  const noFill = presetBtn("No Fill", () => cb.applyShading(null));
+  const applyFill = presetBtn("Apply Fill", () => doShading(fillInput.value));
+  const noFill = presetBtn("No Fill", () => doShading(null));
   sRow.append(fillLabel, applyFill, noFill);
   sSection.append(sTitle, sRow);
 
@@ -220,6 +252,16 @@ export function showTableProperties(init: TablePropertiesInit, cb: TableProperti
   backdrop.appendChild(modal);
   document.body.appendChild(backdrop);
 
+  // Float to the right edge by default so it doesn't cover the (often left-aligned)
+  // table being edited; the user drags it wherever they like to watch live changes.
+  const place = (left: number, top: number): void => {
+    const maxLeft = Math.max(4, window.innerWidth - modal.offsetWidth - 6);
+    const maxTop = Math.max(4, window.innerHeight - 44);
+    modal.style.left = `${Math.min(Math.max(4, left), maxLeft)}px`;
+    modal.style.top = `${Math.min(Math.max(4, top), maxTop)}px`;
+  };
+  place(window.innerWidth - modal.offsetWidth - 24, 72);
+
   const ac = new AbortController();
   const handle: TablePropertiesHandle = {
     close(): void {
@@ -227,6 +269,18 @@ export function showTableProperties(init: TablePropertiesInit, cb: TableProperti
       ac.abort(); // detaches every listener registered with ac.signal
     },
   };
+
+  // Drag by the header (grab anywhere but the close button).
+  let drag: { dx: number; dy: number } | null = null;
+  head.addEventListener("mousedown", (ev) => {
+    if ((ev.target as HTMLElement).closest(".cw-tbl-x")) return;
+    const r = modal.getBoundingClientRect();
+    drag = { dx: ev.clientX - r.left, dy: ev.clientY - r.top };
+    ev.preventDefault();
+  });
+  window.addEventListener("mousemove", (ev) => { if (drag) place(ev.clientX - drag.dx, ev.clientY - drag.dy); }, { signal: ac.signal });
+  window.addEventListener("mouseup", () => { drag = null; }, { signal: ac.signal });
+
   window.addEventListener(
     "keydown",
     (ev: KeyboardEvent) => {
@@ -238,9 +292,15 @@ export function showTableProperties(init: TablePropertiesInit, cb: TableProperti
     },
     { capture: true, signal: ac.signal },
   );
-  backdrop.addEventListener("mousedown", () => handle.close());
   xBtn.addEventListener("click", () => handle.close());
-  doneBtn.addEventListener("click", () => handle.close());
+  // Done commits spec/fill the user adjusted but didn't apply via a preset — so
+  // "set Width=5 → Done" borders the selection (All) at 5px, as expected. If they
+  // already clicked a preset/edge (live), Done just closes without re-applying.
+  doneBtn.addEventListener("click", () => {
+    if (borderSpecTouched && !bordersApplied) doBorders(spec(), allFlags);
+    if (fillTouched && !shadingApplied) doShading(fillInput.value);
+    handle.close();
+  });
   return handle;
 }
 

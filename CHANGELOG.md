@@ -48,6 +48,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   block removes its text and reverses the paragraph splits; rejecting a
   cross-paragraph delete restores both the text and the paragraph break.
 
+### Fixed
+- **Table Borders & Shading now applies on Done.** Previously the dialog only
+  applied when you clicked a preset/edge button; adjusting Width/Color/Style (or the
+  fill) and clicking **Done** closed it without doing anything. Done now commits any
+  spec/fill change you made without having clicked a preset (so "set Width = 5 →
+  Done" borders the selection at 5px), while the live preset/edge buttons are
+  unchanged.
+
+### Changed
+- **Table Borders & Shading is a draggable, non-blocking panel.** It no longer dims
+  the page or traps clicks — the table stays visible and editable so border/fill
+  changes are seen live — and it can be dragged by its header to move it out of the
+  way. Clearer apply affordances (a hint + "Apply borders to" / "Individual edges"
+  captions).
+
 ## [0.7.1] — 2026-06-16
 
 ### Added
