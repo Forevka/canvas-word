@@ -57,11 +57,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged.
 
 ### Changed
-- **Table Borders & Shading is a draggable, non-blocking panel.** It no longer dims
-  the page or traps clicks — the table stays visible and editable so border/fill
-  changes are seen live — and it can be dragged by its header to move it out of the
-  way. Clearer apply affordances (a hint + "Apply borders to" / "Individual edges"
-  captions).
+- **Editing dialogs are draggable, non-blocking floating panels.** The Borders &
+  Shading, content-control inspector, field constructor, and TOC-options dialogs no
+  longer dim the page or trap clicks — the document stays visible and interactive so
+  edits are seen live — and each can be dragged by its header out of the way (shared
+  `makeFloatingDialog` helper). Borders & Shading also gains clearer apply
+  affordances (a hint + "Apply borders to" / "Individual edges" captions).
 
 ## [0.7.1] — 2026-06-16
 

@@ -8,6 +8,7 @@
 
 import type { Block, SdtProps } from "@cw/shared";
 import { injectCssOnce } from "./styles";
+import { makeFloatingDialog } from "./floatingDialog";
 
 export interface SdtInspectorData {
   id: string;
@@ -282,7 +283,7 @@ export function showSdtInspector(
     },
     { capture: true, signal: ac.signal },
   );
-  backdrop.addEventListener("mousedown", () => handle.close());
+  makeFloatingDialog({ backdrop, modal, handle: head, signal: ac.signal, noDrag: ".cw-sdt-x" });
   xBtn.addEventListener("click", () => handle.close());
   return handle;
 }

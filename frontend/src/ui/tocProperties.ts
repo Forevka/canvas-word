@@ -6,6 +6,7 @@
 
 import type { TocSwitches } from "@cw/shared";
 import { injectCssOnce } from "./styles";
+import { makeFloatingDialog } from "./floatingDialog";
 
 export interface TocPropertiesOptions {
   /** Current switches, parsed from the TOC field's instruction. */
@@ -151,7 +152,7 @@ export function showTocProperties(opts: TocPropertiesOptions): TocPropertiesHand
   window.addEventListener("keydown", (ev: KeyboardEvent) => {
     if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); handle.close(); }
   }, { capture: true, signal: ac.signal });
-  backdrop.addEventListener("mousedown", () => handle.close());
+  makeFloatingDialog({ backdrop, modal, handle: head, signal: ac.signal, noDrag: ".cw-toc-x" });
   xBtn.addEventListener("click", () => handle.close());
   cancel.addEventListener("click", () => handle.close());
   apply.addEventListener("click", () => { opts.onApply(read()); handle.close(); });

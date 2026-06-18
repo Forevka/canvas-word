@@ -6,6 +6,7 @@
 import type { CharStyle, FieldSpec, IfOp, PageNumFmt, Run } from "@cw/shared";
 import { evaluateIf, formatFieldDate } from "@cw/shared";
 import { injectCssOnce } from "./styles";
+import { makeFloatingDialog } from "./floatingDialog";
 
 export interface FieldConstructorOptions {
   /** Pre-fill for editing an existing field; omit to insert a new one. */
@@ -246,7 +247,7 @@ export function showFieldConstructor(opts: FieldConstructorOptions): FieldConstr
   window.addEventListener("keydown", (ev: KeyboardEvent) => {
     if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); handle.close(); }
   }, { capture: true, signal: ac.signal });
-  backdrop.addEventListener("mousedown", () => handle.close());
+  makeFloatingDialog({ backdrop, modal, handle: head, signal: ac.signal, noDrag: ".cw-fc-x" });
   xBtn.addEventListener("click", () => handle.close());
   cancel.addEventListener("click", () => handle.close());
   apply.addEventListener("click", () => { opts.onApply(readSpec()); handle.close(); });

@@ -6,6 +6,7 @@
 import type { CellBorder } from "@cw/shared";
 import type { BorderEdgeFlags } from "../editor/commands";
 import { injectCssOnce } from "./styles";
+import { makeFloatingDialog } from "./floatingDialog";
 
 export type BorderStyleName = NonNullable<CellBorder["style"]> | "single";
 
@@ -40,9 +41,7 @@ const TBL_CSS = `
 .cw-tbl-modal{position:fixed;width:min(420px,94vw);max-height:88vh;display:flex;flex-direction:column;
   background:#fff;border-radius:10px;box-shadow:0 18px 56px rgba(0,0,0,.34);border:1px solid #d9dce1;
   font:13px/1.5 Arial,sans-serif;color:#202124;overflow:hidden;pointer-events:auto;}
-.cw-tbl-head{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid #e6e8eb;
-  cursor:move;user-select:none;background:#f7f8fa;}
-.cw-tbl-head::before{content:"⠿";color:#b0b4ba;font-size:14px;line-height:1;margin-right:-2px;}
+.cw-tbl-head{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid #e6e8eb;background:#f7f8fa;}
 .cw-tbl-head h2{margin:0;font-size:14px;font-weight:600;flex:1 1 auto;}
 .cw-tbl-hint{font-size:11px;color:#9aa0a6;margin:-4px 0 2px;}
 .cw-tbl-caption{font-size:11px;color:#5f6368;font-weight:600;margin:0 0 4px;}
@@ -252,16 +251,6 @@ export function showTableProperties(init: TablePropertiesInit, cb: TableProperti
   backdrop.appendChild(modal);
   document.body.appendChild(backdrop);
 
-  // Float to the right edge by default so it doesn't cover the (often left-aligned)
-  // table being edited; the user drags it wherever they like to watch live changes.
-  const place = (left: number, top: number): void => {
-    const maxLeft = Math.max(4, window.innerWidth - modal.offsetWidth - 6);
-    const maxTop = Math.max(4, window.innerHeight - 44);
-    modal.style.left = `${Math.min(Math.max(4, left), maxLeft)}px`;
-    modal.style.top = `${Math.min(Math.max(4, top), maxTop)}px`;
-  };
-  place(window.innerWidth - modal.offsetWidth - 24, 72);
-
   const ac = new AbortController();
   const handle: TablePropertiesHandle = {
     close(): void {
@@ -269,17 +258,8 @@ export function showTableProperties(init: TablePropertiesInit, cb: TableProperti
       ac.abort(); // detaches every listener registered with ac.signal
     },
   };
-
-  // Drag by the header (grab anywhere but the close button).
-  let drag: { dx: number; dy: number } | null = null;
-  head.addEventListener("mousedown", (ev) => {
-    if ((ev.target as HTMLElement).closest(".cw-tbl-x")) return;
-    const r = modal.getBoundingClientRect();
-    drag = { dx: ev.clientX - r.left, dy: ev.clientY - r.top };
-    ev.preventDefault();
-  });
-  window.addEventListener("mousemove", (ev) => { if (drag) place(ev.clientX - drag.dx, ev.clientY - drag.dy); }, { signal: ac.signal });
-  window.addEventListener("mouseup", () => { drag = null; }, { signal: ac.signal });
+  // Draggable, non-blocking floating panel (so border/fill changes are seen live).
+  makeFloatingDialog({ backdrop, modal, handle: head, signal: ac.signal, noDrag: ".cw-tbl-x" });
 
   window.addEventListener(
     "keydown",
