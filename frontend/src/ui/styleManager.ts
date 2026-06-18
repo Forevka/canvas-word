@@ -11,10 +11,10 @@
 // here and populated by their own phases.
 
 import type { Block, CharStyle, Document, ListDefinition, NamedStyle, ParaStyle, Paragraph, Run, Stylesheet, TableStyle } from "@cw/shared";
-import { bulletListDefinition, defaultStylesheet, descendantsOf, resolveCharStyle, resolveStyle, styleById, styleType } from "@cw/shared";
+import { bulletListDefinition, defaultStylesheet, descendantsOf, mergeDuplicateNamedStyles, resolveCharStyle, resolveStyle, styleById, styleType } from "@cw/shared";
 import type { ChildDocument, ChildContent } from "../child/childDocument";
 import type { Command } from "../editor/state";
-import { deleteListDefinition, deleteNamedStyle, deleteTableStyle, setDefaultStyle, upsertListDefinition, upsertNamedStyle, upsertTableStyle, type NamedStyleSpec } from "../editor/commands";
+import { deleteListDefinition, deleteNamedStyle, deleteTableStyle, mergeDuplicateStyles, setDefaultStyle, upsertListDefinition, upsertNamedStyle, upsertTableStyle, type NamedStyleSpec } from "../editor/commands";
 import { showContextMenu, type MenuEntry } from "./contextMenu";
 import { makeFloatingDialog } from "./floatingDialog";
 import { injectCssOnce } from "./styles";
@@ -130,9 +130,11 @@ export function showStyleManager(opts: StyleManagerOptions): StyleManagerHandle 
   const foot = el("div", "cw-sm-foot");
   const newBtn = el("button", "cw-sm-btn", "New ▾");
   const delBtn = el("button", "cw-sm-btn danger", "Delete");
+  const mergeBtn = el("button", "cw-sm-btn", "Merge duplicates");
+  mergeBtn.title = "Collapse styles that are identical except for their name";
   const applyBtn = el("button", "cw-sm-btn primary", "Apply");
   const closeBtn = el("button", "cw-sm-btn", "Close");
-  foot.append(newBtn, delBtn, el("div", "spacer"), applyBtn, closeBtn);
+  foot.append(newBtn, delBtn, mergeBtn, el("div", "spacer"), applyBtn, closeBtn);
 
   modal.append(head, body, foot);
   backdrop.append(modal);
@@ -416,6 +418,9 @@ export function showStyleManager(opts: StyleManagerOptions): StyleManagerHandle 
   function syncFooter(): void {
     const isDefault = selId !== null && sheet().defaultStyleId === selId;
     delBtn.disabled = selId === null || isDefault;
+    const dupes = mergeDuplicateNamedStyles(sheet()).remap.size;
+    mergeBtn.disabled = dupes === 0;
+    mergeBtn.textContent = dupes > 0 ? `Merge duplicates (${dupes})` : "Merge duplicates";
   }
 
   newBtn.addEventListener("click", (e) => {
@@ -431,6 +436,12 @@ export function showStyleManager(opts: StyleManagerOptions): StyleManagerHandle 
   });
   applyBtn.addEventListener("click", apply);
   delBtn.addEventListener("click", () => { if (selId) deleteStyle(selKind, selId); });
+  mergeBtn.addEventListener("click", () => {
+    editor.dispatch(mergeDuplicateStyles());
+    // The collapsed-into style may be the one selected — fall back to default.
+    if (selId && !styleById(sheet(), selId)) selectStyle("paragraph", sheet().defaultStyleId);
+    else { rebuildList(); syncFooter(); }
+  });
 
   // ---- Lifecycle ------------------------------------------------------------
   const ac = new AbortController();

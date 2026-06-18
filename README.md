@@ -258,7 +258,9 @@ styles (per-level format/bullet/number-pattern/indent editor), and round-trippab
 **table** styles with **conditional formatting** (header/total row, first/last
 column, row/column banding) applied from right-click → Table Style. Every defined
 style round-trips through `.docx` even before it's applied (matching Word); a
-**"Show only styles in use"** gallery filter collapses large imported catalogs.
+**"Show only styles in use"** gallery filter collapses large imported catalogs, and
+a **Merge duplicates** action folds styles that are identical except for their name
+into one (remapping references, one undo).
 
 **Layout** — US-Letter pages with margins, line-level pagination
 (paragraphs split mid-paragraph across pages), widow/orphan control (0

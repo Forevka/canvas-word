@@ -2293,6 +2293,7 @@ export function setParaProps(patch: Partial<ParaStyle>): Command {
 
 import {
   defaultStylesheet,
+  mergeDuplicateNamedStyles,
   paragraphsWithStyle,
   resolveCharStyle,
   resolveStyle,
@@ -2550,6 +2551,35 @@ export function deleteNamedStyle(styleId: string): Command {
       const { char, para } = resolveStyle(stylesheet, fallbackId);
       for (const p of paragraphsWithStyle(state.doc, styleId)) {
         ops.push(...restyleOps(p, char, para, fallbackId));
+      }
+    }
+    return tr(ops, sel, "command");
+  };
+}
+
+/** Collapse named styles that are identical except for their name (e.g. importer
+ *  duplicates), remapping content references to the surviving style. Since merged
+ *  styles share identical formatting, only the references move — no re-bake needed.
+ *  No-op (returns null) when there are no duplicates. One undoable transaction. */
+export function mergeDuplicateStyles(): Command {
+  return (state) => {
+    const sel = state.selection;
+    const sheet = sheetOf(state);
+    const { sheet: merged, remap } = mergeDuplicateNamedStyles(sheet);
+    if (remap.size === 0) return null;
+    const ops: Op[] = [{ type: "setStylesheet", stylesheet: merged }];
+    for (const p of paragraphsOf(state.doc)) {
+      const ns = p.style.namedStyle;
+      if (ns !== undefined && remap.has(ns)) {
+        ops.push({ type: "setParaStyle", blockId: p.id, patch: { namedStyle: remap.get(ns)! } });
+      }
+      if (p.runs.some((r) => r.style.charStyleId !== undefined && remap.has(r.style.charStyleId))) {
+        const runs = p.runs.map((r) =>
+          r.style.charStyleId !== undefined && remap.has(r.style.charStyleId)
+            ? { ...r, style: { ...r.style, charStyleId: remap.get(r.style.charStyleId)! } }
+            : r,
+        );
+        ops.push({ type: "setRuns", blockId: p.id, runs });
       }
     }
     return tr(ops, sel, "command");

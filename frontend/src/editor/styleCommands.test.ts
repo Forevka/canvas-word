@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { CharStyle, Document, NamedStyle, Paragraph, ParaStyle, SectionProps, Stylesheet } from "@cw/shared";
-import { applyOp, descendantsOf, styleById, styleType, wouldCycle } from "@cw/shared";
+import { applyOp, descendantsOf, mergeDuplicateNamedStyles, styleById, styleType, wouldCycle } from "@cw/shared";
 import { bulletListDefinition, numberListDefinition } from "@cw/shared";
-import { applyCharStyle, deleteListDefinition, deleteNamedStyle, renameNamedStyle, setDefaultStyle, upsertListDefinition, upsertNamedStyle, type NamedStyleSpec } from "./commands";
+import { applyCharStyle, deleteListDefinition, deleteNamedStyle, mergeDuplicateStyles, renameNamedStyle, setDefaultStyle, upsertListDefinition, upsertNamedStyle, type NamedStyleSpec } from "./commands";
 import type { Command, EditorState } from "./state";
 
 const CHAR: CharStyle = { fontFamily: "Georgia, serif", fontSizePx: 14, bold: false, italic: false, underline: false, strikethrough: false, color: "#000" };
@@ -142,6 +142,78 @@ describe("applyCharStyle", () => {
     const spec: NamedStyleSpec = { id: "Emph", name: "Emphasis", type: "character", char: { italic: true, color: "#00ff00" }, para: {} };
     const { doc } = run(state, upsertNamedStyle(spec));
     expect((doc.blocks[0] as Paragraph).runs[0]!.style.color).toBe("#00ff00");
+  });
+});
+
+describe("mergeDuplicateNamedStyles (pure)", () => {
+  it("collapses styles identical except name; the default survives", () => {
+    const sheet: Stylesheet = { defaultStyleId: "Normal", styles: [
+      { id: "Normal", name: "Normal", type: "paragraph", char: { color: "#111" }, para: { align: "left" } },
+      { id: "BodyA", name: "Body A", type: "paragraph", char: { color: "#111" }, para: { align: "left" } },
+      { id: "BodyB", name: "Body B", type: "paragraph", char: { color: "#111" }, para: { align: "left" } },
+    ] };
+    const { sheet: merged, remap } = mergeDuplicateNamedStyles(sheet);
+    expect(merged.styles.map((s) => s.id)).toEqual(["Normal"]); // BodyA/BodyB folded into Normal
+    expect(remap.get("BodyA")).toBe("Normal");
+    expect(remap.get("BodyB")).toBe("Normal");
+  });
+  it("keeps genuinely different styles and rewrites basedOn through the remap", () => {
+    const sheet: Stylesheet = { defaultStyleId: "Normal", styles: [
+      { id: "Normal", name: "Normal", type: "paragraph", char: {}, para: {} },
+      { id: "Blue", name: "Blue", type: "paragraph", char: { color: "#00f" }, para: {} },
+      { id: "BlueDup", name: "Blue Dup", type: "paragraph", char: { color: "#00f" }, para: {} },
+      { id: "Child", name: "Child", type: "paragraph", basedOn: "BlueDup", char: { bold: true }, para: {} },
+    ] };
+    const { sheet: merged, remap } = mergeDuplicateNamedStyles(sheet);
+    expect(remap.get("BlueDup")).toBe("Blue");
+    expect(styleById(merged, "Child")!.basedOn).toBe("Blue"); // rebased off the merged style
+    expect(styleById(merged, "Blue")).toBeTruthy();
+  });
+  it("never merges across kinds (paragraph vs character)", () => {
+    const sheet: Stylesheet = { defaultStyleId: "Normal", styles: [
+      { id: "Normal", name: "Normal", type: "paragraph", char: { bold: true }, para: {} },
+      { id: "Strong", name: "Strong", type: "character", char: { bold: true }, para: {} },
+    ] };
+    expect(mergeDuplicateNamedStyles(sheet).remap.size).toBe(0);
+  });
+});
+
+describe("mergeDuplicateStyles command", () => {
+  const dupSheet: Stylesheet = { defaultStyleId: "Normal", styles: [
+    { id: "Normal", name: "Normal", type: "paragraph", char: { color: "#202124", fontSizePx: 16 }, para: { align: "left" } },
+    { id: "Heading1", name: "Heading 1", type: "paragraph", basedOn: "Normal", char: { bold: true, fontSizePx: 24 }, para: { spaceBeforePx: 12 } },
+    { id: "Heading1b", name: "Heading 1 (copy)", type: "paragraph", basedOn: "Normal", char: { bold: true, fontSizePx: 24 }, para: { spaceBeforePx: 12 } },
+    { id: "Emph", name: "Emphasis", type: "character", char: { italic: true }, para: {} },
+    { id: "Emph2", name: "Emphasis 2", type: "character", char: { italic: true }, para: {} },
+  ] };
+
+  it("remaps paragraph + run references to the survivor and drops the duplicates", () => {
+    const a = p("title", "Heading1b");
+    const b = p("body", "Normal");
+    b.runs = [{ text: "body", style: { ...CHAR, italic: true, charStyleId: "Emph2" } }];
+    const state: EditorState = { doc: docOf(dupSheet, a, b), selection: sel(a) };
+    const { doc } = run(state, mergeDuplicateStyles());
+    // Duplicates gone; survivors kept.
+    expect(styleById(doc.stylesheet!, "Heading1b")).toBeUndefined();
+    expect(styleById(doc.stylesheet!, "Emph2")).toBeUndefined();
+    expect(styleById(doc.stylesheet!, "Heading1")).toBeTruthy();
+    // References remapped.
+    expect((doc.blocks[0] as Paragraph).style.namedStyle).toBe("Heading1");
+    expect((doc.blocks[1] as Paragraph).runs[0]!.style.charStyleId).toBe("Emph");
+  });
+
+  it("is a no-op when there are no duplicates", () => {
+    const a = p("x", "Normal");
+    const sheet: Stylesheet = { ...SHEET };
+    expect(mergeDuplicateStyles()({ doc: docOf(sheet, a), selection: sel(a) })).toBeNull();
+  });
+
+  it("undo restores the duplicate styles and references", () => {
+    const a = p("title", "Heading1b");
+    const res = run({ doc: docOf(dupSheet, a), selection: sel(a) }, mergeDuplicateStyles());
+    const back = undo(res);
+    expect(styleById(back.stylesheet!, "Heading1b")).toBeTruthy();
+    expect((back.blocks[0] as Paragraph).style.namedStyle).toBe("Heading1b");
   });
 });
 

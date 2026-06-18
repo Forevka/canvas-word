@@ -32,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   survives save → reopen even before it's applied — matching Word. A new **"Show
   only styles in use"** filter (funnel button in the Home → Styles group) collapses
   the gallery to applied styles for documents that carry large style catalogs.
+- **Merge duplicate styles.** A **Merge duplicates** action in the Style Manager
+  collapses named styles that are identical except for their name (common after
+  importing generated docs, or duplicating a style) into one survivor — content
+  references and `basedOn` pointers are remapped, the default style is always kept,
+  and it's a single undo. The button shows the count and disables when there are none.
 - **Child documents (`WordCanvas.createChild()`).** A lightweight sibling document
   that shares the parent editor's *live* style context — stylesheet, list/numbering
   definitions, page section, and content-control/field maps — and renders or edits

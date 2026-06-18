@@ -103,6 +103,62 @@ export function wouldCycle(sheet: Stylesheet, styleId: string, newBasedOn: strin
   return descendantsOf(sheet, styleId).has(newBasedOn);
 }
 
+/** A canonical signature of a style's FORMATTING (everything but id + name):
+ *  type, basedOn, and its defined char/para deltas with keys sorted — so two
+ *  styles that differ only by name (or id) produce the same string. */
+function styleSignature(s: NamedStyle): string {
+  const norm = (o: object): [string, unknown][] =>
+    Object.entries(definedOnly(o)).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return JSON.stringify([styleType(s), s.basedOn ?? "", norm(s.char), norm(s.para)]);
+}
+
+export interface StyleMergeResult {
+  sheet: Stylesheet;
+  /** mergedId → survivingId, for every style that was collapsed away. Empty when
+   *  there were no duplicates. */
+  remap: Map<string, string>;
+}
+
+/** Collapse named styles that are identical except for their name/id: each group
+ *  of same-signature styles keeps ONE survivor (the default style if the group
+ *  contains it, otherwise the first in document order) and the rest are dropped,
+ *  their ids remapped to the survivor. basedOn pointers (and defaultStyleId) are
+ *  rewritten through the remap. Callers remap content references (paragraph
+ *  namedStyle / run charStyleId) using `remap`. */
+export function mergeDuplicateNamedStyles(sheet: Stylesheet): StyleMergeResult {
+  const remap = new Map<string, string>();
+  const survivorBySig = new Map<string, string>();
+  for (const s of sheet.styles) {
+    const sig = styleSignature(s);
+    const survivor = survivorBySig.get(sig);
+    if (survivor === undefined) {
+      survivorBySig.set(sig, s.id);
+    } else if (s.id === sheet.defaultStyleId) {
+      // The default style must survive — promote it and fold the prior survivor.
+      survivorBySig.set(sig, s.id);
+      remap.set(survivor, s.id);
+      for (const [k, v] of remap) if (v === survivor) remap.set(k, s.id);
+    } else {
+      remap.set(s.id, survivor);
+    }
+  }
+  if (remap.size === 0) return { sheet, remap };
+
+  const resolveId = (id: string): string => remap.get(id) ?? id;
+  const styles: NamedStyle[] = [];
+  for (const s of sheet.styles) {
+    if (remap.has(s.id)) continue; // collapsed away
+    const next: NamedStyle = { ...s };
+    if (next.basedOn !== undefined) {
+      const rebased = resolveId(next.basedOn);
+      if (rebased === next.id) delete next.basedOn; // self-reference after merge
+      else next.basedOn = rebased;
+    }
+    styles.push(next);
+  }
+  return { sheet: { styles, defaultStyleId: resolveId(sheet.defaultStyleId) }, remap };
+}
+
 function definedOnly<T extends object>(o: T): Partial<T> {
   const out: Partial<T> = {};
   for (const [k, v] of Object.entries(o)) {
