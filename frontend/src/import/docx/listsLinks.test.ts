@@ -56,9 +56,10 @@ describe("lists — numbering.xml", () => {
     expect(def!.levels[0]).toMatchObject({ format: "decimal", text: "%1.", start: 1 });
   });
 
-  it("only emits definitions for referenced lists", () => {
+  it("keeps every defined list definition (authored lists survive before use)", () => {
     const r = runImport(docxWithNumbering(listItem("10", 0, "x")));
-    expect(Object.keys(r.doc.lists ?? {})).toEqual(["10"]); // 11, 12 unused
+    // 10 is referenced; 11 and 12 are defined-but-unused — all are retained now.
+    expect(new Set(Object.keys(r.doc.lists ?? {}))).toEqual(new Set(["10", "11", "12"]));
   });
 
   it("avoids double-counting list indent (engine adds level indent)", () => {

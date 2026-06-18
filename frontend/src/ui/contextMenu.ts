@@ -36,7 +36,7 @@ export interface ContextMenuHandle {
 }
 
 const MENU_CSS = `
-.cw-menu{position:fixed;z-index:1000;min-width:200px;max-width:320px;background:#fff;
+.cw-menu{position:fixed;z-index:1300;min-width:200px;max-width:320px;background:#fff;
   border:1px solid #c8ccd1;border-radius:8px;padding:5px;
   box-shadow:0 6px 22px rgba(0,0,0,.22);font:13px Arial,sans-serif;color:#2b2f33;
   user-select:none;}

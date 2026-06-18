@@ -1,0 +1,176 @@
+// Table styles — a round-trippable mirror of OOXML w:style[@w:type="table"] with
+// conditional formatting (w:tblStylePr): a whole-table base plus per-band overrides
+// (header/total row, first/last column, row/column banding, corner cells). Like
+// named styles, the editor MODEL stays concrete: applying or editing a table style
+// BAKES the effective per-cell props onto TableCell.shading/borders/margin (the
+// layout engine reads those directly), while the TableStyle entity + TableBlock.styleId
+// are retained for re-editing and docx round-trip.
+
+import type { CellBorders, CellMargin, CharStyle, ParaStyle } from "./document";
+
+/** Conditional-format slots (OOXML w:tblStylePr w:type values). "wholeTable" is
+ *  the base applied to every cell. */
+export type TableCond =
+  | "wholeTable"
+  | "firstRow" | "lastRow" | "firstCol" | "lastCol"
+  | "band1Horz" | "band2Horz" | "band1Vert" | "band2Vert"
+  | "nwCell" | "neCell" | "swCell" | "seCell";
+
+/** Formatting for one conditional band. Borders/shading/margin map to cell
+ *  props; char/para map to the cell's content runs/paragraphs. */
+export interface TableCondProps {
+  char?: Partial<CharStyle>;
+  para?: Partial<ParaStyle>;
+  shading?: string;
+  borders?: CellBorders;
+  margin?: CellMargin;
+}
+
+export interface TableStyle {
+  id: string; // shares the docx styleId space
+  name: string;
+  basedOn?: string;
+  /** Per-condition formatting; `wholeTable` is the base. */
+  conds: Partial<Record<TableCond, TableCondProps>>;
+  /** Banding stripe sizes (rows/cols per stripe). Default 1. */
+  rowBandSize?: number;
+  colBandSize?: number;
+}
+
+/** Which conditional bands a given cell participates in, derived from its grid
+ *  position + the table's tblLook flags. */
+export interface CellCondFlags {
+  firstRow?: boolean;
+  lastRow?: boolean;
+  firstCol?: boolean;
+  lastCol?: boolean;
+  /** Row band parity for banded rows (1 = band1Horz, 2 = band2Horz). */
+  rowBand?: 1 | 2;
+  /** Column band parity for banded cols. */
+  colBand?: 1 | 2;
+}
+
+export function tableStyleById(styles: Record<string, TableStyle>, id: string): TableStyle | undefined {
+  return styles[id];
+}
+
+/** Collapse a table style's basedOn chain into one set of per-condition props
+ *  (root → leaf, child overriding per condition/field). Cycle-guarded. */
+export function resolveTableStyle(styles: Record<string, TableStyle>, id: string): Partial<Record<TableCond, TableCondProps>> {
+  const chain: TableStyle[] = [];
+  const seen = new Set<string>();
+  for (let cur = styles[id]; cur && !seen.has(cur.id); cur = cur.basedOn ? styles[cur.basedOn] : undefined) {
+    seen.add(cur.id);
+    chain.unshift(cur);
+  }
+  const out: Partial<Record<TableCond, TableCondProps>> = {};
+  for (const s of chain) {
+    for (const [cond, props] of Object.entries(s.conds) as [TableCond, TableCondProps][]) {
+      const prev = out[cond] ?? {};
+      out[cond] = mergeCond(prev, props);
+    }
+  }
+  return out;
+}
+
+function mergeCond(base: TableCondProps, add: TableCondProps): TableCondProps {
+  const out: TableCondProps = { ...base };
+  if (add.char) out.char = { ...base.char, ...add.char };
+  if (add.para) out.para = { ...base.para, ...add.para };
+  if (add.shading !== undefined) out.shading = add.shading;
+  if (add.borders) out.borders = { ...base.borders, ...add.borders };
+  if (add.margin) out.margin = add.margin;
+  return out;
+}
+
+/** OOXML conditional-formatting precedence (least → most specific), so later
+ *  entries override earlier when combining for a cell. Corners are most specific. */
+const COND_ORDER: TableCond[] = [
+  "wholeTable",
+  "band1Horz", "band2Horz", "band1Vert", "band2Vert",
+  "firstRow", "lastRow", "firstCol", "lastCol",
+  "nwCell", "neCell", "swCell", "seCell",
+];
+
+/** The effective cell props for one cell: layer the table style's applicable
+ *  conditions in OOXML precedence order. `direct` (the cell's own formatting)
+ *  always wins last. Returns only the cell-level fields (shading/borders/margin
+ *  + the cell's content char/para deltas). */
+export function effectiveCellProps(
+  resolved: Partial<Record<TableCond, TableCondProps>>,
+  flags: CellCondFlags,
+  direct?: { shading?: string; borders?: CellBorders; margin?: CellMargin },
+): TableCondProps {
+  const active = (cond: TableCond): boolean => {
+    switch (cond) {
+      case "wholeTable": return true;
+      case "firstRow": return !!flags.firstRow;
+      case "lastRow": return !!flags.lastRow;
+      case "firstCol": return !!flags.firstCol;
+      case "lastCol": return !!flags.lastCol;
+      case "band1Horz": return flags.rowBand === 1;
+      case "band2Horz": return flags.rowBand === 2;
+      case "band1Vert": return flags.colBand === 1;
+      case "band2Vert": return flags.colBand === 2;
+      case "nwCell": return !!flags.firstRow && !!flags.firstCol;
+      case "neCell": return !!flags.firstRow && !!flags.lastCol;
+      case "swCell": return !!flags.lastRow && !!flags.firstCol;
+      case "seCell": return !!flags.lastRow && !!flags.lastCol;
+    }
+  };
+  let out: TableCondProps = {};
+  for (const cond of COND_ORDER) {
+    if (active(cond) && resolved[cond]) out = mergeCond(out, resolved[cond]!);
+  }
+  if (direct) {
+    if (direct.shading !== undefined) out.shading = direct.shading;
+    if (direct.borders) out.borders = { ...out.borders, ...direct.borders };
+    if (direct.margin) out.margin = direct.margin;
+  }
+  return out;
+}
+
+/** Compute a cell's conditional flags from grid position + the table's band
+ *  toggles (w:tblLook). rowCount/colCount are the grid dimensions. */
+export function cellCondFlags(
+  row: number, col: number, rowCount: number, colCount: number,
+  opts: { firstRow?: boolean; lastRow?: boolean; firstCol?: boolean; lastCol?: boolean; bandRows?: boolean; bandCols?: boolean; rowBandSize?: number; colBandSize?: number },
+): CellCondFlags {
+  const flags: CellCondFlags = {};
+  const isFirstRow = opts.firstRow && row === 0;
+  const isLastRow = opts.lastRow && row === rowCount - 1;
+  const isFirstCol = opts.firstCol && col === 0;
+  const isLastCol = opts.lastCol && col === colCount - 1;
+  if (isFirstRow) flags.firstRow = true;
+  if (isLastRow) flags.lastRow = true;
+  if (isFirstCol) flags.firstCol = true;
+  if (isLastCol) flags.lastCol = true;
+  // Banding applies to the "body" rows/cols (excluding header/total/first/last).
+  if (opts.bandRows && !isFirstRow && !isLastRow) {
+    const headerOffset = opts.firstRow ? 1 : 0;
+    const band = Math.floor((row - headerOffset) / Math.max(1, opts.rowBandSize ?? 1));
+    flags.rowBand = band % 2 === 0 ? 1 : 2;
+  }
+  if (opts.bandCols && !isFirstCol && !isLastCol) {
+    const colOffset = opts.firstCol ? 1 : 0;
+    const band = Math.floor((col - colOffset) / Math.max(1, opts.colBandSize ?? 1));
+    flags.colBand = band % 2 === 0 ? 1 : 2;
+  }
+  return flags;
+}
+
+export const TABLE_COND_LABELS: Record<TableCond, string> = {
+  wholeTable: "Whole table",
+  firstRow: "Header row",
+  lastRow: "Total row",
+  firstCol: "First column",
+  lastCol: "Last column",
+  band1Horz: "Banded rows (odd)",
+  band2Horz: "Banded rows (even)",
+  band1Vert: "Banded columns (odd)",
+  band2Vert: "Banded columns (even)",
+  nwCell: "Top-left cell",
+  neCell: "Top-right cell",
+  swCell: "Bottom-left cell",
+  seCell: "Bottom-right cell",
+};

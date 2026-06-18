@@ -307,6 +307,8 @@ export interface IRTable {
   colWidthsTwips?: number[];
   /** w:tblPr/w:tblStyle — table style id (its borders/shd are the cascade base). */
   styleId?: string;
+  /** w:tblPr/w:tblLook — which conditional bands of the table style are active. */
+  look?: { firstRow?: boolean; lastRow?: boolean; firstCol?: boolean; lastCol?: boolean; bandRows?: boolean; bandCols?: boolean };
   /** w:tblPr/w:tblBorders. */
   borders?: IRBorders;
   /** A w:tblBorders element is present — even if empty, the table explicitly

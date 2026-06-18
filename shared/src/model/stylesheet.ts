@@ -11,9 +11,16 @@
 import type { CharStyle, Document, ParaStyle, Paragraph } from "./document";
 import { paragraphsOf } from "./text";
 
+export type NamedStyleType = "paragraph" | "character";
+
 export interface NamedStyle {
   id: string; // shares the docx styleId space ("Normal", "Heading1", ...)
   name: string; // display name
+  /** Paragraph vs character style (Word's two text-level style kinds). Optional
+   *  for back-compat: legacy stylesheets and defaultStylesheet() omit it and read
+   *  as "paragraph" via styleType(). Character styles store only `char` (empty
+   *  `para`) and apply to runs, not paragraphs. */
+  type?: NamedStyleType;
   basedOn?: string;
   char: Partial<CharStyle>;
   para: Partial<ParaStyle>;
@@ -22,6 +29,12 @@ export interface NamedStyle {
 export interface Stylesheet {
   styles: NamedStyle[];
   defaultStyleId: string;
+}
+
+/** A style's kind, defaulting untyped (legacy) styles to "paragraph". Read this
+ *  rather than `.type` directly so old documents keep working. */
+export function styleType(s: NamedStyle): NamedStyleType {
+  return s.type ?? "paragraph";
 }
 
 export function styleById(sheet: Stylesheet, id: string): NamedStyle | undefined {
@@ -46,6 +59,48 @@ export function resolveStyle(
     Object.assign(para, definedOnly(s.para));
   }
   return { char, para };
+}
+
+/** Resolved character template only: basedOn chain root→leaf, defined `char`
+ *  fields override. Character styles have no `para`, so this is the run-level
+ *  equivalent of resolveStyle for type==="character" styles. */
+export function resolveCharStyle(sheet: Stylesheet, id: string): Partial<CharStyle> {
+  const chain: NamedStyle[] = [];
+  const seen = new Set<string>();
+  for (let cur = styleById(sheet, id); cur && !seen.has(cur.id); cur = cur.basedOn ? styleById(sheet, cur.basedOn) : undefined) {
+    seen.add(cur.id);
+    chain.unshift(cur);
+  }
+  const char: Partial<CharStyle> = {};
+  for (const s of chain) Object.assign(char, definedOnly(s.char));
+  return char;
+}
+
+/** Every style id that (transitively) lists `id` as its basedOn ancestor. Used
+ *  to keep a style out of its own descendants' "Based on" pickers. */
+export function descendantsOf(sheet: Stylesheet, id: string): Set<string> {
+  const out = new Set<string>();
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const s of sheet.styles) {
+      if (out.has(s.id)) continue;
+      if (s.basedOn !== undefined && (s.basedOn === id || out.has(s.basedOn))) {
+        out.add(s.id);
+        grew = true;
+      }
+    }
+  }
+  return out;
+}
+
+/** Would setting `styleId`'s basedOn to `newBasedOn` create a cycle? True if
+ *  newBasedOn is the style itself or one of its descendants. A backstop for the
+ *  UI, which already excludes these from the picker. */
+export function wouldCycle(sheet: Stylesheet, styleId: string, newBasedOn: string | undefined): boolean {
+  if (!newBasedOn) return false;
+  if (newBasedOn === styleId) return true;
+  return descendantsOf(sheet, styleId).has(newBasedOn);
 }
 
 function definedOnly<T extends object>(o: T): Partial<T> {

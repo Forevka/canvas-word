@@ -43,10 +43,12 @@ import { showContextMenu, type ContextMenuHandle, type MenuEntry } from "./ui/co
 import { showSdtInspector, type SdtInspectorData, type SdtInspectorHandle } from "./ui/sdtInspector";
 import { showFieldConstructor } from "./ui/fieldConstructor";
 import { showTocProperties } from "./ui/tocProperties";
+import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
 import { showTableProperties, type BorderStyleName, type TablePropertiesHandle } from "./ui/tableProperties";
 import { createA11yMirror } from "./a11y/mirror";
 import {
   changeListLevel,
+  applyTableStyle,
   deleteTableRowCmd,
   deleteTableColumnCmd,
   deleteTableCmd,
@@ -1896,6 +1898,23 @@ export function createEditor(
     return level?.format === "bullet" ? "bullet" : "decimal";
   };
 
+  // ---- Style Manager -----------------------------------------------------
+
+  let styleMgr: StyleManagerHandle | null = null;
+  const openStyleManager = (initialSelection?: { kind: "paragraph" | "character" | "list" | "table"; id: string }): void => {
+    if (styleMgr) { styleMgr.refresh(); return; }
+    styleMgr = showStyleManager({
+      editor: {
+        getDocument: () => doc,
+        dispatch,
+        createChild: () => createChildDocument({ getStyleContext, makeEditor: createEditor }),
+        focus: () => proxy.focus(),
+      },
+      ...(initialSelection ? { initialSelection } : {}),
+      onClose: () => { styleMgr = null; },
+    });
+  };
+
   // ---- Borders & Shading modal -------------------------------------------
 
   let tableProps: TablePropertiesHandle | null = null;
@@ -2044,6 +2063,12 @@ export function createEditor(
 
     // Comment on the selection (edit mode has no floating chip — suggest mode does).
     entries.push(sep, item("Comment", () => startComment(), { icon: ICONS.comment, disabled: !hasSel }));
+
+    // Styles — open the manager, seeded to the caret paragraph's style.
+    {
+      const styleId = para?.kind === "paragraph" ? para.style.namedStyle : undefined;
+      entries.push(item("Styles…", () => openStyleManager(styleId ? { kind: "paragraph", id: styleId } : undefined), { icon: ICONS.stylePencil }));
+    }
 
     // Link.
     if (linkUrl) {
@@ -2276,6 +2301,25 @@ export function createEditor(
         item("Unmerge Cell", () => dispatch(unmergeCellCmd()), { icon: ICONS.unmergeCells }),
         sep,
         item("Borders & Shading…", () => openTableProperties(), { icon: ICONS.borders }),
+        (() => {
+          const captured = cellSelection ?? singleCellAtCaret();
+          const curStyleId = captured ? findTableById(doc, captured.tableId)?.table.styleId : undefined;
+          const styleItems: MenuEntry[] = Object.values(doc.tableStyles ?? {}).map((ts) => ({
+            kind: "item",
+            label: ts.id === curStyleId ? `${ts.name} ✓` : ts.name,
+            onClick: () => dispatch(applyTableStyle(ts.id)),
+          }));
+          return {
+            kind: "submenu",
+            label: "Table Style",
+            icon: ICONS.stylePencil,
+            items: [
+              ...(styleItems.length > 0 ? [...styleItems, { kind: "sep" } as MenuEntry] : []),
+              { kind: "item", label: "New Table Style…", onClick: () => openStyleManager(curStyleId ? { kind: "table", id: curStyleId } : undefined) },
+              { kind: "item", label: "Manage Styles…", onClick: () => openStyleManager(curStyleId ? { kind: "table", id: curStyleId } : undefined) },
+            ],
+          } as MenuEntry;
+        })(),
       );
     }
 

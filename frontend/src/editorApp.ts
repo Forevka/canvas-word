@@ -16,6 +16,7 @@ import type { EditorHandle, WordCanvasRuntime } from "./app/runtime";
 import { buildShell } from "./app/shell";
 import { ensureWordCanvasStyles } from "./ui/styles";
 import { showContextMenu, type MenuEntry } from "./ui/contextMenu";
+import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
 import { loadCollabDocument, loadCollabReview, publishDocument } from "./sync/collab";
 import { attachMentionAutocomplete } from "./review/mentions";
 import { showBusy } from "./app/busyOverlay";
@@ -35,8 +36,8 @@ import {
   unmergeCellCmd,
   setImageProps,
   applyNamedStyle,
+  applyCharStyle,
   updateStyleToSelection,
-  createStyleFromSelection,
   setParaProps,
   addBookmarkCmd,
   removeBookmarkCmd,
@@ -62,7 +63,7 @@ import {
   removeContentControl,
   sdtAtPosition,
 } from "./editor/commands";
-import { defaultStylesheet, styleById } from "@cw/shared";
+import { defaultStylesheet, styleById, styleType } from "@cw/shared";
 import { bulletListDefinition, numberListDefinition, paragraphsOf, textOfRuns } from "@cw/shared";
 import { ICONS } from "./ui/icons";
 
@@ -1142,16 +1143,32 @@ if (toolbar) {
   // sample (correct font/weight/size/color) instead of damped CSS. Recreated on
   // rebuild so removed cards' surfaces are torn down.
   let galleryChild: ReturnType<typeof editor.createChild> | null = null;
+  let styleMgr: StyleManagerHandle | null = null;
+  // "Show only styles in use" filter. Since import now keeps every defined style
+  // (so authored styles round-trip), a heavy imported doc can crowd the gallery —
+  // this collapses it to styles actually applied in the document.
+  let hideUnusedStyles = false;
+  /** Style ids applied anywhere in the document (paragraph namedStyle + run charStyleId). */
+  const usedStyleIds = (): Set<string> => {
+    const used = new Set<string>();
+    for (const p of paragraphsOf(editor.getDocument())) {
+      if (p.style.namedStyle) used.add(p.style.namedStyle);
+      for (const r of p.runs) if (r.style.charStyleId) used.add(r.style.charStyleId);
+    }
+    return used;
+  };
   const addStyleCard = (id: string, name: string): HTMLButtonElement => {
     const c = el("button", "style-card");
-    c.title = name;
+    const isChar = (() => { const st = styleById(stylesheet(), id); return !!st && styleType(st) === "character"; })();
+    c.title = isChar ? `${name} (character style)` : name;
     c.innerHTML = `<span class="preview"></span><span class="name"></span>`;
-    (c.querySelector(".name") as HTMLElement).textContent = name;
+    (c.querySelector(".name") as HTMLElement).textContent = isChar ? `${name} ⓐ` : name; // ⓐ marks a character style
     const prev = c.querySelector(".preview") as HTMLElement;
     galleryChild?.render(prev, { kind: "styleSample", styleId: id, sampleText: "AaBbCc" }, { fit: true, widthPx: 70, maxHeightPx: 24 });
     c.addEventListener("mousedown", (e) => e.preventDefault());
     c.addEventListener("click", () => {
-      editor.dispatch(applyNamedStyle(id));
+      const st = styleById(stylesheet(), id);
+      editor.dispatch(st && styleType(st) === "character" ? applyCharStyle(id) : applyNamedStyle(id));
       editor.focus();
     });
     styleCards.set(id, c);
@@ -1163,7 +1180,13 @@ if (toolbar) {
     galleryChild = editor.createChild();
     styleGallery.textContent = "";
     styleCards.clear();
-    for (const s of stylesheet().styles) addStyleCard(s.id, s.name);
+    const sheet = stylesheet();
+    // When filtering, always keep the default style and the caret's current style
+    // visible so the gallery never hides what's active.
+    const used = hideUnusedStyles ? usedStyleIds() : null;
+    const curId = editor.currentFormat().styleId;
+    const keep = (id: string): boolean => !used || used.has(id) || id === sheet.defaultStyleId || id === curId;
+    for (const s of sheet.styles) if (keep(s.id)) addStyleCard(s.id, s.name);
   };
   rebuildStyleGallery();
   controls.appendChild(styleGallery);
@@ -1171,13 +1194,23 @@ if (toolbar) {
     const id = editor.currentFormat().styleId;
     if (id) editor.dispatch(updateStyleToSelection(id));
   });
-  btn(ICONS.styleNew, "New style from selection…", () => {
-    const name = prompt("New style name:");
-    if (name) {
-      editor.dispatch(createStyleFromSelection(name));
-      rebuildStyleGallery();
-      syncToolbar();
-    }
+  const openStyleManager = (sel?: { kind: "paragraph" | "character"; id: string }): void => {
+    if (styleMgr) { styleMgr.refresh(); return; }
+    styleMgr = showStyleManager({
+      editor,
+      ...(sel ? { initialSelection: sel } : {}),
+      onClose: () => { styleMgr = null; },
+    });
+  };
+  btn(ICONS.styleNew, "Manage styles…", () => {
+    const id = editor.currentFormat().styleId;
+    openStyleManager(id ? { kind: "paragraph", id } : undefined);
+  });
+  const filterBtn = btn(ICONS.filter, "Show only styles in use", () => {
+    hideUnusedStyles = !hideUnusedStyles;
+    filterBtn.classList.toggle("active", hideUnusedStyles);
+    filterBtn.title = hideUnusedStyles ? "Show all styles" : "Show only styles in use";
+    rebuildStyleGallery();
   });
 
   // ---- Editing ----
@@ -1943,6 +1976,7 @@ if (toolbar) {
 
   // ---- toolbar controls mirror the caret formatting -----------------------
   let lastStylesheet = editor.getDocument().stylesheet ?? null;
+  let lastUsedSig = ""; // signature of the in-use style set (for the gallery filter)
   syncToolbar = (): void => {
     // A .docx import swaps the whole stylesheet — rebuild the gallery so
     // imported style ids (Heading 1, …) resolve instead of sticking on Normal.
@@ -1950,6 +1984,12 @@ if (toolbar) {
     if (sheet !== lastStylesheet) {
       lastStylesheet = sheet;
       rebuildStyleGallery();
+      styleMgr?.refresh();
+    } else if (hideUnusedStyles) {
+      // While the "in use" filter is on, keep it live as usage changes (applying
+      // or clearing a style). Cheap signature check — only runs while filtering.
+      const sig = [...usedStyleIds()].sort().join(",");
+      if (sig !== lastUsedSig) { lastUsedSig = sig; rebuildStyleGallery(); }
     }
     const f = editor.currentFormat();
     if (f.styleId) {

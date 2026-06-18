@@ -9,6 +9,7 @@ export * from "./model/position";
 export * from "./model/text";
 export * from "./model/stylesheet";
 export * from "./model/lists";
+export * from "./model/tableStyles";
 export * from "./model/ops";
 export * from "./model/tableGrid";
 

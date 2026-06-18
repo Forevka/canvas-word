@@ -144,6 +144,7 @@ export const ICONS = {
   outline: svg(`<rect x="2" y="2.5" width="12" height="11" rx="1"/><path d="M6 2.5v11"/><path d="M8 5.5h4M8 8h4M8 10.5h3"/>`),
   ruler: svg(`<rect x="1.5" y="5" width="13" height="6" rx="1"/><path d="M4 5v2.2M6.5 5v3M9 5v2.2M11.5 5v3"/>`),
   trash: svg(`<path d="M3 4.5h10"/><path d="M5.5 4.5V3h5v1.5"/><path d="M4 4.5l.8 9h6.4l.8-9"/><path d="M6.5 7v4M9.5 7v4"/>`),
+  filter: svg(`<path d="M2.5 3.5h11l-4.2 5v4l-2.6 1.3v-5.3z"/>`),
 } as const;
 
 export type IconName = keyof typeof ICONS;

@@ -6,7 +6,7 @@ import type { Block, BandContainer, Paragraph, SectionProps } from "@cw/shared";
 import { markImportedTocEntries } from "@cw/shared";
 import { findMainDocumentPart } from "./contentTypes";
 import { parseDocumentXml, parseFootnotesXml, parseHeaderFooterXml } from "./documentParser";
-import { buildStylesheet, collectUsedStyleIds, createMapper, mapSdts, type LinkResolver, type Mapper } from "./mapToModel";
+import { buildStylesheet, buildTableStyles, createMapper, mapSdts, type LinkResolver, type Mapper } from "./mapToModel";
 import { createMediaStore, type MediaStore } from "./media";
 import { parseNumberingXml, EMPTY_NUMBERING } from "./numbering";
 import { findByType, parseRelationships, relsPartFor, type Relationships } from "./relationships";
@@ -139,9 +139,13 @@ export function runImport(
   if (Object.keys(lists).length > 0) doc.lists = lists;
   const bookmarks = mapper.bookmarks();
   if (Object.keys(bookmarks).length > 0) doc.bookmarks = bookmarks;
-  // Style gallery: used paragraph styles (+ basedOn closure) with w:name labels.
-  const stylesheet = buildStylesheet(styles, collectUsedStyleIds(ir.blocks));
+  // Style gallery: ALL defined paragraph/character styles (w:name labels) — so
+  // authored-but-unapplied styles survive a round-trip (matches Word).
+  const stylesheet = buildStylesheet(styles);
   if (stylesheet) doc.stylesheet = stylesheet;
+  // All defined table styles → Document.tableStyles.
+  const tableStyles = buildTableStyles(styles);
+  if (tableStyles) doc.tableStyles = tableStyles;
 
   // TOC field: capture its instruction (for verbatim re-emit) and mark the
   // flattened entry paragraphs as live tocEntry (stripping their cached numbers)

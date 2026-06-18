@@ -2,8 +2,8 @@
 // list-marker run props. Only DEFINED fields are written — the importer reads
 // each w:* element into a patch field, so absent elements stay absent.
 
-import type { CharStyle, ParaStyle } from "@cw/shared";
-import { multiplierToLine, pxToHalfPoints, pxToTwips } from "../units";
+import type { CellBorders, CharStyle, ParaStyle, TableCond, TableCondProps, TableStyle } from "@cw/shared";
+import { multiplierToLine, pxToEighthPoints, pxToHalfPoints, pxToTwips } from "../units";
 import { HIGHLIGHT_NAME, hexColor as hex, JC, TAB_LEADER, TAB_VAL } from "./mappings";
 import { el } from "./xmlWrite";
 
@@ -14,6 +14,9 @@ import { el } from "./xmlWrite";
 export function runPropsXml(s: CharStyle): string {
   const family = (s.fontFamily.split(",")[0] ?? "").trim();
   const children: string[] = [];
+  // w:rStyle (character-style reference) must be the first child of w:rPr; the
+  // concrete props below still override it on re-import (Word semantics).
+  if (s.charStyleId) children.push(el("w:rStyle", { "w:val": s.charStyleId }));
   if (family) children.push(el("w:rFonts", { "w:ascii": family, "w:hAnsi": family, "w:cs": family }));
   children.push(el("w:b", { "w:val": s.bold ? "1" : "0" }));
   children.push(el("w:i", { "w:val": s.italic ? "1" : "0" }));
@@ -124,4 +127,50 @@ export function partialPPrXml(p: Partial<ParaStyle>): string {
     out.push(el("w:tabs", undefined, tabs));
   }
   return out.length > 0 ? el("w:pPr", undefined, out.join("")) : "";
+}
+
+// ---------------------------------------------------------------------------
+// Table styles → w:style[@w:type="table"] with conditional formatting.
+
+function condBordersXml(tag: string, b: CellBorders): string {
+  const edge = (name: string, spec: CellBorders["top"]): string => {
+    if (!spec) return "";
+    const val = spec.style === "double" ? "double" : spec.style === "dashed" ? "dashed" : spec.style === "dotted" ? "dotted" : "single";
+    return el("w:" + name, { "w:val": val, "w:sz": pxToEighthPoints(spec.widthPx), "w:space": 0, "w:color": hex(spec.color) });
+  };
+  return el(tag, undefined, edge("top", b.top) + edge("left", b.left) + edge("bottom", b.bottom) + edge("right", b.right));
+}
+
+const shdFillXml = (fill: string): string => el("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": hex(fill) });
+
+function tblStylePrXml(cond: TableCond, props: TableCondProps): string {
+  const tc: string[] = [];
+  if (props.borders) tc.push(condBordersXml("w:tcBorders", props.borders));
+  if (props.shading) tc.push(shdFillXml(props.shading));
+  const tcPr = tc.length > 0 ? el("w:tcPr", undefined, tc.join("")) : "";
+  return el("w:tblStylePr", { "w:type": cond }, partialRPrXml(props.char ?? {}) + partialPPrXml(props.para ?? {}) + tcPr);
+}
+
+/** One table style. Base (wholeTable) → rPr/pPr + tblPr(borders/shd/band sizes);
+ *  each other condition → a w:tblStylePr. */
+export function tableStyleXml(style: TableStyle): string {
+  const base = style.conds.wholeTable ?? {};
+  const tblPrKids: string[] = [];
+  if (style.rowBandSize !== undefined) tblPrKids.push(el("w:tblStyleRowBandSize", { "w:val": style.rowBandSize }));
+  if (style.colBandSize !== undefined) tblPrKids.push(el("w:tblStyleColBandSize", { "w:val": style.colBandSize }));
+  if (base.borders) tblPrKids.push(condBordersXml("w:tblBorders", base.borders));
+  if (base.shading) tblPrKids.push(shdFillXml(base.shading));
+  const tblPr = tblPrKids.length > 0 ? el("w:tblPr", undefined, tblPrKids.join("")) : "";
+  const conds = (Object.entries(style.conds) as [TableCond, TableCondProps][])
+    .filter(([c]) => c !== "wholeTable")
+    .map(([c, p]) => tblStylePrXml(c, p))
+    .join("");
+  const body =
+    el("w:name", { "w:val": style.name }) +
+    (style.basedOn ? el("w:basedOn", { "w:val": style.basedOn }) : "") +
+    partialRPrXml(base.char ?? {}) +
+    partialPPrXml(base.para ?? {}) +
+    tblPr +
+    conds;
+  return el("w:style", { "w:type": "table", "w:styleId": style.id }, body);
 }

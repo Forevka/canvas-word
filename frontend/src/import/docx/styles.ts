@@ -34,6 +34,20 @@ export interface StyleDef {
   tblBorders?: IRBorders;
   /** Table styles only: w:tblPr/w:shd → CSS fill. */
   tblShd?: string;
+  /** Table styles only: each w:tblStylePr conditional band, keyed by its w:type
+   *  (firstRow, band1Horz, …) — these map 1:1 to the model's TableCond. */
+  tblStylePr?: Record<string, TblCondDef>;
+  /** Table styles only: w:tblStyleRowBandSize / w:tblStyleColBandSize. */
+  rowBandSize?: number;
+  colBandSize?: number;
+}
+
+/** One w:tblStylePr conditional band's captured formatting. */
+export interface TblCondDef {
+  rPr: IRRunProps;
+  pPr: IRParaProps;
+  borders?: IRBorders;
+  shd?: string;
 }
 
 /** A table style's borders/shd, with its basedOn chain already collapsed. */
@@ -91,7 +105,29 @@ export function parseStylesXml(xmlText: string, warnings: WarningSink): StylesDa
         if (borders) def.tblBorders = borders;
         const shd = decodeShdFill(el(tblPr, "w:shd"));
         if (shd) def.tblShd = shd;
+        const rowBand = val(tblPr, "w:tblStyleRowBandSize");
+        if (rowBand && Number.isFinite(Number(rowBand))) def.rowBandSize = Number(rowBand);
+        const colBand = val(tblPr, "w:tblStyleColBandSize");
+        if (colBand && Number.isFinite(Number(colBand))) def.colBandSize = Number(colBand);
       }
+      const conds: Record<string, TblCondDef> = {};
+      for (const sp of els(style, "w:tblStylePr")) {
+        const condType = attr(sp, "w:type");
+        if (!condType) continue;
+        const rPrEl = el(sp, "w:rPr");
+        const pPrEl = el(sp, "w:pPr");
+        const tcPr = el(sp, "w:tcPr");
+        const cond: TblCondDef = {
+          rPr: rPrEl ? decodeRunProps(rPrEl) : {},
+          pPr: pPrEl ? decodeParaProps(pPrEl, warnings) : {},
+        };
+        const cb = tcPr && decodeBorders(el(tcPr, "w:tcBorders"));
+        if (cb) cond.borders = cb;
+        const cs = tcPr && decodeShdFill(el(tcPr, "w:shd"));
+        if (cs) cond.shd = cs;
+        conds[condType] = cond;
+      }
+      if (Object.keys(conds).length > 0) def.tblStylePr = conds;
     }
     data.styles.set(id, def);
     const isDefault = attr(style, "w:default");

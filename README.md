@@ -249,6 +249,17 @@ paragraph end at x=720.0 exactly), first-line indents, named styles
 (gallery, apply/update-to-match-selection/create-from-selection, basedOn
 chains, cascading modify — one undo reverts a cascade).
 
+**Styles (Style Manager)** — a unified **Manage Styles** dialog (Home → Styles,
+or right-click → Styles…) to create / edit / delete styles for every
+OOXML-styleable entity, each with a **live canvas preview**: **paragraph** styles
+(full char + para editor, cycle-safe based-on), first-class **character** styles
+(`type` discriminator + per-run reference, gallery-applied, marked `ⓐ`), **list**
+styles (per-level format/bullet/number-pattern/indent editor), and round-trippable
+**table** styles with **conditional formatting** (header/total row, first/last
+column, row/column banding) applied from right-click → Table Style. Every defined
+style round-trips through `.docx` even before it's applied (matching Word); a
+**"Show only styles in use"** gallery filter collapses large imported catalogs.
+
 **Layout** — US-Letter pages with margins, line-level pagination
 (paragraphs split mid-paragraph across pages), widow/orphan control (0
 violations across 697 split paragraphs in the 1107-page audit),
@@ -311,8 +322,9 @@ list items, date format, checkbox state, locks, placeholder flag).
 
 **Documents** — full `.docx` *import* (maps content controls, bookmarks and
 hidden text; builds the style gallery from styles.xml `w:name` display names —
-generated reports use opaque numeric styleIds) and *export* to `.docx` and PDF
-(see below), 1000-page stress generator (`?stress=N`).
+generated reports use opaque numeric styleIds; keeps **all** defined paragraph/
+character/list/table styles so authored styles round-trip before use) and *export*
+to `.docx` and PDF (see below), 1000-page stress generator (`?stress=N`).
 
 **Export** — `.docx` (hand-rolled OOXML, the exact inverse of the importer, with
 a `import(export(doc))` round-trip oracle that holds block count) and
@@ -420,7 +432,8 @@ npm run dev:multi     # multiple editors on one page (consumes the built library
 - `/?docx=<url>` — fetch and import a .docx.
 - `window.__cw` — dev hook exposing `{ doc, tree, engine, editor, … }` for
   in-browser verification scripts.
-- Toolbar: styles gallery (✎ update-to-match, ✚ new-from-selection), font,
+- Toolbar: styles gallery (✎ update-to-match, ✚ Manage Styles, ⏷ show-only-in-use
+  filter), Style Manager dialog (paragraph/character/list/table styles), font,
   size, spacing, undo/redo, B/I/U/S, alignment, insert image/table, table
   row/col ops, merge/unmerge, image wrap modes, open .docx.
 - Keys: Ctrl+B/I/U, Ctrl+Z/Y, Ctrl+Enter (page break), Tab in tables,
@@ -457,6 +470,13 @@ Everything in it is done; the editor covers ~95% of everyday Word usage.
   documented precedence rather than partial-overlap handling, and a structural
   suggestion's stored inverse isn't re-indexed under heavy intervening edits
   before it's resolved.
+- Table styles bake their effective per-cell formatting onto cells when **applied
+  in the editor** (so header shading/banding/borders show and export correctly);
+  on **import**, the style definition and reference round-trip but conditional
+  bands aren't re-baked onto cells, and a style's character/paragraph conditional
+  formatting round-trips without being applied to cell text. Removing the import
+  "keep all defined styles" pruning means a heavy third-party template surfaces its
+  full style catalog in the gallery (use the "show only styles in use" filter).
 
 ## Implementation history
 

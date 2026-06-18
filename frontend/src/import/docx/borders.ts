@@ -94,6 +94,19 @@ export function resolveCellBorders(src: BorderSources, pos: CellPosition): CellB
   return out;
 }
 
+/** Map an IRBorders' four outer edges to model CellBorders (used by table-style
+ *  conditional bands, which apply per-cell). Inside edges (insideH/V) are not
+ *  represented in per-cell CellBorders and are dropped. */
+export function cellBordersFromIR(b: IRBorders | undefined): CellBorders | undefined {
+  if (!b) return undefined;
+  const out: CellBorders = {};
+  const t = toCellBorder(b.top); if (t) out.top = t;
+  const r = toCellBorder(b.right); if (r) out.right = r;
+  const bot = toCellBorder(b.bottom); if (bot) out.bottom = bot;
+  const l = toCellBorder(b.left); if (l) out.left = l;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function toCellBorder(raw: IRRawBorder | undefined): CellBorder | undefined {
   if (!raw || raw.val === "nil" || raw.val === "none") return undefined;
   // w:sz is eighths of a point: px = sz/8 pt × 96/72 = sz/6. Hairlines clamp up

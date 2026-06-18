@@ -55,12 +55,14 @@ export type Op =
   | { type: "setImageProps"; blockId: string; patch: ImagePropsPatch }
   | { type: "setTableRow"; tableId: string; rowIndex: number; row: TableRow }
   | { type: "setTableStructure"; tableId: string; rows: TableRow[]; colFractions?: number[] }
+  | { type: "setTableStyleRef"; tableId: string; styleId: string | null; condOverrides?: import("./document").TableCondOverrides | null }
   | { type: "setTableColFractions"; blockId: string; fractions: number[] }
   | { type: "insertTableRow"; tableId: string; rowIndex: number; row: TableRow }
   | { type: "removeTableRow"; tableId: string; rowIndex: number }
   | { type: "insertTableColumn"; tableId: string; colIndex: number; cells: TableCell[]; fractions?: number[] }
   | { type: "removeTableColumn"; tableId: string; colIndex: number }
   | { type: "setStylesheet"; stylesheet: import("./stylesheet").Stylesheet }
+  | { type: "setTableStyleSheet"; tableStyles: Record<string, import("./tableStyles").TableStyle> }
   | { type: "setListDefinition"; listId: string; def: import("./lists").ListDefinition | null }
   | { type: "setSectionProps"; geometry: SectionGeometry }
   | { type: "setSectionBand"; band: BandContainer; blocks: Block[] | null }
@@ -773,6 +775,35 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
         inverse: { type: "setStylesheet", stylesheet: old },
         mapPosition: identity,
         dirtyBlockIds: [], // restyling paragraphs happens via setRuns/setParaStyle ops
+      };
+    }
+
+    case "setTableStyleSheet": {
+      const old = doc.tableStyles ?? {};
+      return {
+        doc: { ...doc, tableStyles: op.tableStyles },
+        inverse: { type: "setTableStyleSheet", tableStyles: old },
+        mapPosition: identity,
+        dirtyBlockIds: [], // re-baking cells happens via the table-replace ops
+      };
+    }
+
+    case "setTableStyleRef": {
+      const { where, bi, block } = mustTable(doc, op.tableId);
+      const oldStyleId = block.styleId ?? null;
+      const oldCond = block.condOverrides ?? null;
+      const next: TableBlock = { ...block };
+      if (op.styleId === null) delete next.styleId;
+      else next.styleId = op.styleId;
+      if (op.condOverrides !== undefined) {
+        if (op.condOverrides === null) delete next.condOverrides;
+        else next.condOverrides = op.condOverrides;
+      }
+      return {
+        doc: replaceTable(doc, where, bi, next),
+        inverse: { type: "setTableStyleRef", tableId: op.tableId, styleId: oldStyleId, condOverrides: oldCond },
+        mapPosition: identity,
+        dirtyBlockIds: [op.tableId],
       };
     }
 

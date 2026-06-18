@@ -19,6 +19,7 @@ import type {
   SectionProps,
   TableBlock,
   TableCell,
+  TableCondOverrides,
 } from "@cw/shared";
 import { inRange, parseTocInstruction } from "@cw/shared";
 import { pxToEighthPoints, pxToEmu, pxToTwips } from "../units";
@@ -435,12 +436,28 @@ function tableXml(table: TableBlock, ctx: PartCtx): string {
     rowsXml.push(el("w:tr", undefined, out.join("")));
   }
 
+  // w:tblStyle (style reference) must precede the rest of tblPr; w:tblLook records
+  // which conditional bands are active. Cells still carry concrete (baked) tcPr, so
+  // the table renders correctly even without the style.
+  const styleRef = table.styleId ? el("w:tblStyle", { "w:val": table.styleId }) : "";
+  const look = table.styleId && table.condOverrides ? tblLookXml(table.condOverrides) : "";
   const tblPr = el(
     "w:tblPr",
     undefined,
-    el("w:tblW", { "w:w": 0, "w:type": "auto" }) + el("w:tblLayout", { "w:type": "fixed" }),
+    styleRef + el("w:tblW", { "w:w": 0, "w:type": "auto" }) + el("w:tblLayout", { "w:type": "fixed" }) + look,
   );
   return el("w:tbl", undefined, tblPr + el("w:tblGrid", undefined, grid) + rowsXml.join(""));
+}
+
+function tblLookXml(o: TableCondOverrides): string {
+  return el("w:tblLook", {
+    "w:firstRow": o.firstRow ? "1" : "0",
+    "w:lastRow": o.lastRow ? "1" : "0",
+    "w:firstColumn": o.firstCol ? "1" : "0",
+    "w:lastColumn": o.lastCol ? "1" : "0",
+    "w:noHBand": o.bandRows ? "0" : "1",
+    "w:noVBand": o.bandCols ? "0" : "1",
+  });
 }
 
 // ---------------------------------------------------------------------------

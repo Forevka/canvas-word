@@ -697,6 +697,18 @@ function parseTable(tbl: XmlNode, ctx: ParseCtx): IRTable {
   if (tblPr) {
     const styleId = val(tblPr, "w:tblStyle");
     if (styleId) table.styleId = styleId;
+    const look = el(tblPr, "w:tblLook");
+    if (look) {
+      const on = (a: string): boolean => { const v = attr(look, a); return v === "1" || v === "true"; };
+      table.look = {
+        firstRow: on("w:firstRow"),
+        lastRow: on("w:lastRow"),
+        firstCol: on("w:firstColumn"),
+        lastCol: on("w:lastColumn"),
+        bandRows: !on("w:noHBand"),
+        bandCols: !on("w:noVBand"),
+      };
+    }
     if (el(tblPr, "w:tblBorders")) table.bordersSpecified = true;
     const borders = decodeBorders(el(tblPr, "w:tblBorders"));
     if (borders) table.borders = borders;

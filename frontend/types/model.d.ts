@@ -25,6 +25,9 @@ export interface CharStyle {
   footnoteRef?: string | undefined;
   /** Content-control membership (properties live in Document.sdts). */
   sdtId?: string | undefined;
+  /** Character-style reference (w:rStyle → a type==="character" NamedStyle).
+   *  Reference only — concrete formatting stays baked on the run. */
+  charStyleId?: string | undefined;
 }
 
 export interface TabStop {
@@ -120,6 +123,15 @@ export interface TableRow {
   cells: TableCell[];
 }
 
+export interface TableCondOverrides {
+  firstRow?: boolean;
+  lastRow?: boolean;
+  firstCol?: boolean;
+  lastCol?: boolean;
+  bandRows?: boolean;
+  bandCols?: boolean;
+}
+
 export interface TableBlock {
   kind: "table";
   id: string;
@@ -127,9 +139,37 @@ export interface TableBlock {
   rows: TableRow[];
   /** Column widths as fractions of content width (sum = 1). Absent = equal. */
   colFractions?: number[];
+  /** Table-style reference (→ Document.tableStyles); effective cell formatting is baked. */
+  styleId?: string | undefined;
+  /** Which conditional bands of the referenced style are active (w:tblLook). */
+  condOverrides?: TableCondOverrides;
 }
 
 export type Block = Paragraph | ImageBlock | TableBlock;
+
+/** Conditional-format slots of a table style (OOXML w:tblStylePr types). */
+export type TableCond =
+  | "wholeTable"
+  | "firstRow" | "lastRow" | "firstCol" | "lastCol"
+  | "band1Horz" | "band2Horz" | "band1Vert" | "band2Vert"
+  | "nwCell" | "neCell" | "swCell" | "seCell";
+
+export interface TableCondProps {
+  char?: Partial<CharStyle>;
+  para?: Partial<ParaStyle>;
+  shading?: string;
+  borders?: CellBorders;
+  margin?: CellMargin;
+}
+
+export interface TableStyle {
+  id: string;
+  name: string;
+  basedOn?: string;
+  conds: Partial<Record<TableCond, TableCondProps>>;
+  rowBandSize?: number;
+  colBandSize?: number;
+}
 
 export type BandContainer = "header" | "footer" | "headerFirst" | "headerEven" | "footerFirst" | "footerEven";
 
@@ -152,11 +192,15 @@ export interface SectionProps {
   footerEven?: Block[];
 }
 
+export type NamedStyleType = "paragraph" | "character";
+
 export interface NamedStyle {
   /** Shares the docx styleId space ("Normal", "Heading1", …). */
   id: string;
   /** Display name. */
   name: string;
+  /** Paragraph vs character style. Optional; untyped styles read as "paragraph". */
+  type?: NamedStyleType;
   basedOn?: string;
   char: Partial<CharStyle>;
   para: Partial<ParaStyle>;
@@ -216,6 +260,8 @@ export interface Document {
   stylesheet?: Stylesheet;
   /** List definitions keyed by id. */
   lists?: Record<string, ListDefinition>;
+  /** Table styles keyed by id (docx styleId space). */
+  tableStyles?: Record<string, TableStyle>;
   /** Footnote bodies keyed by ref id. */
   footnotes?: Record<string, Paragraph[]>;
   /** Content-control properties keyed by sdtId. */

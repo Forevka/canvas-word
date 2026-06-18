@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Style constructors — a unified Style Manager.** Create, edit, and delete styles
+  for every OOXML-styleable entity through one draggable, non-blocking dialog
+  (Home → Styles → **Manage styles…**, or right-click → **Styles…**): a left rail
+  lists styles grouped by kind, a center pane edits the selected style, and a right
+  pane shows a **live preview painted by the real layout engine**. Covers:
+  - **Paragraph styles** — full character + paragraph property editor (font, size,
+    bold/italic/underline/strike, color, highlight, position; alignment, spacing,
+    indents, keep-with-next/lines, page-break-before, outline level), with a
+    cycle-safe *based-on* picker. Replaces the old `prompt()`-only "new style".
+  - **Character styles** — now first-class: a `type` discriminator distinguishes
+    them from paragraph styles, runs carry a character-style reference, and the
+    ribbon gallery applies a character style to the selection (marked with `ⓐ`).
+  - **List styles** — a per-level editor (format, bullet glyph, number pattern,
+    indent, marker hang) with a live multi-level preview.
+  - **Table styles** — a brand-new round-trippable style entity with **conditional
+    formatting** (header/total row, first/last column, row/column banding, corner
+    cells). Apply one from **right-click → Table Style ▸**; the effective per-cell
+    fill/borders are baked onto the table and the live preview shows header shading
+    and banding.
+- **Styles always round-trip.** Import now preserves **every defined** paragraph,
+  character, list, and table style (not just the ones in use), so a style you author
+  survives save → reopen even before it's applied — matching Word. A new **"Show
+  only styles in use"** filter (funnel button in the Home → Styles group) collapses
+  the gallery to applied styles for documents that carry large style catalogs.
 - **Child documents (`WordCanvas.createChild()`).** A lightweight sibling document
   that shares the parent editor's *live* style context — stylesheet, list/numbering
   definitions, page section, and content-control/field maps — and renders or edits

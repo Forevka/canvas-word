@@ -28,13 +28,15 @@ import type {
 } from "@cw/shared";
 import type { NamedStyle, Stylesheet } from "@cw/shared";
 import type { ListDefinition, ListLevel, ListNumberFormat } from "@cw/shared";
+import type { TableCond, TableCondProps, TableStyle } from "@cw/shared";
 import { normalizeRuns } from "@cw/shared";
-import { resolveCellBorders, type BorderSources, type CellPosition } from "./borders";
+import { cellBordersFromIR, resolveCellBorders, type BorderSources, type CellPosition } from "./borders";
 import type { MediaStore } from "./media";
 import type { NumberingData } from "./numbering";
 import type { ResolvedTableStyle, StyleResolver, StylesData } from "./styles";
 import type {
   IRBlock,
+  IRBorders,
   IRInline,
   IRListDefinition,
   IRParaProps,
@@ -141,8 +143,9 @@ export function createMapper(
     return num;
   };
 
-  // Model list definitions, built lazily for referenced numIds only (a report
-  // carries far more definitions than it uses).
+  // Model list definitions, built lazily as numIds are referenced during the body
+  // walk; the lists() getter then realizes any remaining DEFINED-but-unused ones
+  // so authored list styles survive a round-trip before being applied.
   const usedLists = new Map<string, ListDefinition>();
   const listDefFor = (numId: string): ListDefinition | undefined => {
     const cached = usedLists.get(numId);
@@ -600,6 +603,10 @@ export function createMapper(
       }
     }
     if (fieldId) style.fieldId = fieldId; // inline built-in field result run
+    // Character-style reference (w:rStyle) — kept for round-trip + "what style?"
+    // UI; the concrete formatting is already baked above. collectUsedStyleIds
+    // picks the same id up from the IR so the stylesheet builder includes it.
+    if (effective.styleId) style.charStyleId = effective.styleId;
     return { text, style };
   }
 
@@ -710,6 +717,10 @@ export function createMapper(
 
     const rows = placedRows.map((row) => ({ cells: row.map((p) => p.cell) }));
     const table: TableBlock = { kind: "table", id: id(), revision: 0, rows };
+    // Table-style reference + active bands (the style itself goes to
+    // Document.tableStyles via buildTableStyles; cells are baked above).
+    if (ir.styleId) table.styleId = ir.styleId;
+    if (ir.look) table.condOverrides = { ...ir.look };
     // Always emit colFractions of the true width: dropped continuation cells mean
     // a row's cell count no longer equals the column count, so the layout engine
     // can't infer the column count from cells.length anymore.
@@ -743,7 +754,12 @@ export function createMapper(
     mapBlocks,
     mapSection,
     emptyParagraph,
-    lists: () => Object.fromEntries(usedLists),
+    // Realize EVERY defined numbering definition (not just referenced ones) so a
+    // list style authored in the editor survives save→reopen before it's applied.
+    lists: () => {
+      for (const numId of numbering.keys()) listDefFor(numId);
+      return Object.fromEntries(usedLists);
+    },
     bookmarks: () => {
       const out: Record<string, BookmarkRange> = {};
       for (const [id, s] of bookmarkStarts) {
@@ -920,18 +936,6 @@ export function mapSdts(ir: Record<string, IRSdtProps>): Record<string, SdtProps
   return out;
 }
 
-/** Paragraph styleIds referenced anywhere in the IR (incl. table cells). */
-export function collectUsedStyleIds(blocks: IRBlock[], into: Set<string> = new Set()): Set<string> {
-  for (const b of blocks) {
-    if (b.kind === "paragraph") {
-      if (b.props.styleId) into.add(b.props.styleId);
-    } else {
-      for (const row of b.rows) for (const cell of row.cells) collectUsedStyleIds(cell.blocks, into);
-    }
-  }
-  return into;
-}
-
 /** Patch-only style mappers: a NamedStyle carries each style's OWN deltas —
  *  the editor resolves basedOn chains itself. Theme-indirected fields are
  *  skipped (the resolver already baked them into the runs). */
@@ -957,32 +961,34 @@ function mapParaPatch(props: IRParaProps): Partial<ParaStyle> {
   return out;
 }
 
-/** styles.xml → editor Stylesheet, restricted to paragraph styles the document
- *  actually USES (plus their basedOn closure and the default style) — a
- *  generated report carries hundreds of unused styles. Display names come from
+/** styles.xml → editor Stylesheet. ALL defined paragraph and character styles
+ *  are carried over (not just the ones in use) so a style authored in the editor
+ *  survives a save→reopen even before it's applied to any content — matching
+ *  Word, which keeps style definitions regardless of use. Display names come from
  *  w:name; generated documents use opaque numeric styleIds. */
-export function buildStylesheet(data: StylesData, usedIds: Set<string>): Stylesheet | undefined {
+export function buildStylesheet(data: StylesData): Stylesheet | undefined {
   if (data.styles.size === 0) return undefined;
   const include = new Set<string>();
-  const addWithBases = (id: string): void => {
-    for (let cur = data.styles.get(id); cur && !include.has(cur.id); cur = cur.basedOnId ? data.styles.get(cur.basedOnId) : undefined) {
-      if (cur.type === "paragraph") include.add(cur.id);
-    }
-  };
-  for (const id of usedIds) addWithBases(id);
-  if (data.defaultParaStyleId) addWithBases(data.defaultParaStyleId);
+  for (const def of data.styles.values()) {
+    if (def.type === "paragraph" || def.type === "character") include.add(def.id);
+  }
   if (include.size === 0) return undefined;
 
   const styles: NamedStyle[] = [];
   for (const id of include) {
     const def = data.styles.get(id)!;
+    const isChar = def.type === "character";
     const style: NamedStyle = {
       id,
       name: def.name ?? id,
+      type: isChar ? "character" : "paragraph",
       char: mapCharPatch(def.rPr),
-      para: mapParaPatch(def.pPr),
+      para: isChar ? {} : mapParaPatch(def.pPr),
     };
-    if (def.basedOnId && include.has(def.basedOnId)) style.basedOn = def.basedOnId;
+    // basedOn is kept only when it resolves to an included style of the same kind.
+    if (def.basedOnId && include.has(def.basedOnId) && data.styles.get(def.basedOnId)?.type === def.type) {
+      style.basedOn = def.basedOnId;
+    }
     styles.push(style);
   }
   // Default style first — the gallery reads top-to-bottom.
@@ -990,6 +996,45 @@ export function buildStylesheet(data: StylesData, usedIds: Set<string>): Stylesh
     a.id === data.defaultParaStyleId ? -1 : b.id === data.defaultParaStyleId ? 1 : a.name.localeCompare(b.name),
   );
   return { styles, defaultStyleId: data.defaultParaStyleId ?? styles[0]!.id };
+}
+
+/** styles.xml table styles → Document.tableStyles. ALL defined table styles are
+ *  carried over (not just used ones) so an authored table style survives a
+ *  save→reopen before being applied. Each w:tblStylePr conditional band maps to a
+ *  TableCond; the whole-table base comes from the style's own rPr/pPr/tblBorders/tblShd. */
+export function buildTableStyles(data: StylesData): Record<string, TableStyle> | undefined {
+  const include = new Set<string>();
+  for (const def of data.styles.values()) if (def.type === "table") include.add(def.id);
+  if (include.size === 0) return undefined;
+
+  const condProps = (rPr: IRRunProps, pPr: IRParaProps, borders: IRBorders | undefined, shd: string | undefined): TableCondProps => {
+    const cp: TableCondProps = {};
+    const char = mapCharPatch(rPr);
+    if (Object.keys(char).length > 0) cp.char = char;
+    const para = mapParaPatch(pPr);
+    if (Object.keys(para).length > 0) cp.para = para;
+    const cb = cellBordersFromIR(borders);
+    if (cb) cp.borders = cb;
+    if (shd !== undefined) cp.shading = shd;
+    return cp;
+  };
+
+  const out: Record<string, TableStyle> = {};
+  for (const id of include) {
+    const def = data.styles.get(id)!;
+    const conds: Partial<Record<TableCond, TableCondProps>> = {
+      wholeTable: condProps(def.rPr, def.pPr, def.tblBorders, def.tblShd),
+    };
+    for (const [cond, c] of Object.entries(def.tblStylePr ?? {})) {
+      conds[cond as TableCond] = condProps(c.rPr, c.pPr, c.borders, c.shd);
+    }
+    const style: TableStyle = { id, name: def.name ?? id, conds };
+    if (def.basedOnId && include.has(def.basedOnId)) style.basedOn = def.basedOnId;
+    if (def.rowBandSize !== undefined) style.rowBandSize = def.rowBandSize;
+    if (def.colBandSize !== undefined) style.colBandSize = def.colBandSize;
+    out[id] = style;
+  }
+  return out;
 }
 
 function mapParaStyle(props: IRParaProps): ParaStyle {

@@ -122,9 +122,11 @@ export function writeDocx(
   // Body — also resolves mid-document section bands (writes their parts too).
   parts["word/document.xml"] = buildDocumentXml(doc.blocks, doc.section, bodyCtx, addBand);
 
-  // styles.xml
-  if (doc.stylesheet && doc.stylesheet.styles.length > 0) {
-    parts["word/styles.xml"] = stylesXml(doc.stylesheet);
+  // styles.xml — paragraph/character styles plus table styles.
+  const hasNamed = !!doc.stylesheet && doc.stylesheet.styles.length > 0;
+  const hasTableStyles = !!doc.tableStyles && Object.keys(doc.tableStyles).length > 0;
+  if (hasNamed || hasTableStyles) {
+    parts["word/styles.xml"] = stylesXml(doc.stylesheet, doc.tableStyles);
     overrides.push(["/word/styles.xml", CT.styles]);
     bodyRels.add(REL.styles, "styles.xml");
   }

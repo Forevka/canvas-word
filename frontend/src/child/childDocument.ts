@@ -15,16 +15,21 @@
 // Each child owns its OWN layout engine, so its cache (keyed by block id+revision
 // +width) can never collide with the parent's even when block ids overlap.
 
-import { defaultStylesheet, forEachImage, resolveStyle, textOfRuns } from "@cw/shared";
+import { cellCondFlags, defaultStylesheet, effectiveCellProps, forEachImage, resolveStyle, resolveTableStyle, textOfRuns } from "@cw/shared";
 import type {
   Block,
   CharStyle,
   Document,
+  ListDefinition,
   ParaStyle,
   Paragraph,
   Run,
   SectionProps,
   Stylesheet,
+  TableBlock,
+  TableCell,
+  TableRow,
+  TableStyle,
 } from "@cw/shared";
 import { insertImage as insertImageCmd } from "../editor/commands";
 
@@ -73,7 +78,13 @@ export type ChildContent =
   | { kind: "fragment"; fragment: BlockFragment }
   | { kind: "runs"; runs: Run[]; paraStyle?: ParaStyle }
   | { kind: "ooxml"; ooxml: string } // parsed via parseOoxmlFragment (media-free)
-  | { kind: "styleSample"; styleId: string; sampleText?: string };
+  | { kind: "styleSample"; styleId: string; sampleText?: string }
+  // One sample paragraph per list level, rendered with the REAL engine against
+  // the draft definition so the actual markers/indents show (List style editor).
+  | { kind: "listSample"; listDef: ListDefinition; levels?: number }
+  // A small synthetic table with cells baked from the draft table style, so the
+  // header/banding/borders show through the real engine (Table style editor).
+  | { kind: "tableSample"; tableStyle: TableStyle; rows?: number; cols?: number };
 
 export interface ChildRenderOptions {
   /** Layout/wrap width in CSS px. Default: target.clientWidth. */
@@ -187,6 +198,32 @@ export function createChildDocument(deps: ChildDeps): ChildDocument {
     return para("cw-child-sample", [{ text: sampleText ?? "AaBbCcDd", style: char }], style);
   };
 
+  const tableSampleBlock = (style: TableStyle, rowN: number, colN: number, ctx: StyleContext): TableBlock => {
+    const resolved = resolveTableStyle({ [style.id]: style }, style.id);
+    const base = resolveStyle(ctx.stylesheet ?? defaultStylesheet(), ctx.defaultStyleId ?? (ctx.stylesheet ?? defaultStylesheet()).defaultStyleId);
+    const overrides = { firstRow: true, bandRows: true, rowBandSize: style.rowBandSize ?? 1, colBandSize: style.colBandSize ?? 1 };
+    const rows: TableRow[] = [];
+    for (let r = 0; r < rowN; r++) {
+      const cells: TableCell[] = [];
+      for (let c = 0; c < colN; c++) {
+        const flags = cellCondFlags(r, c, rowN, colN, overrides);
+        const props = effectiveCellProps(resolved, flags);
+        const char: CharStyle = { ...fallbackChar(), ...base.char, ...props.char };
+        const text = r === 0 ? `Head ${c + 1}` : `R${r}C${c + 1}`;
+        const cell: TableCell = {
+          id: `cw-tbl-${r}-${c}`,
+          blocks: [para(`cw-tbl-p-${r}-${c}`, [{ text, style: char }], { ...fallbackPara(), spaceAfterPx: 0, spaceBeforePx: 0 })],
+        };
+        if (props.shading !== undefined) cell.shading = props.shading;
+        if (props.borders && Object.keys(props.borders).length > 0) cell.borders = props.borders;
+        if (props.margin) cell.margin = props.margin;
+        cells.push(cell);
+      }
+      rows.push({ cells });
+    }
+    return { kind: "table", id: "cw-child-tbl", revision: 0, rows, colFractions: Array.from({ length: colN }, () => 1 / colN) };
+  };
+
   const contentToBlocks = (content: ChildContent, ctx: StyleContext): Block[] => {
     switch (content.kind) {
       case "blocks":
@@ -199,8 +236,32 @@ export function createChildDocument(deps: ChildDeps): ChildDocument {
         return [para("cw-child-0", content.runs, content.paraStyle ?? fallbackPara())];
       case "styleSample":
         return [styleSampleBlock(content.styleId, content.sampleText, ctx)];
+      case "tableSample":
+        return [tableSampleBlock(content.tableStyle, content.rows ?? 4, content.cols ?? 3, ctx)];
+      case "listSample": {
+        const def = content.listDef;
+        const count = Math.max(1, Math.min(content.levels ?? 3, def.levels.length));
+        const base = resolveStyle(ctx.stylesheet ?? defaultStylesheet(), ctx.defaultStyleId ?? (ctx.stylesheet ?? defaultStylesheet()).defaultStyleId);
+        const char: CharStyle = { ...fallbackChar(), ...base.char };
+        return Array.from({ length: count }, (_, i) =>
+          para(`cw-child-list-${i}`, [{ text: `List item at level ${i + 1}`, style: char }], {
+            ...fallbackPara(),
+            ...base.para,
+            spaceBeforePx: 0,
+            spaceAfterPx: 2,
+            list: { listId: def.id, level: i },
+          }),
+        );
+      }
     }
   };
+
+  /** The style context augmented with a draft list definition so a listSample
+   *  renders against the unsaved definition (it isn't in the parent's lists yet). */
+  const ctxFor = (content: ChildContent, ctx: StyleContext): StyleContext =>
+    content.kind === "listSample"
+      ? { ...ctx, lists: { ...(ctx.lists ?? {}), [content.listDef.id]: content.listDef } }
+      : ctx;
 
   const buildDoc = (ctx: StyleContext, blocks: Block[], widthPx: number, padding: number, heightPx: number): Document => {
     const doc: Document = {
@@ -241,7 +302,7 @@ export function createChildDocument(deps: ChildDeps): ChildDocument {
   };
 
   const render = (target: HTMLElement, content: ChildContent, opts: ChildRenderOptions = {}): void => {
-    const ctx = deps.getStyleContext();
+    const ctx = ctxFor(content, deps.getStyleContext());
     const blocks = contentToBlocks(content, ctx);
     const padding = opts.padding ?? 0;
     const fit = opts.fit === true;
@@ -278,7 +339,7 @@ export function createChildDocument(deps: ChildDeps): ChildDocument {
   };
 
   const mountEditor = (target: HTMLElement, content: ChildContent, opts: ChildRenderOptions = {}): ChildEditorHandle => {
-    const ctx = deps.getStyleContext();
+    const ctx = ctxFor(content, deps.getStyleContext());
     const blocks = contentToBlocks(content, ctx);
     const padding = opts.padding ?? 8;
 

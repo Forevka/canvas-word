@@ -37,6 +37,12 @@ export interface CharStyle {
    *  `| undefined` so removing a field can strip the marker. Mirrors `sdtId`;
    *  block-level fields use `Block.fieldId` instead. */
   fieldId?: string | undefined;
+  /** Character-style reference (OOXML w:rStyle → a type==="character" NamedStyle).
+   *  REFERENCE ONLY: the concrete formatting still lives baked on the run (the
+   *  model is concrete, not a live cascade), so layout/paint ignore this — it
+   *  exists for docx round-trip and for "what style is this run?" UI. `| undefined`
+   *  so removing a character style can strip the marker. */
+  charStyleId?: string | undefined;
 }
 
 /** Structured document tag (Word content control) properties — a direct
@@ -241,6 +247,17 @@ export interface TableRow {
   cells: TableCell[];
 }
 
+/** Which conditional bands of a table style this table activates (OOXML w:tblLook).
+ *  Word's default turns on the header row and row banding. */
+export interface TableCondOverrides {
+  firstRow?: boolean;
+  lastRow?: boolean;
+  firstCol?: boolean;
+  lastCol?: boolean;
+  bandRows?: boolean;
+  bandCols?: boolean;
+}
+
 export interface TableBlock {
   kind: "table";
   id: string;
@@ -248,6 +265,12 @@ export interface TableBlock {
   rows: TableRow[];
   /** Column widths as fractions of the content width (sum = 1). Absent = equal. */
   colFractions?: number[];
+  /** Table-style reference (OOXML w:tblStyle → Document.tableStyles). The effective
+   *  per-cell formatting is baked onto the cells; this is kept for re-editing and
+   *  round-trip. Absent = no table style (direct cell formatting only). */
+  styleId?: string | undefined;
+  /** Which conditional bands of the referenced style are active (w:tblLook). */
+  condOverrides?: TableCondOverrides;
   /** Field result membership — see Paragraph.fieldId. */
   fieldId?: string | undefined;
 }
@@ -369,6 +392,8 @@ export interface Document {
   stylesheet?: import("./stylesheet").Stylesheet;
   /** List definitions keyed by id (docx numId space) — see model/lists.ts. */
   lists?: Record<string, import("./lists").ListDefinition>;
+  /** Table styles keyed by id (docx styleId space) — see model/tableStyles.ts. */
+  tableStyles?: Record<string, import("./tableStyles").TableStyle>;
   /** Footnote bodies keyed by ref id (docx footnotes.xml space). Each note is
    *  a paragraph story laid out in the page-bottom footnote area; notes render
    *  on whatever page their reference run lands on. */

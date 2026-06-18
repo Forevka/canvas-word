@@ -1,7 +1,8 @@
 // Commands: pure (state) -> Transaction | null. The keymap, the IME proxy, and
 // (later) toolbar buttons all dispatch through these.
 
-import type { Block, CellBorder, CellBorders, CharStyle, FieldDef, FieldSpec, ImageBlock, ParaStyle, Paragraph, Run, SdtProps, SdtType, TableBlock, TableCell, TableRow, TocOptions, TocSwitches } from "@cw/shared";
+import type { Block, CellBorder, CellBorders, CharStyle, FieldDef, FieldSpec, ImageBlock, ParaStyle, Paragraph, Run, SdtProps, SdtType, TableBlock, TableCell, TableCondOverrides, TableRow, TableStyle, TocOptions, TocSwitches } from "@cw/shared";
+import { cellCondFlags, effectiveCellProps, resolveTableStyle } from "@cw/shared";
 import { buildTocParagraphs, buildTocInstruction, buildInstruction, evaluateField } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, GridRect } from "@cw/shared";
 import { isCollapsed, BAND_CONTAINERS } from "@cw/shared";
@@ -445,6 +446,19 @@ export function applyListStyleCmd(def: ListDefinition): Command {
     }
     return tr(ops, sel, "command");
   };
+}
+
+/** Create or replace a list definition (the List style constructor). No content
+ *  re-patch is needed: markers are read live from Document.lists at layout time.
+ *  Undoable via setListDefinition's inverse. */
+export function upsertListDefinition(def: ListDefinition): Command {
+  return (state) => tr([{ type: "setListDefinition", listId: def.id, def }], state.selection, "command");
+}
+
+/** Delete a list definition. Paragraphs still referencing it fall back to the
+ *  layout engine's default marker rendering. */
+export function deleteListDefinition(listId: string): Command {
+  return (state) => tr([{ type: "setListDefinition", listId, def: null }], state.selection, "command");
 }
 
 /** Apply (or remove) a legal-style multilevel numbered list (1 / 1.1 / 1.1.1). */
@@ -1827,6 +1841,97 @@ export function deleteTableCmd(): Command {
 }
 
 // ---------------------------------------------------------------------------
+// Table styles — round-trippable TableStyle entities whose effective per-cell
+// formatting is BAKED onto the cells (the engine reads concrete cell props).
+
+/** Word's default w:tblLook: header row on, row banding on. */
+const DEFAULT_TBL_LOOK: TableCondOverrides = { firstRow: true, bandRows: true };
+
+/** Recompute every cell's baked shading/borders/margin from a resolved table
+ *  style + the table's active bands. Replaces direct cell formatting (applying a
+ *  table style is destructive, like Word). */
+function bakeTableRows(table: TableBlock, style: TableStyle, styles: Record<string, TableStyle>, overrides: TableCondOverrides): TableRow[] {
+  const resolved = resolveTableStyle(styles, style.id);
+  const grid = buildTableGrid(table);
+  return rebuildRows(grid, (cell, s) => {
+    const flags = cellCondFlags(s.originRow, s.originCol, grid.rows, grid.cols, {
+      ...overrides,
+      rowBandSize: style.rowBandSize ?? 1,
+      colBandSize: style.colBandSize ?? 1,
+    });
+    const props = effectiveCellProps(resolved, flags);
+    const next: TableCell = { ...cell };
+    if (props.shading !== undefined) next.shading = props.shading;
+    else delete next.shading;
+    if (props.borders && Object.keys(props.borders).length > 0) next.borders = props.borders;
+    else delete next.borders;
+    if (props.margin) next.margin = props.margin;
+    else delete next.margin;
+    return next;
+  });
+}
+
+/** Every TableBlock in the document body (recursing into cells). */
+function allTables(blocks: Block[], out: TableBlock[] = []): TableBlock[] {
+  for (const b of blocks) {
+    if (b.kind === "table") {
+      out.push(b);
+      for (const row of b.rows) for (const cell of row.cells) allTables(cell.blocks, out);
+    }
+  }
+  return out;
+}
+
+/** Apply a table style to the table at the caret: set the reference + default
+ *  tblLook and bake the effective cell formatting. */
+export function applyTableStyle(styleId: string): Command {
+  return (state) => {
+    const ctx = cellContext(state);
+    if (!ctx) return null;
+    const styles = state.doc.tableStyles ?? {};
+    const style = styles[styleId];
+    if (!style) return null;
+    const overrides = ctx.table.condOverrides ?? DEFAULT_TBL_LOOK;
+    const rows = bakeTableRows(ctx.table, style, styles, overrides);
+    const ops: Op[] = [
+      { type: "setTableStyleRef", tableId: ctx.table.id, styleId, condOverrides: overrides },
+      structureOp(ctx.table, rows),
+    ];
+    return tr(ops, state.selection, "command");
+  };
+}
+
+/** Create or replace a table style, then re-bake every table referencing it.
+ *  One undoable transaction (setTableStyleSheet + per-table structure ops). */
+export function upsertTableStyle(style: TableStyle): Command {
+  return (state) => {
+    const styles = { ...(state.doc.tableStyles ?? {}), [style.id]: style };
+    const ops: Op[] = [{ type: "setTableStyleSheet", tableStyles: styles }];
+    for (const table of allTables(state.doc.blocks)) {
+      if (table.styleId !== style.id) continue;
+      const overrides = table.condOverrides ?? DEFAULT_TBL_LOOK;
+      ops.push(structureOp(table, bakeTableRows(table, style, styles, overrides)));
+    }
+    return tr(ops, state.selection, "command");
+  };
+}
+
+/** Delete a table style; referencing tables keep their baked cells as direct
+ *  formatting but drop the reference. */
+export function deleteTableStyle(styleId: string): Command {
+  return (state) => {
+    const styles = { ...(state.doc.tableStyles ?? {}) };
+    if (!styles[styleId]) return null;
+    delete styles[styleId];
+    const ops: Op[] = [{ type: "setTableStyleSheet", tableStyles: styles }];
+    for (const table of allTables(state.doc.blocks)) {
+      if (table.styleId === styleId) ops.push({ type: "setTableStyleRef", tableId: table.id, styleId: null, condOverrides: null });
+    }
+    return tr(ops, state.selection, "command");
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Image commands (target = the SELECTED object, passed in by the wiring layer)
 
 export function setImageProps(
@@ -2189,11 +2294,31 @@ export function setParaProps(patch: Partial<ParaStyle>): Command {
 import {
   defaultStylesheet,
   paragraphsWithStyle,
+  resolveCharStyle,
   resolveStyle,
   styleById,
+  styleType,
+  wouldCycle,
   type NamedStyle,
+  type NamedStyleType,
   type Stylesheet,
 } from "@cw/shared";
+
+/** A style definition the UI hands to upsertNamedStyle. `id` present ⇒ update in
+ *  place; absent ⇒ create (id derived from the name). */
+export interface NamedStyleSpec {
+  id?: string;
+  name: string;
+  type: NamedStyleType;
+  basedOn?: string;
+  char?: Partial<CharStyle>;
+  para?: Partial<ParaStyle>;
+}
+
+/** Every paragraph holding a run that references character style `id`. */
+function paragraphsWithCharStyle(doc: EditorState["doc"], styleId: string): Paragraph[] {
+  return paragraphsOf(doc).filter((p) => p.runs.some((r) => r.style.charStyleId === styleId));
+}
 
 const sheetOf = (state: EditorState): Stylesheet => state.doc.stylesheet ?? defaultStylesheet();
 
@@ -2234,8 +2359,96 @@ export function applyNamedStyle(styleId: string): Command {
   };
 }
 
-/** Word's "Update <style> to Match Selection": redefine the style from the
- *  caret formatting, then re-patch every paragraph referencing it. */
+/** Apply a CHARACTER style to the selected run range only (not the paragraph):
+ *  bake the style's resolved char props over the runs and tag them with its id
+ *  (w:rStyle). No-op on a collapsed caret or a non-character style. */
+export function applyCharStyle(styleId: string): Command {
+  return (state) => {
+    const sel = state.selection;
+    if (!sel || isCollapsed(sel)) return null;
+    const sheet = sheetOf(state);
+    const st = styleById(sheet, styleId);
+    if (!st || styleType(st) !== "character") return null;
+    const patch: Partial<CharStyle> = { ...resolveCharStyle(sheet, styleId), charStyleId: styleId };
+    const segments = selectedSegments(state).filter((s) => s.end > s.start);
+    if (segments.length === 0) return null;
+    const ops: Op[] = segments.map((s) => ({
+      type: "setRuns",
+      blockId: s.block.id,
+      runs: applyStylePatchToRuns(s.block.runs, s.start, s.end, patch),
+    }));
+    return tr(ops, sel, "command");
+  };
+}
+
+/** Re-patch only the runs of `block` that reference character style `styleId`,
+ *  merging the resolved `char` over them (leaving the paragraph and other runs
+ *  untouched). The charStyleId marker is preserved. */
+function restyleCharRuns(block: Paragraph, char: Partial<CharStyle>, styleId: string): Op {
+  const runs = block.runs.map((r) =>
+    r.style.charStyleId === styleId ? { ...r, style: { ...r.style, ...char, charStyleId: styleId } } : r,
+  );
+  return { type: "setRuns", blockId: block.id, runs };
+}
+
+/** Create-or-update a named style from a spec, then RE-BAKE every piece of content
+ *  referencing it so the visible formatting tracks the (re)definition — paragraphs
+ *  for paragraph styles, runs for character styles. The whole thing is one undoable
+ *  transaction (setStylesheet + the re-patch ops). The single generalized creator;
+ *  createStyleFromSelection / updateStyleToSelection are thin wrappers over it. */
+export function upsertNamedStyle(spec: NamedStyleSpec): Command {
+  return (state) => {
+    const sel = state.selection;
+    const name = spec.name.trim();
+    if (name.length === 0) return null;
+    const sheet = sheetOf(state);
+    const isCharacter = spec.type === "character";
+    const existing = spec.id ? styleById(sheet, spec.id) : undefined;
+    const id = spec.id ?? name.replace(/\s+/g, "");
+    if (!existing && styleById(sheet, id)) return null; // creating but id taken
+    if (wouldCycle(sheet, id, spec.basedOn)) return null;
+
+    const style: NamedStyle = {
+      id,
+      name,
+      type: spec.type,
+      char: { ...(spec.char ?? {}) },
+      para: isCharacter ? {} : { ...(spec.para ?? {}) },
+    };
+    if (spec.basedOn) style.basedOn = spec.basedOn;
+
+    const styles = existing
+      ? sheet.styles.map((s) => (s.id === id ? style : s))
+      : [...sheet.styles, style];
+    const stylesheet: Stylesheet = { ...sheet, styles };
+
+    const ops: Op[] = [{ type: "setStylesheet", stylesheet }];
+    if (isCharacter) {
+      const char = resolveCharStyle(stylesheet, id);
+      for (const p of paragraphsWithCharStyle(state.doc, id)) ops.push(restyleCharRuns(p, char, id));
+    } else {
+      const { char, para } = resolveStyle(stylesheet, id);
+      const seen = new Set<string>();
+      for (const p of paragraphsWithStyle(state.doc, id)) {
+        seen.add(p.id);
+        ops.push(...restyleOps(p, char, para));
+      }
+      // A brand-new paragraph style also applies to the current selection (like
+      // Word's "New style from selection").
+      if (!existing && sel) {
+        for (const s of selectedSegments(state)) {
+          if (seen.has(s.block.id)) continue;
+          seen.add(s.block.id);
+          ops.push(...restyleOps(s.block, char, para, id));
+        }
+      }
+    }
+    return tr(ops, sel, "command");
+  };
+}
+
+/** Word's "Update <style> to Match Selection": redefine the style from the caret
+ *  formatting (self-contained — drops basedOn), then re-bake referencing content. */
 export function updateStyleToSelection(styleId: string): Command {
   return (state) => {
     const sel = state.selection;
@@ -2247,43 +2460,98 @@ export function updateStyleToSelection(styleId: string): Command {
     if (!block) return null;
     const char = styleAtRuns(block.runs, sel.focus.offset);
     if (!char) return null;
-    const { namedStyle: _omit, ...para } = block.style;
-
-    const updated: NamedStyle = { ...existing, char: { ...char }, para: { ...para } };
-    // The style is now self-contained — drop basedOn so resolution is exact.
-    delete updated.basedOn;
-    const stylesheet: Stylesheet = {
-      ...sheet,
-      styles: sheet.styles.map((s) => (s.id === styleId ? updated : s)),
-    };
-
-    const ops: Op[] = [{ type: "setStylesheet", stylesheet }];
-    for (const p of paragraphsWithStyle(state.doc, styleId)) {
-      ops.push(...restyleOps(p, updated.char, updated.para));
+    if (styleType(existing) === "character") {
+      return upsertNamedStyle({ id: styleId, name: existing.name, type: "character", char })(state);
     }
-    return tr(ops, sel, "command");
+    const { namedStyle: _omit, ...para } = block.style;
+    return upsertNamedStyle({ id: styleId, name: existing.name, type: "paragraph", char, para })(state);
   };
 }
 
-/** Create a new named style from the caret's formatting and apply it. */
+/** Create a new paragraph style from the caret's formatting and apply it. */
 export function createStyleFromSelection(name: string): Command {
   return (state) => {
     const sel = state.selection;
     if (!sel || name.trim().length === 0) return null;
-    const sheet = sheetOf(state);
-    const id = name.trim().replace(/\s+/g, "");
-    if (styleById(sheet, id)) return null; // no duplicates
     const block = blockById(state.doc, sel.focus.blockId);
     if (!block) return null;
     const char = styleAtRuns(block.runs, sel.focus.offset);
     if (!char) return null;
     const { namedStyle: _omit, ...para } = block.style;
-    const style: NamedStyle = { id, name: name.trim(), char: { ...char }, para: { ...para } };
-    const stylesheet: Stylesheet = { ...sheet, styles: [...sheet.styles, style] };
-    const ops: Op[] = [
-      { type: "setStylesheet", stylesheet },
-      ...restyleOps(block, style.char, style.para, id),
-    ];
+    return upsertNamedStyle({ name, type: "paragraph", char, para })(state);
+  };
+}
+
+/** Rename a style's display name only. The id is the docx key referenced by
+ *  content, so it never changes — no re-patch needed. */
+export function renameNamedStyle(styleId: string, newName: string): Command {
+  return (state) => {
+    const sel = state.selection;
+    const sheet = sheetOf(state);
+    const existing = styleById(sheet, styleId);
+    if (!existing || newName.trim().length === 0) return null;
+    const stylesheet: Stylesheet = {
+      ...sheet,
+      styles: sheet.styles.map((s) => (s.id === styleId ? { ...s, name: newName.trim() } : s)),
+    };
+    return tr([{ type: "setStylesheet", stylesheet }], sel, "command");
+  };
+}
+
+/** Make `styleId` the document's default (Word's w:default="1"). */
+export function setDefaultStyle(styleId: string): Command {
+  return (state) => {
+    const sel = state.selection;
+    const sheet = sheetOf(state);
+    if (!styleById(sheet, styleId)) return null;
+    if (sheet.defaultStyleId === styleId) return null;
+    return tr([{ type: "setStylesheet", stylesheet: { ...sheet, defaultStyleId: styleId } }], sel, "command");
+  };
+}
+
+/** Delete a named style. Content referencing it falls back to the style's
+ *  basedOn (if a still-present style of the same type) else the default style,
+ *  and is RE-PATCHED so its visible formatting matches the new reference.
+ *  basedOn chains pointing at the deleted style are rewritten to its parent.
+ *  The default style cannot be deleted. */
+export function deleteNamedStyle(styleId: string): Command {
+  return (state) => {
+    const sel = state.selection;
+    const sheet = sheetOf(state);
+    const victim = styleById(sheet, styleId);
+    if (!victim || sheet.defaultStyleId === styleId) return null;
+
+    const parent = victim.basedOn ? styleById(sheet, victim.basedOn) : undefined;
+    // Same-type fallback keeps semantics (a paragraph keeps a paragraph style).
+    const fallbackId =
+      parent && styleType(parent) === styleType(victim) ? parent.id : sheet.defaultStyleId;
+
+    const styles = sheet.styles
+      .filter((s) => s.id !== styleId)
+      // Reparent any child that based on the victim onto the victim's parent.
+      .map((s) => {
+        if (s.basedOn !== styleId) return s;
+        const { basedOn: _drop, ...rest } = s;
+        return victim.basedOn !== undefined ? { ...rest, basedOn: victim.basedOn } : rest;
+      });
+    const stylesheet: Stylesheet = { ...sheet, styles };
+
+    const ops: Op[] = [{ type: "setStylesheet", stylesheet }];
+    if (styleType(victim) === "character") {
+      // Strip the reference from runs that carried it (formatting stays baked).
+      for (const block of paragraphsOf(state.doc)) {
+        if (!block.runs.some((r) => r.style.charStyleId === styleId)) continue;
+        const runs = block.runs.map((r) =>
+          r.style.charStyleId === styleId ? { ...r, style: { ...r.style, charStyleId: undefined } } : r,
+        );
+        ops.push({ type: "setRuns", blockId: block.id, runs });
+      }
+    } else {
+      const { char, para } = resolveStyle(stylesheet, fallbackId);
+      for (const p of paragraphsWithStyle(state.doc, styleId)) {
+        ops.push(...restyleOps(p, char, para, fallbackId));
+      }
+    }
     return tr(ops, sel, "command");
   };
 }
