@@ -331,6 +331,36 @@ export const BAND_CONTAINERS: readonly BandContainer[] = [
   "footerEven",
 ];
 
+/** One newspaper column's geometry (px). When a section supplies `cols`, it
+ *  overrides the equal-width division implied by `columns.count`/`gapPx`. The
+ *  array length MUST equal `columns.count`; `spaceAfterPx` is the gap to the
+ *  NEXT column (ignored on the last entry). */
+export interface ColumnEntry {
+  widthPx: number;
+  spaceAfterPx: number;
+}
+
+/** One edge of a page border (w:pgBorders child). `style` maps to @w:val. */
+export interface PageBorderEdge {
+  style: "single" | "double" | "dashed" | "dotted" | "thick" | "none";
+  /** w:sz is eighth-points (px = sz / 6 at 96 dpi). */
+  widthPx: number;
+  /** "#rrggbb"; OOXML "auto" maps to "#000000". */
+  color: string;
+  /** w:space (points) — offset from the page edge / text, converted to px. */
+  spacePx?: number;
+}
+
+/** w:sectPr/w:pgBorders — page border box. Absent edges are not drawn. */
+export interface PageBorders {
+  top?: PageBorderEdge;
+  right?: PageBorderEdge;
+  bottom?: PageBorderEdge;
+  left?: PageBorderEdge;
+  /** w:pgBorders/@w:offsetFrom — "page" (from page edge) or "text" (from margin). */
+  offsetFrom?: "page" | "text";
+}
+
 /** Per-section overrides carried on a section-break paragraph. Absent fields
  *  inherit from `Document.section` — Word's "link to previous" for bands, and
  *  shared page geometry unless the user changes it for one section. */
@@ -338,10 +368,16 @@ export interface SectionPatch {
   pageWidthPx?: number;
   pageHeightPx?: number;
   marginPx?: { top: number; right: number; bottom: number; left: number };
-  /** `null` = explicitly single-column; absent = inherit `Document.section`. */
-  columns?: { count: number; gapPx: number } | null;
+  /** `null` = explicitly single-column; absent = inherit `Document.section`.
+   *  `sep` draws a separator line between columns; `cols` overrides the
+   *  equal-width division with explicit per-column widths. */
+  columns?: { count: number; gapPx: number; sep?: boolean; cols?: ColumnEntry[] } | null;
   /** Restart page numbering at this section (absent = continue counting). */
   pageNumberStart?: number;
+  /** w:background/@w:color — page fill ("#rrggbb"). See `SectionProps`. */
+  pageColorHex?: string;
+  /** w:sectPr/w:pgBorders — page border box. */
+  pageBorders?: PageBorders;
   /** w:pgMar/@w:header — distance (px) from the page TOP to the header's top edge. */
   headerDistancePx?: number;
   /** w:pgMar/@w:footer — distance (px) from the page BOTTOM to the footer's bottom
@@ -361,11 +397,19 @@ export interface SectionProps {
   marginPx: { top: number; right: number; bottom: number; left: number };
   /** Newspaper columns: the content box divides into `count` boxes separated by
    *  `gapPx`; flow fills column 1 top-to-bottom, then column 2, then the next
-   *  page. Absent = single column. */
-  columns?: { count: number; gapPx: number };
+   *  page. Absent = single column. `sep` draws a line between columns; `cols`
+   *  overrides the equal-width division with explicit per-column widths. */
+  columns?: { count: number; gapPx: number; sep?: boolean; cols?: ColumnEntry[] };
   /** Restart page numbering at this section's first page ({page} tokens).
    *  Absent = continue counting from the previous page. */
   pageNumberStart?: number;
+  /** w:background/@w:color — page fill behind everything ("#rrggbb"). Absent =
+   *  white/no fill. NOTE: OOXML w:background is document-global (one element on
+   *  w:document); stored per-section for a uniform model/dialog, but export
+   *  reads it only from `Document.section`. */
+  pageColorHex?: string;
+  /** w:sectPr/w:pgBorders — page border box. Absent = no border. */
+  pageBorders?: PageBorders;
   /** w:pgMar/@w:header — distance (px) from the page TOP to the header's top edge
    *  (header grows down). Absent = center the band in the top margin. */
   headerDistancePx?: number;

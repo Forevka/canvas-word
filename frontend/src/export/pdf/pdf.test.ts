@@ -54,6 +54,24 @@ describe("PDF export — happy path", () => {
     expect(warnings.find((w) => w.code === "font-substituted")).toBeUndefined();
   });
 
+  it("renders page color, borders and column separators without drift", async () => {
+    // The PDF painter shares the engine's Page paint data + pageBorderSegments with
+    // the canvas renderer, so this just confirms the new draw calls run cleanly.
+    const doc = docOf(...Array.from({ length: 40 }, (_, i) => para(`c${i}`)));
+    doc.section.pageColorHex = "#ffeecc";
+    doc.section.columns = { count: 2, gapPx: 24, sep: true };
+    doc.section.pageBorders = {
+      offsetFrom: "page",
+      top: { style: "double", widthPx: 2, color: "#1a73e8" },
+      right: { style: "double", widthPx: 2, color: "#1a73e8" },
+      bottom: { style: "double", widthPx: 2, color: "#1a73e8" },
+      left: { style: "double", widthPx: 2, color: "#1a73e8" },
+    };
+    const { bytes } = await renderPdf(doc);
+    expect(isPdf(bytes)).toBe(true);
+    expect(bytes.length).toBeGreaterThan(500);
+  });
+
   it("produces one PDF page per laid-out page", async () => {
     const { createLayoutEngine } = await import("../../layout/engine");
     const doc = sampleDoc();

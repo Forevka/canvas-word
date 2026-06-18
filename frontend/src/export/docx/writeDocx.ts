@@ -145,9 +145,9 @@ export function writeDocx(
     bodyRels.add(REL.footnotes, "footnotes.xml");
   }
 
-  // settings.xml (always — carries the even/odd flag).
+  // settings.xml (always — carries the even/odd flag + background-display flag).
   const evenAndOdd = sectionsHaveEvenBands(doc);
-  parts["word/settings.xml"] = settingsXml(evenAndOdd);
+  parts["word/settings.xml"] = settingsXml(evenAndOdd, doc.section.pageColorHex !== undefined);
   overrides.push(["/word/settings.xml", CT.settings]);
   bodyRels.add(REL.settings, "settings.xml");
 

@@ -80,10 +80,19 @@ export interface SectionGeometry {
   pageHeightPx: number;
   marginPx: { top: number; right: number; bottom: number; left: number };
   /** `null` = single column (the explicit "off" — SectionPatch distinguishes it
-   *  from "inherit"). */
-  columns: { count: number; gapPx: number } | null;
+   *  from "inherit"). `sep`/`cols` carry the separator line and per-column
+   *  widths respectively. */
+  columns: { count: number; gapPx: number; sep?: boolean; cols?: import("./document").ColumnEntry[] } | null;
   /** `null` = continue numbering from the previous section. */
   pageNumberStart: number | null;
+  /** `null` = inherit (center band in margin). px from page top to header top. */
+  headerDistancePx: number | null;
+  /** `null` = inherit (center band in margin). px from page bottom to footer bottom. */
+  footerDistancePx: number | null;
+  /** `null` = no page fill. "#rrggbb". */
+  pageColorHex: string | null;
+  /** `null` = no page border. */
+  pageBorders: import("./document").PageBorders | null;
 }
 
 /** Top-level block containers: the body, or one of the six margin-band stories
@@ -813,8 +822,14 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
         pageWidthPx: s.pageWidthPx,
         pageHeightPx: s.pageHeightPx,
         marginPx: { ...s.marginPx },
-        columns: s.columns ? { ...s.columns } : null,
+        columns: s.columns
+          ? { ...s.columns, ...(s.columns.cols ? { cols: s.columns.cols.map((c) => ({ ...c })) } : {}) }
+          : null,
         pageNumberStart: s.pageNumberStart ?? null,
+        headerDistancePx: s.headerDistancePx ?? null,
+        footerDistancePx: s.footerDistancePx ?? null,
+        pageColorHex: s.pageColorHex ?? null,
+        pageBorders: s.pageBorders ?? null,
       };
       const next = {
         ...s,
@@ -826,6 +841,14 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       else delete next.columns;
       if (op.geometry.pageNumberStart !== null) next.pageNumberStart = op.geometry.pageNumberStart;
       else delete next.pageNumberStart;
+      if (op.geometry.headerDistancePx !== null) next.headerDistancePx = op.geometry.headerDistancePx;
+      else delete next.headerDistancePx;
+      if (op.geometry.footerDistancePx !== null) next.footerDistancePx = op.geometry.footerDistancePx;
+      else delete next.footerDistancePx;
+      if (op.geometry.pageColorHex !== null) next.pageColorHex = op.geometry.pageColorHex;
+      else delete next.pageColorHex;
+      if (op.geometry.pageBorders !== null) next.pageBorders = op.geometry.pageBorders;
+      else delete next.pageBorders;
       return {
         doc: { ...doc, section: next },
         inverse: { type: "setSectionProps", geometry: old },

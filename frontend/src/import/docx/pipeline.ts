@@ -95,6 +95,8 @@ export function runImport(
   const blocks = mapper.mapBlocks(ir.blocks, mediaFor(rels), linkResolverFor(rels));
   if (blocks.length === 0) blocks.push(mapper.emptyParagraph()); // caret needs a home
   const section = mapper.mapSection(ir.section);
+  // w:background is document-global → the body section's page fill.
+  if (ir.pageColorHex) section.pageColorHex = `#${ir.pageColorHex}`;
 
   // Header/footer parts are full block stories with their OWN rels (images and
   // hyperlinks in a header resolve through header1.xml.rels, not the document's).

@@ -1,7 +1,7 @@
 // Layer 2 output: the LayoutTree — absolutely-positioned geometry the paint and
 // input layers consume. Coordinates are CSS px, page-relative.
 
-import type { BandContainer, CellBorders, CharStyle, TabLeader } from "@cw/shared";
+import type { BandContainer, CellBorders, CharStyle, PageBorders, TabLeader } from "@cw/shared";
 
 /** A same-styled slice of text placed on a line. One ctx.fillText call each.
  *  Per-cluster advances for caret math are computed lazily by geometry.ts and
@@ -130,6 +130,12 @@ export interface Page {
    *  header/footer pushes the body (band-edit boundary + band hit regions). */
   contentTopPx: number;
   contentBottomPx: number;
+  /** w:background page fill ("#rrggbb"); absent = white. */
+  pageColorHex?: string;
+  /** w:pgBorders page border box; absent = no border. */
+  pageBorders?: PageBorders;
+  /** X positions (page coords) of column separator lines; absent = none. */
+  columnSeparatorsX?: number[];
   /** Footnote separator rule (present only on pages carrying notes). */
   footnoteRuleY?: number;
   /** Margin-band stories, already positioned in page coords. Read-only: the

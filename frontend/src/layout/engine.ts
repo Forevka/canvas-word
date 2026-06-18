@@ -546,6 +546,11 @@ export function effectiveSection(base: SectionProps, patch: SectionPatch): Secti
   if (headerDist !== undefined) out.headerDistancePx = headerDist;
   const footerDist = patch.footerDistancePx ?? base.footerDistancePx;
   if (footerDist !== undefined) out.footerDistancePx = footerDist;
+  // Page fill & borders inherit from the document section unless overridden.
+  const pageColorHex = patch.pageColorHex ?? base.pageColorHex;
+  if (pageColorHex !== undefined) out.pageColorHex = pageColorHex;
+  const pageBorders = patch.pageBorders ?? base.pageBorders;
+  if (pageBorders !== undefined) out.pageBorders = pageBorders;
   for (const key of BAND_KEYS) {
     const blocks = patch[key] ?? base[key];
     if (blocks) out[key] = blocks;
@@ -657,10 +662,14 @@ function layoutDocument(
   let contentBottom = 0;
   let contentWidth = 0;
   // Newspaper columns: flow fills column boxes left-to-right before paging.
-  // colWidth is the MEASURE width for paragraphs/tables in the section.
+  // colBoxes holds each column's x + width; colWidth is the single MEASURE width
+  // (the narrowest box for unequal columns, so wrapped content never overflows —
+  // a documented single-pass limitation). colSeparatorsX are the gap midpoints
+  // when a separator line is requested.
   let colCount = 1;
-  let colGap = 0;
   let colWidth = 0;
+  let colBoxes: { x: number; width: number }[] = [];
+  let colSeparatorsX: number[] = [];
   const applySection = (props: SectionProps): void => {
     sec = props;
     const box = contentBoxOf(sec);
@@ -669,8 +678,30 @@ function layoutDocument(
     contentBottom = box.bottom;
     contentWidth = sec.pageWidthPx - sec.marginPx.left - sec.marginPx.right;
     colCount = Math.max(1, sec.columns?.count ?? 1);
-    colGap = sec.columns?.gapPx ?? 24;
-    colWidth = colCount > 1 ? (contentWidth - (colCount - 1) * colGap) / colCount : contentWidth;
+    const gap = sec.columns?.gapPx ?? 24;
+    const cols = sec.columns?.cols;
+    if (colCount > 1 && cols && cols.length === colCount) {
+      // Explicit per-column widths + per-column trailing gap (Word honors literally).
+      let x = contentX;
+      colBoxes = cols.map((c, i) => {
+        const b = { x, width: c.widthPx };
+        x += c.widthPx + (i < colCount - 1 ? c.spaceAfterPx : 0);
+        return b;
+      });
+      colWidth = Math.min(...cols.map((c) => c.widthPx));
+    } else if (colCount > 1) {
+      colWidth = (contentWidth - (colCount - 1) * gap) / colCount;
+      colBoxes = Array.from({ length: colCount }, (_, i) => ({
+        x: contentX + i * (colWidth + gap),
+        width: colWidth,
+      }));
+    } else {
+      colWidth = contentWidth;
+      colBoxes = [{ x: contentX, width: contentWidth }];
+    }
+    colSeparatorsX = sec.columns?.sep
+      ? colBoxes.slice(0, -1).map((b, i) => (b.x + b.width + colBoxes[i + 1]!.x) / 2)
+      : [];
   };
   applySection(sec);
 
@@ -770,7 +801,7 @@ function layoutDocument(
   const pageSections: SectionProps[] = [];
   const mkPage = (): Page => {
     pageSections.push(sec);
-    return {
+    const p: Page = {
       index: pageSections.length - 1,
       number: pageSections.length, // provisional; the post-pass sets the real value
       blocks: [],
@@ -780,6 +811,10 @@ function layoutDocument(
       contentTopPx: contentTop,
       contentBottomPx: contentBottom,
     };
+    if (sec.pageColorHex !== undefined) p.pageColorHex = sec.pageColorHex;
+    if (sec.pageBorders !== undefined) p.pageBorders = sec.pageBorders;
+    if (colSeparatorsX.length) p.columnSeparatorsX = colSeparatorsX.slice();
+    return p;
   };
 
   const pages: Page[] = [mkPage()];
@@ -839,7 +874,7 @@ function layoutDocument(
   // column started in page.blocks.
   let colIdx = 0;
   let colStartCount = 0;
-  const colX = (): number => contentX + colIdx * (colWidth + colGap);
+  const colX = (): number => colBoxes[colIdx]?.x ?? contentX;
   const colHasContent = (): boolean => page.blocks.length > colStartCount;
 
   /** Explicit page break / section start: always a fresh page, column 1. */
@@ -876,6 +911,12 @@ function layoutDocument(
       page.marginPx = sec.marginPx;
       page.contentTopPx = contentTop;
       page.contentBottomPx = contentBottom;
+      if (sec.pageColorHex !== undefined) page.pageColorHex = sec.pageColorHex;
+      else delete page.pageColorHex;
+      if (sec.pageBorders !== undefined) page.pageBorders = sec.pageBorders;
+      else delete page.pageBorders;
+      if (colSeparatorsX.length) page.columnSeparatorsX = colSeparatorsX.slice();
+      else delete page.columnSeparatorsX;
       pageSections[page.index] = sec;
       colIdx = 0;
       colStartCount = 0;

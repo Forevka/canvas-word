@@ -16,7 +16,12 @@ import { WarningSink } from "../warnings";
 import { installMeasureHost } from "../shared/measureHost";
 import { resolveFont } from "../shared/fontRegistry";
 import { paintBlock, type PaintCtx } from "./paintBlock";
-import { FOOTNOTE_RULE_COLOR, FOOTNOTE_RULE_WIDTH_FRACTION } from "../../paint/paintStyle";
+import {
+  COLUMN_SEPARATOR_COLOR,
+  FOOTNOTE_RULE_COLOR,
+  FOOTNOTE_RULE_WIDTH_FRACTION,
+  pageBorderSegments,
+} from "../../paint/paintStyle";
 
 const PT = 72 / 96; // px -> pt
 
@@ -115,9 +120,28 @@ export async function renderPdf(doc: Document, opts: RenderPdfOptions = {}): Pro
     pdf.save();
     pdf.scale(PT); // every subsequent draw is in document px
 
-    pdf.rect(0, 0, page.widthPx, page.heightPx).fill("#ffffff");
+    pdf.rect(0, 0, page.widthPx, page.heightPx).fill(page.pageColorHex ?? "#ffffff");
+
+    // page borders (w:pgBorders) — behind content, identical geometry to canvas.
+    if (page.pageBorders) {
+      for (const s of pageBorderSegments(page.pageBorders, page.widthPx, page.heightPx, page.marginPx)) {
+        pdf.lineWidth(s.widthPx).strokeColor(s.color);
+        if (s.dash.length) pdf.dash(s.dash[0]!, { space: s.dash[1] ?? s.dash[0]! });
+        else pdf.undash();
+        pdf.moveTo(s.x1, s.y1).lineTo(s.x2, s.y2).stroke();
+      }
+      pdf.undash();
+    }
 
     for (const block of page.blocks) paintBlock(ctx, block);
+
+    // column separator rules (w:cols/@w:sep).
+    if (page.columnSeparatorsX) {
+      pdf.undash().lineWidth(1).strokeColor(COLUMN_SEPARATOR_COLOR);
+      for (const x of page.columnSeparatorsX) {
+        pdf.moveTo(x + 0.5, page.contentTopPx).lineTo(x + 0.5, page.contentBottomPx).stroke();
+      }
+    }
 
     if (page.footnoteRuleY !== undefined) {
       const cw = page.widthPx - page.marginPx.left - page.marginPx.right;

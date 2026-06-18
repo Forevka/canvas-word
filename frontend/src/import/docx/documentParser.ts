@@ -112,8 +112,16 @@ export function parseDocumentXml(xmlText: string, partName: string, warnings: Wa
   const sectPr = el(body, "w:sectPr");
   const section = sectPr ? parseSection(sectPr, warnings) : null;
 
+  // w:background is document-global (sibling of w:body) — the page fill color.
+  const bgEl = doc ? el(doc, "w:background") : undefined;
+  const bgColor = bgEl ? attr(bgEl, "w:color") : undefined;
+  const pageColorHex = bgColor && bgColor !== "auto" ? bgColor : undefined;
+
   const fields = ctx.fieldTrack.registry;
-  return Object.keys(fields).length > 0 ? { blocks, section, sdts, fields } : { blocks, section, sdts };
+  const out: IRDocument =
+    Object.keys(fields).length > 0 ? { blocks, section, sdts, fields } : { blocks, section, sdts };
+  if (pageColorHex) out.pageColorHex = pageColorHex;
+  return out;
 }
 
 /** header1.xml / footer1.xml — same block content under a w:hdr / w:ftr root.
@@ -834,12 +842,48 @@ function parseSection(sectPr: XmlNode, warnings: WarningSink): IRSection {
 
   const cols = el(sectPr, "w:cols");
   if (cols) {
-    const count = numAttr(cols, "w:num") ?? 1;
+    const colEls = els(cols, "w:col");
+    // count: explicit @w:num, else inferred from the w:col children.
+    const count = numAttr(cols, "w:num") ?? (colEls.length > 1 ? colEls.length : 1);
     if (count > 1) {
       section.columns = { count };
       const space = numAttr(cols, "w:space");
       if (space !== undefined) section.columns.spaceTwips = space;
+      if (attr(cols, "w:sep") === "1" || attr(cols, "w:sep") === "true") section.columns.sep = true;
+      // Unequal columns: w:equalWidth="0" + a w:col per column.
+      if (colEls.length === count) {
+        const list = colEls.map((cel) => ({
+          wTwips: numAttr(cel, "w:w") ?? 0,
+          spaceTwips: numAttr(cel, "w:space") ?? 0,
+        }));
+        if (list.some((c) => c.wTwips > 0)) section.columns.cols = list;
+      }
     }
+  }
+  const pgBorders = el(sectPr, "w:pgBorders");
+  if (pgBorders) {
+    const offsetFrom = attr(pgBorders, "w:offsetFrom");
+    const borders: import("./types").IRPageBorders = {
+      offsetFrom: offsetFrom === "text" ? "text" : "page",
+    };
+    const edge = (name: "top" | "right" | "bottom" | "left"): void => {
+      const e = el(pgBorders, "w:" + name);
+      if (!e) return;
+      const sz = numAttr(e, "w:sz");
+      const space = numAttr(e, "w:space");
+      const color = attr(e, "w:color");
+      borders[name] = {
+        style: attr(e, "w:val") ?? "single",
+        ...(sz !== undefined ? { sz } : {}),
+        ...(space !== undefined ? { space } : {}),
+        ...(color !== undefined ? { color } : {}),
+      };
+    };
+    edge("top");
+    edge("right");
+    edge("bottom");
+    edge("left");
+    if (borders.top || borders.right || borders.bottom || borders.left) section.pageBorders = borders;
   }
   const pgNumStart = numAttr(el(sectPr, "w:pgNumType"), "w:start");
   if (pgNumStart !== undefined) section.pageNumberStart = pgNumStart;

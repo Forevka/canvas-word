@@ -498,6 +498,25 @@ describe("engine — columns", () => {
     const lastX = placedOf(tree, paras.at(-1)!.id)!.pb.x;
     expect(lastX).toBeGreaterThan(firstX);
   });
+
+  it("unequal columns place content at per-column x positions", () => {
+    const paras = Array.from({ length: 70 }, (_, i) => para(`c${i}`));
+    const tree = layout(
+      doc(paras, {
+        columns: { count: 2, gapPx: 24, cols: [{ widthPx: 200, spaceAfterPx: 40 }, { widthPx: 300, spaceAfterPx: 0 }] },
+      }),
+    );
+    expect(placedOf(tree, paras[0]!.id)!.pb.x).toBeCloseTo(96, 0); // col 1 at the left margin
+    expect(placedOf(tree, paras.at(-1)!.id)!.pb.x).toBeCloseTo(336, 0); // col 2 at 96 + 200 + 40
+  });
+
+  it("emits column separator x positions when sep is set", () => {
+    const tree = layout(doc([para("x")], { columns: { count: 2, gapPx: 24, sep: true } }));
+    const seps = tree.pages[0]!.columnSeparatorsX;
+    expect(seps).toHaveLength(1);
+    // equal columns: width = (624 - 24)/2 = 300; gap midpoint = 96 + 300 + 12 = 408.
+    expect(seps![0]).toBeCloseTo(408, 0);
+  });
 });
 
 // --- footnotes ------------------------------------------------------------

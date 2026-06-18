@@ -210,9 +210,14 @@ export interface IRParaProps {
   /** The ending section's margins (twips) — for a SectionPatch when geometry differs. */
   sectionMarginTwips?: { top: number; right: number; bottom: number; left: number };
   /** The ending section's newspaper columns (count > 1). */
-  sectionColumns?: { count: number; spaceTwips?: number };
+  sectionColumns?: { count: number; spaceTwips?: number; sep?: boolean; cols?: { wTwips: number; spaceTwips: number }[] };
   /** The ending section's w:pgNumType w:start (page-number restart). */
   sectionPageNumberStart?: number;
+  /** The ending section's w:pgMar header/footer band distances (twips). */
+  sectionHeaderDistTwips?: number;
+  sectionFooterDistTwips?: number;
+  /** The ending section's w:pgBorders (raw, mapped downstream). */
+  sectionPgBorders?: IRPageBorders;
   /** The ending section's sectPr declares its own header/footer references —
    *  when such a section is flowed (not page-broken) its bands aren't applied. */
   sectionHasBands?: boolean;
@@ -360,10 +365,33 @@ export interface IRSection {
   footerRefs?: BandRefs;
   /** w:titlePg — this section has a distinct first-page header/footer. */
   titlePg?: boolean;
-  /** w:cols — newspaper columns (only count > 1 is meaningful). */
-  columns?: { count: number; spaceTwips?: number };
+  /** w:cols — newspaper columns (only count > 1 is meaningful). `sep` = a
+   *  separator line; `cols` = explicit per-column widths (w:equalWidth="0"). */
+  columns?: {
+    count: number;
+    spaceTwips?: number;
+    sep?: boolean;
+    cols?: { wTwips: number; spaceTwips: number }[];
+  };
   /** w:pgNumType w:start — restart page numbering at this value. */
   pageNumberStart?: number;
+  /** w:pgBorders — page border box (raw twips/eighth-points, mapped downstream). */
+  pageBorders?: IRPageBorders;
+}
+
+/** w:pgBorders edge as parsed (w:sz eighth-points, w:space points). */
+export interface IRPageBorderEdge {
+  style: string;
+  sz?: number;
+  space?: number;
+  color?: string;
+}
+export interface IRPageBorders {
+  top?: IRPageBorderEdge;
+  right?: IRPageBorderEdge;
+  bottom?: IRPageBorderEdge;
+  left?: IRPageBorderEdge;
+  offsetFrom?: "page" | "text";
 }
 
 /** Header/footer relationship ids by Word variant. */
@@ -380,4 +408,6 @@ export interface IRDocument {
   sdts: Record<string, IRSdtProps>;
   /** Custom (non-built-in) complex fields captured in the body, keyed by id. */
   fields?: Record<string, FieldDef>;
+  /** w:document/w:background @w:color — document-global page fill ("RRGGBB"). */
+  pageColorHex?: string;
 }

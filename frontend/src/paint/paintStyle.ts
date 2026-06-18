@@ -5,7 +5,7 @@
 // drifting; the actual draw calls stay separate (canvas vs pdfkit are different
 // APIs). Pure data + math — no DOM, no rendering backend.
 
-import type { CharStyle, TabLeader } from "@cw/shared";
+import type { CharStyle, PageBorderEdge, PageBorders, TabLeader } from "@cw/shared";
 
 // --- colours ---------------------------------------------------------------
 /** Unstyled/native table grid (when a cell carries no explicit borders). */
@@ -85,6 +85,69 @@ export const TOC_LEADER_GAP_PX = 8;
 // --- footnote rule ---------------------------------------------------------
 /** The separator rule spans this fraction of the content width (Word style). */
 export const FOOTNOTE_RULE_WIDTH_FRACTION = 1 / 3;
+
+// --- column separators -----------------------------------------------------
+/** Thin gray rule drawn between newspaper columns (w:cols/@w:sep). */
+export const COLUMN_SEPARATOR_COLOR = "#c0c4c9";
+
+// --- page borders (w:pgBorders) --------------------------------------------
+/** Default offset (px) of a page border from the page edge / text when an edge
+ *  omits w:space. ~24pt is Word's typical page-border offset. */
+const PAGE_BORDER_DEFAULT_SPACE = 24;
+
+/** One stroked line segment of a page border, in page (px) coords. */
+export interface PageBorderSegment {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  widthPx: number;
+  color: string;
+  /** [] = solid. */
+  dash: number[];
+}
+
+/** Geometry of a page border box → the line segments to stroke. Shared so the
+ *  canvas renderer and the PDF painter draw identical borders. "double" yields
+ *  two parallel segments; "none"/absent edges are skipped. */
+export function pageBorderSegments(
+  borders: PageBorders,
+  pageW: number,
+  pageH: number,
+  margin: { top: number; right: number; bottom: number; left: number },
+): PageBorderSegment[] {
+  const fromText = borders.offsetFrom === "text";
+  const sp = (e?: PageBorderEdge): number => e?.spacePx ?? PAGE_BORDER_DEFAULT_SPACE;
+  // Each edge's distance, then the box bounds (per-edge space; usually uniform).
+  const xL = fromText ? margin.left - sp(borders.left) : sp(borders.left);
+  const xR = fromText ? pageW - margin.right + sp(borders.right) : pageW - sp(borders.right);
+  const yT = fromText ? margin.top - sp(borders.top) : sp(borders.top);
+  const yB = fromText ? pageH - margin.bottom + sp(borders.bottom) : pageH - sp(borders.bottom);
+  const out: PageBorderSegment[] = [];
+  const push = (e: PageBorderEdge | undefined, x1: number, y1: number, x2: number, y2: number): void => {
+    if (!e || e.style === "none") return;
+    const w = e.style === "thick" ? Math.max(2, e.widthPx) : Math.max(0.5, e.widthPx);
+    const color = e.color === "auto" ? "#000000" : e.color;
+    const dash = e.style === "dashed" ? [w * 3, w * 2] : e.style === "dotted" ? [w, w * 1.5] : [];
+    out.push({ x1, y1, x2, y2, widthPx: w, color, dash });
+    if (e.style === "double") {
+      const g = w + 1; // inset the second line toward the box interior
+      const horizontal = y1 === y2;
+      if (horizontal) {
+        const dy = y1 < pageH / 2 ? g : -g;
+        out.push({ x1, y1: y1 + dy, x2, y2: y2 + dy, widthPx: w, color, dash: [] });
+      } else {
+        const dx = x1 < pageW / 2 ? g : -g;
+        out.push({ x1: x1 + dx, y1, x2: x2 + dx, y2, widthPx: w, color, dash: [] });
+      }
+    }
+  };
+  push(borders.top, xL, yT, xR, yT);
+  push(borders.bottom, xL, yB, xR, yB);
+  push(borders.left, xL, yT, xL, yB);
+  push(borders.right, xR, yT, xR, yB);
+  return out;
+}
 
 // --- cell borders ----------------------------------------------------------
 /** Hairlines clamp up so a thin rule stays visible. */

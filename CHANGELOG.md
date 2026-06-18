@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Flexible page layout — a redesigned Page Layout dialog.** The old preset-only
+  Page Setup panel is replaced by a draggable, non-blocking dialog (Layout → **Page
+  setup**) with a live, schematic scaled-page preview and an **inches ⇄ cm** toggle.
+  Tabs cover everything that shapes a section's page, applied to the caret's section:
+  - **Page** — Letter/A4/Legal presets *plus* custom width × height and a
+    Portrait/Landscape toggle.
+  - **Margins** — Normal/Narrow/Wide presets *plus* per-side numeric entry.
+  - **Columns** — custom column count, equal *or* explicit per-column widths, custom
+    spacing, and an optional **separator line** between columns (`w:cols/@w:sep`).
+  - **Layout** — **header/footer band distances** (previously unsettable and dropped
+    on export), page-number restart, and the Different-first-page / odd-&-even toggles.
+  - **Background** — a **page color** (`w:background`) and a **page border**
+    (`w:pgBorders`) with style, width, color, and measure-from page/text.
+- **Page layout round-trips through DOCX and PDF.** Export now emits `w:orient`, real
+  `w:header`/`w:footer` distances (fixing a bug that hardcoded both to 720 twips),
+  `w:cols` separators and per-column `w:col` widths, `w:pgBorders`, and a document-level
+  `w:background` (with `w:displayBackgroundShape` so Word paints it). All of it imports
+  back, and the **PDF export renders page color, borders, and column separators
+  identically to the on-screen canvas** (shared paint geometry — no drift).
 - **Style constructors — a unified Style Manager.** Create, edit, and delete styles
   for every OOXML-styleable entity through one draggable, non-blocking dialog
   (Home → Styles → **Manage styles…**, or right-click → **Styles…**): a left rail

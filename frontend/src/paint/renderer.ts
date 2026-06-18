@@ -17,12 +17,14 @@ import { charStyleToFont } from "../layout/metrics";
 import {
   cellBorderDash,
   cellBorderWidth,
+  COLUMN_SEPARATOR_COLOR,
   decorationThickness,
   DEFAULT_GRID_COLOR,
   doubleBorderGap,
   FOOTNOTE_RULE_COLOR,
   FOOTNOTE_RULE_WIDTH_FRACTION,
   IMAGE_PLACEHOLDER_COLOR,
+  pageBorderSegments,
   leaderDash,
   leaderWidth,
   normalizeLinkBlue,
@@ -126,6 +128,23 @@ const PAGE_GAP_PX = 24;
 // glyphs, above cell fills).
 const SELECTION_DIFF_COLOR = "rgb(64, 64, 64)";
 const SELECTION_DIFF_ALPHA = 0.5;
+
+/** Stroke a page's w:pgBorders box. Shares geometry with the PDF painter via
+ *  pageBorderSegments so the two backends stay in lockstep. */
+function paintPageBorders(ctx: CanvasRenderingContext2D, page: Page): void {
+  if (!page.pageBorders) return;
+  const segs = pageBorderSegments(page.pageBorders, page.widthPx, page.heightPx, page.marginPx);
+  for (const s of segs) {
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = s.widthPx;
+    ctx.setLineDash(s.dash);
+    ctx.beginPath();
+    ctx.moveTo(s.x1, s.y1);
+    ctx.lineTo(s.x2, s.y2);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+}
 
 /** A remote collaborator's presence to render: their caret (focus) + any
  *  selection highlight rects, in page-local coords, with their color/name. */
@@ -339,9 +358,12 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     const ctx = canvas.getContext("2d")!;
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
 
-    // 1. page background
-    ctx.fillStyle = "#fff";
+    // 1. page background (w:background page color, else white)
+    ctx.fillStyle = page.pageColorHex ?? "#fff";
     ctx.fillRect(0, 0, page.widthPx, page.heightPx);
+
+    // 1a. page borders (w:pgBorders) — behind content, inset per offsetFrom.
+    if (page.pageBorders) paintPageBorders(ctx, page);
 
     // 1b. table cell background fills — the bottom layer, hoisted out of the
     // block painter so the highlight layers below sit ON TOP of them. Otherwise
@@ -432,6 +454,19 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     // 3. blocks: text fragments (one fillText each), images, table grids
     ctx.textBaseline = "alphabetic";
     for (const block of page.blocks) paintBlock(ctx, block, page.index);
+
+    // 3a. column separator rules (w:cols/@w:sep) — thin vertical lines in gaps.
+    if (page.columnSeparatorsX) {
+      ctx.strokeStyle = COLUMN_SEPARATOR_COLOR;
+      ctx.lineWidth = 1;
+      for (const x of page.columnSeparatorsX) {
+        const sx = Math.round(x) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(sx, page.contentTopPx);
+        ctx.lineTo(sx, page.contentBottomPx);
+        ctx.stroke();
+      }
+    }
 
     // 3b. footnote separator rule (1/3 content width, Word style)
     if (page.footnoteRuleY !== undefined) {

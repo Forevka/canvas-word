@@ -3,7 +3,10 @@
 
 import { el, WML_NS, XML_DECL } from "./xmlWrite";
 
-export function settingsXml(evenAndOdd: boolean): string {
-  const body = evenAndOdd ? el("w:evenAndOddHeadersAndFooters") : "";
+export function settingsXml(evenAndOdd: boolean, displayBackgroundShape = false): string {
+  // w:displayBackgroundShape makes Word actually paint w:background (the page color).
+  const body =
+    (displayBackgroundShape ? el("w:displayBackgroundShape") : "") +
+    (evenAndOdd ? el("w:evenAndOddHeadersAndFooters") : "");
   return XML_DECL + el("w:settings", WML_NS, body);
 }

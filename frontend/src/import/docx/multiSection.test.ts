@@ -50,6 +50,28 @@ describe("per-section columns & page numbering", () => {
     const r = withSect(`<w:pgNumType w:start="1"/>`);
     expect(para(r.doc.blocks[0]).style.sectionBreak?.props.pageNumberStart).toBe(1);
   });
+
+  it("carries column separator + per-column widths into the patch", () => {
+    const r = withSect(
+      `<w:cols w:num="2" w:sep="1" w:equalWidth="0"><w:col w:w="3000" w:space="240"/><w:col w:w="4000"/></w:cols>`,
+    );
+    const cols = para(r.doc.blocks[0]).style.sectionBreak?.props.columns;
+    expect(cols?.count).toBe(2);
+    expect(cols?.sep).toBe(true);
+    expect(cols?.cols).toHaveLength(2);
+    expect(cols?.cols?.[0]?.widthPx).toBeCloseTo(200, 0); // 3000 twips
+  });
+
+  it("treats a mid-doc page border as a distinct section and carries it", () => {
+    const r = withSect(
+      `<w:pgBorders w:offsetFrom="page"><w:top w:val="single" w:sz="12" w:space="24" w:color="FF0000"/></w:pgBorders>`,
+    );
+    const sb = para(r.doc.blocks[0]).style.sectionBreak;
+    expect(sb?.type).toBe("nextPage");
+    expect(sb?.props.pageBorders?.offsetFrom).toBe("page");
+    expect(sb?.props.pageBorders?.top?.color.toLowerCase()).toBe("#ff0000");
+    expect(sb?.props.pageBorders?.top?.widthPx).toBeCloseTo(2, 1); // 12 eighth-pt
+  });
 });
 
 // --- header/footer variants -------------------------------------------------

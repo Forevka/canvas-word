@@ -17,6 +17,7 @@ import { buildShell } from "./app/shell";
 import { ensureWordCanvasStyles } from "./ui/styles";
 import { showContextMenu, type MenuEntry } from "./ui/contextMenu";
 import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
+import { showPageLayout, type PageLayoutHandle } from "./ui/pageLayout";
 import { loadCollabDocument, loadCollabReview, publishDocument } from "./sync/collab";
 import { attachMentionAutocomplete } from "./review/mentions";
 import { showBusy } from "./app/busyOverlay";
@@ -54,9 +55,6 @@ import {
   setLinkCmd,
   insertPageBreak,
   insertSectionBreak,
-  applyPageSetup,
-  pageSetupAt,
-  setBandVariantEnabled,
   insertTocCmd,
   insertFootnoteCmd,
   insertContentControl,
@@ -1144,6 +1142,7 @@ if (toolbar) {
   // rebuild so removed cards' surfaces are torn down.
   let galleryChild: ReturnType<typeof editor.createChild> | null = null;
   let styleMgr: StyleManagerHandle | null = null;
+  let pageLayoutDlg: PageLayoutHandle | null = null;
   // "Show only styles in use" filter. Since import now keeps every defined style
   // (so authored styles round-trip), a heavy imported doc can crowd the gallery —
   // this collapses it to styles actually applied in the document.
@@ -1366,8 +1365,9 @@ if (toolbar) {
   // ===== Layout tab ========================================================
   const layout = tab("layout", "Layout");
   group(layout, "Page Setup");
-  btn(ICONS.pageSetup, "Page setup (size, orientation, margins, columns — applies to the caret's section)", () => {
-    pageSetupPanel.toggle();
+  btn(ICONS.pageSetup, "Page layout (size, orientation, margins, columns, header/footer distance, page color & borders — applies to the caret's section)", () => {
+    if (pageLayoutDlg) { pageLayoutDlg.close(); pageLayoutDlg = null; return; }
+    pageLayoutDlg = showPageLayout({ editor, onClose: () => { pageLayoutDlg = null; } });
   });
 
   // ===== Table tab (acts on the cell containing the caret) =================
@@ -2316,129 +2316,9 @@ if (!readonly) {
   window.addEventListener("resize", () => refreshImageBar(), { signal: teardown.signal });
 }
 
-// ---- page setup panel (📐) ---------------------------------------------------
-// Applies to the CARET's section: size preset, orientation, margin preset.
-const pageSetupPanel = (() => {
-  const SIZES: Record<string, { w: number; h: number }> = {
-    Letter: { w: 816, h: 1056 }, // 8.5×11in @96dpi
-    A4: { w: 794, h: 1123 },
-    Legal: { w: 816, h: 1344 },
-  };
-  const MARGINS: Record<string, { top: number; right: number; bottom: number; left: number }> = {
-    Normal: { top: 96, right: 96, bottom: 96, left: 96 },
-    Narrow: { top: 48, right: 48, bottom: 48, left: 48 },
-    Wide: { top: 96, right: 144, bottom: 96, left: 144 },
-  };
-  const panel = document.createElement("div");
-  panel.className = "cw-float-panel";
-  panel.style.cssText =
-    "position:fixed;top:46px;right:24px;display:none;flex-direction:column;gap:6px;" +
-    "background:#fff;border:1px solid #dadce0;border-radius:8px;padding:10px 12px;" +
-    "box-shadow:0 2px 8px rgba(0,0,0,.18);z-index:10;font-size:13px;";
-  const row = (label: string, control: HTMLElement): void => {
-    const r = document.createElement("div");
-    r.style.cssText = "display:flex;align-items:center;gap:8px;justify-content:space-between;";
-    const l = document.createElement("span");
-    l.textContent = label;
-    r.append(l, control);
-    panel.appendChild(r);
-  };
-  const mkSelect = (entries: string[]): HTMLSelectElement => {
-    const s = document.createElement("select");
-    s.style.cssText = "height:26px;border:1px solid #dadce0;border-radius:4px;background:#fff;font-size:13px;width:120px;";
-    for (const e of entries) {
-      const o = document.createElement("option");
-      o.value = e;
-      o.textContent = e;
-      s.appendChild(o);
-    }
-    return s;
-  };
-  const sizeSel = mkSelect(Object.keys(SIZES));
-  const orientSel = mkSelect(["Portrait", "Landscape"]);
-  const marginSel = mkSelect(Object.keys(MARGINS));
-  const colsSel = mkSelect(["One", "Two", "Three"]);
-  const startInput = document.createElement("input");
-  startInput.type = "number";
-  startInput.min = "0";
-  startInput.placeholder = "continue";
-  startInput.title = "Restart page numbering at this section (blank = continue)";
-  startInput.style.cssText = "height:24px;border:1px solid #dadce0;border-radius:4px;padding:0 6px;font-size:13px;width:108px;";
-  const mkCheck = (): HTMLInputElement => {
-    const c = document.createElement("input");
-    c.type = "checkbox";
-    c.style.cssText = "width:16px;height:16px;";
-    return c;
-  };
-  const firstCheck = mkCheck();
-  const evenCheck = mkCheck();
-  row("Size", sizeSel);
-  row("Orientation", orientSel);
-  row("Margins", marginSel);
-  row("Columns", colsSel);
-  row("Number from", startInput);
-  row("Different first page", firstCheck);
-  row("Different odd & even", evenCheck);
-  // Variant toggles apply immediately (independent of the geometry Apply).
-  firstCheck.addEventListener("change", () => {
-    editor.dispatch(setBandVariantEnabled("first", firstCheck.checked));
-  });
-  evenCheck.addEventListener("change", () => {
-    editor.dispatch(setBandVariantEnabled("even", evenCheck.checked));
-  });
-  const apply = document.createElement("button");
-  apply.textContent = "Apply to this section";
-  apply.style.cssText = "height:28px;border:1px solid #1a73e8;border-radius:4px;background:#1a73e8;color:#fff;cursor:pointer;font-size:13px;";
-  apply.addEventListener("click", () => {
-    const size = SIZES[sizeSel.value]!;
-    const landscape = orientSel.value === "Landscape";
-    const colCount = { One: 1, Two: 2, Three: 3 }[colsSel.value] ?? 1;
-    const start = startInput.value.trim() === "" ? null : Math.max(0, Number(startInput.value));
-    editor.dispatch(
-      applyPageSetup({
-        pageWidthPx: landscape ? size.h : size.w,
-        pageHeightPx: landscape ? size.w : size.h,
-        marginPx: { ...MARGINS[marginSel.value]! },
-        columns: colCount > 1 ? { count: colCount, gapPx: 24 } : null,
-        pageNumberStart: start !== null && Number.isFinite(start) ? start : null,
-      }),
-    );
-    panel.style.display = "none";
-    editor.focus();
-  });
-  panel.appendChild(apply);
-  document.body.appendChild(panel);
-  detachables.push(panel);
-
-  return {
-    toggle(): void {
-      if (panel.style.display === "flex") {
-        panel.style.display = "none";
-        return;
-      }
-      // Seed controls from the caret's section.
-      const geo = pageSetupAt({ doc: editor.getDocument(), selection: editor.getSelection() });
-      const landscape = geo.pageWidthPx > geo.pageHeightPx;
-      const w = landscape ? geo.pageHeightPx : geo.pageWidthPx;
-      const h = landscape ? geo.pageWidthPx : geo.pageHeightPx;
-      sizeSel.value =
-        Object.keys(SIZES).find((k) => SIZES[k]!.w === w && SIZES[k]!.h === h) ?? "Letter";
-      orientSel.value = landscape ? "Landscape" : "Portrait";
-      marginSel.value =
-        Object.keys(MARGINS).find((k) => {
-          const m = MARGINS[k]!;
-          return m.top === geo.marginPx.top && m.right === geo.marginPx.right &&
-            m.bottom === geo.marginPx.bottom && m.left === geo.marginPx.left;
-        }) ?? "Normal";
-      colsSel.value = geo.columns?.count === 2 ? "Two" : geo.columns?.count === 3 ? "Three" : "One";
-      startInput.value = geo.pageNumberStart === null ? "" : String(geo.pageNumberStart);
-      const sec = editor.getDocument().section;
-      firstCheck.checked = sec.headerFirst !== undefined || sec.footerFirst !== undefined;
-      evenCheck.checked = sec.headerEven !== undefined || sec.footerEven !== undefined;
-      panel.style.display = "flex";
-    },
-  };
-})();
+// ---- page setup ------------------------------------------------------------
+// Page layout lives in the draggable showPageLayout dialog (ui/pageLayout.ts),
+// opened from the Layout-tab button above. The old inline preset panel was retired.
 
 // ---- find & replace bar (Ctrl+F) -------------------------------------------
 {

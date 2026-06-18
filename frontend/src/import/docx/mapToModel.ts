@@ -12,8 +12,11 @@ import type {
   Block,
   BookmarkRange,
   CharStyle,
+  ColumnEntry,
   DocPosition,
   ImageBlock,
+  PageBorderEdge,
+  PageBorders,
   ParaStyle,
   Paragraph,
   Run,
@@ -39,6 +42,7 @@ import type {
   IRBorders,
   IRInline,
   IRListDefinition,
+  IRPageBorders,
   IRParaProps,
   IRParagraph,
   IRRunProps,
@@ -49,6 +53,54 @@ import type {
 } from "./types";
 import { WarningSink } from "./types";
 import { emuToPx, halfPointsToPx, marginTwipsToPx, round2, twipsToPx } from "./units";
+
+const PAGE_BORDER_STYLES = new Set(["single", "double", "dashed", "dotted", "thick", "none"]);
+
+/** IR newspaper columns → model columns (twips→px, per-column widths + sep). */
+function irColumnsToModel(
+  c: NonNullable<IRSection["columns"]>,
+): { count: number; gapPx: number; sep?: boolean; cols?: ColumnEntry[] } {
+  // OOXML default column gap is 720 twips (0.5") when w:space is absent.
+  const out = { count: c.count, gapPx: round2(twipsToPx(c.spaceTwips ?? 720)) } as {
+    count: number;
+    gapPx: number;
+    sep?: boolean;
+    cols?: ColumnEntry[];
+  };
+  if (c.sep) out.sep = true;
+  if (c.cols && c.cols.length === c.count) {
+    out.cols = c.cols.map((col) => ({
+      widthPx: round2(twipsToPx(col.wTwips)),
+      spaceAfterPx: round2(twipsToPx(col.spaceTwips)),
+    }));
+  }
+  return out;
+}
+
+/** IR page borders → model PageBorders (eighth-points→px, points→px, color). */
+function irPageBordersToModel(b: IRPageBorders): PageBorders {
+  const edge = (e: IRPageBorders["top"]): PageBorderEdge | undefined => {
+    if (!e) return undefined;
+    const style = (PAGE_BORDER_STYLES.has(e.style) ? e.style : "single") as PageBorderEdge["style"];
+    const out: PageBorderEdge = {
+      style,
+      widthPx: e.sz !== undefined ? round2(e.sz / 6) : 1, // w:sz is eighth-points
+      color: !e.color || e.color === "auto" ? "#000000" : `#${e.color}`,
+    };
+    if (e.space !== undefined) out.spacePx = round2((e.space * 96) / 72); // w:space is points
+    return out;
+  };
+  const out: PageBorders = { offsetFrom: b.offsetFrom ?? "page" };
+  const top = edge(b.top);
+  if (top) out.top = top;
+  const right = edge(b.right);
+  if (right) out.right = right;
+  const bottom = edge(b.bottom);
+  if (bottom) out.bottom = bottom;
+  const left = edge(b.left);
+  if (left) out.left = left;
+  return out;
+}
 
 /** Resolves a hyperlink relationship id to a URL (the part's external rels). */
 export type LinkResolver = (relId: string) => string | undefined;
@@ -201,7 +253,10 @@ export function createMapper(
    *  columns, or a page-number restart. (A bare footer/header switch with the
    *  same geometry flows instead — see mapBlocks.) */
   const sectionIsDistinct = (props: IRParaProps): boolean =>
-    sectionChangesGeometry(props) || !!props.sectionColumns || props.sectionPageNumberStart !== undefined;
+    sectionChangesGeometry(props) ||
+    !!props.sectionColumns ||
+    props.sectionPageNumberStart !== undefined ||
+    !!props.sectionPgBorders;
 
   /** Build a SectionPatch from a section-ending paragraph's geometry/columns. */
   const buildSectionPatch = (props: IRParaProps): SectionPatch => {
@@ -213,10 +268,11 @@ export function createMapper(
     if (props.sectionMarginTwips) {
       patch.marginPx = marginTwipsToPx(props.sectionMarginTwips);
     }
-    if (props.sectionColumns) {
-      patch.columns = { count: props.sectionColumns.count, gapPx: round2(twipsToPx(props.sectionColumns.spaceTwips ?? 720)) };
-    }
+    if (props.sectionColumns) patch.columns = irColumnsToModel(props.sectionColumns);
     if (props.sectionPageNumberStart !== undefined) patch.pageNumberStart = props.sectionPageNumberStart;
+    if (props.sectionHeaderDistTwips !== undefined) patch.headerDistancePx = round2(twipsToPx(props.sectionHeaderDistTwips));
+    if (props.sectionFooterDistTwips !== undefined) patch.footerDistancePx = round2(twipsToPx(props.sectionFooterDistTwips));
+    if (props.sectionPgBorders) patch.pageBorders = irPageBordersToModel(props.sectionPgBorders);
     return patch;
   };
 
@@ -740,13 +796,11 @@ export function createMapper(
         ir.pageHeightTwips !== undefined ? round2(twipsToPx(ir.pageHeightTwips)) : DEFAULT_SECTION.pageHeightPx,
       marginPx: ir.marginTwips ? marginTwipsToPx(ir.marginTwips) : { ...DEFAULT_SECTION.marginPx },
     };
-    if (ir.columns) {
-      // OOXML default column gap is 720 twips (0.5") when w:space is absent.
-      section.columns = { count: ir.columns.count, gapPx: round2(twipsToPx(ir.columns.spaceTwips ?? 720)) };
-    }
+    if (ir.columns) section.columns = irColumnsToModel(ir.columns);
     if (ir.pageNumberStart !== undefined) section.pageNumberStart = ir.pageNumberStart;
     if (ir.headerDistTwips !== undefined) section.headerDistancePx = round2(twipsToPx(ir.headerDistTwips));
     if (ir.footerDistTwips !== undefined) section.footerDistancePx = round2(twipsToPx(ir.footerDistTwips));
+    if (ir.pageBorders) section.pageBorders = irPageBordersToModel(ir.pageBorders);
     return section;
   }
 

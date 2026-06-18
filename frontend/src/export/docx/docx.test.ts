@@ -216,6 +216,74 @@ describe("DOCX export — round trip", () => {
     expect(b.section.pageHeightPx).toBeCloseTo(a.section.pageHeightPx, 0);
   });
 
+  it("round-trips header/footer band distances (w:header/w:footer not clobbered to 720)", () => {
+    // Regression: the writer hardcoded w:header/w:footer="720", dropping real distances.
+    const a = runImport(
+      simpleDocx(
+        `<w:p><w:r><w:t>x</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840"/>` +
+          `<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="1080" w:footer="900"/></w:sectPr>`,
+      ),
+    ).doc;
+    expect(a.section.headerDistancePx).toBeCloseTo(72, 0); // 1080 twips
+    expect(a.section.footerDistancePx).toBeCloseTo(60, 0); // 900 twips
+    const b = roundTrip(a);
+    expect(b.section.headerDistancePx).toBeCloseTo(72, 0);
+    expect(b.section.footerDistancePx).toBeCloseTo(60, 0);
+  });
+
+  it("round-trips landscape orientation (emits w:orient, keeps w > h)", () => {
+    const a = runImport(
+      simpleDocx(
+        `<w:p><w:r><w:t>x</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/></w:sectPr>`,
+      ),
+    ).doc;
+    expect(a.section.pageWidthPx).toBeGreaterThan(a.section.pageHeightPx);
+    expect(exportedDocumentXml(a)).toContain('w:orient="landscape"');
+    const b = roundTrip(a);
+    expect(b.section.pageWidthPx).toBeCloseTo(a.section.pageWidthPx, 0);
+    expect(b.section.pageHeightPx).toBeCloseTo(a.section.pageHeightPx, 0);
+    expect(b.section.pageWidthPx).toBeGreaterThan(b.section.pageHeightPx);
+  });
+
+  it("round-trips column separator + per-column widths (w:sep, w:col)", () => {
+    const a = runImport(
+      simpleDocx(
+        `<w:p><w:r><w:t>x</w:t></w:r></w:p><w:sectPr>` +
+          `<w:cols w:num="2" w:sep="1" w:equalWidth="0"><w:col w:w="3000" w:space="240"/><w:col w:w="4000"/></w:cols></w:sectPr>`,
+      ),
+    ).doc;
+    expect(a.section.columns?.sep).toBe(true);
+    expect(a.section.columns?.cols).toHaveLength(2);
+    const b = roundTrip(a);
+    expect(b.section.columns?.count).toBe(2);
+    expect(b.section.columns?.sep).toBe(true);
+    expect(b.section.columns?.cols).toHaveLength(2);
+    expect(b.section.columns?.cols?.[0]?.widthPx).toBeCloseTo(200, 0); // 3000 twips
+    expect(b.section.columns?.cols?.[1]?.widthPx).toBeCloseTo(266.67, 0); // 4000 twips
+  });
+
+  it("round-trips page color (w:background)", () => {
+    const a = runImport(simpleDocx(`<w:p><w:r><w:t>x</w:t></w:r></w:p>`)).doc;
+    a.section.pageColorHex = "#ffcc00";
+    expect(exportedDocumentXml(a)).toContain("w:background");
+    const b = roundTrip(a);
+    expect(b.section.pageColorHex?.toLowerCase()).toBe("#ffcc00");
+  });
+
+  it("round-trips page borders (w:pgBorders)", () => {
+    const a = runImport(simpleDocx(`<w:p><w:r><w:t>x</w:t></w:r></w:p>`)).doc;
+    const edge = { style: "single" as const, widthPx: 2, color: "#ff0000" };
+    a.section.pageBorders = {
+      offsetFrom: "page",
+      top: { ...edge }, right: { ...edge }, bottom: { ...edge }, left: { ...edge },
+    };
+    const b = roundTrip(a);
+    expect(b.section.pageBorders?.offsetFrom).toBe("page");
+    expect(b.section.pageBorders?.top?.style).toBe("single");
+    expect(b.section.pageBorders?.top?.color.toLowerCase()).toBe("#ff0000");
+    expect(b.section.pageBorders?.top?.widthPx).toBeCloseTo(2, 1);
+  });
+
   it("preserves external and in-document hyperlinks", () => {
     const docx = makeDocx({
       "[Content_Types].xml": CONTENT_TYPES_XML,

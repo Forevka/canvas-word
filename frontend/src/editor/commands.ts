@@ -514,8 +514,12 @@ function sectionGeometryAt(doc: EditorState["doc"], fromIndex: number): SectionG
         pageWidthPx: p.pageWidthPx ?? doc.section.pageWidthPx,
         pageHeightPx: p.pageHeightPx ?? doc.section.pageHeightPx,
         marginPx: { ...(p.marginPx ?? doc.section.marginPx) },
-        columns: columns ? { ...columns } : null,
+        columns: cloneColumns(columns),
         pageNumberStart: p.pageNumberStart ?? null, // restart is per-section, never inherited
+        headerDistancePx: p.headerDistancePx ?? doc.section.headerDistancePx ?? null,
+        footerDistancePx: p.footerDistancePx ?? doc.section.footerDistancePx ?? null,
+        pageColorHex: p.pageColorHex ?? doc.section.pageColorHex ?? null,
+        pageBorders: p.pageBorders ?? doc.section.pageBorders ?? null,
       };
     }
   }
@@ -523,9 +527,19 @@ function sectionGeometryAt(doc: EditorState["doc"], fromIndex: number): SectionG
     pageWidthPx: doc.section.pageWidthPx,
     pageHeightPx: doc.section.pageHeightPx,
     marginPx: { ...doc.section.marginPx },
-    columns: doc.section.columns ? { ...doc.section.columns } : null,
+    columns: cloneColumns(doc.section.columns ?? null),
     pageNumberStart: doc.section.pageNumberStart ?? null,
+    headerDistancePx: doc.section.headerDistancePx ?? null,
+    footerDistancePx: doc.section.footerDistancePx ?? null,
+    pageColorHex: doc.section.pageColorHex ?? null,
+    pageBorders: doc.section.pageBorders ?? null,
   };
+}
+
+/** Deep-clone the columns object so per-column `cols` entries are not shared. */
+function cloneColumns(columns: SectionGeometry["columns"]): SectionGeometry["columns"] {
+  if (!columns) return null;
+  return { ...columns, ...(columns.cols ? { cols: columns.cols.map((c) => ({ ...c })) } : {}) };
 }
 
 /** Insert a next-page section break at the caret: split, then mark the FIRST
@@ -548,6 +562,10 @@ export function insertSectionBreak(): Command {
       columns: geo.columns,
     };
     if (geo.pageNumberStart !== null) props.pageNumberStart = geo.pageNumberStart;
+    if (geo.headerDistancePx !== null) props.headerDistancePx = geo.headerDistancePx;
+    if (geo.footerDistancePx !== null) props.footerDistancePx = geo.footerDistancePx;
+    if (geo.pageColorHex !== null) props.pageColorHex = geo.pageColorHex;
+    if (geo.pageBorders !== null) props.pageBorders = geo.pageBorders;
     const newBlockId = freshBlockId();
     // The tail must NOT clone an existing sectionBreak (splitting the break
     // paragraph itself would otherwise duplicate the section).
@@ -590,6 +608,14 @@ export function applyPageSetup(geometry: SectionGeometry): Command {
         };
         if (geometry.pageNumberStart !== null) props.pageNumberStart = geometry.pageNumberStart;
         else delete props.pageNumberStart;
+        if (geometry.headerDistancePx !== null) props.headerDistancePx = geometry.headerDistancePx;
+        else delete props.headerDistancePx;
+        if (geometry.footerDistancePx !== null) props.footerDistancePx = geometry.footerDistancePx;
+        else delete props.footerDistancePx;
+        if (geometry.pageColorHex !== null) props.pageColorHex = geometry.pageColorHex;
+        else delete props.pageColorHex;
+        if (geometry.pageBorders !== null) props.pageBorders = geometry.pageBorders;
+        else delete props.pageBorders;
         return tr(
           [{ type: "setParaStyle", blockId: b.id, patch: { sectionBreak: { type: "nextPage", props } } }],
           sel,

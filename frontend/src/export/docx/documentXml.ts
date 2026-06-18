@@ -641,6 +641,23 @@ function imageParagraphXml(img: Extract<Block, { kind: "image" }>, ctx: PartCtx)
 /** Band reference + part registration callback: returns the new relationship id. */
 export type AddBandPart = (blocks: Block[], kind: "header" | "footer") => string;
 
+/** w:pgBorders — page border box. style maps 1:1 to OOXML @w:val; w:space is in
+ *  points (clamped 0-31 per the schema). */
+function pgBordersXml(b: import("@cw/shared").PageBorders): string {
+  const edge = (name: string, e: import("@cw/shared").PageBorderEdge | undefined): string => {
+    if (!e || e.style === "none") return "";
+    const spacePt = Math.min(31, Math.max(0, Math.round((e.spacePx ?? 0) * (72 / 96))));
+    return el("w:" + name, {
+      "w:val": e.style,
+      "w:sz": pxToEighthPoints(e.widthPx),
+      "w:space": spacePt,
+      "w:color": e.color === "auto" ? "auto" : hex(e.color),
+    });
+  };
+  const inner = edge("top", b.top) + edge("left", b.left) + edge("bottom", b.bottom) + edge("right", b.right);
+  return el("w:pgBorders", { "w:offsetFrom": b.offsetFrom ?? "page" }, inner);
+}
+
 export function sectPrXml(
   s: SectionProps | SectionPatch,
   ctx: PartCtx,
@@ -663,19 +680,42 @@ export function sectPrXml(
   if (s.headerFirst || s.footerFirst) c.push(el("w:titlePg"));
 
   if (s.pageWidthPx !== undefined && s.pageHeightPx !== undefined) {
-    c.push(el("w:pgSz", { "w:w": pxToTwips(s.pageWidthPx), "w:h": pxToTwips(s.pageHeightPx) }));
+    // Dimensions are stored already-oriented (landscape = w > h); w:orient is
+    // informational (the importer reads w:w/w:h literally), but Word expects it.
+    const pgSz: Record<string, string | number> = {
+      "w:w": pxToTwips(s.pageWidthPx),
+      "w:h": pxToTwips(s.pageHeightPx),
+    };
+    if (s.pageWidthPx > s.pageHeightPx) pgSz["w:orient"] = "landscape";
+    c.push(el("w:pgSz", pgSz));
   }
   if (s.marginPx) {
     const m = s.marginPx;
+    // Real header/footer band distances (round-trips w:header/w:footer); 720
+    // twips is Word's default when a section never set them.
     c.push(el("w:pgMar", {
       "w:top": pxToTwips(m.top), "w:right": pxToTwips(m.right),
       "w:bottom": pxToTwips(m.bottom), "w:left": pxToTwips(m.left),
-      "w:header": 720, "w:footer": 720,
+      "w:header": s.headerDistancePx !== undefined ? pxToTwips(s.headerDistancePx) : 720,
+      "w:footer": s.footerDistancePx !== undefined ? pxToTwips(s.footerDistancePx) : 720,
     }));
   }
   if (s.columns && s.columns.count > 1) {
-    c.push(el("w:cols", { "w:num": s.columns.count, "w:space": pxToTwips(s.columns.gapPx) }));
+    const cols = s.columns;
+    const attrs: Record<string, string | number> = { "w:num": cols.count, "w:space": pxToTwips(cols.gapPx) };
+    if (cols.sep) attrs["w:sep"] = "1";
+    if (cols.cols && cols.cols.length === cols.count) {
+      // Explicit per-column widths → w:equalWidth="0" + a w:col per column.
+      attrs["w:equalWidth"] = "0";
+      const inner = cols.cols
+        .map((col) => el("w:col", { "w:w": pxToTwips(col.widthPx), "w:space": pxToTwips(col.spaceAfterPx) }))
+        .join("");
+      c.push(el("w:cols", attrs, inner));
+    } else {
+      c.push(el("w:cols", attrs));
+    }
   }
+  if (s.pageBorders) c.push(pgBordersXml(s.pageBorders));
   if (s.pageNumberStart !== undefined) c.push(el("w:pgNumType", { "w:start": s.pageNumberStart }));
   // A non-body sectPr (on a paragraph) implies a Next Page break.
   if (!isBody) c.push(el("w:type", { "w:val": "nextPage" }));
@@ -713,5 +753,10 @@ export function buildDocumentXml(
     }
   }
   const body = parts.join("") + sectPrXml(section, ctx, addBand, true);
-  return XML_DECL + el("w:document", WML_NS, el("w:body", undefined, body));
+  // w:background is document-global (one element, first child of w:document);
+  // read the page color only from the body section. Word needs
+  // <w:displayBackgroundShape/> in settings.xml to actually paint it.
+  const background =
+    section.pageColorHex !== undefined ? el("w:background", { "w:color": hex(section.pageColorHex) }) : "";
+  return XML_DECL + el("w:document", WML_NS, background + el("w:body", undefined, body));
 }

@@ -290,10 +290,14 @@ box** (a growing footer moves body text up live, like Word) and the band-edit
 boundary/dim follow the real body edge.
 
 **Sections & columns** — next-page section breaks (§⏎; OOXML sectPr-on-paragraph
-model, "link to previous" band inheritance), per-section page setup (📐 panel:
-Letter/A4/Legal, orientation, margin presets, page-number restart) with
-per-page dimensions throughout paint/hit-testing, **newspaper columns** (1–3,
-per section; flow fills columns then pages; floats clamp to their column;
+model, "link to previous" band inheritance), per-section page setup via a
+draggable **Page Layout** dialog (📐) with a live schematic preview and an
+inches/cm toggle: Letter/A4/Legal **or custom** page size, orientation,
+preset **or per-side** margins, header/footer band distances, page-number
+restart, **page color** (`w:background`) and **page borders** (`w:pgBorders`),
+all with per-page dimensions throughout paint/hit-testing. **Newspaper columns**
+(per section; equal or **explicit per-column widths**, custom spacing, optional
+**separator line**; flow fills columns then pages; floats clamp to their column;
 Ctrl+Shift+Enter column break with the Word backspace ladder).
 
 **Fields & TOC** — table of contents generated from Heading 1–3 paragraphs
