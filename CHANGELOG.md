@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Child documents (`WordCanvas.createChild()`).** A lightweight sibling document
+  that shares the parent editor's *live* style context — stylesheet, list/numbering
+  definitions, page section, and content-control/field maps — and renders or edits
+  an arbitrary content slice (blocks, a fragment, runs, OOXML, or a named-style
+  sample) with the **real layout engine + canvas painter** instead of an HTML
+  approximation. Exposed publicly (`editor.createChild()` / `wc.createChild()`) and
+  used internally to replace every in-app HTML-preview: the **Home → Styles gallery**
+  swatches now show true `AaBbCc` samples in each style's resolved font/weight/size/
+  color; the **content-control inspector** paints the real content (read-only) and
+  hosts a **canvas-native editor** for editable controls that commits edited blocks
+  straight back through the `replaceSdt*` commands (no `contentEditable` round-trip);
+  and the **field constructor** previews the result in the document's real font. Each
+  child owns its own layout engine, so its cache can't collide with the parent's.
+- **Shared media in child documents.** A child proxies the parent's content-addressed
+  media store: it renders the parent's images, and a child editor can **add new
+  images** (`childEditor.insertImage(bytes, mime)`) whose bytes register back into the
+  shared store — so they persist, export, and survive commit-back into the parent. The
+  content-control inspector exposes this as an **Insert Image…** action for block-level
+  rich-text controls.
+- **Insert Image from your device.** The ribbon's Insert Image button now opens a file
+  picker, registers the chosen image in the media store (content-addressed `mediaId`,
+  so it persists and exports), and inserts it at its natural size (capped width) —
+  replacing the previous fixed placeholder image.
 - **Tracked structural edits (suggestion mode).** Paragraph split/merge, block
   add/remove, and table row/column add/remove are now recorded as **structural
   suggestions** instead of passing through untracked. The edit still applies to
