@@ -143,6 +143,9 @@ export const ICONS = {
   textEffects: svg(`<path d="M4 12.5 7 4l3 8.5M5 9.5h4"/><path d="M11.5 4.5l.7 1.4 1.4.2-1 1 .2 1.4-1.3-.7-1.3.7.2-1.4-1-1 1.4-.2z" fill="currentColor" stroke="none"/>`),
   outline: svg(`<rect x="2" y="2.5" width="12" height="11" rx="1"/><path d="M6 2.5v11"/><path d="M8 5.5h4M8 8h4M8 10.5h3"/>`),
   ruler: svg(`<rect x="1.5" y="5" width="13" height="6" rx="1"/><path d="M4 5v2.2M6.5 5v3M9 5v2.2M11.5 5v3"/>`),
+  rulerV: svg(`<rect x="5" y="1.5" width="6" height="13" rx="1"/><path d="M5 4h2.2M5 6.5h3M5 9h2.2M5 11.5h3"/>`),
+  grid: svg(`<rect x="2.5" y="2.5" width="11" height="11" rx="1"/><path d="M6 2.5v11M10 2.5v11M2.5 6h11M2.5 10h11"/>`),
+  snap: svg(`<path d="M4 2.5v5a4 4 0 0 0 8 0v-5"/><path d="M4 2.5h2.5v5M12 2.5H9.5v5"/>`),
   trash: svg(`<path d="M3 4.5h10"/><path d="M5.5 4.5V3h5v1.5"/><path d="M4 4.5l.8 9h6.4l.8-9"/><path d="M6.5 7v4M9.5 7v4"/>`),
   filter: svg(`<path d="M2.5 3.5h11l-4.2 5v4l-2.6 1.3v-5.3z"/>`),
 } as const;

@@ -149,10 +149,22 @@ const CSS = `
    keep default touch-action so the ribbon scrolls and taps normally. */
 .cw-app { flex: 1 1 auto; min-height: 0; min-width: 0; overflow: auto; background: #e8eaed; position: relative; touch-action: pan-x pan-y; }
 
+/* ruler row: top-left corner spacer (over the vertical ruler) + horizontal ruler */
+.cw-ruler-row { flex: 0 0 22px; display: flex; }
+.cw-ruler-row.hidden { display: none; }
+.cw-ruler-corner { flex: 0 0 22px; width: 22px; background: #e8eaed; border-bottom: 1px solid #d2d0ce; border-right: 1px solid #d2d0ce; }
+.cw-ruler-corner.hidden { display: none; }
+.cw-main-row { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; }
 /* horizontal ruler (inch ticks, margin shading, draggable indent markers) */
-.cw-ruler { flex: 0 0 22px; height: 22px; position: relative; background: #e8eaed; border-bottom: 1px solid #d2d0ce; overflow: hidden; }
+.cw-ruler { flex: 1 1 auto; height: 22px; position: relative; background: #e8eaed; border-bottom: 1px solid #d2d0ce; overflow: hidden; }
 .cw-ruler.hidden { display: none; }
 .cw-ruler canvas { position: absolute; inset: 0; }
+/* vertical ruler (inch ticks + top/bottom margin shading down the left edge) */
+.cw-vruler { flex: 0 0 22px; width: 22px; position: relative; background: #e8eaed; border-right: 1px solid #d2d0ce; overflow: hidden; }
+.cw-vruler.hidden { display: none; }
+.cw-vruler canvas { position: absolute; inset: 0; }
+/* margin handles: right-pointing triangles at the top/bottom content boundaries */
+.cw-vruler .vruler-marker { position: absolute; left: 0; width: 0; height: 0; cursor: ns-resize; z-index: 2; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid #5b6b8c; }
 .cw-ruler .ruler-marker { position: absolute; width: 0; height: 0; cursor: ew-resize; z-index: 2; }
 /* left-indent: bottom-pointing triangle sitting on the baseline */
 .cw-ruler .ruler-left { bottom: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 7px solid #5b6b8c; }

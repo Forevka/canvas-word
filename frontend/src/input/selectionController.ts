@@ -35,6 +35,7 @@ import {
   caretRect,
   lineEdges,
   linkAt,
+  objectRect,
   positionOnAdjacentLine,
   type ColumnBoundaryHit,
   type GeoScope,
@@ -54,6 +55,10 @@ export interface SelectionControllerDeps {
   /** Set (or clear) the rectangular table-cell selection during a cross-cell drag. */
   setCellSelection(sel: CellSelection | null): void;
   clientToPage(clientX: number, clientY: number): PagePoint | null;
+  /** Drawing-grid step in document px; 0 disables snapping. */
+  getGridSpacing(): number;
+  /** Whether an anchored-object drag should snap to the grid. */
+  isSnapToGrid(): boolean;
   /** Route focus to the IME proxy so typing works right after a click. */
   focusProxy(): void;
   /** Delete the current selection (Ctrl+X after the copy half). */
@@ -185,6 +190,9 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
     baseY: number;
     lastX: number;
     lastY: number;
+    /** Absolute (page-local) origin of the anchor's reference frame, so snapping
+     *  lands the placed object on the drawn grid regardless of relFrom*. */
+    origin: { ox: number; oy: number };
     moved: boolean;
   }
   let objectDrag: ObjectDrag | null = null;
@@ -299,14 +307,21 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
           // Anchored images can be dragged to reposition: arm a move from here.
           const mv = movableImage(objHit.blockId);
           if (mv) {
+            const baseX = mv.anchor!.offsetXPx;
+            const baseY = mv.anchor!.offsetYPx;
+            // Back out the anchor's reference origin from the placed rect so a
+            // snapped offset lands the object on the page-relative grid lines.
+            const placed = objectRect(deps.getTree(), objHit.blockId);
+            const origin = placed ? { ox: placed.x - baseX, oy: placed.y - baseY } : { ox: 0, oy: 0 };
             objectDrag = {
               blockId: objHit.blockId,
               startX: pt.x,
               startY: pt.y,
-              baseX: mv.anchor!.offsetXPx,
-              baseY: mv.anchor!.offsetYPx,
-              lastX: mv.anchor!.offsetXPx,
-              lastY: mv.anchor!.offsetYPx,
+              baseX,
+              baseY,
+              lastX: baseX,
+              lastY: baseY,
+              origin,
               moved: false,
             };
           }
@@ -390,8 +405,18 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
       const dy = pt.y - objectDrag.startY;
       if (!objectDrag.moved && Math.hypot(dx, dy) < 3) return; // a plain click stays a select
       objectDrag.moved = true;
-      objectDrag.lastX = Math.round(objectDrag.baseX + dx);
-      objectDrag.lastY = Math.round(objectDrag.baseY + dy);
+      let nx = objectDrag.baseX + dx;
+      let ny = objectDrag.baseY + dy;
+      // Snap the ABSOLUTE position to the grid (then back to an offset), so the
+      // object lands on the drawn lines whatever its relFrom* origin is.
+      const g = deps.getGridSpacing();
+      if (deps.isSnapToGrid() && g > 0) {
+        const { ox, oy } = objectDrag.origin;
+        nx = Math.round((ox + nx) / g) * g - ox;
+        ny = Math.round((oy + ny) / g) * g - oy;
+      }
+      objectDrag.lastX = Math.round(nx);
+      objectDrag.lastY = Math.round(ny);
       deps.applyObjectMove(objectDrag.blockId, objectDrag.lastX, objectDrag.lastY, true);
       return;
     }

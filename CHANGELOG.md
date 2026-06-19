@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Vertical ruler + drawing grid with snap-to-grid — for precise object placement.**
+  A **vertical ruler** now runs down the left of the page (inch ticks + top/bottom
+  margin shading), mirroring the horizontal one and tracking the topmost visible
+  page as you scroll. Its top/bottom **margin boundaries are draggable handles**
+  (Word's vertical-ruler resize): drag to set the page's top/bottom margins, committed
+  as one undoable step via the same `applyPageSetup` path as the Page Layout dialog.
+  A toggleable **drawing grid** paints a light gridline mesh on every page, and
+  **snap-to-grid** snaps dragged anchored (floating) images to the grid so they land
+  exactly on the lines — snapping the object's absolute page position, so it's correct
+  for any anchor origin. New independent **View ▸ Show** controls — *Horizontal ruler*,
+  *Vertical ruler*, *Show grid*, *Snap to grid*, and a **grid-spacing** selector
+  (1/8″ / 1/4″ / 1/2″, default 1/4″) — plus a `view` constructor option
+  (`{ ruler, verticalRuler, grid, snapToGrid, gridSpacingPx }`) to set the initial
+  state. Presentational only — no document-model change (snapping reuses the existing
+  anchor offsets).
 - **Flexible page layout — a redesigned Page Layout dialog.** The old preset-only
   Page Setup panel is replaced by a draggable, non-blocking dialog (Layout → **Page
   setup**) with a live, schematic scaled-page preview and an **inches ⇄ cm** toggle.

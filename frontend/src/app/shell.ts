@@ -8,6 +8,8 @@ export interface EditorShell {
   toolbar: HTMLDivElement;
   outline: HTMLElement;
   ruler: HTMLDivElement;
+  /** Vertical ruler down the left of the scroll area, mirroring `ruler`. */
+  vruler: HTMLDivElement;
   app: HTMLDivElement;
   /** Right-docked review pane (track changes + comments) — in-flow like the
    *  outline drawer, so it shrinks the editor rather than overlaying it. */
@@ -31,15 +33,24 @@ export function buildShell(container: HTMLElement): EditorShell {
   const workarea = div("cw-workarea") as HTMLDivElement;
   const outline = div("cw-outline", "aside");
   const editorpane = div("cw-editorpane") as HTMLDivElement;
+  // Two rows: a top ruler-row (corner spacer + horizontal ruler) and a main row
+  // (vertical ruler + scroll area). The corner keeps the horizontal ruler's left
+  // edge aligned with the scroll area, so its pageLeft math needs no change.
+  const rulerRow = div("cw-ruler-row") as HTMLDivElement;
+  const rulerCorner = div("cw-ruler-corner") as HTMLDivElement;
   const ruler = div("cw-ruler") as HTMLDivElement;
+  const mainRow = div("cw-main-row") as HTMLDivElement;
+  const vruler = div("cw-vruler") as HTMLDivElement;
   const app = div("cw-app") as HTMLDivElement;
   const review = div("cw-review", "aside");
   const statusbar = div("cw-statusbar") as HTMLDivElement;
 
-  editorpane.append(ruler, app);
+  rulerRow.append(rulerCorner, ruler);
+  mainRow.append(vruler, app);
+  editorpane.append(rulerRow, mainRow);
   workarea.append(outline, editorpane, review);
   root.append(toolbar, workarea, statusbar);
   container.appendChild(root);
 
-  return { root, toolbar, outline, ruler, app, review, statusbar };
+  return { root, toolbar, outline, ruler, vruler, app, review, statusbar };
 }

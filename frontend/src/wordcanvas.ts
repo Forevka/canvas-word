@@ -9,12 +9,12 @@
 // events fire; when omitted, the editor runs fully offline. Multiple WordCanvas
 // instances can coexist on one page (class-scoped chrome, per-instance runtime).
 
-import type { AgentToolsOptions, EditMode, EditorHandle, FieldResolver, Participant, WordCanvasEvent, WordCanvasRuntime } from "./app/runtime";
+import type { AgentToolsOptions, EditMode, EditorHandle, FieldResolver, Participant, WordCanvasEvent, WordCanvasRuntime, WordCanvasViewOptions } from "./app/runtime";
 import type { ChildContent, ChildDocument, ChildEditorHandle, ChildRenderOptions, FieldResolveRequest, FieldResult } from "./index";
 import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
 import { BUNDLE_SHARE, type LoadProgress } from "./app/loadProgress";
 
-export type { Document, UserInfo, Participant, EditMode, ReviewLayer, Fragment, FieldResolver, FieldResolveRequest, FieldResult, AgentToolsOptions, LoadProgress };
+export type { Document, UserInfo, Participant, EditMode, ReviewLayer, Fragment, FieldResolver, FieldResolveRequest, FieldResult, AgentToolsOptions, LoadProgress, WordCanvasViewOptions };
 export type { ChildDocument, ChildContent, ChildRenderOptions, ChildEditorHandle };
 
 export interface WordCanvasOptions {
@@ -59,6 +59,10 @@ export interface WordCanvasOptions {
    *  don't opt in. Connect an agent via the WebMCP browser extension / Chrome
    *  DevTools MCP. */
   agentTools?: boolean | AgentToolsOptions;
+  /** Initial view-chrome state — show/hide the horizontal & vertical rulers, the
+   *  drawing grid, snap-to-grid, and the grid step. Omit any field to keep its
+   *  default (rulers on, grid/snap off, 1/4-inch step). */
+  view?: WordCanvasViewOptions;
   /** Track first-load progress so you can show a loader while the big chunks
    *  stream. Fires for the editor JS chunk download (`phase: "bundle"`,
    *  indeterminate) and the bundled font fetch (`phase: "fonts"`, the dominant
@@ -103,6 +107,7 @@ export class WordCanvas {
         knownUsers: opts.knownUsers,
         resolveField: opts.resolveField,
         agentTools: opts.agentTools,
+        view: opts.view,
         onLoadProgress: opts.onLoadProgress,
         onReady: (h) => {
           this.handle = h;

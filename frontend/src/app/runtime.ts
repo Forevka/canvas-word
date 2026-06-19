@@ -21,6 +21,20 @@ export interface AgentToolsOptions {
   name?: string;
 }
 
+/** Initial view-chrome state (overrides the built-in defaults). All optional. */
+export interface WordCanvasViewOptions {
+  /** Show the horizontal ruler. Default true (hidden in readonly). */
+  ruler?: boolean;
+  /** Show the vertical ruler. Default true (hidden in readonly). */
+  verticalRuler?: boolean;
+  /** Show the drawing-grid overlay on every page. Default false. */
+  grid?: boolean;
+  /** Snap dragged anchored objects to the grid. Default false. */
+  snapToGrid?: boolean;
+  /** Grid step in document px (96dpi). Default 24 (1/4 inch). */
+  gridSpacingPx?: number;
+}
+
 /** One other collaborator currently in the document. */
 export interface Participant {
   siteId: string;
@@ -105,4 +119,6 @@ export interface WordCanvasRuntime {
    *  registers all tool buckets; an object restricts/namespaces them. The polyfill
    *  is lazy-loaded only when this is set, so other embedders pay nothing. */
   agentTools?: boolean | AgentToolsOptions | undefined;
+  /** Initial view-chrome state (rulers, grid, snap). Omit ⇒ built-in defaults. */
+  view?: WordCanvasViewOptions | undefined;
 }

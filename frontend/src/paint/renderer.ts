@@ -117,6 +117,17 @@ export interface PaintScheduler {
    *  layout (document coords are unchanged), so no relayout. Clamped to [.25, 5]. */
   setZoom(zoom: number): void;
   getZoom(): number;
+  /** Drawing-grid overlay: a light gridline mesh painted on every page (for
+   *  precise object placement). Presentational only — no layout/model change. */
+  setShowGrid(show: boolean): void;
+  getShowGrid(): boolean;
+  /** Whether dragging an anchored object snaps to the grid. Drag-time only, so
+   *  toggling it triggers no repaint. */
+  setSnapToGrid(snap: boolean): void;
+  getSnapToGrid(): boolean;
+  /** Grid step in document px (96dpi). Drives both the drawn mesh and snapping. */
+  setGridSpacing(px: number): void;
+  getGridSpacing(): number;
   destroy(): void;
 }
 
@@ -206,6 +217,10 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
   const dirty = new Set<number>();
   let rafId: number | null = null;
   let zoom = 1;
+  // Drawing-grid view state (mirrors `zoom` — presentational, no model change).
+  let showGrid = false;
+  let snapToGrid = false;
+  let gridSpacingPx = 24; // 1/4 inch @96dpi
   let lastCaret: CaretRect | null = null;
   // Remote collaborators' presence: per siteId a caret overlay (colored bar +
   // name flag) plus selection-highlight rect overlays, repositioned on zoom.
@@ -361,6 +376,28 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     // 1. page background (w:background page color, else white)
     ctx.fillStyle = page.pageColorHex ?? "#fff";
     ctx.fillRect(0, 0, page.widthPx, page.heightPx);
+
+    // 1·grid. drawing-grid mesh (under content) for precise object placement.
+    // Drawn in document coords from the page top-left; hairlines stay 1 device
+    // px crisp at any zoom (ctx is already scaled by `scale`).
+    if (showGrid && gridSpacingPx > 0) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(0,0,0,0.08)";
+      ctx.lineWidth = 1 / scale;
+      ctx.beginPath();
+      for (let x = gridSpacingPx; x < page.widthPx; x += gridSpacingPx) {
+        const px = Math.round(x) + 0.5 / scale;
+        ctx.moveTo(px, 0);
+        ctx.lineTo(px, page.heightPx);
+      }
+      for (let y = gridSpacingPx; y < page.heightPx; y += gridSpacingPx) {
+        const py = Math.round(y) + 0.5 / scale;
+        ctx.moveTo(0, py);
+        ctx.lineTo(page.widthPx, py);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
 
     // 1a. page borders (w:pgBorders) — behind content, inset per offsetFrom.
     if (page.pageBorders) paintPageBorders(ctx, page);
@@ -898,6 +935,30 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     },
     getZoom(): number {
       return zoom;
+    },
+
+    setShowGrid(show: boolean): void {
+      if (show === showGrid) return;
+      showGrid = show;
+      repaintAllLive();
+    },
+    getShowGrid(): boolean {
+      return showGrid;
+    },
+    setSnapToGrid(snap: boolean): void {
+      snapToGrid = snap; // drag-time only — no repaint needed
+    },
+    getSnapToGrid(): boolean {
+      return snapToGrid;
+    },
+    setGridSpacing(px: number): void {
+      const next = Math.max(1, Math.round(px));
+      if (next === gridSpacingPx) return;
+      gridSpacingPx = next;
+      if (showGrid) repaintAllLive();
+    },
+    getGridSpacing(): number {
+      return gridSpacingPx;
     },
 
     destroy(): void {

@@ -60,6 +60,8 @@ import {
   insertContentControl,
   removeContentControl,
   sdtAtPosition,
+  applyPageSetup,
+  pageSetupAt,
 } from "./editor/commands";
 import { defaultStylesheet, styleById, styleType } from "@cw/shared";
 import { bulletListDefinition, numberListDefinition, paragraphsOf, textOfRuns } from "@cw/shared";
@@ -179,6 +181,8 @@ let refreshOutline: () => void = () => {};
 let refreshStatus: () => void = () => {};
 let refreshRuler: () => void = () => {};
 let toggleRuler: () => boolean = () => false;
+let refreshVRuler: () => void = () => {};
+let toggleVRuler: () => boolean = () => false;
 let refreshImageBar: () => void = () => {};
 let refreshBookmarks: () => void = () => {};
 let toggleBookmarks: () => void = () => {};
@@ -220,6 +224,7 @@ const editorOpts = {
     refreshOutline();
     refreshStatus();
     refreshRuler();
+    refreshVRuler();
     refreshImageBar();
     refreshBookmarks();
   },
@@ -227,10 +232,33 @@ const editorOpts = {
     syncZoom(z);
     refreshStatus();
     refreshRuler();
+    refreshVRuler();
     refreshImageBar();
   },
 };
 let editor = createEditor(app, doc, editorOpts);
+
+// Drawing-grid view state (persisted across document replacement, since the
+// editor — and its paint layer — is rebuilt on docx open / setDocument). Seeded
+// from the embedder's `view` options. Ruler visibility is DOM-class state on the
+// shell, which survives a rebuild, so it isn't tracked here.
+const gridView = {
+  show: runtime.view?.grid ?? false,
+  snap: runtime.view?.snapToGrid ?? false,
+  spacingPx: runtime.view?.gridSpacingPx ?? 24,
+};
+const applyGridView = (): void => {
+  editor.setGridSpacing(gridView.spacingPx);
+  editor.setShowGrid(gridView.show);
+  editor.setSnapToGrid(gridView.snap);
+};
+applyGridView();
+
+// Initial ruler visibility (both default on; always hidden in readonly, whose
+// only ruler interaction — indent drag — is an edit). Shared by the ruler blocks
+// and the View-tab toggle buttons below.
+const showHRuler = !readonly && (runtime.view?.ruler ?? true);
+const showVRuler = !readonly && (runtime.view?.verticalRuler ?? true);
 
 // Listeners notified whenever a remote change is applied (the activity panel,
 // Part 3, registers here).
@@ -349,9 +377,11 @@ const replaceDocument = (next: typeof doc): void => {
   engine.reset();
   doc = next;
   editor = createEditor(app, doc, editorOpts);
+  applyGridView(); // re-seed grid state onto the fresh paint layer
   refreshOutline();
   refreshStatus();
   refreshRuler();
+  refreshVRuler();
   window.__cw = { doc, tree: undefined, engine, editor, createLayoutEngine, sampleDoc, stressDoc, persist };
 };
 
@@ -1390,8 +1420,35 @@ if (toolbar) {
   let outlineToggle = (): void => {};
   const outlineBtn = btn(ICONS.outline, "Outline / navigation pane (jump to any heading)", () => outlineToggle());
   const bookmarksBtn = btn(ICONS.bookmark, "Bookmarks — list, go to, add, rename, delete", () => toggleBookmarks());
-  const rulerBtn = btn(ICONS.ruler, "Ruler", () => rulerBtn.classList.toggle("active", toggleRuler()));
-  rulerBtn.classList.add("active"); // ruler shows by default
+  const rulerBtn = btn(ICONS.ruler, "Horizontal ruler", () => rulerBtn.classList.toggle("active", toggleRuler()));
+  rulerBtn.classList.toggle("active", showHRuler);
+  const vrulerBtn = btn(ICONS.rulerV, "Vertical ruler", () => vrulerBtn.classList.toggle("active", toggleVRuler()));
+  vrulerBtn.classList.toggle("active", showVRuler);
+  const gridBtn = btn(ICONS.grid, "Show grid — a light mesh for aligning objects", () => {
+    gridView.show = !gridView.show;
+    editor.setShowGrid(gridView.show);
+    gridBtn.classList.toggle("active", gridView.show);
+  });
+  gridBtn.classList.toggle("active", gridView.show);
+  const snapBtn = btn(ICONS.snap, "Snap to grid — anchored objects snap to grid lines while dragging", () => {
+    gridView.snap = !gridView.snap;
+    editor.setSnapToGrid(gridView.snap);
+    snapBtn.classList.toggle("active", gridView.snap);
+  });
+  snapBtn.classList.toggle("active", gridView.snap);
+  const gridSpacingSel = select("Grid spacing", 92);
+  for (const [px, label] of [
+    [12, 'Grid: 1/8"'],
+    [24, 'Grid: 1/4"'],
+    [48, 'Grid: 1/2"'],
+  ] as [number, string][]) {
+    opt(gridSpacingSel, String(px), label);
+  }
+  gridSpacingSel.value = String(gridView.spacingPx);
+  gridSpacingSel.addEventListener("change", () => {
+    gridView.spacingPx = Number(gridSpacingSel.value);
+    editor.setGridSpacing(gridView.spacingPx);
+  });
   stub(ICONS.marks, "Show/hide formatting marks");
   if (online) btn(ICONS.activity, "Activity — who created/edited this document and when", () => toggleActivity());
 
@@ -2120,8 +2177,20 @@ if (toolbar) {
 {
   // View-only: the ruler's only interactions are draggable indent markers, so
   // hide it (refreshRuler also early-returns while hidden).
+  const rulerRow = shell.ruler.parentElement as HTMLElement; // .cw-ruler-row
+  const rulerCorner = rulerRow.firstElementChild as HTMLElement; // .cw-ruler-corner (spacer over the vruler)
   const ruler = readonly ? null : shell.ruler;
-  if (readonly) shell.ruler.classList.add("hidden");
+  // Apply initial visibility: hide the whole ruler-row when the horizontal ruler
+  // is off (otherwise it leaves an empty 22px bar), and hide the corner spacer
+  // when the vertical ruler is off so the horizontal ruler aligns with .cw-app.
+  if (!showHRuler) {
+    rulerRow.classList.add("hidden");
+    shell.ruler.classList.add("hidden");
+  }
+  if (!showVRuler) {
+    shell.vruler.classList.add("hidden");
+    rulerCorner.classList.add("hidden");
+  }
   if (ruler) {
     const canvas = document.createElement("canvas");
     const leftMarker = document.createElement("div");
@@ -2246,14 +2315,160 @@ if (toolbar) {
 
     app.addEventListener("scroll", () => refreshRuler());
     window.addEventListener("resize", () => refreshRuler(), { signal: teardown.signal });
-    // expose a toggle for the View-tab button
+    // expose a toggle for the View-tab button — toggles the whole ruler-row (so
+    // the corner spacer doesn't linger as an empty bar) and the ruler in lockstep.
     toggleRuler = (): boolean => {
-      ruler.classList.toggle("hidden");
-      const shown = !ruler.classList.contains("hidden");
-      if (shown) refreshRuler();
-      return shown;
+      const hidden = rulerRow.classList.toggle("hidden");
+      ruler.classList.toggle("hidden", hidden);
+      if (!hidden) refreshRuler();
+      return !hidden;
     };
     refreshRuler();
+  }
+
+  // ---- vertical ruler (inch ticks + draggable top/bottom margin markers) ----
+  // A mirror of the horizontal ruler down the left of the scroll area, with
+  // draggable handles at the page's top/bottom margin boundaries (Word's vertical
+  // ruler resize). Tracks the topmost visible page so it stays meaningful while
+  // scrolling.
+  if (!readonly) {
+    const vruler = shell.vruler;
+    const vcanvas = document.createElement("canvas");
+    const topMarker = document.createElement("div");
+    topMarker.className = "vruler-marker vruler-top";
+    topMarker.title = "Top margin — drag to set";
+    const bottomMarker = document.createElement("div");
+    bottomMarker.className = "vruler-marker vruler-bottom";
+    bottomMarker.title = "Bottom margin — drag to set";
+    vruler.append(vcanvas, topMarker, bottomMarker);
+
+    // Geometry captured each refresh, read by the margin drag handlers.
+    let vgeom: { pageTop: number; pageH: number; zoom: number; topPx: number; bottomPx: number } | null = null;
+
+    const drawV = (W: number, H: number, pageTop: number, pageH: number, cT: number, cB: number, zoom: number): void => {
+      const ctx = vcanvas.getContext("2d");
+      if (!ctx) return;
+      const dpr = window.devicePixelRatio || 1;
+      vcanvas.width = Math.round(W * dpr);
+      vcanvas.height = Math.round(H * dpr);
+      vcanvas.style.width = `${W}px`;
+      vcanvas.style.height = `${H}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      // page band (margins greyed, content white) — mirror of the horizontal draw
+      ctx.fillStyle = "#c7cdd6";
+      ctx.fillRect(4, pageTop, W - 8, pageH);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(4, cT, W - 8, cB - cT);
+      // inch ticks + numbers, measured from the top content edge (Word's 0)
+      const inch = 96 * zoom;
+      const tickLeft = 4;
+      const tickRight = 10; // major tick (6 px)
+      const halfTickRight = 8; // half-inch tick (4 px)
+      const numX = W - 4;
+      ctx.strokeStyle = "#8a8f98";
+      ctx.fillStyle = "#605e5c";
+      ctx.font = "9px 'Segoe UI', sans-serif";
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      ctx.lineWidth = 1;
+      for (let i = 1; cT + i * inch < cB - 2; i++) {
+        const y = Math.round(cT + i * inch) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(tickLeft, y);
+        ctx.lineTo(tickRight, y);
+        ctx.stroke();
+        ctx.fillText(String(i), numX, y);
+        const hy = Math.round(cT + (i - 0.5) * inch) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(tickLeft, hy);
+        ctx.lineTo(halfTickRight, hy);
+        ctx.stroke();
+      }
+    };
+
+    refreshVRuler = (): void => {
+      if (vruler.classList.contains("hidden")) return;
+      const appRect = app.getBoundingClientRect();
+      // Topmost page still in view (its bottom past the scroll area's top), so the
+      // ruler tracks the page you're reading rather than always page 1.
+      let ph: HTMLElement | null = null;
+      for (const el of app.querySelectorAll<HTMLElement>("[data-page]")) {
+        if (el.getBoundingClientRect().bottom > appRect.top) {
+          ph = el;
+          break;
+        }
+      }
+      if (!ph) {
+        topMarker.style.display = bottomMarker.style.display = "none";
+        vgeom = null;
+        return;
+      }
+      const vRect = vruler.getBoundingClientRect();
+      const phRect = ph.getBoundingClientRect();
+      const zoom = editor.getZoom();
+      const sec = editor.getDocument().section;
+      const pageTop = phRect.top - vRect.top;
+      const pageH = phRect.height;
+      const cT = pageTop + sec.marginPx.top * zoom;
+      const cB = pageTop + pageH - sec.marginPx.bottom * zoom;
+      drawV(vruler.clientWidth, vruler.clientHeight, pageTop, pageH, cT, cB, zoom);
+      // Position the margin handles at the content boundaries (centered on them).
+      topMarker.style.top = `${cT - 5}px`;
+      bottomMarker.style.top = `${cB - 5}px`;
+      topMarker.style.display = bottomMarker.style.display = "block";
+      vgeom = { pageTop, pageH, zoom, topPx: sec.marginPx.top, bottomPx: sec.marginPx.bottom };
+    };
+
+    const startVDrag = (which: "top" | "bottom") => (e: PointerEvent): void => {
+      const g = vgeom;
+      if (!g) return;
+      e.preventDefault();
+      let topNext = g.topPx;
+      let bottomNext = g.bottomPx;
+      const pageHDoc = g.pageH / g.zoom; // page height in document px
+      const MIN_CONTENT = 48; // keep at least this much white between margins
+      const onMove = (ev: PointerEvent): void => {
+        const y = ev.clientY - vruler.getBoundingClientRect().top; // ruler-local screen-y
+        if (which === "top") {
+          const maxTop = pageHDoc - bottomNext - MIN_CONTENT;
+          topNext = Math.max(0, Math.min(maxTop, (y - g.pageTop) / g.zoom));
+          topMarker.style.top = `${g.pageTop + topNext * g.zoom - 5}px`;
+        } else {
+          const pageBottom = g.pageTop + g.pageH;
+          const maxBottom = pageHDoc - topNext - MIN_CONTENT;
+          bottomNext = Math.max(0, Math.min(maxBottom, (pageBottom - y) / g.zoom));
+          bottomMarker.style.top = `${pageBottom - bottomNext * g.zoom - 5}px`;
+        }
+      };
+      const onUp = (): void => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        const base = pageSetupAt({ doc: editor.getDocument(), selection: editor.getSelection() });
+        editor.dispatch(
+          applyPageSetup({
+            ...base,
+            marginPx: { ...base.marginPx, top: Math.round(topNext), bottom: Math.round(bottomNext) },
+          }),
+        );
+        editor.focus();
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    };
+    topMarker.addEventListener("pointerdown", startVDrag("top"));
+    bottomMarker.addEventListener("pointerdown", startVDrag("bottom"));
+
+    app.addEventListener("scroll", () => refreshVRuler());
+    window.addEventListener("resize", () => refreshVRuler(), { signal: teardown.signal });
+    toggleVRuler = (): boolean => {
+      const hidden = vruler.classList.toggle("hidden");
+      rulerCorner.classList.toggle("hidden", hidden); // corner spacer tracks the vruler
+      refreshRuler(); // the horizontal ruler shifts as the corner appears/disappears
+      if (!hidden) refreshVRuler();
+      return !hidden;
+    };
+    refreshVRuler();
   }
 }
 

@@ -189,6 +189,15 @@ export interface Editor {
   /** Presentational zoom (1 = 100%, clamped to [.25, 5]). No relayout. */
   setZoom(zoom: number): void;
   getZoom(): number;
+  /** Drawing-grid overlay (light gridline mesh on every page) + snap-to-grid for
+   *  dragging anchored objects. Presentational only — no layout/model change. */
+  setShowGrid(show: boolean): void;
+  getShowGrid(): boolean;
+  setSnapToGrid(snap: boolean): void;
+  getSnapToGrid(): boolean;
+  /** Grid step in document px (96dpi); drives both the mesh and snapping. */
+  setGridSpacing(px: number): void;
+  getGridSpacing(): number;
   /** Format painter: capture caret formatting, apply on the next selection. */
   armFormatPainter(sticky: boolean): void;
   cancelFormatPainter(): void;
@@ -1554,6 +1563,8 @@ export function createEditor(
     getCellSelection: () => cellSelection,
     setCellSelection,
     clientToPage: (x, y) => paint.clientToPage(x, y),
+    getGridSpacing: () => paint.getGridSpacing(),
+    isSnapToGrid: () => paint.getSnapToGrid(),
     focusProxy: () => proxy.focus(),
     onDeleteSelection: () => dispatch(deleteBackward()),
     getStory: () => activeStory,
@@ -2607,6 +2618,12 @@ export function createEditor(
     recalculateToc,
     setZoom: (z: number): void => applyZoom(z),
     getZoom: () => paint.getZoom(),
+    setShowGrid: (show: boolean): void => paint.setShowGrid(show),
+    getShowGrid: () => paint.getShowGrid(),
+    setSnapToGrid: (snap: boolean): void => paint.setSnapToGrid(snap),
+    getSnapToGrid: () => paint.getSnapToGrid(),
+    setGridSpacing: (px: number): void => paint.setGridSpacing(px),
+    getGridSpacing: () => paint.getGridSpacing(),
     armFormatPainter,
     cancelFormatPainter,
     copy: (): void => {
