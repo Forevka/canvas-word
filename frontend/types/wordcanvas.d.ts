@@ -2,7 +2,7 @@
 // Hand-written so the published types stay small, self-contained, and stable
 // regardless of internal refactors — no dependency on internal workspace types.
 
-import type { Block, Document, ParaStyle, Run } from "./model";
+import type { Block, CharStyle, DocPosition, Document, ParaStyle, Run } from "./model";
 
 export type { Document } from "./model";
 
@@ -18,6 +18,174 @@ export interface Participant {
   siteId: string;
   user?: UserInfo;
 }
+
+/** Editor mode: "edit" (raw editing), "suggest" (edits become tracked changes),
+ *  or "view" (read-only). The three are mutually exclusive. */
+export type EditMode = "edit" | "suggest" | "view";
+
+// ===== Review layer (track changes + comments) =============================
+// An attributed, anchored overlay on top of the core document. `getReview()`
+// returns a snapshot; the `reviewChanged` event carries the full layer.
+
+/** Rich-text comment body — the same style-homogeneous run list the document
+ *  uses (so a comment composes/renders like any other content). */
+export type Fragment = Run[];
+
+/** A range into the live document; `start === end` is a point (caret) anchor. */
+export interface ReviewAnchor {
+  start: DocPosition;
+  end: DocPosition;
+}
+
+export type SuggestionKind = "insert" | "delete" | "format" | "structural";
+
+/** A tracked structural edit (split/merge/block/table op). `op`/`inverse` are the
+ *  internal core ops captured at intercept time — opaque on the public surface
+ *  (not part of the stable contract); `blockId` is the block the record hangs on. */
+export interface StructuralChange {
+  op: unknown;
+  inverse: unknown;
+  blockId: string;
+}
+
+/** One tracked change. Text-bearing kinds (insert/delete/format) cover live text;
+ *  `structural` records carry a degenerate point anchor + the applied op. */
+export interface Suggestion {
+  /** Globally unique id. */
+  id: string;
+  kind: SuggestionKind;
+  /** Covers text present in the live document. */
+  anchor: ReviewAnchor;
+  /** Attribution (the embedder owns identity; the layer just presents it). */
+  author: UserInfo;
+  /** Wall-clock ms; display/sort only. */
+  createdAt: number;
+  /** format only: the applied char-style patch + its inverse (for reject). */
+  patch?: Partial<CharStyle>;
+  inverse?: Partial<CharStyle>;
+  /** structural only: the applied core op, its inverse, and the host block. */
+  structural?: StructuralChange;
+  /** Optional grouping so related records accept/reject as a unit. */
+  groupId?: string;
+}
+
+export interface Comment {
+  id: string;
+  author: UserInfo;
+  body: Fragment;
+  createdAt: number;
+  editedAt?: number;
+  /** Resolved identities of users @-mentioned in this comment. */
+  mentions?: UserInfo[];
+}
+
+export type ThreadStatus = "open" | "resolved";
+
+export interface CommentThread {
+  id: string;
+  /** Highlighted span; `start === end` ⇒ point comment. */
+  anchor: ReviewAnchor;
+  status: ThreadStatus;
+  /** Ordered; `comments[0]` is the root, the rest are replies. */
+  comments: Comment[];
+}
+
+/** Snapshot of the review overlay (suggestions + comment threads). */
+export interface ReviewLayer {
+  docId: string;
+  /** Core document version these anchors were last rebased to. */
+  baseVersion: number;
+  suggestions: Suggestion[];
+  threads: CommentThread[];
+}
+
+// ===== Theming & behavior (see WordCanvasOptions.theme / .behavior) =========
+
+/** Ruler band styling (the strip the horizontal + vertical rulers paint). */
+export interface RulerTheme {
+  /** Band fill behind the ticks. */
+  bg?: string;
+  /** The lighter "content area" portion of the band (within the margins). */
+  content?: string;
+  /** Tick + boundary line color. */
+  line?: string;
+  /** Number label color. */
+  label?: string;
+  /** CSS font for the number labels. */
+  font?: string;
+}
+
+/** Editor color theme — every field optional; omit to keep the built-in value.
+ *  Affects the on-screen editor only (exported PDFs keep the built-in look). */
+export interface EditorTheme {
+  /** Gray gutter behind the pages (the scroll area + ruler troughs). */
+  canvasBackground?: string;
+  /** Native table gridlines when a cell carries no explicit border. */
+  grid?: string;
+  /** Drawing-grid overlay mesh (the dotted snap grid). */
+  gridMesh?: string;
+  /** External hyperlink color. */
+  externalLink?: string;
+  /** UI accent (band-edit boundary and similar chrome affordances). */
+  accent?: string;
+  /** Footnote separator rule. */
+  footnoteRule?: string;
+  /** Non-printing formatting marks (space dots, tab arrows, pilcrows). */
+  formattingMark?: string;
+  /** TOC dot-leader color. */
+  tocLeader?: string;
+  /** Placeholder fill for an image whose bitmap hasn't loaded. */
+  imagePlaceholder?: string;
+  /** Rule between newspaper columns. */
+  columnSeparator?: string;
+  /** Blinking text caret color. */
+  caret?: string;
+  /** Find-highlight color. */
+  searchHighlight?: string;
+  /** Comment pin fill once its thread is resolved. */
+  reviewPinResolved?: string;
+  /** Comment pin stroke. */
+  reviewPinStroke?: string;
+  /** Gap (px) between stacked pages. */
+  pageGapPx?: number;
+  /** Ruler band styling. */
+  ruler?: RulerTheme;
+}
+
+/** Editor behavior tuning — every field optional. */
+export interface EditorBehavior {
+  /** Multiplicative zoom step for +/- and Ctrl+wheel. Default 1.1. */
+  zoomStep?: number;
+  /** Absolute minimum zoom. Default 0.25. */
+  zoomMin?: number;
+  /** Absolute maximum zoom. Default 5. */
+  zoomMax?: number;
+  /** Indent / outdent step in px per toolbar press. Default 36. */
+  indentStepPx?: number;
+  /** Default drawing-grid spacing in px (view.gridSpacingPx still overrides). Default 24. */
+  gridSpacingPx?: number;
+}
+
+/** Overrides the LIBRARY's built-in default run/paragraph styles for NEW/blank
+ *  documents and the fallback stylesheet — NOT a loaded .docx's own defaults. */
+export interface DefaultStyleOverrides {
+  /** Body (Normal) font family, e.g. "Times New Roman, serif". */
+  fontFamily?: string;
+  /** Body font size in px (96 dpi). */
+  fontSizePx?: number;
+  /** Body text color (any CSS color string). */
+  color?: string;
+  /** Default paragraph line height (multiplier). */
+  lineHeight?: number;
+  /** Heading font family (Title/Heading1/Heading2). Omit to keep the built-in. */
+  headingFontFamily?: string;
+}
+
+/** A ready-made dark-canvas theme (darkens the chrome/gutter; pages stay white
+ *  for print fidelity). Spread + tweak it for your own theme. */
+export declare const darkCanvasTheme: EditorTheme;
+
+// ===========================================================================
 
 export interface WordCanvasOptions {
   /** Element to mount the editor into. */
@@ -41,6 +209,20 @@ export interface WordCanvasOptions {
    *  while you upload. Omit to keep the default download behaviour. (For a fully
    *  custom button, call `exportDocx()` / `exportPdf()` on the instance.) */
   onSave?: SaveHandler;
+  /** Mount as a view-only viewer: the document renders and stays selectable and
+   *  copyable, but the editing chrome is hidden and every mutation is a no-op.
+   *  In an online session a read-only client still receives live remote edits.
+   *  Equivalent to `mode: "view"`. */
+  readonly?: boolean;
+  /** Initial editor mode: "edit" (default), "suggest" (edits become tracked
+   *  changes), or "view" (read-only). Defaults to "view" when `readonly`. */
+  mode?: EditMode;
+  /** Restrict which modes the user can switch to (constrains the mode picker and
+   *  setMode). Omit ⇒ all three. e.g. ["suggest","view"] locks out raw editing. */
+  allowedModes?: EditMode[];
+  /** Users that can be @-mentioned in comments. The embedder owns this roster;
+   *  update it later with `setKnownUsers`. */
+  knownUsers?: UserInfo[];
   /** Resolve a custom (developer-defined) field's content from your backend. When
    *  set, right-clicking a custom field offers "Update Field (<name>)"; the
    *  callback receives the field's name + verbatim instruction and returns the new
@@ -59,6 +241,20 @@ export interface WordCanvasOptions {
    *  panels, ribbon, status bar, the Export buttons, zoom). Omit any field to keep
    *  its default. See WordCanvasViewOptions. */
   view?: WordCanvasViewOptions;
+  /** Color theme — pass a (partial) `EditorTheme` to recolor the editor chrome:
+   *  the gray canvas/gutter, gridlines, hyperlink/accent colors, formatting marks,
+   *  TOC leaders, rulers, caret, etc. Omit any field to keep its built-in value.
+   *  A ready-made `darkCanvasTheme` is exported to spread + tweak. Affects the
+   *  on-screen editor only (exported PDFs keep the built-in look). */
+  theme?: EditorTheme;
+  /** Override the LIBRARY's built-in default run/paragraph styles (body font,
+   *  size, color, line height, heading font) for NEW/blank documents and the
+   *  fallback stylesheet. IMPORTANT: a loaded .docx keeps its OWN defaults
+   *  (w:docDefaults / Normal) — set defaults there, or here, not both. */
+  overrideDefaultStyles?: DefaultStyleOverrides;
+  /** Behavior tuning: zoom step (default 1.1), zoom clamp (0.25–5), indent step
+   *  (36px), and default drawing-grid spacing (24px; `view.gridSpacingPx` wins). */
+  behavior?: EditorBehavior;
   /** Track first-load progress so you can show a loader while the big chunks
    *  stream. Fires for the editor JS chunk download (`phase: "bundle"`,
    *  indeterminate) and the bundled font fetch (`phase: "fonts"`, the dominant
@@ -241,6 +437,11 @@ export interface WordCanvasEventMap {
   userEntered: { siteId: string; user?: UserInfo };
   userLeave: { siteId: string; user?: UserInfo };
   presence: { participants: Participant[] };
+  /** The editor mode changed (picker or setMode). */
+  modeChanged: { mode: EditMode };
+  /** The review overlay changed (suggestion/comment added, resolved, rebased).
+   *  Carries the full layer so panels can re-render. */
+  reviewChanged: { review: ReviewLayer };
 }
 
 /** Handle resolved once the editor is mounted (via `whenReady()`). */
@@ -264,6 +465,26 @@ export interface EditorHandle {
   share(): Promise<string>;
   getDocId(): string | null;
   getShareLink(): string | null;
+  // ---- review layer (track changes + comments) ----------------------------
+  /** The current editor mode. */
+  getMode(): EditMode;
+  /** Switch mode; returns false if the mode isn't allowed. */
+  setMode(mode: EditMode): boolean;
+  /** Snapshot of the review overlay (suggestions + comment threads). */
+  getReview(): ReviewLayer;
+  /** The effective @-mentionable roster (configured base + live editors). */
+  getKnownUsers(): UserInfo[];
+  /** Replace the configured base roster (live editors stay merged on top). */
+  setKnownUsers(users: UserInfo[]): void;
+  acceptSuggestion(id: string): void;
+  rejectSuggestion(id: string): void;
+  acceptAllSuggestions(): void;
+  rejectAllSuggestions(): void;
+  /** Add a comment thread anchored to the current selection. Returns the thread
+   *  id, or null if there's no selection. */
+  addComment(body: Fragment, mentions?: UserInfo[]): string | null;
+  replyToComment(threadId: string, body: Fragment, mentions?: UserInfo[]): void;
+  resolveThread(threadId: string, resolved?: boolean): void;
   destroy(): void;
 }
 
@@ -297,6 +518,26 @@ export declare class WordCanvas {
   setDocument(doc: Document): Promise<void>;
   /** Publish the current document and resolve its shareable link (online only). */
   share(): Promise<string>;
+  // ---- review layer (track changes + comments) ----------------------------
+  /** Current editor mode. Returns null before the editor is ready. */
+  getMode(): EditMode | null;
+  /** Switch mode. Resolves to false if the mode isn't allowed (or not ready). */
+  setMode(mode: EditMode): Promise<boolean>;
+  /** Snapshot of the review overlay (suggestions + comment threads). */
+  getReview(): Promise<ReviewLayer>;
+  /** The effective @-mentionable roster (configured base + live editors). */
+  getKnownUsers(): Promise<UserInfo[]>;
+  /** Replace the configured base roster (live editors stay merged on top). */
+  setKnownUsers(users: UserInfo[]): Promise<void>;
+  acceptSuggestion(id: string): Promise<void>;
+  rejectSuggestion(id: string): Promise<void>;
+  acceptAllSuggestions(): Promise<void>;
+  rejectAllSuggestions(): Promise<void>;
+  /** Add a comment thread anchored to the current selection. Resolves to the
+   *  thread id, or null if there's no selection. */
+  addComment(body: Fragment, mentions?: UserInfo[]): Promise<string | null>;
+  replyToComment(threadId: string, body: Fragment, mentions?: UserInfo[]): Promise<void>;
+  resolveThread(threadId: string, resolved?: boolean): Promise<void>;
   getDocId(): string | null;
   getShareLink(): string | null;
   destroy(): void;

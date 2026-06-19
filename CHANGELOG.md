@@ -52,6 +52,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (via `onSave` or the `exportDocx()` / `exportPdf()` methods) and don't want the
   built-in download button. The whole Export group hides when both are off.
 
+### Fixed
+- **Published TypeScript types brought back in sync with the runtime API.** The
+  hand-written `types/wordcanvas.d.ts` had drifted and was missing options and
+  methods that already worked at runtime, so TypeScript embedders had to cast to
+  reach them. Now fully mirrored: the `readonly` / `mode` / `allowedModes` /
+  `knownUsers` / `view` / `theme` / `overrideDefaultStyles` / `behavior` constructor
+  options; the `WordCanvasViewOptions`, `EditorTheme`, `EditorBehavior`,
+  `DefaultStyleOverrides`, `EditMode`, `ReviewLayer` (+ `Suggestion` / `CommentThread`
+  / `Comment` / `Fragment`) types and the `darkCanvasTheme` export; the review-layer
+  methods (`getMode` / `setMode` / `getReview` / `getKnownUsers` / `setKnownUsers` /
+  accept-reject suggestion(s) / `addComment` / `replyToComment` / `resolveThread`) on
+  both `WordCanvas` and `EditorHandle`; and the `modeChanged` / `reviewChanged` events.
+
 ## [0.7.2] — 2026-06-19
 
 ### Added
