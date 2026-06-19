@@ -23,6 +23,15 @@ export interface Participant {
  *  or "view" (read-only). The three are mutually exclusive. */
 export type EditMode = "edit" | "suggest" | "view";
 
+/** A selection/caret in the document (offsets are UTF-16 code units into a
+ *  block's concatenated run text). `anchor === focus` is a collapsed caret. */
+export interface DocSelection {
+  anchor: DocPosition;
+  focus: DocPosition;
+  /** Preserved X column for Up/Down caret movement; usually ignorable. */
+  goalX?: number;
+}
+
 // ===== Review layer (track changes + comments) =============================
 // An attributed, anchored overlay on top of the core document. `getReview()`
 // returns a snapshot; the `reviewChanged` event carries the full layer.
@@ -185,6 +194,85 @@ export interface DefaultStyleOverrides {
  *  for print fidelity). Spread + tweak it for your own theme. */
 export declare const darkCanvasTheme: EditorTheme;
 
+// ===== Ribbon customization (see WordCanvasOptions.customizeRibbon) =========
+
+/** Where to place a tab/group/button relative to an existing one (by id). When
+ *  the anchor id is absent/omitted, the item is appended at the end. */
+export interface RibbonAnchor {
+  before?: string;
+  after?: string;
+}
+
+/** The editor handle handed to a custom ribbon button's `onClick`, plus macro
+ *  helpers — read/edit the document at the caret, emit events, open popups. */
+export interface RibbonActionContext extends EditorHandle {
+  getSelection(): DocSelection | null;
+  insertText(text: string): void;
+  /** Emit a custom event to the embedder (`wc.on("custom", …)`). */
+  emit(name: string, payload?: unknown): void;
+  /** Tie a DOM node (removed) or callback (run) to the editor's teardown so an
+   *  embedder's popup is cleaned up on destroy(). */
+  registerCleanup(target: HTMLElement | (() => void)): void;
+}
+
+/** A custom ribbon button. */
+export interface RibbonButtonSpec {
+  /** Stable id (namespace it, e.g. "myco.macros.upper"). */
+  id: string;
+  /** Raw innerHTML for the button face — an SVG string, emoji, or text. */
+  icon?: string;
+  /** Text label (used when `icon` is omitted). */
+  label?: string;
+  tooltip?: string;
+  onClick: (ctx: RibbonActionContext) => void;
+  /** Optional pressed-state predicate, re-evaluated on every selection change. */
+  active?: (fmt: unknown) => boolean;
+  /** Optional enabled predicate; the button greys out when it returns false. */
+  enabled?: (fmt: unknown) => boolean;
+}
+
+export interface RibbonTabSpec extends RibbonAnchor {
+  id: string;
+  label: string;
+}
+export interface RibbonGroupSpec extends RibbonAnchor {
+  id: string;
+  label: string;
+}
+
+/** Ribbon mutation API. Ordering is by id; an unknown id is a no-op with a
+ *  console warning. Discover built-in ids with `tabs()`/`groups()`/`items()`. */
+export interface RibbonApi {
+  tabs(): string[];
+  groups(tabId: string): string[];
+  items(groupId: string): string[];
+  addTab(spec: RibbonTabSpec): void;
+  removeTab(id: string): void;
+  moveTab(id: string, pos: RibbonAnchor): void;
+  addGroup(tabId: string, spec: RibbonGroupSpec): void;
+  removeGroup(id: string): void;
+  moveGroup(id: string, pos: RibbonAnchor): void;
+  addButton(groupId: string, spec: RibbonButtonSpec & RibbonAnchor): void;
+  removeItem(id: string): void;
+  moveItem(id: string, pos: RibbonAnchor & { toGroup?: string }): void;
+}
+
+/** Hook for the `customizeRibbon` option — called once at mount. */
+export type CustomizeRibbon = (api: RibbonApi) => void;
+
+/** Options for `makeFloatingDialog` (a draggable, non-blocking panel). */
+export interface FloatingDialogOptions {
+  backdrop: HTMLElement;
+  modal: HTMLElement;
+  handle: HTMLElement;
+  signal: AbortSignal;
+  noDrag?: string;
+}
+
+/** Turn a backdrop+modal pair into a draggable, non-blocking floating panel —
+ *  a convenience for building config/informational popups from a custom button. */
+export declare function makeFloatingDialog(o: FloatingDialogOptions): void;
+
 // ===========================================================================
 
 export interface WordCanvasOptions {
@@ -255,6 +343,13 @@ export interface WordCanvasOptions {
   /** Behavior tuning: zoom step (default 1.1), zoom clamp (0.25–5), indent step
    *  (36px), and default drawing-grid spacing (24px; `view.gridSpacingPx` wins). */
   behavior?: EditorBehavior;
+  /** Customize the ribbon toolbar. Called once at mount with a `RibbonApi` to
+   *  reorder/remove built-in tabs/groups/buttons (by id — discover them with
+   *  `api.tabs()/groups()/items()`) and add your own tabs, groups, and buttons.
+   *  A custom button's `onClick` gets a `RibbonActionContext` (the editor handle +
+   *  `getSelection`/`insertText`/`emit`/`registerCleanup`) — for macros, config
+   *  popups, and informational popups. */
+  customizeRibbon?: CustomizeRibbon;
   /** Track first-load progress so you can show a loader while the big chunks
    *  stream. Fires for the editor JS chunk download (`phase: "bundle"`,
    *  indeterminate) and the bundled font fetch (`phase: "fonts"`, the dominant
@@ -442,6 +537,8 @@ export interface WordCanvasEventMap {
   /** The review overlay changed (suggestion/comment added, resolved, rebased).
    *  Carries the full layer so panels can re-render. */
   reviewChanged: { review: ReviewLayer };
+  /** A custom ribbon button emitted an event via `ctx.emit(name, payload)`. */
+  custom: { name: string; payload?: unknown };
 }
 
 /** Handle resolved once the editor is mounted (via `whenReady()`). */
@@ -465,6 +562,10 @@ export interface EditorHandle {
   share(): Promise<string>;
   getDocId(): string | null;
   getShareLink(): string | null;
+  /** The current selection/caret, or null when the editor isn't focused. */
+  getSelection(): DocSelection | null;
+  /** Insert plain text at the caret, replacing any selection. */
+  insertText(text: string): void;
   // ---- review layer (track changes + comments) ----------------------------
   /** The current editor mode. */
   getMode(): EditMode;
@@ -538,6 +639,10 @@ export declare class WordCanvas {
   addComment(body: Fragment, mentions?: UserInfo[]): Promise<string | null>;
   replyToComment(threadId: string, body: Fragment, mentions?: UserInfo[]): Promise<void>;
   resolveThread(threadId: string, resolved?: boolean): Promise<void>;
+  /** Current selection/caret. Returns null before ready or when unfocused. */
+  getSelection(): DocSelection | null;
+  /** Insert plain text at the caret (replacing any selection). */
+  insertText(text: string): Promise<void>;
   getDocId(): string | null;
   getShareLink(): string | null;
   destroy(): void;

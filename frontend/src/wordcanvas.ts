@@ -14,12 +14,16 @@ import type { ChildContent, ChildDocument, ChildEditorHandle, ChildRenderOptions
 import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
 import type { DefaultStyleOverrides, EditorBehavior, EditorTheme } from "./config";
 import { darkCanvasTheme } from "./config";
+import type { CustomizeRibbon, RibbonActionContext, RibbonApi, RibbonButtonSpec } from "./ribbon";
+import { makeFloatingDialog } from "./ui/floatingDialog";
+import type { DocSelection } from "@cw/shared";
 import { BUNDLE_SHARE, type LoadProgress } from "./app/loadProgress";
 
 export type { Document, UserInfo, Participant, EditMode, ReviewLayer, Fragment, FieldResolver, FieldResolveRequest, FieldResult, AgentToolsOptions, LoadProgress, WordCanvasViewOptions, SaveEvent, SaveFormat, SaveHandler };
 export type { ChildDocument, ChildContent, ChildRenderOptions, ChildEditorHandle };
 export type { EditorTheme, DefaultStyleOverrides, EditorBehavior };
-export { darkCanvasTheme };
+export type { CustomizeRibbon, RibbonApi, RibbonButtonSpec, RibbonActionContext, DocSelection };
+export { darkCanvasTheme, makeFloatingDialog };
 
 export interface WordCanvasOptions {
   /** Element to mount the editor into. */
@@ -90,6 +94,13 @@ export interface WordCanvasOptions {
   /** Behavior tuning: zoom step (default 1.1), zoom clamp (0.25–5), indent step
    *  (36px), and default drawing-grid spacing (24px; `view.gridSpacingPx` wins). */
   behavior?: EditorBehavior;
+  /** Customize the ribbon toolbar. Called once at mount with a `RibbonApi` to
+   *  reorder/remove built-in tabs/groups/buttons (by id — discover them with
+   *  `api.tabs()/groups()/items()`) and add your own tabs, groups, and buttons.
+   *  A custom button's `onClick` receives a `RibbonActionContext` (the editor
+   *  handle + `getSelection`/`insertText`/`emit`/`registerCleanup`) — for macros,
+   *  config popups, and informational popups. */
+  customizeRibbon?: CustomizeRibbon;
   /** Track first-load progress so you can show a loader while the big chunks
    *  stream. Fires for the editor JS chunk download (`phase: "bundle"`,
    *  indeterminate) and the bundled font fetch (`phase: "fonts"`, the dominant
@@ -110,6 +121,8 @@ export interface WordCanvasEventMap {
   /** The review overlay changed (suggestion/comment added, resolved, rebased).
    *  Carries the full layer so panels can re-render. */
   reviewChanged: { review: ReviewLayer };
+  /** A custom ribbon button emitted an event via `ctx.emit(name, payload)`. */
+  custom: { name: string; payload?: unknown };
 }
 
 type Handler<E extends keyof WordCanvasEventMap> = (data: WordCanvasEventMap[E]) => void;
@@ -139,6 +152,7 @@ export class WordCanvas {
         theme: opts.theme,
         overrideDefaultStyles: opts.overrideDefaultStyles,
         behavior: opts.behavior,
+        customizeRibbon: opts.customizeRibbon,
         onLoadProgress: opts.onLoadProgress,
         onReady: (h) => {
           this.handle = h;
@@ -301,6 +315,17 @@ export class WordCanvas {
   }
   async resolveThread(threadId: string, resolved = true): Promise<void> {
     (await this.ready).resolveThread(threadId, resolved);
+  }
+
+  /** Current selection/caret. Returns null before the editor is ready or when
+   *  the editor isn't focused. */
+  getSelection(): DocSelection | null {
+    return this.handle?.getSelection() ?? null;
+  }
+
+  /** Insert plain text at the caret (replacing any selection). */
+  async insertText(text: string): Promise<void> {
+    (await this.ready).insertText(text);
   }
 
   getDocId(): string | null {

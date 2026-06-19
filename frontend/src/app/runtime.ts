@@ -3,10 +3,11 @@
 // which mounts one editor and calls onReady with a handle. The runtime is a plain
 // per-call value (no module singleton), so multiple editors coexist on one page.
 
-import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
+import type { DocSelection, Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
 import type { ChildDocument, EditMode, FieldResolver } from "../index";
 import type { ExportWarning } from "../export/exportDocument";
 import type { DefaultStyleOverrides, EditorBehavior, EditorTheme } from "../config";
+import type { CustomizeRibbon } from "../ribbon";
 import type { LoadProgress } from "./loadProgress";
 
 export type { EditMode, FieldResolver };
@@ -104,7 +105,8 @@ export type WordCanvasEvent =
   | { type: "userLeave"; siteId: string; user?: UserInfo | undefined }
   | { type: "presence"; participants: Participant[] }
   | { type: "modeChanged"; mode: EditMode }
-  | { type: "reviewChanged"; review: ReviewLayer };
+  | { type: "reviewChanged"; review: ReviewLayer }
+  | { type: "custom"; name: string; payload?: unknown };
 
 /** Handle the editor app exposes back to the WordCanvas wrapper. */
 export interface EditorHandle {
@@ -128,6 +130,10 @@ export interface EditorHandle {
   share(): Promise<string>;
   getDocId(): string | null;
   getShareLink(): string | null;
+  /** The current selection/caret, or null when the editor isn't focused. */
+  getSelection(): DocSelection | null;
+  /** Insert plain text at the caret, replacing any selection. */
+  insertText(text: string): void;
   // ---- review layer (track changes + comments) ----------------------------
   getMode(): EditMode;
   setMode(mode: EditMode): boolean;
@@ -191,4 +197,7 @@ export interface WordCanvasRuntime {
   overrideDefaultStyles?: DefaultStyleOverrides | undefined;
   /** Behavior tuning (zoom step/clamp, indent step, default grid spacing). */
   behavior?: EditorBehavior | undefined;
+  /** Customize the ribbon: reorder/remove built-ins by id and add custom tabs,
+   *  groups, and buttons. Called once at mount with a mutation API. */
+  customizeRibbon?: CustomizeRibbon | undefined;
 }

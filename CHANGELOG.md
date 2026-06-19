@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Customizable ribbon — `customizeRibbon` constructor option.** Embedders can now
+  tailor the ribbon toolbar per editor instance, for custom macros, config popups,
+  and informational popups. `customizeRibbon(api)` runs once at mount with a
+  `RibbonApi` that addresses everything by **id**:
+  - **Reorder / remove built-ins** — `moveItem` / `removeItem`, `moveGroup` /
+    `removeGroup`, `moveTab` / `removeTab`, with `{ before }` / `{ after }` anchors.
+    Every built-in tab/group/button has a stable namespaced id (`home`, `home.font`,
+    `home.font.bold`, …); discover them at runtime with `api.tabs()` /
+    `api.groups(tabId)` / `api.items(groupId)`.
+  - **Add your own** — `addTab`, `addGroup`, and `addButton` (into built-in or custom
+    groups). A button's `icon` accepts an SVG string, emoji, or text, with optional
+    `active(fmt)` / `enabled(fmt)` state predicates synced live.
+  - **Macro/popup context** — a custom button's `onClick` receives a
+    `RibbonActionContext`: the editor handle (get/set document, export, mode, …) plus
+    `getSelection()`, `insertText()`, `emit(name, payload)` (surfaced as a new
+    `custom` event — `wc.on("custom", …)`), and `registerCleanup()`. The
+    `getSelection()` / `insertText()` helpers are also available directly on the
+    `WordCanvas` instance and `EditorHandle`. The `makeFloatingDialog` helper is now
+    exported for building draggable, non-blocking config popups.
+
+  Unknown ids are ignored with a console warning (configs survive editor upgrades),
+  and omitting `customizeRibbon` leaves the ribbon exactly as before. New exported
+  types: `CustomizeRibbon`, `RibbonApi`, `RibbonButtonSpec`, `RibbonActionContext`,
+  `FloatingDialogOptions`, `DocSelection`. See `RIBBON.md`.
 - **Theming & configuration via the constructor — `theme`, `overrideDefaultStyles`,
   and `behavior` options.** The editor's previously-hardcoded look and feel are now
   configurable per instance (multiple editors with different configs coexist on one

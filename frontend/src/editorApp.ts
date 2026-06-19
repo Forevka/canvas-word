@@ -25,7 +25,9 @@ import { showBusy } from "./app/busyOverlay";
 // Ribbon/toolbar command set + style helpers + icons — the chrome, not the core.
 // (Hoisted here from the toolbar block; ES imports must be top-level, and the
 // toolbar code now lives inside mountEditorApp.)
+import { anchorBeforeId, type RibbonActionContext, type RibbonApi, type RibbonButtonSpec } from "./ribbon";
 import {
+  insertText as insertTextCmd,
   insertImage,
   insertImageInCell,
   insertTable,
@@ -220,6 +222,10 @@ let syncMode: () => void = () => {};
 // Ships a locally-authored review op on the collab review channel (assigned by
 // the sync wiring; no-op offline). Forward-declared so editorOpts can reference it.
 let onLocalReviewOp: (env: ReviewOpEnvelope) => void = () => {};
+// The action context handed to custom ribbon buttons' onClick (handle + macro
+// helpers). Assigned once the editor handle is built; custom buttons can't fire
+// before mount completes, so it's always set by click time.
+let ribbonCtx: RibbonActionContext | null = null;
 const editorOpts = {
   engine,
   readonly,
@@ -541,19 +547,32 @@ if (toolbar) {
   const tab = (id: string, label: string, kind?: "file"): HTMLDivElement => {
     const t = el("button", "rib-tab" + (kind === "file" ? " file" : ""));
     t.textContent = label;
+    t.dataset["ribbonTab"] = id;
     t.addEventListener("click", () => showTab(id));
     tabButtons.set(id, t);
     tabsBar.appendChild(t);
     const p = el("div", "rib-panel");
     p.dataset["tab"] = id;
+    p.dataset["ribbonPanel"] = id;
     tabPanels.set(id, p);
     bodies.appendChild(p);
+    ribTabsById.set(id, { btn: t, panel: p });
+    curTabId = id;
     return p;
   };
 
   // `controls` is the container the btn/select helpers append into; group() and
   // row() retarget it as the ribbon is built.
   let controls: HTMLElement = el("div");
+  // Begin a group: derive its namespaced id, register it, and make it current so
+  // subsequent item helpers register under it. `container` is where custom-added
+  // buttons land (the group's controls, or the last row for two-row groups).
+  const beginGroup = (panel: HTMLElement, label: string, container: HTMLElement, groupEl: HTMLElement): void => {
+    const tabId = (panel as HTMLElement).dataset["ribbonPanel"] ?? curTabId;
+    curGroupId = ribUniqueId(`${tabId}.${ribSlug(label)}`, ribGroupsById);
+    groupEl.dataset["ribbonGroup"] = curGroupId;
+    ribGroupsById.set(curGroupId, { tabId, groupEl, container });
+  };
   const group = (panel: HTMLElement, label: string): void => {
     const g = el("div", "rib-group");
     controls = el("div", "rib-controls");
@@ -561,6 +580,7 @@ if (toolbar) {
     l.textContent = label;
     g.append(controls, l);
     panel.appendChild(g);
+    beginGroup(panel, label, controls, g);
   };
   /** A group whose controls stack in two rows (Font, Paragraph). Returns a
    *  `row()` that opens a fresh row and points the helpers at it. */
@@ -571,15 +591,20 @@ if (toolbar) {
     l.textContent = label;
     g.append(rows, l);
     panel.appendChild(g);
+    beginGroup(panel, label, rows, g);
+    const gid = curGroupId;
     return () => {
       controls = el("div", "rib-row");
       rows.appendChild(controls);
+      const gnode = ribGroupsById.get(gid);
+      if (gnode) gnode.container = controls; // custom adds land in the last row
     };
   };
   const sep = (): void => {
     const d = el("div");
     d.style.cssText = "width:1px;height:18px;background:#e1dfdd;margin:0 3px;flex:0 0 auto;";
     controls.appendChild(d);
+    ribRegister(d, "sep");
   };
 
   const btn = (icon: string, title: string, onClick: () => void, caret = false): HTMLButtonElement => {
@@ -589,6 +614,7 @@ if (toolbar) {
     b.addEventListener("mousedown", (e) => e.preventDefault()); // keep IME-proxy focus
     b.addEventListener("click", onClick);
     controls.appendChild(b);
+    ribRegister(b, title);
     return b;
   };
   /** Letter buttons (B, I, U, x²…) — Word renders these as styled text. */
@@ -603,6 +629,7 @@ if (toolbar) {
     b.addEventListener("mousedown", (e) => e.preventDefault());
     b.addEventListener("click", onClick);
     controls.appendChild(b);
+    ribRegister(b, title);
     return b;
   };
   /** Large Paste-style button: icon over a caption (with optional caret). */
@@ -613,6 +640,7 @@ if (toolbar) {
     b.addEventListener("mousedown", (e) => e.preventDefault());
     b.addEventListener("click", onClick);
     controls.appendChild(b);
+    ribRegister(b, title);
     return b;
   };
   /** Disabled placeholder for a feature the engine/renderer doesn't support. */
@@ -622,6 +650,7 @@ if (toolbar) {
     b.title = `${title} — not supported by the engine yet`;
     b.disabled = true;
     controls.appendChild(b);
+    ribRegister(b, title);
     return b;
   };
   // Formatting-marks toggle — surfaced in both Home (Paragraph) and View, so the
@@ -643,6 +672,7 @@ if (toolbar) {
     s.style.width = `${width}px`;
     s.addEventListener("mousedown", (e) => e.stopPropagation());
     controls.appendChild(s);
+    ribRegister(s, title);
     return s;
   };
   const opt = (s: HTMLSelectElement, value: string, label: string): void => {
@@ -668,6 +698,32 @@ if (toolbar) {
   const enable = (b: HTMLButtonElement, enabled: (f: CurrentFormat) => boolean, hint?: string): HTMLButtonElement => {
     enableButtons.push({ el: b, enabled, title: b.title, ...(hint !== undefined ? { hint } : {}) });
     return b;
+  };
+
+  // ---- ribbon customization model (stable ids for customizeRibbon) --------
+  // Every built-in tab/group/control registers under an auto-derived, namespaced
+  // id ("home", "home.font", "home.font.bold") — slugged from its tooltip/label
+  // and de-duped within a group. The `customizeRibbon` hook reorders/removes
+  // these by id and adds custom tabs/groups/buttons. `controls`/`curGroupId` are
+  // set by group()/row(); item helpers call ribRegister as they append.
+  let curTabId = "";
+  let curGroupId = "";
+  const ribTabsById = new Map<string, { btn: HTMLButtonElement; panel: HTMLDivElement }>();
+  const ribGroupsById = new Map<string, { tabId: string; groupEl: HTMLElement; container: HTMLElement }>();
+  const ribItemsById = new Map<string, { groupId: string; el: HTMLElement }>();
+  const ribSlug = (s: string): string =>
+    s.toLowerCase().replace(/\([^)]*\)/g, " ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "item";
+  const ribUniqueId = (root: string, taken: { has: (k: string) => boolean }): string => {
+    let id = root;
+    for (let n = 2; taken.has(id); n++) id = `${root}-${n}`;
+    return id;
+  };
+  const ribRegister = (element: HTMLElement, base: string): HTMLElement => {
+    if (!curGroupId) return element; // defensive: only ribbon controls register
+    const id = ribUniqueId(`${curGroupId}.${ribSlug(base)}`, ribItemsById);
+    element.dataset["ribbonItem"] = id;
+    ribItemsById.set(id, { groupId: curGroupId, el: element });
+    return element;
   };
 
   // ---- anchored popovers (palettes, menus, pickers, dialogs) --------------
@@ -832,6 +888,7 @@ if (toolbar) {
     );
     wrap.append(main, more);
     controls.appendChild(wrap);
+    ribRegister(wrap, cfg.title);
     if (cfg.active) toggleButtons.push({ el: main, active: cfg.active });
   };
 
@@ -877,6 +934,7 @@ if (toolbar) {
     );
     wrap.append(main, more);
     controls.appendChild(wrap);
+    ribRegister(wrap, title);
   };
 
   /** Word's table-size grid: hover to size, click to insert. */
@@ -1120,6 +1178,7 @@ if (toolbar) {
   });
   sizeWrap.append(sizeInput, sizeCaret);
   controls.appendChild(sizeWrap);
+  ribRegister(sizeWrap, "font-size");
   const curPt = (): number => pxToPt(editor.currentFormat().fontSizePx ?? 16);
   txtBtn("A", "Grow font", () => setSizePt(curPt() + 1), "font-size:15px;font-weight:600;");
   txtBtn("A", "Shrink font", () => setSizePt(curPt() - 1), "font-size:10px;font-weight:600;");
@@ -1298,6 +1357,7 @@ if (toolbar) {
   };
   rebuildStyleGallery();
   controls.appendChild(styleGallery);
+  ribRegister(styleGallery, "gallery");
   btn(ICONS.stylePencil, "Update current style to match selection", () => {
     const id = editor.currentFormat().styleId;
     if (id) editor.dispatch(updateStyleToSelection(id));
@@ -2111,6 +2171,156 @@ if (toolbar) {
   setCollapsed(false);
   tabsBar.appendChild(collapseBtn);
 
+  // ===== customizeRibbon: reorder/remove built-ins + add custom tabs/buttons ===
+  if (runtime.customizeRibbon) {
+    const warn = (what: string, id: string): void =>
+      console.warn(`[canvas-word] customizeRibbon: ${what} "${id}" not found`);
+    // DOM is the source of truth for order; these read current ids in order.
+    const tabOrder = (): string[] =>
+      [...tabsBar.children].map((c) => (c as HTMLElement).dataset?.["ribbonTab"]).filter((x): x is string => !!x);
+    const groupOrder = (tabId: string): string[] => {
+      const panel = ribTabsById.get(tabId)?.panel;
+      return panel
+        ? [...panel.querySelectorAll(":scope > .rib-group")]
+            .map((g) => (g as HTMLElement).dataset["ribbonGroup"])
+            .filter((x): x is string => !!x)
+        : [];
+    };
+    const itemOrder = (groupId: string): string[] => {
+      const g = ribGroupsById.get(groupId)?.groupEl;
+      return g
+        ? [...g.querySelectorAll("[data-ribbon-item]")]
+            .map((e) => (e as HTMLElement).dataset["ribbonItem"])
+            .filter((x): x is string => !!x)
+        : [];
+    };
+    const dropSync = (target: HTMLElement): void => {
+      for (let i = toggleButtons.length - 1; i >= 0; i--) if (toggleButtons[i]!.el === target) toggleButtons.splice(i, 1);
+      for (let i = enableButtons.length - 1; i >= 0; i--) if (enableButtons[i]!.el === target) enableButtons.splice(i, 1);
+    };
+    const buildCustomButton = (spec: RibbonButtonSpec): HTMLButtonElement => {
+      const b = el("button", "rib-btn");
+      if (spec.icon !== undefined) b.innerHTML = spec.icon;
+      else {
+        const s = el("span");
+        s.textContent = spec.label ?? "";
+        b.appendChild(s);
+      }
+      if (spec.tooltip) b.title = spec.tooltip;
+      b.dataset["ribbonItem"] = spec.id;
+      b.addEventListener("mousedown", (e) => e.preventDefault());
+      b.addEventListener("click", () => {
+        try {
+          if (ribbonCtx) spec.onClick(ribbonCtx);
+        } catch (err) {
+          console.error("[canvas-word] custom ribbon button onClick threw", err);
+        }
+      });
+      if (spec.active) toggleButtons.push({ el: b, active: spec.active });
+      if (spec.enabled) enableButtons.push({ el: b, enabled: spec.enabled, title: spec.tooltip ?? "" });
+      return b;
+    };
+    const api: RibbonApi = {
+      tabs: () => tabOrder(),
+      groups: (tabId) => groupOrder(tabId),
+      items: (groupId) => itemOrder(groupId),
+      addTab: (spec) => {
+        if (ribTabsById.has(spec.id)) return warn("tab (already exists)", spec.id);
+        const beforeId = anchorBeforeId(tabOrder(), spec, spec.id);
+        const ref = (beforeId ? ribTabsById.get(beforeId)?.btn : null) ?? headerReview;
+        const panel = tab(spec.id, spec.label);
+        tabsBar.insertBefore(ribTabsById.get(spec.id)!.btn, ref);
+        void panel;
+      },
+      removeTab: (id) => {
+        const node = ribTabsById.get(id);
+        if (!node) return warn("tab", id);
+        node.btn.remove();
+        node.panel.remove();
+        ribTabsById.delete(id);
+        tabButtons.delete(id);
+        tabPanels.delete(id);
+      },
+      moveTab: (id, pos) => {
+        const node = ribTabsById.get(id);
+        if (!node) return warn("tab", id);
+        const beforeId = anchorBeforeId(tabOrder(), pos, id);
+        const ref = (beforeId ? ribTabsById.get(beforeId)?.btn : null) ?? headerReview;
+        tabsBar.insertBefore(node.btn, ref);
+      },
+      addGroup: (tabId, spec) => {
+        const tabNode = ribTabsById.get(tabId);
+        if (!tabNode) return warn("tab", tabId);
+        if (ribGroupsById.has(spec.id)) return warn("group (already exists)", spec.id);
+        const g = el("div", "rib-group");
+        const c = el("div", "rib-controls");
+        const l = el("div", "rib-label");
+        l.textContent = spec.label;
+        g.append(c, l);
+        g.dataset["ribbonGroup"] = spec.id;
+        ribGroupsById.set(spec.id, { tabId, groupEl: g, container: c });
+        const beforeId = anchorBeforeId(groupOrder(tabId), spec, spec.id);
+        const ref = beforeId ? ribGroupsById.get(beforeId)?.groupEl ?? null : null;
+        tabNode.panel.insertBefore(g, ref);
+      },
+      removeGroup: (id) => {
+        const node = ribGroupsById.get(id);
+        if (!node) return warn("group", id);
+        for (const itemId of itemOrder(id)) {
+          const it = ribItemsById.get(itemId);
+          if (it) dropSync(it.el as HTMLElement);
+          ribItemsById.delete(itemId);
+        }
+        node.groupEl.remove();
+        ribGroupsById.delete(id);
+      },
+      moveGroup: (id, pos) => {
+        const node = ribGroupsById.get(id);
+        if (!node) return warn("group", id);
+        const beforeId = anchorBeforeId(groupOrder(node.tabId), pos, id);
+        const ref = beforeId ? ribGroupsById.get(beforeId)?.groupEl ?? null : null;
+        node.groupEl.parentElement?.insertBefore(node.groupEl, ref);
+      },
+      addButton: (groupId, spec) => {
+        const gnode = ribGroupsById.get(groupId);
+        if (!gnode) return warn("group", groupId);
+        if (ribItemsById.has(spec.id)) return warn("button (id already exists)", spec.id);
+        const b = buildCustomButton(spec);
+        ribItemsById.set(spec.id, { groupId, el: b });
+        const beforeId = anchorBeforeId(itemOrder(groupId), spec, spec.id);
+        const ref = beforeId ? ribItemsById.get(beforeId)?.el ?? null : null;
+        if (ref && ref.parentElement) ref.parentElement.insertBefore(b, ref);
+        else gnode.container.appendChild(b);
+      },
+      removeItem: (id) => {
+        const node = ribItemsById.get(id);
+        if (!node) return warn("item", id);
+        dropSync(node.el as HTMLElement);
+        node.el.remove();
+        ribItemsById.delete(id);
+      },
+      moveItem: (id, pos) => {
+        const node = ribItemsById.get(id);
+        if (!node) return warn("item", id);
+        const targetGroup = pos.toGroup ?? node.groupId;
+        const gnode = ribGroupsById.get(targetGroup);
+        if (!gnode) return warn("group", targetGroup);
+        const beforeId = anchorBeforeId(itemOrder(targetGroup), pos, id);
+        const ref = beforeId ? ribItemsById.get(beforeId)?.el ?? null : null;
+        if (ref && ref.parentElement) ref.parentElement.insertBefore(node.el, ref);
+        else gnode.container.appendChild(node.el);
+        node.groupId = targetGroup;
+      },
+    };
+    try {
+      runtime.customizeRibbon(api);
+    } catch (err) {
+      console.error("[canvas-word] customizeRibbon threw", err);
+    }
+    // Custom buttons' active/enabled predicates sync on the next syncToolbar()
+    // (wired to editor onChange + the initial sync below).
+  }
+
   showTab("home");
   // After showTab (which re-pins), honor the embedder's initial collapsed choice.
   if (runtime.view?.ribbonCollapsed) setCollapsed(true);
@@ -2747,6 +2957,8 @@ const handle: EditorHandle = {
   share: () => goOnlineWithCurrentDoc(),
   getDocId: () => collabId,
   getShareLink: () => shareLink,
+  getSelection: () => editor.getSelection(),
+  insertText: (text) => editor.dispatch(insertTextCmd(text)),
   getMode: () => editor.getMode(),
   setMode: (mode) => editor.setMode(mode),
   getReview: () => editor.getReview(),
@@ -2768,6 +2980,17 @@ const handle: EditorHandle = {
     shell.root.remove();
   },
 };
+// Context for custom ribbon buttons: the handle + macro helpers (getSelection /
+// insertText live on the handle) plus an event emitter and a teardown hook.
+ribbonCtx = {
+  ...handle,
+  emit: (name, payload) => runtime.onEvent?.({ type: "custom", name, payload }),
+  registerCleanup: (target) => {
+    if (typeof target === "function") teardown.signal.addEventListener("abort", () => target(), { once: true });
+    else detachables.push(target);
+  },
+};
+
 runtime.onLoadProgress?.({ phase: "ready", percent: 1, loaded: 0, total: 0 });
 runtime.onReady?.(handle);
 runtime.onEvent?.({ type: "ready" });
