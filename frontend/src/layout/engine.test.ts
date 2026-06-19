@@ -18,7 +18,7 @@ import type {
 } from "@cw/shared";
 import { createLayoutEngine, effectiveSection, resolveSections } from "./engine";
 import { gridColumnCount, effectiveFractions, defaultListDefinition } from "@cw/shared";
-import { hitTestObject, hitTestSelectableObject } from "./geometry";
+import { hitTestObject, hitTestSelectableObject, spaceMarkXs } from "./geometry";
 import type { PlacedBlock } from "./layoutTree";
 
 // --- builders -------------------------------------------------------------
@@ -855,5 +855,75 @@ describe("engine — behind-text anchored images", () => {
     // found there — the controller must not let the header band gate it out.
     expect(30).toBeLessThan(tree.pages[0]!.contentTopPx);
     expect(hitTestSelectableObject(tree, 0, 400, 30)?.blockId).toBe(bg.id);
+  });
+});
+
+// --- formatting marks (show/hide non-printing marks) -----------------------
+// The overlay paint reads these per-line flags from the engine plus spaceMarkXs
+// from geometry; both are pure and font-stub-deterministic, so they pin the
+// feature without exercising the canvas renderer's DOM.
+
+describe("engine — formatting marks", () => {
+  const linesOf = (p: Paragraph): import("./layoutTree").LineBox[] =>
+    placedOf(layout(doc([p])), p.id)!.pb.lines;
+
+  it("flags the paragraph's final line with paragraphEnd (single line, no break)", () => {
+    const lines = linesOf(para("Hello world"));
+    expect(lines.length).toBe(1);
+    expect(lines[0]!.paragraphEnd).toBe(true);
+    expect(lines[0]!.lineBreak).toBeFalsy();
+  });
+
+  it("flags an empty paragraph's sole line with paragraphEnd (Word shows a bare ¶)", () => {
+    const lines = linesOf(para(""));
+    expect(lines[lines.length - 1]!.paragraphEnd).toBe(true);
+  });
+
+  it("sets paragraphEnd ONLY on the last line of a multi-line paragraph", () => {
+    const lines = linesOf(para("word ".repeat(60).trim()));
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines[lines.length - 1]!.paragraphEnd).toBe(true);
+    expect(lines.slice(0, -1).every((l) => !l.paragraphEnd)).toBe(true);
+    // Wrapped lines are NOT manual breaks — no stray ↵ on soft-wrapped lines.
+    expect(lines.every((l) => !l.lineBreak)).toBe(true);
+  });
+
+  it("marks a soft line break (\\v) with lineBreak and the paragraph end with paragraphEnd", () => {
+    const lines = linesOf(para("Line one\vLine two"));
+    const breaks = lines.filter((l) => l.lineBreak);
+    expect(breaks.length).toBe(1); // exactly the segment boundary
+    expect(breaks[0]!.paragraphEnd).toBeFalsy(); // a break is not a paragraph end
+    const last = lines[lines.length - 1]!;
+    expect(last.paragraphEnd).toBe(true);
+    expect(last.lineBreak).toBeFalsy();
+  });
+
+  it("emits a tab arrow in the gap a tab opened, ending at the positioned piece", () => {
+    const p = para("Left\tRight", { tabStops: [{ posPx: 300, align: "right", leader: "dot" }] });
+    const line = placedOf(layout(doc([p])), p.id)!.pb.lines[0]!;
+    expect(line.tabArrows?.length).toBe(1);
+    const arrow = line.tabArrows![0]!;
+    expect(arrow.x2).toBeGreaterThan(arrow.x1); // a real gap
+    // The arrow gap closes exactly where the right-aligned piece begins.
+    const right = line.fragments.find((f) => f.text === "Right")!;
+    expect(arrow.x2).toBeCloseTo(right.x, 0);
+  });
+
+  it("emits a tab arrow even for a plain (leaderless) tab", () => {
+    const p = para("A\tB");
+    const line = placedOf(layout(doc([p])), p.id)!.pb.lines[0]!;
+    expect(line.leaders).toBeUndefined(); // default tab stop has no leader…
+    expect(line.tabArrows?.length).toBe(1); // …but the arrow is independent of leaders
+  });
+
+  it("spaceMarkXs returns one mid-glyph center per rendered space, left to right", () => {
+    const p = para("a b c"); // two interior spaces at indices 1 and 3
+    const frag = placedOf(layout(doc([p])), p.id)!.pb.lines[0]!.fragments[0]!;
+    const xs = spaceMarkXs(frag);
+    expect(xs.length).toBe(2);
+    expect(xs[0]!).toBeLessThan(xs[1]!);
+    // Stub font: 16px → 8px/char. Space centers sit at frag.x + index*8 + 4.
+    expect(xs[0]!).toBeCloseTo(frag.x + 1 * 8 + 4, 0);
+    expect(xs[1]!).toBeCloseTo(frag.x + 3 * 8 + 4, 0);
   });
 });
