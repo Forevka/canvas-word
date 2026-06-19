@@ -260,6 +260,10 @@ applyGridView();
 const showHRuler = !readonly && (runtime.view?.ruler ?? true);
 const showVRuler = !readonly && (runtime.view?.verticalRuler ?? true);
 
+// Initial zoom (what the reader opens at). One-time at mount — later docx opens
+// reset to 100%, like a fresh document.
+if (runtime.view?.zoom != null) editor.setZoom(runtime.view.zoom);
+
 // Listeners notified whenever a remote change is applied (the activity panel,
 // Part 3, registers here).
 const remoteChangeListeners: Array<(change: Change) => void> = [];
@@ -447,10 +451,12 @@ const openDocxFile = async (file: File | ArrayBuffer): Promise<void> => {
 // and the global Ctrl+F shortcut share it.
 let openFind: () => void = () => {};
 
-// View-only: visually hide the editing ribbon, but keep the block running so the
-// side drawers it wires up (outline navigation, bookmarks) still build and show.
+// View-only (or an embedder that opts out via view.toolbar): visually hide the
+// editing ribbon, but keep the block running so the side drawers it wires up
+// (outline navigation, bookmarks) still build and show.
 const toolbar = shell.toolbar;
-if (readonly) toolbar.style.display = "none";
+const showToolbar = !readonly && (runtime.view?.toolbar ?? true);
+if (!showToolbar) toolbar.style.display = "none";
 if (toolbar) {
   // ===== Word-style tabbed ribbon ==========================================
   // A tab strip drives a stack of panels (one visible at a time). Each panel
@@ -1601,6 +1607,7 @@ if (toolbar) {
       }
     };
     aclose.addEventListener("click", () => toggleActivity());
+    if (runtime.view?.activity) toggleActivity(); // closed by default; embedder can open it
   }
 
   // ---- Outline drawer (left navigation pane) ------------------------------
@@ -1710,7 +1717,7 @@ if (toolbar) {
     refreshOutline = (): void => {
       if (open) build();
     };
-    setOpen(true); // visible by default (Word opens the navigation pane on demand; we lead with it)
+    setOpen(runtime.view?.outline ?? true); // visible by default; embedder can start it closed
   }
 
   // ---- Bookmarks panel (list + Go To + add/rename/delete) -----------------
@@ -1798,6 +1805,7 @@ if (toolbar) {
     refreshBookmarks = (): void => {
       if (open) build();
     };
+    if (runtime.view?.bookmarks) setOpen(true); // closed by default; embedder can open it
   }
 
   // ---- Review pane (track changes + comments) — docked right, in-shell ----
@@ -2005,6 +2013,7 @@ if (toolbar) {
     refreshReview = (): void => {
       if (open) build();
     };
+    if (runtime.view?.reviewPane) setOpen(true); // closed by default; embedder can open it
   }
 
   // Collapse / expand the ribbon body (keeps the tab strip). A pinned chevron
@@ -2030,6 +2039,8 @@ if (toolbar) {
   tabsBar.appendChild(collapseBtn);
 
   showTab("home");
+  // After showTab (which re-pins), honor the embedder's initial collapsed choice.
+  if (runtime.view?.ribbonCollapsed) setCollapsed(true);
 
   // ---- toolbar controls mirror the caret formatting -----------------------
   let lastStylesheet = editor.getDocument().stylesheet ?? null;
@@ -2097,6 +2108,7 @@ if (toolbar) {
 // ---- status bar (page count, word/character count, zoom slider) -------------
 {
   const sb = shell.statusbar;
+  if (runtime.view?.statusBar === false) sb.style.display = "none";
   if (sb) {
     const left = document.createElement("div");
     left.className = "sb-left";

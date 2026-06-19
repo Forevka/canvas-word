@@ -31,6 +31,18 @@ const backend =
 // the older alias kept working.
 const collab = params.get("doc") ?? params.get("collab");
 
+// `?view=<url-encoded JSON>` lets the dev page exercise the embedder `view`
+// options (panels, rulers, grid, ribbon, zoom). Ignored if absent or malformed.
+let view: import("./wordcanvas").WordCanvasViewOptions | undefined;
+const viewParam = params.get("view");
+if (viewParam) {
+  try {
+    view = JSON.parse(viewParam) as import("./wordcanvas").WordCanvasViewOptions;
+  } catch {
+    console.warn("[dev] ignoring malformed ?view= JSON");
+  }
+}
+
 // Online (a backend is configured): ask who you are so edits/carets are
 // attributed. Offline: no identity needed.
 const user = backend ? await showIdentityPopup() : undefined;
@@ -49,6 +61,7 @@ const editor = new WordCanvas({
   ...(backend ? { backendUrl: backend } : {}),
   ...(collab ? { collabId: collab } : {}),
   ...(user ? { user } : {}),
+  ...(view ? { view } : {}),
   knownUsers,
   onLoadProgress,
 });

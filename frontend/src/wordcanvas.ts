@@ -59,9 +59,11 @@ export interface WordCanvasOptions {
    *  don't opt in. Connect an agent via the WebMCP browser extension / Chrome
    *  DevTools MCP. */
   agentTools?: boolean | AgentToolsOptions;
-  /** Initial view-chrome state — show/hide the horizontal & vertical rulers, the
-   *  drawing grid, snap-to-grid, and the grid step. Omit any field to keep its
-   *  default (rulers on, grid/snap off, 1/4-inch step). */
+  /** Initial view-chrome state — full control over what the reader sees on open:
+   *  the horizontal & vertical rulers, drawing grid + snap + step, the Outline /
+   *  Bookmarks / Review / Activity panels, the ribbon toolbar (and whether it
+   *  starts collapsed), the status bar, and the initial zoom. Omit any field to
+   *  keep its default. */
   view?: WordCanvasViewOptions;
   /** Track first-load progress so you can show a loader while the big chunks
    *  stream. Fires for the editor JS chunk download (`phase: "bundle"`,

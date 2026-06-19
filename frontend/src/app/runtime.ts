@@ -21,11 +21,14 @@ export interface AgentToolsOptions {
   name?: string;
 }
 
-/** Initial view-chrome state (overrides the built-in defaults). All optional. */
+/** Initial view-chrome state — what the reader sees on open. Every field is
+ *  optional; omit one to keep its built-in default. Lets an embedder fully
+ *  configure the surface (panels, rulers, grid, ribbon, zoom) per mount. */
 export interface WordCanvasViewOptions {
-  /** Show the horizontal ruler. Default true (hidden in readonly). */
+  // ----- rulers & grid -----
+  /** Show the horizontal ruler. Default true (always hidden in readonly). */
   ruler?: boolean;
-  /** Show the vertical ruler. Default true (hidden in readonly). */
+  /** Show the vertical ruler. Default true (always hidden in readonly). */
   verticalRuler?: boolean;
   /** Show the drawing-grid overlay on every page. Default false. */
   grid?: boolean;
@@ -33,6 +36,26 @@ export interface WordCanvasViewOptions {
   snapToGrid?: boolean;
   /** Grid step in document px (96dpi). Default 24 (1/4 inch). */
   gridSpacingPx?: number;
+  // ----- side panels & drawers -----
+  /** Open the Outline / navigation pane (left drawer). Default true. */
+  outline?: boolean;
+  /** Open the Bookmarks panel. Default false. */
+  bookmarks?: boolean;
+  /** Open the Review pane (track changes + comments). Default false. */
+  reviewPane?: boolean;
+  /** Open the Activity panel (online only — who edited & when). Default false. */
+  activity?: boolean;
+  // ----- chrome -----
+  /** Show the ribbon toolbar. Default true (always hidden in readonly). When
+   *  false the editor stays fully editable but chromeless — the side drawers it
+   *  wires up (outline, bookmarks) still work. */
+  toolbar?: boolean;
+  /** Start with the ribbon body collapsed (tab strip stays). Default false. */
+  ribbonCollapsed?: boolean;
+  /** Show the status bar (page/word count + zoom). Default true. */
+  statusBar?: boolean;
+  /** Initial presentational zoom (1 = 100%, clamped to [0.25, 5]). Default 1. */
+  zoom?: number;
 }
 
 /** One other collaborator currently in the document. */

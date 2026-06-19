@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`{ ruler, verticalRuler, grid, snapToGrid, gridSpacingPx }`) to set the initial
   state. Presentational only — no document-model change (snapping reuses the existing
   anchor offsets).
+- **Full initial-view control via the `view` constructor option.** Embedders can now
+  set everything the reader sees on open, per mount: the **Outline/navigation**,
+  **Bookmarks**, **Review** (track changes + comments), and **Activity** panels; the
+  **ribbon toolbar** (hide it for a chromeless-but-editable surface, or start it
+  **collapsed**); the **status bar**; the **initial zoom**; and the rulers/grid above.
+  `view: { ruler, verticalRuler, grid, snapToGrid, gridSpacingPx, outline, bookmarks,
+  reviewPane, activity, toolbar, ribbonCollapsed, statusBar, zoom }` — every field
+  optional, omit to keep its default. (The dev harness also accepts `?view=<json>` to
+  preview a configuration.)
 - **Flexible page layout — a redesigned Page Layout dialog.** The old preset-only
   Page Setup panel is replaced by a draggable, non-blocking dialog (Layout → **Page
   setup**) with a live, schematic scaled-page preview and an **inches ⇄ cm** toggle.
