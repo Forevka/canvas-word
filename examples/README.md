@@ -9,6 +9,7 @@ each consuming the package by name the way a third-party integrator would.
 | [`embed-live`](./embed-live) | Online editing + live collaboration + presence + share links (migrated from the old `/live` page) | Vite |
 | [`playground`](./playground) | Programmatic `DocumentBuilder` playground — edit code, see the document rebuild live | Vite |
 | [`embed-multi`](./embed-multi) | Multiple independent editors on one page; add/remove instances at runtime | Vite |
+| [`ribbon-customization`](./ribbon-customization) | Customize the ribbon (`customizeRibbon`) — reorder/remove built-ins, add tabs/buttons, macros + popups | None (static HTML) |
 
 They require the library to be built first (`npm run build:lib` from the repo
 root), since they import the built `dist-lib` bundle. See each folder's README for
