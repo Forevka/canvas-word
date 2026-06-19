@@ -63,11 +63,11 @@ export interface RunPaint {
   /** External (non-anchor) link — paints blue+underlined; the PDF also annotates it. */
   externalLink: boolean;
 }
-export function runPaint(style: CharStyle): RunPaint {
+export function runPaint(style: CharStyle, linkColor: string = EXTERNAL_LINK_COLOR): RunPaint {
   const anchor = style.link !== undefined && style.link.startsWith("#");
   const externalLink = style.link !== undefined && !anchor;
   let color = style.color;
-  if (externalLink) color = EXTERNAL_LINK_COLOR;
+  if (externalLink) color = linkColor;
   else if (anchor && HYPERLINK_BLUES.has(style.color.toLowerCase())) color = ANCHOR_TEXT_COLOR;
   return {
     color,

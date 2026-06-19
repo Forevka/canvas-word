@@ -5,9 +5,30 @@
 
 import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
 import type { ChildDocument, EditMode, FieldResolver } from "../index";
+import type { ExportWarning } from "../export/exportDocument";
+import type { DefaultStyleOverrides, EditorBehavior, EditorTheme } from "../config";
 import type { LoadProgress } from "./loadProgress";
 
 export type { EditMode, FieldResolver };
+
+/** The file format an export/save produces. */
+export type SaveFormat = "docx" | "pdf";
+
+/** Payload handed to a host `onSave` handler when the user triggers an export
+ *  while `onSave` is configured (see WordCanvasOptions.onSave). */
+export interface SaveEvent {
+  /** The exported file as a Blob with the correct MIME type set. */
+  blob: Blob;
+  /** The same file content as raw bytes (handy for FormData / a Node Buffer). */
+  bytes: Uint8Array;
+  /** Which format the user exported. */
+  format: SaveFormat;
+  /** Deduplicated lossy-mapping notes from the export (usually empty). */
+  warnings: ExportWarning[];
+}
+
+/** Host hook invoked instead of the built-in download when the user exports. */
+export type SaveHandler = (event: SaveEvent) => void | Promise<void>;
 
 /** Opt-in WebMCP agent tooling. `true` registers all tool buckets; an object
  *  restricts capabilities or namespaces tool names. */
@@ -57,6 +78,14 @@ export interface WordCanvasViewOptions {
   ribbonCollapsed?: boolean;
   /** Show the status bar (page/word count + zoom). Default true. */
   statusBar?: boolean;
+  /** Show the File ▸ Export **PDF** button. Default true. Set false when the
+   *  embedder ships its own export/save pipeline (e.g. via `onSave` or the
+   *  `exportPdf()` handle method) and doesn't want the built-in button. */
+  exportPdf?: boolean;
+  /** Show the File ▸ Export **DOCX** button. Default true. Set false when the
+   *  embedder ships its own export/save pipeline (e.g. via `onSave` or the
+   *  `exportDocx()` handle method) and doesn't want the built-in button. */
+  exportDocx?: boolean;
   /** Initial presentational zoom (1 = 100%, clamped to [0.25, 5]). Default 1. */
   zoom?: number;
 }
@@ -90,6 +119,11 @@ export interface EditorHandle {
   setDocument(doc: Document): void;
   /** Open a .docx (auto-publishes when online); resolves when loaded. */
   openDocx(file: File | ArrayBuffer): Promise<void>;
+  /** Export the current document to a .docx Blob (track changes baked to the
+   *  original baseline, matching the toolbar's Export). For a custom Save button. */
+  exportDocx(): Promise<Blob>;
+  /** Export the current document to a PDF Blob. */
+  exportPdf(): Promise<Blob>;
   /** Publish the current document and resolve its shareable link (online only). */
   share(): Promise<string>;
   getDocId(): string | null;
@@ -120,6 +154,9 @@ export interface WordCanvasRuntime {
   user?: UserInfo | undefined;
   /** Override how a share link is surfaced; default shows a built-in dialog. */
   onShareLink?: ((url: string, docId: string) => void) | undefined;
+  /** When set, the toolbar Export buttons hand the produced file to this hook
+   *  instead of triggering a browser download — route it to your own pipeline. */
+  onSave?: SaveHandler | undefined;
   /** Mount view-only: hide the editing chrome and make every mutation a no-op
    *  (the document is still selectable, copyable, and live for remote edits). */
   readonly?: boolean | undefined;
@@ -147,4 +184,11 @@ export interface WordCanvasRuntime {
   agentTools?: boolean | AgentToolsOptions | undefined;
   /** Initial view-chrome state (rulers, grid, snap). Omit ⇒ built-in defaults. */
   view?: WordCanvasViewOptions | undefined;
+  /** Color theme override (per-instance). Omit ⇒ the built-in look. */
+  theme?: EditorTheme | undefined;
+  /** Override the LIBRARY's built-in default run/paragraph styles for NEW/blank
+   *  documents + the fallback stylesheet. A loaded .docx keeps its own defaults. */
+  overrideDefaultStyles?: DefaultStyleOverrides | undefined;
+  /** Behavior tuning (zoom step/clamp, indent step, default grid spacing). */
+  behavior?: EditorBehavior | undefined;
 }

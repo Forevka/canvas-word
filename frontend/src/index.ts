@@ -6,6 +6,7 @@ import type { Block, CharStyle, Document, ParaStyle, TableBlock } from "@cw/shar
 import { BAND_CONTAINERS, parseTocInstruction } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, UserInfo } from "@cw/shared";
 import { isCollapsed, colorForId, userDisplayName, freshId, DEFAULT_CHAR_STYLE } from "@cw/shared";
+import type { ResolvedBehavior, ResolvedTheme } from "./config";
 import { ZOOM_STEP } from "./uiConstants";
 import { applyOp, containerBlocks, containerOf, effectiveFractions, locateImage, sliceRuns, type Op } from "@cw/shared";
 import { bandParagraphs, blockById, buildTableGrid, containerListOf, gridOriginOfCell, locateParagraph, normalizeRect, paragraphsOf, styleAtRuns, textOfRuns } from "@cw/shared";
@@ -331,6 +332,11 @@ export interface EditorOptions {
   /** Paint-surface tuning passed to the canvas layer — e.g. `{ chrome: false }`
    *  to drop page shadow/gaps for an embedded child-document editor. */
   paintOptions?: PaintLayerOptions;
+  /** Resolved color theme (per-instance). Threaded into the paint layer; omit ⇒
+   *  the library default look. */
+  theme?: ResolvedTheme;
+  /** Resolved behavior tuning (zoom step/clamp, indent step). Omit ⇒ defaults. */
+  behavior?: ResolvedBehavior;
 }
 
 /** Request passed to a custom-field resolver. */
@@ -401,7 +407,13 @@ export function createEditor(
   let mode: EditMode = options.mode ?? (options.readonly ? "view" : "edit");
   const allowedModes = options.allowedModes;
   const readonly = mode === "view";
-  const paint = createPaintLayer(container, options.paintOptions);
+  // Multiplicative zoom step (toolbar +/- and Ctrl+wheel) — per-instance.
+  const zoomStep = options.behavior?.zoomStep ?? ZOOM_STEP;
+  const paint = createPaintLayer(container, {
+    ...options.paintOptions,
+    ...(options.theme ? { theme: options.theme } : {}),
+    ...(options.behavior ? { zoomMin: options.behavior.zoomMin, zoomMax: options.behavior.zoomMax } : {}),
+  });
   const undoMgr = new UndoManager();
   // Document history: every committed edit (and undo/redo, as forward ops) is
   // recorded as a Change. The base snapshot + this ordered log reconstructs any
@@ -2433,7 +2445,7 @@ export function createEditor(
     (ev: WheelEvent) => {
       if (!ev.ctrlKey && !ev.metaKey) return;
       ev.preventDefault();
-      applyZoom(paint.getZoom() * (ev.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP), ev.clientY);
+      applyZoom(paint.getZoom() * (ev.deltaY < 0 ? zoomStep : 1 / zoomStep), ev.clientY);
     },
     { passive: false },
   );
@@ -2536,7 +2548,13 @@ export function createEditor(
       return tree;
     },
     getStyleContext,
-    createChild: (): ChildDocument => createChildDocument({ getStyleContext, makeEditor: createEditor }),
+    createChild: (): ChildDocument =>
+      createChildDocument({
+        getStyleContext,
+        makeEditor: createEditor,
+        ...(options.theme ? { theme: options.theme } : {}),
+        ...(options.behavior ? { behavior: options.behavior } : {}),
+      }),
     getSelectedObject(): string | null {
       return selectedObject;
     },

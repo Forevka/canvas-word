@@ -9,13 +9,17 @@
 // events fire; when omitted, the editor runs fully offline. Multiple WordCanvas
 // instances can coexist on one page (class-scoped chrome, per-instance runtime).
 
-import type { AgentToolsOptions, EditMode, EditorHandle, FieldResolver, Participant, WordCanvasEvent, WordCanvasRuntime, WordCanvasViewOptions } from "./app/runtime";
+import type { AgentToolsOptions, EditMode, EditorHandle, FieldResolver, Participant, SaveEvent, SaveFormat, SaveHandler, WordCanvasEvent, WordCanvasRuntime, WordCanvasViewOptions } from "./app/runtime";
 import type { ChildContent, ChildDocument, ChildEditorHandle, ChildRenderOptions, FieldResolveRequest, FieldResult } from "./index";
 import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
+import type { DefaultStyleOverrides, EditorBehavior, EditorTheme } from "./config";
+import { darkCanvasTheme } from "./config";
 import { BUNDLE_SHARE, type LoadProgress } from "./app/loadProgress";
 
-export type { Document, UserInfo, Participant, EditMode, ReviewLayer, Fragment, FieldResolver, FieldResolveRequest, FieldResult, AgentToolsOptions, LoadProgress, WordCanvasViewOptions };
+export type { Document, UserInfo, Participant, EditMode, ReviewLayer, Fragment, FieldResolver, FieldResolveRequest, FieldResult, AgentToolsOptions, LoadProgress, WordCanvasViewOptions, SaveEvent, SaveFormat, SaveHandler };
 export type { ChildDocument, ChildContent, ChildRenderOptions, ChildEditorHandle };
+export type { EditorTheme, DefaultStyleOverrides, EditorBehavior };
+export { darkCanvasTheme };
 
 export interface WordCanvasOptions {
   /** Element to mount the editor into. */
@@ -31,6 +35,13 @@ export interface WordCanvasOptions {
   user?: UserInfo;
   /** Override how a share link is surfaced (default: a built-in dialog). */
   onShareLink?: (url: string, docId: string) => void;
+  /** Route exports to your own pipeline. When set, the toolbar's Export (PDF /
+   *  DOCX) buttons hand the produced file to this callback — a Blob plus raw
+   *  bytes, the format, and any export warnings — instead of triggering a browser
+   *  download. Return a promise to keep the UI responsive while you upload. Omit
+   *  to keep the default download behaviour. (For a fully custom button, call
+   *  `exportDocx()` / `exportPdf()` on the instance or its EditorHandle.) */
+  onSave?: SaveHandler;
   /** Mount as a view-only viewer: the document renders and stays selectable and
    *  copyable, but the editing chrome is hidden and every mutation is a no-op.
    *  In an online session a read-only client still receives live remote edits.
@@ -65,6 +76,20 @@ export interface WordCanvasOptions {
    *  starts collapsed), the status bar, and the initial zoom. Omit any field to
    *  keep its default. */
   view?: WordCanvasViewOptions;
+  /** Color theme — pass a (partial) `EditorTheme` to recolor the editor chrome:
+   *  the gray canvas/gutter, gridlines, hyperlink/accent colors, formatting marks,
+   *  TOC leaders, rulers, caret, etc. Omit any field to keep its built-in value.
+   *  A ready-made `darkCanvasTheme` is exported to spread + tweak. Affects the
+   *  on-screen editor only (exported PDFs keep the built-in look). */
+  theme?: EditorTheme;
+  /** Override the LIBRARY's built-in default run/paragraph styles (body font,
+   *  size, color, line height, heading font) for NEW/blank documents and the
+   *  fallback stylesheet. IMPORTANT: a loaded .docx keeps its OWN defaults
+   *  (w:docDefaults / Normal) — set defaults there, or here, not both. */
+  overrideDefaultStyles?: DefaultStyleOverrides;
+  /** Behavior tuning: zoom step (default 1.1), zoom clamp (0.25–5), indent step
+   *  (36px), and default drawing-grid spacing (24px; `view.gridSpacingPx` wins). */
+  behavior?: EditorBehavior;
   /** Track first-load progress so you can show a loader while the big chunks
    *  stream. Fires for the editor JS chunk download (`phase: "bundle"`,
    *  indeterminate) and the bundled font fetch (`phase: "fonts"`, the dominant
@@ -103,6 +128,7 @@ export class WordCanvas {
         collabId: opts.docId ?? opts.collabId,
         user: opts.user,
         onShareLink: opts.onShareLink,
+        onSave: opts.onSave,
         readonly: opts.readonly,
         mode: opts.mode,
         allowedModes: opts.allowedModes,
@@ -110,6 +136,9 @@ export class WordCanvas {
         resolveField: opts.resolveField,
         agentTools: opts.agentTools,
         view: opts.view,
+        theme: opts.theme,
+        overrideDefaultStyles: opts.overrideDefaultStyles,
+        behavior: opts.behavior,
         onLoadProgress: opts.onLoadProgress,
         onReady: (h) => {
           this.handle = h;
@@ -192,6 +221,18 @@ export class WordCanvas {
   /** Open a .docx. When online, auto-publishes it and surfaces a share link. */
   async openDocx(file: File | ArrayBuffer): Promise<void> {
     return (await this.ready).openDocx(file);
+  }
+
+  /** Export the current document to a .docx Blob — track changes baked to the
+   *  original baseline, exactly like the toolbar's Export. Wire it to your own
+   *  Save button and POST it anywhere. Resolves once the editor is ready. */
+  async exportDocx(): Promise<Blob> {
+    return (await this.ready).exportDocx();
+  }
+
+  /** Export the current document to a PDF Blob (see `exportDocx`). */
+  async exportPdf(): Promise<Blob> {
+    return (await this.ready).exportPdf();
   }
 
   /** Replace the open document with a programmatically-built one (e.g. a

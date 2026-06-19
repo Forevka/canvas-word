@@ -9,6 +9,7 @@
 //     the two systems share the same id space).
 
 import type { CharStyle, Document, ParaStyle, Paragraph } from "./document";
+import type { EditorTypography } from "./defaults";
 import { paragraphsOf } from "./text";
 
 export type NamedStyleType = "paragraph" | "character";
@@ -173,22 +174,32 @@ export function paragraphsWithStyle(doc: Document, styleId: string): Paragraph[]
   return paragraphsOf(doc).filter((p) => p.style.namedStyle === styleId);
 }
 
-export function defaultStylesheet(): Stylesheet {
-  const base: Partial<ParaStyle> = { lineHeight: 1.5, spaceBeforePx: 0, spaceAfterPx: 12 };
+/** The built-in starter stylesheet (Normal + Title/Subtitle/Heading/Quote/Code).
+ *  `t` overrides only the LIBRARY defaults — the body (Normal) font/size/color +
+ *  line height, and the heading font family. It is used for NEW/blank documents
+ *  and as the fallback when a document carries no stylesheet of its own; a loaded
+ *  .docx keeps its own w:docDefaults / Normal style (the importer bakes those in).
+ *  Zero-arg reproduces the historical default byte-for-byte. */
+export function makeDefaultStylesheet(t: EditorTypography = {}): Stylesheet {
+  const fontFamily = t.fontFamily ?? "Georgia, serif";
+  const fontSizePx = t.fontSizePx ?? 16;
+  const color = t.color ?? "#202124";
+  const headingFont = t.headingFontFamily ?? "Arial, sans-serif";
+  const base: Partial<ParaStyle> = { lineHeight: t.lineHeight ?? 1.5, spaceBeforePx: 0, spaceAfterPx: 12 };
   return {
     defaultStyleId: "Normal",
     styles: [
       {
         id: "Normal",
         name: "Normal",
-        char: { fontFamily: "Georgia, serif", fontSizePx: 16, bold: false, italic: false, color: "#202124" },
+        char: { fontFamily, fontSizePx, bold: false, italic: false, color },
         para: { ...base, align: "left", indentFirstLinePx: 0 },
       },
       {
         id: "Title",
         name: "Title",
         basedOn: "Normal",
-        char: { fontFamily: "Arial, sans-serif", fontSizePx: 32, bold: true, color: "#1a1a2e" },
+        char: { fontFamily: headingFont, fontSizePx: 32, bold: true, color: "#1a1a2e" },
         para: { align: "center", spaceAfterPx: 4 },
       },
       {
@@ -202,7 +213,7 @@ export function defaultStylesheet(): Stylesheet {
         id: "Heading1",
         name: "Heading 1",
         basedOn: "Normal",
-        char: { fontFamily: "Arial, sans-serif", fontSizePx: 24, bold: true, color: "#1a1a2e" },
+        char: { fontFamily: headingFont, fontSizePx: 24, bold: true, color: "#1a1a2e" },
         para: { spaceBeforePx: 18, spaceAfterPx: 8, keepWithNext: true },
       },
       {
@@ -228,4 +239,9 @@ export function defaultStylesheet(): Stylesheet {
       },
     ],
   };
+}
+
+/** The built-in starter stylesheet with no overrides. */
+export function defaultStylesheet(): Stylesheet {
+  return makeDefaultStylesheet();
 }

@@ -75,6 +75,47 @@ report re-imports to the **exact same block count** (1031 → 1031).
 
 import ~220ms · PDF ~1.2s (9.5MB, 81pp) · DOCX ~0.4s (9.1MB) · docx re-import 1031→1031 blocks.
 
+## Saving from an embedder (route exports to your own pipeline)
+
+An embedder who wants a **Save** button that ships the file to their own backend
+has two entry points on the `WordCanvas` package API — both reuse the in-worker
+pipeline above (no extra bundle, no `installMeasureHost()` dance), and both bake
+the track-changes overlay to the original baseline like the toolbar's Export:
+
+- **`exportDocx()` / `exportPdf()`** on the instance (and its `EditorHandle`) each
+  resolve to a `Blob`. Wire your own button and `POST` the result anywhere. These
+  work even when the ribbon is hidden (`view.toolbar: false` / `readonly`).
+
+  ```ts
+  const ed = new WordCanvas({ container });
+  saveBtn.onclick = async () => {
+    const blob = await ed.exportDocx();
+    await fetch("/api/documents", { method: "POST", body: blob });
+  };
+  ```
+
+- **`onSave`** constructor option. When set, the toolbar's **Export (PDF / DOCX)**
+  buttons hand the produced file to your callback (`SaveEvent`: `blob`, raw
+  `bytes`, `format`, export `warnings`) instead of triggering a browser download.
+  Return a promise to keep the UI responsive while you upload.
+
+  ```ts
+  new WordCanvas({
+    container,
+    onSave: async ({ blob, format }) => {
+      await fetch(`/api/documents?format=${format}`, { method: "POST", body: blob });
+    },
+  });
+  ```
+
+Both sit on top of `exportDocument(doc, format)`; `getDocument()` (the raw model
+snapshot) and the headless `@forevka/wordcanvas/export` `runExport()` remain
+available for fully custom flows.
+
+To **hide the built-in buttons** entirely (an embedder driving export from its own
+UI), set `view.exportPdf: false` and/or `view.exportDocx: false` — the Export group
+disappears when both are off, while `exportDocx()` / `exportPdf()` keep working.
+
 ## Bundling
 
 The export worker is an **ES-format** worker (`vite.config.ts` `worker.format`)

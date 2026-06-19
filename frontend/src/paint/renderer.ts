@@ -16,29 +16,23 @@ import { spaceMarkXs } from "../layout/geometry";
 import type { CellBorder } from "@cw/shared";
 import { charStyleToFont } from "../layout/metrics";
 import {
-  ACCENT_BLUE,
   cellBorderDash,
   cellBorderWidth,
-  COLUMN_SEPARATOR_COLOR,
   decorationThickness,
-  DEFAULT_GRID_COLOR,
   doubleBorderGap,
-  FOOTNOTE_RULE_COLOR,
-  FORMATTING_MARK_COLOR,
   FOOTNOTE_RULE_WIDTH_FRACTION,
-  IMAGE_PLACEHOLDER_COLOR,
   pageBorderSegments,
   leaderDash,
   leaderWidth,
   normalizeLinkBlue,
   runPaint,
   strikeOffset,
-  TOC_LEADER_COLOR,
   TOC_LEADER_DASH,
   TOC_LEADER_GAP_PX,
   UNDERLINE_OFFSET_PX,
   verticalShift,
 } from "./paintStyle";
+import { DEFAULT_THEME, type ResolvedTheme } from "../config";
 import { ZOOM_MAX, ZOOM_MIN } from "../uiConstants";
 
 export interface PagePoint {
@@ -139,7 +133,6 @@ export interface PaintScheduler {
   destroy(): void;
 }
 
-const PAGE_GAP_PX = 24;
 // Selection is painted with a "difference" blend over a dark-gray source at
 // partial alpha — so it adapts to whatever is beneath it: a soft cool tint on
 // the white page, a clearly lighter/inverted band on a shaded cell (e.g. a blue
@@ -147,13 +140,6 @@ const PAGE_GAP_PX = 24;
 // glyphs, above cell fills).
 const SELECTION_DIFF_COLOR = "rgb(64, 64, 64)";
 const SELECTION_DIFF_ALPHA = 0.5;
-
-// Drawing-grid mesh hairlines (under content) for precise object placement.
-const GRID_MESH_COLOR = "rgba(0,0,0,0.08)";
-// Search-match highlight band (over fills, under text) — Word's amber.
-const SEARCH_HIGHLIGHT_COLOR = "rgba(251, 188, 4, 0.45)";
-// Blinking text caret (injected CSS); matched by the .cw-caret background.
-const CARET_COLOR = "#1a1a2e";
 
 // Content-control / field adornment chrome shared geometry. The two adornment
 // blocks differ in colour + rect treatment (SDT strokes a frame, fields fill +
@@ -170,9 +156,6 @@ const ADORNMENT_LABEL_OFFSET_Y = 11;
 // between the painted disc and reviewPinAt's hit-testing so they stay aligned.
 const PIN_RADIUS_PX = 5;
 const PIN_OFFSET_PX = 6;
-/** Resolved-pin fill and the disc's outline. */
-const PIN_RESOLVED_COLOR = "#9aa0a6";
-const PIN_STROKE_COLOR = "#fff";
 
 /** Stroke a page's w:pgBorders box. Shares geometry with the PDF painter via
  *  pageBorderSegments so the two backends stay in lockstep. */
@@ -208,7 +191,8 @@ function injectCaretCss(): void {
   const style = document.createElement("style");
   style.textContent =
     "@keyframes cw-caret-blink{0%,55%{opacity:1}56%,100%{opacity:0}}" +
-    `.cw-caret{position:absolute;width:2px;background:${CARET_COLOR};pointer-events:none;animation:cw-caret-blink 1.06s step-end infinite;}` +
+    // Caret color is set per-instance inline (caretEl.style.background = theme.caret).
+    ".cw-caret{position:absolute;width:2px;pointer-events:none;animation:cw-caret-blink 1.06s step-end infinite;}" +
     ".cw-rcaret{position:absolute;width:2px;pointer-events:none;z-index:3;}" +
     ".cw-rcaret .flag{position:absolute;top:-13px;left:-1px;height:13px;display:flex;align-items:center;" +
     "font:600 10px/1 'Segoe UI',Roboto,sans-serif;color:#fff;padding:0 4px;border-radius:3px 3px 3px 0;white-space:nowrap;}" +
@@ -222,14 +206,22 @@ export interface PaintLayerOptions {
    *  false for embedded previews / child documents that should render the bare
    *  page(s) flush in their host element (no shadow, no surrounding gap). */
   chrome?: boolean;
+  /** Resolved color theme (omit ⇒ the library default). Per-instance. */
+  theme?: ResolvedTheme;
+  /** Absolute zoom clamp (omit ⇒ built-in 0.25/5). */
+  zoomMin?: number;
+  zoomMax?: number;
 }
 
 export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions = {}): PaintScheduler {
   injectCaretCss();
+  const theme = opts.theme ?? DEFAULT_THEME;
+  const zoomMin = opts.zoomMin ?? ZOOM_MIN;
+  const zoomMax = opts.zoomMax ?? ZOOM_MAX;
   // Page chrome (shadow + gaps) is on by default; previews turn it off so the
   // bare page sits flush in its host. The gap also feeds clientToPage hit-testing.
   const chrome = opts.chrome !== false;
-  const gap = chrome ? PAGE_GAP_PX : 0;
+  const gap = chrome ? theme.pageGapPx : 0;
   let tree: LayoutTree | null = null;
   let selectionRects: Rect[] = [];
   let searchRects: Rect[] = [];
@@ -244,6 +236,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
 
   const caretEl = document.createElement("div");
   caretEl.className = "cw-caret";
+  caretEl.style.background = theme.caret;
   caretEl.style.display = "none";
 
   const placeholders: HTMLDivElement[] = [];
@@ -419,7 +412,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     // px crisp at any zoom (ctx is already scaled by `scale`).
     if (showGrid && gridSpacingPx > 0) {
       ctx.save();
-      ctx.strokeStyle = GRID_MESH_COLOR;
+      ctx.strokeStyle = theme.gridMesh;
       ctx.lineWidth = 1 / scale;
       ctx.beginPath();
       for (let x = gridSpacingPx; x < page.widthPx; x += gridSpacingPx) {
@@ -448,7 +441,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     if (page.footer) for (const b of page.footer) paintCellFills(ctx, b, page.index);
 
     // 2a. search-match highlights (over fills, under text)
-    ctx.fillStyle = SEARCH_HIGHLIGHT_COLOR;
+    ctx.fillStyle = theme.searchHighlight;
     for (const r of searchRects) {
       if (r.pageIndex === page.index) ctx.fillRect(r.x, r.y, r.width, r.height);
     }
@@ -529,7 +522,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
 
     // 3a. column separator rules (w:cols/@w:sep) — thin vertical lines in gaps.
     if (page.columnSeparatorsX) {
-      ctx.strokeStyle = COLUMN_SEPARATOR_COLOR;
+      ctx.strokeStyle = theme.columnSeparator;
       ctx.lineWidth = 1;
       for (const x of page.columnSeparatorsX) {
         const sx = Math.round(x) + 0.5;
@@ -543,7 +536,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     // 3b. footnote separator rule (1/3 content width, Word style)
     if (page.footnoteRuleY !== undefined) {
       const cw = page.widthPx - page.marginPx.left - page.marginPx.right;
-      ctx.strokeStyle = FOOTNOTE_RULE_COLOR;
+      ctx.strokeStyle = theme.footnoteRule;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(page.marginPx.left, page.footnoteRuleY + 0.5);
@@ -577,10 +570,10 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       if (pin.pageIndex !== page.index) continue;
       ctx.beginPath();
       ctx.arc(pin.x, pin.y + PIN_OFFSET_PX, PIN_RADIUS_PX, 0, Math.PI * 2);
-      ctx.fillStyle = pin.resolved ? PIN_RESOLVED_COLOR : pin.color;
+      ctx.fillStyle = pin.resolved ? theme.reviewPinResolved : pin.color;
       ctx.fill();
       ctx.lineWidth = 1;
-      ctx.strokeStyle = PIN_STROKE_COLOR;
+      ctx.strokeStyle = theme.reviewPinStroke;
       ctx.stroke();
     }
 
@@ -593,7 +586,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       ctx.fillStyle = "rgba(255,255,255,0.55)";
       ctx.fillRect(0, contentTop, page.widthPx, contentBottom - contentTop);
       const boundaryY = bandEditMode === "header" ? contentTop : contentBottom;
-      ctx.strokeStyle = ACCENT_BLUE;
+      ctx.strokeStyle = theme.accent;
       ctx.setLineDash([4, 3]);
       ctx.beginPath();
       ctx.moveTo(0, boundaryY + 0.5);
@@ -655,7 +648,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       if (img.complete && img.naturalWidth > 0) {
         ctx.drawImage(img, block.x, block.y, block.image.width, block.image.height);
       } else {
-        ctx.fillStyle = IMAGE_PLACEHOLDER_COLOR;
+        ctx.fillStyle = theme.imagePlaceholder;
         ctx.fillRect(block.x, block.y, block.image.width, block.image.height);
       }
       if (clip) ctx.restore();
@@ -680,7 +673,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
         }
       }
       for (const row of rows) {
-        for (const cell of row.cells) paintCellBorders(ctx, cell);
+        for (const cell of row.cells) paintCellBorders(ctx, cell, theme.grid);
       }
       ctx.setLineDash([]);
       return;
@@ -709,7 +702,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
         const toX = block.toc.numX - TOC_LEADER_GAP_PX;
         if (toX > fromX) {
           ctx.save();
-          ctx.strokeStyle = TOC_LEADER_COLOR;
+          ctx.strokeStyle = theme.tocLeader;
           ctx.lineWidth = 1;
           ctx.setLineDash(TOC_LEADER_DASH);
           ctx.beginPath();
@@ -750,7 +743,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
         // EXTERNAL hyperlinks paint blue+underlined as an affordance. In-document
         // anchors ("#bookmark" — TOC entries, cross-references) read as normal
         // paragraph text like Word (handled by runPaint's link normalization).
-        const rp = runPaint(s);
+        const rp = runPaint(s, theme.externalLink);
         ctx.fillStyle = rp.color;
         (ctx as CanvasRenderingContext2D & { wordSpacing: string }).wordSpacing =
           `${frag.wordSpacingPx ?? 0}px`;
@@ -778,8 +771,8 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     line: LineBox,
     baselineY: number,
   ): void {
-    ctx.fillStyle = FORMATTING_MARK_COLOR;
-    ctx.strokeStyle = FORMATTING_MARK_COLOR;
+    ctx.fillStyle = theme.formattingMark;
+    ctx.strokeStyle = theme.formattingMark;
 
     // Space dots — a small disc at the mid-height of each rendered U+0020.
     const midY = block.y + line.y + line.height / 2;
@@ -991,7 +984,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     },
 
     setZoom(next: number): void {
-      const z = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
+      const z = Math.min(zoomMax, Math.max(zoomMin, next));
       if (z === zoom) return;
       zoom = z;
       // Resize placeholders, repaint live canvases at the new scale, reposition
@@ -1064,11 +1057,11 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
 /** Paint a placed cell's borders. No `borders` field → the legacy uniform light
  *  grid (keeps native/unstyled tables visibly gridded). Otherwise draw exactly
  *  the edges present; an omitted edge means no line on that side. */
-function paintCellBorders(ctx: CanvasRenderingContext2D, cell: PlacedTableCell): void {
+function paintCellBorders(ctx: CanvasRenderingContext2D, cell: PlacedTableCell, gridColor: string): void {
   const { x, y, width: w, height: h } = cell;
   if (cell.borders === undefined) {
     ctx.setLineDash([]);
-    ctx.strokeStyle = DEFAULT_GRID_COLOR;
+    ctx.strokeStyle = gridColor;
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, y + 0.5, w, h);
     return;

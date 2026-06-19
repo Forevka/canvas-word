@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Theming & configuration via the constructor — `theme`, `overrideDefaultStyles`,
+  and `behavior` options.** The editor's previously-hardcoded look and feel are now
+  configurable per instance (multiple editors with different configs coexist on one
+  page):
+  - **`theme`** — pass a (partial) `EditorTheme` to recolor the editor chrome: the
+    gray canvas/gutter, table gridlines, drawing-grid mesh, hyperlink & accent
+    colors, formatting marks, TOC dot-leaders, footnote rule, image placeholder,
+    column separators, the caret, find-highlight, review pins, page gap, and the
+    rulers (`ruler: { bg, content, line, label, font }`). Omit any field to keep its
+    built-in value. A ready-made **`darkCanvasTheme`** is exported to spread + tweak.
+    Affects the on-screen editor only — exported PDFs keep the built-in look.
+  - **`overrideDefaultStyles`** — override the LIBRARY's built-in default
+    run/paragraph styles (body `fontFamily` / `fontSizePx` / `color` / `lineHeight`
+    and `headingFontFamily`) for NEW/blank documents and the fallback stylesheet.
+    A loaded `.docx` keeps its OWN defaults (`w:docDefaults` / `Normal`) — set
+    defaults there, or here, not both.
+  - **`behavior`** — tune `zoomStep` (default 1.1), the `zoomMin`/`zoomMax` clamp
+    (0.25–5), `indentStepPx` (36), and the default drawing-grid `gridSpacingPx` (24;
+    `view.gridSpacingPx` still wins).
+
+  All three are fully back-compatible: omit them and the editor renders exactly as
+  before. New exported types: `EditorTheme`, `DefaultStyleOverrides`, `EditorBehavior`.
+- **Save to your own pipeline — `onSave` option + `exportDocx()` / `exportPdf()`
+  handle methods.** Embedders no longer need the separate headless
+  `@forevka/wordcanvas/export` entrypoint to wire up a Save button:
+  - A new **`onSave`** constructor option. When set, the toolbar's **Export (PDF /
+    DOCX)** buttons hand the produced file to your callback — a `Blob`, the same
+    raw `bytes`, the `format`, and any export `warnings` (see `SaveEvent`) —
+    instead of triggering a browser download. Return a promise to keep the UI
+    responsive while you upload. Omit it to keep the default download behaviour.
+  - New **`exportDocx()`** and **`exportPdf()`** methods on the `WordCanvas`
+    instance (and its `EditorHandle`), each resolving to a `Blob`. Drive your own
+    Save button and `POST` the result anywhere. Track changes are baked to the
+    original baseline, exactly like the toolbar's Export. These work even when the
+    ribbon is hidden (`view.toolbar: false` / `readonly`).
+
+  Both paths reuse the editor's existing in-worker export, so there is no extra
+  bundle cost and no `installMeasureHost()` dance.
+- **Hide the built-in Export buttons** — new `view.exportPdf` and `view.exportDocx`
+  flags (both default `true`). Set either to `false` to drop the corresponding
+  File ▸ Export button — for embedders that ship their own export/save pipeline
+  (via `onSave` or the `exportDocx()` / `exportPdf()` methods) and don't want the
+  built-in download button. The whole Export group hides when both are off.
+
 ## [0.7.2] — 2026-06-19
 
 ### Added

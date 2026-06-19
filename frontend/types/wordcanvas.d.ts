@@ -34,6 +34,13 @@ export interface WordCanvasOptions {
   user?: UserInfo;
   /** Override how a share link is surfaced (default: a built-in dialog). */
   onShareLink?: (url: string, docId: string) => void;
+  /** Route exports to your own pipeline. When set, the toolbar's Export (PDF /
+   *  DOCX) buttons hand the produced file to this callback — a Blob plus raw
+   *  bytes, the format, and any export warnings (see SaveEvent) — instead of
+   *  triggering a browser download. Return a promise to keep the UI responsive
+   *  while you upload. Omit to keep the default download behaviour. (For a fully
+   *  custom button, call `exportDocx()` / `exportPdf()` on the instance.) */
+  onSave?: SaveHandler;
   /** Resolve a custom (developer-defined) field's content from your backend. When
    *  set, right-clicking a custom field offers "Update Field (<name>)"; the
    *  callback receives the field's name + verbatim instruction and returns the new
@@ -48,12 +55,59 @@ export interface WordCanvasOptions {
    *  embedders that don't opt in. Connect an agent via the WebMCP browser
    *  extension / Chrome DevTools MCP. */
   agentTools?: boolean | AgentToolsOptions;
+  /** Initial view-chrome state — what the reader sees on open (rulers, grid,
+   *  panels, ribbon, status bar, the Export buttons, zoom). Omit any field to keep
+   *  its default. See WordCanvasViewOptions. */
+  view?: WordCanvasViewOptions;
   /** Track first-load progress so you can show a loader while the big chunks
    *  stream. Fires for the editor JS chunk download (`phase: "bundle"`,
    *  indeterminate) and the bundled font fetch (`phase: "fonts"`, the dominant
    *  ~9 MB cost — a smooth, size-weighted bar), then once at `phase: "ready"`
    *  with `percent: 1`. Read `percent` (0..1, monotonic) to drive a progress bar. */
   onLoadProgress?: (progress: LoadProgress) => void;
+}
+
+/** Initial view-chrome state (see WordCanvasOptions.view). Every field is
+ *  optional; omit one to keep its built-in default. */
+export interface WordCanvasViewOptions {
+  /** Show the horizontal ruler. Default true (always hidden in readonly). */
+  ruler?: boolean;
+  /** Show the vertical ruler. Default true (always hidden in readonly). */
+  verticalRuler?: boolean;
+  /** Show the drawing-grid overlay on every page. Default false. */
+  grid?: boolean;
+  /** Snap dragged anchored objects to the grid. Default false. */
+  snapToGrid?: boolean;
+  /** Grid step in document px (96dpi). Default 24 (1/4 inch). */
+  gridSpacingPx?: number;
+  /** Show non-printing formatting marks (spaces, tabs, paragraph ends, line
+   *  breaks) on open. Default false. */
+  formattingMarks?: boolean;
+  /** Open the Outline / navigation pane (left drawer). Default true. */
+  outline?: boolean;
+  /** Open the Bookmarks panel. Default false. */
+  bookmarks?: boolean;
+  /** Open the Review pane (track changes + comments). Default false. */
+  reviewPane?: boolean;
+  /** Open the Activity panel (online only — who edited & when). Default false. */
+  activity?: boolean;
+  /** Show the ribbon toolbar. Default true (always hidden in readonly). When
+   *  false the editor stays fully editable but chromeless. */
+  toolbar?: boolean;
+  /** Start with the ribbon body collapsed (tab strip stays). Default false. */
+  ribbonCollapsed?: boolean;
+  /** Show the status bar (page/word count + zoom). Default true. */
+  statusBar?: boolean;
+  /** Show the File ▸ Export **PDF** button. Default true. Set false when the
+   *  embedder ships its own export/save pipeline (e.g. via `onSave` or the
+   *  `exportPdf()` method) and doesn't want the built-in button. */
+  exportPdf?: boolean;
+  /** Show the File ▸ Export **DOCX** button. Default true. Set false when the
+   *  embedder ships its own export/save pipeline (e.g. via `onSave` or the
+   *  `exportDocx()` method) and doesn't want the built-in button. */
+  exportDocx?: boolean;
+  /** Initial presentational zoom (1 = 100%, clamped to [0.25, 5]). Default 1. */
+  zoom?: number;
 }
 
 /** First-load progress (see WordCanvasOptions.onLoadProgress). */
@@ -106,6 +160,32 @@ export type FieldResult = string | ArrayBuffer | Uint8Array | Blob;
 
 /** Host hook producing a field's result for a resolve request. */
 export type FieldResolver = (req: FieldResolveRequest) => Promise<FieldResult>;
+
+/** The file format an export/save produces. */
+export type SaveFormat = "docx" | "pdf";
+
+/** A deduplicated lossy-mapping note from an export. `count` = times it fired. */
+export interface ExportWarning {
+  code: string;
+  detail?: string;
+  count: number;
+}
+
+/** Payload handed to a host `onSave` handler when the user triggers an export
+ *  while `onSave` is configured (see WordCanvasOptions.onSave). */
+export interface SaveEvent {
+  /** The exported file as a Blob with the correct MIME type set. */
+  blob: Blob;
+  /** The same file content as raw bytes (handy for FormData / a Node Buffer). */
+  bytes: Uint8Array;
+  /** Which format the user exported. */
+  format: SaveFormat;
+  /** Deduplicated lossy-mapping notes from the export (usually empty). */
+  warnings: ExportWarning[];
+}
+
+/** Host hook invoked instead of the built-in download when the user exports. */
+export type SaveHandler = (event: SaveEvent) => void | Promise<void>;
 
 /** What to render into a child-document surface (see WordCanvas.createChild). */
 export type ChildContent =
@@ -175,6 +255,11 @@ export interface EditorHandle {
   setDocument(doc: Document): void;
   /** Open a .docx (auto-publishes when online); resolves when loaded. */
   openDocx(file: File | ArrayBuffer): Promise<void>;
+  /** Export the current document to a .docx Blob (track changes baked to the
+   *  original baseline, matching the toolbar's Export). For a custom Save button. */
+  exportDocx(): Promise<Blob>;
+  /** Export the current document to a PDF Blob (see `exportDocx`). */
+  exportPdf(): Promise<Blob>;
   /** Publish the current document and resolve its shareable link (online only). */
   share(): Promise<string>;
   getDocId(): string | null;
@@ -198,6 +283,12 @@ export declare class WordCanvas {
   createChild(): ChildDocument;
   /** Open a .docx. When online, auto-publishes it and surfaces a share link. */
   openDocx(file: File | ArrayBuffer): Promise<void>;
+  /** Export the current document to a .docx Blob — track changes baked to the
+   *  original baseline, exactly like the toolbar's Export. Wire it to your own
+   *  Save button and POST it anywhere. Resolves once the editor is ready. */
+  exportDocx(): Promise<Blob>;
+  /** Export the current document to a PDF Blob (see `exportDocx`). */
+  exportPdf(): Promise<Blob>;
   /** Replace the open document with a programmatically-built one (e.g. a
    *  DocumentBuilder result). The input is cloned. Like openDocx, this starts a
    *  NEW document: undo history and any live collab session are dropped (the

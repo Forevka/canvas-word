@@ -32,6 +32,7 @@ import type {
   TableStyle,
 } from "@cw/shared";
 import { insertImage as insertImageCmd } from "../editor/commands";
+import type { ResolvedBehavior, ResolvedTheme } from "../config";
 
 /** A block-level rich fragment (paragraph runs + style), mirroring the editor's
  *  clipboard fragment — distinct from the review `Fragment` (which is `Run[]`). */
@@ -129,6 +130,10 @@ export interface ChildDeps {
   getStyleContext: () => StyleContext;
   /** Construct a child editor (the real createEditor, injected by index.ts). */
   makeEditor: (container: HTMLElement, doc: Document, opts: EditorOptions) => Editor;
+  /** Parent's resolved theme — so child previews/editors share its look. */
+  theme?: ResolvedTheme;
+  /** Parent's resolved behavior (zoom clamp). */
+  behavior?: ResolvedBehavior;
 }
 
 // A tall page for the measuring pass — keeps all content on page 0 so its size
@@ -296,7 +301,14 @@ export function createChildDocument(deps: ChildDeps): ChildDocument {
     const host = document.createElement("div");
     host.style.cssText = "overflow:hidden;position:relative;";
     target.appendChild(host);
-    s = { host, paint: createPaintLayer(host, { chrome: false }) };
+    s = {
+      host,
+      paint: createPaintLayer(host, {
+        chrome: false,
+        ...(deps.theme ? { theme: deps.theme } : {}),
+        ...(deps.behavior ? { zoomMin: deps.behavior.zoomMin, zoomMax: deps.behavior.zoomMax } : {}),
+      }),
+    };
     surfaces.set(target, s);
     return s;
   };
@@ -359,6 +371,8 @@ export function createChildDocument(deps: ChildDeps): ChildDocument {
 
     const ed = deps.makeEditor(host, buildDoc(ctx, blocks, widthPx, padding, contentH), {
       paintOptions: { chrome: false },
+      ...(deps.theme ? { theme: deps.theme } : {}),
+      ...(deps.behavior ? { behavior: deps.behavior } : {}),
     });
     const media = ctx.media;
     // Seed a caret at the end of the content so toolbar-less inserts (e.g. images)

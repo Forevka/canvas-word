@@ -1,5 +1,5 @@
 import { bakeReview, colorForId, configureIds, deserializeDocument, freshId, reconstruct, serializeDocument, DEFAULT_CHAR_STYLE, DOCX_MIME, PDF_MIME, PX_PER_INCH, ptToPx as sharedPtToPx, pxToPt as sharedPxToPt, type Change, type DocSelection, type Document, type Fragment, type ReviewLayer } from "@cw/shared";
-import { INDENT_STEP_PX, ZOOM_STEP } from "./uiConstants";
+import { resolveConfig } from "./config";
 import { emptyParagraphFor } from "./builder/blockFactory";
 import { mediaStore, mediaUrl, registerMediaBytes, rehydrateDocMedia } from "./media/store";
 import { SyncClient } from "./sync/SyncClient";
@@ -9,7 +9,7 @@ import { createLayoutEngine } from "./layout/engine";
 import { sampleDoc } from "./model/sampleDoc";
 import { stressDoc } from "./model/stressDoc";
 import { importDocx, type ImportResult, type ImportPhase } from "./import/docx/importDocx";
-import { exportDocument, type ExportFormat } from "./export/exportDocument";
+import { exportDocument, type ExportFormat, type ExportWarning } from "./export/exportDocument";
 import { loadEditorFonts } from "./export/shared/editorFonts";
 import { fontsProgress } from "./app/loadProgress";
 import { TOOLBAR_FONTS } from "./fonts/clones";
@@ -76,14 +76,9 @@ declare global {
   }
 }
 
-// Ruler visuals shared by the horizontal ruler (draw) and the vertical ruler
-// (drawV) — same band colours, tick lines, label colour, font, and tick
-// lengths in both, kept here so the two stay pixel-identical.
-const RULER_BG = "#c7cdd6"; // greyed margin band
-const RULER_CONTENT = "#ffffff"; // content (inside-margins) fill
-const RULER_LINE = "#8a8f98"; // tick stroke
-const RULER_LABEL_COLOR = "#605e5c"; // inch-number fill
-const RULER_FONT = "9px 'Segoe UI', sans-serif";
+// Ruler tick GEOMETRY shared by the horizontal ruler (draw) and the vertical
+// ruler (drawV), kept here so the two stay pixel-identical. Colors + font are
+// per-instance (config.theme.ruler).
 const RULER_TICK_START = 4; // band edge the ticks hang from
 const RULER_TICK_LEN = 10; // major (inch) tick extent
 const RULER_HALF_TICK_LEN = 8; // half-inch tick extent
@@ -108,6 +103,21 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
   ensureWordCanvasStyles();
   const shell = buildShell(runtime.container);
   const app = shell.app;
+
+  // Resolve the per-instance configuration (theme colors, default-style overrides,
+  // behavior tuning) once. Everything below reads from `config`; omitting an option
+  // keeps the built-in look. Theme + behavior thread into the editor via editorOpts;
+  // the typography override seeds new/blank docs (a loaded .docx keeps its own).
+  const config = resolveConfig({
+    ...(runtime.theme ? { theme: runtime.theme } : {}),
+    ...(runtime.overrideDefaultStyles ? { overrideDefaultStyles: runtime.overrideDefaultStyles } : {}),
+    ...(runtime.behavior ? { behavior: runtime.behavior } : {}),
+  });
+  // Recolor the gray gutter behind the pages + the ruler troughs (inline overrides
+  // the static .cw-app/.cw-ruler stylesheet rules, so it stays per-instance).
+  app.style.background = config.theme.canvasBackground;
+  shell.ruler.style.background = config.theme.canvasBackground;
+  shell.vruler.style.background = config.theme.canvasBackground;
 
   // Per-instance teardown. Global window/document listeners are registered with
   // this signal, and body-level floating panels (popovers, find bar, image bar,
@@ -177,6 +187,11 @@ if (collabId !== null && BACKEND_HTTP) {
   doc = sampleDoc();
 }
 
+// A document with no stylesheet of its own adopts the configured default styles
+// (the `overrideDefaultStyles` typography, or the library default). A loaded .docx
+// always arrives WITH its own stylesheet, so its w:docDefaults/Normal win.
+if (!doc.stylesheet) doc = { ...doc, stylesheet: config.stylesheet };
+
 const engine = createLayoutEngine();
 const t0 = performance.now();
 const tree = engine.layout(doc); // cold: every paragraph hits prepareRichInline
@@ -208,6 +223,8 @@ let onLocalReviewOp: (env: ReviewOpEnvelope) => void = () => {};
 const editorOpts = {
   engine,
   readonly,
+  theme: config.theme,
+  behavior: config.behavior,
   ...(runtime.mode ? { mode: runtime.mode } : {}),
   ...(runtime.allowedModes ? { allowedModes: runtime.allowedModes } : {}),
   ...(runtime.user ? { user: runtime.user } : {}),
@@ -258,7 +275,7 @@ let editor = createEditor(app, doc, editorOpts);
 const gridView = {
   show: runtime.view?.grid ?? false,
   snap: runtime.view?.snapToGrid ?? false,
-  spacingPx: runtime.view?.gridSpacingPx ?? 24,
+  spacingPx: runtime.view?.gridSpacingPx ?? config.behavior.gridSpacingPx,
 };
 // Formatting-marks visibility — same "survives a paint-layer rebuild" treatment
 // as the grid (re-seeded via applyGridView below).
@@ -432,6 +449,9 @@ const detachCollabSession = (): void => {
 // and preserve the viewport (zoom + scroll) so live rebuilds don't jump.
 const setDocumentFromApi = (next: Document): void => {
   const clone = structuredClone(next);
+  // A doc with no stylesheet adopts the configured defaults before we mint any
+  // empty paragraph from it (a real .docx always brings its own — see config).
+  if (!clone.stylesheet) clone.stylesheet = config.stylesheet;
   if (clone.blocks.length === 0) clone.blocks.push(emptyParagraphFor(clone, freshId()));
   const scrollTop = app.scrollTop;
   const zoom = editor.getZoom();
@@ -460,6 +480,22 @@ const openDocxFile = async (file: File | ArrayBuffer): Promise<void> => {
   } finally {
     busy.done();
   }
+};
+
+// Bake the review overlay into a clean doc (default: reject-all = original
+// baseline) so the review-blind writer emits a plain file, then export it.
+// Defined at mount scope so both the toolbar's Export buttons and the public
+// handle's exportDocx()/exportPdf() share one path.
+const exportBaked = (format: ExportFormat): Promise<{ bytes: Uint8Array; warnings: ExportWarning[] }> => {
+  const baked = bakeReview(editor.getDocument(), editor.getReview(), "reject");
+  return exportDocument(baked, format);
+};
+const blobFor = (format: ExportFormat, bytes: Uint8Array): Blob =>
+  new Blob([bytes as BlobPart], { type: format === "pdf" ? PDF_MIME : DOCX_MIME });
+/** Export to a Blob — backs the public handle's exportDocx()/exportPdf(). */
+const exportBlob = async (format: ExportFormat): Promise<Blob> => {
+  const { bytes } = await exportBaked(format);
+  return blobFor(format, bytes);
 };
 
 // ---- demo toolbar (app chrome, not editor core) ----------------------------
@@ -918,18 +954,21 @@ if (toolbar) {
 
   const exportAs = async (format: ExportFormat): Promise<void> => {
     try {
-      // Bake the review overlay into a clean doc (default: reject-all = original
-      // baseline) so the review-blind writer emits a plain file.
-      const baked = bakeReview(editor.getDocument(), editor.getReview(), "reject");
-      const { bytes, warnings } = await exportDocument(baked, format);
-      const mime = format === "pdf" ? PDF_MIME : DOCX_MIME;
-      const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime }));
+      const { bytes, warnings } = await exportBaked(format);
+      if (warnings.length > 0) console.warn(`[export-${format}] warnings`, warnings);
+      const blob = blobFor(format, bytes);
+      // With an embedder onSave hook, hand off the file instead of downloading;
+      // the host routes it to its own pipeline (upload, persist, custom download).
+      if (runtime.onSave) {
+        await runtime.onSave({ blob, bytes, format, warnings });
+        return;
+      }
+      const url = URL.createObjectURL(blob);
       const a = el("a");
       a.href = url;
       a.download = `document.${format}`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      if (warnings.length > 0) console.warn(`[export-${format}] warnings`, warnings);
     } catch (err) {
       console.error(`[export-${format}] failed`, err);
     }
@@ -994,9 +1033,16 @@ if (toolbar) {
     });
   }
 
-  group(fileTab, "Export");
-  txtBtn("PDF", "Export to PDF", () => void exportAs("pdf"), "font-size:11px;font-weight:600;");
-  txtBtn("DOCX", "Export to .docx", () => void exportAs("docx"), "font-size:11px;font-weight:600;");
+  // Export buttons are independently hideable (view.exportPdf / view.exportDocx)
+  // for embedders that route saving through their own pipeline (onSave / the
+  // exportDocx()/exportPdf() handle methods). Skip the group entirely if both off.
+  const showExportPdf = runtime.view?.exportPdf ?? true;
+  const showExportDocx = runtime.view?.exportDocx ?? true;
+  if (showExportPdf || showExportDocx) {
+    group(fileTab, "Export");
+    if (showExportPdf) txtBtn("PDF", "Export to PDF", () => void exportAs("pdf"), "font-size:11px;font-weight:600;");
+    if (showExportDocx) txtBtn("DOCX", "Export to .docx", () => void exportAs("docx"), "font-size:11px;font-weight:600;");
+  }
   group(fileTab, "Undo");
   btn(ICONS.undo, "Undo (Ctrl+Z)", () => editor.undo());
   btn(ICONS.redo, "Redo (Ctrl+Y)", () => editor.redo());
@@ -1157,8 +1203,8 @@ if (toolbar) {
   ]);
   btn(ICONS.multilevel, "Multilevel list (1, 1.1, 1.1.1 — Tab / Shift+Tab change level)", () => editor.dispatch(toggleMultilevelList()));
   sep();
-  btn(ICONS.indentDecrease, "Decrease indent", () => editor.dispatch(adjustIndentCmd(-INDENT_STEP_PX)));
-  btn(ICONS.indentIncrease, "Increase indent", () => editor.dispatch(adjustIndentCmd(INDENT_STEP_PX)));
+  btn(ICONS.indentDecrease, "Decrease indent", () => editor.dispatch(adjustIndentCmd(-config.behavior.indentStepPx)));
+  btn(ICONS.indentIncrease, "Increase indent", () => editor.dispatch(adjustIndentCmd(config.behavior.indentStepPx)));
   stub(ICONS.sort, "Sort");
   marksToggleBtn();
 
@@ -1517,12 +1563,12 @@ if (toolbar) {
   tabsBar.appendChild(headerReview);
 
   group(view, "Zoom");
-  txtBtn("−", "Zoom out", () => editor.setZoom(editor.getZoom() / ZOOM_STEP), "font-size:15px;");
+  txtBtn("−", "Zoom out", () => editor.setZoom(editor.getZoom() / config.behavior.zoomStep), "font-size:15px;");
   const zoomSel = select("Zoom level", 66);
   for (const z of [0.5, 0.75, 1, 1.25, 1.5, 2, 3]) opt(zoomSel, String(z), `${Math.round(z * 100)}%`);
   zoomSel.value = "1";
   zoomSel.addEventListener("change", () => editor.setZoom(parseFloat(zoomSel.value)));
-  txtBtn("+", "Zoom in", () => editor.setZoom(editor.getZoom() * ZOOM_STEP), "font-size:15px;");
+  txtBtn("+", "Zoom in", () => editor.setZoom(editor.getZoom() * config.behavior.zoomStep), "font-size:15px;");
 
   // ---- Activity panel (who created/edited, when) — online only ------------
   if (online) {
@@ -2159,7 +2205,7 @@ if (toolbar) {
       b.addEventListener("click", onClick);
       right.appendChild(b);
     };
-    zBtn("−", "Zoom out", () => editor.setZoom(editor.getZoom() / ZOOM_STEP));
+    zBtn("−", "Zoom out", () => editor.setZoom(editor.getZoom() / config.behavior.zoomStep));
     const slider = document.createElement("input");
     slider.type = "range";
     slider.min = "50";
@@ -2168,7 +2214,7 @@ if (toolbar) {
     slider.title = "Zoom";
     slider.addEventListener("input", () => editor.setZoom(Number(slider.value) / 100));
     right.appendChild(slider);
-    zBtn("+", "Zoom in", () => editor.setZoom(editor.getZoom() * ZOOM_STEP));
+    zBtn("+", "Zoom in", () => editor.setZoom(editor.getZoom() * config.behavior.zoomStep));
     const zLabel = document.createElement("span");
     zLabel.className = "sb-item sb-zoom";
     right.appendChild(zLabel);
@@ -2254,9 +2300,9 @@ if (toolbar) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
       // page band (margins greyed, content white)
-      ctx.fillStyle = RULER_BG;
+      ctx.fillStyle = config.theme.ruler.bg;
       ctx.fillRect(pageLeft, 4, pageW, H - 8);
-      ctx.fillStyle = RULER_CONTENT;
+      ctx.fillStyle = config.theme.ruler.content;
       ctx.fillRect(cL, 4, cR - cL, H - 8);
       // inch ticks + numbers, measured from the left content edge (Word's 0)
       // Ticks hang from the top of the ruler band; numbers sit in the lower half
@@ -2266,9 +2312,9 @@ if (toolbar) {
       const tickBot = RULER_TICK_LEN;   // bottom of the major tick (6 px, upper half only)
       const halfTickBot = RULER_HALF_TICK_LEN; // bottom of the half-inch tick (4 px)
       const numY = H - 4;       // number baseline anchored to the bottom of the band
-      ctx.strokeStyle = RULER_LINE;
-      ctx.fillStyle = RULER_LABEL_COLOR;
-      ctx.font = RULER_FONT;
+      ctx.strokeStyle = config.theme.ruler.line;
+      ctx.fillStyle = config.theme.ruler.label;
+      ctx.font = config.theme.ruler.font;
       ctx.textAlign = "center";
       ctx.textBaseline = "bottom";
       ctx.lineWidth = 1;
@@ -2395,9 +2441,9 @@ if (toolbar) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
       // page band (margins greyed, content white) — mirror of the horizontal draw
-      ctx.fillStyle = RULER_BG;
+      ctx.fillStyle = config.theme.ruler.bg;
       ctx.fillRect(4, pageTop, W - 8, pageH);
-      ctx.fillStyle = RULER_CONTENT;
+      ctx.fillStyle = config.theme.ruler.content;
       ctx.fillRect(4, cT, W - 8, cB - cT);
       // inch ticks + numbers, measured from the top content edge (Word's 0)
       const inch = PX_PER_INCH * zoom;
@@ -2405,9 +2451,9 @@ if (toolbar) {
       const tickRight = RULER_TICK_LEN; // major tick (6 px)
       const halfTickRight = RULER_HALF_TICK_LEN; // half-inch tick (4 px)
       const numX = W - 4;
-      ctx.strokeStyle = RULER_LINE;
-      ctx.fillStyle = RULER_LABEL_COLOR;
-      ctx.font = RULER_FONT;
+      ctx.strokeStyle = config.theme.ruler.line;
+      ctx.fillStyle = config.theme.ruler.label;
+      ctx.font = config.theme.ruler.font;
       ctx.textAlign = "right";
       ctx.textBaseline = "middle";
       ctx.lineWidth = 1;
@@ -2696,6 +2742,8 @@ const handle: EditorHandle = {
   createChild: () => editor.createChild(),
   setDocument: (d) => setDocumentFromApi(d),
   openDocx: (file) => openDocxFile(file),
+  exportDocx: () => exportBlob("docx"),
+  exportPdf: () => exportBlob("pdf"),
   share: () => goOnlineWithCurrentDoc(),
   getDocId: () => collabId,
   getShareLink: () => shareLink,

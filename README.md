@@ -338,7 +338,11 @@ a `import(export(doc))` round-trip oracle that holds block count) and
 PDF page matches the canvas pixel-for-pixel). Both run isomorphically — the same
 DOM-free pipeline in a browser Web Worker and on the Node backend, over bundled
 metric-clone fonts so editor, browser export and server export paginate
-identically. See [EXPORT.md](./EXPORT.md) and [FONTS.md](./FONTS.md).
+identically. Embedders can **save to their own pipeline**: `exportDocx()` /
+`exportPdf()` on the instance return a `Blob` for a custom Save button, and an
+`onSave` constructor option re-routes the toolbar's Export buttons to a callback
+(`Blob` + bytes + format + warnings) instead of a browser download. See
+[EXPORT.md](./EXPORT.md) and [FONTS.md](./FONTS.md).
 
 **Programmatic generation** — a fluent document-builder API
 (`@forevka/wordcanvas/builder`): compose documents in JS/TS instead of a
