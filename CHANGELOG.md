@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-06-19
+
 ### Added
 - **Show/hide formatting marks.** A new **View ▸ Show** toggle (also surfaced on
   **Home ▸ Paragraph** as the ¶ button — both buttons share one state) overlays Word's
@@ -414,6 +416,7 @@ implementation history in [README.md](./README.md)):
   docId, integration tokens for third-party `/upload`, and session webhooks.
 - Mobile/touch input and a responsive ribbon.
 
+[0.7.2]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.2
 [0.7.1]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.1
 [0.7.0]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.0
 [0.6.1]: https://github.com/Forevka/canvas-word/releases/tag/v0.6.1
