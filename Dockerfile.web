@@ -10,6 +10,7 @@
 #   /live              -> examples/embed-live (online + collaboration; same origin
 #                         as the backend, so its location.origin backend URL works)
 #   /examples/offline  -> examples/embed-offline (minimal offline embed)
+#   /examples/ribbon   -> examples/ribbon-customization (customizeRibbon demo)
 #   /playground        -> examples/playground (document-builder playground)
 #   /multi             -> examples/embed-multi (multiple editors on one page)
 #
@@ -31,6 +32,7 @@ COPY dashboard/package.json ./dashboard/
 # Example workspaces must be present for `npm ci` to match the lockfile.
 COPY examples/embed-live/package.json ./examples/embed-live/
 COPY examples/embed-offline/package.json ./examples/embed-offline/
+COPY examples/ribbon-customization/package.json ./examples/ribbon-customization/
 COPY examples/playground/package.json ./examples/playground/
 COPY examples/embed-multi/package.json ./examples/embed-multi/
 RUN npm ci
@@ -58,6 +60,12 @@ RUN mkdir -p examples/embed-offline/dist/wordcanvas \
  && cp examples/embed-offline/index.html examples/embed-offline/app.js examples/embed-offline/dist/ \
  && sed -i 's#/node_modules/@forevka/wordcanvas/dist-lib/wordcanvas.js#./wordcanvas/wordcanvas.js#' examples/embed-offline/dist/index.html \
  && cp -a frontend/dist-lib/. examples/embed-offline/dist/wordcanvas/
+# Ribbon-customization example: same no-build assembly (static files + import-map
+# rewrite to a sibling library copy).
+RUN mkdir -p examples/ribbon-customization/dist/wordcanvas \
+ && cp examples/ribbon-customization/index.html examples/ribbon-customization/app.js examples/ribbon-customization/dist/ \
+ && sed -i 's#/node_modules/@forevka/wordcanvas/dist-lib/wordcanvas.js#./wordcanvas/wordcanvas.js#' examples/ribbon-customization/dist/index.html \
+ && cp -a frontend/dist-lib/. examples/ribbon-customization/dist/wordcanvas/
 
 # 2. Serve + proxy with Caddy. Static files in /srv, API/WS to the backend.
 FROM caddy:2-alpine
@@ -66,6 +74,7 @@ COPY --from=build /app/frontend/dist /srv
 COPY --from=build /app/dashboard/dist /srv/dashboard
 COPY --from=build /app/examples/embed-live/dist /srv/live
 COPY --from=build /app/examples/embed-offline/dist /srv/examples/offline
+COPY --from=build /app/examples/ribbon-customization/dist /srv/examples/ribbon
 COPY --from=build /app/examples/playground/dist /srv/playground
 COPY --from=build /app/examples/embed-multi/dist /srv/multi
 EXPOSE 80

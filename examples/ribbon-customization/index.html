@@ -121,7 +121,11 @@
 
     <!--
       Resolve the bare package specifier to the built bundle (see embed-offline).
-      Serve from the repo root so /node_modules/... resolves; build the lib first.
+      The path is absolute from the repo root, so serve this example with the repo
+      root as the static root (see this folder's README.md); build the lib first.
+      In a bundler-based app you'd just `import { WordCanvas } from
+      "@forevka/wordcanvas"` and skip this. (The deploy image rewrites this map to
+      a sibling library copy — see Dockerfile.web.)
     -->
     <script type="importmap">
       {
