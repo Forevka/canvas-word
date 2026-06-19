@@ -5,6 +5,7 @@
 //   - transparent gzip inflation;
 //   - a raw-Buffer catch-all for everything that isn't JSON.
 import { createGunzip } from "node:zlib";
+import { OCTET_STREAM_MIME } from "@cw/shared";
 import type { FastifyInstance } from "fastify";
 
 export function registerRawBody(app: FastifyInstance): void {
@@ -12,7 +13,7 @@ export function registerRawBody(app: FastifyInstance): void {
   // catch-all parser below claims it (e.g. a bare .docx upload).
   app.addHook("onRequest", (req, _reply, done) => {
     if (!req.headers["content-type"] && req.method !== "GET" && req.method !== "HEAD") {
-      req.headers["content-type"] = "application/octet-stream";
+      req.headers["content-type"] = OCTET_STREAM_MIME;
     }
     done();
   });

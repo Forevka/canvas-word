@@ -20,6 +20,7 @@ import type {
   TableRow,
 } from "./document";
 import { BAND_CONTAINERS } from "./document";
+import { DEFAULT_CHAR_STYLE } from "./defaults";
 import type { DocPosition } from "./position";
 import {
   locateParagraph,
@@ -170,17 +171,7 @@ export function sliceRuns(runs: Run[], start: number, end: number): Run[] {
 }
 
 function fallbackStyle(runs: Run[], offset: number): CharStyle {
-  return (
-    styleAtRuns(runs, offset) ?? {
-      fontFamily: "Georgia, serif",
-      fontSizePx: 16,
-      bold: false,
-      italic: false,
-      underline: false,
-      strikethrough: false,
-      color: "#202124",
-    }
-  );
+  return styleAtRuns(runs, offset) ?? { ...DEFAULT_CHAR_STYLE };
 }
 
 export function insertTextInRuns(runs: Run[], offset: number, text: string, style?: CharStyle): Run[] {

@@ -5,10 +5,12 @@
 //   POST /admin/login { username, password }  ->  { token, expiresAt }
 //   Authorization: Bearer <token>             ->  requireAdmin gate
 //
-// Env (with dev-friendly defaults; SET THESE IN PRODUCTION):
-//   ADMIN_USERNAME      (default "admin")
-//   ADMIN_PASSWORD      (default "admin")
-//   ADMIN_TOKEN_SECRET  (default a fixed dev string)
+// Env (dev-friendly defaults in dev/test; REQUIRED in production):
+//   ADMIN_USERNAME      (default "admin" — username isn't secret, always overridable)
+//   ADMIN_PASSWORD      (dev default "admin"; MUST be set in production)
+//   ADMIN_TOKEN_SECRET  (dev default a fixed string; MUST be set in production)
+// In production (NODE_ENV === "production") the insecure fallbacks are refused —
+// an unset ADMIN_PASSWORD or ADMIN_TOKEN_SECRET throws at module init.
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
@@ -16,9 +18,22 @@ import type { IncomingHttpHeaders } from "node:http";
 /** Anything carrying request headers — a raw IncomingMessage or a Fastify request. */
 type HasHeaders = { headers: IncomingHttpHeaders };
 
+const IS_PROD = process.env.NODE_ENV === "production";
+
+/** Read a secret env var: required in production (throws if unset/empty), but in
+ *  dev/test falls back to an insecure default (warning once) so local dev works. */
+function requireInProd(name: string, devFallback: string): string {
+  const raw = process.env[name];
+  if (raw !== undefined && raw !== "") return raw;
+  if (IS_PROD) throw new Error(`${name} must be set in production`);
+  console.warn(`[admin/auth] ${name} is unset — using an INSECURE dev default. Set ${name} in production.`);
+  return devFallback;
+}
+
+// Username isn't a secret, so it may keep defaulting even in production.
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME ?? "admin";
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "admin";
-const TOKEN_SECRET = process.env.ADMIN_TOKEN_SECRET ?? "dev-insecure-token-secret-change-me";
+const ADMIN_PASSWORD = requireInProd("ADMIN_PASSWORD", "admin");
+const TOKEN_SECRET = requireInProd("ADMIN_TOKEN_SECRET", "dev-insecure-token-secret-change-me");
 const TOKEN_TTL_MS = Number(process.env.ADMIN_TOKEN_TTL_MS ?? 12 * 60 * 60 * 1000); // 12h
 
 function b64url(buf: Buffer): string {

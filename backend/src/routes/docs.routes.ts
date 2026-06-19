@@ -1,6 +1,8 @@
 // Document CRUD + change log + review overlay + server-side export.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
+  DOCX_MIME,
+  PDF_MIME,
   reconstruct,
   rehydrateReview,
   type Change,
@@ -267,7 +269,7 @@ export function registerDocsRoutes(app: FastifyInstance, { store, bcast }: AppCo
         type: "object",
         properties: { tracked: { type: "string", enum: ["accept", "reject"], description: "fold suggestions (default reject)" } },
       },
-      produces: [format === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+      produces: [format === "pdf" ? PDF_MIME : DOCX_MIME],
       response: { 200: { type: "string", format: "binary" }, 404: { $ref: "Error#" } },
     }) as const;
   const exportHandler = (format: "docx" | "pdf") => async (req: FastifyRequest, reply: FastifyReply) => {
@@ -277,10 +279,7 @@ export function registerDocsRoutes(app: FastifyInstance, { store, bcast }: AppCo
     const exported = await exportDoc(id, format, store, bakeMode);
     if (!exported) return reply.code(404).send({ error: "document not found" });
     const filename = `${sanitizeFilename(exported.title ?? id)}.${format}`;
-    const mime =
-      format === "pdf"
-        ? "application/pdf"
-        : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    const mime = format === "pdf" ? PDF_MIME : DOCX_MIME;
     return reply
       .code(200)
       .header("content-disposition", `attachment; filename="${filename}"`)

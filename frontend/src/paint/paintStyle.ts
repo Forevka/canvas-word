@@ -12,6 +12,8 @@ import type { CharStyle, PageBorderEdge, PageBorders, TabLeader } from "@cw/shar
 export const DEFAULT_GRID_COLOR = "#c0c4c9";
 /** External hyperlinks paint in this blue (Word's affordance). */
 export const EXTERNAL_LINK_COLOR = "#0b57d0";
+/** UI-accent blue for editor chrome affordances (e.g. the band-edit boundary). */
+export const ACCENT_BLUE = "#1a73e8";
 /** In-document anchors that inherited a Hyperlink blue read as plain text. */
 export const ANCHOR_TEXT_COLOR = "#202124";
 export const FOOTNOTE_RULE_COLOR = "#80868b";

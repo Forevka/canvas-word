@@ -1,4 +1,5 @@
-import { bakeReview, colorForId, configureIds, deserializeDocument, freshId, reconstruct, serializeDocument, type Change, type DocSelection, type Document, type Fragment, type ReviewLayer } from "@cw/shared";
+import { bakeReview, colorForId, configureIds, deserializeDocument, freshId, reconstruct, serializeDocument, DEFAULT_CHAR_STYLE, DOCX_MIME, PDF_MIME, PX_PER_INCH, ptToPx as sharedPtToPx, pxToPt as sharedPxToPt, type Change, type DocSelection, type Document, type Fragment, type ReviewLayer } from "@cw/shared";
+import { INDENT_STEP_PX, ZOOM_STEP } from "./uiConstants";
 import { emptyParagraphFor } from "./builder/blockFactory";
 import { mediaStore, mediaUrl, registerMediaBytes, rehydrateDocMedia } from "./media/store";
 import { SyncClient } from "./sync/SyncClient";
@@ -74,6 +75,18 @@ declare global {
     __cw?: unknown;
   }
 }
+
+// Ruler visuals shared by the horizontal ruler (draw) and the vertical ruler
+// (drawV) — same band colours, tick lines, label colour, font, and tick
+// lengths in both, kept here so the two stay pixel-identical.
+const RULER_BG = "#c7cdd6"; // greyed margin band
+const RULER_CONTENT = "#ffffff"; // content (inside-margins) fill
+const RULER_LINE = "#8a8f98"; // tick stroke
+const RULER_LABEL_COLOR = "#605e5c"; // inch-number fill
+const RULER_FONT = "9px 'Segoe UI', sans-serif";
+const RULER_TICK_START = 4; // band edge the ticks hang from
+const RULER_TICK_LEN = 10; // major (inch) tick extent
+const RULER_HALF_TICK_LEN = 8; // half-inch tick extent
 
 // Mount ONE editor into runtime.container and hand its control surface to
 // runtime.onReady. Called once per WordCanvas instance — every binding below is
@@ -909,10 +922,7 @@ if (toolbar) {
       // baseline) so the review-blind writer emits a plain file.
       const baked = bakeReview(editor.getDocument(), editor.getReview(), "reject");
       const { bytes, warnings } = await exportDocument(baked, format);
-      const mime =
-        format === "pdf"
-          ? "application/pdf"
-          : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      const mime = format === "pdf" ? PDF_MIME : DOCX_MIME;
       const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime }));
       const a = el("a");
       a.href = url;
@@ -933,7 +943,7 @@ if (toolbar) {
   bigBtn(ICONS.open, "Open<br>.docx", "Open a Word document", () => {
     const input = el("input");
     input.type = "file";
-    input.accept = ".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    input.accept = `.docx,${DOCX_MIME}`;
     input.addEventListener("change", () => {
       const file = input.files?.[0];
       if (file) void openDocxFile(file);
@@ -1021,8 +1031,8 @@ if (toolbar) {
   });
   // The model is px-native; Word shows POINTS. Convert on read/write (96dpi:
   // 1pt = 4/3 px). The displayed value snaps to the nearest half-point.
-  const pxToPt = (px: number): number => Math.round(px * 0.75 * 2) / 2;
-  const ptToPx = (pt: number): number => (pt * 4) / 3;
+  const pxToPt = (px: number): number => Math.round(sharedPxToPt(px) * 2) / 2;
+  const ptToPx = (pt: number): number => sharedPtToPx(pt);
   const sizeInput = el("input");
   sizeInput.type = "number";
   sizeInput.min = "1";
@@ -1147,8 +1157,8 @@ if (toolbar) {
   ]);
   btn(ICONS.multilevel, "Multilevel list (1, 1.1, 1.1.1 — Tab / Shift+Tab change level)", () => editor.dispatch(toggleMultilevelList()));
   sep();
-  btn(ICONS.indentDecrease, "Decrease indent", () => editor.dispatch(adjustIndentCmd(-36)));
-  btn(ICONS.indentIncrease, "Increase indent", () => editor.dispatch(adjustIndentCmd(36)));
+  btn(ICONS.indentDecrease, "Decrease indent", () => editor.dispatch(adjustIndentCmd(-INDENT_STEP_PX)));
+  btn(ICONS.indentIncrease, "Increase indent", () => editor.dispatch(adjustIndentCmd(INDENT_STEP_PX)));
   stub(ICONS.sort, "Sort");
   marksToggleBtn();
 
@@ -1507,12 +1517,12 @@ if (toolbar) {
   tabsBar.appendChild(headerReview);
 
   group(view, "Zoom");
-  txtBtn("−", "Zoom out", () => editor.setZoom(editor.getZoom() / 1.1), "font-size:15px;");
+  txtBtn("−", "Zoom out", () => editor.setZoom(editor.getZoom() / ZOOM_STEP), "font-size:15px;");
   const zoomSel = select("Zoom level", 66);
   for (const z of [0.5, 0.75, 1, 1.25, 1.5, 2, 3]) opt(zoomSel, String(z), `${Math.round(z * 100)}%`);
   zoomSel.value = "1";
   zoomSel.addEventListener("change", () => editor.setZoom(parseFloat(zoomSel.value)));
-  txtBtn("+", "Zoom in", () => editor.setZoom(editor.getZoom() * 1.1), "font-size:15px;");
+  txtBtn("+", "Zoom in", () => editor.setZoom(editor.getZoom() * ZOOM_STEP), "font-size:15px;");
 
   // ---- Activity panel (who created/edited, when) — online only ------------
   if (online) {
@@ -1826,7 +1836,7 @@ if (toolbar) {
   }
 
   // ---- Review pane (track changes + comments) — docked right, in-shell ----
-  const COMMENT_STYLE = { fontFamily: "Georgia, serif", fontSizePx: 16, bold: false, italic: false, underline: false, strikethrough: false, color: "#202124" };
+  const COMMENT_STYLE = { ...DEFAULT_CHAR_STYLE };
   const commentFragment = (text: string): Fragment => [{ text, style: COMMENT_STYLE }];
   {
     const reviewEl = shell.review;
@@ -2149,7 +2159,7 @@ if (toolbar) {
       b.addEventListener("click", onClick);
       right.appendChild(b);
     };
-    zBtn("−", "Zoom out", () => editor.setZoom(editor.getZoom() / 1.1));
+    zBtn("−", "Zoom out", () => editor.setZoom(editor.getZoom() / ZOOM_STEP));
     const slider = document.createElement("input");
     slider.type = "range";
     slider.min = "50";
@@ -2158,7 +2168,7 @@ if (toolbar) {
     slider.title = "Zoom";
     slider.addEventListener("input", () => editor.setZoom(Number(slider.value) / 100));
     right.appendChild(slider);
-    zBtn("+", "Zoom in", () => editor.setZoom(editor.getZoom() * 1.1));
+    zBtn("+", "Zoom in", () => editor.setZoom(editor.getZoom() * ZOOM_STEP));
     const zLabel = document.createElement("span");
     zLabel.className = "sb-item sb-zoom";
     right.appendChild(zLabel);
@@ -2244,21 +2254,21 @@ if (toolbar) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
       // page band (margins greyed, content white)
-      ctx.fillStyle = "#c7cdd6";
+      ctx.fillStyle = RULER_BG;
       ctx.fillRect(pageLeft, 4, pageW, H - 8);
-      ctx.fillStyle = "#ffffff";
+      ctx.fillStyle = RULER_CONTENT;
       ctx.fillRect(cL, 4, cR - cL, H - 8);
       // inch ticks + numbers, measured from the left content edge (Word's 0)
       // Ticks hang from the top of the ruler band; numbers sit in the lower half
       // so they never overlap the tick lines.
-      const inch = 96 * zoom;
-      const tickTop = 4;        // top of the page band
-      const tickBot = 10;       // bottom of the major tick (6 px, upper half only)
-      const halfTickBot = 8;    // bottom of the half-inch tick (4 px)
+      const inch = PX_PER_INCH * zoom;
+      const tickTop = RULER_TICK_START; // top of the page band
+      const tickBot = RULER_TICK_LEN;   // bottom of the major tick (6 px, upper half only)
+      const halfTickBot = RULER_HALF_TICK_LEN; // bottom of the half-inch tick (4 px)
       const numY = H - 4;       // number baseline anchored to the bottom of the band
-      ctx.strokeStyle = "#8a8f98";
-      ctx.fillStyle = "#605e5c";
-      ctx.font = "9px 'Segoe UI', sans-serif";
+      ctx.strokeStyle = RULER_LINE;
+      ctx.fillStyle = RULER_LABEL_COLOR;
+      ctx.font = RULER_FONT;
       ctx.textAlign = "center";
       ctx.textBaseline = "bottom";
       ctx.lineWidth = 1;
@@ -2385,19 +2395,19 @@ if (toolbar) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
       // page band (margins greyed, content white) — mirror of the horizontal draw
-      ctx.fillStyle = "#c7cdd6";
+      ctx.fillStyle = RULER_BG;
       ctx.fillRect(4, pageTop, W - 8, pageH);
-      ctx.fillStyle = "#ffffff";
+      ctx.fillStyle = RULER_CONTENT;
       ctx.fillRect(4, cT, W - 8, cB - cT);
       // inch ticks + numbers, measured from the top content edge (Word's 0)
-      const inch = 96 * zoom;
-      const tickLeft = 4;
-      const tickRight = 10; // major tick (6 px)
-      const halfTickRight = 8; // half-inch tick (4 px)
+      const inch = PX_PER_INCH * zoom;
+      const tickLeft = RULER_TICK_START;
+      const tickRight = RULER_TICK_LEN; // major tick (6 px)
+      const halfTickRight = RULER_HALF_TICK_LEN; // half-inch tick (4 px)
       const numX = W - 4;
-      ctx.strokeStyle = "#8a8f98";
-      ctx.fillStyle = "#605e5c";
-      ctx.font = "9px 'Segoe UI', sans-serif";
+      ctx.strokeStyle = RULER_LINE;
+      ctx.fillStyle = RULER_LABEL_COLOR;
+      ctx.font = RULER_FONT;
       ctx.textAlign = "right";
       ctx.textBaseline = "middle";
       ctx.lineWidth = 1;

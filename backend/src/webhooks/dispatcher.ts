@@ -5,14 +5,17 @@
 // is logged so the dashboard can show delivery history.
 
 import { createHmac } from "node:crypto";
-import { applyReviewOp, emptyReview, type Comment, type ReviewOp } from "@cw/shared";
+import { applyReviewOp, emptyReview, WEBHOOK_EVENT, type Comment, type ReviewOp } from "@cw/shared";
 import type { ChangeStore, DocumentActivity } from "../store/ChangeStore";
 
-export const SESSION_ENDED_EVENT = "document.session_ended";
+export const SESSION_ENDED_EVENT = WEBHOOK_EVENT.SessionEnded;
 /** Fired when a comment (or reply) @-mentions one or more users, so a third-party
  *  system can notify them. Embedders subscribe a webhook with this event. */
-export const MENTION_EVENT = "comment.mention";
+export const MENTION_EVENT = WEBHOOK_EVENT.CommentMention;
 const MAX_ATTEMPTS = Number(process.env.WEBHOOK_MAX_ATTEMPTS ?? 3);
+// Retry backoff: base doubles each attempt, capped. Env-overridable like the others.
+const WEBHOOK_BACKOFF_BASE_MS = Number(process.env.WEBHOOK_BACKOFF_BASE_MS ?? 1000);
+const WEBHOOK_BACKOFF_MAX_MS = Number(process.env.WEBHOOK_BACKOFF_MAX_MS ?? 8000);
 
 export interface EditorRef {
   id?: string;
@@ -26,7 +29,8 @@ export interface SessionEndContext {
 }
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
-const backoffMs = (attempt: number): number => Math.min(1000 * 2 ** (attempt - 1), 8000);
+const backoffMs = (attempt: number): number =>
+  Math.min(WEBHOOK_BACKOFF_BASE_MS * 2 ** (attempt - 1), WEBHOOK_BACKOFF_MAX_MS);
 
 export class WebhookDispatcher {
   constructor(

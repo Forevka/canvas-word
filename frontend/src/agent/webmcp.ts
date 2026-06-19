@@ -7,7 +7,7 @@
 // module only registers tools, so it stays trivially testable with a fake context.
 
 import type { CharStyle, Document, DocSelection, Fragment, ParaStyle } from "@cw/shared";
-import { blockById, paragraphsOf, textOfBlock, textOfRuns } from "@cw/shared";
+import { blockById, DEFAULT_CHAR_STYLE, paragraphsOf, textOfBlock, textOfRuns } from "@cw/shared";
 import type { Editor } from "../index";
 import { dumpLayout, type LayoutDumpOptions } from "./layoutDump";
 
@@ -52,15 +52,7 @@ export interface AgentToolsContext {
 
 // ---- helpers -------------------------------------------------------------------
 
-const COMMENT_STYLE: CharStyle = {
-  fontFamily: "Georgia, serif",
-  fontSizePx: 16,
-  bold: false,
-  italic: false,
-  underline: false,
-  strikethrough: false,
-  color: "#202124",
-};
+const COMMENT_STYLE: CharStyle = DEFAULT_CHAR_STYLE;
 
 const ok = (text: string): AgentToolResult => ({ content: [{ type: "text", text }] });
 const okJson = (value: unknown): AgentToolResult => ok(JSON.stringify(value, null, 2));

@@ -1,6 +1,7 @@
 // PUT/GET /media/:hash — content-addressed blob store. Bodies/responses are raw
 // bytes, so they're described via consumes/produces rather than JSON schemas
 // (a body/response schema would make Fastify validate/serialize the Buffer).
+import { OCTET_STREAM_MIME } from "@cw/shared";
 import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../context";
 import { headerStr } from "../http/headers";
@@ -19,14 +20,14 @@ export function registerMediaRoutes(app: FastifyInstance, { store }: AppContext)
         tags: ["media"],
         summary: "Store image bytes under their content hash",
         params: hashParam,
-        consumes: ["application/octet-stream"],
+        consumes: [OCTET_STREAM_MIME],
         response: { 200: { type: "object", properties: { hash: { type: "string" } }, additionalProperties: true } },
       },
     },
     async (req) => {
       const { hash } = req.params as { hash: string };
       const bytes = (req.body as Buffer | undefined) ?? Buffer.alloc(0);
-      const mime = headerStr(req.headers["content-type"]) ?? "application/octet-stream";
+      const mime = headerStr(req.headers["content-type"]) ?? OCTET_STREAM_MIME;
       await store.putMedia({ hash, mime, bytes: new Uint8Array(bytes) });
       return { hash };
     },
@@ -39,7 +40,7 @@ export function registerMediaRoutes(app: FastifyInstance, { store }: AppContext)
         tags: ["media"],
         summary: "Fetch image bytes by content hash",
         params: hashParam,
-        produces: ["application/octet-stream"],
+        produces: [OCTET_STREAM_MIME],
         response: { 200: { type: "string", format: "binary" }, 404: { $ref: "Error#" } },
       },
     },

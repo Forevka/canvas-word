@@ -16,6 +16,7 @@ import { spaceMarkXs } from "../layout/geometry";
 import type { CellBorder } from "@cw/shared";
 import { charStyleToFont } from "../layout/metrics";
 import {
+  ACCENT_BLUE,
   cellBorderDash,
   cellBorderWidth,
   COLUMN_SEPARATOR_COLOR,
@@ -38,6 +39,7 @@ import {
   UNDERLINE_OFFSET_PX,
   verticalShift,
 } from "./paintStyle";
+import { ZOOM_MAX, ZOOM_MIN } from "../uiConstants";
 
 export interface PagePoint {
   pageIndex: number;
@@ -146,6 +148,32 @@ const PAGE_GAP_PX = 24;
 const SELECTION_DIFF_COLOR = "rgb(64, 64, 64)";
 const SELECTION_DIFF_ALPHA = 0.5;
 
+// Drawing-grid mesh hairlines (under content) for precise object placement.
+const GRID_MESH_COLOR = "rgba(0,0,0,0.08)";
+// Search-match highlight band (over fills, under text) — Word's amber.
+const SEARCH_HIGHLIGHT_COLOR = "rgba(251, 188, 4, 0.45)";
+// Blinking text caret (injected CSS); matched by the .cw-caret background.
+const CARET_COLOR = "#1a1a2e";
+
+// Content-control / field adornment chrome shared geometry. The two adornment
+// blocks differ in colour + rect treatment (SDT strokes a frame, fields fill +
+// stroke a shade) but share the title-tab height, label font, and text offsets.
+const ADORNMENT_TAB_H = 15;
+const ADORNMENT_LABEL_FONT = "10px Arial";
+/** Horizontal padding added to the measured label width for the tab box. */
+const ADORNMENT_LABEL_PAD_X = 10;
+/** Label baseline insets within the tab: +x from the tab left, +y from its top. */
+const ADORNMENT_LABEL_OFFSET_X = 5;
+const ADORNMENT_LABEL_OFFSET_Y = 11;
+
+// Review comment pin (right-margin marker). Radius + vertical offset are shared
+// between the painted disc and reviewPinAt's hit-testing so they stay aligned.
+const PIN_RADIUS_PX = 5;
+const PIN_OFFSET_PX = 6;
+/** Resolved-pin fill and the disc's outline. */
+const PIN_RESOLVED_COLOR = "#9aa0a6";
+const PIN_STROKE_COLOR = "#fff";
+
 /** Stroke a page's w:pgBorders box. Shares geometry with the PDF painter via
  *  pageBorderSegments so the two backends stay in lockstep. */
 function paintPageBorders(ctx: CanvasRenderingContext2D, page: Page): void {
@@ -180,7 +208,7 @@ function injectCaretCss(): void {
   const style = document.createElement("style");
   style.textContent =
     "@keyframes cw-caret-blink{0%,55%{opacity:1}56%,100%{opacity:0}}" +
-    ".cw-caret{position:absolute;width:2px;background:#1a1a2e;pointer-events:none;animation:cw-caret-blink 1.06s step-end infinite;}" +
+    `.cw-caret{position:absolute;width:2px;background:${CARET_COLOR};pointer-events:none;animation:cw-caret-blink 1.06s step-end infinite;}` +
     ".cw-rcaret{position:absolute;width:2px;pointer-events:none;z-index:3;}" +
     ".cw-rcaret .flag{position:absolute;top:-13px;left:-1px;height:13px;display:flex;align-items:center;" +
     "font:600 10px/1 'Segoe UI',Roboto,sans-serif;color:#fff;padding:0 4px;border-radius:3px 3px 3px 0;white-space:nowrap;}" +
@@ -391,7 +419,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     // px crisp at any zoom (ctx is already scaled by `scale`).
     if (showGrid && gridSpacingPx > 0) {
       ctx.save();
-      ctx.strokeStyle = "rgba(0,0,0,0.08)";
+      ctx.strokeStyle = GRID_MESH_COLOR;
       ctx.lineWidth = 1 / scale;
       ctx.beginPath();
       for (let x = gridSpacingPx; x < page.widthPx; x += gridSpacingPx) {
@@ -420,7 +448,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     if (page.footer) for (const b of page.footer) paintCellFills(ctx, b, page.index);
 
     // 2a. search-match highlights (over fills, under text)
-    ctx.fillStyle = "rgba(251, 188, 4, 0.45)";
+    ctx.fillStyle = SEARCH_HIGHLIGHT_COLOR;
     for (const r of searchRects) {
       if (r.pageIndex === page.index) ctx.fillRect(r.x, r.y, r.width, r.height);
     }
@@ -456,17 +484,16 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       }
       const first = onPage[0];
       if (first && sdtAdorn.label) {
-        ctx.font = "10px Arial";
-        const w = ctx.measureText(sdtAdorn.label).width + 10;
-        const tabH = 15;
+        ctx.font = ADORNMENT_LABEL_FONT;
+        const w = ctx.measureText(sdtAdorn.label).width + ADORNMENT_LABEL_PAD_X;
         const tx = first.x - 2.5;
-        const ty = first.y - 1.5 - tabH;
+        const ty = first.y - 1.5 - ADORNMENT_TAB_H;
         ctx.fillStyle = "#d8d8d8";
         ctx.beginPath();
-        ctx.roundRect(tx, ty, w, tabH, [3, 3, 0, 0]);
+        ctx.roundRect(tx, ty, w, ADORNMENT_TAB_H, [3, 3, 0, 0]);
         ctx.fill();
         ctx.fillStyle = "#3c4043";
-        ctx.fillText(sdtAdorn.label, tx + 5, ty + 11);
+        ctx.fillText(sdtAdorn.label, tx + ADORNMENT_LABEL_OFFSET_X, ty + ADORNMENT_LABEL_OFFSET_Y);
       }
     }
 
@@ -483,17 +510,16 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       }
       const first = onPage[0];
       if (first && fieldAdorn.label) {
-        ctx.font = "10px Arial";
-        const w = ctx.measureText(fieldAdorn.label).width + 10;
-        const tabH = 15;
+        ctx.font = ADORNMENT_LABEL_FONT;
+        const w = ctx.measureText(fieldAdorn.label).width + ADORNMENT_LABEL_PAD_X;
         const tx = first.x - 1;
-        const ty = first.y - 1 - tabH;
+        const ty = first.y - 1 - ADORNMENT_TAB_H;
         ctx.fillStyle = "#c7d2e0";
         ctx.beginPath();
-        ctx.roundRect(tx, ty, w, tabH, [3, 3, 0, 0]);
+        ctx.roundRect(tx, ty, w, ADORNMENT_TAB_H, [3, 3, 0, 0]);
         ctx.fill();
         ctx.fillStyle = "#2b3a4a";
-        ctx.fillText(fieldAdorn.label, tx + 5, ty + 11);
+        ctx.fillText(fieldAdorn.label, tx + ADORNMENT_LABEL_OFFSET_X, ty + ADORNMENT_LABEL_OFFSET_Y);
       }
     }
 
@@ -550,11 +576,11 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     for (const pin of reviewDecos.pins) {
       if (pin.pageIndex !== page.index) continue;
       ctx.beginPath();
-      ctx.arc(pin.x, pin.y + 6, 5, 0, Math.PI * 2);
-      ctx.fillStyle = pin.resolved ? "#9aa0a6" : pin.color;
+      ctx.arc(pin.x, pin.y + PIN_OFFSET_PX, PIN_RADIUS_PX, 0, Math.PI * 2);
+      ctx.fillStyle = pin.resolved ? PIN_RESOLVED_COLOR : pin.color;
       ctx.fill();
       ctx.lineWidth = 1;
-      ctx.strokeStyle = "#fff";
+      ctx.strokeStyle = PIN_STROKE_COLOR;
       ctx.stroke();
     }
 
@@ -567,7 +593,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       ctx.fillStyle = "rgba(255,255,255,0.55)";
       ctx.fillRect(0, contentTop, page.widthPx, contentBottom - contentTop);
       const boundaryY = bandEditMode === "header" ? contentTop : contentBottom;
-      ctx.strokeStyle = "#1a73e8";
+      ctx.strokeStyle = ACCENT_BLUE;
       ctx.setLineDash([4, 3]);
       ctx.beginPath();
       ctx.moveTo(0, boundaryY + 0.5);
@@ -849,9 +875,9 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       for (const pin of reviewDecos.pins) {
         if (pin.pageIndex !== pt.pageIndex) continue;
         const dx = pt.x - pin.x;
-        const dy = pt.y - (pin.y + 6);
+        const dy = pt.y - (pin.y + PIN_OFFSET_PX);
         const d2 = dx * dx + dy * dy;
-        if (d2 <= 100 && (!best || d2 < best.d2)) best = { id: pin.threadId, d2 }; // 10px radius
+        if (d2 <= 100 && (!best || d2 < best.d2)) best = { id: pin.threadId, d2 }; // 10px hit radius (larger than the painted disc)
       }
       return best ? best.id : null;
     },
@@ -965,7 +991,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     },
 
     setZoom(next: number): void {
-      const z = Math.min(5, Math.max(0.25, next));
+      const z = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
       if (z === zoom) return;
       zoom = z;
       // Resize placeholders, repaint live canvases at the new scale, reposition

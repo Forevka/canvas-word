@@ -7,6 +7,7 @@
 export * from "./model/document";
 export * from "./model/position";
 export * from "./model/text";
+export * from "./model/defaults";
 export * from "./model/stylesheet";
 export * from "./model/lists";
 export * from "./model/tableStyles";
@@ -15,6 +16,9 @@ export * from "./model/tableGrid";
 
 // Collaboration foundations: unique ids, content-addressed media, document <->
 // snapshot serialization, the change log, and replay.
+export * from "./units";
+export * from "./mime";
+export * from "./protocol";
 export * from "./ids";
 export * from "./persist/media";
 export * from "./persist/serialize";

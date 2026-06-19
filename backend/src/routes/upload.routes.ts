@@ -2,6 +2,7 @@
 // caller can redirect into WordCanvas({ docId }). Body = raw file bytes (described
 // via consumes, not a body schema, since our parser yields a Buffer); filename +
 // optional user come from headers.
+import { DOCX_MIME, OCTET_STREAM_MIME } from "@cw/shared";
 import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../context";
 import { uploadAuthHook } from "../http/auth";
@@ -20,7 +21,7 @@ export function registerUploadRoutes(app: FastifyInstance, { store }: AppContext
           "Body = raw .docx bytes. Auth: dashboard admin token OR an integration API key (X-API-Key or " +
           "Bearer). Filename comes from the X-Filename header; optional X-User (JSON) attributes the creator.",
         security: [{ ApiKeyAuth: [] }, { BearerAuth: [] }],
-        consumes: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/octet-stream"],
+        consumes: [DOCX_MIME, OCTET_STREAM_MIME],
         response: {
           201: { type: "object", properties: { docId: { type: "string", format: "uuid" } }, additionalProperties: true },
           400: { $ref: "Error#" },

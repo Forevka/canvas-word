@@ -5,7 +5,7 @@
 
 import type { Block, CharStyle, GridRect, ParaStyle, Paragraph, Run, TableBlock } from "@cw/shared";
 import type { DocPosition } from "@cw/shared";
-import { buildTableGrid, normalizeRect, normalizeRuns, sliceRuns } from "@cw/shared";
+import { buildTableGrid, DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE, normalizeRect, normalizeRuns, sliceRuns } from "@cw/shared";
 import { textOfRuns } from "@cw/shared";
 
 export interface FragmentBlock {
@@ -19,24 +19,8 @@ export interface DocFragment {
   inline: boolean;
 }
 
-const DEFAULT_CHAR: CharStyle = {
-  fontFamily: "Georgia, serif",
-  fontSizePx: 16,
-  bold: false,
-  italic: false,
-  underline: false,
-  strikethrough: false,
-  color: "#202124",
-};
-
-const DEFAULT_PARA: ParaStyle = {
-  align: "left",
-  lineHeight: 1.5,
-  spaceBeforePx: 0,
-  spaceAfterPx: 12,
-  indentFirstLinePx: 0,
-  indentLeftPx: 0,
-};
+const DEFAULT_CHAR: CharStyle = DEFAULT_CHAR_STYLE;
+const DEFAULT_PARA: ParaStyle = DEFAULT_PARA_STYLE;
 
 // ---------------------------------------------------------------------------
 // Extraction

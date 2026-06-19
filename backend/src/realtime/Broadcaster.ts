@@ -1,7 +1,7 @@
 // Live change broadcast + presence. Holds the in-memory room state and the
 // debounced "session ended" signal; transport-agnostic (works with any ws socket).
 import type { WebSocket } from "ws";
-import type { Change, ReviewOpEnvelope, UserInfo } from "@cw/shared";
+import { WS_MSG, type Change, type ReviewOpEnvelope, type UserInfo } from "@cw/shared";
 
 interface Conn {
   docId: string;
@@ -39,7 +39,7 @@ export class Broadcaster {
       const m = this.meta.get(ws);
       this.meta.delete(ws);
       // Tell the room this collaborator left so their caret disappears.
-      if (m?.siteId) this.toRoom(docId, { type: "leave", siteId: m.siteId }, ws);
+      if (m?.siteId) this.toRoom(docId, { type: WS_MSG.Leave, siteId: m.siteId }, ws);
       // The last editor just left → arm the debounced session-end signal.
       if (room!.size === 0) this.scheduleSessionEnd(docId, m);
     });
@@ -67,8 +67,8 @@ export class Broadcaster {
     m.siteId = siteId;
     m.user = user;
     const entries = this.roster(m.docId, ws);
-    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "roster", entries }));
-    this.toRoom(m.docId, { type: "presence", siteId, user, selection: m.selection ?? null }, ws);
+    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: WS_MSG.Roster, entries }));
+    this.toRoom(m.docId, { type: WS_MSG.Presence, siteId, user, selection: m.selection ?? null }, ws);
   }
 
   /** A client's caret moved: relay to the rest of the room. */
@@ -76,18 +76,18 @@ export class Broadcaster {
     const m = this.meta.get(ws);
     if (!m?.siteId) return;
     m.selection = selection;
-    this.toRoom(m.docId, { type: "presence", siteId: m.siteId, user: m.user, selection }, ws);
+    this.toRoom(m.docId, { type: WS_MSG.Presence, siteId: m.siteId, user: m.user, selection }, ws);
   }
 
   /** Accepted change → everyone in the room (incl. sender, who treats it as ack). */
   publish(docId: string, change: Change): void {
-    this.toRoom(docId, { type: "change", change });
+    this.toRoom(docId, { type: WS_MSG.Change, change });
   }
 
   /** A review op (suggestion/comment) → the rest of the room. Excludes the
    *  sender, who already applied it locally (apply is idempotent regardless). */
   publishReview(docId: string, env: ReviewOpEnvelope, sender: WebSocket): void {
-    this.toRoom(docId, { type: "review", review: env }, sender);
+    this.toRoom(docId, { type: WS_MSG.Review, review: env }, sender);
   }
 
   private roster(

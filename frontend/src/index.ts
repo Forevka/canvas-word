@@ -5,7 +5,8 @@
 import type { Block, CharStyle, Document, ParaStyle, TableBlock } from "@cw/shared";
 import { BAND_CONTAINERS, parseTocInstruction } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, UserInfo } from "@cw/shared";
-import { isCollapsed, colorForId, userDisplayName, freshId } from "@cw/shared";
+import { isCollapsed, colorForId, userDisplayName, freshId, DEFAULT_CHAR_STYLE } from "@cw/shared";
+import { ZOOM_STEP } from "./uiConstants";
 import { applyOp, containerBlocks, containerOf, effectiveFractions, locateImage, sliceRuns, type Op } from "@cw/shared";
 import { bandParagraphs, blockById, buildTableGrid, containerListOf, gridOriginOfCell, locateParagraph, normalizeRect, paragraphsOf, styleAtRuns, textOfRuns } from "@cw/shared";
 import type { CellBorders } from "@cw/shared";
@@ -1845,10 +1846,7 @@ export function createEditor(
       align: "left", lineHeight: 1.5, spaceBeforePx: 0, spaceAfterPx: 0,
       indentFirstLinePx: 0, indentLeftPx: 0,
     };
-    const fallbackChar: CharStyle = {
-      fontFamily: "Georgia, serif", fontSizePx: 16, bold: false, italic: false,
-      underline: false, strikethrough: false, color: "#202124",
-    };
+    const fallbackChar: CharStyle = { ...DEFAULT_CHAR_STYLE };
     return {
       inline: true,
       blocks: [{ runs: [{ text: "", style: style ?? fallbackChar }], style: para }],
@@ -2435,7 +2433,7 @@ export function createEditor(
     (ev: WheelEvent) => {
       if (!ev.ctrlKey && !ev.metaKey) return;
       ev.preventDefault();
-      applyZoom(paint.getZoom() * (ev.deltaY < 0 ? 1.1 : 1 / 1.1), ev.clientY);
+      applyZoom(paint.getZoom() * (ev.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP), ev.clientY);
     },
     { passive: false },
   );

@@ -6,7 +6,7 @@
 // body. Nothing is stored. The 200 is binary (described via produces), so it carries
 // no response schema; only the JSON error responses do.
 import type { FastifyInstance } from "fastify";
-import type { TocOptions } from "@cw/shared";
+import { DOCX_MIME, PDF_MIME, type TocOptions } from "@cw/shared";
 import type { AppContext } from "../context";
 import { renderPdfFromDocx } from "../export/serverExport";
 import { uploadAuthHook } from "../http/auth";
@@ -29,8 +29,8 @@ export function registerRenderRoutes(app: FastifyInstance, { store }: AppContext
           "admin token OR an integration API key (X-API-Key or Bearer). Accepts multipart (file + optional toc) " +
           "OR a raw .docx body.",
         security: [{ ApiKeyAuth: [] }, { BearerAuth: [] }],
-        consumes: ["multipart/form-data", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
-        produces: ["application/pdf"],
+        consumes: ["multipart/form-data", DOCX_MIME],
+        produces: [PDF_MIME],
         response: { 200: { type: "string", format: "binary" }, 400: { $ref: "Error#" }, 401: { $ref: "Error#" } },
       },
     },
@@ -61,7 +61,7 @@ export function registerRenderRoutes(app: FastifyInstance, { store }: AppContext
         return reply
           .code(200)
           .header("content-disposition", `attachment; filename="render.pdf"`)
-          .type("application/pdf")
+          .type(PDF_MIME)
           .send(Buffer.from(out));
       } catch (e) {
         return reply.code(400).send({ error: String(e instanceof Error ? e.message : e) });

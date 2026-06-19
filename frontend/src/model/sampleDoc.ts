@@ -7,11 +7,11 @@
 import type {
   BookmarkRange, CharStyle, Document, FieldDef, FieldSpec, ImageBlock, ParaStyle, Paragraph, Run, SdtProps, TableBlock, TableCell,
 } from "@cw/shared";
-import { buildInstruction, buildTocParagraphs, defaultStylesheet, evaluateIf, formatFieldDate } from "@cw/shared";
+import { buildInstruction, buildTocParagraphs, DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE, defaultStylesheet, evaluateIf, formatFieldDate } from "@cw/shared";
 import { defaultListDefinition, DEFAULT_BULLET_LIST_ID, DEFAULT_NUMBER_LIST_ID } from "@cw/shared";
 
-const BODY: CharStyle = { fontFamily: "Georgia, serif", fontSizePx: 16, bold: false, italic: false, underline: false, strikethrough: false, color: "#202124" };
-const PARA: ParaStyle = { align: "left", lineHeight: 1.5, spaceBeforePx: 0, spaceAfterPx: 12, indentFirstLinePx: 0, indentLeftPx: 0 };
+const BODY: CharStyle = DEFAULT_CHAR_STYLE;
+const PARA: ParaStyle = DEFAULT_PARA_STYLE;
 
 let nextId = 0;
 const id = (): string => `b${nextId++}`;

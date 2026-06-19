@@ -15,7 +15,7 @@
 // roster/presence/leave → the editor (which owns + rebases peer caret positions)
 // plus userEntered/userLeave/presence callbacks for the embedder.
 
-import { currentSiteId, freshId, transformOps, type Change, type DocSelection, type Op, type ReviewOp, type UserInfo } from "@cw/shared";
+import { currentSiteId, freshId, transformOps, WS_MSG, type Change, type DocSelection, type Op, type ReviewOp, type UserInfo } from "@cw/shared";
 import type { ReviewOpEnvelope } from "../index";
 
 export interface SyncEditor {
@@ -90,7 +90,7 @@ export class SyncClient {
     const ws = new WebSocket(`${this.opts.wsUrl}/ws?doc=${encodeURIComponent(this.opts.docId)}`);
     this.ws = ws;
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "hello", siteId: currentSiteId(), user: this.opts.user }));
+      ws.send(JSON.stringify({ type: WS_MSG.Hello, siteId: currentSiteId(), user: this.opts.user }));
       this.flush();
       this.opened = true;
       for (const w of this.openWaiters) w();
@@ -99,19 +99,19 @@ export class SyncClient {
     ws.onmessage = (ev) => {
       const msg = JSON.parse(ev.data as string) as PresenceMsg;
       switch (msg.type) {
-        case "change":
+        case WS_MSG.Change:
           if (msg.change) this.onServerChange(msg.change);
           break;
-        case "review":
+        case WS_MSG.Review:
           if (msg.review) this.onServerReview(msg.review);
           break;
-        case "roster":
+        case WS_MSG.Roster:
           for (const e of msg.entries ?? []) this.applyPeer(e.siteId, e.user, e.selection ?? null);
           break;
-        case "presence":
+        case WS_MSG.Presence:
           if (msg.siteId) this.applyPeer(msg.siteId, msg.user, msg.selection ?? null);
           break;
-        case "leave":
+        case WS_MSG.Leave:
           if (msg.siteId) this.removePeer(msg.siteId);
           break;
       }
@@ -136,7 +136,7 @@ export class SyncClient {
       this.presenceTimer = null;
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.ws.send(
-          JSON.stringify({ type: "presence", siteId: currentSiteId(), user: this.opts.user, selection: this.lastSelection }),
+          JSON.stringify({ type: WS_MSG.Presence, siteId: currentSiteId(), user: this.opts.user, selection: this.lastSelection }),
         );
       }
     }, PRESENCE_THROTTLE_MS);
@@ -146,7 +146,7 @@ export class SyncClient {
    *  the core version its anchor depends on (causal delivery). */
   localReviewOp(env: ReviewOpEnvelope): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: "review", review: env }));
+      this.ws.send(JSON.stringify({ type: WS_MSG.Review, review: env }));
     }
   }
 
@@ -219,7 +219,7 @@ export class SyncClient {
       ts: Date.now(),
       ops,
     };
-    this.ws.send(JSON.stringify({ type: "submit", change }));
+    this.ws.send(JSON.stringify({ type: WS_MSG.Submit, change }));
   }
 
   private onServerChange(change: Change): void {

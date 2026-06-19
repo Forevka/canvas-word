@@ -5,7 +5,7 @@
 // them. Modeled on the run/para closures in model/sampleDoc.ts.
 
 import type { CharStyle, Document, ImageBlock, ParaStyle, Paragraph, Run, Stylesheet } from "@cw/shared";
-import { createIdGenerator, resolveStyle, styleById, type IdGenerator } from "@cw/shared";
+import { createIdGenerator, DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE, resolveStyle, styleById, type IdGenerator } from "@cw/shared";
 import { builtinTableStyles, type TableStylePreset } from "./tableStyles";
 
 export interface BuilderWarning {
@@ -14,24 +14,8 @@ export interface BuilderWarning {
 }
 
 /** Baseline concrete styles (match the editor's sample-doc/import defaults). */
-const BASE_CHAR: CharStyle = {
-  fontFamily: "Georgia, serif",
-  fontSizePx: 16,
-  bold: false,
-  italic: false,
-  underline: false,
-  strikethrough: false,
-  color: "#202124",
-};
-
-const BASE_PARA: ParaStyle = {
-  align: "left",
-  lineHeight: 1.5,
-  spaceBeforePx: 0,
-  spaceAfterPx: 12,
-  indentFirstLinePx: 0,
-  indentLeftPx: 0,
-};
+const BASE_CHAR: CharStyle = DEFAULT_CHAR_STYLE;
+const BASE_PARA: ParaStyle = DEFAULT_PARA_STYLE;
 
 /** A concrete empty paragraph matching the document's default style — the
  *  caret home injected when a document arrives with no blocks (builder build()

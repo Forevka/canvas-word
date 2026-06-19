@@ -12,6 +12,7 @@ import type { ExportFormat, ExportResult, FromExportWorker, ImageBytes, ToExport
 
 export type { ExportFormat, ExportResult, ExportWarning } from "./types";
 
+// Intentionally mirrors the same constant in importDocx.ts (both are worker-host files).
 const IDLE_TERMINATE_MS = 30_000;
 
 interface Pending {

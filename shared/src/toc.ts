@@ -6,6 +6,7 @@
 // the TOC paragraph styles, not the instruction (see TocOptions).
 
 import type { CharStyle, Document, ParaStyle, Paragraph } from "./model/document";
+import { DEFAULT_CHAR_STYLE } from "./model/defaults";
 import { bodyParagraphs, textOfRuns } from "./model/text";
 import { sliceRuns } from "./model/ops";
 import { freshId } from "./ids";
@@ -185,10 +186,11 @@ export interface TocLevelStyle {
   para?: Partial<ParaStyle>;
 }
 
-const TOC_BASE_CHAR: CharStyle = {
-  fontFamily: "Georgia, serif", fontSizePx: 13, bold: false, italic: false,
-  underline: false, strikethrough: false, color: "#202124",
-};
+/** TOC entries default to the body font/color, one notch smaller. */
+const TOC_BASE_CHAR: CharStyle = { ...DEFAULT_CHAR_STYLE, fontSizePx: 13 };
+
+/** Per-level left-indent step (px) when none is supplied via TocOptions. */
+const TOC_INDENT_STEP_PX = 20;
 
 /** Resolve the char + paragraph style for a TOC entry at `level`. Precedence:
  *  built-in defaults < the document's own TOC style (`inherit`, from its TOC field
@@ -202,15 +204,17 @@ export function tocEntryStyle(
   contentWidthPx: number,
   inherit?: { char?: CharStyle | undefined; para?: ParaStyle | undefined },
 ): { char: CharStyle; para: ParaStyle } {
-  const indentStep = opts.indentStepPx ?? 20;
+  const indentStep = opts.indentStepPx ?? TOC_INDENT_STEP_PX;
   const leader = opts.leader ?? "dot";
+  // Shared paragraph base for every entry, before indent + per-level overrides.
+  const paraBase = { align: "left", lineHeight: 1.5, spaceBeforePx: 0, spaceAfterPx: 2, indentFirstLinePx: 0 } as const;
   let char: CharStyle;
   let para: ParaStyle;
   if (inherit && (inherit.char || inherit.para)) {
     char = { ...TOC_BASE_CHAR, ...inherit.char, ...opts.baseChar, ...opts.levels?.[level]?.char };
     const baseIndent = inherit.para?.indentLeftPx ?? 0;
     para = {
-      align: "left", lineHeight: 1.5, spaceBeforePx: 0, spaceAfterPx: 2, indentFirstLinePx: 0,
+      ...paraBase,
       ...inherit.para,
       indentLeftPx: baseIndent + (level - 1) * indentStep,
       ...opts.levels?.[level]?.para,
@@ -219,8 +223,8 @@ export function tocEntryStyle(
     const base = { ...TOC_BASE_CHAR, ...opts.baseChar };
     char = { ...base, fontSizePx: level === 1 ? 14 : 13, bold: level === 1, ...opts.levels?.[level]?.char };
     para = {
-      align: "left", lineHeight: 1.5, spaceBeforePx: 0, spaceAfterPx: 2,
-      indentFirstLinePx: 0, indentLeftPx: (level - 1) * indentStep, ...opts.levels?.[level]?.para,
+      ...paraBase,
+      indentLeftPx: (level - 1) * indentStep, ...opts.levels?.[level]?.para,
     };
   }
   if (leader !== "none" && contentWidthPx > 0) para.tabStops = [{ posPx: contentWidthPx, align: "right", leader }];

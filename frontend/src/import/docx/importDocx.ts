@@ -7,7 +7,7 @@
 // free for the UI no matter how big the document is.
 
 import { ImportError, type FromWorker, type ImportPhase, type ImportResult, type ToWorker } from "./types";
-import { BAND_CONTAINERS, type Block } from "@cw/shared";
+import { BAND_CONTAINERS, PNG_MIME, type Block } from "@cw/shared";
 import { bindMediaUrl, registerMediaBytes } from "../../media/store";
 
 export type { ImportPhase, ImportResult, ImportWarning } from "./types";
@@ -23,6 +23,7 @@ interface Pending {
   onProgress?: ((phase: ImportPhase, pct: number) => void) | undefined;
 }
 
+// Intentionally mirrors the same constant in exportDocument.ts (both are worker-host files).
 const IDLE_TERMINATE_MS = 30_000;
 
 let worker: Worker | null = null;
@@ -103,7 +104,7 @@ async function rehomeMedia(result: ImportResult): Promise<void> {
           // Content-address the bytes and register them so the image survives a
           // serialize → reload round-trip (and, later, replication to the server).
           const bytes = new Uint8Array(await blob.arrayBuffer());
-          mediaId = await registerMediaBytes(bytes, blob.type || "image/png");
+          mediaId = await registerMediaBytes(bytes, blob.type || PNG_MIME);
           bindMediaUrl(mediaId, url);
         } catch {
           // Hashing unavailable (no Web Crypto) — keep the live URL, skip mediaId.

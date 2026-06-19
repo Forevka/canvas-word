@@ -6,10 +6,15 @@
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import type { FastifyInstance } from "fastify";
+import { PORT } from "../config";
 import { registerSchemas } from "../schemas/models";
 
 export async function registerOpenapi(app: FastifyInstance): Promise<void> {
   registerSchemas(app);
+
+  // Advertised base URL: PUBLIC_BASE_URL in deployed envs, else local dev on the
+  // configured port (so it tracks BACKEND_PORT instead of a hardcoded 8787).
+  const serverUrl = process.env.PUBLIC_BASE_URL ?? `http://localhost:${PORT}`;
 
   await app.register(swagger, {
     // Keep shared-schema component names as their $id (Error, Change, …) instead
@@ -28,7 +33,7 @@ export async function registerOpenapi(app: FastifyInstance): Promise<void> {
           "WebSocket channel (not described by OpenAPI): connect to `ws://<host>/ws?doc=<id>`, send " +
           "`{type:'submit', change}` and receive `{type:'change', change}` broadcasts.",
       },
-      servers: [{ url: "http://localhost:8787", description: "local dev" }],
+      servers: [{ url: serverUrl, description: "local dev" }],
       tags: [
         { name: "docs", description: "Documents, change log, review overlay, export" },
         { name: "media", description: "Content-addressed image blobs" },

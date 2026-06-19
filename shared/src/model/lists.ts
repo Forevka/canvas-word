@@ -79,7 +79,7 @@ export function formatListNumber(n: number, format: ListNumberFormat): string {
 export function markerText(def: ListDefinition, level: number, counters: number[]): string {
   const lvl = def.levels[Math.min(level, def.levels.length - 1)];
   if (!lvl) return "";
-  if (lvl.format === "bullet") return lvl.bulletChar ?? "•";
+  if (lvl.format === "bullet") return lvl.bulletChar ?? DEFAULT_BULLET;
   return lvl.text.replace(/%(\d)/g, (_, d: string) => {
     const k = Number(d) - 1;
     const refLevel = def.levels[Math.min(k, def.levels.length - 1)];
@@ -95,27 +95,38 @@ export const DEFAULT_BULLET_LIST_ID = "bullets";
 export const DEFAULT_NUMBER_LIST_ID = "numbers";
 export const DEFAULT_MULTILEVEL_LIST_ID = "multilevel";
 
-const BULLETS = ["•", "◦", "▪"];
+/** OOXML abstractNum holds up to 9 levels (0..8). */
+const LIST_LEVELS = 9;
+/** Per-level text indent + step (px): level i sits at LIST_INDENT_STEP_PX*(i+1). */
+const LIST_INDENT_STEP_PX = 24;
+/** How far the marker hangs left of the text origin, per list kind. */
+const BULLET_HANGING_PX = 18;
+const NUMBER_HANGING_PX = 22;
+
+const DEFAULT_BULLET = "•";
+const BULLETS = [DEFAULT_BULLET, "◦", "▪"];
 const NUMBER_FORMATS: ListNumberFormat[] = ["decimal", "lowerLetter", "lowerRoman"];
+
+const levelIndentPx = (i: number): number => LIST_INDENT_STEP_PX * (i + 1);
 
 export function defaultListDefinition(kind: "bullet" | "decimal"): ListDefinition {
   const levels: ListLevel[] = [];
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < LIST_LEVELS; i++) {
     if (kind === "bullet") {
       levels.push({
         format: "bullet",
         text: "",
-        bulletChar: BULLETS[i % 3]!,
-        indentLeftPx: 24 + i * 24,
-        hangingPx: 18,
+        bulletChar: BULLETS[i % BULLETS.length]!,
+        indentLeftPx: levelIndentPx(i),
+        hangingPx: BULLET_HANGING_PX,
         start: 1,
       });
     } else {
       levels.push({
-        format: NUMBER_FORMATS[i % 3]!,
+        format: NUMBER_FORMATS[i % NUMBER_FORMATS.length]!,
         text: `%${i + 1}.`,
-        indentLeftPx: 24 + i * 24,
-        hangingPx: 22,
+        indentLeftPx: levelIndentPx(i),
+        hangingPx: NUMBER_HANGING_PX,
         start: 1,
       });
     }
@@ -127,8 +138,8 @@ export function defaultListDefinition(kind: "bullet" | "decimal"): ListDefinitio
  *  style picker applies. */
 export function bulletListDefinition(id: string, char: string): ListDefinition {
   const levels: ListLevel[] = [];
-  for (let i = 0; i < 9; i++) {
-    levels.push({ format: "bullet", text: "", bulletChar: char, indentLeftPx: 24 + i * 24, hangingPx: 18, start: 1 });
+  for (let i = 0; i < LIST_LEVELS; i++) {
+    levels.push({ format: "bullet", text: "", bulletChar: char, indentLeftPx: levelIndentPx(i), hangingPx: BULLET_HANGING_PX, start: 1 });
   }
   return { id, levels };
 }
@@ -137,8 +148,8 @@ export function bulletListDefinition(id: string, char: string): ListDefinition {
  *  after each counter ("." or ")") — what the number style picker applies. */
 export function numberListDefinition(id: string, format: ListNumberFormat, suffix: string): ListDefinition {
   const levels: ListLevel[] = [];
-  for (let i = 0; i < 9; i++) {
-    levels.push({ format, text: `%${i + 1}${suffix}`, indentLeftPx: 24 + i * 24, hangingPx: 22, start: 1 });
+  for (let i = 0; i < LIST_LEVELS; i++) {
+    levels.push({ format, text: `%${i + 1}${suffix}`, indentLeftPx: levelIndentPx(i), hangingPx: NUMBER_HANGING_PX, start: 1 });
   }
   return { id, levels };
 }
@@ -148,13 +159,13 @@ export function numberListDefinition(id: string, format: ListNumberFormat, suffi
  *  default Multilevel List). Tab/Shift+Tab walk the levels. */
 export function multilevelListDefinition(): ListDefinition {
   const levels: ListLevel[] = [];
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < LIST_LEVELS; i++) {
     const text = Array.from({ length: i + 1 }, (_, k) => `%${k + 1}`).join(".") + ".";
     levels.push({
       format: "decimal",
       text, // "%1.", "%1.%2.", "%1.%2.%3.", …
-      indentLeftPx: 24 + i * 24,
-      hangingPx: 24 + i * 8, // compound markers widen with depth
+      indentLeftPx: levelIndentPx(i),
+      hangingPx: LIST_INDENT_STEP_PX + i * 8, // compound markers widen with depth
       start: 1,
     });
   }

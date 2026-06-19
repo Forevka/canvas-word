@@ -3,7 +3,7 @@
 // dispatches them to the store / broadcaster / webhook dispatcher.
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
-import type { Change, ReviewOpEnvelope, UserInfo } from "@cw/shared";
+import { WS_MSG, type Change, type ReviewOpEnvelope, type UserInfo } from "@cw/shared";
 import type { AppContext } from "../context";
 
 export function registerWsRoutes(app: FastifyInstance, { store, bcast, dispatcher }: AppContext): void {
@@ -19,21 +19,21 @@ export function registerWsRoutes(app: FastifyInstance, { store, bcast, dispatche
         } catch {
           return;
         }
-        if (msg.type === "submit" && msg.change) {
+        if (msg.type === WS_MSG.Submit && msg.change) {
           // Append (with OT rebase) then broadcast to everyone in the room,
           // including the sender — whose client treats the echo as its ack.
           const accepted = await store.appendChange(docId, msg.change);
           bcast.publish(docId, accepted);
-        } else if (msg.type === "review" && msg.review) {
+        } else if (msg.type === WS_MSG.Review && msg.review) {
           // Persist the review op (append log) and relay to the rest of the room.
           await store.appendReviewOp(docId, msg.review);
           bcast.publishReview(docId, msg.review, socket);
           // Notify third-party systems about any @-mentions in the op.
           void dispatcher.onReviewOp(docId, msg.review.op);
-        } else if (msg.type === "hello" && msg.siteId) {
+        } else if (msg.type === WS_MSG.Hello && msg.siteId) {
           if (msg.user) await store.upsertUser(msg.user);
           bcast.hello(socket, msg.siteId, msg.user);
-        } else if (msg.type === "presence") {
+        } else if (msg.type === WS_MSG.Presence) {
           bcast.presence(socket, msg.selection ?? null);
         }
       })();
