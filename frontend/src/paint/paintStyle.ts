@@ -15,6 +15,9 @@ export const EXTERNAL_LINK_COLOR = "#0b57d0";
 /** In-document anchors that inherited a Hyperlink blue read as plain text. */
 export const ANCHOR_TEXT_COLOR = "#202124";
 export const FOOTNOTE_RULE_COLOR = "#80868b";
+/** Non-printing formatting marks (space dots, tab arrows, pilcrows, line breaks)
+ *  drawn only when "show formatting marks" is on. A muted gray-blue, like Word. */
+export const FORMATTING_MARK_COLOR = "#7a8aa0";
 export const TOC_LEADER_COLOR = "#9aa0a6";
 export const IMAGE_PLACEHOLDER_COLOR = "#f1f3f4";
 

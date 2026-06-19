@@ -34,6 +34,14 @@ export interface LineBox {
   /** Tab leaders (dot/dash/underscore fills) to paint in the gap a tab opened.
    *  x is block-relative (alignment already applied); paint draws on the baseline. */
   leaders?: { x1: number; x2: number; kind: TabLeader; color: string; fontSizePx: number }[];
+  // ---- formatting-marks overlay (paint-only when the toggle is on) ----------
+  /** Tab gaps on this line (block-relative, alignment applied). The marks overlay
+   *  draws a "→" arrow in each; independent of `leaders` (a tab can have both). */
+  tabArrows?: { x1: number; x2: number }[];
+  /** This line is the FINAL line of its paragraph → draw a pilcrow (¶) after it. */
+  paragraphEnd?: boolean;
+  /** This line ends with a manual line break (soft return) → draw a "↵" after it. */
+  lineBreak?: boolean;
 }
 
 export interface PlacedImage {

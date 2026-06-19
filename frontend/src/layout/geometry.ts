@@ -182,6 +182,21 @@ function clustersOf(frag: InlineFragment): ClusterInfo {
   return info;
 }
 
+/** Block-relative x centers of every rendered U+0020 in a fragment, for the
+ *  formatting-marks overlay (the space dots). Reuses the cluster-advance cache
+ *  (which folds in letter/word spacing), so each dot sits exactly mid-glyph —
+ *  consistent with where the caret lands either side of the space. */
+export function spaceMarkXs(frag: InlineFragment): number[] {
+  const { boundaries, advances } = clustersOf(frag);
+  const xs: number[] = [];
+  for (let k = 0; k + 1 < boundaries.length; k++) {
+    if (frag.text.slice(boundaries[k]!, boundaries[k + 1]!) === " ") {
+      xs.push(frag.x + (advances[k]! + advances[k + 1]!) / 2);
+    }
+  }
+  return xs;
+}
+
 /** Model-offset delta (relative to startOffset) of a fragment-text-local index.
  *  Identity unless pretext collapsed whitespace inside the fragment. */
 const localToModel = (frag: InlineFragment, local: number): number =>

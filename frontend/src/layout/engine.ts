@@ -254,6 +254,9 @@ interface RawLine {
   lastOfSegment: boolean;
   emptyOffset?: number;
   leaders?: LineBox["leaders"];
+  tabArrows?: LineBox["tabArrows"];
+  paragraphEnd?: boolean;
+  lineBreak?: boolean;
 }
 
 /** Next tab stop strictly past `curX`: the first explicit stop, else the next
@@ -324,6 +327,7 @@ function layoutTabbedSegment(
   // The current visual line being assembled.
   let curFrags: RawFrag[] = [];
   let curLeaders: NonNullable<RawLine["leaders"]> = [];
+  let curArrows: NonNullable<RawLine["tabArrows"]> = [];
   let curX = firstIndent;
   let maxH = 0;
   let maxA = 0;
@@ -346,9 +350,11 @@ function layoutTabbedSegment(
       // pure wrapped continuation lines justify normally when the paragraph does.
       lastOfSegment: isLast || hasTab,
       ...(curLeaders.length > 0 ? { leaders: curLeaders } : {}),
+      ...(curArrows.length > 0 ? { tabArrows: curArrows } : {}),
     });
     curFrags = [];
     curLeaders = [];
+    curArrows = [];
     curX = 0;
     maxH = 0;
     maxA = 0;
@@ -370,6 +376,8 @@ function layoutTabbedSegment(
       if ((stop.leader ?? "none") !== "none" && targetX > curX + 1 && baseStyle) {
         curLeaders.push({ x1: curX, x2: targetX, kind: stop.leader ?? "none", color: baseStyle.color, fontSizePx: baseStyle.fontSizePx });
       }
+      // Formatting-marks overlay: remember the gap this tab opened (drawn as "→").
+      curArrows.push({ x1: curX, x2: Math.max(targetX, curX) });
       curX = targetX;
       hasTab = true;
     }
@@ -438,13 +446,19 @@ function paragraphLines(p: Paragraph, contentWidth: number, cache: PrepareCache)
   const raw: RawLine[] = [];
 
   let first = true; // first line of the PARAGRAPH (first-line indent)
-  for (const seg of segments) {
+  // Index of the last raw line each segment contributed — the segment boundary
+  // where a formatting mark lands (¶ for the paragraph's end, ↵ for a soft break
+  // between segments). Set after every segment so each one always has an entry.
+  const segLastLine: number[] = [];
+  for (let si = 0; si < segments.length; si++) {
+    const seg = segments[si]!;
     // Tab path: a segment with hard tabs lays out as one tab-stopped line (the
     // pretext collapse path would otherwise eat the tabs). Dormant unless run
     // text actually carries "\t".
     if (seg.runs.some((r) => r.text.includes("\t"))) {
       raw.push(...layoutTabbedSegment(p, seg.runs, seg.startOffset, contentWidth, first ? p.style.indentFirstLinePx : 0));
       first = false;
+      segLastLine[si] = raw.length - 1;
       continue;
     }
 
@@ -490,6 +504,16 @@ function paragraphLines(p: Paragraph, contentWidth: number, cache: PrepareCache)
     } else {
       raw[raw.length - 1]!.lastOfSegment = true;
     }
+    segLastLine[si] = raw.length - 1;
+  }
+
+  // Formatting marks: each segment boundary carries a pilcrow (the paragraph's
+  // final segment) or a line-break arrow (a soft return separating segments).
+  for (let si = 0; si < segLastLine.length; si++) {
+    const idx = segLastLine[si];
+    if (idx === undefined) continue;
+    if (si === segments.length - 1) raw[idx]!.paragraphEnd = true;
+    else raw[idx]!.lineBreak = true;
   }
 
   // Phase 2: alignment + justification, then final LineBoxes.
@@ -506,6 +530,11 @@ function paragraphLines(p: Paragraph, contentWidth: number, cache: PrepareCache)
     if (rl.leaders && rl.leaders.length > 0) {
       box.leaders = rl.leaders.map((l) => ({ ...l, x1: l.x1 + startX, x2: l.x2 + startX }));
     }
+    if (rl.tabArrows && rl.tabArrows.length > 0) {
+      box.tabArrows = rl.tabArrows.map((a) => ({ x1: a.x1 + startX, x2: a.x2 + startX }));
+    }
+    if (rl.paragraphEnd) box.paragraphEnd = true;
+    if (rl.lineBreak) box.lineBreak = true;
     lines.push(box);
     y += rl.height;
   }

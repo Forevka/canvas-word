@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Show/hide formatting marks.** A new **View ▸ Show** toggle (also surfaced on
+  **Home ▸ Paragraph** as the ¶ button — both buttons share one state) overlays Word's
+  non-printing marks on the canvas: a **center dot** for every space, a **→ arrow** in
+  each tab gap, a **¶ pilcrow** at every paragraph end, and a **↵ arrow** at each manual
+  line break. Settable on open via the `view` constructor option (`{ formattingMarks }`)
+  and togglable through the editor handle (`setShowFormattingMarks` /
+  `getShowFormattingMarks`). Presentational only — a paint overlay positioned from the
+  existing layout geometry (so the marks land exactly where the caret would), with no
+  relayout or document-model change.
 - **Vertical ruler + drawing grid with snap-to-grid — for precise object placement.**
   A **vertical ruler** now runs down the left of the page (inch ticks + top/bottom
   margin shading), mirroring the horizontal one and tracking the topmost visible
@@ -28,9 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Bookmarks**, **Review** (track changes + comments), and **Activity** panels; the
   **ribbon toolbar** (hide it for a chromeless-but-editable surface, or start it
   **collapsed**); the **status bar**; the **initial zoom**; and the rulers/grid above.
-  `view: { ruler, verticalRuler, grid, snapToGrid, gridSpacingPx, outline, bookmarks,
-  reviewPane, activity, toolbar, ribbonCollapsed, statusBar, zoom }` — every field
-  optional, omit to keep its default. (The dev harness also accepts `?view=<json>` to
+  `view: { ruler, verticalRuler, grid, snapToGrid, gridSpacingPx, formattingMarks,
+  outline, bookmarks, reviewPane, activity, toolbar, ribbonCollapsed, statusBar, zoom }`
+  — every field optional, omit to keep its default. (The dev harness also accepts `?view=<json>` to
   preview a configuration.)
 - **Flexible page layout — a redesigned Page Layout dialog.** The old preset-only
   Page Setup panel is replaced by a draggable, non-blocking dialog (Layout → **Page

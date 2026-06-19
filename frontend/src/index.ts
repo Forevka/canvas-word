@@ -198,6 +198,10 @@ export interface Editor {
   /** Grid step in document px (96dpi); drives both the mesh and snapping. */
   setGridSpacing(px: number): void;
   getGridSpacing(): number;
+  /** Non-printing formatting marks (space dots, tab arrows, pilcrows, line-break
+   *  arrows). Presentational overlay only — no layout/model change. */
+  setShowFormattingMarks(show: boolean): void;
+  getShowFormattingMarks(): boolean;
   /** Format painter: capture caret formatting, apply on the next selection. */
   armFormatPainter(sticky: boolean): void;
   cancelFormatPainter(): void;
@@ -2624,6 +2628,8 @@ export function createEditor(
     getSnapToGrid: () => paint.getSnapToGrid(),
     setGridSpacing: (px: number): void => paint.setGridSpacing(px),
     getGridSpacing: () => paint.getGridSpacing(),
+    setShowFormattingMarks: (show: boolean): void => paint.setShowFormattingMarks(show),
+    getShowFormattingMarks: () => paint.getShowFormattingMarks(),
     armFormatPainter,
     cancelFormatPainter,
     copy: (): void => {

@@ -10,8 +10,9 @@
 // The caret is a DOM overlay div inside the page placeholder — blinking via CSS
 // animation, so it never triggers a canvas repaint.
 
-import type { LayoutTree, Page, PlacedBlock, PlacedTableCell } from "../layout/layoutTree";
+import type { LayoutTree, LineBox, Page, PlacedBlock, PlacedTableCell } from "../layout/layoutTree";
 import type { CaretRect, Rect } from "../layout/geometry";
+import { spaceMarkXs } from "../layout/geometry";
 import type { CellBorder } from "@cw/shared";
 import { charStyleToFont } from "../layout/metrics";
 import {
@@ -22,6 +23,7 @@ import {
   DEFAULT_GRID_COLOR,
   doubleBorderGap,
   FOOTNOTE_RULE_COLOR,
+  FORMATTING_MARK_COLOR,
   FOOTNOTE_RULE_WIDTH_FRACTION,
   IMAGE_PLACEHOLDER_COLOR,
   pageBorderSegments,
@@ -128,6 +130,10 @@ export interface PaintScheduler {
   /** Grid step in document px (96dpi). Drives both the drawn mesh and snapping. */
   setGridSpacing(px: number): void;
   getGridSpacing(): number;
+  /** Non-printing formatting marks (space dots, tab arrows, pilcrows, line-break
+   *  arrows). Pure overlay over existing geometry — repaint, never relayout. */
+  setShowFormattingMarks(show: boolean): void;
+  getShowFormattingMarks(): boolean;
   destroy(): void;
 }
 
@@ -221,6 +227,9 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
   let showGrid = false;
   let snapToGrid = false;
   let gridSpacingPx = 24; // 1/4 inch @96dpi
+  // Show non-printing formatting marks (spaces, tabs, paragraph ends, breaks).
+  // Pure overlay over the already-positioned fragments — no relayout.
+  let showFormattingMarks = false;
   let lastCaret: CaretRect | null = null;
   // Remote collaborators' presence: per siteId a caret overlay (colored bar +
   // name flag) plus selection-highlight rect overlays, repositioned on zoom.
@@ -729,6 +738,53 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
           ctx.fillRect(x, baselineY + vShift + strikeOffset(s.fontSizePx), frag.width, th);
         }
       }
+      if (showFormattingMarks) paintFormattingMarks(ctx, block, line, baselineY);
+    }
+  }
+
+  /** Non-printing marks for one line, drawn on top of its text: a center dot per
+   *  space, a "→" in each tab gap, and a "¶"/"↵" at a paragraph end / soft break.
+   *  Overlay only — positions come from layout (engine flags + geometry), so paint
+   *  never measures anything that could affect line breaking. */
+  function paintFormattingMarks(
+    ctx: CanvasRenderingContext2D,
+    block: PlacedBlock,
+    line: LineBox,
+    baselineY: number,
+  ): void {
+    ctx.fillStyle = FORMATTING_MARK_COLOR;
+    ctx.strokeStyle = FORMATTING_MARK_COLOR;
+
+    // Space dots — a small disc at the mid-height of each rendered U+0020.
+    const midY = block.y + line.y + line.height / 2;
+    for (const frag of line.fragments) {
+      if (frag.text.indexOf(" ") < 0) continue;
+      const r = Math.max(0.6, Math.min(1.4, frag.style.fontSizePx / 18));
+      for (const cx of spaceMarkXs(frag)) {
+        ctx.beginPath();
+        ctx.arc(block.x + cx, midY, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Tab arrows — a "→" spanning the gap the tab opened, on the baseline.
+    if (line.tabArrows) {
+      const arrowSize = Math.round(line.ascent * 0.85);
+      ctx.font = `${arrowSize}px sans-serif`;
+      ctx.textAlign = "center";
+      for (const a of line.tabArrows) {
+        ctx.fillText("→", block.x + (a.x1 + a.x2) / 2, baselineY);
+      }
+      ctx.textAlign = "left";
+    }
+
+    // Paragraph end (¶) or manual line break (↵), just past the last glyph.
+    if (line.paragraphEnd || line.lineBreak) {
+      const lastFrag = line.fragments[line.fragments.length - 1];
+      const endX = lastFrag ? block.x + lastFrag.x + lastFrag.width : block.x;
+      const glyphSize = Math.round(line.ascent * 0.95);
+      ctx.font = `${glyphSize}px sans-serif`;
+      ctx.fillText(line.paragraphEnd ? "¶" : "↵", endX + 1, baselineY);
     }
   }
 
@@ -959,6 +1015,15 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     },
     getGridSpacing(): number {
       return gridSpacingPx;
+    },
+
+    setShowFormattingMarks(show: boolean): void {
+      if (show === showFormattingMarks) return;
+      showFormattingMarks = show;
+      repaintAllLive();
+    },
+    getShowFormattingMarks(): boolean {
+      return showFormattingMarks;
     },
 
     destroy(): void {

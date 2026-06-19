@@ -247,10 +247,14 @@ const gridView = {
   snap: runtime.view?.snapToGrid ?? false,
   spacingPx: runtime.view?.gridSpacingPx ?? 24,
 };
+// Formatting-marks visibility — same "survives a paint-layer rebuild" treatment
+// as the grid (re-seeded via applyGridView below).
+let showFormattingMarks = runtime.view?.formattingMarks ?? false;
 const applyGridView = (): void => {
   editor.setGridSpacing(gridView.spacingPx);
   editor.setShowGrid(gridView.show);
   editor.setSnapToGrid(gridView.snap);
+  editor.setShowFormattingMarks(showFormattingMarks);
 };
 applyGridView();
 
@@ -569,6 +573,19 @@ if (toolbar) {
     b.title = `${title} — not supported by the engine yet`;
     b.disabled = true;
     controls.appendChild(b);
+    return b;
+  };
+  // Formatting-marks toggle — surfaced in both Home (Paragraph) and View, so the
+  // buttons share one state and reflect it in lockstep (like Word's ¶ button).
+  const marksBtns: HTMLButtonElement[] = [];
+  const marksToggleBtn = (): HTMLButtonElement => {
+    const b = btn(ICONS.marks, "Show/hide formatting marks (spaces, tabs, paragraph ends, line breaks)", () => {
+      showFormattingMarks = !showFormattingMarks;
+      editor.setShowFormattingMarks(showFormattingMarks);
+      for (const m of marksBtns) m.classList.toggle("active", showFormattingMarks);
+    });
+    b.classList.toggle("active", showFormattingMarks);
+    marksBtns.push(b);
     return b;
   };
   const select = (title: string, width: number): HTMLSelectElement => {
@@ -1133,7 +1150,7 @@ if (toolbar) {
   btn(ICONS.indentDecrease, "Decrease indent", () => editor.dispatch(adjustIndentCmd(-36)));
   btn(ICONS.indentIncrease, "Increase indent", () => editor.dispatch(adjustIndentCmd(36)));
   stub(ICONS.sort, "Sort");
-  stub(ICONS.marks, "Show/hide formatting marks");
+  marksToggleBtn();
 
   paraRow();
   toggle(btn(ICONS.alignLeft, "Align left", () => editor.align("left")), (f) => f.align === "left");
@@ -1455,7 +1472,7 @@ if (toolbar) {
     gridView.spacingPx = Number(gridSpacingSel.value);
     editor.setGridSpacing(gridView.spacingPx);
   });
-  stub(ICONS.marks, "Show/hide formatting marks");
+  marksToggleBtn();
   if (online) btn(ICONS.activity, "Activity — who created/edited this document and when", () => toggleActivity());
 
   // ---- Review controls live in the ribbon HEADER (right of the tab strip,

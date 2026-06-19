@@ -36,6 +36,9 @@ export interface WordCanvasViewOptions {
   snapToGrid?: boolean;
   /** Grid step in document px (96dpi). Default 24 (1/4 inch). */
   gridSpacingPx?: number;
+  /** Show non-printing formatting marks (spaces, tabs, paragraph ends, line
+   *  breaks) on open. Default false. */
+  formattingMarks?: boolean;
   // ----- side panels & drawers -----
   /** Open the Outline / navigation pane (left drawer). Default true. */
   outline?: boolean;
