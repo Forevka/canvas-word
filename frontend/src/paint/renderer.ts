@@ -276,21 +276,52 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
   };
   document.addEventListener("visibilitychange", onVisible);
 
+  function stylePlaceholder(ph: HTMLDivElement, page: Page): void {
+    ph.dataset["page"] = String(page.index);
+    const shadow = chrome ? "box-shadow:0 1px 4px rgba(0,0,0,.25);" : "";
+    ph.style.cssText = `position:relative;width:${page.widthPx * zoom}px;height:${page.heightPx * zoom}px;background:#fff;${shadow}flex-shrink:0;`;
+  }
+
+  // Reconcile the placeholder elements against tree.pages IN PLACE — surplus
+  // trimmed from the tail, deficit appended — rather than tearing the whole set
+  // down. Surviving placeholders keep their DOM identity (and any overlay child:
+  // the caret, an active object-selection frame, remote-presence carets). That
+  // matters during an image-resize drag: the resize handle holds pointer
+  // capture, and removing its host page from the document would implicitly
+  // release that capture and abort the drag. Re-rendering the same page set is
+  // also cheaper (no canvas remount / observer churn) than a full rebuild.
   function rebuildPlaceholders(): void {
-    observer.disconnect();
-    liveCanvases.clear();
-    caretEl.remove();
-    pagesWrap.textContent = "";
-    placeholders.length = 0;
-    if (!tree) return;
-    for (const page of tree.pages) {
+    if (!tree) {
+      observer.disconnect();
+      liveCanvases.clear();
+      caretEl.remove();
+      pagesWrap.textContent = "";
+      placeholders.length = 0;
+      return;
+    }
+    const want = tree.pages.length;
+    // Trim surplus from the tail (page count shrank).
+    while (placeholders.length > want) {
+      const index = placeholders.length - 1;
+      const ph = placeholders.pop()!;
+      observer.unobserve(ph);
+      unmountPage(index); // drop its canvas from liveCanvases + dirty
+      ph.remove();
+    }
+    // Append new placeholders for added pages.
+    while (placeholders.length < want) {
       const ph = document.createElement("div");
-      ph.dataset["page"] = String(page.index);
-      const shadow = chrome ? "box-shadow:0 1px 4px rgba(0,0,0,.25);" : "";
-      ph.style.cssText = `position:relative;width:${page.widthPx * zoom}px;height:${page.heightPx * zoom}px;background:#fff;${shadow}flex-shrink:0;`;
+      stylePlaceholder(ph, tree.pages[placeholders.length]!);
       pagesWrap.appendChild(ph);
       placeholders.push(ph);
       observer.observe(ph);
+    }
+    // Refresh geometry on every surviving placeholder — dims can change without
+    // the count changing (a section resizing its pages) — and repaint any page
+    // whose canvas is mounted so the new dimensions take effect.
+    for (let i = 0; i < placeholders.length; i++) {
+      stylePlaceholder(placeholders[i]!, tree.pages[i]!);
+      if (liveCanvases.has(i)) dirty.add(i);
     }
   }
 

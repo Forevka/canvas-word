@@ -161,7 +161,21 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
       const host = deps.getPageElement(rect.pageIndex);
       if (!host) return;
       current = { rect, maxWidth };
-      if (frame.parentElement !== host) host.appendChild(frame);
+      if (frame.parentElement !== host) {
+        host.appendChild(frame);
+        // Re-parenting the frame detaches it from the document for an instant.
+        // If a resize is in flight (e.g. a reflow moved the image onto another
+        // page mid-drag), that detach implicitly releases the handle's pointer
+        // capture, so re-acquire it — otherwise the drag silently dies and the
+        // user has to grab the handle again to keep resizing.
+        if (drag && dragEl) {
+          try {
+            dragEl.setPointerCapture(dragPointerId);
+          } catch {
+            /* pointer no longer active */
+          }
+        }
+      }
       const z = deps.getZoom();
       frame.style.display = "block";
       frame.style.left = `${rect.x * z - 2}px`;

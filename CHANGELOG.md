@@ -77,6 +77,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   built-in download button. The whole Export group hides when both are off.
 
 ### Fixed
+- **Resizing an image no longer drops the selection when the drag changes the page
+  count.** Dragging an image's resize handle wide/tall enough to reflow content onto
+  a new page (or back off one) used to abort the drag mid-stroke: the user had to
+  release, re-select the image, and grab the handle again to keep going. The page
+  layer rebuilt every page placeholder from scratch on any page-count change, which
+  detached the selection frame — and the handle holding pointer capture — from the
+  document, implicitly releasing the drag. Placeholders are now reconciled in place
+  (surviving pages keep their DOM identity, so the captured handle stays attached),
+  and the frame re-acquires pointer capture if a reflow does move the image to a
+  different page mid-drag. Reconciling also avoids a full canvas/observer teardown on
+  every reflow that adds or removes a page.
 - **Published TypeScript types brought back in sync with the runtime API.** The
   hand-written `types/wordcanvas.d.ts` had drifted and was missing options and
   methods that already worked at runtime, so TypeScript embedders had to cast to
