@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WordCanvas — constructor / config builder</title>
+
+    <!--
+      Resolves the bare import in the PRODUCTION build, where the library is
+      external (not re-bundled). `npm run build` copies the library's dist-lib
+      next to the app as ./wordcanvas. In `vite dev` this map is inert.
+    -->
+    <script type="importmap">
+      {
+        "imports": {
+          "@forevka/wordcanvas": "./wordcanvas/wordcanvas.js"
+        }
+      }
+    </script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font-family: system-ui, sans-serif;
+        font-size: 13px;
+        color: #202124;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 360px 1fr;
+        height: 100vh;
+      }
+
+      /* ---- left: the config form ------------------------------------------ */
+      #config {
+        overflow: auto;
+        padding: 12px 14px 40px;
+        border-right: 1px solid #d0d4d9;
+        background: #fafbfc;
+      }
+      #config h1 {
+        margin: 4px 0 2px;
+        font-size: 15px;
+      }
+      #config .intro {
+        margin: 0 0 12px;
+        color: #5f6368;
+        line-height: 1.45;
+      }
+      #config fieldset {
+        margin: 0 0 12px;
+        padding: 8px 10px 10px;
+        border: 1px solid #e2e5ea;
+        border-radius: 8px;
+        background: #fff;
+      }
+      #config legend {
+        padding: 0 4px;
+        font-weight: 600;
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #5f6368;
+      }
+      #config .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 3px 0;
+        min-height: 24px;
+      }
+      #config .row > label {
+        flex: 1;
+        min-width: 0;
+      }
+      #config .row.sub {
+        padding-left: 14px;
+      }
+      #config .hint {
+        color: #80868b;
+        font-size: 11px;
+        line-height: 1.4;
+        margin: 2px 0 6px;
+      }
+      #config input[type="text"],
+      #config input[type="number"],
+      #config select,
+      #config textarea {
+        font: inherit;
+        padding: 3px 6px;
+        border: 1px solid #c4c9d1;
+        border-radius: 5px;
+        background: #fff;
+        min-width: 0;
+      }
+      #config input[type="text"],
+      #config select {
+        width: 150px;
+      }
+      #config input[type="number"] {
+        width: 76px;
+      }
+      #config textarea {
+        width: 100%;
+        resize: vertical;
+        min-height: 48px;
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 12px;
+      }
+      #config input[type="color"] {
+        width: 30px;
+        height: 22px;
+        padding: 0;
+        border: 1px solid #c4c9d1;
+        border-radius: 5px;
+        background: #fff;
+      }
+      #config .multi {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      #config .multi label {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        flex: none;
+      }
+      #config .preset {
+        font: inherit;
+        padding: 3px 8px;
+        border: 1px solid #c4c9d1;
+        border-radius: 6px;
+        background: #fff;
+        cursor: pointer;
+      }
+      #config .preset:hover {
+        background: #eef1f5;
+      }
+
+      /* ---- right: preview over the snippet drawer ------------------------- */
+      .preview {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      #editor {
+        flex: 1;
+        position: relative;
+        min-height: 0;
+      }
+
+      .snippetbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-top: 1px solid #e2e5ea;
+        background: #f1f3f6;
+      }
+      .snippetbar .title {
+        font-weight: 600;
+        margin-right: auto;
+      }
+      .snippetbar .dirty {
+        color: #9a6700;
+        font-size: 11px;
+        display: none;
+      }
+      .snippetbar.dirty .dirty {
+        display: inline;
+      }
+      .snippetbar button {
+        font: inherit;
+        padding: 4px 10px;
+        border: 1px solid #c4c9d1;
+        border-radius: 6px;
+        background: #fff;
+        cursor: pointer;
+      }
+      .snippetbar button:hover {
+        background: #eef1f5;
+      }
+      .snippetbar #apply {
+        border-color: #2563eb;
+        color: #2563eb;
+        font-weight: 600;
+      }
+      #snippet {
+        margin: 0;
+        max-height: 30vh;
+        overflow: auto;
+        padding: 12px 14px;
+        background: #1e1e1e;
+        color: #d4d4d4;
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 12.5px;
+        line-height: 1.5;
+        white-space: pre;
+      }
+
+      /* First-load overlay — absolute over the PREVIEW pane only (not full
+         screen), so the config form stays usable while the editor re-mounts. */
+      #loader {
+        position: absolute;
+        inset: 0;
+        z-index: 20;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: #fafafa;
+        font: 14px/1.4 system-ui, sans-serif;
+        color: #444;
+        transition: opacity 0.3s ease;
+      }
+      #loader.done {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #loader .track {
+        width: 280px;
+        height: 6px;
+        border-radius: 3px;
+        background: #e4e4e4;
+        overflow: hidden;
+      }
+      #loader .bar {
+        height: 100%;
+        width: 0;
+        border-radius: 3px;
+        background: #2563eb;
+        transition: width 0.15s ease;
+      }
+      #loader .label {
+        font-variant-numeric: tabular-nums;
+      }
+
+      @media (max-width: 900px) {
+        .layout {
+          grid-template-columns: 1fr;
+          height: auto;
+        }
+        .preview {
+          height: 100vh;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="layout">
+      <aside id="config">
+        <h1>WordCanvas constructor</h1>
+        <p class="intro">
+          Toggle any constructor option, click <b>Apply</b> to preview it live, and
+          copy the generated <code>new&nbsp;WordCanvas({…})</code> snippet into your app.
+        </p>
+        <!-- fieldsets injected by src/main.ts -->
+      </aside>
+      <section class="preview">
+        <div id="loader">
+          <div class="label">Loading editor…</div>
+          <div class="track"><div class="bar"></div></div>
+        </div>
+        <div id="editor"></div>
+        <div class="snippetbar" id="snippetbar">
+          <span class="title">new WordCanvas({…})</span>
+          <span class="dirty">● unapplied changes</span>
+          <button id="apply" title="Tear down and re-mount the editor with these options">Apply</button>
+          <button id="reset" title="Restore every option to its default">Reset</button>
+          <button id="copy" title="Copy the snippet to the clipboard">Copy</button>
+        </div>
+        <pre id="snippet"></pre>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

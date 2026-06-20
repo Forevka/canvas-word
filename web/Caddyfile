@@ -49,6 +49,7 @@
 	#   /live              -> examples/embed-live  (online + collaboration)
 	#   /examples/offline  -> examples/embed-offline
 	#   /examples/ribbon   -> examples/ribbon-customization (customizeRibbon demo)
+	#   /examples/constructor -> examples/editor-constructor (constructor config builder)
 	#   /playground        -> examples/playground  (document-builder playground)
 	#   /multi             -> examples/embed-multi  (multiple editors on one page)
 	# These have RELATIVE asset URLs (./assets, ./wordcanvas), so they must load

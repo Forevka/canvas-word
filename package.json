@@ -16,6 +16,7 @@
     "dev:example": "npm run dev --workspace @cw/example-embed-live",
     "dev:playground": "npm run dev --workspace @cw/example-playground",
     "dev:multi": "npm run dev --workspace @cw/example-embed-multi",
+    "dev:constructor": "npm run dev --workspace @cw/example-editor-constructor",
     "build": "npm run build --workspace @forevka/wordcanvas",
     "build:lib": "npm run build:lib --workspace @forevka/wordcanvas",
     "typecheck": "npm run typecheck --workspace @cw/shared && npm run typecheck --workspace @forevka/wordcanvas && npm run typecheck --workspace @cw/backend && npm run typecheck --workspace @cw/dashboard",
