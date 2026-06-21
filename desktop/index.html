@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WordCanvas</title>
+
+    <!--
+      Resolves the bare `@forevka/wordcanvas` import in the PRODUCTION build, where
+      the library is external (not re-bundled). `npm run build` copies the library's
+      dist-lib next to the app as ./wordcanvas, so this path resolves at runtime
+      under Tauri's asset protocol. In `vite dev` this map is inert — Vite resolves
+      the import from node_modules itself.
+    -->
+    <script type="importmap">
+      {
+        "imports": {
+          "@forevka/wordcanvas": "./wordcanvas/wordcanvas.js"
+        }
+      }
+    </script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      #editor {
+        position: fixed;
+        inset: 0;
+      }
+
+      /* First-load overlay, driven by `onLoadProgress` (see src/main.ts). The
+         editor JS chunk + ~9 MB of bundled fonts stream on a cold load; this bar
+         shows progress instead of a blank box, and fades out on "ready". */
+      #loader {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: #fafafa;
+        font: 14px/1.4 system-ui, sans-serif;
+        color: #444;
+        transition: opacity 0.3s ease;
+      }
+      #loader.done {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #loader .track {
+        width: 280px;
+        height: 6px;
+        border-radius: 3px;
+        background: #e4e4e4;
+        overflow: hidden;
+      }
+      #loader .bar {
+        height: 100%;
+        width: 0;
+        border-radius: 3px;
+        background: #2563eb;
+        transition: width 0.15s ease;
+      }
+      #loader .label {
+        font-variant-numeric: tabular-nums;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loader">
+      <div class="label">Loading editor…</div>
+      <div class="track"><div class="bar"></div></div>
+    </div>
+    <div id="editor"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

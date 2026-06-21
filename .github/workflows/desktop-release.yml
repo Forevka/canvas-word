@@ -1,0 +1,71 @@
+name: Desktop Release
+
+# Builds the WordCanvas Tauri app as a single PORTABLE .exe (no installer) and
+# either attaches it to a draft GitHub release (on a `desktop-v*` tag) or uploads
+# it as a workflow artifact (manual runs).
+#
+# No-installer mechanism: tauri.conf.json sets `bundle.active: false`, so
+# `tauri build` produces only the raw binary in target/release — no MSI/NSIS.
+
+on:
+  push:
+    tags:
+      - "desktop-v*"
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    permissions:
+      contents: write
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+
+      - run: npm ci
+
+      # The desktop frontend consumes the editor as a pre-built bundle; build it
+      # first so copy-lib (in `npm run build`, the beforeBuildCommand) can copy it.
+      - run: npm run build:lib --workspace @forevka/wordcanvas
+
+      - name: Build portable exe
+        working-directory: desktop
+        run: npm run tauri:build
+        env:
+          # Statically link the MSVC C runtime so the portable exe needs no
+          # VC++ redistributable on the target machine.
+          RUSTFLAGS: "-C target-feature=+crt-static"
+
+      - name: Attach portable binary to draft release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $asset = "WordCanvas-$tag-portable.exe"
+          Copy-Item "desktop/src-tauri/target/release/wordcanvas-desktop.exe" $asset
+          gh release create $tag $asset `
+            --title "WordCanvas Desktop $tag" `
+            --draft `
+            --notes ""
+
+      - name: Upload portable binary as workflow artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: WordCanvas-portable
+          path: desktop/src-tauri/target/release/wordcanvas-desktop.exe

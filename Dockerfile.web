@@ -38,6 +38,9 @@ COPY examples/ribbon-customization/package.json ./examples/ribbon-customization/
 COPY examples/playground/package.json ./examples/playground/
 COPY examples/embed-multi/package.json ./examples/embed-multi/
 COPY examples/editor-constructor/package.json ./examples/editor-constructor/
+# Desktop (Tauri) workspace manifest — present so `npm ci` matches the lockfile.
+# Not built here (the desktop app is distributed via its own CI, not Caddy).
+COPY desktop/package.json ./desktop/
 RUN npm ci
 COPY shared ./shared
 COPY frontend ./frontend

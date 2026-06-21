@@ -16,6 +16,8 @@ COPY shared/package.json ./shared/
 COPY frontend/package.json ./frontend/
 COPY backend/package.json ./backend/
 COPY dashboard/package.json ./dashboard/
+# Desktop (Tauri) workspace manifest — present so `npm ci` matches the lockfile.
+COPY desktop/package.json ./desktop/
 RUN npm ci
 
 # 2. Build the frontend's compiled Node pipeline bundle (dist-node) — the headless

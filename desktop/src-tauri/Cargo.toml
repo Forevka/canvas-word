@@ -1,0 +1,28 @@
+[package]
+name = "wordcanvas-desktop"
+version = "0.1.0"
+description = "WordCanvas desktop app"
+authors = ["Bohdan Lushchyk"]
+edition = "2021"
+
+# The binary's name comes from [package].name → wordcanvas-desktop(.exe).
+[lib]
+name = "wordcanvas_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Smaller, self-contained release binary for portable distribution.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

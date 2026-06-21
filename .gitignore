@@ -21,3 +21,7 @@ RenderedReportsDocx_*
 frontend/dist-lib/
 frontend/dist-node/
 .codegraph/
+
+# Tauri desktop build output (Rust target + generated schemas)
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
