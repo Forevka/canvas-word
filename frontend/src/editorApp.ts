@@ -1011,8 +1011,13 @@ if (toolbar) {
   };
 
   const exportAs = async (format: ExportFormat): Promise<void> => {
+    // Rendering (especially PDF) can take a few seconds; show the busy overlay so
+    // the app doesn't look hung. Dropped before any onSave dialog / download so it
+    // doesn't sit behind a native Save sheet.
+    const busy = showBusy(`Exporting ${format.toUpperCase()}…`);
     try {
       const { bytes, warnings } = await exportBaked(format);
+      busy.done();
       if (warnings.length > 0) console.warn(`[export-${format}] warnings`, warnings);
       const blob = blobFor(format, bytes);
       // With an embedder onSave hook, hand off the file instead of downloading;
@@ -1029,6 +1034,8 @@ if (toolbar) {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
       console.error(`[export-${format}] failed`, err);
+    } finally {
+      busy.done(); // idempotent — covers the error path
     }
   };
   const stylesheet = (): ReturnType<typeof defaultStylesheet> =>

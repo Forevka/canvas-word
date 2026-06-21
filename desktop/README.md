@@ -11,13 +11,14 @@ share), and file open/export go through **native OS dialogs**. Ships as a single
   editor as a **pre-built, external** bundle — same pattern as
   `examples/embed-live` (import map + `rollupOptions.external` + `copy-lib`). The
   editor's own import/export workers and ~9 MB of fonts ship inside that bundle.
-- The Rust shell (`src-tauri/`) registers `tauri-plugin-dialog` and two small
-  commands — `read_file_bytes` / `write_file_bytes` — that the JS bridge
-  (`src/native.ts`) uses to read/write the path the dialog returns. This avoids
-  fs-plugin scope configuration entirely.
-- Open: **Ctrl/Cmd+O** or **File → Open…** → `editor.openDocx(bytes)`.
-- Save: the editor's built-in **Export DOCX/PDF** buttons (and **File → Save
-  as…**) route through the `onSave` hook → native Save dialog.
+- The Rust shell (`src-tauri/`) registers `tauri-plugin-dialog` and one small
+  command — `write_file_bytes` — that the JS bridge (`src/native.ts`) uses to
+  write the path the Save dialog returns. This avoids fs-plugin scope config.
+- **All actions are in the editor's ribbon — there's no separate native menu.**
+  - Open: the ribbon's **Open `.docx`** uses `<input type=file>` (the native OS
+    picker in the webview) and shows the editor's built-in import progress overlay.
+  - Save: the ribbon's **Export DOCX/PDF** buttons render (with a busy overlay)
+    then route through the `onSave` hook → a native Save dialog.
 
 ## Prerequisites
 

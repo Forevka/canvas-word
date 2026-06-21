@@ -9,14 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Desktop app — `desktop/` Tauri v2 workspace.** WordCanvas can now ship as a
-  native desktop application. The editor runs fully offline (no backend calls),
-  with native **Open** (Ctrl/Cmd+O or the File menu → `openDocx`) and **Save**
-  (the `onSave` hook → a native save dialog for DOCX/PDF). It builds to a single
-  **portable `.exe`** with no installer (`bundle.active: false`, statically-linked
-  CRT); `.github/workflows/desktop-release.yml` produces it on `windows-latest`.
-  The desktop frontend consumes the published `@forevka/wordcanvas` bundle as an
+  native desktop application. The editor runs fully offline (no backend calls);
+  all actions live in the ribbon — **Open `.docx`** uses the native OS file picker
+  and **Export DOCX/PDF** routes through a native Save dialog (the `onSave` hook),
+  so there's no separate native menu. It builds to a single **portable `.exe`**
+  with no installer (`bundle.active: false`, statically-linked CRT);
+  `.github/workflows/desktop-release.yml` produces it on `windows-latest`. The
+  desktop frontend consumes the published `@forevka/wordcanvas` bundle as an
   external dependency (the `examples/embed-live` pattern), so the package itself
   is unchanged. See `desktop/README.md`.
+
+### Changed
+- **Export shows a busy overlay while rendering.** The DOCX/PDF Export buttons now
+  display an "Exporting…" overlay during the (potentially multi-second) render —
+  matching the existing open-document overlay — so the editor no longer appears
+  frozen mid-export.
 
 ## [0.7.3] — 2026-06-21
 
