@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] — 2026-06-21
+
 ### Added
 - **Customizable ribbon — `customizeRibbon` constructor option.** Embedders can now
   tailor the ribbon toolbar per editor instance, for custom macros, config popups,
@@ -509,6 +511,7 @@ implementation history in [README.md](./README.md)):
   docId, integration tokens for third-party `/upload`, and session webhooks.
 - Mobile/touch input and a responsive ribbon.
 
+[0.7.3]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.3
 [0.7.2]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.2
 [0.7.1]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.1
 [0.7.0]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.0
