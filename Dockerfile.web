@@ -5,7 +5,8 @@
 # API/WebSocket paths to the backend so the whole app lives on one origin.
 #
 # Routes served from /srv:
-#   /                  -> frontend dev app (offline editor)
+#   /                  -> marketing landing page (landing/index.html; overwrites
+#                         the frontend app's index.html in the final stage)
 #   /dashboard         -> admin dashboard SPA
 #   /live              -> examples/embed-live (online + collaboration; same origin
 #                         as the backend, so its location.origin backend URL works)
@@ -82,4 +83,9 @@ COPY --from=build /app/examples/ribbon-customization/dist /srv/examples/ribbon
 COPY --from=build /app/examples/playground/dist /srv/playground
 COPY --from=build /app/examples/embed-multi/dist /srv/multi
 COPY --from=build /app/examples/editor-constructor/dist /srv/examples/constructor
+# The marketing landing page is the public root (/). Copied from the build context
+# (not the build stage) AFTER the frontend dist, so it overwrites the frontend app's
+# index.html — `/` now serves the landing. The editor stays reachable through the
+# examples (/examples/offline, /playground, /multi, …) which the landing links to.
+COPY landing/index.html /srv/index.html
 EXPOSE 80

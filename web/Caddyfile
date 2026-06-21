@@ -43,7 +43,8 @@
 		file_server
 	}
 
-	# Static frontend (default: the offline editor at index.html).
+	# Static files from /srv. The root index.html is the marketing landing page
+	# (Dockerfile.web copies landing/index.html over the frontend app's index.html).
 	#
 	# This also serves the embedding examples placed under /srv by Dockerfile.web:
 	#   /live              -> examples/embed-live  (online + collaboration)

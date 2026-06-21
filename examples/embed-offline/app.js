@@ -11,8 +11,22 @@ const bar = loader.querySelector(".bar");
 const label = loader.querySelector(".label");
 const PHASE_LABEL = { bundle: "Loading editor…", fonts: "Loading fonts…", ready: "Ready" };
 
+// Optional embedder `view` config via ?view=<url-encoded JSON>. Lets a host page
+// (e.g. the landing-page <iframe> embed) set the initial chrome state — hide the
+// outline pane, start at 50% zoom, etc. Ignored if absent or malformed.
+let view;
+const viewParam = new URLSearchParams(location.search).get("view");
+if (viewParam) {
+  try {
+    view = JSON.parse(viewParam);
+  } catch {
+    console.warn("ignoring malformed ?view= JSON");
+  }
+}
+
 const editor = new WordCanvas({
   container: document.getElementById("editor"),
+  ...(view ? { view } : {}),
   // Drive the loading bar. `percent` is an overall 0..1 across the whole startup
   // (bundle download → font fetch → ready), so it maps straight onto a bar width.
   // `phase` is a coarse stage label; `loaded`/`total` are byte counts for the
@@ -51,15 +65,6 @@ const editor = new WordCanvas({
 editor.on("ready", () => {
   console.log("WordCanvas ready (offline)");
 });
-
-// Optional: let the user open a .docx from disk to see DOCX import (still local).
-const picker = Object.assign(document.createElement("input"), { type: "file", accept: ".docx" });
-picker.style.cssText = "position:fixed;z-index:10;top:8px;right:8px;";
-picker.addEventListener("change", () => {
-  const file = picker.files?.[0];
-  if (file) void editor.openDocx(file);
-});
-document.body.appendChild(picker);
 
 // Expose for quick in-browser poking.
 window.__wc = editor;

@@ -1,0 +1,754 @@
+<!doctype html>
+<html lang="en">
+<head>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-32YR3RF1QS"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-32YR3RF1QS');
+</script>
+<!-- End Google tag (gtag.js) -->
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WordCanvas — Embeddable Word editor for your app | MIT, zero dependencies</title>
+<meta name="description" content="Add a Word-class document editor to your product without the six-month build. Canvas-rendered, DOCX + PDF in the browser, live collaboration, track changes. MIT-licensed, zero runtime dependencies." />
+<link rel="canonical" href="https://wordcanvas.dev/" />
+
+<!-- Open Graph / social. TODO: replace og:image with a real 1200x630 asset and og:url with your domain. -->
+<meta property="og:type" content="website" />
+<meta property="og:title" content="WordCanvas — Embeddable Word editor for your app" />
+<meta property="og:description" content="Canvas-rendered Word editor with DOCX + PDF import/export, live collaboration, and track changes. MIT-licensed, zero runtime dependencies, no server required to render." />
+<meta property="og:url" content="https://wordcanvas.dev/" />
+<meta property="og:image" content="https://wordcanvas.dev/og-image.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="WordCanvas — Embeddable Word editor for your app" />
+<meta name="twitter:description" content="A Word-class editor you embed in an afternoon. MIT, zero dependencies, DOCX + PDF in the browser." />
+
+<style>
+:root{
+  --ink:#16181d; --ink-soft:#41464f; --muted:#767b85;
+  --line:#e7e8ec; --line-soft:#f0f1f4;
+  --paper:#ffffff; --paper-2:#f7f8fa; --paper-3:#fbfcfd;
+  --accent:#2f6fed; --accent-dark:#1f57c9; --accent-soft:#eaf1ff;
+  --good:#157a4a; --good-soft:#e7f5ee;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",Menlo,Consolas,monospace;
+  --maxw:1120px;
+  --radius:14px;
+  --shadow:0 1px 2px rgba(16,18,29,.05),0 12px 32px -12px rgba(16,18,29,.12);
+  --shadow-lg:0 30px 70px -28px rgba(16,18,29,.30);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; font-family:var(--sans); color:var(--ink); background:var(--paper);
+  font-size:17px; line-height:1.6; -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+h1,h2,h3{font-family:var(--serif); font-weight:600; letter-spacing:-.01em; line-height:1.12; margin:0}
+p{margin:0}
+a{color:inherit; text-decoration:none}
+img{max-width:100%; display:block}
+/* Inline code — explicit mono stack avoids the tall-metric `monospace` fallback (Courier New) that inflates line boxes */
+code{font-family:var(--mono); font-size:.86em; line-height:1; background:var(--paper-2); border:1px solid var(--line); border-radius:5px; padding:.12em .38em; color:#2b3140; white-space:nowrap}
+.code code, pre code{all:unset}
+.wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
+.eyebrow{font-family:var(--sans); font-size:13px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--accent)}
+.muted{color:var(--muted)}
+.center{text-align:center}
+
+/* Buttons */
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:9px;
+  font-family:var(--sans); font-size:16px; font-weight:600; line-height:1;
+  min-height:52px; padding:0 24px; border-radius:11px; cursor:pointer;
+  border:1px solid transparent; transition:transform .12s ease, box-shadow .12s ease, background .12s ease;
+  white-space:nowrap;
+}
+.btn:active{transform:translateY(1px)}
+.btn-primary{background:var(--accent); color:#fff; box-shadow:0 8px 20px -8px rgba(47,111,237,.6)}
+.btn-primary:hover{background:var(--accent-dark)}
+.btn-ghost{background:#fff; color:var(--ink); border-color:var(--line)}
+.btn-ghost:hover{border-color:#cfd2da; background:var(--paper-2)}
+.btn-sm{min-height:42px; font-size:15px; padding:0 16px}
+
+/* Header */
+header.site{position:sticky; top:0; z-index:50; background:rgba(255,255,255,.82); backdrop-filter:saturate(180%) blur(12px); border-bottom:1px solid transparent; transition:border-color .2s ease, box-shadow .2s ease}
+header.site.scrolled{border-color:var(--line); box-shadow:0 1px 0 rgba(16,18,29,.02)}
+.nav{display:flex; align-items:center; justify-content:space-between; height:66px}
+.brand{display:flex; align-items:center; gap:10px; font-weight:700; font-size:18px; letter-spacing:-.01em}
+.brand .glyph{width:28px; height:28px; border-radius:7px; background:linear-gradient(135deg,var(--accent),#5b8bff); color:#fff; display:grid; place-items:center; font-family:var(--serif); font-size:17px; font-weight:700; box-shadow:0 4px 10px -3px rgba(47,111,237,.55)}
+.nav-links{display:flex; align-items:center; gap:30px}
+.nav-links a{font-size:15px; font-weight:500; color:var(--ink-soft)}
+.nav-links a:hover{color:var(--ink)}
+.nav-cta{display:flex; align-items:center; gap:12px}
+.nav-toggle{display:none; background:none; border:1px solid var(--line); border-radius:9px; width:42px; height:42px; cursor:pointer}
+
+/* Hero */
+.hero{padding:78px 0 56px; position:relative; overflow:hidden}
+.hero::before{content:""; position:absolute; inset:0; background:
+  radial-gradient(680px 320px at 78% 8%, rgba(47,111,237,.07), transparent 70%),
+  radial-gradient(560px 280px at 8% 0%, rgba(91,139,255,.06), transparent 70%);
+  pointer-events:none}
+.hero-grid{display:grid; grid-template-columns:0.82fr 1.18fr; gap:48px; align-items:center; position:relative}
+.hero h1{font-size:clamp(36px,5.2vw,58px); margin:18px 0 0}
+.hero h1 .ul{background:linear-gradient(transparent 62%, rgba(47,111,237,.18) 62%)}
+.hero .sub{font-size:clamp(17px,2vw,20px); color:var(--ink-soft); margin:22px 0 0; max-width:36ch}
+.hero-actions{display:flex; flex-wrap:wrap; gap:14px; margin:30px 0 0}
+.hero-trust{display:flex; flex-wrap:wrap; gap:10px 22px; margin:26px 0 0; font-size:14.5px; color:var(--muted)}
+.hero-trust span{display:inline-flex; align-items:center; gap:7px}
+/* refined check badge — a drawn checkmark in a soft circle, not a raw ✓ glyph */
+.tick{display:inline-flex; flex:none; width:18px; height:18px; border-radius:50%; background:var(--good-soft); position:relative; font-size:0; vertical-align:-4px}
+.tick::after{content:""; position:absolute; left:6.5px; top:4px; width:4px; height:7.5px; border:solid var(--good); border-width:0 2px 2px 0; transform:rotate(43deg)}
+
+/* copy command */
+.cmd{display:inline-flex; align-items:center; gap:12px; margin:20px 0 0; padding:11px 14px; background:#0e1117; color:#e8eaf0; border-radius:11px; font-family:var(--mono); font-size:14.5px; box-shadow:var(--shadow)}
+.cmd .dollar{color:#5b8bff}
+.cmd button{margin-left:4px; background:#23262f; color:#cdd2dd; border:0; border-radius:7px; padding:6px 10px; font-size:12px; font-weight:600; cursor:pointer; font-family:var(--sans)}
+.cmd button:hover{background:#2e323d}
+
+/* Live editor embed (window chrome + iframe) */
+.mock{border-radius:14px; background:#fff; border:1px solid var(--line); box-shadow:var(--shadow-lg); overflow:hidden}
+.mock-top{display:flex; align-items:center; gap:7px; padding:11px 14px; background:var(--paper-2); border-bottom:1px solid var(--line)}
+.dot{width:11px; height:11px; border-radius:50%}
+.dot.r{background:#ff5f57}.dot.y{background:#febc2e}.dot.g{background:#28c840}
+.mock-title{margin-left:10px; font-size:12.5px; color:var(--muted); font-family:var(--mono)}
+.mock-open{margin-left:auto; font-size:12.5px; font-weight:600; color:var(--accent); font-family:var(--sans); white-space:nowrap}
+.mock-open:hover{text-decoration:underline}
+.mock-embed{display:block; width:100%; height:680px; border:0; background:#eceef2}
+
+/* Examples gallery */
+.examples-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:22px}
+.ex-card{display:flex; flex-direction:column; padding:26px; border:1px solid var(--line); border-radius:var(--radius); background:#fff; box-shadow:var(--shadow); color:inherit; transition:transform .15s ease, border-color .15s ease, box-shadow .15s ease}
+.ex-card:hover{transform:translateY(-3px); border-color:#cfd6e4; box-shadow:var(--shadow-lg)}
+.ex-card.lead{grid-column:1 / -1; flex-direction:row; align-items:center; gap:24px; background:linear-gradient(160deg,#fbfcff,#f2f6ff); border-color:#dbe5fb}
+.ex-card.lead .ex-body{flex:1}
+.ex-tag{align-self:flex-start; font-size:11.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--accent); background:var(--accent-soft); padding:5px 11px; border-radius:999px; margin-bottom:14px}
+.ex-card h3{font-size:19px; margin-bottom:8px}
+.ex-card.lead h3{font-size:23px}
+.ex-card p{font-size:14.5px; color:var(--ink-soft); flex:1; margin:0}
+.ex-open{margin-top:16px; font-size:14.5px; font-weight:600; color:var(--accent)}
+.ex-card.lead .ex-open{margin-top:10px}
+.ex-card:hover .ex-open{text-decoration:underline}
+.ex-lead-btn{flex:none}
+
+/* Section scaffolding */
+section{padding:82px 0}
+.sec-head{max-width:660px; margin:0 auto 52px; text-align:center}
+.sec-head h2{font-size:clamp(28px,3.6vw,40px); margin:14px 0 0}
+.sec-head p{font-size:18px; color:var(--ink-soft); margin:16px 0 0}
+.alt{background:var(--paper-2); border-top:1px solid var(--line); border-bottom:1px solid var(--line)}
+
+/* Logos / signal bar */
+.signalbar{padding:30px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); background:var(--paper-3)}
+.signals{display:flex; flex-wrap:wrap; justify-content:center; gap:14px 14px}
+.chip{display:inline-flex; align-items:center; gap:8px; font-size:14.5px; font-weight:600; color:var(--ink-soft); background:#fff; border:1px solid var(--line); padding:9px 15px; border-radius:999px}
+.chip::before{content:""; flex:none; width:6px; height:6px; border-radius:50%; background:var(--accent)}
+
+/* Problem cards */
+.cards3{display:grid; grid-template-columns:repeat(3,1fr); gap:22px}
+.card{background:#fff; border:1px solid var(--line); border-radius:var(--radius); padding:28px; box-shadow:var(--shadow)}
+.card h3{font-size:20px; margin-bottom:10px}
+.card p{color:var(--ink-soft); font-size:15.5px}
+.card .ic{width:44px; height:44px; border-radius:11px; display:grid; place-items:center; background:var(--accent-soft); margin-bottom:16px; font-size:21px}
+.card.pain .ic{background:#fdeceb}
+
+/* Benefits */
+.benefits{display:grid; grid-template-columns:repeat(2,1fr); gap:24px}
+.benefit{display:flex; gap:16px; padding:26px; border:1px solid var(--line); border-radius:var(--radius); background:#fff}
+.benefit .ic{flex:none; width:42px; height:42px; border-radius:11px; background:var(--accent-soft); display:grid; place-items:center; font-size:20px}
+.benefit h3{font-size:18.5px; margin-bottom:6px}
+.benefit p{font-size:15px; color:var(--ink-soft)}
+
+/* Compare table */
+.tablewrap{overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); background:#fff}
+table.cmp{border-collapse:collapse; width:100%; min-width:720px; font-size:15px}
+table.cmp th, table.cmp td{padding:15px 16px; text-align:left; border-bottom:1px solid var(--line-soft)}
+table.cmp thead th{font-family:var(--sans); font-size:13.5px; font-weight:600; color:var(--muted); background:var(--paper-2); border-bottom:1px solid var(--line)}
+table.cmp thead th.us{color:var(--accent); background:var(--accent-soft)}
+table.cmp tbody th{font-weight:600; color:var(--ink); font-family:var(--sans)}
+table.cmp td.us{background:rgba(47,111,237,.045); font-weight:600}
+table.cmp tr:last-child td, table.cmp tr:last-child th{border-bottom:0}
+.yes{color:var(--good); font-weight:700}
+.no{color:#b23b34; font-weight:700}
+.cmp-note{font-size:14px; color:var(--muted); margin:18px 0 0; text-align:center}
+
+/* How it works */
+.steps{display:grid; grid-template-columns:repeat(3,1fr); gap:24px; margin-bottom:38px}
+.step{position:relative; padding:26px; border:1px solid var(--line); border-radius:var(--radius); background:#fff}
+.step .num{width:34px; height:34px; border-radius:9px; background:var(--ink); color:#fff; display:grid; place-items:center; font-weight:700; font-family:var(--sans); font-size:15px; margin-bottom:14px}
+.step h3{font-size:18px; margin-bottom:7px}
+.step p{font-size:15px; color:var(--ink-soft)}
+
+/* Code block */
+.code{background:#0e1117; border-radius:var(--radius); padding:24px 26px; overflow-x:auto; box-shadow:var(--shadow-lg); border:1px solid #1c1f27; max-width:100%}
+.code pre{margin:0; font-family:var(--mono); font-size:14.5px; line-height:1.7; color:#e6e8ee}
+.code .c-key{color:#7aa2ff}.code .c-str{color:#9ad7a0}.code .c-com{color:#6b7280}.code .c-fn{color:#e6c07b}.code .c-pn{color:#c9d1e0}
+
+/* Features grid */
+.features{display:grid; grid-template-columns:repeat(3,1fr); gap:20px}
+.feat{padding:24px; border:1px solid var(--line); border-radius:var(--radius); background:#fff; transition:border-color .15s ease, transform .15s ease}
+.feat:hover{border-color:#cfd6e4; transform:translateY(-2px)}
+.feat .ic{font-size:22px; margin-bottom:12px}
+.feat h3{font-size:17px; margin-bottom:6px}
+.feat p{font-size:14.5px; color:var(--ink-soft)}
+
+/* Split content */
+.split{display:grid; grid-template-columns:1fr 1fr; gap:48px; align-items:center}
+.split > *{min-width:0}
+.split h2{font-size:clamp(26px,3.2vw,36px)}
+.split p{font-size:17px; color:var(--ink-soft); margin-top:16px}
+.checklist{list-style:none; padding:0; margin:22px 0 0}
+/* hanging-indent (not flex): keeps text + inline <code> in one inline flow so the
+   checkmark doesn't split the line into separate flex items */
+.checklist li{position:relative; padding-left:28px; margin:12px 0; font-size:15.5px; color:var(--ink-soft)}
+.checklist .tick{position:absolute; left:0; top:1px}
+
+/* FAQ */
+.faq{max-width:780px; margin:0 auto}
+.qa{border-bottom:1px solid var(--line)}
+/* block + absolutely-positioned icon (not flex) so inline <em>/<code> in the
+   question text don't become separate flex items with gaps around them */
+.qa summary{list-style:none; cursor:pointer; padding:22px 40px 22px 4px; position:relative; font-weight:600; font-size:17.5px; font-family:var(--serif)}
+.qa summary::-webkit-details-marker{display:none}
+.qa .plus{position:absolute; right:4px; top:50%; transform:translateY(-50%); width:26px; height:26px; transition:opacity .2s ease}
+.qa .plus::before,.qa .plus::after{content:""; position:absolute; background:var(--accent); border-radius:2px}
+.qa .plus::before{top:12px; left:5px; right:5px; height:2px}
+.qa .plus::after{left:12px; top:5px; bottom:5px; width:2px; transition:opacity .2s ease}
+.qa[open] .plus::after{opacity:0}
+.qa .ans{padding:0 4px 24px; color:var(--ink-soft); font-size:16px; max-width:68ch}
+.qa .ans a{color:var(--accent); text-decoration:underline; text-underline-offset:2px}
+
+/* Final CTA */
+.cta{background:linear-gradient(160deg,#11151f 0%,#1a2233 100%); color:#fff; border-radius:24px; padding:64px 40px; text-align:center; position:relative; overflow:hidden}
+.cta::before{content:""; position:absolute; inset:0; background:radial-gradient(520px 240px at 50% -10%, rgba(91,139,255,.28), transparent 70%)}
+.cta > *{position:relative}
+.cta h2{font-size:clamp(28px,3.8vw,42px); color:#fff}
+.cta p{color:#c2c8d6; font-size:18px; margin:16px auto 0; max-width:50ch}
+.cta-actions{display:flex; flex-wrap:wrap; gap:14px; justify-content:center; margin:30px 0 0}
+.cta .btn-ghost{background:transparent; color:#fff; border-color:rgba(255,255,255,.25)}
+.cta .btn-ghost:hover{background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.4)}
+.cta-trust{margin:24px 0 0; font-size:14.5px; color:#9aa3b5; display:flex; flex-wrap:wrap; gap:8px 20px; justify-content:center}
+.cta-trust span{display:inline-flex; align-items:center; gap:7px}
+
+/* Footer */
+footer{padding:54px 0 40px; border-top:1px solid var(--line); margin-top:90px}
+.foot{display:flex; justify-content:space-between; gap:30px; flex-wrap:wrap; align-items:flex-start}
+.foot .brand{margin-bottom:12px}
+.foot-cols{display:flex; gap:64px; flex-wrap:wrap}
+.foot-col h4{font-family:var(--sans); font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 12px}
+.foot-col a{display:block; font-size:15px; color:var(--ink-soft); margin:8px 0}
+.foot-col a:hover{color:var(--ink)}
+.foot-legal{margin-top:34px; padding-top:22px; border-top:1px solid var(--line-soft); font-size:14px; color:var(--muted); display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px}
+
+@media (max-width:900px){
+  .hero-grid{grid-template-columns:1fr; gap:40px}
+  .hero{padding:46px 0 40px}
+  .hero .sub{max-width:none}
+  .cards3,.steps,.features,.examples-grid{grid-template-columns:1fr}
+  .benefits,.split{grid-template-columns:1fr}
+  .split .code-side{order:2}
+  .ex-card.lead{flex-direction:column; align-items:flex-start; gap:18px}
+  .mock-embed{height:70vh; min-height:460px}
+  .nav-links{display:none}
+  .nav-links.open{display:flex; position:absolute; top:66px; left:0; right:0; flex-direction:column; gap:0; background:#fff; border-bottom:1px solid var(--line); padding:8px 24px 18px}
+  .nav-links.open a{padding:13px 0; border-bottom:1px solid var(--line-soft); width:100%}
+  .nav-toggle{display:grid; place-items:center}
+  .nav .btn.desktop-cta{display:none}
+  section{padding:60px 0}
+  .cta{padding:48px 24px; border-radius:18px}
+}
+@media (max-width:560px){
+  .hero-actions .btn{width:100%}
+  .features{grid-template-columns:1fr}
+}
+.skip{position:absolute; left:-9999px}
+.skip:focus{position:fixed; left:16px; top:16px; background:#fff; padding:10px 16px; border:1px solid var(--accent); border-radius:8px; z-index:100}
+</style>
+</head>
+<body>
+<a href="#main" class="skip">Skip to content</a>
+
+<!-- ============ HEADER ============ -->
+<header class="site" id="site-header">
+  <div class="wrap nav">
+    <a class="brand" href="#main" aria-label="WordCanvas home">
+      <span class="glyph">W</span> WordCanvas
+    </a>
+    <nav class="nav-links" id="nav-links" aria-label="Primary">
+      <a href="#why">Why</a>
+      <a href="#compare">Compare</a>
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#examples">Examples</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="btn btn-ghost btn-sm desktop-cta" href="https://github.com/Forevka/canvas-word" target="_blank" rel="noopener">View on GitHub</a>
+      <a class="btn btn-primary btn-sm" href="https://doc-editor.forevka.dev/examples/offline" target="_blank" rel="noopener">Try the live editor</a>
+      <button class="nav-toggle" id="nav-toggle" aria-label="Menu" aria-expanded="false">☰</button>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- ============ HERO ============ -->
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <span class="eyebrow">Embeddable document editor · MIT</span>
+      <h1>Put a <span class="ul">Word-class editor</span> in your product — not on your roadmap for six months.</h1>
+      <p class="sub">WordCanvas is a canvas-rendered Word editor you embed with one import. Real <strong>DOCX</strong> and <strong>PDF</strong> import/export, live collaboration, and track changes — MIT-licensed, zero runtime dependencies, no server required to render.</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="https://doc-editor.forevka.dev/examples/offline" target="_blank" rel="noopener">Try the live editor →</a>
+        <a class="btn btn-ghost" href="#examples">Browse examples</a>
+      </div>
+      <div class="cmd">
+        <span class="dollar">$</span><span>npm install @forevka/wordcanvas</span>
+        <button id="copy-npm" data-copy="npm install @forevka/wordcanvas">Copy</button>
+      </div>
+      <div class="hero-trust">
+        <span><span class="tick"></span>Free forever — MIT, no per-seat fees</span>
+        <span><span class="tick"></span>Zero runtime dependencies</span>
+        <span><span class="tick"></span>Runs fully in the browser</span>
+      </div>
+    </div>
+
+    <!-- The real editor, embedded live from the hosted app -->
+    <div class="mock">
+      <div class="mock-top">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span class="mock-title">doc-editor.forevka.dev</span>
+        <a class="mock-open" href="https://doc-editor.forevka.dev/examples/offline" target="_blank" rel="noopener">Open full screen ↗</a>
+      </div>
+      <iframe class="mock-embed" src="https://doc-editor.forevka.dev/examples/offline?view=%7B%22outline%22%3Afalse%2C%22zoom%22%3A0.5%7D" title="WordCanvas live editor — type, format, and export"
+              loading="lazy" allow="clipboard-write; fullscreen"></iframe>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SIGNAL BAR ============ -->
+<div class="signalbar">
+  <div class="wrap signals">
+    <span class="chip">Self-contained bundle</span>
+    <span class="chip">DOCX + PDF round-trip</span>
+    <span class="chip">Paginates exactly like Word</span>
+    <span class="chip">Live multi-user collaboration</span>
+    <span class="chip">Track changes &amp; comments</span>
+    <span class="chip">Headless on Node</span>
+  </div>
+</div>
+
+<!-- ============ PROBLEM / WHY ============ -->
+<section id="why">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">The build-vs-buy trap</span>
+      <h2>Document editing is a feature. It shouldn't become a project.</h2>
+      <p>Every path to "let users edit documents in our app" has a hidden cost. Here's what teams hit before they find WordCanvas.</p>
+    </div>
+    <div class="cards3">
+      <div class="card pain">
+        <div class="ic">🏗️</div>
+        <h3>Building it yourself</h3>
+        <p>Pagination, DOCX fidelity, fonts, tables, undo, collaboration — a multi-quarter effort that pulls senior engineers off the roadmap and never quite matches Word.</p>
+      </div>
+      <div class="card pain">
+        <div class="ic">💳</div>
+        <h3>Licensing a commercial control</h3>
+        <p>Syncfusion, DevExpress and OnlyOffice are mature — and bill per seat, often need a server running before the editor renders, and lock you to one framework or stack.</p>
+      </div>
+      <div class="card pain">
+        <div class="ic">🧩</div>
+        <h3>Hacking <code>contenteditable</code></h3>
+        <p>A rich-text div gets you 80% of the way and then breaks on page breaks, real DOCX export, and print-accurate PDF. The last 20% is where the budget goes.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SOLUTION / BENEFITS ============ -->
+<section class="alt" id="solution">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">The third option</span>
+      <h2>Embed the editor. Own none of the complexity.</h2>
+      <p>WordCanvas takes the trade the commercial editors won't: MIT-licensed, browser-native, and self-contained — so you ship document editing this sprint, not next year.</p>
+    </div>
+    <div class="benefits">
+      <div class="benefit">
+        <div class="ic">⚡</div>
+        <div>
+          <h3>Live in an afternoon</h3>
+          <p><code>npm install</code>, mount into a <code>&lt;div&gt;</code>, and you have a paginating Word editor. No backend to stand up, no document server to operate.</p>
+        </div>
+      </div>
+      <div class="benefit">
+        <div class="ic">📄</div>
+        <div>
+          <h3>Real DOCX, in and out</h3>
+          <p>Imports and exports genuine <code>.docx</code> in the browser, and renders page-accurate PDF — the same layout users see on screen is the file they download.</p>
+        </div>
+      </div>
+      <div class="benefit">
+        <div class="ic">🔓</div>
+        <div>
+          <h3>MIT — no per-seat math</h3>
+          <p>Ship it to one user or one million for the same price: zero. No license server, no audit risk, no renewal that scales with your success.</p>
+        </div>
+      </div>
+      <div class="benefit">
+        <div class="ic">🪶</div>
+        <div>
+          <h3>Zero runtime dependencies</h3>
+          <p>The layout engine, font tooling, and DOCX/PDF pipelines are inlined and code-split. One self-contained module — nothing else to keep up to date.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ COMPARISON ============ -->
+<section id="compare">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Honest comparison</span>
+      <h2>How it stacks up against the commercial editors</h2>
+      <p>If you've shopped for an embeddable Word editor, you've met these three. Here's where WordCanvas takes a different trade.</p>
+    </div>
+    <div class="tablewrap">
+      <table class="cmp">
+        <thead>
+          <tr>
+            <th></th>
+            <th class="us">WordCanvas</th>
+            <th>Syncfusion</th>
+            <th>OnlyOffice</th>
+            <th>DevExpress</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><th>License</th><td class="us">MIT</td><td>Commercial seat</td><td>AGPL or commercial</td><td>Commercial seat</td></tr>
+          <tr><th>Rendering</th><td class="us">Canvas</td><td>DOM</td><td>Canvas (in iframe)</td><td>DOM</td></tr>
+          <tr><th>Server required to render</th><td class="us"><span class="yes">No</span></td><td>For some conversions</td><td class="no">Yes</td><td class="no">Yes (.NET)</td></tr>
+          <tr><th>Runtime dependencies</th><td class="us"><span class="yes">Zero</span></td><td>Several</td><td>Bundled suite</td><td>.NET stack</td></tr>
+          <tr><th>DOCX import + export</th><td class="us">In-browser</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+          <tr><th>PDF export</th><td class="us">Page-accurate, in-browser</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+          <tr><th>Server&nbsp;↔&nbsp;browser render parity</th><td class="us"><span class="yes">Pixel-identical</span> — same engine</td><td>Separate render path</td><td>Separate render path</td><td>Separate render path</td></tr>
+          <tr><th>Live collaboration</th><td class="us">Built in (opt-in backend)</td><td>Add-on</td><td>Built in</td><td>Add-on</td></tr>
+          <tr><th>Primary target</th><td class="us">Any JS app</td><td>Angular/React/Vue</td><td>Iframe / full suite</td><td>Blazor / .NET</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="cmp-note">Where the commercial editors win today: RTL &amp; complex-script editing, bundled CJK fonts, charts &amp; equations, and an enterprise support contract. We tell you that up front.</p>
+  </div>
+</section>
+
+<!-- ============ HOW IT WORKS ============ -->
+<section class="alt" id="how">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">From install to shipped</span>
+      <h2>Three steps to a working editor</h2>
+      <p>No build step required — an import map is enough. Here's the whole integration.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="num">1</div>
+        <h3>Install</h3>
+        <p>Add the package, or load the standalone ES module straight from a <code>&lt;script type="module"&gt;</code> with an import map.</p>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <h3>Mount</h3>
+        <p>Point <code>WordCanvas</code> at a sized container element. It mounts the full chrome — ribbon, ruler, outline, status bar — inside it.</p>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <h3>Ship</h3>
+        <p>It runs fully offline. Pass a <code>backendUrl</code> later to switch on live collaboration, presence, and shareable links.</p>
+      </div>
+    </div>
+
+    <div class="code">
+<pre><span class="c-key">import</span> { <span class="c-pn">WordCanvas</span> } <span class="c-key">from</span> <span class="c-str">"@forevka/wordcanvas"</span>;
+
+<span class="c-com">// Offline: no backend, no network, no document server.</span>
+<span class="c-key">const</span> editor = <span class="c-key">new</span> <span class="c-fn">WordCanvas</span>({
+  container: document.<span class="c-fn">getElementById</span>(<span class="c-str">"editor"</span>),
+});
+
+editor.<span class="c-fn">on</span>(<span class="c-str">"ready"</span>, () =&gt; console.<span class="c-fn">log</span>(<span class="c-str">"editor mounted"</span>));
+
+<span class="c-com">// Load a .docx the user picked — exports back to .docx/.pdf too.</span>
+<span class="c-key">await</span> editor.<span class="c-fn">openDocx</span>(file);</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FEATURES ============ -->
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">What's in the box</span>
+      <h2>A real word processor, not a rich-text box</h2>
+      <p>The same layout engine the editor renders with also runs headless on Node — so a server-generated file paginates identically to what users see.</p>
+    </div>
+    <div class="features">
+      <div class="feat"><div class="ic">📐</div><h3>Word-accurate pagination</h3><p>Paints pages to a canvas and breaks them exactly like Word — no <code>contenteditable</code> guesswork.</p></div>
+      <div class="feat"><div class="ic">🔁</div><h3>DOCX import &amp; export</h3><p>Round-trips genuine <code>.docx</code> in the browser, preserving styles, tables, fields, and structure.</p></div>
+      <div class="feat"><div class="ic">🖨️</div><h3>Page-accurate PDF</h3><p>Export print-ready PDF that matches the on-screen document, in-browser or headless.</p></div>
+      <div class="feat"><div class="ic">👥</div><h3>Live collaboration</h3><p>Opt-in backend adds multi-user editing, presence, carets, and one-click share links.</p></div>
+      <div class="feat"><div class="ic">✍️</div><h3>Track changes &amp; comments</h3><p>Review workflows with suggestions and comment threads built into the editor.</p></div>
+      <div class="feat"><div class="ic">📊</div><h3>Tables, fields, TOC &amp; styles</h3><p>Span-aware tables, PAGE/NUMPAGES/DATE fields, generated tables of contents, and a full style manager.</p></div>
+      <div class="feat"><div class="ic">🖥️</div><h3>Headless on Node</h3><p>Build or import documents server-side and export to DOCX/PDF with no browser and no DOM.</p></div>
+      <div class="feat"><div class="ic">👁️</div><h3>Read-only viewer mode</h3><p><code>readonly: true</code> mounts a selectable, copyable, find-enabled viewer with editing disabled.</p></div>
+      <div class="feat"><div class="ic">🧱</div><h3>Multiple instances</h3><p>Class-scoped chrome means you can run several editors on one page, each mounted independently.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ HEADLESS / SERVER SPLIT ============ -->
+<section class="alt" id="headless">
+  <div class="wrap split">
+    <div>
+      <span class="eyebrow">Same engine, server-side</span>
+      <h2>Generate documents on the server, identical to the screen</h2>
+      <p>The pipeline subpaths are isomorphic. The <code>node</code> condition resolves a self-contained build — bundled fonts, bundled PDF engine, still zero runtime dependencies — so the same <code>import</code> works in a browser bundler and on Node.</p>
+      <ul class="checklist">
+        <li><span class="tick"></span>Compose documents with the fluent <code>DocumentBuilder</code></li>
+        <li><span class="tick"></span>Parse uploaded <code>.docx</code> back into the editable model</li>
+        <li><span class="tick"></span>Pixel-identical PDF — the server renders exactly what the user sees on screen</li>
+      </ul>
+    </div>
+    <div class="code-side">
+      <div class="code">
+<pre><span class="c-key">import</span> { <span class="c-pn">DocumentBuilder</span> } <span class="c-key">from</span> <span class="c-str">"@forevka/wordcanvas/builder"</span>;
+<span class="c-key">import</span> { <span class="c-pn">installMeasureHost</span> } <span class="c-key">from</span> <span class="c-str">"@forevka/wordcanvas/export/measure"</span>;
+<span class="c-key">import</span> { <span class="c-pn">runExport</span> } <span class="c-key">from</span> <span class="c-str">"@forevka/wordcanvas/export"</span>;
+
+<span class="c-key">const</span> doc = DocumentBuilder.<span class="c-fn">create</span>()
+  .<span class="c-fn">paragraph</span>(<span class="c-str">"Quarterly report"</span>).<span class="c-fn">withStyle</span>(<span class="c-str">"Heading1"</span>)
+  .<span class="c-fn">paragraph</span>(<span class="c-str">"Generated on the server — no DOM."</span>)
+  .<span class="c-fn">build</span>();
+
+<span class="c-key">await</span> <span class="c-fn">installMeasureHost</span>();           <span class="c-com">// once per process</span>
+<span class="c-key">const</span> { bytes } = <span class="c-key">await</span> <span class="c-fn">runExport</span>(doc, <span class="c-str">"pdf"</span>);</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ EXAMPLES ============ -->
+<section id="examples">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">See it in action</span>
+      <h2>Live examples for every integration</h2>
+      <p>Each one is the real editor, deployed and runnable. Open it, poke around, then read the source on GitHub.</p>
+    </div>
+    <div class="examples-grid">
+      <a class="ex-card" href="https://doc-editor.forevka.dev/examples/offline" target="_blank" rel="noopener">
+        <span class="ex-tag">No-build</span>
+        <h3>Minimal offline embed</h3>
+        <p>The smallest possible drop-in: mount the full editor with a browser import map — no bundler, no tooling, no build step.</p>
+        <div class="ex-open">Open example ↗</div>
+      </a>
+
+      <a class="ex-card" href="https://doc-editor.forevka.dev/playground" target="_blank" rel="noopener">
+        <span class="ex-tag">Builder API</span>
+        <h3>Document-builder playground</h3>
+        <p>Write fluent <code>builder</code> code, feed it a JSON data model, and watch the document render live in a full editor.</p>
+        <div class="ex-open">Open example ↗</div>
+      </a>
+
+      <a class="ex-card" href="https://doc-editor.forevka.dev/multi" target="_blank" rel="noopener">
+        <span class="ex-tag">Multi-instance</span>
+        <h3>Multiple editors on one page</h3>
+        <p>Several fully independent editors side by side — add and remove them at runtime, each with its own document, undo history, and ribbon.</p>
+        <div class="ex-open">Open example ↗</div>
+      </a>
+
+      <a class="ex-card" href="https://doc-editor.forevka.dev/examples/ribbon" target="_blank" rel="noopener">
+        <span class="ex-tag">Customization</span>
+        <h3>Ribbon customization</h3>
+        <p>Reorder and remove built-in ribbon tabs, and add your own — macros, config popups, and info panels — through <code>customizeRibbon</code>.</p>
+        <div class="ex-open">Open example ↗</div>
+      </a>
+
+      <a class="ex-card" href="https://doc-editor.forevka.dev/examples/constructor" target="_blank" rel="noopener">
+        <span class="ex-tag">Config builder</span>
+        <h3>Constructor config builder</h3>
+        <p>Toggle any constructor option, preview it live, and copy the exact <code>new WordCanvas({…})</code> snippet to paste into your app.</p>
+        <div class="ex-open">Open example ↗</div>
+      </a>
+    </div>
+    <p class="center muted" style="margin-top:32px; font-size:14.5px">Every example lives in the <a href="https://github.com/Forevka/canvas-word/tree/main/examples" target="_blank" rel="noopener" style="color:var(--accent); text-decoration:underline; text-underline-offset:2px">examples/ directory</a> on GitHub.</p>
+  </div>
+</section>
+
+<!-- ============ FAQ ============ -->
+<section class="alt" id="faq">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Before you commit</span>
+      <h2>Questions engineering leaders ask</h2>
+    </div>
+    <div class="faq">
+      <details class="qa">
+        <summary>What does it cost, and what's the license? <span class="plus"></span></summary>
+        <div class="ans">WordCanvas is MIT-licensed and free — including commercial use, redistribution, and modification. There are no per-seat fees, no license server, and no usage audit. You ship it to one user or one million for the same price.</div>
+      </details>
+      <details class="qa">
+        <summary>Do I need a server to use it? <span class="plus"></span></summary>
+        <div class="ans">No. Reading, editing, and DOCX/PDF export all run fully in the browser with zero runtime dependencies. You only stand up a backend if you want live multi-user collaboration and shareable links — and that's opt-in via a single <code>backendUrl</code> option.</div>
+      </details>
+      <details class="qa">
+        <summary>Does it work with React, Vue, or Angular? <span class="plus"></span></summary>
+        <div class="ans">Yes. It's framework-agnostic — you give it a DOM element to mount into, so it drops into any JS app (or none at all). The bundle is a standalone ES module that imports from any bundler, or loads directly via an import map with no build step.</div>
+      </details>
+      <details class="qa">
+        <summary>How faithful is DOCX import/export? <span class="plus"></span></summary>
+        <div class="ans">It imports and exports genuine <code>.docx</code> — preserving paragraph and character styles, tables, fields, table of contents, and document structure — and paginates the way Word does. PDF export is page-accurate, so the downloaded file matches what's on screen.</div>
+      </details>
+      <details class="qa">
+        <summary>How large is the bundle? <span class="plus"></span></summary>
+        <div class="ans">It ships a full layout engine plus DOCX/PDF tooling, so it's large on disk (~20&nbsp;MB unminified) — but it's code-split. The initial entry chunk is small; the heavy editor app and the export/import workers are lazily loaded on demand.</div>
+      </details>
+      <details class="qa">
+        <summary>What does it <em>not</em> do well yet? <span class="plus"></span></summary>
+        <div class="ans">We're upfront about the gaps. Today the commercial editors lead on RTL and complex-script editing, bundled CJK fonts, charts and equations, and enterprise support contracts. If those are hard requirements, evaluate carefully — and read our <a href="https://github.com/Forevka/canvas-word#readme" target="_blank" rel="noopener">full comparison</a>.</div>
+      </details>
+      <details class="qa">
+        <summary>Can I generate documents on the server? <span class="plus"></span></summary>
+        <div class="ans">Yes. The same package runs headless on Node — compose with the <code>DocumentBuilder</code>, parse uploaded <code>.docx</code> back into the model, and export to DOCX/PDF with no browser and no DOM. Because it's the same pipeline, server-rendered files paginate identically to the on-screen editor.</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FINAL CTA ============ -->
+<section>
+  <div class="wrap">
+    <div class="cta">
+      <h2>Ship document editing this sprint</h2>
+      <p>Install the package, mount it into a div, and you have a Word-class editor running in the browser. No server, no license, no roadmap detour.</p>
+      <div class="cmd" style="margin:26px auto 0; justify-content:center">
+        <span class="dollar">$</span><span>npm install @forevka/wordcanvas</span>
+        <button id="copy-npm-2" data-copy="npm install @forevka/wordcanvas">Copy</button>
+      </div>
+      <div class="cta-actions">
+        <a class="btn btn-primary" href="https://doc-editor.forevka.dev/examples/offline" target="_blank" rel="noopener">Try the live editor →</a>
+        <a class="btn btn-ghost" href="https://github.com/Forevka/canvas-word#readme" target="_blank" rel="noopener">View on GitHub</a>
+      </div>
+      <div class="cta-trust">
+        <span><span class="tick"></span>Free forever (MIT)</span><span><span class="tick"></span>Zero runtime dependencies</span><span><span class="tick"></span>No server required</span><span><span class="tick"></span>Works offline</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ============ FOOTER ============ -->
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <div>
+        <a class="brand" href="#main"><span class="glyph">W</span> WordCanvas</a>
+        <p class="muted" style="max-width:34ch; font-size:14.5px">An embeddable, canvas-rendered, Word-compatible document editor. MIT © Bohdan Lushchyk.</p>
+      </div>
+      <div class="foot-cols">
+        <div class="foot-col">
+          <h4>Product</h4>
+          <a href="#why">Why WordCanvas</a>
+          <a href="#compare">Comparison</a>
+          <a href="#features">Features</a>
+          <a href="#examples">Examples</a>
+        </div>
+        <div class="foot-col">
+          <h4>Developers</h4>
+          <a href="https://github.com/Forevka/canvas-word#readme" target="_blank" rel="noopener">Documentation</a>
+          <a href="https://www.npmjs.com/package/@forevka/wordcanvas" target="_blank" rel="noopener">npm package</a>
+          <a href="https://github.com/Forevka/canvas-word" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/Forevka/canvas-word/issues" target="_blank" rel="noopener">Issues</a>
+        </div>
+        <div class="foot-col">
+          <h4>Resources</h4>
+          <a href="https://forevka.dev/articles/best-embeddable-js-word-editors/" target="_blank" rel="noopener">Editor comparison</a>
+          <a href="#faq">FAQ</a>
+          <a href="https://github.com/Forevka/canvas-word/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+        </div>
+      </div>
+    </div>
+    <div class="foot-legal">
+      <span>© 2026 WordCanvas · MIT License</span>
+      <span>Not affiliated with Microsoft. "Word" is a trademark of Microsoft Corporation.</span>
+    </div>
+  </div>
+</footer>
+
+<!-- FAQ structured data for SEO -->
+<script type="application/ld+json">
+{
+  "@context":"https://schema.org",
+  "@type":"FAQPage",
+  "mainEntity":[
+    {"@type":"Question","name":"What does WordCanvas cost, and what's the license?","acceptedAnswer":{"@type":"Answer","text":"WordCanvas is MIT-licensed and free, including commercial use, redistribution, and modification. There are no per-seat fees, no license server, and no usage audit."}},
+    {"@type":"Question","name":"Do I need a server to use WordCanvas?","acceptedAnswer":{"@type":"Answer","text":"No. Reading, editing, and DOCX/PDF export run fully in the browser with zero runtime dependencies. A backend is only needed for opt-in live collaboration via a single backendUrl option."}},
+    {"@type":"Question","name":"Does WordCanvas work with React, Vue, or Angular?","acceptedAnswer":{"@type":"Answer","text":"Yes. It is framework-agnostic and mounts into any DOM element, so it drops into any JS app. The bundle is a standalone ES module that imports from any bundler or loads via an import map with no build step."}},
+    {"@type":"Question","name":"How faithful is DOCX import and export?","acceptedAnswer":{"@type":"Answer","text":"It imports and exports genuine .docx, preserving styles, tables, fields, and table of contents, and paginates like Word. PDF export is page-accurate."}},
+    {"@type":"Question","name":"Can I generate documents on the server?","acceptedAnswer":{"@type":"Answer","text":"Yes. The same package runs headless on Node. Compose with DocumentBuilder, parse uploaded .docx, and export DOCX/PDF with no browser. Server-rendered files paginate identically to the editor."}}
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context":"https://schema.org",
+  "@type":"SoftwareApplication",
+  "name":"WordCanvas",
+  "applicationCategory":"DeveloperApplication",
+  "operatingSystem":"Web browser, Node.js",
+  "description":"Embeddable, canvas-rendered, Word-compatible document editor with DOCX and PDF import/export, live collaboration, and track changes. MIT-licensed, zero runtime dependencies.",
+  "offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},
+  "license":"https://opensource.org/licenses/MIT"
+}
+</script>
+
+<script>
+// Header shadow on scroll
+var header = document.getElementById('site-header');
+var onScroll = function(){ header.classList.toggle('scrolled', window.scrollY > 8); };
+onScroll(); window.addEventListener('scroll', onScroll, {passive:true});
+
+// Mobile nav
+var toggle = document.getElementById('nav-toggle');
+var links = document.getElementById('nav-links');
+toggle.addEventListener('click', function(){
+  var open = links.classList.toggle('open');
+  toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+});
+links.addEventListener('click', function(e){
+  if (e.target.tagName === 'A'){ links.classList.remove('open'); toggle.setAttribute('aria-expanded','false'); }
+});
+
+// Copy-to-clipboard for npm command
+function wireCopy(id){
+  var b = document.getElementById(id);
+  if(!b) return;
+  b.addEventListener('click', function(){
+    var text = b.getAttribute('data-copy');
+    navigator.clipboard.writeText(text).then(function(){
+      var old = b.textContent; b.textContent = 'Copied ✓';
+      setTimeout(function(){ b.textContent = old; }, 1600);
+    });
+  });
+}
+wireCopy('copy-npm'); wireCopy('copy-npm-2');
+</script>
+</body>
+</html>
