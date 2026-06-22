@@ -29,7 +29,15 @@ const CSS = `
   display: flex; align-items: flex-end; gap: 1px; height: 32px;
   padding: 4px 8px 0; background: #f3f2f1;
 }
+/* Tab buttons scroll horizontally on overflow; the right-side cluster
+   (.cw-header-review + collapse chevron) stays pinned as siblings of .rib-tabs. */
+.rib-tab-scroll {
+  flex: 1 1 auto; min-width: 0; display: flex; align-items: flex-end; gap: 1px;
+  overflow-x: auto; overflow-y: hidden; flex-wrap: nowrap; scrollbar-width: none;
+}
+.rib-tab-scroll::-webkit-scrollbar { display: none; }
 .rib-tab {
+  flex: 0 0 auto; /* never shrink — tabs scroll instead of squashing */
   border: none; background: transparent; cursor: pointer;
   font: inherit; font-size: 13px; color: #323130;
   padding: 5px 11px 6px; border-radius: 4px 4px 0 0; position: relative;
@@ -338,6 +346,20 @@ const CSS = `
 
 /* collapsed ribbon: keep the tab strip, hide the body */
 .cw-toolbar.collapsed .rib-bodies { display: none; }
+
+/* compact ribbon (container-width driven via ResizeObserver, see editorApp):
+   dense single horizontally-scrollable group row with captions hidden. Keyed off
+   the editor's own width, so it also engages for narrow embeds on a wide page.
+   The pointer:coarse half of the mobile @media block below carries the same body
+   rules for touch devices regardless of width. */
+.cw-toolbar.compact .rib-panel {
+  min-height: 0; overflow-x: auto; overflow-y: hidden;
+  flex-wrap: nowrap; -webkit-overflow-scrolling: touch;
+}
+.cw-toolbar.compact .rib-label { display: none; }
+.cw-toolbar.compact .rib-group { padding: 4px 6px; }
+.cw-toolbar.compact .rib-panel::-webkit-scrollbar { height: 8px; }
+.cw-toolbar.compact .rib-panel::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
 
 /* ===== Status bar ================================================== */
 .cw-statusbar {

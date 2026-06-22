@@ -127,6 +127,8 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
   // aborts the signal and removes them, so nothing leaks outside shell.root.
   const teardown = new AbortController();
   const detachables: Element[] = [];
+  // Container-width compact ribbon observer (assigned in the ribbon block below).
+  let compactRO: ResizeObserver | null = null;
 
 // Backend base URL gates online features. Present ⇒ sync/publish/share; absent ⇒
 // fully offline editor (the kill-switch).
@@ -535,6 +537,22 @@ if (toolbar) {
   };
 
   const tabsBar = el("div", "rib-tabs");
+  // Tab buttons live in an inner scroll wrapper so they scroll horizontally on
+  // overflow while the right-side cluster (mode select / Review / collapse
+  // chevron) stays pinned as direct children of `.rib-tabs`.
+  const tabScroll = el("div", "rib-tab-scroll");
+  tabsBar.appendChild(tabScroll);
+  // Mouse users on a narrow desktop: translate vertical wheel to horizontal scroll
+  // (inert when the tabs fit). Auto-removed via the teardown signal.
+  tabScroll.addEventListener(
+    "wheel",
+    (e) => {
+      if (e.deltaY === 0 || tabScroll.scrollWidth <= tabScroll.clientWidth) return;
+      e.preventDefault();
+      tabScroll.scrollLeft += e.deltaY;
+    },
+    { passive: false, signal: teardown.signal },
+  );
   const bodies = el("div", "rib-bodies");
   toolbar.append(tabsBar, bodies);
   const tabButtons = new Map<string, HTMLButtonElement>();
@@ -550,7 +568,7 @@ if (toolbar) {
     t.dataset["ribbonTab"] = id;
     t.addEventListener("click", () => showTab(id));
     tabButtons.set(id, t);
-    tabsBar.appendChild(t);
+    tabScroll.appendChild(t);
     const p = el("div", "rib-panel");
     p.dataset["tab"] = id;
     p.dataset["ribbonPanel"] = id;
@@ -2184,7 +2202,7 @@ if (toolbar) {
       console.warn(`[canvas-word] customizeRibbon: ${what} "${id}" not found`);
     // DOM is the source of truth for order; these read current ids in order.
     const tabOrder = (): string[] =>
-      [...tabsBar.children].map((c) => (c as HTMLElement).dataset?.["ribbonTab"]).filter((x): x is string => !!x);
+      [...tabScroll.children].map((c) => (c as HTMLElement).dataset?.["ribbonTab"]).filter((x): x is string => !!x);
     const groupOrder = (tabId: string): string[] => {
       const panel = ribTabsById.get(tabId)?.panel;
       return panel
@@ -2234,9 +2252,9 @@ if (toolbar) {
       addTab: (spec) => {
         if (ribTabsById.has(spec.id)) return warn("tab (already exists)", spec.id);
         const beforeId = anchorBeforeId(tabOrder(), spec, spec.id);
-        const ref = (beforeId ? ribTabsById.get(beforeId)?.btn : null) ?? headerReview;
+        const ref = (beforeId ? ribTabsById.get(beforeId)?.btn : null) ?? null;
         const panel = tab(spec.id, spec.label);
-        tabsBar.insertBefore(ribTabsById.get(spec.id)!.btn, ref);
+        tabScroll.insertBefore(ribTabsById.get(spec.id)!.btn, ref);
         void panel;
       },
       removeTab: (id) => {
@@ -2252,8 +2270,8 @@ if (toolbar) {
         const node = ribTabsById.get(id);
         if (!node) return warn("tab", id);
         const beforeId = anchorBeforeId(tabOrder(), pos, id);
-        const ref = (beforeId ? ribTabsById.get(beforeId)?.btn : null) ?? headerReview;
-        tabsBar.insertBefore(node.btn, ref);
+        const ref = (beforeId ? ribTabsById.get(beforeId)?.btn : null) ?? null;
+        tabScroll.insertBefore(node.btn, ref);
       },
       addGroup: (tabId, spec) => {
         const tabNode = ribTabsById.get(tabId);
@@ -2326,6 +2344,24 @@ if (toolbar) {
     }
     // Custom buttons' active/enabled predicates sync on the next syncToolbar()
     // (wired to editor onChange + the initial sync below).
+  }
+
+  // Container-width-driven compact ribbon: when the EDITOR itself is narrow (not
+  // just the viewport — so it also works embedded in a narrow pane on a wide page),
+  // switch the body to a dense, single horizontally-scrollable row. Mirrors the
+  // `.collapsed` class pattern. Hysteresis (enter <720, exit ≥760) avoids flapping.
+  if (typeof ResizeObserver !== "undefined") {
+    const COMPACT_ON = 720;
+    const COMPACT_OFF = 760;
+    const applyCompact = (w: number): void => {
+      const on = toolbar.classList.contains("compact");
+      if (!on && w < COMPACT_ON) toolbar.classList.add("compact");
+      else if (on && w >= COMPACT_OFF) toolbar.classList.remove("compact");
+    };
+    compactRO = new ResizeObserver((entries) => {
+      for (const e of entries) applyCompact(e.contentRect.width);
+    });
+    compactRO.observe(shell.root);
   }
 
   showTab("home");
@@ -2981,6 +3017,7 @@ const handle: EditorHandle = {
   destroy: () => {
     disposeAgentTools?.(); // unregister WebMCP tools before tearing the editor down
     teardown.abort(); // drop every global window/document listener this instance added
+    compactRO?.disconnect(); // ResizeObserver isn't signal-aware — stop it explicitly
     for (const el of detachables) el.remove(); // body-level floats (find bar, image bar, …)
     sync?.destroy();
     editor.destroy();

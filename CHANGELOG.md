@@ -29,6 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (e.g. "Section › Appraisal Fee"), so the hierarchy is visible at a glance. The
   caret still frames the control it sits in; hover takes precedence while pointing.
   Block-level controls (incl. ones wrapping a whole table) frame their full span.
+- **Responsive compact ribbon + scrollable tab strip.** The ribbon now adapts to a
+  narrow editor: a `ResizeObserver` on the editor root toggles a dense, single
+  horizontally-scrollable group row with hidden group labels below ~720px wide
+  (720 enter / 760 exit hysteresis). It keys off the editor's **own** width — so it
+  also compacts when embedded in a narrow pane on a wide page, not just on small
+  devices. The tab strip (`Home`/`Insert`/…) is now horizontally scrollable on
+  overflow (swipe, trackpad, or mouse-wheel-to-horizontal) while the mode-select /
+  Review / collapse-chevron cluster stays pinned at the right.
 - **Desktop app — `desktop/` Tauri v2 workspace.** WordCanvas can now ship as a
   native desktop application. The editor runs fully offline (no backend calls);
   all actions live in the ribbon — **Open `.docx`** uses the native OS file picker
