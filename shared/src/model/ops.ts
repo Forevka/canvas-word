@@ -20,6 +20,7 @@ import type {
   TableRow,
 } from "./document";
 import { BAND_CONTAINERS } from "./document";
+import { sdtPathEq } from "./sdt";
 import { DEFAULT_CHAR_STYLE } from "./defaults";
 import type { DocPosition } from "./position";
 import {
@@ -126,7 +127,7 @@ export function styleEq(a: CharStyle, b: CharStyle): boolean {
     a.verticalAlign === b.verticalAlign &&
     a.link === b.link &&
     a.footnoteRef === b.footnoteRef && // adjacent refs must never merge into one run
-    a.sdtId === b.sdtId && // content-control boundaries survive normalization
+    sdtPathEq(a.sdtPath, b.sdtPath) && // content-control boundaries (incl. nesting) survive normalization
     a.fieldId === b.fieldId // inline-field boundaries survive normalization
   );
 }

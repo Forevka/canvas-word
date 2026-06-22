@@ -7,7 +7,8 @@ import { buildTocParagraphs, buildTocInstruction, buildInstruction, evaluateFiel
 import type { BookmarkRange, DocPosition, DocSelection, GridRect } from "@cw/shared";
 import { isCollapsed, BAND_CONTAINERS } from "@cw/shared";
 import type { ImagePropsPatch, Op, SectionGeometry } from "@cw/shared";
-import { sliceRuns, applyStylePatchToRuns, mapTextInRuns, containerOf, containerBlocks, containerListOf, locateImage, freshId } from "@cw/shared";
+import { sliceRuns, applyStylePatchToRuns, mapTextInRuns, splitRunsAt, normalizeRuns, containerOf, containerBlocks, containerListOf, locateImage, freshId } from "@cw/shared";
+import { inSdt, innermostSdtId, pushSdt, removeSdt, ancestryThrough } from "@cw/shared";
 import { buildTableGrid, cellsInRect, gridOriginOfCell, mergeRows, normalizeRect, rebuildRows, unmergeRows } from "@cw/shared";
 import type { CellSelection } from "./state";
 import {
@@ -822,9 +823,10 @@ export function replaceFieldResultCmd(fieldId: string, blocks: Block[]): Command
 }
 
 // ---------------------------------------------------------------------------
-// Content controls (OOXML w:sdt) — contiguous runs sharing a CharStyle.sdtId
-// form one inline control; properties live in Document.sdts. Placeholder text
-// is gray and replaced WHOLE on first input (Word).
+// Content controls (OOXML w:sdt) — runs sharing a CharStyle.sdtPath form one
+// inline control (nested controls share a path PREFIX); block-level controls live
+// on Block.sdtPath. Properties live in Document.sdts. Placeholder text is gray and
+// replaced WHOLE on first input (Word).
 
 export interface SdtRange {
   blockId: string;
@@ -832,14 +834,29 @@ export interface SdtRange {
   end: number;
 }
 
-/** Every contiguous run span carrying this sdtId, document order. */
+/** Re-style runs in [start,end) via `fn` (others pass through), splitting and
+ *  renormalizing. Used to add/remove a single sdt id on a sub-range when a
+ *  uniform patch won't do (each run's path is transformed independently). */
+function mapRunStylesInRange(runs: Run[], start: number, end: number, fn: (s: CharStyle) => CharStyle): Run[] {
+  const [head, fromStart] = splitRunsAt(runs, start);
+  const [middle, tail] = splitRunsAt(fromStart, end - start);
+  const styled = middle.map((r) => ({ text: r.text, style: fn(r.style) }));
+  const fallback = styled[0]?.style ?? head[0]?.style ?? tail[0]?.style ?? runs[0]?.style ?? DEFAULT_CELL_CHAR;
+  return normalizeRuns([...head, ...styled, ...tail], fallback);
+}
+
+/** Every contiguous span belonging to control `id`, document order. Membership is
+ *  path-aware: a run whose inline `sdtPath` contains `id` (at any nesting level),
+ *  or a run in a block whose block-level `sdtPath` contains `id` (whole-paragraph
+ *  block control). */
 export function findSdtRanges(doc: EditorState["doc"], id: string): SdtRange[] {
   const out: SdtRange[] = [];
   for (const p of paragraphsOf(doc)) {
+    const blockMember = p.sdtPath?.includes(id) ?? false;
     let off = 0;
     let open: SdtRange | null = null;
     for (const r of p.runs) {
-      if (r.style.sdtId === id) {
+      if (blockMember || inSdt(r.style, id)) {
         if (open) open.end = off + r.text.length;
         else open = { blockId: p.id, start: off, end: off + r.text.length };
       } else if (open) {
@@ -865,16 +882,48 @@ export function sdtAtPosition(doc: EditorState["doc"], pos: DocPosition): string
   let after: string | null = null;
   for (const r of block.runs) {
     const end = off + r.text.length;
-    if (pos.offset > off && pos.offset <= end) before = r.style.sdtId ?? null;
-    if (pos.offset >= off && pos.offset < end) after = r.style.sdtId ?? null;
+    if (pos.offset > off && pos.offset <= end) before = innermostSdtId(r.style) ?? null;
+    if (pos.offset >= off && pos.offset < end) after = innermostSdtId(r.style) ?? null;
     off = end;
   }
   const direct = after ?? before;
   if (direct) return direct;
+  // No inline control on the runs — a block-level control wrapping this paragraph?
+  if (block.sdtPath?.length) return block.sdtPath[block.sdtPath.length - 1]!;
   const loc = locateParagraph(doc, pos.blockId);
   if (loc?.kind !== "cell") return null;
   const table = containerBlocks(doc, loc.where)[loc.bi];
-  return table && table.kind === "table" ? dominantCellSdt(table) : null;
+  if (table?.kind !== "table") return null;
+  // A block-level control wrapping the whole table, else the dominant cell control.
+  if (table.sdtPath?.length) return table.sdtPath[table.sdtPath.length - 1]!;
+  return dominantCellSdt(table);
+}
+
+/** The full outer→inner content-control chain at a position: a containing table's
+ *  block-level controls (when the position is in a cell), then the paragraph's
+ *  block-level controls, then the run's inline controls. Empty when none. Drives
+ *  the nested-control adornment (frames + breadcrumb). */
+export function sdtStackAtPosition(doc: EditorState["doc"], pos: DocPosition): string[] {
+  const block = blockById(doc, pos.blockId);
+  if (!block) return [];
+  let before: string[] | undefined;
+  let after: string[] | undefined;
+  let off = 0;
+  for (const r of block.runs) {
+    const end = off + r.text.length;
+    if (pos.offset > off && pos.offset <= end) before = r.style.sdtPath;
+    if (pos.offset >= off && pos.offset < end) after = r.style.sdtPath;
+    off = end;
+  }
+  const inline = after ?? before ?? [];
+  const blockPath = block.sdtPath ?? [];
+  let tablePath: string[] = [];
+  const loc = locateParagraph(doc, pos.blockId);
+  if (loc?.kind === "cell") {
+    const table = containerBlocks(doc, loc.where)[loc.bi];
+    if (table?.kind === "table") tablePath = table.sdtPath ?? [];
+  }
+  return [...tablePath, ...blockPath, ...inline];
 }
 
 // Inline fields (OOXML complex field) — contiguous runs sharing a CharStyle.fieldId
@@ -990,7 +1039,8 @@ function dominantCellSdt(table: TableBlock): string | null {
     for (const cell of row.cells) {
       const ids = new Set<string>();
       for (const b of cell.blocks) {
-        if (b.kind === "paragraph") for (const r of b.runs) if (r.style.sdtId) ids.add(r.style.sdtId);
+        for (const bid of b.sdtPath ?? []) ids.add(bid);
+        if (b.kind === "paragraph") for (const r of b.runs) for (const sid of r.style.sdtPath ?? []) ids.add(sid);
       }
       for (const id of ids) cellsWith.set(id, (cellsWith.get(id) ?? 0) + 1);
     }
@@ -1040,7 +1090,8 @@ export function insertContentControl(type: SdtType, props: Partial<SdtProps> = {
       ops.push({
         type: "setRuns",
         blockId: from.blockId,
-        runs: applyStylePatchToRuns(block.runs, from.offset, to.offset, { sdtId: id }),
+        // Append to any existing inline ancestry so wrapping inside another control nests.
+        runs: mapRunStylesInRange(block.runs, from.offset, to.offset, (s) => ({ ...s, sdtPath: pushSdt(s.sdtPath, id) })),
       });
       return tr(ops, sel, "command");
     }
@@ -1059,7 +1110,7 @@ export function insertContentControl(type: SdtType, props: Partial<SdtProps> = {
       style: {
         ...inherited,
         color: isCheckbox ? inherited.color : SDT_PLACEHOLDER_COLOR,
-        sdtId: id,
+        sdtPath: pushSdt(inherited.sdtPath, id),
         link: undefined,
         footnoteRef: undefined,
       },
@@ -1086,13 +1137,15 @@ export function setSdtContent(id: string, text: string, patch: Partial<SdtProps>
     const block = blockById(state.doc, range.blockId);
     if (!block) return null;
     const base = styleAtRuns(block.runs, range.start + 1) ?? DEFAULT_CELL_CHAR;
+    // Preserve the control's full ancestry up to and including `id`.
+    const path = ancestryThrough(base.sdtPath, id) ?? [id];
     const ops: Op[] = [
       { type: "deleteRange", blockId: range.blockId, start: range.start, end: range.end },
       {
         type: "insertText",
         at: { blockId: range.blockId, offset: range.start },
         text,
-        style: { ...base, color: props.placeholder ? "#202124" : base.color, sdtId: id },
+        style: { ...base, color: props.placeholder ? "#202124" : base.color, sdtPath: path },
       },
       { type: "setSdtProps", id, props: { ...props, ...patch, placeholder: false } },
     ];
@@ -1121,11 +1174,16 @@ export function replaceSdtContent(id: string, fragment: DocFragment): Command {
     if (!props || ranges.length === 0) return null;
     const first = ranges[0]!;
     const last = ranges[ranges.length - 1]!;
+    // The ancestry the replaced content must carry (through `id`), read from the
+    // control's existing first run.
+    const origBlock = blockById(state.doc, first.blockId);
+    const baseStyle = origBlock ? styleAtRuns(origBlock.runs, first.start + 1) : undefined;
+    const path = ancestryThrough(baseStyle?.sdtPath, id) ?? [id];
     const tagged: DocFragment = {
       inline: fragment.inline,
       blocks: fragment.blocks.map((b) => ({
         style: b.style,
-        runs: b.runs.map((r) => ({ text: r.text, style: { ...r.style, sdtId: id } })),
+        runs: b.runs.map((r) => ({ text: r.text, style: { ...r.style, sdtPath: path } })),
       })),
     };
     const spanState: EditorState = {
@@ -1169,21 +1227,22 @@ export function replaceSdtBlockSpan(id: string, blocks: Block[]): Command {
 
     const baseStyle: CharStyle =
       styleAtRuns((span[lo] as Paragraph).runs ?? [], ranges[0]!.start + 1) ?? DEFAULT_CELL_CHAR;
+    // Block-level control membership lives on Block.sdtPath; preserve ancestry through `id`.
+    const blockPath = ancestryThrough((span[lo] as Block).sdtPath, id) ?? [id];
     const taggedPara = (p: Paragraph): Paragraph => ({
       kind: "paragraph",
       id: freshBlockId(),
       revision: 0,
       style: p.style,
-      runs: (p.runs.length > 0 ? p.runs : [{ text: "", style: baseStyle }]).map((r) => ({
-        text: r.text,
-        style: { ...r.style, sdtId: id },
-      })),
+      // Runs keep their own inline sdt ancestry; the block carries the block-level path.
+      runs: p.runs.length > 0 ? p.runs.map((r) => ({ text: r.text, style: r.style })) : [{ text: "", style: baseStyle }],
+      sdtPath: blockPath,
     });
     const emptyTagged = (): Paragraph =>
       taggedPara({ kind: "paragraph", id: "", revision: 0, runs: [], style: (span[lo] as Paragraph).style });
 
     const fresh: Block[] = blocks.map((b) =>
-      b.kind === "paragraph" ? taggedPara(b) : b,
+      b.kind === "paragraph" ? taggedPara(b) : { ...b, sdtPath: blockPath },
     );
     // Guarantee tagged-paragraph bookends.
     if (fresh.length === 0 || fresh[0]!.kind !== "paragraph") fresh.unshift(emptyTagged());
@@ -1226,6 +1285,8 @@ export function replaceSdtCellContent(id: string, runsPerRange: Run[][]): Comman
         const provided = runsPerRange[idx];
         if (provided === undefined) continue; // untouched range
         const base = styleAtRuns(block.runs, r.start + 1) ?? styleAtRuns(block.runs, r.start) ?? DEFAULT_CELL_CHAR;
+        // Preserve the inline control's full ancestry up to and including `id`.
+        const path = ancestryThrough(base.sdtPath, id) ?? [id];
         // The inspector has no font UI, so typography (family/size/color) stays
         // the cell's own; only the inline toggles the user can flip (B/I/U via
         // contentEditable, links) ride over from the edited runs.
@@ -1240,11 +1301,11 @@ export function replaceSdtCellContent(id: string, runsPerRange: Run[][]): Comman
             verticalAlign: rn.style.verticalAlign,
             highlightColor: rn.style.highlightColor,
             link: rn.style.link,
-            sdtId: id,
+            sdtPath: path,
           },
         }));
         if (runs.length === 0 || runs.every((rn) => rn.text.length === 0)) {
-          runs = [{ text: "", style: { ...base, sdtId: id } }];
+          runs = [{ text: "", style: { ...base, sdtPath: path } }];
         }
         ops.push({ type: "deleteRange", blockId, start: r.start, end: r.end });
         ops.push({ type: "insertRuns", at: { blockId, offset: r.start }, runs });
@@ -1270,11 +1331,11 @@ export function removeContentControl(id: string, deleteContents: boolean): Comma
         ops.push({ type: "deleteRange", blockId: r.blockId, start: r.start, end: r.end });
       } else {
         const block = blockById(state.doc, r.blockId)!;
-        ops.push({
-          type: "setRuns",
-          blockId: r.blockId,
-          runs: applyStylePatchToRuns(block.runs, r.start, r.end, { sdtId: undefined }),
-        });
+        // Remove just THIS id from each run's path, preserving any outer/inner controls.
+        // (Removing a block-level control's Block.sdtPath interactively is a v1
+        // follow-up — block controls are import/inspector-driven.)
+        const runs = mapRunStylesInRange(block.runs, r.start, r.end, (s) => ({ ...s, sdtPath: removeSdt(s.sdtPath, id) }));
+        ops.push({ type: "setRuns", blockId: r.blockId, runs });
       }
     }
     ops.push({ type: "setSdtProps", id, props: null });

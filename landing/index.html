@@ -438,6 +438,8 @@ footer{padding:54px 0 40px; border-top:1px solid var(--line); margin-top:90px}
           <tr><th>Runtime dependencies</th><td class="us"><span class="yes">Zero</span></td><td>Several</td><td>Bundled suite</td><td>.NET stack</td></tr>
           <tr><th>DOCX import + export</th><td class="us">In-browser</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
           <tr><th>PDF export</th><td class="us">Page-accurate, in-browser</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+          <tr><th>Nested content controls</th><td class="us"><span class="yes">Any depth</span> — incl. fields inside</td><td class="no">Flat only</td><td class="no">Flat only</td><td class="no">Flat only</td></tr>
+          <tr><th>Word fields (PAGE/DATE/IF…)</th><td class="us">Editable objects, round-trip</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
           <tr><th>Server&nbsp;↔&nbsp;browser render parity</th><td class="us"><span class="yes">Pixel-identical</span> — same engine</td><td>Separate render path</td><td>Separate render path</td><td>Separate render path</td></tr>
           <tr><th>Live collaboration</th><td class="us">Built in (opt-in backend)</td><td>Add-on</td><td>Built in</td><td>Add-on</td></tr>
           <tr><th>Primary target</th><td class="us">Any JS app</td><td>Angular/React/Vue</td><td>Iframe / full suite</td><td>Blazor / .NET</td></tr>
@@ -505,6 +507,7 @@ editor.<span class="c-fn">on</span>(<span class="c-str">"ready"</span>, () =&gt;
       <div class="feat"><div class="ic">👥</div><h3>Live collaboration</h3><p>Opt-in backend adds multi-user editing, presence, carets, and one-click share links.</p></div>
       <div class="feat"><div class="ic">✍️</div><h3>Track changes &amp; comments</h3><p>Review workflows with suggestions and comment threads built into the editor.</p></div>
       <div class="feat"><div class="ic">📊</div><h3>Tables, fields, TOC &amp; styles</h3><p>Span-aware tables, PAGE/NUMPAGES/DATE fields, generated tables of contents, and a full style manager.</p></div>
+      <div class="feat"><div class="ic">🪆</div><h3>Nested content controls</h3><p>Content controls inside content controls — to any depth, with complex Word fields nested inside — round-trip through <code>.docx</code> intact. No other browser-native editor keeps the nesting; generated report section→field structure survives editing.</p></div>
       <div class="feat"><div class="ic">🖥️</div><h3>Headless on Node</h3><p>Build or import documents server-side and export to DOCX/PDF with no browser and no DOM.</p></div>
       <div class="feat"><div class="ic">👁️</div><h3>Read-only viewer mode</h3><p><code>readonly: true</code> mounts a selectable, copyable, find-enabled viewer with editing disabled.</p></div>
       <div class="feat"><div class="ic">🧱</div><h3>Multiple instances</h3><p>Class-scoped chrome means you can run several editors on one page, each mounted independently.</p></div>

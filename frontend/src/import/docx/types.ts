@@ -125,7 +125,7 @@ export interface IRRunProps {
 }
 
 /** w:sdtPr — content-control properties, decoded faithfully (mapToModel turns
- *  these into the model's SdtProps; runs inside the control carry the sdtId). */
+ *  these into the model's SdtProps; runs inside the control carry the sdtPath). */
 export interface IRSdtProps {
   type: "richText" | "plainText" | "checkbox" | "dropDown" | "comboBox" | "date";
   alias?: string;
@@ -140,7 +140,7 @@ export interface IRSdtProps {
 }
 
 export type IRInline =
-  | { kind: "run"; text: string; props: IRRunProps; sdtId?: string; fieldId?: string }
+  | { kind: "run"; text: string; props: IRRunProps; sdtPath?: string[]; fieldId?: string }
   /** w:br / w:cr — soft line break (model has none; mapToModel splits the
    *  paragraph). page=true for w:br w:type="page" (→ pageBreakBefore on the
    *  follower); column=true for w:br w:type="column" (→ columnBreakBefore). */
@@ -246,6 +246,8 @@ export interface IRParagraph {
   bookmarkMarkers?: BookmarkMarker[];
   /** Custom-field result membership — mapped onto Block.fieldId. */
   fieldId?: string;
+  /** Block-level content-control ancestry (outer→inner) — mapped onto Block.sdtPath. */
+  sdtPath?: string[];
   /** Set when this paragraph holds a `TOC` field — its verbatim instrText. Lets a
    *  headless render anchor a freshly-built TOC at this exact block (mapToModel
    *  records the resulting block id), instead of fragile ordinal counting. */
@@ -326,6 +328,8 @@ export interface IRTable {
   cellMarginTwips?: IRCellMargin;
   /** Custom-field result membership — mapped onto Block.fieldId. */
   fieldId?: string;
+  /** Block-level content-control ancestry (outer→inner) — mapped onto Block.sdtPath. */
+  sdtPath?: string[];
 }
 
 export type IRBlock = IRParagraph | IRTable;

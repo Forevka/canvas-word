@@ -210,7 +210,7 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     const sdts = (this.ctx.doc.sdts ??= {});
     const sid = this.ctx.ids.next();
     sdts[sid] = props;
-    return this.pushRun(this.ctx.run(text, { ...this.charPatch, ...style, sdtId: sid }));
+    return this.pushRun(this.ctx.run(text, { ...this.charPatch, ...style, sdtPath: [sid] }));
   }
 
   /** Insert any content control from its props. */

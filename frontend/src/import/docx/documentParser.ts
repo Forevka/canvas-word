@@ -37,6 +37,12 @@ interface ParseCtx {
    *  across body and band parts so ids never collide. */
   sdts: Record<string, IRSdtProps>;
   nextSdt: { n: number };
+  /** Ids of the block-level w:sdt ancestors currently open (outer→inner), stamped
+   *  onto each block as `sdtPath`. */
+  blockSdtStack: string[];
+  /** Ids of the inline w:sdt ancestors currently open (outer→inner), snapshotted
+   *  onto each run created by `parseRun` as `sdtPath`. */
+  inlineSdtStack: string[];
   /** Bookmark names seen between paragraphs (block-level w:bookmarkStart),
    *  attached to the NEXT paragraph. */
   pendingBookmarks: string[];
@@ -104,7 +110,7 @@ export function parseDocumentXml(xmlText: string, partName: string, warnings: Wa
     throw new ImportError("MALFORMED_XML", `${partName} has no w:document/w:body root.`);
   }
   const sdts: Record<string, IRSdtProps> = {};
-  const ctx: ParseCtx = { warnings, fieldTokens: false, sdts, nextSdt: { n: 0 }, pendingBookmarks: [], currentBookmarks: null, pendingMarkers: [], currentMarkers: null, trackFields: true, fieldTrack: newFieldTrack() };
+  const ctx: ParseCtx = { warnings, fieldTokens: false, sdts, nextSdt: { n: 0 }, blockSdtStack: [], inlineSdtStack: [], pendingBookmarks: [], currentBookmarks: null, pendingMarkers: [], currentMarkers: null, trackFields: true, fieldTrack: newFieldTrack() };
 
   const blocks: IRBlock[] = [];
   walkBlocks(children(body), blocks, ctx);
@@ -137,7 +143,7 @@ export function parseHeaderFooterXml(
   if (!root) {
     throw new ImportError("MALFORMED_XML", `${partName} has no w:hdr/w:ftr root.`);
   }
-  const ctx: ParseCtx = { warnings, fieldTokens: true, sdts, nextSdt: { n: Object.keys(sdts).length }, pendingBookmarks: [], currentBookmarks: null, pendingMarkers: [], currentMarkers: null, trackFields: false, fieldTrack: newFieldTrack() };
+  const ctx: ParseCtx = { warnings, fieldTokens: true, sdts, nextSdt: { n: Object.keys(sdts).length }, blockSdtStack: [], inlineSdtStack: [], pendingBookmarks: [], currentBookmarks: null, pendingMarkers: [], currentMarkers: null, trackFields: false, fieldTrack: newFieldTrack() };
   const blocks: IRBlock[] = [];
   walkBlocks(children(root), blocks, ctx);
   return blocks;
@@ -161,12 +167,14 @@ function walkBlocks(nodes: XmlNode[], out: IRBlock[], ctx: ParseCtx): void {
       case "w:p": {
         const p = parseParagraph(node, ctx);
         if (ctx.trackFields && ctx.fieldTrack.markBlock) p.fieldId = ctx.fieldTrack.markBlock;
+        if (ctx.blockSdtStack.length) p.sdtPath = [...ctx.blockSdtStack];
         out.push(p);
         break;
       }
       case "w:tbl": {
         const t = parseTable(node, ctx);
         if (ctx.trackFields && ctx.fieldTrack.markBlock) t.fieldId = ctx.fieldTrack.markBlock;
+        if (ctx.blockSdtStack.length) t.sdtPath = [...ctx.blockSdtStack];
         out.push(t);
         break;
       }
@@ -180,12 +188,14 @@ function walkBlocks(nodes: XmlNode[], out: IRBlock[], ctx: ParseCtx): void {
           walkBlocks(children(content), out, ctx);
           break;
         }
+        // Block-level control: push its id so contained blocks carry it as part of
+        // their sdtPath ancestry (supports nesting). Inner blocks are stamped at
+        // their own w:p/w:tbl emit sites above.
         const sdtId = `sdt${ctx.nextSdt.n++}`;
         ctx.sdts[sdtId] = props;
-        const inner: IRBlock[] = [];
-        walkBlocks(children(content), inner, ctx);
-        for (const b of inner) tagBlockSdt(b, sdtId);
-        out.push(...inner);
+        ctx.blockSdtStack.push(sdtId);
+        walkBlocks(children(content), out, ctx);
+        ctx.blockSdtStack.pop();
         break;
       }
       case "w:bookmarkStart": {
@@ -323,14 +333,13 @@ function walkInlines(nodes: XmlNode[], out: IRInline[], ctx: ParseCtx, field: Fi
           walkInlines(children(content), out, ctx, field);
           break;
         }
+        // Inline control: push its id so runs created inside (via parseRun) carry
+        // it on their sdtPath ancestry — recursion handles inline-in-inline nesting.
         const sdtId = `sdt${ctx.nextSdt.n++}`;
         ctx.sdts[sdtId] = props;
-        const inner: IRInline[] = [];
-        walkInlines(children(content), inner, ctx, field);
-        for (const inline of inner) {
-          if (inline.kind === "run") inline.sdtId = sdtId;
-        }
-        out.push(...inner);
+        ctx.inlineSdtStack.push(sdtId);
+        walkInlines(children(content), out, ctx, field);
+        ctx.inlineSdtStack.pop();
         break;
       }
       case "w:fldSimple": {
@@ -382,6 +391,9 @@ function firstRunProps(container: XmlNode): IRRunProps {
 function parseRun(r: XmlNode, out: IRInline[], ctx: ParseCtx, field: FieldState): void {
   const rPr = el(r, "w:rPr");
   const props = rPr ? decodeRunProps(rPr) : {};
+  // Snapshot the open inline-control ancestry onto every run this w:r produces.
+  const startIdx = out.length;
+  const sdtPath = ctx.inlineSdtStack.length ? [...ctx.inlineSdtStack] : undefined;
   let text = "";
   const flush = (): void => {
     if (text.length > 0) {
@@ -480,6 +492,12 @@ function parseRun(r: XmlNode, out: IRInline[], ctx: ParseCtx, field: FieldState)
   };
   walkContent(children(r));
   flush();
+  if (sdtPath) {
+    for (let i = startIdx; i < out.length; i++) {
+      const inl = out[i]!;
+      if (inl.kind === "run") inl.sdtPath = sdtPath;
+    }
+  }
 }
 
 function handleFldChar(
@@ -737,7 +755,14 @@ function parseCell(tc: XmlNode, ctx: ParseCtx): IRTableCell {
   const vMergeContinue = !!vMerge && (attr(vMerge, "w:val") ?? "continue") === "continue";
 
   const blocks: IRBlock[] = [];
+  // Cell content is a fresh block container: any block-level control wrapping the
+  // TABLE is carried on the table block itself, so cell blocks must NOT re-inherit
+  // it (that would re-wrap every cell on export). Block controls opened INSIDE the
+  // cell still nest normally on this reset stack.
+  const savedBlockStack = ctx.blockSdtStack;
+  ctx.blockSdtStack = [];
   walkBlocks(children(tc), blocks, ctx);
+  ctx.blockSdtStack = savedBlockStack;
   const cell: IRTableCell = { blocks, gridSpan, vMergeContinue };
   if (tcPr) {
     if (el(tcPr, "w:tcBorders")) cell.bordersSpecified = true;
@@ -794,20 +819,6 @@ function parseSdtPr(pr: XmlNode | undefined): IRSdtProps | null {
   if (lockVal === "contentLocked" || lockVal === "sdtContentLocked") props.lockContent = true;
   if (lockVal === "sdtLocked" || lockVal === "sdtContentLocked") props.lockControl = true;
   return props;
-}
-
-/** Block-level control: every run in the wrapped paragraphs (including table
- *  cell paragraphs) joins the control. */
-function tagBlockSdt(block: IRBlock, sdtId: string): void {
-  if (block.kind === "paragraph") {
-    for (const inline of block.inlines) {
-      if (inline.kind === "run" && inline.sdtId === undefined) inline.sdtId = sdtId;
-    }
-    return;
-  }
-  for (const row of block.rows) {
-    for (const cell of row.cells) for (const b of cell.blocks) tagBlockSdt(b, sdtId);
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -926,6 +937,8 @@ export function parseFootnotesXml(
     fieldTokens: false,
     sdts,
     nextSdt: { n: Object.keys(sdts).length },
+    blockSdtStack: [],
+    inlineSdtStack: [],
     pendingBookmarks: [],
     currentBookmarks: null,
     pendingMarkers: [],

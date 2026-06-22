@@ -21,25 +21,23 @@ function summarizeSdts(doc, label) {
                : (parsed?.Name ? `SECTION[${parsed.Name}]` : 'OTHER');
     console.log(`  ${id}: alias=${JSON.stringify(props.alias)} -> ${kind}`);
   }
-  // run-level membership: which sdtId does each run carry, and its text
-  const membership = {};
+  // run-level membership: full enclosing chain = block.sdtPath ++ run.style.sdtPath
   const runLog = [];
-  const walkBlocks = (blocks) => {
+  const walkBlocks = (blocks, blockPath = []) => {
     for (const b of blocks ?? []) {
+      const bp = b.sdtPath ?? blockPath;
       if (b.kind === 'paragraph') {
         for (const r of b.runs ?? []) {
-          const sid = r.style?.sdtId ?? '(none)';
-          membership[sid] = (membership[sid] ?? 0) + (r.text?.length ?? 0);
-          if (r.text?.trim()) runLog.push(`    "${r.text}" -> sdtId=${sid}`);
+          const chain = [...bp, ...(r.style?.sdtPath ?? [])];
+          if (r.text?.trim()) runLog.push(`    "${r.text}" -> [${chain.join(' > ')}]`);
         }
       } else if (b.kind === 'table') {
-        for (const row of b.rows ?? []) for (const cell of row.cells ?? []) walkBlocks(cell.blocks);
+        for (const row of b.rows ?? []) for (const cell of row.cells ?? []) walkBlocks(cell.blocks, bp);
       }
     }
   };
   walkBlocks(doc.blocks);
-  console.log('  run sdtId membership (sdtId -> chars):', JSON.stringify(membership));
-  console.log('  per-run sdtId:');
+  console.log('  per-run enclosing control chain (outer > inner):');
   console.log(runLog.join('\n'));
 }
 
@@ -65,7 +63,7 @@ let edited = 0;
 const editRuns = (blocks) => {
   for (const b of blocks ?? []) {
     if (b.kind === 'paragraph') {
-      for (const r of b.runs ?? []) if (r.style?.sdtId === editTargetSdt) { r.text = '$300.00'; edited++; }
+      for (const r of b.runs ?? []) if (r.style?.sdtPath?.includes(editTargetSdt)) { r.text = '$300.00'; edited++; }
     } else if (b.kind === 'table') {
       for (const row of b.rows ?? []) for (const cell of row.cells ?? []) editRuns(cell.blocks);
     }
@@ -81,7 +79,7 @@ const doc3 = imp3.doc ?? imp3;
 const feeId = Object.entries(doc3.sdts).find(([,p]) => p.alias === 'Appraisal Fee')?.[0];
 let feeText = '';
 const collect = (blocks) => { for (const b of blocks ?? []) {
-  if (b.kind === 'paragraph') for (const r of b.runs ?? []) { if (r.style?.sdtId === feeId) feeText += r.text; }
+  if (b.kind === 'paragraph') for (const r of b.runs ?? []) { if (r.style?.sdtPath?.includes(feeId)) feeText += r.text; }
   else if (b.kind === 'table') for (const row of b.rows ?? []) for (const cell of row.cells ?? []) collect(cell.blocks);
 }};
 collect(doc3.blocks);

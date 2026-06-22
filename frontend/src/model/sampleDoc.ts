@@ -40,12 +40,15 @@ const ifField = (a: string, op: "=" | "<>" | "<" | ">" | "<=" | ">=", b: string,
 };
 
 let sdtN = 0;
-/** An inline content control: an sdtId-tagged run + registered SdtProps. */
-const sdtRun = (props: SdtProps, text: string, patch: Partial<CharStyle> = {}): Run => {
+/** Register a content control's props and return its id (for nesting / block-level use). */
+const sdtId = (props: SdtProps): string => {
   const sid = `sdt${sdtN++}`;
   sdts[sid] = props;
-  return { text, style: { ...BODY, ...patch, sdtId: sid } };
+  return sid;
 };
+/** An inline content control: an sdtPath-tagged run + registered SdtProps. */
+const sdtRun = (props: SdtProps, text: string, patch: Partial<CharStyle> = {}): Run =>
+  ({ text, style: { ...BODY, ...patch, sdtPath: [sdtId(props)] } });
 
 const heading = (text: string, level: 1 | 2 | 3): Paragraph => {
   const h = para([run(text, { bold: true, fontSizePx: level === 1 ? 24 : level === 2 ? 19 : 16, color: "#1a1a2e" })], {
@@ -126,6 +129,38 @@ export function sampleDoc(): Document {
     run("."),
   ]);
 
+  // Nested controls: an outer control wrapping an inner one (runs share a path
+  // prefix). And a block-level "section" control wrapping a whole paragraph + a
+  // table whose value cell holds its own inner control (the report-style pattern).
+  const ccOuter = sdtId({ type: "richText", alias: "Outer control" });
+  const ccInner = sdtId({ type: "richText", alias: "Inner control" });
+  const ccNestedPara = para([
+    run("Controls can also nest: here an "),
+    run("outer control wraps ", { sdtPath: [ccOuter] }),
+    run("an inner control", { sdtPath: [ccOuter, ccInner] }),
+    run(" and trailing text", { sdtPath: [ccOuter] }),
+    run("."),
+  ]);
+
+  const ccSection = sdtId({ type: "richText", alias: "Section (block-level control)" });
+  const ccFee = sdtId({ type: "richText", alias: "Appraisal Fee" });
+  const ccSectionIntro: Paragraph = {
+    ...para([run("A block-level control can wrap whole paragraphs and tables — this paragraph and the table below are one control, with an inner control around just the value:")], { spaceAfterPx: 6 }),
+    sdtPath: [ccSection],
+  };
+  const ccSectionTable: TableBlock = {
+    kind: "table", id: id(), revision: 0, sdtPath: [ccSection],
+    rows: [
+      { cells: [cell("Field", { bold: true }), cell("Value", { bold: true })] },
+      {
+        cells: [
+          cell("Appraisal Fee", {}),
+          { id: id(), blocks: [cellPara("", {}, [run("$200.00", { fontSizePx: 14, sdtPath: [ccFee] })])] },
+        ],
+      },
+    ],
+  };
+
   const tablesHeading = heading("Tables", 1);
   const fieldInCellTable: TableBlock = {
     kind: "table", id: id(), revision: 0,
@@ -154,6 +189,9 @@ export function sampleDoc(): Document {
 
     ccHeading,
     ccPara,
+    ccNestedPara,
+    ccSectionIntro,
+    ccSectionTable,
 
     tablesHeading,
     para([run("Merged cells (column- and row-spanning), shading and borders:")], { spaceAfterPx: 6 }),

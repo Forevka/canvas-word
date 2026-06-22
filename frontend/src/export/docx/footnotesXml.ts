@@ -3,7 +3,7 @@
 // <docxId>, matching the w:footnoteReference written into the document.
 
 import type { Paragraph } from "@cw/shared";
-import { blockXml, type PartCtx } from "./documentXml";
+import { emitBlocks, type PartCtx } from "./documentXml";
 import { el, WML_NS, XML_DECL } from "./xmlWrite";
 
 export function footnotesXml(footnotes: Record<string, Paragraph[]>, ctx: PartCtx): string {
@@ -13,7 +13,7 @@ export function footnotesXml(footnotes: Record<string, Paragraph[]>, ctx: PartCt
   const notes = Object.entries(footnotes)
     .map(([noteId, paras]) => {
       const docxId = noteId.replace(/^fn/, "");
-      const body = paras.length > 0 ? paras.map((p) => blockXml(p, ctx)).join("") : el("w:p");
+      const body = paras.length > 0 ? emitBlocks(paras, 0, ctx) : el("w:p");
       return el("w:footnote", { "w:id": docxId }, body);
     })
     .join("");

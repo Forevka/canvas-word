@@ -355,6 +355,9 @@ export function createMapper(
       // fieldId onto every model block it produced (a paragraph may split).
       if (irBlock.fieldId) for (const b of mapped) b.fieldId = irBlock.fieldId;
 
+      // Block-level content-control ancestry: stamp every produced model block.
+      if (irBlock.sdtPath) for (const b of mapped) b.sdtPath = irBlock.sdtPath;
+
       // TOC field anchor: record the real model block (first one this paragraph
       // produced) so a headless render places the built TOC exactly here.
       if (irBlock.kind === "paragraph" && irBlock.tocField !== undefined && tocAnchor === undefined) {
@@ -547,7 +550,7 @@ export function createMapper(
           // Hidden text (w:vanish) is PRESERVED with style.hidden (set via
           // applyRunProps) — never displayed, never caret-reachable, protected
           // from deletion — so a round-trip re-emits it instead of losing it.
-          runs.push(mapRun(inline.text, effective, resolveLink, inline.sdtId, inline.fieldId));
+          runs.push(mapRun(inline.text, effective, resolveLink, inline.sdtPath, inline.fieldId));
           trailingBreak = false;
           break;
         }
@@ -629,7 +632,7 @@ export function createMapper(
     return image;
   }
 
-  function mapRun(rawText: string, effective: IRRunProps, resolveLink: LinkResolver, sdtId?: string, fieldId?: string): Run {
+  function mapRun(rawText: string, effective: IRRunProps, resolveLink: LinkResolver, sdtPath?: string[], fieldId?: string): Run {
     // "\t" is preserved — the layout engine positions it at the paragraph's tab
     // stops (or the default interval); no flattening to spaces.
     let text = rawText;
@@ -648,11 +651,12 @@ export function createMapper(
       style.footnoteRef = `fn${effective.footnoteId}`;
       style.verticalAlign = "super";
     }
-    if (sdtId) {
-      style.sdtId = sdtId;
-      const sdt = sdts[sdtId];
+    if (sdtPath && sdtPath.length > 0) {
+      style.sdtPath = sdtPath;
       // Checkbox glyphs arrive in symbol fonts (MS Gothic / Wingdings private
-      // chars) — normalize to the Unicode glyphs the editor toggles between.
+      // chars) — normalize to the Unicode glyphs the editor toggles between. A
+      // checkbox is always a leaf control, so key on the innermost id.
+      const sdt = sdts[sdtPath[sdtPath.length - 1]!];
       if (sdt?.type === "checkbox" && text.length > 0) {
         text = sdt.checked ? "☒" : "☐";
         style.fontFamily = DEFAULT_CHAR.fontFamily;
@@ -709,8 +713,13 @@ export function createMapper(
     const buildCell = (irCell: IRTableCell): TableCell => {
       const blocks: Block[] = [];
       for (const b of irCell.blocks) {
-        if (b.kind === "paragraph") blocks.push(...mapParagraph(b, media, resolveLink));
-        else blocks.push(mapTable(b, media, resolveLink)); // nested table — model renders one level
+        const mapped =
+          b.kind === "paragraph"
+            ? mapParagraph(b, media, resolveLink)
+            : [mapTable(b, media, resolveLink)]; // nested table — model renders one level
+        // Block-level control inside a cell: stamp every produced model block.
+        if (b.sdtPath) for (const mb of mapped) mb.sdtPath = b.sdtPath;
+        blocks.push(...mapped);
       }
       const cell: TableCell = { id: id(), blocks: blocks.length > 0 ? blocks : [emptyParagraph()] };
       if (irCell.gridSpan > 1) cell.colSpan = irCell.gridSpan;

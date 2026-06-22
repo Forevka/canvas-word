@@ -23,8 +23,10 @@ export interface CharStyle {
   link?: string | undefined;
   /** Footnote reference id — this run is the marker. */
   footnoteRef?: string | undefined;
-  /** Content-control membership (properties live in Document.sdts). */
-  sdtId?: string | undefined;
+  /** Inline content-control ancestry, outer→inner (properties live in
+   *  Document.sdts). Runs sharing a path prefix are nested in the same outer
+   *  control(s); block-level controls use Block.sdtPath. */
+  sdtPath?: string[] | undefined;
   /** Character-style reference (w:rStyle → a type==="character" NamedStyle).
    *  Reference only — concrete formatting stays baked on the run. */
   charStyleId?: string | undefined;
@@ -264,7 +266,7 @@ export interface Document {
   tableStyles?: Record<string, TableStyle>;
   /** Footnote bodies keyed by ref id. */
   footnotes?: Record<string, Paragraph[]>;
-  /** Content-control properties keyed by sdtId. */
+  /** Content-control properties keyed by sdt id (runs/blocks carry membership via sdtPath). */
   sdts?: Record<string, SdtProps>;
   /** Bookmark name → character range. */
   bookmarks?: Record<string, BookmarkRange>;

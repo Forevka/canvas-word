@@ -82,6 +82,7 @@ import {
   replaceSdtBlockSpan,
   replaceSdtCellContent,
   sdtAtPosition,
+  sdtStackAtPosition,
   setAlignment,
   setCharStyle as setCharStyleCmd,
   setImageProps,
@@ -380,10 +381,22 @@ async function fieldResultToBlocks(result: FieldResult): Promise<Block[]> {
  *  commit (replaceSdt*) re-applies the marker, re-wrapping the whole result. */
 function stripSdtMarker(blocks: Block[], sdtId: string): Block[] {
   const clone = structuredClone(blocks);
+  const strip = (path: string[] | undefined): string[] | undefined => {
+    if (!path) return undefined;
+    const next = path.filter((x) => x !== sdtId);
+    return next.length > 0 ? next : undefined;
+  };
   const walk = (bs: Block[]): void => {
     for (const b of bs) {
+      const bp = strip(b.sdtPath);
+      if (bp) b.sdtPath = bp;
+      else delete b.sdtPath;
       if (b.kind === "paragraph") {
-        for (const r of b.runs) if (r.style.sdtId === sdtId) delete r.style.sdtId;
+        for (const r of b.runs) {
+          const rp = strip(r.style.sdtPath);
+          if (rp) r.style.sdtPath = rp;
+          else delete r.style.sdtPath;
+        }
       } else if (b.kind === "table") {
         for (const row of b.rows) for (const c of row.cells) walk(c.blocks);
       }
@@ -472,26 +485,9 @@ export function createEditor(
    *  inline control leaves partial coverage. So "every range is whole-paragraph"
    *  means block-level; a cell paragraph's range maps back to its top-level table
    *  via locateParagraph, letting an SDT that wraps a heading + table be framed. */
-  const blockLevelSdtRects = (id: string): Rect[] | null => {
-    const ranges = findSdtRanges(doc, id);
-    if (ranges.length === 0) return null;
-    const paraLen = new Map<string, number>();
-    for (const p of paragraphsOf(doc)) paraLen.set(p.id, textOfRuns(p.runs).length);
-    let minIdx = Infinity;
-    let maxIdx = -Infinity;
-    for (const r of ranges) {
-      const len = paraLen.get(r.blockId);
-      if (len === undefined || r.start > 0 || r.end < len) return null; // partial ⇒ inline
-      const loc = locateParagraph(doc, r.blockId);
-      // Body only: a top-level paragraph, or a cell paragraph whose table is the
-      // top-level block (loc.bi). Bands/footnotes can't hold the caret here.
-      if (!loc || (loc.kind !== "top" && !(loc.kind === "cell" && loc.where === "body"))) return null;
-      minIdx = Math.min(minIdx, loc.bi);
-      maxIdx = Math.max(maxIdx, loc.bi);
-    }
-    if (!Number.isFinite(minIdx)) return null;
-    const ids = new Set(containerBlocks(doc, "body").slice(minIdx, maxIdx + 1).map((b) => b.id));
-    // Union the span's blocks' vertical extent per page (a span can break pages).
+  /** Union the vertical extent of a set of top-level body blocks into one framed
+   *  box per page (a span can break across pages). */
+  const boxRectsForBlockIds = (ids: Set<string>): Rect[] => {
     const byPage = new Map<number, { top: number; bot: number; page: Page }>();
     for (const page of tree.pages) {
       for (const pb of page.blocks) {
@@ -504,42 +500,80 @@ export function createEditor(
         } else byPage.set(page.index, { top: t, bot: b, page });
       }
     }
-    if (byPage.size === 0) return null;
     const rects: Rect[] = [];
     for (const { top, bot, page } of byPage.values()) {
-      rects.push({
-        pageIndex: page.index,
-        x: page.marginPx.left,
-        y: top,
-        width: page.widthPx - page.marginPx.left - page.marginPx.right,
-        height: bot - top,
-      });
+      rects.push({ pageIndex: page.index, x: page.marginPx.left, y: top, width: page.widthPx - page.marginPx.left - page.marginPx.right, height: bot - top });
     }
     return rects;
   };
 
-  /** Word's active-control chrome: gray frame + title tab around the control
-   *  containing the caret. Cleared when the caret leaves. */
-  const updateSdtAdornment = (): void => {
-    const focus = selection?.focus;
-    const id = focus ? sdtAtPosition(doc, focus) : null;
-    const props = id ? doc.sdts?.[id] : undefined;
-    if (!id || !props) {
-      paint.setSdtAdornment(null);
-      return;
-    }
-    // Block-level controls get a single bounding box (Word's boundingBox chrome);
-    // inline ones fall back to the text-shaped per-line rects.
+  const blockLevelSdtRects = (id: string): Rect[] | null => {
+    const body = containerBlocks(doc, "body");
+    // A control is block-level only when top-level body blocks (paragraph/table/
+    // image) carry its id on Block.sdtPath — then frame the whole contiguous span
+    // (incl. a wrapped table). Everything else — including an INLINE control that
+    // happens to fill a whole cell paragraph — is text-shaped: return null so the
+    // caller frames the run rects, not the containing block/table.
+    const blockIdxs: number[] = [];
+    body.forEach((b, i) => { if (b.sdtPath?.includes(id)) blockIdxs.push(i); });
+    if (blockIdxs.length === 0) return null;
+    const lo = Math.min(...blockIdxs);
+    const hi = Math.max(...blockIdxs);
+    const ids = new Set(body.slice(lo, hi + 1).map((b) => b.id));
+    const rects = boxRectsForBlockIds(ids);
+    return rects.length > 0 ? rects : null;
+  };
+
+  /** Frame + label for one control id: a single bounding box for block-level
+   *  controls (Word's boundingBox chrome), else text-shaped per-line rects. */
+  const sdtLayerFor = (id: string): { rects: Rect[]; label: string } | null => {
+    const props = doc.sdts?.[id];
+    if (!props) return null;
     const rects =
       blockLevelSdtRects(id) ??
       findSdtRanges(doc, id).flatMap((r) =>
-        selectionRects(
-          tree,
-          { anchor: { blockId: r.blockId, offset: r.start }, focus: { blockId: r.blockId, offset: r.end } },
-          scope(),
-        ),
+        selectionRects(tree, { anchor: { blockId: r.blockId, offset: r.start }, focus: { blockId: r.blockId, offset: r.end } }, scope()),
       );
-    paint.setSdtAdornment({ rects, label: props.alias ?? SDT_LABELS[props.type] ?? "Content control" });
+    if (rects.length === 0) return null;
+    return { rects, label: props.alias ?? SDT_LABELS[props.type] ?? "Content control" };
+  };
+
+  // Content-control chrome: an OUTER→INNER stack of frames (concentric, with a
+  // breadcrumb tab) for the nested controls under the caret OR the pointer. Hover
+  // takes precedence over the caret so the user can inspect any control by pointing.
+  let caretSdtChain: string[] = [];
+  let hoverSdtChain: string[] = [];
+  const sdtChainKey = (ids: string[]): string => ids.join(">");
+  const renderSdtAdornment = (): void => {
+    const chain = hoverSdtChain.length > 0 ? hoverSdtChain : caretSdtChain;
+    paint.setSdtAdornment(chain.length > 0 ? chain.map(sdtLayerFor).filter((l): l is { rects: Rect[]; label: string } => l !== null) : null);
+  };
+
+  /** Word's active-control chrome, recomputed from the caret. Cleared when the
+   *  caret leaves all controls (unless the pointer is hovering one). */
+  const updateSdtAdornment = (): void => {
+    const focus = selection?.focus;
+    caretSdtChain = focus ? sdtStackAtPosition(doc, focus) : [];
+    renderSdtAdornment();
+  };
+
+  let lastHoverKey = "";
+  /** Highlight the nested control chain under the pointer (skipped while dragging
+   *  or when an object is selected). */
+  const updateHoverAdornment = (clientX: number, clientY: number, buttons: number): void => {
+    let chain: string[] = [];
+    if (buttons === 0 && !selectedObject) {
+      const pt = paint.clientToPage(clientX, clientY);
+      if (pt && pt.inside) {
+        const pos = hitTest(tree, pt.pageIndex, pt.x, pt.y, scope());
+        if (pos) chain = sdtStackAtPosition(doc, pos);
+      }
+    }
+    const key = sdtChainKey(chain);
+    if (key === lastHoverKey) return;
+    lastHoverKey = key;
+    hoverSdtChain = chain;
+    renderSdtAdornment();
   };
 
   /** Block-region field (contiguous top-level blocks sharing Block.fieldId): one
@@ -2424,6 +2458,18 @@ export function createEditor(
   };
   container.addEventListener("contextmenu", onContextMenu);
 
+  // Hover highlighting for content controls (incl. nested) — point at any control
+  // to see its frame(s) and breadcrumb, without moving the caret.
+  const onSdtHoverMove = (ev: MouseEvent): void => updateHoverAdornment(ev.clientX, ev.clientY, ev.buttons);
+  const onSdtHoverLeave = (): void => {
+    if (hoverSdtChain.length === 0) return;
+    hoverSdtChain = [];
+    lastHoverKey = "";
+    renderSdtAdornment();
+  };
+  container.addEventListener("mousemove", onSdtHoverMove);
+  container.addEventListener("mouseleave", onSdtHoverLeave);
+
   const applyZoom = (next: number, anchorClientY?: number): void => {
     const before = paint.getZoom();
     paint.setZoom(next);
@@ -2733,6 +2779,8 @@ export function createEditor(
       tableProps?.close();
       container.removeEventListener("keydown", keymapHandler);
       container.removeEventListener("contextmenu", onContextMenu);
+      container.removeEventListener("mousemove", onSdtHoverMove);
+      container.removeEventListener("mouseleave", onSdtHoverLeave);
       if (vv) {
         vv.removeEventListener("resize", onViewportChange);
         vv.removeEventListener("scroll", onViewportChange);

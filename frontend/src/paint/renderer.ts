@@ -89,9 +89,10 @@ export interface PaintScheduler {
   setReviewDecorations(decos: ReviewDecorations): void;
   /** The comment thread whose margin pin is at a client point, or null. */
   reviewPinAt(clientX: number, clientY: number): string | null;
-  /** Content-control focus adornment: bounding boxes + a title tab (Word's
-   *  gray frame around the active control). Null clears. */
-  setSdtAdornment(adorn: { rects: Rect[]; label: string } | null): void;
+  /** Content-control adornment as an ordered OUTER→INNER stack of layers, so
+   *  nested controls render as concentric frames with a breadcrumb tab. A single
+   *  control is just a one-layer stack. Null/empty clears. */
+  setSdtAdornment(layers: { rects: Rect[]; label: string }[] | null): void;
   /** Inline/block FIELD focus adornment: gray field-shading fill + a labelled tab
    *  (Word's field highlight). Distinct from the SDT frame. Null clears. */
   setFieldAdornment(adorn: { rects: Rect[]; label: string } | null): void;
@@ -226,7 +227,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
   let selectionRects: Rect[] = [];
   let searchRects: Rect[] = [];
   let reviewDecos: ReviewDecorations = EMPTY_REVIEW_DECOS;
-  let sdtAdorn: { rects: Rect[]; label: string } | null = null;
+  let sdtAdorn: { rects: Rect[]; label: string }[] | null = null;
   let fieldAdorn: { rects: Rect[]; label: string } | null = null;
   let bandEditMode: "header" | "footer" | null = null;
 
@@ -500,24 +501,35 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     // control chrome). The tab text is UI chrome, not document text — measuring
     // it here doesn't violate the paint-never-measures-layout invariant.
     if (sdtAdorn) {
-      const onPage = sdtAdorn.rects.filter((r) => r.pageIndex === page.index);
-      ctx.strokeStyle = "#a8a8a8";
-      ctx.lineWidth = 1;
-      for (const r of onPage) {
-        ctx.strokeRect(r.x - 2.5, r.y - 1.5, r.width + 5, r.height + 3);
-      }
-      const first = onPage[0];
-      if (first && sdtAdorn.label) {
+      // Concentric frames, OUTER→INNER. Deeper controls draw darker and are inset
+      // a touch so nesting reads even when an inner control covers its outer whole.
+      sdtAdorn.forEach((layer, depth) => {
+        const onPage = layer.rects.filter((r) => r.pageIndex === page.index);
+        if (onPage.length === 0) return;
+        const pad = Math.max(0, 2.5 - depth * 1.5); // 2.5, 1.0, 0, …
+        const shade = Math.max(96, 168 - depth * 32); // 168, 136, 104, …
+        ctx.strokeStyle = `rgb(${shade},${shade},${shade})`;
+        ctx.lineWidth = 1;
+        for (const r of onPage) {
+          ctx.strokeRect(r.x - pad, r.y - pad + 1, Math.max(2, r.width + pad * 2), Math.max(2, r.height + pad * 2 - 2));
+        }
+      });
+      // One breadcrumb tab ("Outer › Inner"), anchored to the OUTERMOST layer's
+      // first rect, drawn only on the page where that control starts.
+      const outer = sdtAdorn[0]!;
+      const globalFirst = outer.rects[0];
+      if (globalFirst && globalFirst.pageIndex === page.index) {
+        const label = sdtAdorn.map((l) => l.label).join(" › ");
         ctx.font = ADORNMENT_LABEL_FONT;
-        const w = ctx.measureText(sdtAdorn.label).width + ADORNMENT_LABEL_PAD_X;
-        const tx = first.x - 2.5;
-        const ty = first.y - 1.5 - ADORNMENT_TAB_H;
+        const w = ctx.measureText(label).width + ADORNMENT_LABEL_PAD_X;
+        const tx = globalFirst.x - 2.5;
+        const ty = globalFirst.y - 1.5 - ADORNMENT_TAB_H;
         ctx.fillStyle = "#d8d8d8";
         ctx.beginPath();
         ctx.roundRect(tx, ty, w, ADORNMENT_TAB_H, [3, 3, 0, 0]);
         ctx.fill();
         ctx.fillStyle = "#3c4043";
-        ctx.fillText(sdtAdorn.label, tx + ADORNMENT_LABEL_OFFSET_X, ty + ADORNMENT_LABEL_OFFSET_Y);
+        ctx.fillText(label, tx + ADORNMENT_LABEL_OFFSET_X, ty + ADORNMENT_LABEL_OFFSET_Y);
       }
     }
 
@@ -906,9 +918,10 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       return best ? best.id : null;
     },
 
-    setSdtAdornment(adorn: { rects: Rect[]; label: string } | null): void {
-      const affected = new Set([...pagesOf(sdtAdorn?.rects ?? []), ...pagesOf(adorn?.rects ?? [])]);
-      sdtAdorn = adorn;
+    setSdtAdornment(layers: { rects: Rect[]; label: string }[] | null): void {
+      const flat = (ls: { rects: Rect[] }[] | null): Rect[] => (ls ?? []).flatMap((l) => l.rects);
+      const affected = new Set([...pagesOf(flat(sdtAdorn)), ...pagesOf(flat(layers))]);
+      sdtAdorn = layers && layers.length > 0 ? layers : null;
       for (const i of affected) if (liveCanvases.has(i)) dirty.add(i);
       schedule();
     },

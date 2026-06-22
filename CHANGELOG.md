@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Nested content controls (`w:sdt` inside `w:sdt`) now round-trip.** Content
+  controls can nest — an outer "section" control wrapping inner field controls,
+  inline-in-inline, block-in-block, inline-in-block, and a control wrapping a whole
+  table (with its own inner controls per cell). Import reconstructs the full
+  ancestry, export re-emits the nested `w:sdt` structure faithfully, and editing
+  inside an inner control preserves its outer ancestry. Previously nesting
+  collapsed to a single level and a multi-block/section control fragmented into
+  several controls on export. Complex Word fields (PAGE/DATE/IF…) nest inside
+  controls too — a field result inside nested controls keeps both its control
+  ancestry and its field membership across the round-trip. The default showcase
+  document now demonstrates this: an outer-wraps-inner inline control, plus a
+  block-level "section" control around a paragraph and a table whose value cell
+  holds its own inner control. No other browser-native Word editor preserves
+  nested content controls — generated C#/OOXML report section→field structure
+  survives an editor round-trip intact.
+- **Hover highlighting for content controls (including nested).** Pointing at a
+  control now frames it without moving the caret; nested controls draw as
+  concentric frames (outer→inner, depth-graded) with a single breadcrumb tab
+  (e.g. "Section › Appraisal Fee"), so the hierarchy is visible at a glance. The
+  caret still frames the control it sits in; hover takes precedence while pointing.
+  Block-level controls (incl. ones wrapping a whole table) frame their full span.
 - **Desktop app — `desktop/` Tauri v2 workspace.** WordCanvas can now ship as a
   native desktop application. The editor runs fully offline (no backend calls);
   all actions live in the ribbon — **Open `.docx`** uses the native OS file picker
@@ -20,6 +41,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unchanged. See `desktop/README.md`.
 
 ### Changed
+- **Content-control membership moved from a scalar `CharStyle.sdtId` to an ordered
+  `CharStyle.sdtPath` (plus block-level `Block.sdtPath`).** This is what enables
+  nesting: a run's controls are an outer→inner path, and a run's full enclosing
+  chain is `block.sdtPath ++ run.style.sdtPath`. **Behavior change, no migration
+  shim:** documents loaded from a `.docx` are unaffected (import populates
+  `sdtPath` directly). Old **persisted snapshots / op logs** written before this
+  change carried the legacy scalar `sdtId`, which is no longer read — their
+  content-control *membership* is dropped on load (the text is intact); re-import
+  from the source `.docx`, or re-save, to restore controls as `sdtPath`. Code
+  reading membership must use `sdtPath` / the `@cw/shared` sdt helpers
+  (`innermostSdtId`, `fullSdtChain`, …) instead of `style.sdtId`.
 - **Export shows a busy overlay while rendering.** The DOCX/PDF Export buttons now
   display an "Exporting…" overlay during the (potentially multi-second) render —
   matching the existing open-document overlay — so the editor no longer appears

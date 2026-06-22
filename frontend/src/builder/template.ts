@@ -55,8 +55,9 @@ function pruneBodyAnchored(doc: Document): void {
   const visit = (blocks: Block[] | undefined): void => {
     for (const b of blocks ?? []) {
       blockIds.add(b.id);
+      for (const id of b.sdtPath ?? []) sdtIds.add(id);
       if (b.kind === "paragraph") {
-        for (const r of b.runs) if (r.style.sdtId) sdtIds.add(r.style.sdtId);
+        for (const r of b.runs) for (const id of r.style.sdtPath ?? []) sdtIds.add(id);
       } else if (b.kind === "table") {
         for (const row of b.rows) for (const cell of row.cells) visit(cell.blocks);
       }

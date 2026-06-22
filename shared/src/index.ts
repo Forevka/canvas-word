@@ -12,6 +12,7 @@ export * from "./model/stylesheet";
 export * from "./model/lists";
 export * from "./model/tableStyles";
 export * from "./model/ops";
+export * from "./model/sdt";
 export * from "./model/tableGrid";
 
 // Collaboration foundations: unique ids, content-addressed media, document <->

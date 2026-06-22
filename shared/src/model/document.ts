@@ -26,15 +26,22 @@ export interface CharStyle {
    *  kept in sync by the insert command's renumber pass; typically also
    *  verticalAlign 'super'). Points into Document.footnotes. */
   footnoteRef?: string | undefined;
-  /** Content-control membership (OOXML w:sdt): contiguous runs sharing an
-   *  sdtId form one inline control; properties live in `Document.sdts`.
-   *  `| undefined` so removing a control can strip the marker. */
-  sdtId?: string | undefined;
+  /** Content-control membership (OOXML w:sdt) as an ORDERED ANCESTRY PATH,
+   *  outermost→innermost. Contiguous runs sharing the same path form one inline
+   *  control; runs sharing a path PREFIX are nested inside the same outer
+   *  control(s). Properties for every id on the path live in `Document.sdts`.
+   *  This is the INLINE chain only — block-level controls put their ids on
+   *  `Block.sdtPath`; a run's full enclosing chain is `block.sdtPath ++ sdtPath`.
+   *  Mirrors `fieldId`/`Block.fieldId`; an invisible flat marker — no layout
+   *  effect. Treat the array as IMMUTABLE (always replace, never mutate in
+   *  place — shallow `{...style}` copies alias it). `| undefined` (never `[]`)
+   *  so removing the last control strips the marker. */
+  sdtPath?: string[] | undefined;
   /** Inline-field membership (OOXML complex field): contiguous runs sharing a
    *  fieldId are one inline field's RESULT (e.g. PAGE, DATE, IF); the definition
    *  lives in `Document.fields`. The marker is what distinguishes a real field
    *  result from literal text (e.g. a `{page}` token a user merely typed).
-   *  `| undefined` so removing a field can strip the marker. Mirrors `sdtId`;
+   *  `| undefined` so removing a field can strip the marker. Mirrors `sdtPath`;
    *  block-level fields use `Block.fieldId` instead. */
   fieldId?: string | undefined;
   /** Character-style reference (OOXML w:rStyle → a type==="character" NamedStyle).
@@ -140,9 +147,16 @@ export interface Paragraph {
   /** Membership in a generic field's result region (see Document.fields). A
    *  contiguous run of blocks sharing a fieldId IS the field's result; export
    *  wraps them in the field's begin/instrText/separate…end. Absent = ordinary
-   *  content. Like `tocEntry`/run `sdtId`, an invisible flat marker — no layout
+   *  content. Like `tocEntry`/run `sdtPath`, an invisible flat marker — no layout
    *  effect. `| undefined` so an op can clear it. */
   fieldId?: string | undefined;
+  /** Block-level content-control ancestry (OOXML block-level w:sdt), outer→inner.
+   *  A contiguous run of blocks sharing this path is wrapped by the control(s);
+   *  this represents controls around whole paragraphs/tables (incl. run-less
+   *  blocks). Inline controls inside the block put their ids on the runs'
+   *  `CharStyle.sdtPath` instead. Mirrors `fieldId`; invisible marker. Treat as
+   *  IMMUTABLE. `| undefined` (never `[]`). */
+  sdtPath?: string[] | undefined;
 }
 
 export interface ImageBlock {
@@ -185,6 +199,8 @@ export interface ImageBlock {
   };
   /** Field result membership — see Paragraph.fieldId. */
   fieldId?: string | undefined;
+  /** Block-level content-control ancestry — see Paragraph.sdtPath. */
+  sdtPath?: string[] | undefined;
 }
 
 /** Cells hold Blocks: paragraphs (first-class editing targets, located through
@@ -273,6 +289,8 @@ export interface TableBlock {
   condOverrides?: TableCondOverrides;
   /** Field result membership — see Paragraph.fieldId. */
   fieldId?: string | undefined;
+  /** Block-level content-control ancestry — see Paragraph.sdtPath. */
+  sdtPath?: string[] | undefined;
 }
 
 export type Block = Paragraph | ImageBlock | TableBlock;
@@ -442,7 +460,9 @@ export interface Document {
    *  a paragraph story laid out in the page-bottom footnote area; notes render
    *  on whatever page their reference run lands on. */
   footnotes?: Record<string, Paragraph[]>;
-  /** Content-control properties keyed by sdtId (runs carry the membership). */
+  /** Content-control properties keyed by sdt id. Runs carry inline membership via
+   *  `CharStyle.sdtPath`; blocks carry block-level membership via `Block.sdtPath`.
+   *  Every id appearing on any path has an entry here. */
   sdts?: Record<string, SdtProps>;
   /** Bookmark name → its character RANGE (docx w:bookmarkStart/End). `start`/`end`
    *  are positions (block id + UTF-16 offset) that may span paragraphs; a point

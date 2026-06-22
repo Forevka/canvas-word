@@ -69,8 +69,12 @@ file-conversion endpoint, or a .NET backend) before the editor renders.
 This project is the open-source, browser-native option. It ships under MIT,
 paints to a `<canvas>` instead of leaning on `contenteditable`, carries zero
 runtime dependencies, and runs fully offline; a backend is optional and only
-buys live collaboration. The honest gaps versus the incumbents are RTL/complex
-scripts, bundled CJK fonts, and charts/equations (see Known limitations below).
+buys live collaboration. It also goes **past** the incumbents in one place that
+matters for generated reports: **nested content controls** (a w:sdt inside a
+w:sdt, to any depth — including complex Word fields nested inside them)
+round-trip faithfully, which the commercial editors flatten. The honest gaps
+versus the incumbents are RTL/complex scripts, bundled CJK fonts, and
+charts/equations (see Known limitations below).
 A full side-by-side writeup lives at
 [Best embeddable JS Word editors](https://forevka.dev/articles/best-embeddable-js-word-editors/).
 
@@ -321,10 +325,19 @@ breaks.
 **Content controls (SDT)** — inline w:sdt controls as first-class citizens:
 rich/plain text, check box (click toggles ☐/☒), drop-down list & combo box
 (click opens a chooser), date picker; gray placeholder text is selected whole
-on entry and replaced by the first keystroke (Word); the active control draws
-Word's gray frame + alias title tab; content/control locks honored; Controls
-ribbon group inserts them, the importer maps `w:sdtPr` losslessly (alias, tag,
-list items, date format, checkbox state, locks, placeholder flag).
+on entry and replaced by the first keystroke (Word); content/control locks
+honored; Controls ribbon group inserts them, the importer maps `w:sdtPr`
+losslessly (alias, tag, list items, date format, checkbox state, locks,
+placeholder flag). **Nesting is first-class** — controls inside controls, and
+block-level controls wrapping whole paragraphs/tables, to **any depth** —
+carried as an ordered `sdtPath` ancestry that round-trips through `.docx`
+import → edit → export without flattening or fragmenting. **Complex Word fields
+nest inside controls** too (e.g. a DATE/PAGE/IF field as a control's value).
+Hovering any control frames it (no caret move); nested controls draw concentric,
+depth-graded frames with a breadcrumb tab (e.g. *Section › Appraisal Fee*).
+**No other browser-native Word editor preserves nested content controls** — so a
+generated report's section→field structure (the common C#/OOXML output) survives
+a round-trip through the editor intact.
 
 **Documents** — full `.docx` *import* (maps content controls, bookmarks and
 hidden text; builds the style gallery from styles.xml `w:name` display names —

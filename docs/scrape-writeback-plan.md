@@ -39,10 +39,9 @@ Comparables + others are deferred — they slot in as additional strategies, no 
 
 ## canvas-word responsibilities (this repo)
 
-1. **Fidelity:** nested binding SDTs must survive import → edit → export with tag JSON intact.
-   - Import: `frontend/src/import/docx/documentParser.ts` (`parseSdtPr`, inline + block walks → `doc.sdts`).
-   - Export: `frontend/src/export/docx/documentXml.ts` (`runsXml` groups by `sdtId`, `sdtPrXml` writes `w:tag`).
-   - **Open risk:** runs carry a single `CharStyle.sdtId`; nesting (run inside outer section SDT *and* inner field SDT) may collapse to one level. Test fixture in `test-fixtures/scrape/`.
+1. **Fidelity:** nested binding SDTs survive import → edit → export with tag JSON intact. **(Done — nesting is now first-class; see `docs/nested-sdt-plan.md`.)**
+   - Membership is an ordered ancestry path: `CharStyle.sdtPath` (inline) + `Block.sdtPath` (block-level). Import builds it via push/pop stacks (`documentParser.ts`); export reconstructs nested `w:sdt` by LCP grouping (`documentXml.ts`).
+   - The earlier flattening risk is resolved: an outer section SDT containing inner field SDTs round-trips as a single control with the inner controls nested, verified by `test-fixtures/scrape/roundtrip-test.mjs`.
 2. (Later, with the Syncfusion swap) editor UX: read-only outside bindings, inspector showing `orig → current`, provisional `itemKey` on row insert. Hook points: `frontend/src/editor/commands.ts` (`sdtAtPosition`), `frontend/src/ui/sdtInspector.ts`.
 
 ## AppraiSys responsibilities (other repo; monolith today, moving to a reporting microservice)

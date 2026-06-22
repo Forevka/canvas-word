@@ -147,26 +147,29 @@ function singleRun(run: Run, ctx: PartCtx): string {
   return r;
 }
 
-/** Serialize a run list: group consecutive runs sharing an sdtId into a w:sdt
- *  content control (outer), and within each segment group runs sharing a built-in
- *  field's id into a complex field (inner). */
+/** Serialize a run list, reconstructing NESTED inline content controls from each
+ *  run's `sdtPath` (outer→inner) via longest-common-prefix grouping: runs sharing
+ *  the id at `depth` are wrapped in one w:sdt and recursed at depth+1; runs with
+ *  no control at this depth flush to `fieldRunsXml` (built-in field grouping, the
+ *  innermost layer). */
 function runsXml(runs: Run[], ctx: PartCtx): string {
+  return nestRunSdt(runs, 0, ctx);
+}
+
+function nestRunSdt(runs: Run[], depth: number, ctx: PartCtx): string {
   let out = "";
   let i = 0;
   while (i < runs.length) {
-    const sdtId = runs[i]!.style.sdtId;
-    if (sdtId) {
-      let j = i;
+    const path = runs[i]!.style.sdtPath;
+    if (!path || path.length <= depth) {
       const seg: Run[] = [];
-      while (j < runs.length && runs[j]!.style.sdtId === sdtId) seg.push(runs[j++]!);
-      out += el("w:sdt", undefined, sdtPrXml(ctx.sdts[sdtId]) + el("w:sdtContent", undefined, fieldRunsXml(seg, ctx)));
-      i = j;
-    } else {
-      let j = i;
-      const seg: Run[] = [];
-      while (j < runs.length && !runs[j]!.style.sdtId) seg.push(runs[j++]!);
+      while (i < runs.length && (runs[i]!.style.sdtPath?.length ?? 0) <= depth) seg.push(runs[i++]!);
       out += fieldRunsXml(seg, ctx);
-      i = j;
+    } else {
+      const id = path[depth]!;
+      const seg: Run[] = [];
+      while (i < runs.length && runs[i]!.style.sdtPath?.[depth] === id) seg.push(runs[i++]!);
+      out += el("w:sdt", undefined, sdtPrXml(ctx.sdts[id]) + el("w:sdtContent", undefined, nestRunSdt(seg, depth + 1, ctx)));
     }
   }
   return out;
@@ -270,7 +273,7 @@ function paragraphXml(p: Paragraph, ctx: PartCtx): string {
   // A paragraph whose runs join an sdt content control can't have markers spliced
   // between its runs without breaking the w:sdt grouping — bracket the whole
   // paragraph at block level instead (start before w:p, end after).
-  if (runs.some((r) => r.style.sdtId)) {
+  if (runs.some((r) => r.style.sdtPath?.length)) {
     const pre = marks.filter((m) => m.kind === "start").map(bookmarkEl).join("");
     const post = marks.filter((m) => m.kind === "end").map(bookmarkEl).join("");
     return pre + el("w:p", undefined, pPr + runsXml(runs, ctx)) + post;
@@ -349,7 +352,7 @@ function cellXml(cell: TableCell, ctx: PartCtx, vMergeRestart = false): string {
   }
   const tcPr = el("w:tcPr", undefined, pr.join(""));
   // A cell must contain at least one paragraph.
-  const content = cell.blocks.length > 0 ? cell.blocks.map((b) => blockXml(b, ctx)).join("") : el("w:p");
+  const content = cell.blocks.length > 0 ? emitBlocks(cell.blocks, 0, ctx) : el("w:p");
   return el("w:tc", undefined, tcPr + content);
 }
 
@@ -467,6 +470,57 @@ export function blockXml(block: Block, ctx: PartCtx): string {
   if (block.kind === "paragraph") return paragraphXml(block, ctx);
   if (block.kind === "table") return tableXml(block, ctx);
   return imageParagraphXml(block, ctx);
+}
+
+/** Emit a block list, reconstructing NESTED block-level content controls from each
+ *  block's `sdtPath` (outer→inner) by longest-common-prefix grouping. A block-level
+ *  w:sdt wraps whole paragraphs/tables (incl. run-less blocks) directly in its
+ *  w:sdtContent — simpler than a field region (no synthetic boundary paragraph).
+ *  The leaf span (blocks with no control at this depth) runs the toc/field/plain
+ *  dispatch in `emitLeafBlocks`, so block sdt is the OUTER wrapper of any field
+ *  region or TOC at the same location. */
+export function emitBlocks(blocks: Block[], depth: number, ctx: PartCtx): string {
+  let out = "";
+  let i = 0;
+  while (i < blocks.length) {
+    const path = blocks[i]!.sdtPath;
+    if (!path || path.length <= depth) {
+      const seg: Block[] = [];
+      while (i < blocks.length && (blocks[i]!.sdtPath?.length ?? 0) <= depth) seg.push(blocks[i++]!);
+      out += emitLeafBlocks(seg, ctx);
+    } else {
+      const id = path[depth]!;
+      const seg: Block[] = [];
+      while (i < blocks.length && blocks[i]!.sdtPath?.[depth] === id) seg.push(blocks[i++]!);
+      out += el("w:sdt", undefined, sdtPrXml(ctx.sdts[id]) + el("w:sdtContent", undefined, emitBlocks(seg, depth + 1, ctx)));
+    }
+  }
+  return out;
+}
+
+/** Per-block dispatch over a contiguous span carrying no (further) block control:
+ *  contiguous TOC entries → one live TOC field; contiguous same-fieldId blocks →
+ *  one complex field region; otherwise a plain block. */
+function emitLeafBlocks(blocks: Block[], ctx: PartCtx): string {
+  const parts: string[] = [];
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i]!;
+    if (isTocEntry(b)) {
+      const group: Paragraph[] = [];
+      while (i < blocks.length && isTocEntry(blocks[i]!)) group.push(blocks[i++] as Paragraph);
+      i--;
+      parts.push(tocFieldXml(group, ctx));
+    } else if (b.fieldId && ctx.fields?.[b.fieldId]) {
+      const id = b.fieldId;
+      const group: Block[] = [];
+      while (i < blocks.length && blocks[i]!.fieldId === id) group.push(blocks[i++]!);
+      i--;
+      parts.push(fieldRegionXml(group, ctx));
+    } else {
+      parts.push(blockXml(b, ctx));
+    }
+  }
+  return parts.join("");
 }
 
 // ---------------------------------------------------------------------------
@@ -732,27 +786,7 @@ export function buildDocumentXml(
   ctx: PartCtx,
   addBand: AddBandPart,
 ): string {
-  const parts: string[] = [];
-  for (let i = 0; i < blocks.length; i++) {
-    const b = blocks[i]!;
-    if (isTocEntry(b)) {
-      // Wrap the whole contiguous run of TOC entries in one live TOC field.
-      const group: Paragraph[] = [];
-      while (i < blocks.length && isTocEntry(blocks[i]!)) group.push(blocks[i++] as Paragraph);
-      i--; // the for-loop will ++ past the last consumed block
-      parts.push(tocFieldXml(group, ctx));
-    } else if (b.fieldId && ctx.fields?.[b.fieldId]) {
-      // Wrap the contiguous run of blocks sharing this fieldId in a complex field.
-      const id = b.fieldId;
-      const group: Block[] = [];
-      while (i < blocks.length && blocks[i]!.fieldId === id) group.push(blocks[i++]!);
-      i--;
-      parts.push(fieldRegionXml(group, ctx));
-    } else {
-      parts.push(blockXml(b, ctx));
-    }
-  }
-  const body = parts.join("") + sectPrXml(section, ctx, addBand, true);
+  const body = emitBlocks(blocks, 0, ctx) + sectPrXml(section, ctx, addBand, true);
   // w:background is document-global (one element, first child of w:document);
   // read the page color only from the body section. Word needs
   // <w:displayBackgroundShape/> in settings.xml to actually paint it.

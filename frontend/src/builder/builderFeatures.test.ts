@@ -66,7 +66,7 @@ describe("content controls", () => {
       .build();
     const run = para(doc.blocks[0]).runs[0]!;
     expect(run.text).toBe("One");
-    const props = doc.sdts![run.style.sdtId!]!;
+    const props = doc.sdts![run.style.sdtPath!.at(-1)!]!;
     expect(props.type).toBe("dropDown");
     expect(props.listItems).toHaveLength(2);
     expect(props.alias).toBe("Choice");

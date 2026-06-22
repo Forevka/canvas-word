@@ -32,8 +32,16 @@ collaboration; reading, editing, and DOCX/PDF export all work offline.
 | Runtime dependencies | Zero | Several | Bundled suite | .NET stack |
 | DOCX import + export | In-browser | Yes | Yes | Yes |
 | PDF export | Page-accurate, in-browser | Yes | Yes | Yes |
+| Nested content controls | **Any depth** — incl. fields inside | Flat only | Flat only | Flat only |
+| Word fields (PAGE/DATE/IF…) | Editable objects, round-trip | Yes | Yes | Yes |
 | Live collaboration | Built in (opt-in backend) | Add-on | Built in | Add-on |
 | Primary target | Any JS app | Angular/React/Vue | Iframe / full suite | Blazor / .NET |
+
+Where WordCanvas goes *past* them: **nested content controls** — a `w:sdt`
+inside a `w:sdt`, to any depth, with complex Word fields nested inside —
+round-trip through `.docx` without flattening. That matters for C#/OOXML
+generated reports, whose section→field control structure the commercial editors
+collapse on edit.
 
 Where the commercial editors win today: RTL and complex-script editing, bundled
 CJK fonts, charts and equations, and an enterprise support contract. The full
