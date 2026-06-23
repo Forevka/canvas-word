@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.4] — 2026-06-23
+
 ### Added
 - **Nested content controls (`w:sdt` inside `w:sdt`) now round-trip.** Content
   controls can nest — an outer "section" control wrapping inner field controls,
@@ -569,6 +571,7 @@ implementation history in [README.md](./README.md)):
   docId, integration tokens for third-party `/upload`, and session webhooks.
 - Mobile/touch input and a responsive ribbon.
 
+[0.7.4]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.4
 [0.7.3]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.3
 [0.7.2]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.2
 [0.7.1]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.1
