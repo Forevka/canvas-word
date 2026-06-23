@@ -5,6 +5,10 @@ custom canvas rendering pipeline with [`@chenglou/pretext`](https://github.com/c
 as the text layout engine.** The browser never lays out document text — we do,
 deterministically, the way post-2021 Google Docs does.
 
+**▶ Live demo: [doc-editor.forevka.dev](https://doc-editor.forevka.dev/)** — the
+full feature showcase. Minimal offline embed:
+[doc-editor.forevka.dev/examples/offline/](https://doc-editor.forevka.dev/examples/offline/).
+
 ---
 
 ## What this project wants to accomplish

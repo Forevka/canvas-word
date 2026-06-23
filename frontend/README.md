@@ -11,6 +11,9 @@ code-split). You can drop it onto a page with a plain `<script type="module">` o
 import it from any bundler. The same package also runs **headless on Node** for
 server-side `.docx`/`.pdf` generation — see [Server-side (Node)](#server-side-node).
 
+**▶ Live demo:** [doc-editor.forevka.dev](https://doc-editor.forevka.dev/) (full
+feature showcase) · [minimal offline embed](https://doc-editor.forevka.dev/examples/offline/).
+
 ## How it compares
 
 If you have shopped for an embeddable Word editor, you have met Syncfusion
