@@ -27,9 +27,50 @@ export interface ExportResult {
  *  in the worker / on Node) and passed through to the pipeline. */
 export type ImageBytes = Record<string, Uint8Array>;
 
-/** Render a document to PDF or DOCX bytes. */
+// ===== Custom fonts =========================================================
+
+/** Per-style face URLs for a custom font (`regular` required; the rest fall back). */
+export interface CustomFontFaces {
+  regular: string;
+  bold?: string;
+  italic?: string;
+  boldItalic?: string;
+}
+
+/** One custom font: family name (model + render name), face URLs, and REQUIRED
+ *  `sizing` ({ ascent, descent } as fractions of em) for pagination parity. */
+export interface CustomFontDef {
+  family: string;
+  faces: CustomFontFaces;
+  sizing: { ascent: number; descent: number };
+  label?: string;
+}
+
+/** Fully-populated custom-fonts config. */
+export interface ResolvedFontsConfig {
+  disableBuiltin: string[];
+  fonts: CustomFontDef[];
+}
+
+/** One fetched custom face's bytes, ready for fontkit/pdfkit. */
+export interface CustomFontFaceBytes {
+  family: string;
+  style: "Regular" | "Bold" | "Italic" | "BoldItalic";
+  bytes: Uint8Array;
+}
+
+/** Custom fonts carried into the export pipeline: defs (for resolution/metrics) +
+ *  fetched face bytes (for measuring + embedding). */
+export interface CustomFontPayload {
+  defs: ResolvedFontsConfig;
+  faces: CustomFontFaceBytes[];
+}
+
+/** Render a document to PDF or DOCX bytes. Pass `fonts` to embed custom faces (the
+ *  caller fetches their bytes; on Node use a disk cache to reuse across renders). */
 export declare function runExport(
   doc: Document,
   format: ExportFormat,
   images?: ImageBytes,
+  fonts?: CustomFontPayload,
 ): Promise<ExportResult>;

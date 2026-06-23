@@ -1,6 +1,7 @@
 // Shared export types — small and transport-friendly (worker postMessage).
 
 import type { Document } from "@cw/shared";
+import type { CustomFontPayload } from "../fonts/customRegistry";
 
 export type ExportFormat = "pdf" | "docx";
 
@@ -27,6 +28,8 @@ export interface ToExportWorker {
   doc: Document;
   format: ExportFormat;
   images?: ImageBytes;
+  /** Custom fonts (defs + fetched face bytes), resolved on the main thread. */
+  fonts?: CustomFontPayload;
 }
 
 export type FromExportWorker =

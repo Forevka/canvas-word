@@ -9,6 +9,13 @@
 
 import type { Block, Document } from "@cw/shared";
 import type { ExportFormat, ExportResult, FromExportWorker, ImageBytes, ToExportWorker } from "./types";
+import {
+  CUSTOM_FONT_STYLES,
+  faceUrlForStyle,
+  type CustomFontFaceBytes,
+  type CustomFontPayload,
+  type ResolvedFontsConfig,
+} from "../fonts/customRegistry";
 
 export type { ExportFormat, ExportResult, ExportWarning } from "./types";
 
@@ -103,13 +110,52 @@ async function resolveImages(doc: Document): Promise<ImageBytes> {
   return out;
 }
 
+// The mounting editor sets its resolved custom-font config here (the worker is a
+// separate context with no DOM/network, so face bytes are fetched on the main
+// thread — like images — and passed in the export message). Module-scoped to mirror
+// the font subsystem's process-global nature; set once per mount.
+let exportFonts: ResolvedFontsConfig | undefined;
+
+/** Register the editor's custom-font config so exports embed those faces. */
+export function setExportFontConfig(cfg: ResolvedFontsConfig | undefined): void {
+  exportFonts = cfg;
+}
+
+/** Fetch every custom face's bytes on the main thread (deduped by URL). Missing
+ *  optional faces fall back to the regular URL. Returns undefined when there are no
+ *  custom fonts. A face that fails to fetch is dropped (resolveFont falls back). */
+async function resolveFonts(cfg: ResolvedFontsConfig | undefined): Promise<CustomFontPayload | undefined> {
+  if (!cfg || cfg.fonts.length === 0) return undefined;
+  const cache = new Map<string, Promise<Uint8Array | null>>();
+  const fetchBytes = (url: string): Promise<Uint8Array | null> => {
+    let p = cache.get(url);
+    if (!p) {
+      p = fetch(url)
+        .then((r) => (r.ok ? r.arrayBuffer().then((b) => new Uint8Array(b)) : null))
+        .catch(() => null);
+      cache.set(url, p);
+    }
+    return p;
+  };
+  const faces: CustomFontFaceBytes[] = [];
+  await Promise.all(
+    cfg.fonts.flatMap((f) =>
+      CUSTOM_FONT_STYLES.map(async (style) => {
+        const bytes = await fetchBytes(faceUrlForStyle(f.faces, style));
+        if (bytes) faces.push({ family: f.family, style, bytes });
+      }),
+    ),
+  );
+  return { defs: cfg, faces };
+}
+
 export async function exportDocument(doc: Document, format: ExportFormat): Promise<ExportResult> {
-  const images = await resolveImages(doc);
+  const [images, fonts] = await Promise.all([resolveImages(doc), resolveFonts(exportFonts)]);
   const w = ensureWorker();
   const id = nextId++;
   return new Promise<ExportResult>((resolve, reject) => {
     pending.set(id, { resolve, reject });
-    const msg: ToExportWorker = { id, doc, format, images };
+    const msg: ToExportWorker = { id, doc, format, images, ...(fonts ? { fonts } : {}) };
     w.postMessage(msg);
   });
 }

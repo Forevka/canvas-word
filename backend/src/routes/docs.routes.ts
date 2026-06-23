@@ -10,6 +10,7 @@ import {
   type SerializedDocument,
   type UserInfo,
 } from "@cw/shared";
+import type { ResolvedFontsConfig } from "@forevka/wordcanvas/export";
 import type { AppContext } from "../context";
 import { exportDoc } from "../export/serverExport";
 import { sanitizeFilename } from "../http/headers";
@@ -29,7 +30,8 @@ export function registerDocsRoutes(app: FastifyInstance, { store, bcast }: AppCo
         summary: "Create a document from a base snapshot",
         description:
           "Mints a new document id (server-side UUID) and stores the snapshot as version 0. Body is " +
-          "either a bare SerializedDocument, or { snapshot, createdBy?, user? } for attribution.",
+          "either a bare SerializedDocument, or { snapshot, createdBy?, user?, fontsConfig? } — the " +
+          "fontsConfig (custom families with face URLs + sizing) is saved so server-side export embeds them.",
         body: { type: "object", additionalProperties: true },
         response: {
           201: {
@@ -43,13 +45,17 @@ export function registerDocsRoutes(app: FastifyInstance, { store, bcast }: AppCo
     async (req, reply) => {
       const body = req.body as
         | SerializedDocument
-        | { snapshot: SerializedDocument; createdBy?: string; user?: UserInfo };
+        | { snapshot: SerializedDocument; createdBy?: string; user?: UserInfo; fontsConfig?: ResolvedFontsConfig };
       const wrapped = !!body && typeof body === "object" && "snapshot" in body;
       const snapshot = (wrapped ? body.snapshot : body) as SerializedDocument;
       const createdBy = wrapped ? body.createdBy : undefined;
       const user = wrapped ? body.user : undefined;
+      const fontsConfig = wrapped ? body.fontsConfig : undefined;
       if (user) await store.upsertUser(user);
-      const created = await store.createDocument(snapshot, createdBy ? { createdBy } : {});
+      const created = await store.createDocument(snapshot, {
+        ...(createdBy ? { createdBy } : {}),
+        ...(fontsConfig ? { fontsConfig } : {}),
+      });
       return reply.code(201).send(created);
     },
   );

@@ -9,10 +9,11 @@ import { createLayoutEngine } from "./layout/engine";
 import { sampleDoc } from "./model/sampleDoc";
 import { stressDoc } from "./model/stressDoc";
 import { importDocx, type ImportResult, type ImportPhase } from "./import/docx/importDocx";
-import { exportDocument, type ExportFormat, type ExportWarning } from "./export/exportDocument";
+import { exportDocument, setExportFontConfig, type ExportFormat, type ExportWarning } from "./export/exportDocument";
 import { loadEditorFonts } from "./export/shared/editorFonts";
 import { fontsProgress } from "./app/loadProgress";
-import { TOOLBAR_FONTS } from "./fonts/clones";
+import { toolbarFonts } from "./fonts/clones";
+import { registerCustomFonts } from "./fonts/customRegistry";
 import type { EditorHandle, WordCanvasRuntime } from "./app/runtime";
 import { buildShell } from "./app/shell";
 import { ensureWordCanvasStyles } from "./ui/styles";
@@ -90,11 +91,20 @@ const RULER_HALF_TICK_LEN = 8; // half-inch tick extent
 // per-call, so multiple editors coexist on a single page. The CSS is class-based
 // (see ui/styles.ts) and all off-container artifacts are tracked for destroy().
 export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> {
-  // Fonts must be resolved before the first layout — pretext measures with the same
-  // font strings the paint layer draws with, so a late font swap would desync them.
-  // The editor renders the bundled metric clones (Calibri→Carlito, …) so layout
-  // matches the PDF/DOCX exporters exactly, with no dependency on system fonts.
-  await loadEditorFonts((loaded, total) => runtime.onLoadProgress?.(fontsProgress(loaded, total)));
+  // Resolve config FIRST: custom fonts must be registered (so cloneFamilyFor /
+  // metrics know them) and loaded before the first layout. pretext measures with the
+  // same font strings the paint layer draws with, so a late font swap would desync
+  // them. The editor renders the bundled metric clones (Calibri→Carlito, …) plus any
+  // custom fonts, so layout matches the PDF/DOCX exporters exactly.
+  const config = resolveConfig({
+    ...(runtime.theme ? { theme: runtime.theme } : {}),
+    ...(runtime.overrideDefaultStyles ? { overrideDefaultStyles: runtime.overrideDefaultStyles } : {}),
+    ...(runtime.behavior ? { behavior: runtime.behavior } : {}),
+    ...(runtime.fonts ? { fonts: runtime.fonts } : {}),
+  });
+  registerCustomFonts(config.fonts);
+  setExportFontConfig(config.fonts);
+  await loadEditorFonts((loaded, total) => runtime.onLoadProgress?.(fontsProgress(loaded, total)), config.fonts);
   await document.fonts.ready;
 
   // Give this editor session a unique siteId so every block/cell id it mints is
@@ -106,15 +116,10 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
   const shell = buildShell(runtime.container);
   const app = shell.app;
 
-  // Resolve the per-instance configuration (theme colors, default-style overrides,
-  // behavior tuning) once. Everything below reads from `config`; omitting an option
-  // keeps the built-in look. Theme + behavior thread into the editor via editorOpts;
-  // the typography override seeds new/blank docs (a loaded .docx keeps its own).
-  const config = resolveConfig({
-    ...(runtime.theme ? { theme: runtime.theme } : {}),
-    ...(runtime.overrideDefaultStyles ? { overrideDefaultStyles: runtime.overrideDefaultStyles } : {}),
-    ...(runtime.behavior ? { behavior: runtime.behavior } : {}),
-  });
+  // Config was resolved at the top of mountEditorApp (fonts must register before the
+  // first layout). Everything below reads from `config`; omitting an option keeps the
+  // built-in look. Theme + behavior thread into the editor via editorOpts; the
+  // typography override seeds new/blank docs (a loaded .docx keeps its own).
   // Recolor the gray gutter behind the pages + the ruler troughs (inline overrides
   // the static .cw-app/.cw-ruler stylesheet rules, so it stays per-instance).
   app.style.background = config.theme.canvasBackground;
@@ -1153,7 +1158,8 @@ if (toolbar) {
   fontRow();
   const fontSelect = select("Font family", 150);
   // Labels show the bundled clone we actually render — e.g. "Calibri (Carlito)".
-  for (const f of TOOLBAR_FONTS) opt(fontSelect, f.value, f.label);
+  // Per-instance: built-ins minus disableBuiltin, plus this mount's custom fonts.
+  for (const f of toolbarFonts(config.fonts)) opt(fontSelect, f.value, f.label);
   fontSelect.addEventListener("change", () => {
     editor.setCharStyle({ fontFamily: fontSelect.value });
     editor.focus();
@@ -2393,7 +2399,7 @@ if (toolbar) {
       for (const [id, c] of styleCards) c.classList.toggle("active", id === f.styleId);
     }
     if (f.fontFamily) {
-      const match = TOOLBAR_FONTS.find((x) => x.value.toLowerCase() === f.fontFamily!.toLowerCase());
+      const match = toolbarFonts(config.fonts).find((x) => x.value.toLowerCase() === f.fontFamily!.toLowerCase());
       if (match) fontSelect.value = match.value;
     }
     if (f.fontSizePx !== null && document.activeElement !== sizeInput) {

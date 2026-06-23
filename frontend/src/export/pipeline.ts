@@ -7,6 +7,8 @@ import type { ExportFormat, ExportResult, ImageBytes } from "./types";
 import { renderPdf } from "./pdf/renderPdf";
 import { writeDocx } from "./docx/writeDocx";
 import { installMeasureHost } from "./shared/measureHost";
+import { registerCustomFontBytes } from "./shared/fontRegistry";
+import { registerCustomFonts, type CustomFontPayload } from "../fonts/customRegistry";
 import { createLayoutEngine } from "../layout/engine";
 import { pageOfBlockMap } from "../recalc/recalcToc";
 
@@ -27,7 +29,15 @@ export async function runExport(
   doc: Document,
   format: ExportFormat,
   images: ImageBytes = {},
+  fonts?: CustomFontPayload,
 ): Promise<ExportResult> {
+  // Register custom fonts (defs → resolution/metrics; bytes → fontkit/pdfkit) BEFORE
+  // any layout. This worker/process has its own global registry, so the config must
+  // be (re)applied per export — it's keyed by family, so repeats are cheap.
+  if (fonts) {
+    registerCustomFonts(fonts.defs);
+    registerCustomFontBytes(fonts.faces);
+  }
   if (format === "pdf") return renderPdf(doc, { images });
   // Live TOC field export needs each heading's real page for the cached PAGEREF
   // result — lay the doc out once (measure host is idempotent).

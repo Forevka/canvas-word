@@ -13,7 +13,7 @@
 
 import { setMeasureContext } from "../../layout/metrics";
 import { FontkitMeasureContext } from "./fontkitContext";
-import { fontsLoaded, registerFont } from "./fontRegistry";
+import { builtinsRegistered, registerFont } from "./fontRegistry";
 import { FONT_FILES } from "../../fonts/clones";
 
 async function readFontBytes(file: string): Promise<Uint8Array> {
@@ -36,7 +36,7 @@ let installPromise: Promise<void> | null = null;
 export function installMeasureHost(): Promise<void> {
   if (installPromise) return installPromise;
   installPromise = (async () => {
-    if (!fontsLoaded()) {
+    if (!builtinsRegistered()) {
       await Promise.all(FONT_FILES.map(async (f) => registerFont(f, await readFontBytes(f))));
     }
     // Route pretext + metrics through the fontkit shim over the bundled clones.

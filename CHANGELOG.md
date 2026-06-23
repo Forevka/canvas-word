@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Custom fonts via the `fonts` constructor option.** Embedders can now supply their
+  own fonts, loaded from URLs at runtime, instead of being limited to the bundled
+  metric clones: `fonts: { fonts: [{ family, faces: { regular, bold?, italic?,
+  boldItalic? }, sizing: { ascent, descent } }], disableBuiltin?: string[] }`. A
+  custom family is stored in the model, listed in the toolbar, and rendered as
+  itself (never substituted to a clone) across all three contexts that must agree
+  for page-accurate layout — the editor canvas, the client-side export worker, and
+  the headless Node backend. The required `sizing` (ascent/descent as fractions of
+  em — the same role the bundled clones' baked metrics play) is what keeps the
+  editor, the browser export, and a server-side export paginating **identically**.
+  `disableBuiltin` hides built-in families from the toolbar by their original name
+  (e.g. `"Calibri"`) while keeping them loaded and resolvable, so a loaded `.docx`
+  that still references them renders. PDF subset-embeds the actual faces used; DOCX
+  writes the custom family name. **Backend:** server-side export honors a document's
+  saved font config (persisted at `POST /docs`), and `POST /render.pdf` accepts a
+  `fonts` part — the server fetches the faces and **caches them on disk** (keyed by
+  URL) so they're reused across renders. TTF/OTF only (WOFF2 is rejected); a missing
+  bold/italic/bold-italic face falls back to the regular face in both the editor and
+  the exporters. See `FONTS.md` for the design.
+- **New `custom-fonts` example** (`examples/custom-fonts`, served at
+  `/examples/custom-fonts`): a no-build offline embed that self-hosts PT Serif (4
+  faces) via the `fonts` option, hides the built-in Calibri from the toolbar, and
+  exports a PDF with the custom faces embedded.
+
 ## [0.7.4] — 2026-06-23
 
 ### Added

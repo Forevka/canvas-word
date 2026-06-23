@@ -10,6 +10,9 @@
 
 import type { Pool } from "pg";
 import { SNAPSHOT_VERSION, transformOps, type Change, type Op, type ReviewOpEnvelope, type SerializedDocument, type UserInfo } from "@cw/shared";
+import type { ResolvedFontsConfig } from "@forevka/wordcanvas/export";
+
+export type { ResolvedFontsConfig } from "@forevka/wordcanvas/export";
 
 export interface DocSnapshotRecord {
   docId: string;
@@ -104,10 +107,14 @@ export interface ChangeStore {
   /** Create a document from a base snapshot (stored as version 0). */
   createDocument(
     base: SerializedDocument,
-    opts?: { docId?: string; createdBy?: string; title?: string },
+    opts?: { docId?: string; createdBy?: string; title?: string; fontsConfig?: ResolvedFontsConfig },
   ): Promise<{ docId: string; version: number }>;
   /** Rename a document (dashboard / upload filename). */
   setDocumentTitle(docId: string, title: string): Promise<void>;
+  /** The document's saved custom-font config, or null if none. */
+  getFontsConfig(docId: string): Promise<ResolvedFontsConfig | null>;
+  /** Set (or clear) the document's custom-font config. */
+  setFontsConfig(docId: string, cfg: ResolvedFontsConfig | null): Promise<void>;
   /** A document's title (for export filenames), or null if unset/missing. */
   getDocumentTitle(docId: string): Promise<string | null>;
   /** Document list for the dashboard, newest first. */
@@ -159,20 +166,21 @@ export class PgChangeStore implements ChangeStore {
 
   async createDocument(
     base: SerializedDocument,
-    opts: { docId?: string; createdBy?: string; title?: string } = {},
+    opts: { docId?: string; createdBy?: string; title?: string; fontsConfig?: ResolvedFontsConfig } = {},
   ): Promise<{ docId: string; version: number }> {
-    const { docId, createdBy = null, title = null } = opts;
+    const { docId, createdBy = null, title = null, fontsConfig } = opts;
+    const fonts = fontsConfig ? JSON.stringify(fontsConfig) : null;
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       const row = docId
         ? await client.query<{ id: string }>(
-            "INSERT INTO documents (id, created_by, title) VALUES ($1, $2, $3) RETURNING id",
-            [docId, createdBy, title],
+            "INSERT INTO documents (id, created_by, title, fonts_config) VALUES ($1, $2, $3, $4) RETURNING id",
+            [docId, createdBy, title, fonts],
           )
         : await client.query<{ id: string }>(
-            "INSERT INTO documents (created_by, title) VALUES ($1, $2) RETURNING id",
-            [createdBy, title],
+            "INSERT INTO documents (created_by, title, fonts_config) VALUES ($1, $2, $3) RETURNING id",
+            [createdBy, title, fonts],
           );
       const id = row.rows[0]!.id;
       await client.query("INSERT INTO snapshots (doc_id, version, doc) VALUES ($1, 0, $2)", [
@@ -386,6 +394,21 @@ export class PgChangeStore implements ChangeStore {
       [docId],
     );
     return (res.rowCount ?? 0) > 0 ? (res.rows[0]!.title ?? null) : null;
+  }
+
+  async getFontsConfig(docId: string): Promise<ResolvedFontsConfig | null> {
+    const res = await this.pool.query<{ fonts_config: ResolvedFontsConfig | null }>(
+      "SELECT fonts_config FROM documents WHERE id = $1",
+      [docId],
+    );
+    return (res.rowCount ?? 0) > 0 ? (res.rows[0]!.fonts_config ?? null) : null;
+  }
+
+  async setFontsConfig(docId: string, cfg: ResolvedFontsConfig | null): Promise<void> {
+    await this.pool.query("UPDATE documents SET fonts_config = $1 WHERE id = $2", [
+      cfg ? JSON.stringify(cfg) : null,
+      docId,
+    ]);
   }
 
   async listDocuments(): Promise<DocumentSummary[]> {

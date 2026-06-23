@@ -12,7 +12,7 @@
 import type { AgentToolsOptions, EditMode, EditorHandle, FieldResolver, Participant, SaveEvent, SaveFormat, SaveHandler, WordCanvasEvent, WordCanvasRuntime, WordCanvasViewOptions } from "./app/runtime";
 import type { ChildContent, ChildDocument, ChildEditorHandle, ChildRenderOptions, FieldResolveRequest, FieldResult } from "./index";
 import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
-import type { DefaultStyleOverrides, EditorBehavior, EditorTheme } from "./config";
+import type { CustomFontDef, CustomFontFaces, DefaultStyleOverrides, EditorBehavior, EditorTheme, FontsConfig } from "./config";
 import { darkCanvasTheme } from "./config";
 import type { CustomizeRibbon, RibbonActionContext, RibbonApi, RibbonButtonSpec } from "./ribbon";
 import { makeFloatingDialog } from "./ui/floatingDialog";
@@ -21,7 +21,7 @@ import { BUNDLE_SHARE, type LoadProgress } from "./app/loadProgress";
 
 export type { Document, UserInfo, Participant, EditMode, ReviewLayer, Fragment, FieldResolver, FieldResolveRequest, FieldResult, AgentToolsOptions, LoadProgress, WordCanvasViewOptions, SaveEvent, SaveFormat, SaveHandler };
 export type { ChildDocument, ChildContent, ChildRenderOptions, ChildEditorHandle };
-export type { EditorTheme, DefaultStyleOverrides, EditorBehavior };
+export type { EditorTheme, DefaultStyleOverrides, EditorBehavior, FontsConfig, CustomFontDef, CustomFontFaces };
 export type { CustomizeRibbon, RibbonApi, RibbonButtonSpec, RibbonActionContext, DocSelection };
 export { darkCanvasTheme, makeFloatingDialog };
 
@@ -94,6 +94,15 @@ export interface WordCanvasOptions {
   /** Behavior tuning: zoom step (default 1.1), zoom clamp (0.25–5), indent step
    *  (36px), and default drawing-grid spacing (24px; `view.gridSpacingPx` wins). */
   behavior?: EditorBehavior;
+  /** Supply your OWN fonts, loaded from URLs at runtime. Each custom font needs a
+   *  `family` (stored in the model + shown in the toolbar), per-style face URLs
+   *  (`regular` required; bold/italic/boldItalic optional, falling back to regular),
+   *  and REQUIRED `sizing` ({ ascent, descent } as fractions of em) so the editor
+   *  and the PDF/DOCX exporters paginate identically. `disableBuiltin` hides
+   *  built-in families (by their original name, e.g. "Calibri") from the toolbar
+   *  only — they stay loaded so a loaded .docx that uses them still renders.
+   *  TTF/OTF only (WOFF2 is not supported). Font hosts must allow CORS. */
+  fonts?: FontsConfig;
   /** Customize the ribbon toolbar. Called once at mount with a `RibbonApi` to
    *  reorder/remove built-in tabs/groups/buttons (by id — discover them with
    *  `api.tabs()/groups()/items()`) and add your own tabs, groups, and buttons.
@@ -152,6 +161,7 @@ export class WordCanvas {
         theme: opts.theme,
         overrideDefaultStyles: opts.overrideDefaultStyles,
         behavior: opts.behavior,
+        fonts: opts.fonts,
         customizeRibbon: opts.customizeRibbon,
         onLoadProgress: opts.onLoadProgress,
         onReady: (h) => {

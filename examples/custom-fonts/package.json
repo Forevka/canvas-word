@@ -1,0 +1,7 @@
+{
+  "name": "@cw/example-custom-fonts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "No-build offline embed of @forevka/wordcanvas showing the `fonts` option: a self-hosted custom font (PT Serif) loaded from a URL, with per-style faces + sizing, plus a hidden built-in."
+}

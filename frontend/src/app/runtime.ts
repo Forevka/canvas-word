@@ -6,7 +6,7 @@
 import type { DocSelection, Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
 import type { ChildDocument, EditMode, FieldResolver } from "../index";
 import type { ExportWarning } from "../export/exportDocument";
-import type { DefaultStyleOverrides, EditorBehavior, EditorTheme } from "../config";
+import type { DefaultStyleOverrides, EditorBehavior, EditorTheme, FontsConfig } from "../config";
 import type { CustomizeRibbon } from "../ribbon";
 import type { LoadProgress } from "./loadProgress";
 
@@ -197,6 +197,8 @@ export interface WordCanvasRuntime {
   overrideDefaultStyles?: DefaultStyleOverrides | undefined;
   /** Behavior tuning (zoom step/clamp, indent step, default grid spacing). */
   behavior?: EditorBehavior | undefined;
+  /** Custom fonts (URL-loaded faces + sizing) and toolbar disables. */
+  fonts?: FontsConfig | undefined;
   /** Customize the ribbon: reorder/remove built-ins by id and add custom tabs,
    *  groups, and buttons. Called once at mount with a mutation API. */
   customizeRibbon?: CustomizeRibbon | undefined;

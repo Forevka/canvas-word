@@ -2,7 +2,7 @@
 // One hidden canvas, results cached per font string.
 
 import type { CharStyle } from "@cw/shared";
-import { CLONE_METRICS, cloneFamilyFor, firstFamilyToken } from "../fonts/clones";
+import { cloneFamilyFor, firstFamilyToken, metricsFor } from "../fonts/clones";
 import { SUB_SUPER_SCALE } from "../paint/paintStyle";
 
 export interface FontMetrics {
@@ -74,7 +74,7 @@ export function fontMetrics(font: string): FontMetrics {
     const sizeMatch = /(\d+(?:\.\d+)?)px/.exec(font);
     const size = sizeMatch ? parseFloat(sizeMatch[1]!) : 16;
     const family = font.slice(font.indexOf("px ") + 3).trim();
-    const r = CLONE_METRICS[cloneFamilyFor(family).clone] ?? { ascent: 0.9, descent: 0.25 };
+    const r = metricsFor(cloneFamilyFor(family).clone);
     m = { ascent: Math.round(r.ascent * size), descent: Math.round(r.descent * size) };
     metricsCache.set(font, m);
   }
