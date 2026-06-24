@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { Document, ImageBlock, Paragraph, SectionProps } from "@cw/shared";
+import type { Document, ImageBlock, Paragraph, SectionProps, TableBlock } from "@cw/shared";
 import { applyOp } from "@cw/shared";
-import { setImageLayer, bringImageToFront, sendImageToBack, moveAnchoredImage } from "./commands";
+import { setImageLayer, bringImageToFront, sendImageToBack, moveAnchoredImage, setImageProps } from "./commands";
 import type { Command } from "./state";
 import type { EditorState } from "./state";
 
@@ -65,6 +65,30 @@ describe("image layer / z-order commands", () => {
   it("moveAnchoredImage is a no-op on an in-flow (non-anchored) image", () => {
     const a = img("a", undefined, "square");
     expect(moveAnchoredImage("a", 10, 10)({ doc: docOf(a), selection: null })).toBeNull();
+  });
+
+  it("setImageProps resizes/aligns an image inside a table cell (content-control templates)", () => {
+    // Reports wrap a table in a content control and drop the image in a cell; the
+    // image must still resize & align. Regression: the command's old top-level-only
+    // guard made cell images inert (frame showed, handles/align did nothing).
+    const cellImg = img("ci");
+    const para: Paragraph = { kind: "paragraph", id: "p", revision: 0, runs: [{ text: "", style: {} as never }], style: {} as never };
+    const table: TableBlock = {
+      kind: "table", id: "t", revision: 0,
+      rows: [{ cells: [{ id: "c", blocks: [cellImg, para] }] }],
+    };
+    const doc: Document = { section: SECTION, blocks: [table] };
+
+    const cmd = setImageProps("ci", { widthPx: 200, heightPx: 150, align: "right" });
+    const trn = cmd({ doc, selection: null });
+    expect(trn).not.toBeNull(); // command no longer bails on a cell image
+
+    let out = doc;
+    for (const op of trn!.ops) out = applyOp(out, op).doc;
+    const updated = (out.blocks[0] as TableBlock).rows[0]!.cells[0]!.blocks[0] as ImageBlock;
+    expect(updated.widthPx).toBe(200);
+    expect(updated.heightPx).toBe(150);
+    expect(updated.align).toBe("right");
   });
 
   it("clearing the anchor (wrap toggle) is undoable back to the anchored state", () => {

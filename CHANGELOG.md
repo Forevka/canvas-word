@@ -38,6 +38,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   faces) via the `fonts` option, hides the built-in Calibri from the toolbar, and
   exports a PDF with the custom faces embedded.
 
+### Fixed
+- **Images inside table cells can now be resized and aligned.** Selecting an image
+  that lives in a table cell — the usual shape of a content-control report template,
+  where a `w:sdt` wraps a table and the picture sits in a cell — drew the selection
+  frame and resize handles, but dragging a handle or clicking an alignment button did
+  nothing. The image-props command (resize, align, wrap) and the live resize-preview
+  both looked only at top-level body blocks, so a cell image was silently inert even
+  though the underlying op (and every other image command: delete, layer/z-order,
+  move) already resolved images in cells. Both paths now use the cell-aware
+  `locateImage`, so in-cell images resize and align like any other.
+
 ## [0.7.4] — 2026-06-23
 
 ### Added

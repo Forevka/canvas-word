@@ -789,8 +789,10 @@ export function createEditor(
     getZoom: () => paint.getZoom(),
     onResizePreview: (w, h) => {
       if (!selectedObject) return;
-      const img = doc.blocks.find((b) => b.id === selectedObject);
-      if (img?.kind !== "image") return;
+      // locateImage (not doc.blocks) so images inside table cells — e.g. inside a
+      // content control — resize too; otherwise the handles drag but nothing moves.
+      const img = locateImage(doc, selectedObject)?.image;
+      if (!img) return;
       resizeBase ??= { w: img.widthPx, h: img.heightPx };
       dispatch(setImageProps(selectedObject, { widthPx: w, heightPx: h }, "transient"));
     },

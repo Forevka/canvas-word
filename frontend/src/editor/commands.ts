@@ -2027,8 +2027,10 @@ export function setImageProps(
   origin: TransactionOrigin = "command",
 ): Command {
   return (state) => {
-    const exists = state.doc.blocks.some((b) => b.id === blockId && b.kind === "image");
-    if (!exists) return null;
+    // Cell-aware: images inside table cells (common in content-control report
+    // templates) must resize/align too. The reducer's op already handles cells —
+    // a top-level-only `doc.blocks` guard here was what made them inert.
+    if (!locateImage(state.doc, blockId)) return null;
     return tr([{ type: "setImageProps", blockId, patch }], state.selection, origin);
   };
 }
