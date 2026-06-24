@@ -166,7 +166,9 @@ export type InspectorTarget =
   | { kind: "cell"; tableId: string; ri: number; ci: number }
   | { kind: "row"; tableId: string; ri: number }
   | { kind: "sdt"; sdtId: string }
-  | { kind: "field"; fieldId: string };
+  | { kind: "field"; fieldId: string }
+  /** A literal page-coordinate rect (Layout-tab geometry nodes). */
+  | { kind: "rect"; pageIndex: number; x: number; y: number; width: number; height: number; label?: string };
 
 export interface Editor {
   focus(): void;
@@ -721,6 +723,9 @@ export function createEditor(
         if (origin) rects.push(...cellRangeRects(tree, t.tableId, origin.row, origin.col, origin.row + (cell.rowSpan ?? 1) - 1, origin.col + (cell.colSpan ?? 1) - 1));
       });
       return rects.length > 0 ? { rects, label: "row" } : null;
+    }
+    if (t.kind === "rect") {
+      return { rects: [{ pageIndex: t.pageIndex, x: t.x, y: t.y, width: t.width, height: t.height }], label: t.label ?? "rect" };
     }
     if (t.kind === "sdt") {
       return sdtLayerFor(t.sdtId);

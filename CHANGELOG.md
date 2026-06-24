@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Inspector: Layout tab (geometry tree).** A new tab renders the laid-out geometry
+  — pages → placed blocks → lines → fragments, and tables → rows → cells → blocks —
+  each node showing its position/size and highlighting its exact painted rect on
+  hover (fragment-precise). New `{ kind: "rect" }` inspector target.
 - **Inspector: Problems tab (model validator).** A new tab runs a pure model walk
   and lists integrity problems grouped by severity — dangling content-control /
   field / style / list / table-style / bookmark / TOC / footnote references,

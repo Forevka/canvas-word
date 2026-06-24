@@ -14,6 +14,7 @@
 import { makeFloatingDialog } from "./floatingDialog";
 import { injectCssOnce } from "./styles";
 import { createModelTab } from "./devpanel/modelTab";
+import { createLayoutTab } from "./devpanel/layoutTab";
 import { createProblemsTab } from "./devpanel/problemsTab";
 import { createOverlayBar } from "./devpanel/overlayBar";
 import { el, type DevPanelEditor, type PanelCtx, type PanelTab } from "./devpanel/types";
@@ -128,7 +129,7 @@ export function showDevPanel(opts: DevPanelOptions): DevPanelHandle {
 
   // ---- Tabs -----------------------------------------------------------------
   const ctx: PanelCtx = { editor, showDetail };
-  const tabs: PanelTab[] = [createModelTab(ctx), createProblemsTab(ctx)];
+  const tabs: PanelTab[] = [createModelTab(ctx), createLayoutTab(ctx), createProblemsTab(ctx)];
   let active: PanelTab = tabs[0]!;
   const tabButtons = new Map<string, HTMLButtonElement>();
   const tabCounts = new Map<string, HTMLSpanElement>();
