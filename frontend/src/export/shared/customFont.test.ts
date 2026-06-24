@@ -50,6 +50,19 @@ describe("custom font export parity", () => {
     expect(r.substituted).toBe(false);
   });
 
+  it("a registered custom family with NO loaded bytes resolves to Arimo, marked substituted", () => {
+    // Registered as a def (so cloneFamilyFor keeps it custom) but its bytes never
+    // loaded — e.g. the required Regular face failed to fetch. resolveFont must NOT
+    // emit Arimo bytes under a custom file name with substituted:false (a metadata
+    // lie); it falls back honestly so a font-substituted warning can fire.
+    registerCustomFonts({
+      fonts: [{ family: "GhostBrand", faces: { regular: "https://x/Ghost.ttf" }, sizing: { ascent: 0.9, descent: 0.25 } }],
+    });
+    const r = resolveFont("GhostBrand", false, false);
+    expect(r.file).toBe("Arimo-Regular.ttf");
+    expect(r.substituted).toBe(true);
+  });
+
   it("measure host agrees with pdfkit.widthOfString for the custom face", () => {
     const pdf = new PDFDocument();
     const resolved = resolveFont(FAMILY, false, false);

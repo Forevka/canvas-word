@@ -31,7 +31,12 @@ function mockFetch(impl: (url: string) => Response): void {
 }
 
 function okResponse(bytes: Uint8Array): Response {
-  return { ok: true, status: 200, arrayBuffer: async () => bytes.buffer } as unknown as Response;
+  return {
+    ok: true,
+    status: 200,
+    headers: new Headers(),
+    arrayBuffer: async () => bytes.buffer,
+  } as unknown as Response;
 }
 
 describe("fontCache", () => {

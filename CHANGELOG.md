@@ -26,7 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `fonts` part — the server fetches the faces and **caches them on disk** (keyed by
   URL) so they're reused across renders. TTF/OTF only (WOFF2 is rejected); a missing
   bold/italic/bold-italic face falls back to the regular face in both the editor and
-  the exporters. See `FONTS.md` for the design.
+  the exporters. Custom-font state is **per-instance**: each editor mount and each
+  export job owns its own registry (threaded onto the export call, not a shared
+  module slot), so multiple `WordCanvas` instances with different fonts — and
+  concurrent export jobs — never cross-contaminate. The backend font fetcher is
+  **bounded** (http/https only, optional host allowlist, timeout, and size cap) to
+  prevent SSRF/abuse, and `POST /docs` validates the `fontsConfig` before storing it.
+  See `FONTS.md` for the design.
 - **New `custom-fonts` example** (`examples/custom-fonts`, served at
   `/examples/custom-fonts`): a no-build offline embed that self-hosts PT Serif (4
   faces) via the `fonts` option, hides the built-in Calibri from the toolbar, and

@@ -14,7 +14,14 @@ import type { PlacedBlock } from "../../layout/layoutTree";
 import type { ExportResult, ImageBytes } from "../types";
 import { WarningSink } from "../warnings";
 import { installMeasureHost } from "../shared/measureHost";
-import { resolveFont } from "../shared/fontRegistry";
+import { resolveFont, registerCustomFontBytes, clearCustomFontBytes } from "../shared/fontRegistry";
+import {
+  createFontRegistry,
+  defaultFontRegistry,
+  setActiveFontRegistry,
+  type CustomFontPayload,
+  type CustomFontRegistry,
+} from "../../fonts/customRegistry";
 import { paintBlock, type PaintCtx } from "./paintBlock";
 import {
   COLUMN_SEPARATOR_COLOR,
@@ -27,6 +34,9 @@ const PT = 72 / 96; // px -> pt
 
 export interface RenderPdfOptions {
   images?: ImageBytes;
+  /** This export job's custom fonts (defs + fetched face bytes). Scoped to the
+   *  render so concurrent jobs never share custom-font state. */
+  fonts?: CustomFontPayload;
 }
 
 /** pdfkit's outline addItem accepts these at runtime (@types only declares
@@ -38,12 +48,32 @@ interface OutlineItemOptions {
   expanded?: boolean;
 }
 
+/** Public entry: own a per-job CustomFontRegistry for the whole render so concurrent
+ *  exports never share custom-font state, register this job's custom defs+bytes and
+ *  make the registry active, then render. The registry's bytes are dropped (and the
+ *  process default restored) in finally. */
 export async function renderPdf(doc: Document, opts: RenderPdfOptions = {}): Promise<ExportResult> {
+  const fontReg = createFontRegistry();
+  if (opts.fonts) fontReg.register(opts.fonts.defs);
+  setActiveFontRegistry(fontReg);
+  if (opts.fonts) registerCustomFontBytes(opts.fonts.faces);
+  try {
+    return await renderPdfInner(doc, opts, fontReg);
+  } finally {
+    clearCustomFontBytes(fontReg);
+    setActiveFontRegistry(defaultFontRegistry());
+  }
+}
+
+async function renderPdfInner(doc: Document, opts: RenderPdfOptions, fontReg: CustomFontRegistry): Promise<ExportResult> {
   await installMeasureHost();
   // Imported after the host is installed: the engine measures lazily at layout(),
   // but this keeps the ordering contract explicit and avoids any module-load DOM.
   const { createLayoutEngine } = await import("../../layout/engine");
-  const tree = createLayoutEngine().layout(doc);
+  // layout() re-asserts fontReg active (no await between it and the paint loop), so
+  // the whole resolution span sees this job's fonts even if another job swapped the
+  // active registry during the awaits above.
+  const tree = createLayoutEngine(fontReg).layout(doc);
 
   const warnings = new WarningSink();
   const images = opts.images ?? {};

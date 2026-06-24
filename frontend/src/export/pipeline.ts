@@ -7,8 +7,13 @@ import type { ExportFormat, ExportResult, ImageBytes } from "./types";
 import { renderPdf } from "./pdf/renderPdf";
 import { writeDocx } from "./docx/writeDocx";
 import { installMeasureHost } from "./shared/measureHost";
-import { registerCustomFontBytes } from "./shared/fontRegistry";
-import { registerCustomFonts, type CustomFontPayload } from "../fonts/customRegistry";
+import { registerCustomFontBytes, clearCustomFontBytes } from "./shared/fontRegistry";
+import {
+  createFontRegistry,
+  defaultFontRegistry,
+  setActiveFontRegistry,
+  type CustomFontPayload,
+} from "../fonts/customRegistry";
 import { createLayoutEngine } from "../layout/engine";
 import { pageOfBlockMap } from "../recalc/recalcToc";
 
@@ -31,20 +36,25 @@ export async function runExport(
   images: ImageBytes = {},
   fonts?: CustomFontPayload,
 ): Promise<ExportResult> {
-  // Register custom fonts (defs → resolution/metrics; bytes → fontkit/pdfkit) BEFORE
-  // any layout. This worker/process has its own global registry, so the config must
-  // be (re)applied per export — it's keyed by family, so repeats are cheap.
-  if (fonts) {
-    registerCustomFonts(fonts.defs);
-    registerCustomFontBytes(fonts.faces);
+  // Each job owns its custom-font state: renderPdf builds + tears down a per-job
+  // CustomFontRegistry internally, so a later export that omits a family can't
+  // inherit an earlier job's fonts.
+  if (format === "pdf") return renderPdf(doc, { images, ...(fonts ? { fonts } : {}) });
+
+  // DOCX writes family names verbatim, but a live TOC field export still needs a
+  // layout pass for each heading's real page (cached PAGEREF result). Scope that
+  // pass's custom fonts to a per-job registry, just like the PDF path.
+  if (!hasTocEntries(doc)) return writeDocx(doc, images);
+  await installMeasureHost(); // idempotent; awaited BEFORE the synchronous font span
+  const fontReg = createFontRegistry();
+  if (fonts) fontReg.register(fonts.defs);
+  setActiveFontRegistry(fontReg);
+  if (fonts) registerCustomFontBytes(fonts.faces);
+  try {
+    const tocPages = pageOfBlockMap(createLayoutEngine(fontReg).layout(doc));
+    return await writeDocx(doc, images, tocPages);
+  } finally {
+    clearCustomFontBytes(fontReg);
+    setActiveFontRegistry(defaultFontRegistry());
   }
-  if (format === "pdf") return renderPdf(doc, { images });
-  // Live TOC field export needs each heading's real page for the cached PAGEREF
-  // result — lay the doc out once (measure host is idempotent).
-  let tocPages: Map<string, number> | undefined;
-  if (hasTocEntries(doc)) {
-    await installMeasureHost();
-    tocPages = pageOfBlockMap(createLayoutEngine().layout(doc));
-  }
-  return writeDocx(doc, images, tocPages);
 }

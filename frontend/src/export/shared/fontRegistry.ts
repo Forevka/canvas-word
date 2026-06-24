@@ -6,7 +6,12 @@
 import * as fontkit from "fontkit";
 import type { Font } from "fontkit";
 import { cloneFamilyFor, FONT_FILES } from "../../fonts/clones";
-import { customFontFileName, customFontFor, type CustomFontFaceBytes } from "../../fonts/customRegistry";
+import {
+  activeFontRegistry,
+  customFontFor,
+  type CustomFontFaceBytes,
+  type CustomFontRegistry,
+} from "../../fonts/customRegistry";
 
 export { FONT_FILES };
 
@@ -29,10 +34,21 @@ export function registerFont(file: string, bytes: Uint8Array, overwrite = false)
   loaded.set(file, { bytes, font: fontkit.create(toBuffer(bytes)) as Font });
 }
 
-/** Register the fetched bytes of custom faces (keyed by the synthetic filename so
- *  resolveFont/pdfkit find them). Called from runExport before any layout. */
+/** Register the fetched bytes of custom faces (keyed by the ACTIVE registry's
+ *  synthetic filename so resolveFont/pdfkit find them). Called from runExport
+ *  inside the synchronous span after the job's registry is made active. */
 export function registerCustomFontBytes(faces: CustomFontFaceBytes[]): void {
-  for (const f of faces) registerFont(customFontFileName(f.family, f.style), f.bytes, true);
+  const reg = activeFontRegistry();
+  for (const f of faces) registerFont(reg.faceKey(f.family, f.style), f.bytes, true);
+}
+
+/** Drop a job registry's custom faces from the loaded map after its export, so a
+ *  long-running process (Node backend / shared worker) doesn't accumulate every
+ *  job's font bytes forever. No-op for the default registry (empty prefix). */
+export function clearCustomFontBytes(reg: CustomFontRegistry): void {
+  if (!reg.faceKeyPrefix) return;
+  const tag = `__custom__${reg.faceKeyPrefix}`;
+  for (const key of [...loaded.keys()]) if (key.startsWith(tag)) loaded.delete(key);
 }
 
 export function fontsLoaded(): boolean {
@@ -62,16 +78,24 @@ export function resolveFont(family: string, bold: boolean, italic: boolean): Res
   const { clone, substituted } = cloneFamilyFor(family);
   const style = bold && italic ? "BoldItalic" : bold ? "Bold" : italic ? "Italic" : "Regular";
 
-  // Custom font: prefer the exact style, fall back to its own Regular. If its bytes
-  // somehow aren't registered, fall through to the clone path below.
+  // Custom font: prefer the exact style, fall back to its own Regular.
   if (customFontFor(clone)) {
-    const want = customFontFileName(clone, style);
-    const reg = customFontFileName(clone, "Regular");
-    const hit = loaded.get(want) ?? loaded.get(reg);
+    const reg = activeFontRegistry();
+    const wantKey = reg.faceKey(clone, style);
+    const regularKey = reg.faceKey(clone, "Regular");
+    const hit = loaded.get(wantKey) ?? loaded.get(regularKey);
     if (hit) {
-      const file = loaded.has(want) ? want : reg;
+      const file = loaded.has(wantKey) ? wantKey : regularKey;
       return { file, font: hit.font, bytes: hit.bytes, substituted: false };
     }
+    // Registered as a custom family but its bytes never loaded (e.g. the required
+    // Regular face failed to fetch). Don't emit bundled bytes under a custom file
+    // name with substituted:false — that would make the exported face metadata lie.
+    // Fall back to the visible substitution path so a warning fires and the
+    // reported file/flag are honest.
+    const fb = loaded.get("Arimo-Regular.ttf");
+    if (!fb) throw new Error("fontRegistry: no fonts loaded — call installMeasureHost() before measuring/exporting");
+    return { file: "Arimo-Regular.ttf", font: fb.font, bytes: fb.bytes, substituted: true };
   }
 
   const file = `${clone}-${style}.ttf`;

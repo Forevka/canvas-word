@@ -146,10 +146,15 @@ Constraints (documented behavior, not bugs):
   bytes it embeds (WOFF2 is rejected at registration with a warning).
 - **Missing bold/italic/boldItalic → regular** in BOTH editor and export
   (deterministic parity over faux-synthesis).
-- The custom-font registry is **process-global** (like the rest of the font
-  subsystem); the toolbar is per-instance. Two instances cannot define the **same
-  family name** with **different** faces/sizing — latest registration wins, with a
-  `console.warn`.
+- The custom-font registry is **per-instance**: each `WordCanvas` mount and each
+  export job owns its own `CustomFontRegistry`, asserted active for the duration of
+  every (synchronous) layout/paint span and threaded onto the export call — so two
+  instances with **different** fonts (even the same family name with different
+  faces/sizing) no longer clobber each other, and a later export can't inherit an
+  earlier one's fonts. Within a single registry, redefining one family with
+  different faces/sizing still warns and takes the latest. (Browser `FontFace`
+  registration via `document.fonts` remains genuinely document-global, but it is
+  keyed by family+source so concurrent loads are harmless.)
 - Font hosts must allow **CORS** (editor `FontFace.load` + main-thread fetch). A URL
   that fails to load warns and falls back to a clone rather than hard-failing.
 

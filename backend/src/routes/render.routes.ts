@@ -11,19 +11,10 @@ import type { ResolvedFontsConfig } from "@forevka/wordcanvas/export";
 import type { AppContext } from "../context";
 import { renderPdfFromDocx } from "../export/serverExport";
 import { FontFetchError } from "../export/fontCache";
+import { normalizeFontsConfig } from "../export/fontsConfig";
 import { uploadAuthHook } from "../http/auth";
 import { headerStr } from "../http/headers";
 import { parseMultipart } from "../http/multipart";
-
-/** Normalize a (possibly partial) fonts config JSON into the resolved shape. */
-function normalizeFontsConfig(raw: unknown): ResolvedFontsConfig | undefined {
-  if (!raw || typeof raw !== "object") return undefined;
-  const r = raw as { disableBuiltin?: unknown; fonts?: unknown };
-  return {
-    disableBuiltin: Array.isArray(r.disableBuiltin) ? (r.disableBuiltin as string[]) : [],
-    fonts: Array.isArray(r.fonts) ? (r.fonts as ResolvedFontsConfig["fonts"]) : [],
-  };
-}
 
 export function registerRenderRoutes(app: FastifyInstance, { store }: AppContext): void {
   app.post(

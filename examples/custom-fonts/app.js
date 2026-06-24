@@ -68,10 +68,10 @@ function demoDoc() {
   return b.build();
 }
 
-editor.on("ready", () => {
+editor.on("ready", async () => {
   panel.hidden = false;
   try {
-    editor.setDocument(demoDoc());
+    await editor.setDocument(demoDoc());
   } catch (e) {
     console.error("failed to build demo document", e);
   }

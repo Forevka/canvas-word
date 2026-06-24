@@ -13,6 +13,7 @@ import {
 import type { ResolvedFontsConfig } from "@forevka/wordcanvas/export";
 import type { AppContext } from "../context";
 import { exportDoc } from "../export/serverExport";
+import { normalizeFontsConfig } from "../export/fontsConfig";
 import { sanitizeFilename } from "../http/headers";
 
 // Reusable schema fragments.
@@ -50,7 +51,7 @@ export function registerDocsRoutes(app: FastifyInstance, { store, bcast }: AppCo
       const snapshot = (wrapped ? body.snapshot : body) as SerializedDocument;
       const createdBy = wrapped ? body.createdBy : undefined;
       const user = wrapped ? body.user : undefined;
-      const fontsConfig = wrapped ? body.fontsConfig : undefined;
+      const fontsConfig = normalizeFontsConfig(wrapped ? body.fontsConfig : undefined);
       if (user) await store.upsertUser(user);
       const created = await store.createDocument(snapshot, {
         ...(createdBy ? { createdBy } : {}),

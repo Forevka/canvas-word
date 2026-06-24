@@ -5,7 +5,7 @@
 // keeps the original family names; only rendering/measuring/embedding map to a
 // clone. See src/export/shared/fonts/LICENSES.md.
 
-import { customFontFor, customMetrics, type CustomFontDef } from "./customRegistry";
+import { customFontFor, customMetrics, isRegistrableFontDef, type CustomFontDef } from "./customRegistry";
 
 // "TimesNewRoman" is the genuine Microsoft Times New Roman (bundled at the user's
 // request), not a clone — see FONTS.md / fonts/LICENSES.md for the licensing note.
@@ -118,6 +118,11 @@ export const TOOLBAR_FONTS: { value: string; label: string }[] = [
 export function toolbarFonts(cfg?: { disableBuiltin?: string[]; fonts?: CustomFontDef[] }): { value: string; label: string }[] {
   const disabled = new Set((cfg?.disableBuiltin ?? []).map((s) => firstFamilyToken(s).trim().toLowerCase()));
   const builtins = TOOLBAR_FONTS.filter((f) => !disabled.has(firstFamilyToken(f.value).trim().toLowerCase()));
-  const custom = (cfg?.fonts ?? []).map((f) => ({ value: f.family, label: f.label ?? f.family }));
+  // Only advertise custom families that actually register (valid sizing, a regular
+  // face, no WOFF2) — otherwise the dropdown lists a font cloneFamilyFor can never
+  // resolve, and picking it silently falls back to the default clone.
+  const custom = (cfg?.fonts ?? [])
+    .filter((f) => isRegistrableFontDef(f))
+    .map((f) => ({ value: f.family, label: f.label ?? f.family }));
   return [...builtins, ...custom];
 }

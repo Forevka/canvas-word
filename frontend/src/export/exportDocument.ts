@@ -110,20 +110,12 @@ async function resolveImages(doc: Document): Promise<ImageBytes> {
   return out;
 }
 
-// The mounting editor sets its resolved custom-font config here (the worker is a
-// separate context with no DOM/network, so face bytes are fetched on the main
-// thread — like images — and passed in the export message). Module-scoped to mirror
-// the font subsystem's process-global nature; set once per mount.
-let exportFonts: ResolvedFontsConfig | undefined;
-
-/** Register the editor's custom-font config so exports embed those faces. */
-export function setExportFontConfig(cfg: ResolvedFontsConfig | undefined): void {
-  exportFonts = cfg;
-}
-
 /** Fetch every custom face's bytes on the main thread (deduped by URL). Missing
  *  optional faces fall back to the regular URL. Returns undefined when there are no
- *  custom fonts. A face that fails to fetch is dropped (resolveFont falls back). */
+ *  custom fonts. A family whose REQUIRED Regular face fails to fetch is dropped
+ *  entirely — keeping it would register custom sizing/metrics with no bytes to
+ *  embed, so the export would silently fall back to bundled glyphs and desync from
+ *  the editor. A missing optional face just falls back to that family's Regular. */
 async function resolveFonts(cfg: ResolvedFontsConfig | undefined): Promise<CustomFontPayload | undefined> {
   if (!cfg || cfg.fonts.length === 0) return undefined;
   const cache = new Map<string, Promise<Uint8Array | null>>();
@@ -138,19 +130,32 @@ async function resolveFonts(cfg: ResolvedFontsConfig | undefined): Promise<Custo
     return p;
   };
   const faces: CustomFontFaceBytes[] = [];
+  const regularOk = new Set<string>();
   await Promise.all(
     cfg.fonts.flatMap((f) =>
       CUSTOM_FONT_STYLES.map(async (style) => {
         const bytes = await fetchBytes(faceUrlForStyle(f.faces, style));
-        if (bytes) faces.push({ family: f.family, style, bytes });
+        if (!bytes) return;
+        faces.push({ family: f.family, style, bytes });
+        if (style === "Regular") regularOk.add(f.family);
       }),
     ),
   );
-  return { defs: cfg, faces };
+  const keptFonts = cfg.fonts.filter((f) => regularOk.has(f.family));
+  if (keptFonts.length === 0) return undefined;
+  const defs: ResolvedFontsConfig = { disableBuiltin: cfg.disableBuiltin, fonts: keptFonts };
+  return { defs, faces: faces.filter((face) => regularOk.has(face.family)) };
 }
 
-export async function exportDocument(doc: Document, format: ExportFormat): Promise<ExportResult> {
-  const [images, fonts] = await Promise.all([resolveImages(doc), resolveFonts(exportFonts)]);
+/** Export a document. Pass the editor instance's resolved `fontConfig` so the worker
+ *  embeds exactly that instance's custom faces — the config travels on the call, not
+ *  a shared module slot, so two editors with different fonts never cross-export. */
+export async function exportDocument(
+  doc: Document,
+  format: ExportFormat,
+  fontConfig?: ResolvedFontsConfig,
+): Promise<ExportResult> {
+  const [images, fonts] = await Promise.all([resolveImages(doc), resolveFonts(fontConfig)]);
   const w = ensureWorker();
   const id = nextId++;
   return new Promise<ExportResult>((resolve, reject) => {
@@ -160,5 +165,7 @@ export async function exportDocument(doc: Document, format: ExportFormat): Promi
   });
 }
 
-export const exportPdf = (doc: Document): Promise<ExportResult> => exportDocument(doc, "pdf");
-export const exportDocx = (doc: Document): Promise<ExportResult> => exportDocument(doc, "docx");
+export const exportPdf = (doc: Document, fontConfig?: ResolvedFontsConfig): Promise<ExportResult> =>
+  exportDocument(doc, "pdf", fontConfig);
+export const exportDocx = (doc: Document, fontConfig?: ResolvedFontsConfig): Promise<ExportResult> =>
+  exportDocument(doc, "docx", fontConfig);

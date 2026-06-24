@@ -52,9 +52,6 @@ export async function exportDoc(
 ): Promise<ExportedDoc | null> {
   const snap = await store.getSnapshot(docId);
   if (!snap) return null;
-  // The document's saved custom-font config (set at create time) — fetched + cached
-  // to bytes so server-side layout/embedding matches the editor.
-  const fonts = await resolveCustomFontBytes((await store.getFontsConfig(docId)) ?? undefined);
   const changes = await store.getChanges(docId, snap.version);
   const reconstructed = reconstruct(snap.snapshot, changes);
 
@@ -83,6 +80,10 @@ export async function exportDoc(
 
   await acquire();
   try {
+    // The document's saved custom-font config (set at create time) — fetched +
+    // cached to bytes so server-side layout/embedding matches the editor. Resolved
+    // under the limiter so remote fetches/cache-writes obey EXPORT_CONCURRENCY.
+    const fonts = await resolveCustomFontBytes((await store.getFontsConfig(docId)) ?? undefined);
     await installMeasureHost();
     const { bytes } = await runExport(doc, format, images, fonts);
     const title = await store.getDocumentTitle(docId);
@@ -108,10 +109,11 @@ export async function renderPdfFromDocx(
   const rendered = doc.tocInstruction !== undefined ? generateTocIntoDoc(doc, tocOpts).doc : doc;
   const images: Record<string, Uint8Array> = {};
   for (const m of media) images[m.src] = m.bytes;
-  const fonts = await resolveCustomFontBytes(fontsConfig);
 
   await acquire();
   try {
+    // Resolved under the limiter so remote font fetches obey EXPORT_CONCURRENCY.
+    const fonts = await resolveCustomFontBytes(fontsConfig);
     await installMeasureHost();
     const { bytes: out } = await runExport(rendered, "pdf", images, fonts);
     return out;

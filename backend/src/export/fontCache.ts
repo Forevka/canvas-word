@@ -41,10 +41,22 @@ function faceUrlForStyle(faces: FaceUrls, style: FontStyleName): string {
   }
 }
 
-/** Raised when a font URL can't be fetched (404 / network / non-OK). */
+/** Host of a URL, for log/error messages — never the full URL (presigned tokens,
+ *  internal paths). Returns a placeholder when the URL won't parse. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "<invalid-url>";
+  }
+}
+
+/** Raised when a font URL can't be fetched (404 / network / non-OK). The message
+ *  carries only the host (not the raw URL) so logs / 400 bodies don't leak tokens
+ *  or internal hostnames; the full `url` stays on the instance for internal use. */
 export class FontFetchError extends Error {
   constructor(public readonly url: string, message: string) {
-    super(`font fetch failed (${url}): ${message}`);
+    super(`font fetch failed (${hostOf(url)}): ${message}`);
     this.name = "FontFetchError";
   }
 }
@@ -69,14 +81,47 @@ export async function fetchAndCache(url: string): Promise<Uint8Array> {
   let p = inflight.get(url);
   if (!p) {
     p = (async () => {
+      // Validate scheme: request-supplied URLs must be plain http(s) (no file:,
+      // data:, gopher:, etc. — SSRF surface).
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        throw new FontFetchError(url, "invalid URL");
+      }
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        throw new FontFetchError(url, "unsupported URL scheme");
+      }
+      // Optional host allowlist (comma-separated FONT_FETCH_ALLOWED_HOSTS).
+      const allowed = (process.env.FONT_FETCH_ALLOWED_HOSTS ?? "")
+        .split(",")
+        .map((h) => h.trim())
+        .filter(Boolean);
+      if (allowed.length > 0 && !allowed.includes(parsed.hostname)) {
+        throw new FontFetchError(url, "host not allowed");
+      }
+
+      const MAX = Number(process.env.FONT_FETCH_MAX_BYTES ?? 10 * 1024 * 1024);
+      const controller = new AbortController();
+      const timeout = setTimeout(
+        () => controller.abort(),
+        Number(process.env.FONT_FETCH_TIMEOUT_MS ?? 10000),
+      );
       let res: Response;
       try {
-        res = await fetch(url);
+        res = await fetch(url, { signal: controller.signal });
       } catch (e) {
+        if (e instanceof Error && e.name === "AbortError") throw new FontFetchError(url, "timeout");
         throw new FontFetchError(url, e instanceof Error ? e.message : String(e));
+      } finally {
+        clearTimeout(timeout);
       }
       if (!res.ok) throw new FontFetchError(url, `HTTP ${res.status}`);
+      // Reject oversized fonts early (advertised length), then after download.
+      const declared = res.headers.get("content-length");
+      if (declared && Number(declared) > MAX) throw new FontFetchError(url, "font too large");
       const bytes = new Uint8Array(await res.arrayBuffer());
+      if (bytes.byteLength > MAX) throw new FontFetchError(url, "font too large");
       await mkdir(CACHE_DIR, { recursive: true });
       const tmp = `${path}.${process.pid}.${bytes.byteLength}.tmp`;
       await writeFile(tmp, bytes);

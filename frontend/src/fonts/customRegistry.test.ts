@@ -7,9 +7,12 @@ import { cloneFamilyFor, metricsFor, toolbarFonts, CLONE_METRICS } from "./clone
 import {
   __resetCustomFonts,
   allCustomFonts,
+  createFontRegistry,
   customFontFileName,
   customMetrics,
+  defaultFontRegistry,
   registerCustomFonts,
+  setActiveFontRegistry,
   type CustomFontDef,
 } from "./customRegistry";
 
@@ -21,6 +24,7 @@ const inter: CustomFontDef = {
 
 afterEach(() => {
   __resetCustomFonts();
+  setActiveFontRegistry(defaultFontRegistry());
   vi.restoreAllMocks();
 });
 
@@ -78,5 +82,31 @@ describe("custom font overlay", () => {
     expect(list.find((f) => f.value === "Inter")?.label).toBe("Inter"); // custom appended
     // disableBuiltin does NOT affect resolution — Calibri still maps to its clone.
     expect(cloneFamilyFor("Calibri")).toEqual({ clone: "Carlito", substituted: false });
+  });
+
+  it("toolbar hides custom defs that would fail registration (so they always resolve)", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const woff = { ...inter, family: "BadWoff", faces: { regular: "https://x/B.woff2" } };
+    const values = toolbarFonts({ fonts: [inter, woff] }).map((f) => f.value);
+    expect(values).toContain("Inter");
+    expect(values).not.toContain("BadWoff"); // cloneFamilyFor could never resolve it
+  });
+
+  it("registry instances are isolated; resolvers read the ACTIVE one", () => {
+    const a = createFontRegistry();
+    const b = createFontRegistry();
+    a.register({ fonts: [inter] });
+    b.register({ fonts: [{ ...inter, family: "Roboto", sizing: { ascent: 0.7, descent: 0.2 } }] });
+    // Distinct synthetic face-key namespaces so two concurrent export jobs that both
+    // define "Inter" with different bytes can't collide in the loaded map.
+    expect(a.faceKey("Inter", "Regular")).not.toBe(b.faceKey("Inter", "Regular"));
+
+    setActiveFontRegistry(a);
+    expect(cloneFamilyFor("Inter")).toEqual({ clone: "Inter", substituted: false });
+    expect(cloneFamilyFor("Roboto")).toEqual({ clone: "Arimo", substituted: true }); // not in A
+
+    setActiveFontRegistry(b);
+    expect(cloneFamilyFor("Roboto")).toEqual({ clone: "Roboto", substituted: false });
+    expect(cloneFamilyFor("Inter")).toEqual({ clone: "Arimo", substituted: true }); // not in B
   });
 });

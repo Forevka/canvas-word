@@ -15,6 +15,7 @@ import type { CaretRect, Rect } from "../layout/geometry";
 import { spaceMarkXs } from "../layout/geometry";
 import type { CellBorder } from "@cw/shared";
 import { charStyleToFont } from "../layout/metrics";
+import { setActiveFontRegistry, type CustomFontRegistry } from "../fonts/customRegistry";
 import {
   cellBorderDash,
   cellBorderWidth,
@@ -212,6 +213,10 @@ export interface PaintLayerOptions {
   /** Absolute zoom clamp (omit ⇒ built-in 0.25/5). */
   zoomMin?: number;
   zoomMax?: number;
+  /** This editor instance's custom-font registry — asserted active for each paint
+   *  pass so charStyleToFont resolves against this instance's fonts (not another
+   *  WordCanvas mount's). Omit ⇒ the process-default registry. */
+  fontRegistry?: CustomFontRegistry;
 }
 
 export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions = {}): PaintScheduler {
@@ -222,6 +227,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
   // Page chrome (shadow + gaps) is on by default; previews turn it off so the
   // bare page sits flush in its host. The gap also feeds clientToPage hit-testing.
   const chrome = opts.chrome !== false;
+  const fontRegistry = opts.fontRegistry;
   const gap = chrome ? theme.pageGapPx : 0;
   let tree: LayoutTree | null = null;
   let selectionRects: Rect[] = [];
@@ -356,6 +362,10 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
 
   function flush(): void {
     if (!tree) return;
+    // Assert this instance's fonts for the whole (synchronous) paint pass so
+    // charStyleToFont resolves against them even if another WordCanvas mount last
+    // touched the active registry.
+    if (fontRegistry) setActiveFontRegistry(fontRegistry);
     for (const index of dirty) {
       const canvas = liveCanvases.get(index);
       const page = tree.pages[index];

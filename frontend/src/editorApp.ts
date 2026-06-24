@@ -9,11 +9,11 @@ import { createLayoutEngine } from "./layout/engine";
 import { sampleDoc } from "./model/sampleDoc";
 import { stressDoc } from "./model/stressDoc";
 import { importDocx, type ImportResult, type ImportPhase } from "./import/docx/importDocx";
-import { exportDocument, setExportFontConfig, type ExportFormat, type ExportWarning } from "./export/exportDocument";
+import { exportDocument, type ExportFormat, type ExportWarning } from "./export/exportDocument";
 import { loadEditorFonts } from "./export/shared/editorFonts";
 import { fontsProgress } from "./app/loadProgress";
 import { toolbarFonts } from "./fonts/clones";
-import { registerCustomFonts } from "./fonts/customRegistry";
+import { createFontRegistry } from "./fonts/customRegistry";
 import type { EditorHandle, WordCanvasRuntime } from "./app/runtime";
 import { buildShell } from "./app/shell";
 import { ensureWordCanvasStyles } from "./ui/styles";
@@ -102,8 +102,11 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
     ...(runtime.behavior ? { behavior: runtime.behavior } : {}),
     ...(runtime.fonts ? { fonts: runtime.fonts } : {}),
   });
-  registerCustomFonts(config.fonts);
-  setExportFontConfig(config.fonts);
+  // This editor instance's own font registry — threaded into its layout engine and
+  // paint layer (below) so its custom fonts can't be clobbered by another WordCanvas
+  // instance on the page, and into its exports via config.fonts.
+  const fontRegistry = createFontRegistry();
+  fontRegistry.register(config.fonts);
   await loadEditorFonts((loaded, total) => runtime.onLoadProgress?.(fontsProgress(loaded, total)), config.fonts);
   await document.fonts.ready;
 
@@ -201,7 +204,7 @@ if (collabId !== null && BACKEND_HTTP) {
 // always arrives WITH its own stylesheet, so its w:docDefaults/Normal win.
 if (!doc.stylesheet) doc = { ...doc, stylesheet: config.stylesheet };
 
-const engine = createLayoutEngine();
+const engine = createLayoutEngine(fontRegistry);
 const t0 = performance.now();
 const tree = engine.layout(doc); // cold: every paragraph hits prepareRichInline
 const t1 = performance.now();
@@ -235,6 +238,7 @@ let onLocalReviewOp: (env: ReviewOpEnvelope) => void = () => {};
 let ribbonCtx: RibbonActionContext | null = null;
 const editorOpts = {
   engine,
+  paintOptions: { fontRegistry },
   readonly,
   theme: config.theme,
   behavior: config.behavior,
@@ -501,7 +505,7 @@ const openDocxFile = async (file: File | ArrayBuffer): Promise<void> => {
 // handle's exportDocx()/exportPdf() share one path.
 const exportBaked = (format: ExportFormat): Promise<{ bytes: Uint8Array; warnings: ExportWarning[] }> => {
   const baked = bakeReview(editor.getDocument(), editor.getReview(), "reject");
-  return exportDocument(baked, format);
+  return exportDocument(baked, format, config.fonts);
 };
 const blobFor = (format: ExportFormat, bytes: Uint8Array): Blob =>
   new Blob([bytes as BlobPart], { type: format === "pdf" ? PDF_MIME : DOCX_MIME });

@@ -179,12 +179,15 @@ export function resolveBehavior(b?: EditorBehavior): ResolvedBehavior {
 /** The library's built-in (empty) fonts config. */
 export const DEFAULT_FONTS: ResolvedFontsConfig = { disableBuiltin: [], fonts: [] };
 
-/** Normalize the public partial `fonts` option into the fully-populated form. */
+/** Normalize the public partial `fonts` option into the fully-populated form.
+ *  Deep-clones nested `faces`/`sizing` (and never returns the shared DEFAULT_FONTS
+ *  object) so later mutation of the caller's `fonts` option can't desync the
+ *  already-loaded editor fonts from the export-side config. */
 export function resolveFonts(f?: FontsConfig): ResolvedFontsConfig {
-  if (!f) return DEFAULT_FONTS;
+  if (!f) return { disableBuiltin: [], fonts: [] };
   return {
     disableBuiltin: f.disableBuiltin ? [...f.disableBuiltin] : [],
-    fonts: f.fonts ? f.fonts.map((d) => ({ ...d })) : [],
+    fonts: f.fonts ? f.fonts.map((d) => ({ ...d, faces: { ...d.faces }, sizing: { ...d.sizing } })) : [],
   };
 }
 
