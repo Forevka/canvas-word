@@ -9,6 +9,7 @@
 
 import type { EditorTypography, Stylesheet } from "@cw/shared";
 import { makeDefaultStylesheet } from "@cw/shared";
+import type { FontsConfig, ResolvedFontsConfig } from "./fonts/customRegistry";
 import {
   ACCENT_BLUE,
   COLUMN_SEPARATOR_COLOR,
@@ -25,6 +26,8 @@ import { INDENT_STEP_PX, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from "./uiConstants";
  *  LIBRARY's built-in default run/paragraph styles for NEW/blank documents and
  *  the fallback stylesheet — NOT a loaded .docx's own w:docDefaults / Normal. */
 export type DefaultStyleOverrides = EditorTypography;
+
+export type { CustomFontDef, CustomFontFaces, FontsConfig, ResolvedFontsConfig } from "./fonts/customRegistry";
 
 /** Ruler band styling (the strip the horizontal + vertical rulers paint). */
 export interface RulerTheme {
@@ -173,6 +176,21 @@ export function resolveBehavior(b?: EditorBehavior): ResolvedBehavior {
   return b ? { ...DEFAULT_BEHAVIOR, ...stripUndefined(b) } : DEFAULT_BEHAVIOR;
 }
 
+/** The library's built-in (empty) fonts config. */
+export const DEFAULT_FONTS: ResolvedFontsConfig = { disableBuiltin: [], fonts: [] };
+
+/** Normalize the public partial `fonts` option into the fully-populated form.
+ *  Deep-clones nested `faces`/`sizing` (and never returns the shared DEFAULT_FONTS
+ *  object) so later mutation of the caller's `fonts` option can't desync the
+ *  already-loaded editor fonts from the export-side config. */
+export function resolveFonts(f?: FontsConfig): ResolvedFontsConfig {
+  if (!f) return { disableBuiltin: [], fonts: [] };
+  return {
+    disableBuiltin: f.disableBuiltin ? [...f.disableBuiltin] : [],
+    fonts: f.fonts ? f.fonts.map((d) => ({ ...d, faces: { ...d.faces }, sizing: { ...d.sizing } })) : [],
+  };
+}
+
 /** The resolved, instance-scoped configuration the editor app threads downward. */
 export interface ResolvedConfig {
   theme: ResolvedTheme;
@@ -182,12 +200,15 @@ export interface ResolvedConfig {
   /** The default stylesheet generated from `typography` — used for new/blank
    *  documents and as the fallback when a document carries none. */
   stylesheet: Stylesheet;
+  /** Custom fonts + toolbar disables (per-instance toolbar; global font registry). */
+  fonts: ResolvedFontsConfig;
 }
 
 export interface EditorConfigInput {
   theme?: EditorTheme | undefined;
   overrideDefaultStyles?: DefaultStyleOverrides | undefined;
   behavior?: EditorBehavior | undefined;
+  fonts?: FontsConfig | undefined;
 }
 
 /** Resolve the public partial options into the fully-populated internal config. */
@@ -198,6 +219,7 @@ export function resolveConfig(input: EditorConfigInput = {}): ResolvedConfig {
     behavior: resolveBehavior(input.behavior),
     typography,
     stylesheet: makeDefaultStylesheet(typography),
+    fonts: resolveFonts(input.fonts),
   };
 }
 

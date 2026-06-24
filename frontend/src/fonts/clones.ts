@@ -5,6 +5,8 @@
 // keeps the original family names; only rendering/measuring/embedding map to a
 // clone. See src/export/shared/fonts/LICENSES.md.
 
+import { customFontFor, customMetrics, isRegistrableFontDef, type CustomFontDef } from "./customRegistry";
+
 // "TimesNewRoman" is the genuine Microsoft Times New Roman (bundled at the user's
 // request), not a clone — see FONTS.md / fonts/LICENSES.md for the licensing note.
 export const CLONE_FAMILIES = ["Carlito", "Caladea", "Gelasio", "Arimo", "TimesNewRoman", "Cousine"] as const;
@@ -67,11 +69,23 @@ export const CLONE_METRICS: Record<string, { ascent: number; descent: number }> 
   Cousine: { ascent: 0.625, descent: 0.1875 },
 };
 
-/** Resolve one CSS-stack family token to its bundled clone family. */
+/** Resolve one CSS-stack family token to the face family the editor/exporters
+ *  render with. A registered custom font resolves to ITSELF (no clone, no
+ *  substitution) and shadows a built-in of the same name; otherwise it maps to the
+ *  bundled clone (or the Arimo fallback). */
 export function cloneFamilyFor(family: string): { clone: string; substituted: boolean } {
+  const custom = customFontFor(family);
+  if (custom) return { clone: custom.family, substituted: false };
   const key = family.trim().toLowerCase().replace(/^["']|["']$/g, "");
   const clone = CLONE_OF[key];
   return clone ? { clone, substituted: false } : { clone: FALLBACK_CLONE, substituted: true };
+}
+
+/** Vertical metrics (fractions of em) for a resolved face name — caller-supplied
+ *  for custom fonts, baked for clones, with a safe default otherwise. Consumed by
+ *  layout/metrics.ts so editor and exporters agree on line height. */
+export function metricsFor(name: string): { ascent: number; descent: number } {
+  return customMetrics(name) ?? CLONE_METRICS[name] ?? { ascent: 0.9, descent: 0.25 };
 }
 
 /** First token of a CSS font-family stack ("Calibri, serif" -> "Calibri"). */
@@ -96,3 +110,19 @@ export const TOOLBAR_FONTS: { value: string; label: string }[] = [
   { value: "Consolas, monospace", label: "Consolas (Cousine)" },
   { value: "Courier New, monospace", label: "Courier New (Cousine)" },
 ];
+
+/** The font-dropdown list for one editor instance: the built-ins minus any hidden
+ *  by `disableBuiltin` (matched on the original family name), plus the instance's
+ *  custom fonts. Computed PER MOUNT from that instance's config, so the toolbar is
+ *  per-instance even though the underlying custom-font registry is global. */
+export function toolbarFonts(cfg?: { disableBuiltin?: string[]; fonts?: CustomFontDef[] }): { value: string; label: string }[] {
+  const disabled = new Set((cfg?.disableBuiltin ?? []).map((s) => firstFamilyToken(s).trim().toLowerCase()));
+  const builtins = TOOLBAR_FONTS.filter((f) => !disabled.has(firstFamilyToken(f.value).trim().toLowerCase()));
+  // Only advertise custom families that actually register (valid sizing, a regular
+  // face, no WOFF2) — otherwise the dropdown lists a font cloneFamilyFor can never
+  // resolve, and picking it silently falls back to the default clone.
+  const custom = (cfg?.fonts ?? [])
+    .filter((f) => isRegistrableFontDef(f))
+    .map((f) => ({ value: f.family, label: f.label ?? f.family }));
+  return [...builtins, ...custom];
+}

@@ -12,6 +12,7 @@ import type {
   DocumentActivity,
   DocumentSummary,
   MediaRecord,
+  ResolvedFontsConfig,
   UserSummary,
   WebhookRecord,
 } from "./ChangeStore";
@@ -23,6 +24,7 @@ interface DocRow {
   createdAt: number;
   head: number;
   snapshot: SerializedDocument;
+  fontsConfig: ResolvedFontsConfig | null;
 }
 
 export class MemoryChangeStore implements ChangeStore {
@@ -37,7 +39,7 @@ export class MemoryChangeStore implements ChangeStore {
 
   async createDocument(
     base: SerializedDocument,
-    opts: { docId?: string; createdBy?: string; title?: string } = {},
+    opts: { docId?: string; createdBy?: string; title?: string; fontsConfig?: ResolvedFontsConfig } = {},
   ): Promise<{ docId: string; version: number }> {
     const docId = opts.docId ?? randomUUID();
     this.docs.set(docId, {
@@ -47,6 +49,7 @@ export class MemoryChangeStore implements ChangeStore {
       createdAt: Date.now(),
       head: 0,
       snapshot: base,
+      fontsConfig: opts.fontsConfig ?? null,
     });
     this.log.set(docId, []);
     return { docId, version: 0 };
@@ -59,6 +62,15 @@ export class MemoryChangeStore implements ChangeStore {
 
   async getDocumentTitle(docId: string): Promise<string | null> {
     return this.docs.get(docId)?.title ?? null;
+  }
+
+  async getFontsConfig(docId: string): Promise<ResolvedFontsConfig | null> {
+    return this.docs.get(docId)?.fontsConfig ?? null;
+  }
+
+  async setFontsConfig(docId: string, cfg: ResolvedFontsConfig | null): Promise<void> {
+    const d = this.docs.get(docId);
+    if (d) d.fontsConfig = cfg;
   }
 
   async getSnapshot(docId: string): Promise<DocSnapshotRecord | null> {

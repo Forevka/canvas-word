@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WordCanvas — custom fonts</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      #editor {
+        position: fixed;
+        inset: 0;
+      }
+
+      /* Floating control panel (top-right). pointer-events on the panel only, so
+         the editor underneath stays fully usable. */
+      #panel {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        z-index: 30;
+        width: 300px;
+        max-width: calc(100vw - 24px);
+        background: #ffffff;
+        border: 1px solid #e2e2e6;
+        border-radius: 10px;
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+        font: 13px/1.45 system-ui, sans-serif;
+        color: #222;
+        overflow: hidden;
+      }
+      #panel h1 {
+        margin: 0;
+        padding: 10px 14px;
+        font-size: 13px;
+        font-weight: 700;
+        background: #f5f6f8;
+        border-bottom: 1px solid #ececef;
+      }
+      #panel .body {
+        padding: 12px 14px;
+      }
+      #panel p {
+        margin: 0 0 10px;
+        color: #444;
+      }
+      #panel code {
+        background: #f1f1f4;
+        padding: 1px 4px;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+      #panel button {
+        appearance: none;
+        border: 1px solid #2563eb;
+        background: #2563eb;
+        color: #fff;
+        border-radius: 7px;
+        padding: 7px 12px;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #panel button:hover {
+        background: #1d4ed8;
+      }
+      #status {
+        margin-top: 10px;
+        font-variant-numeric: tabular-nums;
+        color: #555;
+        min-height: 1.4em;
+      }
+
+      /* First-load overlay (same pattern as the offline example). */
+      #loader {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: #fafafa;
+        font: 14px/1.4 system-ui, sans-serif;
+        color: #444;
+        transition: opacity 0.3s ease;
+      }
+      #loader.done {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #loader .track {
+        width: 280px;
+        height: 6px;
+        border-radius: 3px;
+        background: #e4e4e4;
+        overflow: hidden;
+      }
+      #loader .bar {
+        height: 100%;
+        width: 0;
+        border-radius: 3px;
+        background: #2563eb;
+        transition: width 0.15s ease;
+      }
+    </style>
+
+    <!--
+      Resolve the bare package specifiers to the built bundles (main + builder).
+      In a bundler-based app you'd just import them and skip this. Paths are
+      absolute from the repo root, so serve this example with the repo root as the
+      static root (see this folder's README.md).
+    -->
+    <script type="importmap">
+      {
+        "imports": {
+          "@forevka/wordcanvas": "/node_modules/@forevka/wordcanvas/dist-lib/wordcanvas.js",
+          "@forevka/wordcanvas/builder": "/node_modules/@forevka/wordcanvas/dist-lib/builder.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="loader">
+      <div class="label">Loading editor…</div>
+      <div class="track"><div class="bar"></div></div>
+    </div>
+
+    <div id="panel" hidden>
+      <h1>Custom fonts demo</h1>
+      <div class="body">
+        <p>
+          This editor is configured with a self-hosted <strong>PT Serif</strong> custom font
+          (4 faces + <code>sizing</code>), and the built-in <strong>Calibri</strong> hidden from
+          the toolbar. Open the Font dropdown to see it, or click below to export — the PDF
+          embeds PT Serif.
+        </p>
+        <button id="export">Export PDF</button>
+        <div id="status"></div>
+      </div>
+    </div>
+
+    <div id="editor"></div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

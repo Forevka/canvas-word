@@ -175,6 +175,42 @@ export interface EditorBehavior {
   gridSpacingPx?: number;
 }
 
+// ===== Custom fonts (see WordCanvasOptions.fonts) ===========================
+
+/** Per-style face URLs for a custom font. `regular` is required; a missing
+ *  bold/italic/boldItalic falls back to `regular` in both the editor and the
+ *  exporters. TTF/OTF only (WOFF2 is not supported). */
+export interface CustomFontFaces {
+  regular: string;
+  bold?: string;
+  italic?: string;
+  boldItalic?: string;
+}
+
+/** One custom font supplied through configuration. */
+export interface CustomFontDef {
+  /** Family name — stored in the model, shown in the toolbar, AND the render name
+   *  (a custom font is never substituted to a built-in clone). */
+  family: string;
+  /** Per-style face URLs. */
+  faces: CustomFontFaces;
+  /** Vertical metrics as fractions of em — REQUIRED so the editor and the PDF/DOCX
+   *  exporters compute identical line heights (and therefore identical pagination). */
+  sizing: { ascent: number; descent: number };
+  /** Optional toolbar label (defaults to `family`). */
+  label?: string;
+}
+
+/** The `fonts` option: register custom fonts and/or hide built-ins from the toolbar. */
+export interface FontsConfig {
+  /** Original family names (e.g. "Calibri") to hide from the toolbar. Hidden
+   *  built-ins stay loaded and resolvable, so a loaded .docx that references them
+   *  still renders — this only trims the font dropdown. */
+  disableBuiltin?: string[];
+  /** Custom fonts to register and offer in the toolbar. */
+  fonts?: CustomFontDef[];
+}
+
 /** Overrides the LIBRARY's built-in default run/paragraph styles for NEW/blank
  *  documents and the fallback stylesheet — NOT a loaded .docx's own defaults. */
 export interface DefaultStyleOverrides {
@@ -343,6 +379,14 @@ export interface WordCanvasOptions {
   /** Behavior tuning: zoom step (default 1.1), zoom clamp (0.25–5), indent step
    *  (36px), and default drawing-grid spacing (24px; `view.gridSpacingPx` wins). */
   behavior?: EditorBehavior;
+  /** Supply your OWN fonts, loaded from URLs at runtime. Each custom font needs a
+   *  `family` (stored in the model + shown in the toolbar), per-style face URLs
+   *  (`regular` required; the rest fall back to it), and REQUIRED `sizing`
+   *  ({ ascent, descent } as fractions of em) so the editor and the PDF/DOCX
+   *  exporters paginate identically. `disableBuiltin` hides built-ins (by original
+   *  name, e.g. "Calibri") from the toolbar only. TTF/OTF only; font hosts must
+   *  allow CORS. */
+  fonts?: FontsConfig;
   /** Customize the ribbon toolbar. Called once at mount with a `RibbonApi` to
    *  reorder/remove built-in tabs/groups/buttons (by id — discover them with
    *  `api.tabs()/groups()/items()`) and add your own tabs, groups, and buttons.

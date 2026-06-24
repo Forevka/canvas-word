@@ -6,11 +6,12 @@
 // keys embedded images by ImageBlock.src, so we set src = mediaId and feed an
 // images map keyed by the same id, pulling bytes from the media table.
 
-import { runExport } from "@forevka/wordcanvas/export";
+import { runExport, type ResolvedFontsConfig } from "@forevka/wordcanvas/export";
 import { installMeasureHost } from "@forevka/wordcanvas/export/measure";
 import { runImport } from "@forevka/wordcanvas/import";
 import { applyReviewOp, bakeReview, emptyReview, forEachImage, generateTocIntoDoc, reconstruct, type BakeMode, type TocOptions } from "@cw/shared";
 import type { ChangeStore } from "../store/ChangeStore";
+import { resolveCustomFontBytes } from "./fontCache";
 
 export type ExportFormat = "docx" | "pdf";
 
@@ -79,8 +80,12 @@ export async function exportDoc(
 
   await acquire();
   try {
+    // The document's saved custom-font config (set at create time) — fetched +
+    // cached to bytes so server-side layout/embedding matches the editor. Resolved
+    // under the limiter so remote fetches/cache-writes obey EXPORT_CONCURRENCY.
+    const fonts = await resolveCustomFontBytes((await store.getFontsConfig(docId)) ?? undefined);
     await installMeasureHost();
-    const { bytes } = await runExport(doc, format, images);
+    const { bytes } = await runExport(doc, format, images, fonts);
     const title = await store.getDocumentTitle(docId);
     return { bytes, title };
   } finally {
@@ -94,7 +99,11 @@ export async function exportDoc(
  *  from the document's headings styled by `tocOpts` (page numbers resolve during
  *  layout), then render. Footer PAGE/NUMPAGES are substituted per page by the layout
  *  engine, so "Page X of Y" is correct on every page. Nothing is stored. */
-export async function renderPdfFromDocx(bytes: Uint8Array, tocOpts: TocOptions = {}): Promise<Uint8Array> {
+export async function renderPdfFromDocx(
+  bytes: Uint8Array,
+  tocOpts: TocOptions = {},
+  fontsConfig?: ResolvedFontsConfig,
+): Promise<Uint8Array> {
   const { doc, media } = runImport(bytes, undefined, { collectMediaBytes: true });
   // Build the TOC entries in place (no-op when the document has no TOC field).
   const rendered = doc.tocInstruction !== undefined ? generateTocIntoDoc(doc, tocOpts).doc : doc;
@@ -103,8 +112,10 @@ export async function renderPdfFromDocx(bytes: Uint8Array, tocOpts: TocOptions =
 
   await acquire();
   try {
+    // Resolved under the limiter so remote font fetches obey EXPORT_CONCURRENCY.
+    const fonts = await resolveCustomFontBytes(fontsConfig);
     await installMeasureHost();
-    const { bytes: out } = await runExport(rendered, "pdf", images);
+    const { bytes: out } = await runExport(rendered, "pdf", images, fonts);
     return out;
   } finally {
     release();

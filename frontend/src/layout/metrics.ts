@@ -2,7 +2,8 @@
 // One hidden canvas, results cached per font string.
 
 import type { CharStyle } from "@cw/shared";
-import { CLONE_METRICS, cloneFamilyFor, firstFamilyToken } from "../fonts/clones";
+import { cloneFamilyFor, firstFamilyToken, metricsFor } from "../fonts/clones";
+import { activeFontRegistry } from "../fonts/customRegistry";
 import { SUB_SUPER_SCALE } from "../paint/paintStyle";
 
 export interface FontMetrics {
@@ -41,8 +42,6 @@ function measureContext(): MeasureContext {
   return browserCtx;
 }
 
-const metricsCache = new Map<string, FontMetrics>();
-
 export function charStyleToFont(s: CharStyle): string {
   const italic = s.italic ? "italic " : "";
   const weight = s.bold ? "700" : "400";
@@ -69,12 +68,16 @@ export function measureTextWidth(text: string, font: string): number {
 // therefore identical pagination on every platform. charStyleToFont already
 // emits the clone family, so the last token of the font string is it.
 export function fontMetrics(font: string): FontMetrics {
+  // Per-registry cache: a custom family's sizing is instance-scoped, so keying on
+  // the active registry's cache keeps two editors with the same family name but
+  // different metrics from sharing a (wrong) line height.
+  const metricsCache = activeFontRegistry().metricsCache;
   let m = metricsCache.get(font);
   if (!m) {
     const sizeMatch = /(\d+(?:\.\d+)?)px/.exec(font);
     const size = sizeMatch ? parseFloat(sizeMatch[1]!) : 16;
     const family = font.slice(font.indexOf("px ") + 3).trim();
-    const r = CLONE_METRICS[cloneFamilyFor(family).clone] ?? { ascent: 0.9, descent: 0.25 };
+    const r = metricsFor(cloneFamilyFor(family).clone);
     m = { ascent: Math.round(r.ascent * size), descent: Math.round(r.descent * size) };
     metricsCache.set(font, m);
   }

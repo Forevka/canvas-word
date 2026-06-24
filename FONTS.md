@@ -101,7 +101,66 @@ export = 80 pages.** If you change `CLONE_METRICS` or `charStyleToFont`, re-veri
 this parity (lay the same doc out in the editor and via `runExport` and compare
 page counts) — they must stay equal. See `EXPORT.md` for the export architecture.
 
-## Adding or changing a font
+## Custom fonts (embedder-supplied, at runtime)
+
+Embedders can add their own fonts via the `fonts` constructor option without
+touching the bundle:
+
+```ts
+new WordCanvas({
+  fonts: {
+    disableBuiltin: ["Calibri"],          // hide built-ins from the TOOLBAR only
+    fonts: [{
+      family: "Inter",                     // model + toolbar + render name
+      faces: { regular: "https://…/Inter-Regular.ttf", bold: "https://…/Inter-Bold.ttf" },
+      sizing: { ascent: 0.95, descent: 0.24 },   // REQUIRED — same role as CLONE_METRICS
+    }],
+  },
+})
+```
+
+How it threads through (mirrors the clone path, so parity holds):
+
+- **`frontend/src/fonts/customRegistry.ts`** is a global, additive overlay. The
+  `clones.ts` resolvers consult it: `cloneFamilyFor` returns a custom family **as
+  itself** (`substituted: false`, no Arimo fallback — it shadows a built-in of the
+  same name), and `metricsFor` returns the caller's `sizing` instead of
+  `CLONE_METRICS`. So a custom family renders/measures/embeds as itself with its
+  supplied vertical metrics — the one knob that keeps the editor and both exporters
+  paginating identically. **`sizing` is required for exactly this reason.**
+- **Editor:** `editorFonts.ts` loads each face as a `FontFace` under the custom
+  family name (missing bold/italic reuse the regular bytes — matching export).
+- **Export:** the main thread fetches face bytes and passes them in the worker
+  message (`ToExportWorker.fonts`); `runExport` calls `registerCustomFonts` +
+  `registerCustomFontBytes` before layout; `resolveFont` keys custom faces by a
+  synthetic `__custom__<family>-<Style>.ttf` name (both the fontkit-registry key and
+  the pdfkit registration key). DOCX writes the custom family name verbatim
+  (`w:rFonts w:ascii`).
+- **Backend:** `backend/src/export/fontCache.ts` fetches + disk-caches faces by URL
+  hash; `serverExport` reads the doc's saved config (`ChangeStore.getFontsConfig`,
+  set at `POST /docs` time) or, for `/render.pdf`, a `fonts` multipart part.
+
+Constraints (documented behavior, not bugs):
+
+- **TTF/OTF only** — WOFF and WOFF2 are compressed SFNT wrappers (zlib / Brotli),
+  but the export pipeline feeds the SAME raw bytes to fontkit (to measure widths) and
+  to pdfkit (to subset-embed), and both need an uncompressed TTF/OTF. Both `.woff` and
+  `.woff2` are rejected at registration with a warning — convert to TTF/OTF first.
+- **Missing bold/italic/boldItalic → regular** in BOTH editor and export
+  (deterministic parity over faux-synthesis).
+- The custom-font registry is **per-instance**: each `WordCanvas` mount and each
+  export job owns its own `CustomFontRegistry`, asserted active for the duration of
+  every (synchronous) layout/paint span and threaded onto the export call — so two
+  instances with **different** fonts (even the same family name with different
+  faces/sizing) no longer clobber each other, and a later export can't inherit an
+  earlier one's fonts. Within a single registry, redefining one family with
+  different faces/sizing still warns and takes the latest. (Browser `FontFace`
+  registration via `document.fonts` remains genuinely document-global, but it is
+  keyed by family+source so concurrent loads are harmless.)
+- Font hosts must allow **CORS** (editor `FontFace.load` + main-thread fetch). A URL
+  that fails to load warns and falls back to a clone rather than hard-failing.
+
+## Adding or changing a *bundled* font
 
 1. Drop the four faces (`Family-Regular/Bold/Italic/BoldItalic.ttf`) into
    `frontend/src/export/shared/fonts/`. **Only ship OFL/Apache (or otherwise

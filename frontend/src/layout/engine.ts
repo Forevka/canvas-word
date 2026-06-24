@@ -15,6 +15,7 @@ import { formatListNumber, markerText, type ListDefinition, type ListLevel } fro
 import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock, PlacedImage } from "./layoutTree";
 import { PrepareCache, prepareRuns, type PreparedSegment } from "./prepareCache";
 import { charStyleToFont, fontMetrics, measureTextWidth } from "./metrics";
+import { setActiveFontRegistry, type CustomFontRegistry } from "../fonts/customRegistry";
 
 /** Word's default tab interval when a `\t` runs past the last explicit stop
  *  (0.5 inch at 96 dpi). */
@@ -37,7 +38,10 @@ export interface LayoutEngine {
   reset(): void;
 }
 
-export function createLayoutEngine(): LayoutEngine {
+/** @param fontRegistry custom-font registry to make active for this engine's layout
+ *  passes (editor mount / export job). Omit to leave the active registry untouched
+ *  (tests + recalc paths that use the process-default global). */
+export function createLayoutEngine(fontRegistry?: CustomFontRegistry): LayoutEngine {
   const prepCache = new PrepareCache();
   // Second cache tier: LineBox[] per (block revision, width). A keystroke
   // re-breaks ONE paragraph; every other block's lines are reused as-is and
@@ -60,6 +64,11 @@ export function createLayoutEngine(): LayoutEngine {
 
   return {
     layout(doc: Document, _dirtyBlockIds?: string[], options?: LayoutOptions): LayoutTree {
+      // Assert this engine's font registry for the whole (synchronous) layout pass
+      // so cloneFamilyFor/metricsFor resolve against the right custom fonts. Safe
+      // for concurrent editors/jobs: layout() never awaits, so nothing can swap the
+      // active registry mid-pass.
+      if (fontRegistry) setActiveFontRegistry(fontRegistry);
       const rawBand = options?.rawBand ?? null;
       touched = rawBand === null ? new Set<string>() : null;
       try {

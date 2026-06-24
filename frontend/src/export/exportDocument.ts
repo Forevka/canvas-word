@@ -9,11 +9,23 @@
 
 import type { Block, Document } from "@cw/shared";
 import type { ExportFormat, ExportResult, FromExportWorker, ImageBytes, ToExportWorker } from "./types";
+import {
+  CUSTOM_FONT_STYLES,
+  faceUrlForStyle,
+  type CustomFontFaceBytes,
+  type CustomFontPayload,
+  type ResolvedFontsConfig,
+} from "../fonts/customRegistry";
 
 export type { ExportFormat, ExportResult, ExportWarning } from "./types";
 
 // Intentionally mirrors the same constant in importDocx.ts (both are worker-host files).
 const IDLE_TERMINATE_MS = 30_000;
+
+// Bound main-thread custom-font fetches so a slow or oversized URL can't stall an
+// export (it blocks Promise.all([resolveImages, resolveFonts])) or balloon memory.
+const FONT_FETCH_TIMEOUT_MS = 15_000;
+const FONT_FETCH_MAX_BYTES = 10 * 1024 * 1024;
 
 interface Pending {
   resolve: (r: ExportResult) => void;
@@ -103,16 +115,75 @@ async function resolveImages(doc: Document): Promise<ImageBytes> {
   return out;
 }
 
-export async function exportDocument(doc: Document, format: ExportFormat): Promise<ExportResult> {
-  const images = await resolveImages(doc);
+/** Fetch every custom face's bytes on the main thread (deduped by URL). Missing
+ *  optional faces fall back to the regular URL. Returns undefined when there are no
+ *  custom fonts. A family whose REQUIRED Regular face fails to fetch is dropped
+ *  entirely — keeping it would register custom sizing/metrics with no bytes to
+ *  embed, so the export would silently fall back to bundled glyphs and desync from
+ *  the editor. A missing optional face just falls back to that family's Regular. */
+async function resolveFonts(cfg: ResolvedFontsConfig | undefined): Promise<CustomFontPayload | undefined> {
+  if (!cfg || cfg.fonts.length === 0) return undefined;
+  const cache = new Map<string, Promise<Uint8Array | null>>();
+  const fetchBytes = (url: string): Promise<Uint8Array | null> => {
+    let p = cache.get(url);
+    if (!p) {
+      p = (async () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), FONT_FETCH_TIMEOUT_MS);
+        try {
+          const r = await fetch(url, { signal: controller.signal });
+          if (!r.ok) return null;
+          const declared = Number(r.headers.get("content-length"));
+          if (Number.isFinite(declared) && declared > FONT_FETCH_MAX_BYTES) return null;
+          const bytes = new Uint8Array(await r.arrayBuffer());
+          return bytes.byteLength > FONT_FETCH_MAX_BYTES ? null : bytes;
+        } catch {
+          return null; // network error / timeout / abort — drop the face (resolveFonts handles it)
+        } finally {
+          clearTimeout(timer);
+        }
+      })();
+      cache.set(url, p);
+    }
+    return p;
+  };
+  const faces: CustomFontFaceBytes[] = [];
+  const regularOk = new Set<string>();
+  await Promise.all(
+    cfg.fonts.flatMap((f) =>
+      CUSTOM_FONT_STYLES.map(async (style) => {
+        const bytes = await fetchBytes(faceUrlForStyle(f.faces, style));
+        if (!bytes) return;
+        faces.push({ family: f.family, style, bytes });
+        if (style === "Regular") regularOk.add(f.family);
+      }),
+    ),
+  );
+  const keptFonts = cfg.fonts.filter((f) => regularOk.has(f.family));
+  if (keptFonts.length === 0) return undefined;
+  const defs: ResolvedFontsConfig = { disableBuiltin: cfg.disableBuiltin, fonts: keptFonts };
+  return { defs, faces: faces.filter((face) => regularOk.has(face.family)) };
+}
+
+/** Export a document. Pass the editor instance's resolved `fontConfig` so the worker
+ *  embeds exactly that instance's custom faces — the config travels on the call, not
+ *  a shared module slot, so two editors with different fonts never cross-export. */
+export async function exportDocument(
+  doc: Document,
+  format: ExportFormat,
+  fontConfig?: ResolvedFontsConfig,
+): Promise<ExportResult> {
+  const [images, fonts] = await Promise.all([resolveImages(doc), resolveFonts(fontConfig)]);
   const w = ensureWorker();
   const id = nextId++;
   return new Promise<ExportResult>((resolve, reject) => {
     pending.set(id, { resolve, reject });
-    const msg: ToExportWorker = { id, doc, format, images };
+    const msg: ToExportWorker = { id, doc, format, images, ...(fonts ? { fonts } : {}) };
     w.postMessage(msg);
   });
 }
 
-export const exportPdf = (doc: Document): Promise<ExportResult> => exportDocument(doc, "pdf");
-export const exportDocx = (doc: Document): Promise<ExportResult> => exportDocument(doc, "docx");
+export const exportPdf = (doc: Document, fontConfig?: ResolvedFontsConfig): Promise<ExportResult> =>
+  exportDocument(doc, "pdf", fontConfig);
+export const exportDocx = (doc: Document, fontConfig?: ResolvedFontsConfig): Promise<ExportResult> =>
+  exportDocument(doc, "docx", fontConfig);
