@@ -17,6 +17,7 @@ import { createModelTab } from "./devpanel/modelTab";
 import { createLayoutTab } from "./devpanel/layoutTab";
 import { createProblemsTab } from "./devpanel/problemsTab";
 import { createProbeTab } from "./devpanel/probeTab";
+import { createHistoryTab } from "./devpanel/historyTab";
 import { createOverlayBar } from "./devpanel/overlayBar";
 import { el, type DevPanelEditor, type PanelCtx, type PanelTab } from "./devpanel/types";
 
@@ -80,6 +81,18 @@ const CSS = `
 .cw-dev-overlabel{color:#6b6f76;font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-right:2px;}
 .cw-dev-btn{height:24px;padding:0 9px;border:1px solid #3a3d42;border-radius:6px;background:#1a1b1e;color:#9aa0a6;cursor:pointer;font-size:11px;}
 .cw-dev-btn:hover{border-color:#4a4d52;color:#d4d6da;}
+.cw-dev-history{flex:1 1 auto;overflow:auto;padding:2px 0;font-family:'Cascadia Code',Consolas,monospace;}
+.cw-dev-hrow{display:flex;align-items:baseline;gap:8px;padding:2px 10px;cursor:pointer;white-space:nowrap;}
+.cw-dev-hrow:hover{background:#2b2d31;}
+.cw-dev-hrow.sel{background:#33415e;}
+.cw-dev-hi{color:#6b6f76;flex:0 0 38px;}
+.cw-dev-horigin{flex:0 0 60px;color:#9aa0a6;}
+.cw-dev-horigin.typing{color:#7ec699;}
+.cw-dev-horigin.command{color:#9cdcfe;}
+.cw-dev-horigin.paste{color:#d7ba7d;}
+.cw-dev-horigin.undo,.cw-dev-horigin.redo{color:#c586c0;}
+.cw-dev-hops{color:#cea36a;overflow:hidden;text-overflow:ellipsis;}
+.cw-dev-hts{color:#6b6f76;font-size:10px;margin-left:auto;}
 .cw-dev-probe{flex:1 1 auto;overflow:auto;padding:8px 12px;}
 .cw-dev-probe-row{display:flex;gap:8px;padding:3px 0;border-bottom:1px solid #2b2d31;}
 .cw-dev-probe-k{flex:0 0 84px;color:#9aa0a6;}
@@ -136,7 +149,7 @@ export function showDevPanel(opts: DevPanelOptions): DevPanelHandle {
 
   // ---- Tabs -----------------------------------------------------------------
   const ctx: PanelCtx = { editor, showDetail };
-  const tabs: PanelTab[] = [createModelTab(ctx), createLayoutTab(ctx), createProblemsTab(ctx), createProbeTab(ctx)];
+  const tabs: PanelTab[] = [createModelTab(ctx), createLayoutTab(ctx), createProblemsTab(ctx), createProbeTab(ctx), createHistoryTab(ctx)];
   let active: PanelTab = tabs[0]!;
   const tabButtons = new Map<string, HTMLButtonElement>();
   const tabCounts = new Map<string, HTMLSpanElement>();

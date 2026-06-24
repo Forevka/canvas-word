@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Inspector: History tab (edit log).** A new tab streams the recorded change log
+  — each entry's origin (typing/command/paste/undo/redo), op summary, and time —
+  click to inspect its ops; Undo / Redo buttons step the document from the panel.
 - **Inspector: Probe tab (hit-test readout).** A new tab shows, live under the
   pointer, exactly what the input layer resolves there — the page point, caret
   position (block id + offset), content-control chain, field, and table cell — with
