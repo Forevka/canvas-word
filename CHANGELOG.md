@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Inspector: Problems tab (model validator).** A new tab runs a pure model walk
+  and lists integrity problems grouped by severity — dangling content-control /
+  field / style / list / table-style / bookmark / TOC / footnote references,
+  duplicate block ids, and unused content controls / fields — each linking to the
+  offending block. The tab shows an error+warning count badge.
 - **Inspector: canvas layout overlays.** The develop-mode panel gains a row of
   toggle chips that draw the layout structure directly on the page — block boxes,
   line boxes, inline-fragment boxes, baselines, table cell boxes, the content

@@ -14,6 +14,7 @@
 import { makeFloatingDialog } from "./floatingDialog";
 import { injectCssOnce } from "./styles";
 import { createModelTab } from "./devpanel/modelTab";
+import { createProblemsTab } from "./devpanel/problemsTab";
 import { createOverlayBar } from "./devpanel/overlayBar";
 import { el, type DevPanelEditor, type PanelCtx, type PanelTab } from "./devpanel/types";
 
@@ -127,20 +128,33 @@ export function showDevPanel(opts: DevPanelOptions): DevPanelHandle {
 
   // ---- Tabs -----------------------------------------------------------------
   const ctx: PanelCtx = { editor, showDetail };
-  const tabs: PanelTab[] = [createModelTab(ctx)];
+  const tabs: PanelTab[] = [createModelTab(ctx), createProblemsTab(ctx)];
   let active: PanelTab = tabs[0]!;
   const tabButtons = new Map<string, HTMLButtonElement>();
+  const tabCounts = new Map<string, HTMLSpanElement>();
 
   for (const tab of tabs) {
     tab.element.classList.add("cw-dev-tabpane");
     tab.element.style.display = "none";
     content.append(tab.element);
     if (tab.toolbar) { tab.toolbar.style.display = "none"; extrasHost.append(tab.toolbar); }
-    const btn = el("button", "cw-dev-tab", tab.label);
+    const btn = el("button", "cw-dev-tab");
+    btn.append(document.createTextNode(tab.label));
+    const countSpan = el("span", "cw-dev-tabcount");
+    btn.append(countSpan);
     btn.addEventListener("click", () => switchTo(tab.id));
     tabButtons.set(tab.id, btn);
+    tabCounts.set(tab.id, countSpan);
     tabStrip.append(btn);
   }
+
+  const updateCounts = (): void => {
+    for (const tab of tabs) {
+      const n = tab.count?.() ?? null;
+      const span = tabCounts.get(tab.id);
+      if (span) span.textContent = n != null ? String(n) : "";
+    }
+  };
 
   const switchTo = (id: string): void => {
     const next = tabs.find((t) => t.id === id);
@@ -155,6 +169,7 @@ export function showDevPanel(opts: DevPanelOptions): DevPanelHandle {
     filterInput.style.display = active.usesFilter ? "" : "none";
     if (active.usesFilter) active.setFilter?.(filterInput.value);
     active.activate();
+    updateCounts();
   };
 
   filterInput.addEventListener("input", () => active.usesFilter && active.setFilter?.(filterInput.value));
@@ -172,7 +187,7 @@ export function showDevPanel(opts: DevPanelOptions): DevPanelHandle {
       ac.abort();
       opts.onClose?.();
     },
-    refresh(): void { active.refresh(); },
+    refresh(): void { active.refresh(); updateCounts(); },
     highlightNode(blockId: string | null): void { active.highlightByBlockId?.(blockId); },
   };
   window.addEventListener("keydown", (ev: KeyboardEvent) => {

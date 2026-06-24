@@ -70,6 +70,8 @@ export interface PanelTab {
   refresh(): void;
   /** Reverse sync from a canvas-hover blockId (tree tabs). */
   highlightByBlockId?(blockId: string | null): void;
+  /** Optional count badge shown next to the tab label (e.g. problem count). Null = none. */
+  count?(): number | null;
   destroy?(): void;
 }
 
