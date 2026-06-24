@@ -267,6 +267,7 @@ function blockNode(doc: Document, block: Block): TreeNode {
     label: `row ${ri}`,
     preview: "",
     badges: [`${row.cells.length} cells`],
+    target: { kind: "row", tableId: block.id, ri },
     data: row,
     children: row.cells.map((cell, ci) => ({
       key: cell.id, kind: "tag",

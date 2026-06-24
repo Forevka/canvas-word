@@ -17,8 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reconstructed as tree structure** — body/cell-level SDTs show as `SDT ->
   paragraph -> runs`, and inline fields as `Field -> run` — instead of flat
   paragraphs/runs. Hovering a node paints a highlight box over its region on the
-  canvas (paragraphs, runs, images, **table cells**, content controls, and fields
-  all resolve to their painted rects); hovering the page reveals the matching node
+  canvas (paragraphs, runs, images, **table rows and cells**, content controls, and
+  fields all resolve to their painted rects); hovering the page reveals the matching node
   in the tree (reverse sync); clicking selects + scrolls to it (cells and images
   included); selecting shows the node's properties + raw JSON. A filter box narrows
   the tree. It's a pure debugging aid,

@@ -163,6 +163,7 @@ export type InspectorTarget =
   | { kind: "block"; blockId: string }
   | { kind: "run"; blockId: string; start: number; end: number }
   | { kind: "cell"; tableId: string; ri: number; ci: number }
+  | { kind: "row"; tableId: string; ri: number }
   | { kind: "sdt"; sdtId: string }
   | { kind: "field"; fieldId: string };
 
@@ -661,6 +662,17 @@ export function createEditor(
       const rects = cellRangeRects(tree, t.tableId, origin.row, origin.col, origin.row + (cell?.rowSpan ?? 1) - 1, origin.col + (cell?.colSpan ?? 1) - 1);
       return rects.length > 0 ? { rects, label: "cell" } : null;
     }
+    if (t.kind === "row") {
+      const found = findTableById(doc, t.tableId);
+      if (!found) return null;
+      const grid = buildTableGrid(found.table);
+      const rects: Rect[] = [];
+      (found.table.rows[t.ri]?.cells ?? []).forEach((cell, ci) => {
+        const origin = gridOriginOfCell(grid, t.ri, ci);
+        if (origin) rects.push(...cellRangeRects(tree, t.tableId, origin.row, origin.col, origin.row + (cell.rowSpan ?? 1) - 1, origin.col + (cell.colSpan ?? 1) - 1));
+      });
+      return rects.length > 0 ? { rects, label: "row" } : null;
+    }
     if (t.kind === "sdt") {
       return sdtLayerFor(t.sdtId);
     }
@@ -679,8 +691,9 @@ export function createEditor(
       setSelection({ anchor: { blockId: t.blockId, offset: t.start }, focus: { blockId: t.blockId, offset: t.end } });
     } else if (t.kind === "block" && findBlockDeep(doc.blocks, t.blockId)?.kind === "paragraph") {
       setSelection({ anchor: { blockId: t.blockId, offset: 0 }, focus: { blockId: t.blockId, offset: 0 } });
-    } else if (t.kind === "cell") {
-      const firstPara = findTableById(doc, t.tableId)?.table.rows[t.ri]?.cells[t.ci]?.blocks.find((b) => b.kind === "paragraph");
+    } else if (t.kind === "cell" || t.kind === "row") {
+      const ci = t.kind === "cell" ? t.ci : 0;
+      const firstPara = findTableById(doc, t.tableId)?.table.rows[t.ri]?.cells[ci]?.blocks.find((b) => b.kind === "paragraph");
       if (firstPara) setSelection({ anchor: { blockId: firstPara.id, offset: 0 }, focus: { blockId: firstPara.id, offset: 0 } });
     }
     const r = inspectorRectsFor(t)?.rects[0];
