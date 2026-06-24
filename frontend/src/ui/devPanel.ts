@@ -14,6 +14,7 @@
 import { makeFloatingDialog } from "./floatingDialog";
 import { injectCssOnce } from "./styles";
 import { createModelTab } from "./devpanel/modelTab";
+import { createOverlayBar } from "./devpanel/overlayBar";
 import { el, type DevPanelEditor, type PanelCtx, type PanelTab } from "./devpanel/types";
 
 export type { DevPanelEditor } from "./devpanel/types";
@@ -67,9 +68,11 @@ const CSS = `
 .cw-dev-badge{color:#6b9bd1;font-size:10px;border:1px solid #3f5470;border-radius:7px;padding:0 5px;flex:0 0 auto;}
 .cw-dev-id{color:#6b6f76;font-size:10px;flex:0 0 auto;}
 .cw-dev-empty{color:#6b6f76;padding:6px 14px;font-style:italic;}
-.cw-dev-chip{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 9px;border:1px solid #3a3d42;border-radius:12px;background:#1a1b1e;color:#9aa0a6;cursor:pointer;font-size:11px;user-select:none;}
+.cw-dev-chip{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 9px;border:1px solid #3a3d42;border-radius:12px;background:#1a1b1e;color:#9aa0a6;cursor:pointer;font-size:11px;user-select:none;}
 .cw-dev-chip:hover{border-color:#4a4d52;color:#d4d6da;}
 .cw-dev-chip.on{background:#2d4156;border-color:#5b9bd5;color:#cfe3f5;}
+.cw-dev-overlays{display:flex;align-items:center;gap:5px;padding:6px 10px;border-bottom:1px solid #34363b;background:#1f2124;flex-wrap:wrap;}
+.cw-dev-overlabel{color:#6b6f76;font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-right:2px;}
 .cw-dev-btn{height:24px;padding:0 9px;border:1px solid #3a3d42;border-radius:6px;background:#1a1b1e;color:#9aa0a6;cursor:pointer;font-size:11px;}
 .cw-dev-btn:hover{border-color:#4a4d52;color:#d4d6da;}
 .cw-dev-detail{flex:0 0 200px;border-top:1px solid #34363b;background:#191a1d;display:flex;flex-direction:column;min-height:0;}
@@ -100,6 +103,7 @@ export function showDevPanel(opts: DevPanelOptions): DevPanelHandle {
   extrasHost.style.cssText = "display:flex;align-items:center;gap:6px;flex:1 1 auto;flex-wrap:wrap;";
   toolbar.append(filterInput, extrasHost);
 
+  const overlayBar = createOverlayBar(editor);
   const content = el("div", "cw-dev-content");
 
   const detail = el("div", "cw-dev-detail");
@@ -107,7 +111,7 @@ export function showDevPanel(opts: DevPanelOptions): DevPanelHandle {
   const json = el("pre", "cw-dev-json");
   detail.append(detailHead, json);
 
-  modal.append(head, tabStrip, toolbar, content, detail);
+  modal.append(head, tabStrip, toolbar, overlayBar.element, content, detail);
   backdrop.append(modal);
   document.body.append(backdrop);
 
@@ -162,6 +166,7 @@ export function showDevPanel(opts: DevPanelOptions): DevPanelHandle {
     close(): void {
       editor.setInspectorActive(false);
       editor.setInspectorHighlight(null);
+      overlayBar.reset(); // clear any canvas overlays the dev left on
       for (const t of tabs) t.destroy?.();
       backdrop.remove();
       ac.abort();

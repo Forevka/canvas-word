@@ -18,6 +18,8 @@ export interface DevPanelEditor {
   revealInspectorTarget(target: InspectorTarget): void;
   /** Turn the canvas→tree hover signal on/off (the panel owns its lifetime). */
   setInspectorActive(active: boolean): void;
+  /** Toggle a layout-debug overlay drawn on the canvas. */
+  setDebugOverlay(kind: string, on: boolean): void;
   /** Recorded edit history (History tab). */
   getChangeLog(): Change[];
   getChangeHead(): number;

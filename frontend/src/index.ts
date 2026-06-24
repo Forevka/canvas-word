@@ -257,6 +257,9 @@ export interface Editor {
    *  The inspector panel enables it while open and disables it on close, so the
    *  canvas→tree reverse highlight costs nothing when no inspector is attached. */
   setInspectorActive(active: boolean): void;
+  /** Develop-mode layout overlay toggle drawn on the canvas — kinds: blockBoxes,
+   *  lineBoxes, fragments, baselines, margins, cells, pageInfo. Presentational. */
+  setDebugOverlay(kind: string, on: boolean): void;
   /** Find & replace. search() highlights all matches and returns state. */
   search(query: string, opts?: { matchCase?: boolean; wholeWord?: boolean }): SearchState;
   searchNav(dir: 1 | -1): SearchState;
@@ -2912,6 +2915,7 @@ export function createEditor(
     getZoom: () => paint.getZoom(),
     setShowGrid: (show: boolean): void => paint.setShowGrid(show),
     getShowGrid: () => paint.getShowGrid(),
+    setDebugOverlay: (kind: string, on: boolean): void => paint.setDebugOverlay(kind, on),
     setSnapToGrid: (snap: boolean): void => paint.setSnapToGrid(snap),
     getSnapToGrid: () => paint.getSnapToGrid(),
     setGridSpacing: (px: number): void => paint.setGridSpacing(px),

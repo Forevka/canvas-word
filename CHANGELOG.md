@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Inspector: canvas layout overlays.** The develop-mode panel gains a row of
+  toggle chips that draw the layout structure directly on the page — block boxes,
+  line boxes, inline-fragment boxes, baselines, table cell boxes, the content
+  margins, and a per-page info badge — for debugging "why does this render like
+  that." Drawn from the live layout tree on every repaint (survives scroll/zoom),
+  cleared when the panel closes. New `Editor.setDebugOverlay(kind, on)` + a paint
+  channel. The inspector panel was also refactored into a tabbed shell (Model tab
+  today; Layout / Problems / History to follow).
 - **Wrap a selected image in a content control (picture content control authoring).**
   The *Rich text content control* ribbon button and a new *Wrap in Content Control*
   image right-click entry now act on a selected image, tagging the image block with a

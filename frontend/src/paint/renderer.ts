@@ -101,6 +101,9 @@ export interface PaintScheduler {
    *  a labelled tab over a hovered node's painted region. Painted ABOVE the other
    *  adornments so it reads as an ephemeral inspection cue. Null clears. */
   setInspectorRects(adorn: { rects: Rect[]; label: string } | null): void;
+  /** Develop-mode layout overlay toggle (block/line/fragment boxes, baselines,
+   *  margins, cells, page info). Repaints all live pages. */
+  setDebugOverlay(kind: string, on: boolean): void;
   setCaret(caret: CaretRect | null): void;
   /** Remote collaborators' carets (DOM overlays with name flags). Replaces the
    *  whole set each call; pass [] to clear. */
@@ -240,6 +243,9 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
   let sdtAdorn: { rects: Rect[]; label: string }[] | null = null;
   let fieldAdorn: { rects: Rect[]; label: string } | null = null;
   let inspectorAdorn: { rects: Rect[]; label: string } | null = null;
+  // Develop-mode layout overlays (block/line/fragment boxes, baselines, margins,
+  // cells, page info) — a Set of enabled kinds, drawn last on every page.
+  const debugOverlays = new Set<string>();
   let bandEditMode: "header" | "footer" | null = null;
 
   const pagesWrap = document.createElement("div");
@@ -680,6 +686,87 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       ctx.stroke();
       ctx.setLineDash([]);
     }
+
+    // 6. develop-mode layout overlays — drawn on top of everything so the structure
+    //    is visible over the text. Each kind strokes from the live layout tree.
+    if (debugOverlays.size > 0) drawDebugOverlays(ctx, page);
+  }
+
+  /** Stroke the enabled layout-debug overlays for one page. */
+  function drawDebugOverlays(ctx: CanvasRenderingContext2D, page: Page): void {
+    const on = (k: string): boolean => debugOverlays.has(k);
+    const contentRight = page.widthPx - page.marginPx.right;
+    ctx.save();
+    ctx.lineWidth = 1;
+
+    // margins / content box
+    if (on("margins")) {
+      ctx.strokeStyle = "rgba(150,150,165,0.7)";
+      ctx.setLineDash([4, 3]);
+      ctx.strokeRect(page.marginPx.left + 0.5, page.marginPx.top + 0.5, contentRight - page.marginPx.left - 1, page.heightPx - page.marginPx.top - page.marginPx.bottom - 1);
+      ctx.setLineDash([]);
+    }
+
+    const drawParaOverlays = (pb: PlacedBlock): void => {
+      // line + fragment + baseline boxes
+      for (const line of pb.lines) {
+        const ly = pb.y + line.y;
+        let lx = contentRight, lr = pb.x;
+        for (const f of line.fragments) { lx = Math.min(lx, pb.x + f.x); lr = Math.max(lr, pb.x + f.x + f.width); }
+        if (line.fragments.length === 0) { lx = pb.x; lr = pb.x + 6; }
+        if (on("lineBoxes")) {
+          ctx.strokeStyle = "rgba(126,198,153,0.55)";
+          ctx.strokeRect(lx + 0.5, ly + 0.5, Math.max(1, lr - lx - 1), Math.max(1, line.height - 1));
+        }
+        if (on("fragments")) {
+          ctx.strokeStyle = "rgba(215,186,125,0.6)";
+          for (const f of line.fragments) ctx.strokeRect(pb.x + f.x + 0.5, ly + 0.5, Math.max(1, f.width - 1), Math.max(1, line.height - 1));
+        }
+        if (on("baselines")) {
+          ctx.strokeStyle = "rgba(229,115,115,0.7)";
+          ctx.beginPath();
+          ctx.moveTo(lx, ly + line.ascent + 0.5);
+          ctx.lineTo(lr, ly + line.ascent + 0.5);
+          ctx.stroke();
+        }
+      }
+    };
+
+    for (const pb of page.blocks) {
+      if (on("blockBoxes")) {
+        ctx.strokeStyle = "rgba(91,155,213,0.7)";
+        if (pb.table) ctx.strokeRect(pb.table.x + 0.5, pb.table.y + 0.5, pb.table.width - 1, pb.table.height - 1);
+        else if (pb.image) ctx.strokeRect(pb.x + 0.5, pb.y + 0.5, pb.image.width - 1, pb.image.height - 1);
+        else {
+          const top = pb.y + (pb.lines[0]?.y ?? 0);
+          const last = pb.lines[pb.lines.length - 1];
+          const bot = last ? pb.y + last.y + last.height : top;
+          ctx.strokeRect(pb.x + 0.5, top + 0.5, Math.max(1, contentRight - pb.x - 1), Math.max(1, bot - top - 1));
+        }
+      }
+      if (pb.table) {
+        if (on("cells")) {
+          ctx.strokeStyle = "rgba(197,134,192,0.7)";
+          for (const row of pb.table.rows) for (const cell of row.cells) ctx.strokeRect(cell.x + 0.5, cell.y + 0.5, cell.width - 1, cell.height - 1);
+        }
+        if (on("lineBoxes") || on("fragments") || on("baselines")) {
+          for (const row of pb.table.rows) for (const cell of row.cells) for (const cb of cell.blocks) drawParaOverlays(cb);
+        }
+      } else {
+        drawParaOverlays(pb);
+      }
+    }
+
+    if (on("pageInfo")) {
+      const label = `p${page.index} · #${page.number} · ${Math.round(page.widthPx)}×${Math.round(page.heightPx)}`;
+      ctx.font = "10px 'Cascadia Code', Consolas, monospace";
+      const w = ctx.measureText(label).width + 8;
+      ctx.fillStyle = "rgba(40,42,46,0.85)";
+      ctx.fillRect(2, 2, w, 14);
+      ctx.fillStyle = "#cfe3f5";
+      ctx.fillText(label, 6, 12);
+    }
+    ctx.restore();
   }
 
   const imageCache = new Map<string, HTMLImageElement>();
@@ -980,6 +1067,14 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       const affected = new Set([...pagesOf(inspectorAdorn?.rects ?? []), ...pagesOf(adorn?.rects ?? [])]);
       inspectorAdorn = adorn;
       for (const i of affected) if (liveCanvases.has(i)) dirty.add(i);
+      schedule();
+    },
+
+    setDebugOverlay(kind: string, on: boolean): void {
+      if (on === debugOverlays.has(kind)) return;
+      if (on) debugOverlays.add(kind);
+      else debugOverlays.delete(kind);
+      for (const i of liveCanvases.keys()) dirty.add(i);
       schedule();
     },
 
