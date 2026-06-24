@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Document, ImageBlock, Paragraph, SectionProps, TableBlock } from "@cw/shared";
 import { applyOp } from "@cw/shared";
-import { setImageLayer, bringImageToFront, sendImageToBack, moveAnchoredImage, setImageProps } from "./commands";
+import { setImageLayer, bringImageToFront, sendImageToBack, moveAnchoredImage, setImageProps, wrapImageInContentControl, removeContentControl } from "./commands";
 import type { Command } from "./state";
 import type { EditorState } from "./state";
 
@@ -101,5 +101,55 @@ describe("image layer / z-order commands", () => {
     const undone = applyOp(res.doc, res.inverse).doc;
     expect((undone.blocks[0] as ImageBlock).anchor).toMatchObject({ behind: true, offsetXPx: -98 });
     expect((undone.blocks[0] as ImageBlock).wrap).toBeUndefined();
+  });
+});
+
+describe("wrap image in a content control", () => {
+  const para = (id: string): Paragraph =>
+    ({ kind: "paragraph", id, revision: 0, runs: [{ text: "", style: {} as never }], style: {} as never });
+  const cellImageDoc = (): Document => ({
+    section: SECTION,
+    blocks: [{ kind: "table", id: "t", revision: 0, rows: [{ cells: [{ id: "c", blocks: [img("ci"), para("p")] }] }] } as TableBlock],
+  });
+
+  it("tags a top-level image with a fresh control id and registers its props", () => {
+    const out = apply({ doc: docOf(img("a")), selection: null }, wrapImageInContentControl("a", "richText", { alias: "Pic" }));
+    const image = imageOf(out, "a");
+    expect(image.sdtPath?.length).toBe(1);
+    const id = image.sdtPath![0]!;
+    expect(out.sdts?.[id]).toMatchObject({ type: "richText", alias: "Pic" });
+  });
+
+  it("nests: wrapping an already-wrapped image appends to its existing ancestry", () => {
+    const once = apply({ doc: docOf(img("a")), selection: null }, wrapImageInContentControl("a"));
+    const outer = imageOf(once, "a").sdtPath![0]!;
+    const twice = apply({ doc: once, selection: null }, wrapImageInContentControl("a"));
+    const path = imageOf(twice, "a").sdtPath!;
+    expect(path.length).toBe(2);
+    expect(path[0]).toBe(outer); // outer ancestry preserved, new id appended inside
+  });
+
+  it("wraps an image that lives in a table cell", () => {
+    const out = apply({ doc: cellImageDoc(), selection: null }, wrapImageInContentControl("ci"));
+    const cellImg = (out.blocks[0] as TableBlock).rows[0]!.cells[0]!.blocks[0] as ImageBlock;
+    expect(cellImg.sdtPath?.length).toBe(1);
+    expect(out.sdts?.[cellImg.sdtPath![0]!]).toMatchObject({ type: "richText" });
+  });
+
+  it("round-trips: removeContentControl strips the id off a top-level image and drops its props", () => {
+    const wrapped = apply({ doc: docOf(img("a")), selection: null }, wrapImageInContentControl("a"));
+    const id = imageOf(wrapped, "a").sdtPath![0]!;
+    const out = apply({ doc: wrapped, selection: null }, removeContentControl(id, false));
+    expect(imageOf(out, "a").sdtPath).toBeUndefined();
+    expect(out.sdts?.[id]).toBeUndefined();
+  });
+
+  it("round-trips a cell image: removeContentControl clears the cell image's sdtPath", () => {
+    const wrapped = apply({ doc: cellImageDoc(), selection: null }, wrapImageInContentControl("ci"));
+    const id = ((wrapped.blocks[0] as TableBlock).rows[0]!.cells[0]!.blocks[0] as ImageBlock).sdtPath![0]!;
+    const out = apply({ doc: wrapped, selection: null }, removeContentControl(id, false));
+    const cellImg = (out.blocks[0] as TableBlock).rows[0]!.cells[0]!.blocks[0] as ImageBlock;
+    expect(cellImg.sdtPath).toBeUndefined();
+    expect(out.sdts?.[id]).toBeUndefined();
   });
 });

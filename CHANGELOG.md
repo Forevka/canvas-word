@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Wrap a selected image in a content control (picture content control authoring).**
+  The *Rich text content control* ribbon button and a new *Wrap in Content Control*
+  image right-click entry now act on a selected image, tagging the image block with a
+  fresh control id (nesting-aware — it appends to any existing ancestry) and
+  registering the control. Previously content controls could only be authored around
+  a text selection, so picture content controls could only arrive via import. The
+  control's frame + breadcrumb appear immediately, and *Content control properties*
+  and *Remove content control* work on the image's control too (the ribbon exposes the
+  active control via `Editor.activeContentControlId()`). `removeContentControl` now
+  strips block-level membership off image blocks (top-level and in table cells), so
+  wrap/unwrap round-trips cleanly. Works for an image anywhere it's selectable —
+  body or table cell.
 - **Develop mode via the `develop` constructor option (`develop: true`).** Reveals a
   dedicated **Developer** ribbon tab whose *Inspect document tree* button opens a
   floating, draggable, devtools-Elements-style panel over the parsed `Document`

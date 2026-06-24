@@ -63,8 +63,8 @@ import {
   insertTocCmd,
   insertFootnoteCmd,
   insertContentControl,
+  wrapImageInContentControl,
   removeContentControl,
-  sdtAtPosition,
   applyPageSetup,
   pageSetupAt,
 } from "./editor/commands";
@@ -1549,9 +1549,18 @@ if (toolbar) {
     editor.focus();
   }, "font-size:11px;");
   group(insert, "Controls");
-  btn(ICONS.sdtText, "Rich text content control (wraps the selection)", () => {
-    editor.dispatch(insertContentControl("richText", { alias: "Text" }));
-    editor.focus();
+  btn(ICONS.sdtText, "Rich text content control (wraps the selection or selected image)", () => {
+    // A selected image is an object selection (no text caret), so route it to the
+    // image-wrapping command; otherwise wrap the text selection/caret as before.
+    const imgId = editor.getSelectedObject();
+    if (imgId) {
+      editor.dispatch(wrapImageInContentControl(imgId, "richText", { alias: "Text" }));
+      // Keep the image selected so the new control frame is visible — don't refocus
+      // the doc (which would drop the object selection).
+    } else {
+      editor.dispatch(insertContentControl("richText", { alias: "Text" }));
+      editor.focus();
+    }
   });
   btn(ICONS.sdtCheckbox, "Check box content control", () => {
     editor.dispatch(insertContentControl("checkbox", { alias: "Check Box" }));
@@ -1580,11 +1589,10 @@ if (toolbar) {
     "place the caret in a content control",
   );
   enable(
-    btn(ICONS.sdtRemove, "Remove the content control at the caret (keeps its text)", () => {
-      const sel = editor.getSelection();
-      const id = sel ? sdtAtPosition(editor.getDocument(), sel.focus) : null;
+    btn(ICONS.sdtRemove, "Remove the content control at the caret or around the selected image (keeps its content)", () => {
+      const id = editor.activeContentControlId();
       if (id) editor.dispatch(removeContentControl(id, false));
-      editor.focus();
+      // Don't force focus to the doc — that would drop an active image selection.
     }),
     (f) => f.inContentControl,
     "place the caret in a content control",

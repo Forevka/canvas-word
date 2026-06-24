@@ -77,6 +77,7 @@ import {
   setCellsBordersCmd,
   setCellsShadingCmd,
   removeContentControl,
+  wrapImageInContentControl,
   replaceBackAndInsert,
   replaceSdtContent,
   replaceSdtBlockSpan,
@@ -194,9 +195,14 @@ export interface Editor {
   align(align: ParaStyle["align"]): void;
   /** Formatting at the caret — drives toolbar control state. */
   currentFormat(): CurrentFormat;
-  /** Open the content-control inspector for the control at the caret (ribbon
-   *  button). Returns false when the caret isn't inside a content control. */
+  /** Open the content-control inspector for the active control — the one at the
+   *  caret, or the one wrapping the selected image. Returns false when neither is
+   *  in a content control. */
   inspectContentControl(): boolean;
+  /** The innermost content-control id at the caret or around the selected image,
+   *  or null. Drives ribbon buttons that act on "the current control" (e.g. Remove)
+   *  for both text and object (image) selections. */
+  activeContentControlId(): string | null;
   /** Update every TOC entry's page number to its target's current page (the
    *  imported pre-calculated numbers are shown until the user asks for this).
    *  Returns the count of entries whose number changed. */
@@ -2103,12 +2109,20 @@ export function createEditor(
       onClose: () => child.destroy(),
     });
   };
-  /** Inspect the control at the caret (ribbon button). Returns false if none. */
-  const inspectSdtAtCaret = (): boolean => {
+  /** The innermost content-control id at the caret OR around the selected image —
+   *  the single "active control" the ribbon's inspect/remove buttons act on. */
+  const activeSdtId = (): string | null => {
+    if (selectedObject) {
+      const chain = objectSdtChain(selectedObject);
+      return chain[chain.length - 1] ?? null;
+    }
     const focus = selection?.focus;
-    // A selected image (no caret) inspects its innermost wrapping control.
-    const chain = selectedObject ? objectSdtChain(selectedObject) : [];
-    const id = selectedObject ? chain[chain.length - 1] ?? null : focus ? sdtAtPosition(doc, focus) : null;
+    return focus ? sdtAtPosition(doc, focus) : null;
+  };
+
+  /** Inspect the active control (ribbon button). Returns false if none. */
+  const inspectSdtAtCaret = (): boolean => {
+    const id = activeSdtId();
     if (!id || !doc.sdts?.[id]) return false;
     openSdtInspector(id);
     return true;
@@ -2299,7 +2313,9 @@ export function createEditor(
     const imgId = selectedObject;
     const imgInCell = imgId ? locateImage(doc, imgId)?.kind === "cell" : false;
     const inCell = loc?.kind === "cell" || imgInCell || hasCellSel;
-    const sdtId = focus && !imgId ? sdtAtPosition(doc, focus) : null;
+    // The active control: around a selected image, or at the caret.
+    const imgSdtChain = imgId ? objectSdtChain(imgId) : [];
+    const sdtId = imgId ? imgSdtChain[imgSdtChain.length - 1] ?? null : focus ? sdtAtPosition(doc, focus) : null;
     const linkUrl = linkAt(tree, pt.pageIndex, pt.x, pt.y, scope());
     const band = bandAtPoint(pt);
 
@@ -2435,6 +2451,7 @@ export function createEditor(
         },
         item("Bring to Front", () => dispatch(bringImageToFront(imgId))),
         item("Send to Back", () => dispatch(sendImageToBack(imgId))),
+        item("Wrap in Content Control", () => dispatch(wrapImageInContentControl(imgId, "richText", { alias: "Text" })), { icon: ICONS.sdtText }),
         item("Delete Image", () => {
           selectObject(null);
           dispatch(deleteImage(imgId));
@@ -2889,6 +2906,7 @@ export function createEditor(
       dispatch(setAlignment(align));
     },
     inspectContentControl: inspectSdtAtCaret,
+    activeContentControlId: activeSdtId,
     recalculateToc,
     setZoom: (z: number): void => applyZoom(z),
     getZoom: () => paint.getZoom(),
