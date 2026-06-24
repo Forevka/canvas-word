@@ -22,6 +22,11 @@ export type { ExportFormat, ExportResult, ExportWarning } from "./types";
 // Intentionally mirrors the same constant in importDocx.ts (both are worker-host files).
 const IDLE_TERMINATE_MS = 30_000;
 
+// Bound main-thread custom-font fetches so a slow or oversized URL can't stall an
+// export (it blocks Promise.all([resolveImages, resolveFonts])) or balloon memory.
+const FONT_FETCH_TIMEOUT_MS = 15_000;
+const FONT_FETCH_MAX_BYTES = 10 * 1024 * 1024;
+
 interface Pending {
   resolve: (r: ExportResult) => void;
   reject: (e: Error) => void;
@@ -122,9 +127,22 @@ async function resolveFonts(cfg: ResolvedFontsConfig | undefined): Promise<Custo
   const fetchBytes = (url: string): Promise<Uint8Array | null> => {
     let p = cache.get(url);
     if (!p) {
-      p = fetch(url)
-        .then((r) => (r.ok ? r.arrayBuffer().then((b) => new Uint8Array(b)) : null))
-        .catch(() => null);
+      p = (async () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), FONT_FETCH_TIMEOUT_MS);
+        try {
+          const r = await fetch(url, { signal: controller.signal });
+          if (!r.ok) return null;
+          const declared = Number(r.headers.get("content-length"));
+          if (Number.isFinite(declared) && declared > FONT_FETCH_MAX_BYTES) return null;
+          const bytes = new Uint8Array(await r.arrayBuffer());
+          return bytes.byteLength > FONT_FETCH_MAX_BYTES ? null : bytes;
+        } catch {
+          return null; // network error / timeout / abort — drop the face (resolveFonts handles it)
+        } finally {
+          clearTimeout(timer);
+        }
+      })();
       cache.set(url, p);
     }
     return p;

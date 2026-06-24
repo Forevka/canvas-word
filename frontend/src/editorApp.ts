@@ -13,7 +13,7 @@ import { exportDocument, type ExportFormat, type ExportWarning } from "./export/
 import { loadEditorFonts } from "./export/shared/editorFonts";
 import { fontsProgress } from "./app/loadProgress";
 import { toolbarFonts } from "./fonts/clones";
-import { createFontRegistry } from "./fonts/customRegistry";
+import { createFontRegistry, normalizeFamily } from "./fonts/customRegistry";
 import type { EditorHandle, WordCanvasRuntime } from "./app/runtime";
 import { buildShell } from "./app/shell";
 import { ensureWordCanvasStyles } from "./ui/styles";
@@ -106,8 +106,15 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
   // paint layer (below) so its custom fonts can't be clobbered by another WordCanvas
   // instance on the page, and into its exports via config.fonts.
   const fontRegistry = createFontRegistry();
-  fontRegistry.register(config.fonts);
-  await loadEditorFonts((loaded, total) => runtime.onLoadProgress?.(fontsProgress(loaded, total)), config.fonts);
+  const loadedFamilies = await loadEditorFonts(
+    (loaded, total) => runtime.onLoadProgress?.(fontsProgress(loaded, total)),
+    config.fonts,
+  );
+  // Register only families whose required Regular face actually loaded, so a custom
+  // font that failed (CORS/404) falls back to a clone consistently in the editor —
+  // the same fallback the exporter makes when its own fetch fails. (Layout reads
+  // the registry below, so registration must happen before the first engine.layout.)
+  fontRegistry.register({ fonts: config.fonts.fonts.filter((f) => loadedFamilies.has(normalizeFamily(f.family))) });
   await document.fonts.ready;
 
   // Give this editor session a unique siteId so every block/cell id it mints is

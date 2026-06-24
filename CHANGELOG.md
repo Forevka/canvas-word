@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   writes the custom family name. **Backend:** server-side export honors a document's
   saved font config (persisted at `POST /docs`), and `POST /render.pdf` accepts a
   `fonts` part — the server fetches the faces and **caches them on disk** (keyed by
-  URL) so they're reused across renders. TTF/OTF only (WOFF2 is rejected); a missing
+  URL) so they're reused across renders. TTF/OTF only (WOFF/WOFF2 rejected); a missing
   bold/italic/bold-italic face falls back to the regular face in both the editor and
   the exporters. Custom-font state is **per-instance**: each editor mount and each
   export job owns its own registry (threaded onto the export call, not a shared

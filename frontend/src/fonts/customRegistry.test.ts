@@ -63,9 +63,11 @@ describe("custom font overlay", () => {
   it("rejects invalid sizing and WOFF2, and warns on conflicting redefine", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     registerCustomFonts({ fonts: [{ ...inter, family: "BadSize", sizing: { ascent: 0, descent: 0.2 } }] });
-    registerCustomFonts({ fonts: [{ ...inter, family: "Woff", faces: { regular: "https://x/F.woff2" } }] });
+    registerCustomFonts({ fonts: [{ ...inter, family: "Woff2", faces: { regular: "https://x/F.woff2" } }] });
+    registerCustomFonts({ fonts: [{ ...inter, family: "Woff1", faces: { regular: "https://x/F.woff" } }] });
     expect(allCustomFonts().map((f) => f.family)).not.toContain("BadSize");
-    expect(allCustomFonts().map((f) => f.family)).not.toContain("Woff");
+    expect(allCustomFonts().map((f) => f.family)).not.toContain("Woff2"); // Brotli-wrapped SFNT
+    expect(allCustomFonts().map((f) => f.family)).not.toContain("Woff1"); // zlib-wrapped SFNT
 
     registerCustomFonts({ fonts: [inter] });
     registerCustomFonts({ fonts: [{ ...inter, sizing: { ascent: 0.8, descent: 0.2 } }] });

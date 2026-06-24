@@ -69,9 +69,42 @@ function cachePath(url: string): string {
   return join(CACHE_DIR, `${createHash("sha256").update(url).digest("hex")}.bin`);
 }
 
+/** Positive finite number from an env var, else the fallback — so a malformed
+ *  FONT_FETCH_* value can't disable the size guard (`NaN > x` is always false) or
+ *  make the timeout fire immediately (`setTimeout(fn, NaN)` ≈ 0). */
+function posNum(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/** Validate a request-supplied font URL: http/https only and, when
+ *  FONT_FETCH_ALLOWED_HOSTS is set, an allowlisted host. Runs BEFORE the cache read
+ *  so tightening the allowlist also rejects an already-cached URL. */
+function validateFontUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new FontFetchError(url, "invalid URL");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new FontFetchError(url, "unsupported URL scheme");
+  }
+  const allowed = (process.env.FONT_FETCH_ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map((h) => h.trim())
+    .filter(Boolean);
+  if (allowed.length > 0 && !allowed.includes(parsed.hostname)) {
+    throw new FontFetchError(url, "host not allowed");
+  }
+}
+
 /** Fetch a font URL through the disk cache. Reads the cached file if present, else
  *  downloads, writes atomically (temp + rename), and returns the bytes. */
 export async function fetchAndCache(url: string): Promise<Uint8Array> {
+  // Enforce the URL policy up front — before the cache read — so a URL that was
+  // cached while allowed can't keep serving after the policy is tightened.
+  validateFontUrl(url);
   const path = cachePath(url);
   try {
     return new Uint8Array(await readFile(path));
@@ -81,35 +114,14 @@ export async function fetchAndCache(url: string): Promise<Uint8Array> {
   let p = inflight.get(url);
   if (!p) {
     p = (async () => {
-      // Validate scheme: request-supplied URLs must be plain http(s) (no file:,
-      // data:, gopher:, etc. — SSRF surface).
-      let parsed: URL;
-      try {
-        parsed = new URL(url);
-      } catch {
-        throw new FontFetchError(url, "invalid URL");
-      }
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        throw new FontFetchError(url, "unsupported URL scheme");
-      }
-      // Optional host allowlist (comma-separated FONT_FETCH_ALLOWED_HOSTS).
-      const allowed = (process.env.FONT_FETCH_ALLOWED_HOSTS ?? "")
-        .split(",")
-        .map((h) => h.trim())
-        .filter(Boolean);
-      if (allowed.length > 0 && !allowed.includes(parsed.hostname)) {
-        throw new FontFetchError(url, "host not allowed");
-      }
-
-      const MAX = Number(process.env.FONT_FETCH_MAX_BYTES ?? 10 * 1024 * 1024);
+      const MAX = posNum(process.env.FONT_FETCH_MAX_BYTES, 10 * 1024 * 1024);
       const controller = new AbortController();
-      const timeout = setTimeout(
-        () => controller.abort(),
-        Number(process.env.FONT_FETCH_TIMEOUT_MS ?? 10000),
-      );
+      const timeout = setTimeout(() => controller.abort(), posNum(process.env.FONT_FETCH_TIMEOUT_MS, 10000));
       let res: Response;
       try {
-        res = await fetch(url, { signal: controller.signal });
+        // redirect:"error" — an allowlisted/validated URL must not be able to 30x-hop
+        // to a disallowed or internal host after the up-front check.
+        res = await fetch(url, { signal: controller.signal, redirect: "error" });
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") throw new FontFetchError(url, "timeout");
         throw new FontFetchError(url, e instanceof Error ? e.message : String(e));

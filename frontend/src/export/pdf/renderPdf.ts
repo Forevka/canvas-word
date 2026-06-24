@@ -54,10 +54,14 @@ interface OutlineItemOptions {
  *  process default restored) in finally. */
 export async function renderPdf(doc: Document, opts: RenderPdfOptions = {}): Promise<ExportResult> {
   const fontReg = createFontRegistry();
-  if (opts.fonts) fontReg.register(opts.fonts.defs);
-  setActiveFontRegistry(fontReg);
-  if (opts.fonts) registerCustomFontBytes(opts.fonts.faces);
   try {
+    // Inside the try so the finally still restores the active registry and clears
+    // this job's bytes if registerCustomFontBytes throws on an invalid face.
+    setActiveFontRegistry(fontReg);
+    if (opts.fonts) {
+      fontReg.register(opts.fonts.defs);
+      registerCustomFontBytes(opts.fonts.faces);
+    }
     return await renderPdfInner(doc, opts, fontReg);
   } finally {
     clearCustomFontBytes(fontReg);

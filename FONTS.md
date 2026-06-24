@@ -142,8 +142,10 @@ How it threads through (mirrors the clone path, so parity holds):
 
 Constraints (documented behavior, not bugs):
 
-- **TTF/OTF only** — fontkit can't parse WOFF2 and the exporter must parse the exact
-  bytes it embeds (WOFF2 is rejected at registration with a warning).
+- **TTF/OTF only** — WOFF and WOFF2 are compressed SFNT wrappers (zlib / Brotli),
+  but the export pipeline feeds the SAME raw bytes to fontkit (to measure widths) and
+  to pdfkit (to subset-embed), and both need an uncompressed TTF/OTF. Both `.woff` and
+  `.woff2` are rejected at registration with a warning — convert to TTF/OTF first.
 - **Missing bold/italic/boldItalic → regular** in BOTH editor and export
   (deterministic parity over faux-synthesis).
 - The custom-font registry is **per-instance**: each `WordCanvas` mount and each

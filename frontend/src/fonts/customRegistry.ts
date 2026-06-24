@@ -106,8 +106,12 @@ export function faceUrlForStyle(faces: CustomFontFaces, style: FontStyleName): s
   }
 }
 
-function isWoff2(url: string): boolean {
-  return /\.woff2(\?|#|$)/i.test(url);
+/** WOFF and WOFF2 are compressed SFNT wrappers (zlib / Brotli). The export pipeline
+ *  feeds the SAME raw bytes to fontkit (to measure glyph widths) and to pdfkit (to
+ *  subset-embed), and both need an uncompressed TTF/OTF — so both `.woff` and
+ *  `.woff2` are rejected at registration. */
+function isWoffUrl(url: string): boolean {
+  return /\.woff2?(\?|#|$)/i.test(url);
 }
 
 function sameDef(a: CustomFontDef, b: CustomFontDef): boolean {
@@ -136,12 +140,12 @@ export function isRegistrableFontDef(def: CustomFontDef, warn = false): boolean 
     return false;
   }
   if (
-    isWoff2(def.faces.regular) ||
-    (def.faces.bold && isWoff2(def.faces.bold)) ||
-    (def.faces.italic && isWoff2(def.faces.italic)) ||
-    (def.faces.boldItalic && isWoff2(def.faces.boldItalic))
+    isWoffUrl(def.faces.regular) ||
+    (def.faces.bold && isWoffUrl(def.faces.bold)) ||
+    (def.faces.italic && isWoffUrl(def.faces.italic)) ||
+    (def.faces.boldItalic && isWoffUrl(def.faces.boldItalic))
   ) {
-    if (warn) console.warn(`[wordcanvas] custom font "${def.family}": WOFF2 is not supported — use TTF/OTF; skipped`);
+    if (warn) console.warn(`[wordcanvas] custom font "${def.family}": WOFF/WOFF2 is not supported — use TTF/OTF; skipped`);
     return false;
   }
   return true;
