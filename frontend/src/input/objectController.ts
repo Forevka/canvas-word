@@ -79,6 +79,24 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
   let dragEl: HTMLElement | null = null;
   let dragPointerId = 0;
 
+  // Resize previews are coalesced to one per animation frame: each preview runs a
+  // full relayout, and pointermove fires faster than a heavy layout (e.g. an image
+  // in a large report table) completes. Dispatching per event backs up a queue and
+  // the image trails the cursor; collapsing to the latest size per frame keeps it
+  // glued to the handle. Same per-frame-throttle pattern as pinch-zoom.
+  let movePending: { w: number; h: number } | null = null;
+  let moveRaf = 0;
+  const flushMove = (): void => {
+    moveRaf = 0;
+    if (movePending && drag) deps.onResizePreview(movePending.w, movePending.h);
+    movePending = null;
+  };
+  const cancelPendingMove = (): void => {
+    if (moveRaf) cancelAnimationFrame(moveRaf);
+    moveRaf = 0;
+    movePending = null;
+  };
+
   const endDrag = (): void => {
     if (!dragEl) return;
     dragEl.removeEventListener("pointermove", onDragMove);
@@ -142,13 +160,14 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
 
   const onDragMove = (ev: PointerEvent): void => {
     if (!drag) return;
-    const { w, h } = sizeFromDrag(ev);
-    deps.onResizePreview(w, h);
+    movePending = sizeFromDrag(ev);
+    if (!moveRaf) moveRaf = requestAnimationFrame(flushMove);
   };
 
   const onDragUp = (ev: PointerEvent): void => {
     if (!drag) return;
     const { w, h } = sizeFromDrag(ev);
+    cancelPendingMove(); // drop any queued preview; the commit below is the final size
     drag = null;
     endDrag();
     deps.onResizeCommit(w, h);

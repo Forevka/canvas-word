@@ -71,6 +71,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   though the underlying op (and every other image command: delete, layer/z-order,
   move) already resolved images in cells. Both paths now use the cell-aware
   `locateImage`, so in-cell images resize and align like any other.
+- **Smooth image-resize dragging (no more lag inside large tables).** The resize
+  handle ran a full relayout on every `pointermove`. For a top-level image that's a
+  few milliseconds and keeps up, but an image in a big table makes each relayout far
+  heavier than the gap between move events, so previews queued up and the image
+  trailed the cursor by a fraction of a second. Resize previews are now coalesced to
+  one per animation frame (the same per-frame throttle pinch-zoom already used), so
+  the image stays glued to the handle regardless of table size; the final committed
+  size is unaffected.
 
 ## [0.7.4] — 2026-06-23
 
