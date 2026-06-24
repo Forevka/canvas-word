@@ -155,6 +155,17 @@ export interface SearchState {
   total: number;
 }
 
+/** A node the develop-mode Document-tree inspector can point at — used by both
+ *  `setInspectorHighlight` (paint its region) and `revealInspectorTarget` (scroll
+ *  to it). Covers every tree-node kind, each resolved to rects via the matching
+ *  geometry path (whole-block box, run range, table cell, content-control, field). */
+export type InspectorTarget =
+  | { kind: "block"; blockId: string }
+  | { kind: "run"; blockId: string; start: number; end: number }
+  | { kind: "cell"; tableId: string; ri: number; ci: number }
+  | { kind: "sdt"; sdtId: string }
+  | { kind: "field"; fieldId: string };
+
 export interface Editor {
   focus(): void;
   getDocument(): Document;
@@ -227,10 +238,14 @@ export interface Editor {
   /** Delete the selected image and clear the object selection. */
   deleteSelectedObject(): void;
   // ---- develop-mode Document-tree inspector --------------------------------
-  /** Paint a devtools-style highlight over a node's region on the canvas, given a
-   *  block id (paragraph/image/table, incl. blocks nested in table cells). Pass
-   *  null to clear. Presentational only — no model/selection change. */
-  setInspectorHighlight(blockId: string | null): void;
+  /** Paint a devtools-style highlight over an inspector node's region on the
+   *  canvas (block, run range, table cell, content control, or field). Pass null
+   *  to clear. Presentational only — no model/selection change. */
+  setInspectorHighlight(target: InspectorTarget | null): void;
+  /** Scroll an inspector node into view (and move the caret into text targets, so
+   *  it mirrors clicking there). Handles every node kind — paragraphs, runs,
+   *  images, tables, cells, content controls, and fields. */
+  revealInspectorTarget(target: InspectorTarget): void;
   /** Turn the develop-mode hover signal (EditorOptions.onInspectorHover) on/off.
    *  The inspector panel enables it while open and disables it on close, so the
    *  canvas→tree reverse highlight costs nothing when no inspector is attached. */
@@ -611,23 +626,65 @@ export function createEditor(
     }
     return undefined;
   };
-  const inspectorHighlightFor = (blockId: string): { rects: Rect[]; label: string } | null => {
-    const block = findBlockDeep(doc.blocks, blockId);
-    if (!block) return null;
-    if (block.kind === "image") {
-      const r = objectRect(tree, blockId);
-      return r ? { rects: [r], label: "image" } : null;
+  // Resolve any inspector node to its painted rects + a label, reusing the same
+  // geometry the live adornments use (objectRect/selectionRects/cellRangeRects/
+  // sdtLayerFor/field rects). Powers both the hover highlight and the scroll-to.
+  const inspectorRectsFor = (t: InspectorTarget): { rects: Rect[]; label: string } | null => {
+    if (t.kind === "block") {
+      const block = findBlockDeep(doc.blocks, t.blockId);
+      if (!block) return null;
+      if (block.kind === "image") {
+        const r = objectRect(tree, t.blockId);
+        return r ? { rects: [r], label: "image" } : null;
+      }
+      if (block.kind === "paragraph") {
+        const len = textOfRuns(block.runs).length;
+        const rects = selectionRects(tree, { anchor: { blockId: t.blockId, offset: 0 }, focus: { blockId: t.blockId, offset: len } }, scope());
+        // Empty paragraph (no runs) — fall back to its full-width block box.
+        const boxed = rects.length > 0 ? rects : boxRectsForBlockIds(new Set([t.blockId]));
+        return boxed.length > 0 ? { rects: boxed, label: "¶" } : null;
+      }
+      // Table: the placed block's full-width box (selectionRects has no text anchor).
+      const rects = boxRectsForBlockIds(new Set([t.blockId]));
+      return rects.length > 0 ? { rects, label: "table" } : null;
     }
-    if (block.kind === "paragraph") {
-      const len = textOfRuns(block.runs).length;
-      const rects = selectionRects(tree, { anchor: { blockId, offset: 0 }, focus: { blockId, offset: len } }, scope());
-      // Empty paragraph (no runs) — fall back to its full-width block box.
-      const boxed = rects.length > 0 ? rects : boxRectsForBlockIds(new Set([blockId]));
-      return boxed.length > 0 ? { rects: boxed, label: "¶" } : null;
+    if (t.kind === "run") {
+      const rects = selectionRects(tree, { anchor: { blockId: t.blockId, offset: t.start }, focus: { blockId: t.blockId, offset: t.end } }, scope());
+      return rects.length > 0 ? { rects, label: "run" } : null;
     }
-    // Table: the placed block's full-width box (selectionRects has no text anchor).
-    const rects = boxRectsForBlockIds(new Set([blockId]));
-    return rects.length > 0 ? { rects, label: "table" } : null;
+    if (t.kind === "cell") {
+      const found = findTableById(doc, t.tableId);
+      if (!found) return null;
+      const origin = gridOriginOfCell(buildTableGrid(found.table), t.ri, t.ci);
+      if (!origin) return null;
+      const cell = found.table.rows[t.ri]?.cells[t.ci];
+      const rects = cellRangeRects(tree, t.tableId, origin.row, origin.col, origin.row + (cell?.rowSpan ?? 1) - 1, origin.col + (cell?.colSpan ?? 1) - 1);
+      return rects.length > 0 ? { rects, label: "cell" } : null;
+    }
+    if (t.kind === "sdt") {
+      return sdtLayerFor(t.sdtId);
+    }
+    // field: block-region (Block.fieldId) or inline (CharStyle.fieldId).
+    const def = doc.fields?.[t.fieldId];
+    const isBlock = containerBlocks(doc, "body").some((b) => b.fieldId === t.fieldId);
+    const rects = isBlock
+      ? blockLevelFieldRects(t.fieldId)
+      : findFieldRanges(doc, t.fieldId).flatMap((r) => selectionRects(tree, { anchor: { blockId: r.blockId, offset: r.start }, focus: { blockId: r.blockId, offset: r.end } }, scope()));
+    return rects.length > 0 ? { rects, label: def?.name ?? "field" } : null;
+  };
+  // Scroll an inspector node into view; move the caret into text targets so the
+  // reveal matches clicking there (images/tables/cells just scroll).
+  const revealInspector = (t: InspectorTarget): void => {
+    if (t.kind === "run") {
+      setSelection({ anchor: { blockId: t.blockId, offset: t.start }, focus: { blockId: t.blockId, offset: t.end } });
+    } else if (t.kind === "block" && findBlockDeep(doc.blocks, t.blockId)?.kind === "paragraph") {
+      setSelection({ anchor: { blockId: t.blockId, offset: 0 }, focus: { blockId: t.blockId, offset: 0 } });
+    } else if (t.kind === "cell") {
+      const firstPara = findTableById(doc, t.tableId)?.table.rows[t.ri]?.cells[t.ci]?.blocks.find((b) => b.kind === "paragraph");
+      if (firstPara) setSelection({ anchor: { blockId: firstPara.id, offset: 0 }, focus: { blockId: firstPara.id, offset: 0 } });
+    }
+    const r = inspectorRectsFor(t)?.rects[0];
+    if (r) paint.ensureVisible({ pageIndex: r.pageIndex, x: r.x, y: r.y, height: r.height }, "center");
   };
   const updateInspectorHover = (clientX: number, clientY: number, buttons: number): void => {
     if (!inspectorActive) return;
@@ -2838,8 +2895,11 @@ export function createEditor(
       selectObject(null);
       dispatch(deleteImage(id));
     },
-    setInspectorHighlight: (blockId: string | null): void => {
-      paint.setInspectorRects(blockId ? inspectorHighlightFor(blockId) : null);
+    setInspectorHighlight: (target: InspectorTarget | null): void => {
+      paint.setInspectorRects(target ? inspectorRectsFor(target) : null);
+    },
+    revealInspectorTarget: (target: InspectorTarget): void => {
+      revealInspector(target);
     },
     setInspectorActive: (active: boolean): void => {
       if (active === inspectorActive) return;

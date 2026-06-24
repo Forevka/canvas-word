@@ -14,6 +14,7 @@
 
 import type { Block, DocSelection, Document, ImageBlock, Paragraph, Run, TableBlock } from "@cw/shared";
 import { BAND_CONTAINERS, textOfRuns } from "@cw/shared";
+import type { InspectorTarget } from "../index";
 import { makeFloatingDialog } from "./floatingDialog";
 import { injectCssOnce } from "./styles";
 
@@ -21,10 +22,10 @@ import { injectCssOnce } from "./styles";
 export interface DevPanelEditor {
   getDocument(): Document;
   getSelection(): DocSelection | null;
-  setSelection(sel: DocSelection | null): void;
-  revealBlock(blockId: string): void;
   /** Paint a devtools highlight over a node's region (null clears). */
-  setInspectorHighlight(blockId: string | null): void;
+  setInspectorHighlight(target: InspectorTarget | null): void;
+  /** Scroll a node into view (and move the caret into text targets). */
+  revealInspectorTarget(target: InspectorTarget): void;
   /** Turn the canvas→tree hover signal on/off (the panel owns its lifetime). */
   setInspectorActive(active: boolean): void;
   focus(): void;
@@ -43,16 +44,19 @@ export interface DevPanelHandle {
   highlightNode(blockId: string | null): void;
 }
 
-/** One node in the rendered tree. `blockId` powers hover-highlight + click-reveal;
- *  `range` selects an inline run; `data` feeds the JSON detail pane. */
+/** One node in the rendered tree. `target` is what the editor highlights/scrolls to
+ *  on hover/click; `blockId` (paragraph/image/table) keys the canvas→tree reverse
+ *  highlight; `data` feeds the JSON detail pane. */
 interface TreeNode {
   /** Stable key for expand-state + reverse lookup (block id where possible). */
   key: string;
   label: string;
+  /** Kind class for coloring: "group" (SDT/Field), "run", "tag" (structural), or "". */
+  kind: "block" | "run" | "group" | "tag";
   preview: string;
   badges: string[];
   blockId?: string | undefined;
-  range?: { blockId: string; start: number; end: number } | undefined;
+  target?: InspectorTarget | undefined;
   data: unknown;
   children: TreeNode[];
 }
@@ -79,6 +83,7 @@ const CSS = `
 .cw-dev-kind{color:#9cdcfe;flex:0 0 auto;}
 .cw-dev-kind.tag{color:#c586c0;}
 .cw-dev-kind.run{color:#7ec699;}
+.cw-dev-kind.group{color:#d7ba7d;}
 .cw-dev-prev{color:#cea36a;overflow:hidden;text-overflow:ellipsis;}
 .cw-dev-badge{color:#6b9bd1;font-size:10px;border:1px solid #3f5470;border-radius:7px;padding:0 5px;flex:0 0 auto;}
 .cw-dev-id{color:#6b6f76;font-size:10px;flex:0 0 auto;}
@@ -148,71 +153,142 @@ const tableBadges = (t: TableBlock): string[] => {
 
 const shortId = (id: string): string => (id.length > 10 ? `…${id.slice(-7)}` : id);
 
-/** Build the tree node for one block, recursing into table cells. */
-function blockNode(block: Block): TreeNode {
+// ---- SDT / Field grouping -------------------------------------------------
+// Content-control + field membership is stored as flat marker PATHS on blocks
+// (Block.sdtPath / Block.fieldId) and runs (CharStyle.sdtPath / fieldId), not as
+// tree edges. To render "SDT → paragraph → runs" and "Field → run", we reconstruct
+// the grouping: a contiguous run of siblings sharing an ancestry id is wrapped in a
+// group node, nesting one path level per depth. A field id is treated as the
+// innermost path segment ("field:<id>"), so it nests inside any enclosing SDTs.
+
+const blockPath = (b: Block): string[] => [...(b.sdtPath ?? []), ...(b.fieldId ? [`field:${b.fieldId}`] : [])];
+const runPath = (r: Run): string[] => [...(r.style.sdtPath ?? []), ...(r.style.fieldId ? [`field:${r.style.fieldId}`] : [])];
+
+/** A group node for one ancestry id (an SDT id, or "field:<fieldId>"). */
+function groupNode(doc: Document, id: string, key: string, children: TreeNode[]): TreeNode {
+  if (id.startsWith("field:")) {
+    const fid = id.slice(6);
+    const def = doc.fields?.[fid];
+    return {
+      key, kind: "group",
+      label: `❏ Field ${def?.name ?? shortId(fid)}`,
+      preview: previewText(def?.instruction ?? ""),
+      badges: def?.kind ? [def.kind] : [],
+      target: { kind: "field", fieldId: fid },
+      data: def ?? { fieldId: fid },
+      children,
+    };
+  }
+  const sdt = doc.sdts?.[id];
+  return {
+    key, kind: "group",
+    label: `❑ SDT ${sdt?.alias ?? sdt?.tag ?? sdt?.type ?? shortId(id)}`,
+    preview: "",
+    badges: sdt?.type ? [sdt.type] : [],
+    target: { kind: "sdt", sdtId: id },
+    data: sdt ?? { sdtId: id },
+    children,
+  };
+}
+
+/** Wrap a sequence of items into nested SDT/Field group nodes by shared ancestry.
+ *  Items whose path is exhausted at this depth become leaves via `makeLeaf`. */
+function groupByPath<T>(
+  doc: Document,
+  items: T[],
+  getPath: (t: T) => string[],
+  keyOf: (t: T) => string,
+  makeLeaf: (t: T) => TreeNode,
+  depth: number,
+): TreeNode[] {
+  const out: TreeNode[] = [];
+  let i = 0;
+  while (i < items.length) {
+    const path = getPath(items[i]!);
+    if (path.length <= depth) { out.push(makeLeaf(items[i]!)); i++; continue; }
+    const id = path[depth]!;
+    let j = i;
+    while (j < items.length) {
+      const p = getPath(items[j]!);
+      if (p.length > depth && p[depth] === id) j++;
+      else break;
+    }
+    const slice = items.slice(i, j);
+    out.push(groupNode(doc, id, `grp/${depth}/${id}/${keyOf(slice[0]!)}`, groupByPath(doc, slice, getPath, keyOf, makeLeaf, depth + 1)));
+    i = j;
+  }
+  return out;
+}
+
+/** Build the tree node for one block, recursing into table cells, with inline runs
+ *  grouped under their content-control / field membership. */
+function blockNode(doc: Document, block: Block): TreeNode {
   if (block.kind === "paragraph") {
-    const runs: TreeNode[] = [];
+    type RunItem = { run: Run; index: number; start: number; end: number };
+    const items: RunItem[] = [];
     let off = 0;
-    block.runs.forEach((r, i) => {
-      const start = off;
-      off += r.text.length;
-      runs.push({
-        key: `${block.id}#run${i}`,
-        label: "run",
-        preview: previewText(r.text) || "∅",
-        badges: runBadges(r.style),
-        range: { blockId: block.id, start, end: off },
-        data: r,
-        children: [],
-      });
+    block.runs.forEach((r, i) => { const start = off; off += r.text.length; items.push({ run: r, index: i, start, end: off }); });
+    const runLeaf = (it: RunItem): TreeNode => ({
+      key: `${block.id}#run${it.index}`,
+      kind: "run",
+      label: "run",
+      preview: previewText(it.run.text) || "∅",
+      badges: runBadges(it.run.style),
+      target: { kind: "run", blockId: block.id, start: it.start, end: it.end },
+      data: it.run,
+      children: [],
     });
     return {
-      key: block.id,
+      key: block.id, kind: "block",
       label: "¶ paragraph",
       preview: previewText(textOfRuns(block.runs)) || "(empty)",
       badges: paraBadges(block),
       blockId: block.id,
+      target: { kind: "block", blockId: block.id },
       data: block,
-      children: runs,
+      children: groupByPath(doc, items, (it) => runPath(it.run), (it) => `${block.id}#run${it.index}`, runLeaf, 0),
     };
   }
   if (block.kind === "image") {
     return {
-      key: block.id,
+      key: block.id, kind: "block",
       label: "🖼 image",
       preview: block.mediaId ? `media ${shortId(block.mediaId)}` : "(inline)",
       badges: imageBadges(block),
       blockId: block.id,
+      target: { kind: "block", blockId: block.id },
       data: block,
       children: [],
     };
   }
-  // table → rows → cells → blocks
+  // table → rows → cells → (grouped) blocks
   const rows: TreeNode[] = block.rows.map((row, ri) => ({
-    key: `${block.id}#r${ri}`,
+    key: `${block.id}#r${ri}`, kind: "tag",
     label: `row ${ri}`,
     preview: "",
     badges: [`${row.cells.length} cells`],
     data: row,
     children: row.cells.map((cell, ci) => ({
-      key: cell.id,
+      key: cell.id, kind: "tag",
       label: `cell ${ri},${ci}`,
-      preview: "",
+      preview: previewText(cell.blocks.map((b) => (b.kind === "paragraph" ? textOfRuns(b.runs) : "")).join(" ")),
       badges: [
         ...(cell.colSpan && cell.colSpan > 1 ? [`colSpan ${cell.colSpan}`] : []),
         ...(cell.rowSpan && cell.rowSpan > 1 ? [`rowSpan ${cell.rowSpan}`] : []),
         ...(cell.shading ? ["shaded"] : []),
       ],
+      target: { kind: "cell", tableId: block.id, ri, ci },
       data: cell,
-      children: cell.blocks.map((cb) => blockNode(cb)),
+      children: groupByPath(doc, cell.blocks, blockPath, (b) => b.id, (b) => blockNode(doc, b), 0),
     })),
   }));
   return {
-    key: block.id,
+    key: block.id, kind: "block",
     label: "▦ table",
     preview: "",
     badges: tableBadges(block),
     blockId: block.id,
+    target: { kind: "block", blockId: block.id },
     data: block,
     children: rows,
   };
@@ -224,13 +300,12 @@ function recordNode(key: string, label: string, obj: Record<string, unknown> | u
   const entries = Object.entries(obj);
   if (entries.length === 0) return null;
   return {
-    key,
-    label,
+    key, kind: "tag", label,
     preview: `${entries.length}`,
     badges: [],
     data: obj,
     children: entries.map(([k, v]) => ({
-      key: `${key}/${k}`,
+      key: `${key}/${k}`, kind: "tag",
       label: k,
       preview: previewText(typeof v === "string" ? v : JSON.stringify(v)),
       badges: [],
@@ -240,17 +315,19 @@ function recordNode(key: string, label: string, obj: Record<string, unknown> | u
   };
 }
 
-/** Whole-document tree: Body, then Section bands, Footnotes, and Side-tables. */
+/** Whole-document tree: Body, then Section bands, Footnotes, and Side-tables. Each
+ *  block list is grouped by its content-control / field membership. */
 function buildTree(doc: Document): TreeNode[] {
   const roots: TreeNode[] = [];
+  const blockChildren = (blocks: Block[]): TreeNode[] =>
+    groupByPath(doc, blocks, blockPath, (b) => b.id, (b) => blockNode(doc, b), 0);
 
   roots.push({
-    key: "$body",
-    label: "Body",
+    key: "$body", kind: "tag", label: "Body",
     preview: `${doc.blocks.length} blocks`,
     badges: [],
     data: { blocks: doc.blocks.length },
-    children: doc.blocks.map((b) => blockNode(b)),
+    children: blockChildren(doc.blocks),
   });
 
   const bandChildren: TreeNode[] = [];
@@ -258,35 +335,33 @@ function buildTree(doc: Document): TreeNode[] {
     const blocks = doc.section[band];
     if (blocks && blocks.length > 0) {
       bandChildren.push({
-        key: `$band/${band}`,
-        label: band,
+        key: `$band/${band}`, kind: "tag", label: band,
         preview: `${blocks.length} blocks`,
         badges: [],
         data: { band, blocks: blocks.length },
-        children: blocks.map((b) => blockNode(b)),
+        children: blockChildren(blocks),
       });
     }
   }
   if (bandChildren.length > 0) {
-    roots.push({ key: "$bands", label: "Section bands", preview: `${bandChildren.length}`, badges: [], data: doc.section, children: bandChildren });
+    roots.push({ key: "$bands", kind: "tag", label: "Section bands", preview: `${bandChildren.length}`, badges: [], data: doc.section, children: bandChildren });
   }
 
   const footnotes = doc.footnotes;
   if (footnotes && Object.keys(footnotes).length > 0) {
     roots.push({
-      key: "$footnotes",
-      label: "Footnotes",
+      key: "$footnotes", kind: "tag", label: "Footnotes",
       preview: `${Object.keys(footnotes).length}`,
       badges: [],
       data: footnotes,
       children: Object.entries(footnotes).map(([noteId, paras]) => ({
-        key: `$fn/${noteId}`,
+        key: `$fn/${noteId}`, kind: "tag",
         label: `note ${noteId}`,
         preview: previewText(paras.map((p) => textOfRuns(p.runs)).join(" ")),
         badges: [`${paras.length} ¶`],
         blockId: paras[0]?.id,
         data: paras,
-        children: paras.map((p) => blockNode(p)),
+        children: blockChildren(paras),
       })),
     });
   }
@@ -300,7 +375,7 @@ function buildTree(doc: Document): TreeNode[] {
     recordNode("$bookmarks", "Bookmarks", doc.bookmarks),
   ].filter((n): n is TreeNode => n !== null);
   if (sideKids.length > 0) {
-    roots.push({ key: "$side", label: "Side tables", preview: `${sideKids.length}`, badges: [], data: {}, children: sideKids });
+    roots.push({ key: "$side", kind: "tag", label: "Side tables", preview: `${sideKids.length}`, badges: [], data: {}, children: sideKids });
   }
 
   return roots;
@@ -368,13 +443,8 @@ export function showDevPanel(opts: DevPanelOptions): DevPanelHandle {
     for (const r of treeHost.querySelectorAll(".cw-dev-row.sel")) r.classList.remove("sel");
     rowEl.classList.add("sel");
     showDetail(node);
-    // Reveal on canvas: a run selects its range; a block scrolls to its start.
-    if (node.range) {
-      editor.revealBlock(node.range.blockId);
-      editor.setSelection({ anchor: { blockId: node.range.blockId, offset: node.range.start }, focus: { blockId: node.range.blockId, offset: node.range.end } });
-    } else if (node.blockId) {
-      editor.revealBlock(node.blockId);
-    }
+    // Reveal on canvas: the editor scrolls to (and selects, for text) the node.
+    if (node.target) editor.revealInspectorTarget(node.target);
   };
 
   // ---- Render ---------------------------------------------------------------
@@ -396,8 +466,7 @@ export function showDevPanel(opts: DevPanelOptions): DevPanelHandle {
       if (filter && matches(node)) row.classList.add("match");
 
       const tw = el("span", "cw-dev-tw", hasKids ? (isOpen ? "▾" : "▸") : "");
-      const kindCls = node.label.includes("run") ? "cw-dev-kind run" : node.key.startsWith("$") ? "cw-dev-kind tag" : "cw-dev-kind";
-      const kind = el("span", kindCls, node.label);
+      const kind = el("span", `cw-dev-kind ${node.kind}`, node.label);
       row.append(tw, kind);
       if (node.preview) row.append(el("span", "cw-dev-prev", node.preview));
       for (const b of node.badges) row.append(el("span", "cw-dev-badge", b));
@@ -412,12 +481,12 @@ export function showDevPanel(opts: DevPanelOptions): DevPanelHandle {
         });
       }
       row.addEventListener("click", () => selectNode(node, row));
-      const hoverId = node.blockId ?? node.range?.blockId ?? null;
-      if (hoverId) {
-        row.addEventListener("mouseenter", () => editor.setInspectorHighlight(hoverId));
+      const target = node.target;
+      if (target) {
+        row.addEventListener("mouseenter", () => editor.setInspectorHighlight(target));
         row.addEventListener("mouseleave", () => editor.setInspectorHighlight(null));
-        rowByBlock.set(hoverId, row);
       }
+      if (node.blockId) rowByBlock.set(node.blockId, row);
       treeHost.append(row);
 
       if (hasKids && isOpen) for (const c of node.children) renderNode(c, depth + 1);
