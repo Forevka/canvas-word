@@ -3,7 +3,7 @@ import { resolveConfig } from "./config";
 import { emptyParagraphFor } from "./builder/blockFactory";
 import { mediaStore, mediaUrl, registerMediaBytes, rehydrateDocMedia } from "./media/store";
 import { SyncClient } from "./sync/SyncClient";
-import { createEditor, type CurrentFormat, type EditMode, type ReviewOpEnvelope } from "./index";
+import { createEditor, type CurrentFormat, type EditMode, type InspectorProbe, type ReviewOpEnvelope } from "./index";
 import type { Command } from "./editor/state";
 import { createLayoutEngine } from "./layout/engine";
 import { sampleDoc } from "./model/sampleDoc";
@@ -243,6 +243,7 @@ let syncMode: () => void = () => {};
 // the tree on edits; inspectorHoverSink routes the canvas→tree hover signal.
 let refreshDevPanel: () => void = () => {};
 let inspectorHoverSink: (blockId: string | null) => void = () => {};
+let inspectorProbeSink: (probe: InspectorProbe | null) => void = () => {};
 // Close the inspector (it captures the live editor) when the editor is rebuilt on
 // document replacement. Assigned when the panel opens; no-op otherwise.
 let closeDevPanel: () => void = () => {};
@@ -287,6 +288,7 @@ const editorOpts = {
   // Develop mode only: the inspector turns this signal on while open (dormant
   // otherwise) — route the hovered block id to the tree for the reverse highlight.
   onInspectorHover: (blockId: string | null) => inspectorHoverSink(blockId),
+  onInspectorProbe: (probe: InspectorProbe | null) => inspectorProbeSink(probe),
   onChange: () => {
     syncToolbar();
     refreshOutline();
@@ -1673,12 +1675,14 @@ if (toolbar) {
           devPanel = null;
           refreshDevPanel = () => {};
           inspectorHoverSink = () => {};
+          inspectorProbeSink = () => {};
           closeDevPanel = () => {};
           devBtn.classList.remove("active");
         },
       });
       refreshDevPanel = () => devPanel?.refresh();
       inspectorHoverSink = (blockId) => devPanel?.highlightNode(blockId);
+      inspectorProbeSink = (probe) => devPanel?.setProbe(probe);
       closeDevPanel = () => devPanel?.close();
       devBtn.classList.add("active");
     };

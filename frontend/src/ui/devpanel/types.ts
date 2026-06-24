@@ -18,6 +18,8 @@ export interface DevPanelEditor {
   revealInspectorTarget(target: InspectorTarget): void;
   /** Turn the canvas→tree hover signal on/off (the panel owns its lifetime). */
   setInspectorActive(active: boolean): void;
+  /** Turn the hit-test probe signal on/off (Probe tab owns its lifetime). */
+  setInspectorProbe(active: boolean): void;
   /** Toggle a layout-debug overlay drawn on the canvas. */
   setDebugOverlay(kind: string, on: boolean): void;
   /** Recorded edit history (History tab). */
@@ -66,10 +68,15 @@ export interface PanelTab {
   setFilter?(f: string): void;
   /** Called when the tab becomes active (and on first show). */
   activate(): void;
+  /** Called when the tab is switched away from (turn off any live signals). */
+  deactivate?(): void;
   /** Live refresh on doc/selection change — only called while active. */
   refresh(): void;
   /** Reverse sync from a canvas-hover blockId (tree tabs). */
   highlightByBlockId?(blockId: string | null): void;
+  /** Receive a hit-test probe payload (Probe tab). Typed as unknown to keep the
+   *  shell decoupled; the Probe tab casts it. */
+  onProbe?(probe: unknown): void;
   /** Optional count badge shown next to the tab label (e.g. problem count). Null = none. */
   count?(): number | null;
   destroy?(): void;

@@ -16,6 +16,7 @@ import { injectCssOnce } from "./styles";
 import { createModelTab } from "./devpanel/modelTab";
 import { createLayoutTab } from "./devpanel/layoutTab";
 import { createProblemsTab } from "./devpanel/problemsTab";
+import { createProbeTab } from "./devpanel/probeTab";
 import { createOverlayBar } from "./devpanel/overlayBar";
 import { el, type DevPanelEditor, type PanelCtx, type PanelTab } from "./devpanel/types";
 
@@ -32,6 +33,8 @@ export interface DevPanelHandle {
   refresh(): void;
   /** Reverse sync: highlight the tree row for a canvas block id (tree tabs). */
   highlightNode(blockId: string | null): void;
+  /** Deliver a hit-test probe payload to the active tab (Probe tab). */
+  setProbe(probe: unknown): void;
 }
 
 const CSS = `
@@ -77,6 +80,10 @@ const CSS = `
 .cw-dev-overlabel{color:#6b6f76;font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-right:2px;}
 .cw-dev-btn{height:24px;padding:0 9px;border:1px solid #3a3d42;border-radius:6px;background:#1a1b1e;color:#9aa0a6;cursor:pointer;font-size:11px;}
 .cw-dev-btn:hover{border-color:#4a4d52;color:#d4d6da;}
+.cw-dev-probe{flex:1 1 auto;overflow:auto;padding:8px 12px;}
+.cw-dev-probe-row{display:flex;gap:8px;padding:3px 0;border-bottom:1px solid #2b2d31;}
+.cw-dev-probe-k{flex:0 0 84px;color:#9aa0a6;}
+.cw-dev-probe-v{color:#cdd1d6;font-family:'Cascadia Code',Consolas,monospace;word-break:break-all;}
 .cw-dev-detail{flex:0 0 200px;border-top:1px solid #34363b;background:#191a1d;display:flex;flex-direction:column;min-height:0;}
 .cw-dev-detail-head{padding:6px 12px;border-bottom:1px solid #2b2d31;color:#9aa0a6;font-size:11px;text-transform:uppercase;letter-spacing:.05em;}
 .cw-dev-json{flex:1 1 auto;overflow:auto;margin:0;padding:8px 12px;font-family:'Cascadia Code',Consolas,monospace;font-size:11px;color:#cdd1d6;white-space:pre;}`;
@@ -129,7 +136,7 @@ export function showDevPanel(opts: DevPanelOptions): DevPanelHandle {
 
   // ---- Tabs -----------------------------------------------------------------
   const ctx: PanelCtx = { editor, showDetail };
-  const tabs: PanelTab[] = [createModelTab(ctx), createLayoutTab(ctx), createProblemsTab(ctx)];
+  const tabs: PanelTab[] = [createModelTab(ctx), createLayoutTab(ctx), createProblemsTab(ctx), createProbeTab(ctx)];
   let active: PanelTab = tabs[0]!;
   const tabButtons = new Map<string, HTMLButtonElement>();
   const tabCounts = new Map<string, HTMLSpanElement>();
@@ -160,6 +167,7 @@ export function showDevPanel(opts: DevPanelOptions): DevPanelHandle {
   const switchTo = (id: string): void => {
     const next = tabs.find((t) => t.id === id);
     if (!next) return;
+    active.deactivate?.();
     active.element.style.display = "none";
     if (active.toolbar) active.toolbar.style.display = "none";
     tabButtons.get(active.id)?.classList.remove("active");
@@ -190,6 +198,7 @@ export function showDevPanel(opts: DevPanelOptions): DevPanelHandle {
     },
     refresh(): void { active.refresh(); updateCounts(); },
     highlightNode(blockId: string | null): void { active.highlightByBlockId?.(blockId); },
+    setProbe(probe: unknown): void { active.onProbe?.(probe); },
   };
   window.addEventListener("keydown", (ev: KeyboardEvent) => {
     if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); handle.close(); }

@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Inspector: Probe tab (hit-test readout).** A new tab shows, live under the
+  pointer, exactly what the input layer resolves there — the page point, caret
+  position (block id + offset), content-control chain, field, and table cell — with
+  a Freeze chip to pin a reading. New `Editor.setInspectorProbe(active)` +
+  `onInspectorProbe` callback + `InspectorProbe` type.
 - **Inspector: Layout tab (geometry tree).** A new tab renders the laid-out geometry
   — pages → placed blocks → lines → fragments, and tables → rows → cells → blocks —
   each node showing its position/size and highlighting its exact painted rect on

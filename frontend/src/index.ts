@@ -170,6 +170,24 @@ export type InspectorTarget =
   /** A literal page-coordinate rect (Layout-tab geometry nodes). */
   | { kind: "rect"; pageIndex: number; x: number; y: number; width: number; height: number; label?: string };
 
+/** What the develop-mode hit-test probe resolves under the pointer — the input
+ *  layer's view of a page point (caret position, content-control chain, field,
+ *  table cell). Powers the inspector's Probe readout. */
+export interface InspectorProbe {
+  pageIndex: number;
+  /** Page-local coordinates (CSS px, zoom-agnostic). */
+  x: number;
+  y: number;
+  /** Resolved caret position, or null when the point hits no text. */
+  position: { blockId: string; offset: number } | null;
+  /** Content-control ancestry at the position (outer→inner sdt ids). */
+  sdtChain: string[];
+  /** Field id whose result contains the position, or null. */
+  fieldId: string | null;
+  /** Table cell under the point, or null. */
+  cell: { tableId: string; row: number; col: number } | null;
+}
+
 export interface Editor {
   focus(): void;
   getDocument(): Document;
@@ -259,6 +277,8 @@ export interface Editor {
    *  The inspector panel enables it while open and disables it on close, so the
    *  canvas→tree reverse highlight costs nothing when no inspector is attached. */
   setInspectorActive(active: boolean): void;
+  /** Turn the develop-mode hit-test probe (EditorOptions.onInspectorProbe) on/off. */
+  setInspectorProbe(active: boolean): void;
   /** Develop-mode layout overlay toggle drawn on the canvas — kinds: blockBoxes,
    *  lineBoxes, fragments, baselines, margins, cells, pageInfo. Presentational. */
   setDebugOverlay(kind: string, on: boolean): void;
@@ -379,6 +399,10 @@ export interface EditorOptions {
    *  emitted while the Document-tree inspector is attached (see setInspectorActive)
    *  — it powers the canvas→tree reverse-highlight and stays dormant otherwise. */
   onInspectorHover?: (blockId: string | null) => void;
+  /** Develop-mode hit-test probe: fires as the pointer moves with the resolved
+   *  page point (caret position, sdt chain, field, cell), or null when off-page.
+   *  Only emitted while `setInspectorProbe(true)` — dormant otherwise. */
+  onInspectorProbe?: (probe: InspectorProbe | null) => void;
 }
 
 /** Request passed to a custom-field resolver. */
@@ -664,6 +688,8 @@ export function createEditor(
   // so non-develop embeds pay nothing.
   let inspectorActive = false;
   let lastInspectorHover: string | null = null;
+  let probeActive = false;
+  let lastProbeKey = "";
   // Any-kind block lookup across body blocks + table cells (blockById finds only
   // paragraphs). Used to pick the right doc→rect strategy per node kind.
   const findBlockDeep = (blocks: Block[], id: string): Block | undefined => {
@@ -754,15 +780,33 @@ export function createEditor(
     if (r) paint.ensureVisible({ pageIndex: r.pageIndex, x: r.x, y: r.y, height: r.height }, "center");
   };
   const updateInspectorHover = (clientX: number, clientY: number, buttons: number): void => {
-    if (!inspectorActive) return;
-    let blockId: string | null = null;
-    if (buttons === 0 && !selectedObject) {
-      const pt = paint.clientToPage(clientX, clientY);
-      if (pt && pt.inside) blockId = hitTest(tree, pt.pageIndex, pt.x, pt.y, scope())?.blockId ?? null;
+    if (!inspectorActive && !probeActive) return;
+    const pt = buttons === 0 && !selectedObject ? paint.clientToPage(clientX, clientY) : null;
+    const inside = pt !== null && pt.inside;
+    // Reverse highlight: emit the block under the pointer.
+    if (inspectorActive) {
+      const blockId = inside ? hitTest(tree, pt!.pageIndex, pt!.x, pt!.y, scope())?.blockId ?? null : null;
+      if (blockId !== lastInspectorHover) { lastInspectorHover = blockId; options.onInspectorHover?.(blockId); }
     }
-    if (blockId === lastInspectorHover) return;
-    lastInspectorHover = blockId;
-    options.onInspectorHover?.(blockId);
+    // Hit-test probe: emit the resolved page point (position, sdt chain, field, cell).
+    if (probeActive) {
+      let probe: InspectorProbe | null = null;
+      if (inside) {
+        const pos = hitTest(tree, pt!.pageIndex, pt!.x, pt!.y, scope()) ?? null;
+        const cellHit = hitTestCell(tree, pt!.pageIndex, pt!.x, pt!.y);
+        probe = {
+          pageIndex: pt!.pageIndex,
+          x: Math.round(pt!.x),
+          y: Math.round(pt!.y),
+          position: pos ? { blockId: pos.blockId, offset: pos.offset } : null,
+          sdtChain: pos ? sdtStackAtPosition(doc, pos) : [],
+          fieldId: pos ? fieldAtPosition(doc, pos) ?? null : null,
+          cell: cellHit ? { tableId: cellHit.tableId, row: cellHit.row, col: cellHit.col } : null,
+        };
+      }
+      const key = probe ? JSON.stringify(probe) : "";
+      if (key !== lastProbeKey) { lastProbeKey = key; options.onInspectorProbe?.(probe); }
+    }
   };
 
   /** Block-region field (contiguous top-level blocks sharing Block.fieldId): one
@@ -3012,6 +3056,11 @@ export function createEditor(
         lastInspectorHover = null;
         paint.setInspectorRects(null);
       }
+    },
+    setInspectorProbe: (active: boolean): void => {
+      if (active === probeActive) return;
+      probeActive = active;
+      if (!active) { lastProbeKey = ""; options.onInspectorProbe?.(null); }
     },
     search,
     searchNav,
