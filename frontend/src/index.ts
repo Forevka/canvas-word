@@ -554,18 +554,52 @@ export function createEditor(
     return rects.length > 0 ? rects : null;
   };
 
+  /** Image-only controls inside table cells: blockLevelSdtRects only scans body
+   *  top-level blocks and findSdtRanges only walks paragraph runs, so a control
+   *  whose sole content is an image sitting in a cell would frame nothing. Frame
+   *  the image itself (a top-level image-only control already frames via the
+   *  block-level path, since the image is a body block). */
+  const cellImageSdtRects = (id: string): Rect[] => {
+    const rects: Rect[] = [];
+    for (const b of doc.blocks) {
+      if (b.kind !== "table") continue;
+      for (const row of b.rows)
+        for (const cell of row.cells)
+          for (const cb of cell.blocks)
+            if (cb.kind === "image" && cb.sdtPath?.includes(id)) {
+              const r = objectRect(tree, cb.id);
+              if (r) rects.push(r);
+            }
+    }
+    return rects;
+  };
+
   /** Frame + label for one control id: a single bounding box for block-level
    *  controls (Word's boundingBox chrome), else text-shaped per-line rects. */
   const sdtLayerFor = (id: string): { rects: Rect[]; label: string } | null => {
     const props = doc.sdts?.[id];
     if (!props) return null;
     const rects =
-      blockLevelSdtRects(id) ??
-      findSdtRanges(doc, id).flatMap((r) =>
-        selectionRects(tree, { anchor: { blockId: r.blockId, offset: r.start }, focus: { blockId: r.blockId, offset: r.end } }, scope()),
-      );
+      blockLevelSdtRects(id) ?? [
+        ...findSdtRanges(doc, id).flatMap((r) =>
+          selectionRects(tree, { anchor: { blockId: r.blockId, offset: r.start }, focus: { blockId: r.blockId, offset: r.end } }, scope()),
+        ),
+        ...cellImageSdtRects(id),
+      ];
     if (rects.length === 0) return null;
     return { rects, label: props.alias ?? SDT_LABELS[props.type] ?? "Content control" };
+  };
+
+  /** SDT ancestry (outer→inner) of a selected image — the caret-less analogue of
+   *  sdtStackAtPosition: the wrapping table's block path (for a cell image) then
+   *  the image block's own path. Lets selecting an image inside a control still
+   *  raise the control chrome + light up the ribbon, so its membership is visible. */
+  const objectSdtChain = (blockId: string): string[] => {
+    const loc = locateImage(doc, blockId);
+    if (!loc) return [];
+    const table = loc.kind === "cell" ? doc.blocks[loc.bi] : undefined;
+    const tablePath = table?.kind === "table" ? table.sdtPath ?? [] : [];
+    return [...tablePath, ...(loc.image.sdtPath ?? [])];
   };
 
   // Content-control chrome: an OUTER→INNER stack of frames (concentric, with a
@@ -579,11 +613,17 @@ export function createEditor(
     paint.setSdtAdornment(chain.length > 0 ? chain.map(sdtLayerFor).filter((l): l is { rects: Rect[]; label: string } => l !== null) : null);
   };
 
-  /** Word's active-control chrome, recomputed from the caret. Cleared when the
-   *  caret leaves all controls (unless the pointer is hovering one). */
+  /** Word's active-control chrome, recomputed from the caret — or, when an image
+   *  object is selected (which clears the text caret), from that image's control
+   *  ancestry, so a picture inside a control still shows its frame + breadcrumb.
+   *  Cleared when neither is in a control (unless the pointer is hovering one). */
   const updateSdtAdornment = (): void => {
     const focus = selection?.focus;
-    caretSdtChain = focus ? sdtStackAtPosition(doc, focus) : [];
+    caretSdtChain = focus
+      ? sdtStackAtPosition(doc, focus)
+      : selectedObject
+        ? objectSdtChain(selectedObject)
+        : [];
     renderSdtAdornment();
   };
 
@@ -971,10 +1011,11 @@ export function createEditor(
       return;
     }
     selectedObject = blockId;
-    if (blockId) {
-      selection = null; // object selection replaces the text selection (Word)
-      refreshSelectionVisuals();
-    }
+    if (blockId) selection = null; // object selection replaces the text selection (Word)
+    // Always refresh: selecting an image raises its control chrome (if any), and
+    // deselecting must tear that chrome back down (recomputed from the caret, which
+    // may be null). Previously only the select path refreshed.
+    refreshSelectionVisuals();
     refreshObjectFrame();
     notifyChange(); // object selection drives the floating image toolbar
   };
@@ -1000,13 +1041,28 @@ export function createEditor(
       return f;
     };
 
+    // Coalesce preview relayouts to one per animation frame: each transient op runs
+    // a full relayout, and mousemove fires faster than a big table re-measures, so
+    // dispatching per event backs up a queue and the boundary lags the cursor (same
+    // backlog as image resize). Keep only the latest fractions per frame.
+    let pendingFractions: number[] | null = null;
+    let moveRaf = 0;
+    const flushMove = (): void => {
+      moveRaf = 0;
+      if (pendingFractions) dispatch(setTableColFractionsCmd(hit.tableId, pendingFractions, "transient"));
+      pendingFractions = null;
+    };
     const onMove = (e: MouseEvent): void => {
       lastFractions = fractionsFor(e);
-      dispatch(setTableColFractionsCmd(hit.tableId, lastFractions, "transient"));
+      pendingFractions = lastFractions;
+      if (!moveRaf) moveRaf = requestAnimationFrame(flushMove);
     };
     const onUp = (e: MouseEvent): void => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      if (moveRaf) cancelAnimationFrame(moveRaf); // drop any queued preview
+      moveRaf = 0;
+      pendingFractions = null;
       lastFractions = fractionsFor(e);
       // Revert preview, commit one undoable op.
       dispatch(setTableColFractionsCmd(hit.tableId, base, "transient"));
@@ -2050,7 +2106,9 @@ export function createEditor(
   /** Inspect the control at the caret (ribbon button). Returns false if none. */
   const inspectSdtAtCaret = (): boolean => {
     const focus = selection?.focus;
-    const id = focus ? sdtAtPosition(doc, focus) : null;
+    // A selected image (no caret) inspects its innermost wrapping control.
+    const chain = selectedObject ? objectSdtChain(selectedObject) : [];
+    const id = selectedObject ? chain[chain.length - 1] ?? null : focus ? sdtAtPosition(doc, focus) : null;
     if (!id || !doc.sdts?.[id]) return false;
     openSdtInspector(id);
     return true;
@@ -2814,7 +2872,13 @@ export function createEditor(
         listKind,
         imageSelected: selectedObject !== null,
         inTable: !!cellSelection || (focus ? locateParagraph(doc, focus.blockId)?.kind === "cell" : false),
-        inContentControl: focus && !selectedObject ? sdtAtPosition(doc, focus) !== null : false,
+        // A selected image inside a control counts too (its caret is cleared), so
+        // the Controls ribbon group lights up instead of leaving the user no clue.
+        inContentControl: selectedObject
+          ? objectSdtChain(selectedObject).length > 0
+          : focus
+            ? sdtAtPosition(doc, focus) !== null
+            : false,
       };
     },
     align(align: ParaStyle["align"]): void {

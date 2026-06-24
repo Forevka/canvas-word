@@ -78,7 +78,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trailed the cursor by a fraction of a second. Resize previews are now coalesced to
   one per animation frame (the same per-frame throttle pinch-zoom already used), so
   the image stays glued to the handle regardless of table size; the final committed
-  size is unaffected.
+  size is unaffected. Table **column-boundary drags** were throttled the same way —
+  they ran a transient relayout per `mousemove` and lagged identically on big tables.
+- **Selecting an image inside a content control now shows that it's in one.** When a
+  control's only content was an image, selecting the image (object selection clears
+  the text caret, which is what drove the chrome) left no frame, no breadcrumb, and a
+  greyed-out Controls ribbon group — the user had no way to tell the picture was
+  inside a `w:sdt`. Object selection now derives the control ancestry from the image
+  (its block-level `sdtPath`, plus the wrapping table's for a cell image), so the
+  control frame + breadcrumb tab render and the *Content control properties* / *Remove*
+  buttons light up. Image-only controls that sit in a table cell — which the
+  block-level and run-based frame paths both miss — are framed around the image.
 
 ## [0.7.4] — 2026-06-23
 
