@@ -1,0 +1,38 @@
+name: CI
+
+# Runs the full test suite on every pull request (and on pushes to main, so the
+# base branch always has a green baseline to compare PRs against). The root
+# `npm test` script fans out to the @cw/shared, @forevka/wordcanvas, and
+# @cw/backend workspaces; the backend's `pretest` hook rebuilds the dist-node
+# bundle first so tests exercise the same compiled output external consumers get.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# A newer push to the same PR/branch cancels the in-flight run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
