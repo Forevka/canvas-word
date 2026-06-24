@@ -226,6 +226,15 @@ export interface Editor {
   getSelectedObjectRect(): { left: number; top: number; width: number; height: number } | null;
   /** Delete the selected image and clear the object selection. */
   deleteSelectedObject(): void;
+  // ---- develop-mode Document-tree inspector --------------------------------
+  /** Paint a devtools-style highlight over a node's region on the canvas, given a
+   *  block id (paragraph/image/table, incl. blocks nested in table cells). Pass
+   *  null to clear. Presentational only — no model/selection change. */
+  setInspectorHighlight(blockId: string | null): void;
+  /** Turn the develop-mode hover signal (EditorOptions.onInspectorHover) on/off.
+   *  The inspector panel enables it while open and disables it on close, so the
+   *  canvas→tree reverse highlight costs nothing when no inspector is attached. */
+  setInspectorActive(active: boolean): void;
   /** Find & replace. search() highlights all matches and returns state. */
   search(query: string, opts?: { matchCase?: boolean; wholeWord?: boolean }): SearchState;
   searchNav(dir: 1 | -1): SearchState;
@@ -338,6 +347,11 @@ export interface EditorOptions {
   theme?: ResolvedTheme;
   /** Resolved behavior tuning (zoom step/clamp, indent step). Omit ⇒ defaults. */
   behavior?: ResolvedBehavior;
+  /** Develop-mode hook: fires as the pointer moves over the page with the blockId
+   *  of the top-level body block under the cursor (or null when over none). Only
+   *  emitted while the Document-tree inspector is attached (see setInspectorActive)
+   *  — it powers the canvas→tree reverse-highlight and stays dormant otherwise. */
+  onInspectorHover?: (blockId: string | null) => void;
 }
 
 /** Request passed to a custom-field resolver. */
@@ -574,6 +588,57 @@ export function createEditor(
     lastHoverKey = key;
     hoverSdtChain = chain;
     renderSdtAdornment();
+  };
+
+  // ---- develop-mode Document-tree inspector --------------------------------
+  // Two cooperating signals for the floating inspector panel: tree→canvas (paint a
+  // node's region on demand) and canvas→tree (emit the block under the pointer).
+  // Both are inert unless the panel turns the hover signal on via setInspectorActive,
+  // so non-develop embeds pay nothing.
+  let inspectorActive = false;
+  let lastInspectorHover: string | null = null;
+  // Any-kind block lookup across body blocks + table cells (blockById finds only
+  // paragraphs). Used to pick the right doc→rect strategy per node kind.
+  const findBlockDeep = (blocks: Block[], id: string): Block | undefined => {
+    for (const b of blocks) {
+      if (b.id === id) return b;
+      if (b.kind === "table") {
+        for (const row of b.rows) for (const cell of row.cells) {
+          const hit = findBlockDeep(cell.blocks, id);
+          if (hit) return hit;
+        }
+      }
+    }
+    return undefined;
+  };
+  const inspectorHighlightFor = (blockId: string): { rects: Rect[]; label: string } | null => {
+    const block = findBlockDeep(doc.blocks, blockId);
+    if (!block) return null;
+    if (block.kind === "image") {
+      const r = objectRect(tree, blockId);
+      return r ? { rects: [r], label: "image" } : null;
+    }
+    if (block.kind === "paragraph") {
+      const len = textOfRuns(block.runs).length;
+      const rects = selectionRects(tree, { anchor: { blockId, offset: 0 }, focus: { blockId, offset: len } }, scope());
+      // Empty paragraph (no runs) — fall back to its full-width block box.
+      const boxed = rects.length > 0 ? rects : boxRectsForBlockIds(new Set([blockId]));
+      return boxed.length > 0 ? { rects: boxed, label: "¶" } : null;
+    }
+    // Table: the placed block's full-width box (selectionRects has no text anchor).
+    const rects = boxRectsForBlockIds(new Set([blockId]));
+    return rects.length > 0 ? { rects, label: "table" } : null;
+  };
+  const updateInspectorHover = (clientX: number, clientY: number, buttons: number): void => {
+    if (!inspectorActive) return;
+    let blockId: string | null = null;
+    if (buttons === 0 && !selectedObject) {
+      const pt = paint.clientToPage(clientX, clientY);
+      if (pt && pt.inside) blockId = hitTest(tree, pt.pageIndex, pt.x, pt.y, scope())?.blockId ?? null;
+    }
+    if (blockId === lastInspectorHover) return;
+    lastInspectorHover = blockId;
+    options.onInspectorHover?.(blockId);
   };
 
   /** Block-region field (contiguous top-level blocks sharing Block.fieldId): one
@@ -2462,8 +2527,15 @@ export function createEditor(
 
   // Hover highlighting for content controls (incl. nested) — point at any control
   // to see its frame(s) and breadcrumb, without moving the caret.
-  const onSdtHoverMove = (ev: MouseEvent): void => updateHoverAdornment(ev.clientX, ev.clientY, ev.buttons);
+  const onSdtHoverMove = (ev: MouseEvent): void => {
+    updateHoverAdornment(ev.clientX, ev.clientY, ev.buttons);
+    updateInspectorHover(ev.clientX, ev.clientY, ev.buttons);
+  };
   const onSdtHoverLeave = (): void => {
+    if (inspectorActive && lastInspectorHover !== null) {
+      lastInspectorHover = null;
+      options.onInspectorHover?.(null);
+    }
     if (hoverSdtChain.length === 0) return;
     hoverSdtChain = [];
     lastHoverKey = "";
@@ -2765,6 +2837,17 @@ export function createEditor(
       const id = selectedObject;
       selectObject(null);
       dispatch(deleteImage(id));
+    },
+    setInspectorHighlight: (blockId: string | null): void => {
+      paint.setInspectorRects(blockId ? inspectorHighlightFor(blockId) : null);
+    },
+    setInspectorActive: (active: boolean): void => {
+      if (active === inspectorActive) return;
+      inspectorActive = active;
+      if (!active) {
+        lastInspectorHover = null;
+        paint.setInspectorRects(null);
+      }
     },
     search,
     searchNav,

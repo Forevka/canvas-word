@@ -55,4 +55,10 @@ describe("resolveConfig", () => {
     expect(cfg.behavior).toEqual(DEFAULT_BEHAVIOR);
     expect(cfg.stylesheet.styles.find((s) => s.id === "Normal")!.char.fontFamily).toBe("Georgia, serif");
   });
+
+  it("defaults develop mode off and honors the override", () => {
+    expect(resolveConfig().develop).toBe(false);
+    expect(resolveConfig({ develop: false }).develop).toBe(false);
+    expect(resolveConfig({ develop: true }).develop).toBe(true);
+  });
 });

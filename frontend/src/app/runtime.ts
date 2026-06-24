@@ -197,6 +197,8 @@ export interface WordCanvasRuntime {
   overrideDefaultStyles?: DefaultStyleOverrides | undefined;
   /** Behavior tuning (zoom step/clamp, indent step, default grid spacing). */
   behavior?: EditorBehavior | undefined;
+  /** Develop mode: reveal the "Developer" ribbon tab + Document-tree inspector. */
+  develop?: boolean | undefined;
   /** Custom fonts (URL-loaded faces + sizing) and toolbar disables. */
   fonts?: FontsConfig | undefined;
   /** Customize the ribbon: reorder/remove built-ins by id and add custom tabs,

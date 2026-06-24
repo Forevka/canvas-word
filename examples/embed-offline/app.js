@@ -14,8 +14,9 @@ const PHASE_LABEL = { bundle: "Loading editor…", fonts: "Loading fonts…", re
 // Optional embedder `view` config via ?view=<url-encoded JSON>. Lets a host page
 // (e.g. the landing-page <iframe> embed) set the initial chrome state — hide the
 // outline pane, start at 50% zoom, etc. Ignored if absent or malformed.
+const params = new URLSearchParams(location.search);
 let view;
-const viewParam = new URLSearchParams(location.search).get("view");
+const viewParam = params.get("view");
 if (viewParam) {
   try {
     view = JSON.parse(viewParam);
@@ -24,9 +25,18 @@ if (viewParam) {
   }
 }
 
+// `?devMode=true` reveals a dedicated **Developer** ribbon tab whose "Inspect
+// document tree" button opens a floating, devtools-Elements-style panel over the
+// parsed Document model: browse the tree (blocks → runs, tables → cells, bands,
+// footnotes, side-tables), hover a node to highlight its region on the page, hover
+// the page to reveal the matching node, click to jump to it, and read each node's
+// raw JSON. Pure debugging aid — gated, so production embeds that omit it pay nothing.
+const devMode = params.get("devMode") === "true";
+
 const editor = new WordCanvas({
   container: document.getElementById("editor"),
   ...(view ? { view } : {}),
+  ...(devMode ? { develop: true } : {}),
   // Drive the loading bar. `percent` is an overall 0..1 across the whole startup
   // (bundle download → font fetch → ready), so it maps straight onto a bar width.
   // `phase` is a coarse stage label; `loaded`/`total` are byte counts for the

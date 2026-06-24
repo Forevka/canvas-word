@@ -410,6 +410,18 @@ multiple editors per page; the WebMCP polyfill is lazy-loaded only when enabled,
 the zero-runtime-dependency package is unchanged for everyone else. See
 [WEBMCP.md](./WEBMCP.md).
 
+**Develop mode** — opt-in (`develop: true`), the ribbon gains a dedicated
+**Developer** tab whose *Inspect document tree* button opens a floating,
+devtools-Elements-style panel over the parsed `Document` model. Browse the tree
+(body blocks → runs, tables → rows → cells, header/footer bands, footnotes, and the
+side-tables: styles, lists, table styles, content controls, fields, bookmarks);
+**hover a node** to paint a highlight box over its region on the canvas; **hover the
+page** to reveal the matching node in the tree (reverse sync); **click** to select
+and scroll to it; and **select** any node to read its properties + raw JSON. It's a
+pure debugging aid — gated twice over: the tab only exists when the flag is set, and
+nothing runs until the developer opens the panel from it. Leave it off for
+production embeds.
+
 **Bookmarks** — character-range bookmarks (body, table cells, headers/footers)
 that rebase live as the document is edited; a Bookmarks panel lists them with
 Go-To navigation and management ops; they back TOC and cross-reference targets.

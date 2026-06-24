@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Develop mode via the `develop` constructor option (`develop: true`).** Reveals a
+  dedicated **Developer** ribbon tab whose *Inspect document tree* button opens a
+  floating, draggable, devtools-Elements-style panel over the parsed `Document`
+  model. The tree covers body blocks → runs, tables → rows → cells, header/footer
+  bands, footnotes, and the side-tables (styles, lists, table styles, content
+  controls, fields, bookmarks). Hovering a node paints a highlight box over its
+  region on the canvas; hovering the page reveals the matching node in the tree
+  (reverse sync); clicking selects + scrolls to it; selecting shows the node's
+  properties + raw JSON. A filter box narrows the tree. It's a pure debugging aid,
+  gated twice over: the tab only exists when the flag is set, and nothing dev-related
+  runs until the panel is opened from it (the canvas↔tree hover signal is dormant
+  otherwise). The editor surface gains `setInspectorHighlight(blockId | null)` and
+  `setInspectorActive(active)` with an `onInspectorHover` callback, and the paint
+  layer a `setInspectorRects` overlay channel. The panel is draggable by its header
+  and **resizable** (drag the bottom-right corner). Off by default; leave it off for
+  production embeds. The dev harness (`npm run dev` / `dev:online`) and the
+  **offline embed example** opt in with `?devMode=true` in the URL; the constructor
+  builder example exposes a `develop` toggle.
 - **Custom fonts via the `fonts` constructor option.** Embedders can now supply their
   own fonts, loaded from URLs at runtime, instead of being limited to the bundled
   metric clones: `fonts: { fonts: [{ family, faces: { regular, bold?, italic?,

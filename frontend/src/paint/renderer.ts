@@ -97,6 +97,10 @@ export interface PaintScheduler {
   /** Inline/block FIELD focus adornment: gray field-shading fill + a labelled tab
    *  (Word's field highlight). Distinct from the SDT frame. Null clears. */
   setFieldAdornment(adorn: { rects: Rect[]; label: string } | null): void;
+  /** Develop-mode Document-tree inspector highlight: a devtools-blue overlay box +
+   *  a labelled tab over a hovered node's painted region. Painted ABOVE the other
+   *  adornments so it reads as an ephemeral inspection cue. Null clears. */
+  setInspectorRects(adorn: { rects: Rect[]; label: string } | null): void;
   setCaret(caret: CaretRect | null): void;
   /** Remote collaborators' carets (DOM overlays with name flags). Replaces the
    *  whole set each call; pass [] to clear. */
@@ -235,6 +239,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
   let reviewDecos: ReviewDecorations = EMPTY_REVIEW_DECOS;
   let sdtAdorn: { rects: Rect[]; label: string }[] | null = null;
   let fieldAdorn: { rects: Rect[]; label: string } | null = null;
+  let inspectorAdorn: { rects: Rect[]; label: string } | null = null;
   let bandEditMode: "header" | "footer" | null = null;
 
   const pagesWrap = document.createElement("div");
@@ -566,6 +571,34 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
         ctx.fill();
         ctx.fillStyle = "#2b3a4a";
         ctx.fillText(fieldAdorn.label, tx + ADORNMENT_LABEL_OFFSET_X, ty + ADORNMENT_LABEL_OFFSET_Y);
+      }
+    }
+
+    // 2e. develop-mode inspector highlight: a devtools-blue translucent fill +
+    // solid stroke + a labelled tab over the hovered tree node's painted region.
+    // Drawn last of the overlays (above selection/sdt/field) so it reads as an
+    // ephemeral inspection cue, never as a persistent document decoration.
+    if (inspectorAdorn) {
+      const onPage = inspectorAdorn.rects.filter((r) => r.pageIndex === page.index);
+      for (const r of onPage) {
+        ctx.fillStyle = "rgba(56,121,217,0.18)";
+        ctx.fillRect(r.x - 1, r.y - 1, r.width + 2, r.height + 2);
+        ctx.strokeStyle = "#3879d9";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(r.x - 1, r.y - 1, r.width + 2, r.height + 2);
+      }
+      const first = onPage[0];
+      if (first && inspectorAdorn.label) {
+        ctx.font = ADORNMENT_LABEL_FONT;
+        const w = ctx.measureText(inspectorAdorn.label).width + ADORNMENT_LABEL_PAD_X;
+        const tx = first.x - 1;
+        const ty = first.y - 1 - ADORNMENT_TAB_H;
+        ctx.fillStyle = "#3879d9";
+        ctx.beginPath();
+        ctx.roundRect(tx, ty, w, ADORNMENT_TAB_H, [3, 3, 0, 0]);
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(inspectorAdorn.label, tx + ADORNMENT_LABEL_OFFSET_X, ty + ADORNMENT_LABEL_OFFSET_Y);
       }
     }
 
@@ -939,6 +972,13 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     setFieldAdornment(adorn: { rects: Rect[]; label: string } | null): void {
       const affected = new Set([...pagesOf(fieldAdorn?.rects ?? []), ...pagesOf(adorn?.rects ?? [])]);
       fieldAdorn = adorn;
+      for (const i of affected) if (liveCanvases.has(i)) dirty.add(i);
+      schedule();
+    },
+
+    setInspectorRects(adorn: { rects: Rect[]; label: string } | null): void {
+      const affected = new Set([...pagesOf(inspectorAdorn?.rects ?? []), ...pagesOf(adorn?.rects ?? [])]);
+      inspectorAdorn = adorn;
       for (const i of affected) if (liveCanvases.has(i)) dirty.add(i);
       schedule();
     },
