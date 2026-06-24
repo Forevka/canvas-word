@@ -24,6 +24,7 @@ export function createModelTab(ctx: PanelCtx): PanelTab {
     element: tree.element,
     usesFilter: true,
     setFilter: (f) => tree.setFilter(f),
+    setFollowCaret: (on) => tree.setFollowCaret(on),
     activate: () => tree.refresh(),
     refresh: () => tree.refresh(),
     highlightByBlockId: (blockId) => tree.highlightByBlockId(blockId),

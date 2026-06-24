@@ -66,6 +66,8 @@ export interface PanelTab {
   /** Whether the shared filter input applies (and shows) for this tab. */
   readonly usesFilter?: boolean | undefined;
   setFilter?(f: string): void;
+  /** Follow-caret toggle (tree tabs scroll to the caret's node). */
+  setFollowCaret?(on: boolean): void;
   /** Called when the tab becomes active (and on first show). */
   activate(): void;
   /** Called when the tab is switched away from (turn off any live signals). */

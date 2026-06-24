@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Inspector: ergonomics.** Keyboard navigation in the trees (↑/↓ move, →/←
+  expand/collapse, Enter reveals), a right-click context menu (copy block id / JSON
+  / label, reveal), a **Follow caret** toggle that scrolls the tree to the node
+  under the caret as you edit, and toolbar buttons to copy the **Document** /
+  **LayoutTree** JSON or **load** a Document JSON snapshot.
 - **Inspector: History tab (edit log).** A new tab streams the recorded change log
   — each entry's origin (typing/command/paste/undo/redo), op summary, and time —
   click to inspect its ops; Undo / Redo buttons step the document from the panel.

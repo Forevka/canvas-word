@@ -11,6 +11,7 @@
 // Pattern mirrors styleManager.ts: injectCssOnce + makeFloatingDialog, an
 // AbortController for teardown, Escape-to-close, a handle with close()/refresh().
 
+import type { Document } from "@cw/shared";
 import { makeFloatingDialog } from "./floatingDialog";
 import { injectCssOnce } from "./styles";
 import { createModelTab } from "./devpanel/modelTab";
@@ -26,6 +27,10 @@ export type { DevPanelEditor } from "./devpanel/types";
 export interface DevPanelOptions {
   editor: DevPanelEditor;
   onClose?: () => void;
+  /** Replace the whole document from a loaded JSON snapshot. When provided, the
+   *  toolbar shows a "Load" button; omit to hide it (the core editor can't replace
+   *  its own document — editorApp wires this to its replaceDocument). */
+  setDocument?: (doc: Document) => void;
 }
 
 export interface DevPanelHandle {
@@ -79,6 +84,7 @@ const CSS = `
 .cw-dev-chip.on{background:#2d4156;border-color:#5b9bd5;color:#cfe3f5;}
 .cw-dev-overlays{display:flex;align-items:center;gap:5px;padding:6px 10px;border-bottom:1px solid #34363b;background:#1f2124;flex-wrap:wrap;}
 .cw-dev-overlabel{color:#6b6f76;font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-right:2px;}
+.cw-dev-actions{display:flex;align-items:center;gap:6px;flex:0 0 auto;margin-left:auto;}
 .cw-dev-btn{height:24px;padding:0 9px;border:1px solid #3a3d42;border-radius:6px;background:#1a1b1e;color:#9aa0a6;cursor:pointer;font-size:11px;}
 .cw-dev-btn:hover{border-color:#4a4d52;color:#d4d6da;}
 .cw-dev-history{flex:1 1 auto;overflow:auto;padding:2px 0;font-family:'Cascadia Code',Consolas,monospace;}
@@ -122,8 +128,40 @@ export function showDevPanel(opts: DevPanelOptions): DevPanelHandle {
   filterInput.type = "search";
   filterInput.placeholder = "Filter…";
   const extrasHost = el("div", "cw-dev-extras");
-  extrasHost.style.cssText = "display:flex;align-items:center;gap:6px;flex:1 1 auto;flex-wrap:wrap;";
-  toolbar.append(filterInput, extrasHost);
+  extrasHost.style.cssText = "display:flex;align-items:center;gap:6px;flex:0 1 auto;flex-wrap:wrap;";
+
+  // Shell actions: follow-caret toggle + snapshot copy/load.
+  const actions = el("div", "cw-dev-actions");
+  const followChip = el("span", "cw-dev-chip", "⟲ Follow caret");
+  followChip.title = "Scroll the tree to the node under the caret as you edit";
+  let followOn = false;
+  followChip.addEventListener("click", () => { followOn = !followOn; followChip.classList.toggle("on", followOn); active.setFollowCaret?.(followOn); });
+  const flash = (btn: HTMLButtonElement, fn: () => void): void => { fn(); const t = btn.textContent; btn.textContent = "Copied!"; setTimeout(() => { btn.textContent = t; }, 900); };
+  const copyDocBtn = el("button", "cw-dev-btn", "⧉ Doc");
+  copyDocBtn.title = "Copy the Document JSON to the clipboard";
+  copyDocBtn.addEventListener("click", () => flash(copyDocBtn, () => void navigator.clipboard?.writeText(JSON.stringify(editor.getDocument(), null, 2))));
+  const copyLayoutBtn = el("button", "cw-dev-btn", "⧉ Layout");
+  copyLayoutBtn.title = "Copy the LayoutTree JSON to the clipboard";
+  copyLayoutBtn.addEventListener("click", () => flash(copyLayoutBtn, () => void navigator.clipboard?.writeText(JSON.stringify(editor.getLayoutTree(), null, 2))));
+  actions.append(followChip, copyDocBtn, copyLayoutBtn);
+  if (opts.setDocument) {
+    const loadBtn = el("button", "cw-dev-btn", "⤓ Load");
+    loadBtn.title = "Replace the document from a JSON snapshot";
+    const fileInput = el("input");
+    fileInput.type = "file";
+    fileInput.accept = "application/json,.json";
+    fileInput.style.display = "none";
+    loadBtn.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", async () => {
+      const f = fileInput.files?.[0];
+      if (!f) return;
+      try { opts.setDocument!(JSON.parse(await f.text()) as Document); }
+      catch { window.alert("Could not parse the file as a Document JSON."); }
+      fileInput.value = "";
+    });
+    actions.append(loadBtn, fileInput);
+  }
+  toolbar.append(filterInput, extrasHost, actions);
 
   const overlayBar = createOverlayBar(editor);
   const content = el("div", "cw-dev-content");
@@ -190,6 +228,7 @@ export function showDevPanel(opts: DevPanelOptions): DevPanelHandle {
     tabButtons.get(active.id)?.classList.add("active");
     filterInput.style.display = active.usesFilter ? "" : "none";
     if (active.usesFilter) active.setFilter?.(filterInput.value);
+    active.setFollowCaret?.(followOn);
     active.activate();
     updateCounts();
   };

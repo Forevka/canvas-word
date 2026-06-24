@@ -1671,6 +1671,7 @@ if (toolbar) {
       if (devPanel) { devPanel.close(); return; } // toggle: a second click closes it
       devPanel = showDevPanel({
         editor,
+        setDocument: (next) => replaceDocument(next),
         onClose: () => {
           devPanel = null;
           refreshDevPanel = () => {};
