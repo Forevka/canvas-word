@@ -1249,14 +1249,19 @@ export function createEditor(
     return inverses;
   };
 
-  const afterMutation = (selectionAfter: DocSelection | null): void => {
+  // `transient` marks a live drag/composition frame (column-grip drag, IME
+  // preview): the drag always ends in a non-transient commit that runs the full
+  // pass, so per-frame we relayout + repaint + reposition the caret/frame but
+  // DEFER the heavy, drag-irrelevant work (search re-run, peer-caret and
+  // review-overlay re-measurement) to that final commit.
+  const afterMutation = (selectionAfter: DocSelection | null, transient = false): void => {
     const prevSelection = selection;
     relayout();
     selection = selectionAfter;
     cellSelection = null; // grid coords are invalidated by any structural change
     refreshSelectionVisuals();
     refreshObjectFrame(); // images move/resize with reflow; frame follows
-    if (searchQuery) {
+    if (searchQuery && !transient) {
       runSearch(); // live re-search while the find bar is open
       paintSearch();
     }
@@ -1273,8 +1278,10 @@ export function createEditor(
       const caret = caretRect(tree, selection.focus, scope());
       if (caret) paint.ensureVisible(caret);
     }
-    paintRemoteCarets(); // peers' carets re-measured against the new layout
-    refreshReviewDecorations(); // suggestion/comment overlays re-measured too
+    if (!transient) {
+      paintRemoteCarets(); // peers' carets re-measured against the new layout
+      refreshReviewDecorations(); // suggestion/comment overlays re-measured too
+    }
     mirror.sync(state());
     notifyChange();
     options.onSelectionChange?.(selection);
@@ -1306,7 +1313,7 @@ export function createEditor(
       recorder.record(trn.ops, trn.origin as ChangeOrigin, trn.selectionAfter, Date.now());
     }
     if (reviewOps.length > 0) notifyReviewChanged();
-    afterMutation(trn.selectionAfter);
+    afterMutation(trn.selectionAfter, trn.origin === "transient");
   };
 
   const commit = (trn: Transaction): void => {
