@@ -15,6 +15,7 @@ import { formatListNumber, markerText, type ListDefinition, type ListLevel } fro
 import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock, PlacedImage } from "./layoutTree";
 import { PrepareCache, prepareRuns, type PreparedSegment } from "./prepareCache";
 import { charStyleToFont, fontMetrics, measureTextWidth } from "./metrics";
+import { baseLevelFor, effectiveAlign, hasRtlChars, levelsFor, visualOrder } from "./bidi";
 import { setActiveFontRegistry, type CustomFontRegistry } from "../fonts/customRegistry";
 
 /** Word's default tab interval when a `\t` runs past the last explicit stop
@@ -155,6 +156,7 @@ function mapFragmentToRun(
 interface RawFrag {
   frag: InlineFragment;
   hadGap: boolean; // eaten separator whitespace preceded this fragment
+  gap: number; // width (px) of that separator gap — needed to rebuild x after bidi reorder
   spaces: number; // U+0020 count inside the fragment text
 }
 
@@ -232,7 +234,7 @@ function breakNextLine(
         width: f.occupiedWidth,
       };
       if (m.map) frag.offsetMap = m.map;
-      frags.push({ frag, hadGap: f.gapBefore > 0, spaces: countSpaces(f.text) });
+      frags.push({ frag, hadGap: f.gapBefore > 0, gap: f.gapBefore, spaces: countSpaces(f.text) });
     }
     x += f.occupiedWidth;
   }
@@ -266,6 +268,8 @@ interface RawLine {
   tabArrows?: LineBox["tabArrows"];
   paragraphEnd?: boolean;
   lineBreak?: boolean;
+  /** Tab-stop line with absolute fragment x baked in — never bidi-reordered. */
+  tabbed?: boolean;
 }
 
 /** Next tab stop strictly past `curX`: the first explicit stop, else the next
@@ -358,6 +362,7 @@ function layoutTabbedSegment(
       // A tab-positioned line stays ragged (its manual x must not be re-justified);
       // pure wrapped continuation lines justify normally when the paragraph does.
       lastOfSegment: isLast || hasTab,
+      ...(hasTab ? { tabbed: true } : {}),
       ...(curLeaders.length > 0 ? { leaders: curLeaders } : {}),
       ...(curArrows.length > 0 ? { tabArrows: curArrows } : {}),
     });
@@ -444,9 +449,105 @@ function justifyLine(frags: RawFrag[], slack: number): void {
   }
 }
 
+/** Per-code-unit bidi embedding levels over the WHOLE paragraph text (global
+ *  offsets — fragments carry the same), or null when the paragraph is purely its
+ *  base direction and needs no reordering (the LTR fast path AND a pure-Latin RTL
+ *  paragraph, which only needs right-alignment, handled by effectiveAlign). */
+function paragraphLevels(p: Paragraph): Int8Array | null {
+  const base = baseLevelFor(p.style.direction);
+  let text = "";
+  const forced: [number, number][] = [];
+  for (const r of p.runs) {
+    const start = text.length;
+    text += r.text;
+    if (r.style.rtl) forced.push([start, text.length]);
+  }
+  if (base === 0 && forced.length === 0 && !hasRtlChars(text)) return null;
+  let levels = levelsFor(text, base);
+  if (levels === null) {
+    // No strong-RTL characters resolved (e.g. an RTL paragraph of Latin text):
+    // alignment alone makes it right-aligned, so only an explicit run `rtl` flag
+    // forces any reordering.
+    if (forced.length === 0) return null;
+    levels = new Int8Array(text.length); // base-LTR fill; forced ranges go RTL below
+  }
+  for (const [a, b] of forced) {
+    for (let i = a; i < b; i++) if ((levels[i]! & 1) === 0) levels[i] = levels[i]! + 1;
+  }
+  return levels;
+}
+
+/** Split a fragment whose model range spans more than one embedding level into
+ *  per-level sub-fragments (each becomes a single-direction fillText). Skips the
+ *  collapsed-whitespace case (offsetMap present), tagging the whole fragment with
+ *  its start level — mixed-script inside a single collapsed run is vanishingly
+ *  rare. Returns sub-RawFrags in LOGICAL order; only the first keeps the gap. */
+function splitFragByLevel(rf: RawFrag, levels: Int8Array): RawFrag[] {
+  const { frag } = rf;
+  const s = frag.startOffset;
+  const e = frag.endOffset;
+  const startLevel = levels[s] ?? 0;
+  if (frag.offsetMap || frag.text.length !== e - s) {
+    frag.level = startLevel;
+    return [rf];
+  }
+  // Find level-change boundaries within [s, e).
+  const bounds: number[] = [0];
+  for (let i = s + 1; i < e; i++) if (levels[i] !== levels[i - 1]) bounds.push(i - s);
+  if (bounds.length === 1) {
+    frag.level = startLevel;
+    return [rf];
+  }
+  bounds.push(e - s);
+  const font = charStyleToFont(frag.style);
+  const fullW = measureTextWidth(frag.text, font) || frag.width;
+  const out: RawFrag[] = [];
+  for (let k = 0; k < bounds.length - 1; k++) {
+    const a = bounds[k]!;
+    const b = bounds[k + 1]!;
+    const sub = frag.text.slice(a, b);
+    // Proportional width keeps the sub-pieces summing to the fragment's measured
+    // width (pretext's occupiedWidth includes letter-spacing this measure omits).
+    const w = (measureTextWidth(sub, font) / fullW) * frag.width;
+    out.push({
+      hadGap: k === 0 ? rf.hadGap : false,
+      gap: k === 0 ? rf.gap : 0,
+      spaces: countSpaces(sub),
+      frag: {
+        ...frag,
+        text: sub,
+        startOffset: s + a,
+        endOffset: s + b,
+        width: w,
+        level: levels[s + a] ?? startLevel,
+      },
+    });
+  }
+  return out;
+}
+
+/** Reorder a line's fragments into VISUAL (left-to-right) order per UAX#9 L2 and
+ *  rebuild their line-local x. Returns the reordered frags and the new line width.
+ *  Pure-LTR lines never reach here (paragraphLevels returns null). */
+function bidiReorderLine(frags: RawFrag[], levels: Int8Array): { frags: RawFrag[]; width: number } {
+  const split: RawFrag[] = [];
+  for (const rf of frags) split.push(...splitFragByLevel(rf, levels));
+  const order = visualOrder(split.map((rf) => rf.frag.level ?? 0));
+  const visual = order.map((i) => split[i]!);
+  let x = 0;
+  for (const rf of visual) {
+    x += rf.gap;
+    rf.frag.x = x;
+    x += rf.frag.width;
+  }
+  return { frags: visual, width: x };
+}
+
 function paragraphLines(p: Paragraph, contentWidth: number, cache: PrepareCache): LineBox[] {
   const segments = cache.get(p);
   const lines: LineBox[] = [];
+  const levels = paragraphLevels(p);
+  const dir = p.style.direction;
 
   // Phase 1: break lines per SEGMENT (segments = soft-break "\v" pieces).
   // Fragments are line-LOCAL; justification needs to know each segment's last
@@ -525,14 +626,25 @@ function paragraphLines(p: Paragraph, contentWidth: number, cache: PrepareCache)
     else raw[idx]!.lineBreak = true;
   }
 
-  // Phase 2: alignment + justification, then final LineBoxes.
+  // Phase 2: bidi reorder (RTL/mixed only), alignment + justification, final boxes.
+  const align = effectiveAlign(p.style.align, dir);
   let y = 0;
   for (const rl of raw) {
+    let reordered = false;
+    if (levels !== null && rl.frags.length > 0 && !rl.tabbed) {
+      const r = bidiReorderLine(rl.frags, levels);
+      rl.frags = r.frags;
+      rl.width = r.width;
+      reordered = true;
+    }
     const slack = rl.lineMaxWidth - rl.width;
     let startX = rl.indent;
-    if (p.style.align === "center") startX += slack / 2;
-    else if (p.style.align === "right") startX += slack;
-    else if (p.style.align === "justify" && !rl.lastOfSegment) justifyLine(rl.frags, slack);
+    if (align === "center") startX += slack / 2;
+    else if (align === "right") startX += slack;
+    // Justification redistributes inter-word gaps in logical order, which a bidi
+    // reorder has already consumed — skip it on reordered lines (they stay
+    // start/end-aligned, like Word's behaviour for short RTL paragraphs).
+    else if (align === "justify" && !rl.lastOfSegment && !reordered) justifyLine(rl.frags, slack);
     for (const rf of rl.frags) rf.frag.x += startX;
     const box: LineBox = { y, height: rl.height, ascent: rl.ascent, fragments: rl.frags.map((rf) => rf.frag) };
     if (rl.emptyOffset !== undefined) box.emptyOffset = rl.emptyOffset;
@@ -1210,6 +1322,8 @@ function layoutDocument(
    *  segment's last — which stays ragged, like a paragraph's final line). */
   const placeParagraphFloating = (p: Paragraph): void => {
     const segments = getPrepared(p);
+    const levels = paragraphLevels(p);
+    const palign = effectiveAlign(p.style.align, p.style.direction);
     let first = true;
     let lineIdx = 0;
     let placed: PlacedBlock | null = null;
@@ -1268,14 +1382,21 @@ function layoutDocument(
           placed = null;
           continue;
         }
+        if (levels !== null && bl.frags.length > 0) {
+          const r = bidiReorderLine(bl.frags, levels);
+          bl.frags = r.frags;
+          bl.width = r.width;
+        }
+        const reordered = levels !== null && bl.frags.length > 0;
         const slack = box.width - indent - rightIndentOf(p) - bl.width;
         let startX = box.x0 - colX() + indent;
-        if (p.style.align === "center") startX += slack / 2;
-        else if (p.style.align === "right") startX += slack;
+        if (palign === "center") startX += slack / 2;
+        else if (palign === "right") startX += slack;
         for (const rf of bl.frags) rf.frag.x += startX;
         // Justify the PREVIOUS line now that this one exists (so it's non-last);
-        // buffer this line for the same decision next iteration.
-        if (p.style.align === "justify") {
+        // buffer this line for the same decision next iteration. Reordered (bidi)
+        // lines stay start/end-aligned — see paragraphLines.
+        if (palign === "justify" && !reordered) {
           if (justifyPrev) justifyLine(justifyPrev.frags, justifyPrev.slack);
           justifyPrev = { frags: bl.frags, slack };
         }

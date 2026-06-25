@@ -50,6 +50,13 @@ export interface CharStyle {
    *  exists for docx round-trip and for "what style is this run?" UI. `| undefined`
    *  so removing a character style can strip the marker. */
   charStyleId?: string | undefined;
+  /** Explicit right-to-left run (OOXML w:rPr/w:rtl). Forces this run's text to a
+   *  bidi-RTL embedding regardless of its characters, mirroring Word's per-run
+   *  "rtl" toggle. Absent = resolve direction from the characters' Unicode bidi
+   *  classes under the paragraph's base direction (the common case — Arabic/Hebrew
+   *  text reorders correctly without this flag). `| undefined` so a patch can
+   *  remove it. */
+  rtl?: boolean | undefined;
 }
 
 /** Structured document tag (Word content control) properties — a direct
@@ -78,6 +85,13 @@ export interface SdtProps {
 
 export interface ParaStyle {
   align: "left" | "center" | "right" | "justify";
+  /** Base writing direction (OOXML w:pPr/w:bidi). "rtl" lays the paragraph out
+   *  right-to-left: the bidi base level is RTL (so a leading Latin word still sits
+   *  on the right), `align: "left"|"right"` are interpreted as START/END (mirrored),
+   *  and left/right indents swap to start/end. Absent = "ltr" (the default — every
+   *  existing document is unaffected). Resolved through the Stylesheet cascade like
+   *  `align`. */
+  direction?: "ltr" | "rtl";
   lineHeight: number; // multiplier
   spaceBeforePx: number;
   spaceAfterPx: number;
