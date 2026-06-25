@@ -25,3 +25,6 @@ frontend/dist-node/
 # Tauri desktop build output (Rust target + generated schemas)
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
+# Raw DevTools perf traces (large; analysis lives in perf/baseline.md)
+perf/*-trace.json
+perf/keystroke-burst-*.json

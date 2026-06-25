@@ -14,18 +14,26 @@ export interface ObjectFrameDeps {
   /** Current presentational zoom — the frame lives in zoomed page pixels, but
    *  sizes are document px, so positions scale up and drag deltas scale down. */
   getZoom(): number;
-  /** Live preview during handle drag (transient). */
-  onResizePreview(width: number, height: number): void;
-  /** Final size on mouseup (one undoable op). */
+  /** Final size on mouseup (one undoable op). The whole drag is previewed purely
+   *  in the DOM overlay (no model ops, no relayout) — this is the ONLY mutation. */
   onResizeCommit(width: number, height: number): void;
 }
 
 export interface ObjectFrame {
-  /** Show the frame over a rect (page coords) for an image of natural ratio. */
-  show(rect: Rect, maxWidth: number): void;
+  /** Show the frame over a rect (page coords) for an image of natural ratio.
+   *  `src` is the image URL used to paint the live resize ghost during a drag.
+   *  `anchor` is the horizontal edge the layout keeps fixed as the width changes
+   *  (in-flow images re-align on resize): "left" for left-aligned / anchored
+   *  images, "center" / "right" for those alignments — so the ghost tracks the
+   *  committed position instead of jumping on mouseup. */
+  show(rect: Rect, maxWidth: number, src?: string, anchor?: ResizeAnchor): void;
   hide(): void;
   destroy(): void;
 }
+
+/** Horizontal edge held fixed while an in-flow image resizes (mirrors the layout
+ *  engine: x = colX + slack·alignFactor, slack = colWidth − width). */
+export type ResizeAnchor = "left" | "center" | "right";
 
 interface HandleSpec {
   name: string;
@@ -53,6 +61,18 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     "position:absolute;display:none;border:2px solid #1a73e8;box-sizing:border-box;" +
     "pointer-events:none;z-index:2;";
 
+  // Live resize ghost: a bitmap of the image painted at the in-progress size over
+  // an opaque page-colored backdrop covering the ORIGINAL footprint. This lets a
+  // handle drag preview the new size purely in the DOM — no model op, no relayout
+  // (a full relayout on this document costs ~33ms; doing it per drag frame was the
+  // lag). The model is mutated once, on mouseup. The backdrop hides the
+  // still-old-size bitmap the canvas painted underneath when shrinking.
+  const ghost = document.createElement("div");
+  ghost.style.cssText =
+    "position:absolute;display:none;pointer-events:none;z-index:1;" +
+    "background-repeat:no-repeat;background-position:top left;";
+  let ghostSrc: string | undefined;
+
   const handleEls: HTMLDivElement[] = HANDLES.map((h) => {
     const el = document.createElement("div");
     el.dataset["handle"] = h.name;
@@ -65,13 +85,19 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     return el;
   });
 
-  let current: { rect: Rect; maxWidth: number } | null = null;
+  let current: { rect: Rect; maxWidth: number; anchor: ResizeAnchor } | null = null;
   let drag: {
     spec: HandleSpec;
     startX: number;
     startY: number;
     startW: number;
     startH: number;
+    /** Horizontal edge the committed layout keeps fixed as the width changes. */
+    anchor: ResizeAnchor;
+    /** Image footprint at drag start (page coords), in document px. The ghost is
+     *  anchored here — in-flow images keep their layout position while resizing,
+     *  so only width/height change during the preview. */
+    startRect: Rect;
   } | null = null;
 
   // Pointer Events (not mouse) so the handles drag by finger/pen too. Pointer
@@ -79,22 +105,58 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
   let dragEl: HTMLElement | null = null;
   let dragPointerId = 0;
 
-  // Resize previews are coalesced to one per animation frame: each preview runs a
-  // full relayout, and pointermove fires faster than a heavy layout (e.g. an image
-  // in a large report table) completes. Dispatching per event backs up a queue and
-  // the image trails the cursor; collapsing to the latest size per frame keeps it
-  // glued to the handle. Same per-frame-throttle pattern as pinch-zoom.
+  // The drag preview is painted into the ghost overlay (DOM only), coalesced to
+  // one paint per animation frame. pointermove fires faster than the browser
+  // composites; collapsing to the latest size per frame keeps the ghost glued to
+  // the handle with zero model work. Same per-frame-throttle pattern as pinch-zoom.
   let movePending: { w: number; h: number } | null = null;
   let moveRaf = 0;
   const flushMove = (): void => {
     moveRaf = 0;
-    if (movePending && drag) deps.onResizePreview(movePending.w, movePending.h);
+    if (movePending && drag) paintPreview(movePending.w, movePending.h);
     movePending = null;
   };
   const cancelPendingMove = (): void => {
     if (moveRaf) cancelAnimationFrame(moveRaf);
     moveRaf = 0;
     movePending = null;
+  };
+
+  /** Paint the in-progress resize into the ghost + frame, purely in the DOM. The
+   *  ghost shows the bitmap at the new size over an opaque page-colored backdrop
+   *  that covers the original footprint (so shrinking doesn't reveal the
+   *  still-old-size bitmap the canvas painted underneath). */
+  const paintPreview = (w: number, h: number): void => {
+    if (!drag) return;
+    const r = drag.startRect;
+    const z = deps.getZoom();
+    // Hold the same horizontal edge the committed layout will: left-aligned and
+    // anchored images keep their left edge; centered images keep their center;
+    // right-aligned keep their right edge. Without this the ghost grows from the
+    // left and the image jumps sideways on mouseup once layout re-aligns it.
+    const x = drag.anchor === "center" ? r.x + (r.width - w) / 2 : drag.anchor === "right" ? r.x + (r.width - w) : r.x;
+    // Backdrop covers the union of old and new footprints; the bitmap is drawn at
+    // the new size, top-left, within it.
+    const coverLeft = Math.min(r.x, x);
+    const coverW = (Math.max(r.x + r.width, x + w) - coverLeft) * z;
+    const coverH = Math.max(r.height, h) * z;
+    ghost.style.left = `${coverLeft * z}px`;
+    ghost.style.top = `${r.y * z}px`;
+    ghost.style.width = `${coverW}px`;
+    ghost.style.height = `${coverH}px`;
+    ghost.style.backgroundPosition = `${(x - coverLeft) * z}px 0`;
+    ghost.style.backgroundSize = `${w * z}px ${h * z}px`;
+    ghost.style.display = "block";
+    // Frame border + handles track the new size at the anchored position.
+    frame.style.left = `${x * z - 2}px`;
+    frame.style.top = `${r.y * z - 2}px`;
+    frame.style.width = `${w * z + 4}px`;
+    frame.style.height = `${h * z + 4}px`;
+  };
+
+  const hideGhost = (): void => {
+    ghost.style.display = "none";
+    ghost.style.backgroundImage = "";
   };
 
   const endDrag = (): void => {
@@ -123,7 +185,18 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
       startY: ev.clientY,
       startW: current.rect.width,
       startH: current.rect.height,
+      anchor: current.anchor,
+      startRect: current.rect,
     };
+    // Arm the ghost with the image bitmap and a backdrop matching the page color,
+    // so a shrink hides the old-size bitmap painted on the canvas underneath.
+    const host = frame.parentElement;
+    if (ghostSrc && host) {
+      if (ghost.parentElement !== host) host.appendChild(ghost);
+      const pageBg = getComputedStyle(host).backgroundColor;
+      ghost.style.backgroundColor = pageBg && pageBg !== "rgba(0, 0, 0, 0)" ? pageBg : "#fff";
+      ghost.style.backgroundImage = `url("${ghostSrc}")`;
+    }
     dragEl = el;
     dragPointerId = ev.pointerId;
     el.setPointerCapture(ev.pointerId);
@@ -170,16 +243,18 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     cancelPendingMove(); // drop any queued preview; the commit below is the final size
     drag = null;
     endDrag();
+    hideGhost(); // the committed relayout repaints the image at the new size
     deps.onResizeCommit(w, h);
   };
 
   for (const el of handleEls) el.addEventListener("pointerdown", onHandleDown);
 
   return {
-    show(rect: Rect, maxWidth: number): void {
+    show(rect: Rect, maxWidth: number, src?: string, anchor: ResizeAnchor = "left"): void {
       const host = deps.getPageElement(rect.pageIndex);
       if (!host) return;
-      current = { rect, maxWidth };
+      current = { rect, maxWidth, anchor };
+      ghostSrc = src;
       if (frame.parentElement !== host) {
         host.appendChild(frame);
         // Re-parenting the frame detaches it from the document for an instant.
@@ -204,10 +279,14 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     },
     hide(): void {
       current = null;
+      ghostSrc = undefined;
       frame.style.display = "none";
+      hideGhost();
     },
     destroy(): void {
       cancelPendingMove(); // drop any in-flight resize frame so it can't fire post-teardown
+      hideGhost();
+      ghost.remove();
       frame.remove();
     },
   };

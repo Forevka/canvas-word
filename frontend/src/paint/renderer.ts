@@ -238,6 +238,15 @@ export interface PaintLayerOptions {
   fontRegistry?: CustomFontRegistry;
 }
 
+/** Serialize a page's paint inputs for change detection in setTree. Includes the
+ *  whole Page (body blocks, bands, page chrome) — over-inclusive on purpose: a
+ *  stray field can only trigger a harmless extra repaint, never a missed one.
+ *  Overlays (selection, search, review, adornments) have their own dirty paths,
+ *  so they are intentionally NOT part of this signature. */
+function pageSignature(p: Page): string {
+  return JSON.stringify(p);
+}
+
 export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions = {}): PaintScheduler {
   injectCaretCss();
   const theme = opts.theme ?? DEFAULT_THEME;
@@ -272,6 +281,13 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
   const placeholders: HTMLDivElement[] = [];
   const liveCanvases = new Map<number, HTMLCanvasElement>();
   const dirty = new Set<number>();
+  // Per-page paint signature from the last setTree. A relayout rebuilds the whole
+  // LayoutTree (fresh PlacedBlock objects), so we can't compare by reference —
+  // instead we serialize each LIVE page's paint inputs and repaint only the pages
+  // whose content actually changed, rather than every mounted canvas. Serializing
+  // is strictly over-dirty-safe (an unrelated field change can only cause an extra
+  // repaint, never a missed one) and bounded to the few live pages.
+  const pageSigs = new Map<number, string>();
   let rafId: number | null = null;
   let zoom = 1;
   // Drawing-grid view state (mirrors `zoom` — presentational, no model change).
@@ -365,6 +381,9 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     ph.prepend(canvas); // under the caret overlay if it lives on this page
     liveCanvases.set(index, canvas);
     dirty.add(index);
+    // Record the signature it's about to be painted at, so the next setTree only
+    // repaints it if its content actually changes after this mount.
+    pageSigs.set(index, pageSignature(tree.pages[index]!));
     schedule();
   }
 
@@ -1030,8 +1049,21 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
           return prev.widthPx !== p.widthPx || prev.heightPx !== p.heightPx;
         });
       tree = next;
-      if (dimsChanged) rebuildPlaceholders();
-      else for (const i of liveCanvases.keys()) dirty.add(i);
+      if (dimsChanged) {
+        pageSigs.clear(); // page set / geometry changed wholesale
+        rebuildPlaceholders();
+      } else {
+        // Same page set & dimensions: repaint only the live pages whose paint
+        // inputs actually changed (typing usually touches one page; the rest of
+        // the mounted canvases are identical and can be left alone).
+        for (const i of liveCanvases.keys()) {
+          const sig = pageSignature(next.pages[i]!);
+          if (pageSigs.get(i) !== sig) {
+            dirty.add(i);
+            pageSigs.set(i, sig);
+          }
+        }
+      }
       schedule();
     },
 
