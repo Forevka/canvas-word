@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Content-driven autofit tables (`TableBlock.widthMode`).** Tables can now size
+  their columns from cell content instead of only the fixed
+  `colFractions × content-width` model. Two modes, exposed under the **Table →
+  AutoFit** ribbon menu: *AutoFit to Contents* measures each cell's min (widest
+  unbreakable token) and max (natural unwrapped) width, solves the grid with the
+  CSS automatic-table-layout algorithm, and lets the table **shrink below the page
+  width** to fit; *AutoFit to Window* solves the same way then fills the available
+  width. Column-spanning cells distribute their demand across the columns they
+  cover; per-cell preferred widths (`w:tcW`) clamp a column's content min/max up to
+  the preference. A manual column-border drag **cancels autofit** and pins the
+  table back to fixed widths (Word's behavior). The default sample document now
+  includes an AutoFit-to-Contents table. The mode round-trips through `.docx`
+  (`w:tblLayout` + `w:tblW` + `w:tcW`) and renders pixel-exact in PDF export (which
+  replays the layout engine). **Export is hint-based** — the writer emits
+  `w:tblLayout="autofit"` and relies on Word re-autofitting from the `w:gridCol`
+  snapshot rather than writing the solved widths; import is conservative (a table
+  adopts autofit only when it explicitly declares it, so existing fixed-proportional
+  imports never shift). See *Known limitations* in `README.md`.
 - **Custom fonts via the `fonts` constructor option.** Embedders can now supply their
   own fonts, loaded from URLs at runtime, instead of being limited to the bundled
   metric clones: `fonts: { fonts: [{ family, faces: { regular, bold?, italic?,

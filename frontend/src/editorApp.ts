@@ -39,6 +39,8 @@ import {
   deleteTableCmd,
   mergeCellsCmd,
   unmergeCellCmd,
+  setTableWidthModeAtSelectionCmd,
+  tableAtSelection,
   setImageProps,
   applyNamedStyle,
   applyCharStyle,
@@ -1594,6 +1596,24 @@ if (toolbar) {
   group(tableTab, "Merge");
   btn(ICONS.mergeCells, "Merge cells (select across cells in one row)", () => editor.dispatch(mergeCellsCmd()));
   btn(ICONS.unmergeCells, "Unmerge cell", () => editor.dispatch(unmergeCellCmd()));
+  group(tableTab, "Size");
+  const autofitBtn = txtBtn("AutoFit", "AutoFit columns to contents or window, or use fixed widths", () => {}, "", true);
+  autofitBtn.addEventListener("click", () => {
+    // Tick the active mode (resolved against the table the caret is in right now).
+    const cur = tableAtSelection({ doc: editor.getDocument(), selection: editor.getSelection() })?.widthMode ?? "fixed";
+    const fit = (text: string, mode: "fixed" | "autofitContents" | "autofitWindow") => ({
+      label: cur === mode ? `${text}  ✓` : text,
+      onClick: () => { editor.dispatch(setTableWidthModeAtSelectionCmd(mode)); editor.focus(); },
+    });
+    openPop(
+      autofitBtn,
+      menu([
+        fit("AutoFit to Contents", "autofitContents"),
+        fit("AutoFit to Window", "autofitWindow"),
+        fit("Fixed Column Width", "fixed"),
+      ]),
+    );
+  });
 
   // ===== View tab ==========================================================
   const view = tab("view", "View");

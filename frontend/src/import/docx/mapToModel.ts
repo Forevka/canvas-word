@@ -728,6 +728,12 @@ export function createMapper(
       const side = (s: "top" | "right" | "bottom" | "left"): number =>
         irCell.marginTwips?.[s] ?? ir.cellMarginTwips?.[s] ?? WORD_CELL_MARGIN_TWIPS[s];
       cell.margin = marginTwipsToPx({ top: side("top"), right: side("right"), bottom: side("bottom"), left: side("left") });
+      if (irCell.preferredWidth) {
+        cell.preferredWidth =
+          irCell.preferredWidth.type === "pct"
+            ? { type: "pct", px: irCell.preferredWidth.frac }
+            : { type: "abs", px: round2(twipsToPx(irCell.preferredWidth.twips)) };
+      }
       return cell;
     };
 
@@ -790,6 +796,7 @@ export function createMapper(
     // a row's cell count no longer equals the column count, so the layout engine
     // can't infer the column count from cells.length anymore.
     table.colFractions = columnFractions(ir.colWidthsTwips, width);
+    if (ir.widthMode && ir.widthMode !== "fixed") table.widthMode = ir.widthMode;
     return table;
   }
 

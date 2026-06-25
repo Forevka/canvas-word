@@ -563,7 +563,7 @@ export interface ColumnBoundaryHit {
   tableWidth: number;
 }
 
-const COLUMN_GRIP_PX = 4;
+const COLUMN_GRIP_PX = 6;
 
 /** Interior column boundary of a body table within grip distance of a point.
  *  Boundaries come from colWidths, not row cells — merged cells make row-cell

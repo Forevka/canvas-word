@@ -301,6 +301,10 @@ export interface IRTableCell {
   shd?: string;
   /** w:tcPr/w:tcMar — per-side inner padding override (twips). */
   marginTwips?: IRCellMargin;
+  /** w:tcPr/w:tcW — preferred cell width. `abs` carries twips (dxa); `pct` carries
+   *  a 0..1 fraction of the table width (w:w is fiftieths of a percent). Consulted
+   *  only in autofit modes (→ TableCell.preferredWidth). */
+  preferredWidth?: { type: "abs"; twips: number } | { type: "pct"; frac: number };
 }
 
 export interface IRTableRow {
@@ -312,6 +316,8 @@ export interface IRTable {
   rows: IRTableRow[];
   /** w:tblGrid/w:gridCol widths — become TableBlock.colFractions. */
   colWidthsTwips?: number[];
+  /** w:tblPr/w:tblLayout + w:tblW → column-sizing strategy. Absent = fixed. */
+  widthMode?: "fixed" | "autofitContents" | "autofitWindow";
   /** w:tblPr/w:tblStyle — table style id (its borders/shd are the cascade base). */
   styleId?: string;
   /** w:tblPr/w:tblLook — which conditional bands of the table style are active. */

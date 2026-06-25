@@ -280,7 +280,12 @@ keep-with-next, page breaks, exact scrollbar with canvas virtualization
 images scaled-to-fit and nested read-only tables), multi-paragraph cells,
 Tab/Shift+Tab navigation (Tab in last cell appends a row), column resize by
 border drag, row/col insert/delete, **cell merge (colSpan)** with span-aware
-column ops, **row-level page breaks** (14-row table verified splitting 5+9).
+column ops, **row-level page breaks** (14-row table verified splitting 5+9),
+and **content-driven autofit** (Table → AutoFit): *AutoFit to Contents* solves
+column widths from each cell's min/max content so the table shrinks to fit, and
+*AutoFit to Window* fills the page; per-cell preferred widths (`w:tcW`) and the
+`w:tblLayout`/`w:tblW` mode round-trip, and a manual column drag pins the table
+back to fixed widths (Word).
 
 **Images** — insert (body or inside cells), click-select with 8-handle frame,
 proportional corner resize with live reflow, alignment, **square text-wrap**
@@ -479,6 +484,18 @@ Everything in it is done; the editor covers ~95% of everyday Word usage.
 - No repeat-header-row on table chunks; a vertical-merge (rowSpan) table taller
   than a page splits at a row boundary, leaving the merged cell on the first page
   only (a table that fits whole is moved intact to the next page instead).
+- **Autofit table export is hint-based (TODO: exact-width writeback).** AutoFit
+  to Contents/Window solve column widths from cell content at layout time, but the
+  `.docx` writer emits `w:tblLayout="autofit"` (+ a 100% `w:tblW` for window mode)
+  and lets Word re-autofit from the `w:gridCol` snapshot rather than writing the
+  exact solved widths. A non-Word consumer that does not itself autofit may not
+  reproduce the editor's column widths (our own PDF export renders through the
+  layout engine, so it is pixel-exact). Writing the solved widths into
+  `w:gridCol`/`w:tcW` on export is not yet done. Import is also conservative: a
+  table adopts autofit only when it explicitly declares it (`w:tblLayout="autofit"`
+  or a percentage `w:tblW`); an absent layout stays fixed-proportional so existing
+  imports never shift. Tab-stop gaps inside an autofit cell are not counted toward
+  its content width.
 - Only Latin metric-clone fonts are bundled, so CJK/complex scripts render as
   tofu in PDF export (same gap as the importer).
 - Raster browser-print was skipped — use PDF export instead.

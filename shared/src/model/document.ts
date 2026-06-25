@@ -257,6 +257,11 @@ export interface TableCell {
   /** Resolved inner padding (px) from the w:tcMar/w:tblCellMar cascade. Absent =
    *  engine default (Word's 0 vertical, ~7.2px horizontal). */
   margin?: CellMargin;
+  /** Preferred cell width (OOXML w:tcW). Only consulted when the table is in an
+   *  autofit mode, where it clamps the cell's content-derived min/max width up to
+   *  this preference (Word semantics). `abs` = px (from dxa); `pct` = px resolved
+   *  per layout from a percentage of the table width. Absent = content-only. */
+  preferredWidth?: { px: number; type: "abs" | "pct" };
 }
 
 export interface TableRow {
@@ -279,8 +284,17 @@ export interface TableBlock {
   id: string;
   revision: number;
   rows: TableRow[];
-  /** Column widths as fractions of the content width (sum = 1). Absent = equal. */
+  /** Column widths as fractions of the content width (sum = 1). Absent = equal.
+   *  In autofit modes this is the last-known snapshot (used as the export grid
+   *  hint and the value the "Fixed" path / column drag edits); layout recomputes
+   *  the painted widths from cell content and does not depend on it. */
   colFractions?: number[];
+  /** Column sizing strategy (OOXML w:tblLayout + w:tblW). Absent = "fixed", the
+   *  historical behavior: columns are `colFractions × content width`. The autofit
+   *  modes derive column widths from cell content at layout time —
+   *  "autofitContents" lets the table shrink below the content width to fit its
+   *  content; "autofitWindow" always fills the available width. */
+  widthMode?: "fixed" | "autofitContents" | "autofitWindow";
   /** Table-style reference (OOXML w:tblStyle → Document.tableStyles). The effective
    *  per-cell formatting is baked onto the cells; this is kept for re-editing and
    *  round-trip. Absent = no table style (direct cell formatting only). */

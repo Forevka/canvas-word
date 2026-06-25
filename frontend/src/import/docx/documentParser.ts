@@ -742,6 +742,18 @@ function parseTable(tbl: XmlNode, ctx: ParseCtx): IRTable {
     if (shd) table.shd = shd;
     const cellMar = decodeCellMargin(el(tblPr, "w:tblCellMar"));
     if (cellMar) table.cellMarginTwips = cellMar;
+    // Column-sizing strategy (w:tblLayout + w:tblW). Conservative mapping: a table
+    // is autofit ONLY when it explicitly declares so (w:tblLayout type="autofit",
+    // or a percentage w:tblW). An absent layout with auto/dxa width keeps the
+    // historical fixed-proportional behavior, so existing imports never shift.
+    const layoutEl = el(tblPr, "w:tblLayout");
+    const layoutType = layoutEl ? attr(layoutEl, "w:type") : undefined;
+    const tblW = el(tblPr, "w:tblW");
+    const tblWType = tblW && attr(tblW, "w:type");
+    const tblWVal = tblW ? numAttr(tblW, "w:w") : undefined;
+    const isPct = tblWType === "pct" && (tblWVal ?? 0) > 0;
+    if (layoutType === "autofit") table.widthMode = isPct ? "autofitWindow" : "autofitContents";
+    else if (layoutType !== "fixed" && isPct) table.widthMode = "autofitWindow";
   }
   return table;
 }
@@ -772,6 +784,14 @@ function parseCell(tc: XmlNode, ctx: ParseCtx): IRTableCell {
     if (shd) cell.shd = shd;
     const cellMar = decodeCellMargin(el(tcPr, "w:tcMar"));
     if (cellMar) cell.marginTwips = cellMar;
+    // w:tcW preferred cell width — abs (dxa twips) or pct (fiftieths of a percent).
+    const tcW = el(tcPr, "w:tcW");
+    const tcWVal = tcW ? numAttr(tcW, "w:w") : undefined;
+    if (tcW && tcWVal !== undefined && tcWVal > 0) {
+      const tcWType = attr(tcW, "w:type");
+      if (tcWType === "pct") cell.preferredWidth = { type: "pct", frac: tcWVal / 5000 };
+      else if (tcWType === "dxa" || tcWType === undefined) cell.preferredWidth = { type: "abs", twips: tcWVal };
+    }
   }
   return cell;
 }
