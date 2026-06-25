@@ -41,6 +41,8 @@ export function decodeRunProps(rPr: XmlNode): IRRunProps {
   if (vertAlign) props.vertAlign = vertAlign;
   const vanish = onOff(el(rPr, "w:vanish"));
   if (vanish !== undefined) props.vanish = vanish;
+  const rtl = onOff(el(rPr, "w:rtl"));
+  if (rtl) props.rtl = true;
   return props;
 }
 
@@ -94,6 +96,9 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
 
   const keepLines = onOff(el(pPr, "w:keepLines"));
   if (keepLines !== undefined) props.keepLinesTogether = keepLines;
+
+  const bidi = onOff(el(pPr, "w:bidi"));
+  if (bidi) props.direction = "rtl";
 
   const tabs = el(pPr, "w:tabs");
   if (tabs) {

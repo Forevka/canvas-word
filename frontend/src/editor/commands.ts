@@ -2754,3 +2754,21 @@ export function setAlignment(align: ParaStyle["align"]): Command {
     return tr(ops, sel, "command");
   };
 }
+
+/** Set the base writing direction (LTR/RTL, OOXML w:bidi) on the selected
+ *  paragraphs. RTL right-aligns by default and lays text out right-to-left. */
+export function setDirection(direction: "ltr" | "rtl"): Command {
+  return (state) => {
+    const sel = state.selection;
+    if (!sel) return null;
+    const [from, to] = orderedRange(state, sel);
+    const fi = blockIndexOf(state.doc, from.blockId);
+    const ti = blockIndexOf(state.doc, to.blockId);
+    const blocks = paragraphsOf(state.doc);
+    const ops: Op[] = [];
+    for (let i = fi; i <= ti; i++) {
+      ops.push({ type: "setParaStyle", blockId: blocks[i]!.id, patch: { direction } });
+    }
+    return tr(ops, sel, "command");
+  };
+}

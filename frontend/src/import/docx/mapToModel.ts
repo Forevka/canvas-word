@@ -979,6 +979,7 @@ function applyRunProps(style: Partial<CharStyle>, props: IRRunProps): void {
   if (props.vertAlign === "superscript") style.verticalAlign = "super";
   else if (props.vertAlign === "subscript") style.verticalAlign = "sub";
   if (props.vanish) style.hidden = true; // preserved, never displayed (see CharStyle.hidden)
+  if (props.rtl) style.rtl = true;
 }
 
 /** IR content controls → model SdtProps (shapes match; copy defined fields). */
@@ -1011,6 +1012,7 @@ function mapCharPatch(props: IRRunProps): Partial<CharStyle> {
 function mapParaPatch(props: IRParaProps): Partial<ParaStyle> {
   const out: Partial<ParaStyle> = {};
   if (props.align) out.align = props.align;
+  if (props.direction) out.direction = props.direction;
   if (props.lineHeight !== undefined) out.lineHeight = round2(props.lineHeight);
   if (props.spaceBeforeTwips !== undefined) out.spaceBeforePx = round2(twipsToPx(props.spaceBeforeTwips));
   if (props.spaceAfterTwips !== undefined) out.spaceAfterPx = round2(twipsToPx(props.spaceAfterTwips));
@@ -1103,6 +1105,7 @@ export function buildTableStyles(data: StylesData): Record<string, TableStyle> |
 function mapParaStyle(props: IRParaProps): ParaStyle {
   const style: ParaStyle = { ...DEFAULT_PARA };
   if (props.align) style.align = props.align;
+  if (props.direction) style.direction = props.direction;
   if (props.lineHeight !== undefined) style.lineHeight = round2(props.lineHeight);
   if (props.spaceBeforeTwips !== undefined) style.spaceBeforePx = round2(twipsToPx(props.spaceBeforeTwips));
   if (props.spaceAfterTwips !== undefined) style.spaceAfterPx = round2(twipsToPx(props.spaceAfterTwips));

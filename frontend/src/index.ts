@@ -144,6 +144,8 @@ export interface CurrentFormat {
   subscript: boolean;
   /** Paragraph alignment, and which list (if any) the caret paragraph is in. */
   align: ParaStyle["align"] | null;
+  /** Caret paragraph's base writing direction (RTL when w:bidi). null = mixed. */
+  direction: ParaStyle["direction"] | null;
   listKind: "bullet" | "number" | null;
   /** Caret/selection context — drives which ribbon buttons are enabled. */
   imageSelected: boolean;
@@ -2944,6 +2946,7 @@ export function createEditor(
         superscript: effective.verticalAlign === "super",
         subscript: effective.verticalAlign === "sub",
         align: block?.style.align ?? null,
+        direction: block?.style.direction ?? null,
         listKind,
         imageSelected: selectedObject !== null,
         inTable: !!cellSelection || (focus ? locateParagraph(doc, focus.blockId)?.kind === "cell" : false),

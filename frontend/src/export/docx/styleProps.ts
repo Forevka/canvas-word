@@ -32,6 +32,7 @@ export function runPropsXml(s: CharStyle): string {
     if (name) children.push(el("w:highlight", { "w:val": name }));
   }
   if (s.verticalAlign) children.push(el("w:vertAlign", { "w:val": s.verticalAlign === "super" ? "superscript" : "subscript" }));
+  if (s.rtl) children.push(el("w:rtl"));
   return el("w:rPr", undefined, children.join(""));
 }
 

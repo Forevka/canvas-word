@@ -54,6 +54,7 @@ import {
   toggleMultilevelList,
   toggleHighlight,
   toggleVerticalAlign,
+  setDirection,
   changeCaseCmd,
   adjustIndentCmd,
   clearCharFormatting,
@@ -1338,6 +1339,10 @@ if (toolbar) {
   toggle(btn(ICONS.alignCenter, "Center", () => editor.align("center")), (f) => f.align === "center");
   toggle(btn(ICONS.alignRight, "Align right", () => editor.align("right")), (f) => f.align === "right");
   toggle(btn(ICONS.alignJustify, "Justify", () => editor.align("justify")), (f) => f.align === "justify");
+  sep();
+  // Paragraph writing direction (OOXML w:bidi). RTL right-aligns + reorders.
+  toggle(txtBtn("LTR", "Left-to-right paragraph", () => editor.dispatch(setDirection("ltr"))), (f) => f.direction !== "rtl");
+  toggle(txtBtn("RTL", "Right-to-left paragraph", () => editor.dispatch(setDirection("rtl"))), (f) => f.direction === "rtl");
   sep();
   const SPACINGS = [
     { v: 1, l: "1.0" },
