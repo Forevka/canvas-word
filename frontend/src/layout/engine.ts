@@ -49,6 +49,15 @@ export function createLayoutEngine(fontRegistry?: CustomFontRegistry): LayoutEng
   // re-layout degenerates to the pagination walk (pure arithmetic).
   const linesCache = new Map<string, { revision: number; width: number; lines: LineBox[] }>();
 
+  // Third cache tier: the full measureTable result per (table revision, width).
+  // measureTable re-walks every cell (1191 cells / ~9ms on a 98-page report) on
+  // EVERY layout pass, even for unrelated edits. Its output depends only on the
+  // table + the column width: any edit to the table OR a cell paragraph bumps
+  // table.revision (replaceParagraphAt/replaceCellBlocks/replaceTable all do), and
+  // the result is position-independent (placement assigns page coords afterwards),
+  // so an unchanged table at the same width reuses its measurement verbatim.
+  const tableCache = new Map<string, { revision: number; width: number; measured: ReturnType<typeof measureTable> }>();
+
   // Ids visited during the current FULL layout (null during a partial rawBand
   // pass, which only touches one band and must not evict the rest). After a full
   // layout we prune both caches to this set, so deleted blocks can't leak.
@@ -61,6 +70,23 @@ export function createLayoutEngine(fontRegistry?: CustomFontRegistry): LayoutEng
     const lines = paragraphLines(p, width, prepCache);
     linesCache.set(p.id, { revision: p.revision, width, lines });
     return lines;
+  };
+
+  // Memoized top-level table measurement (body flow only; nested/band tables stay
+  // direct — their width is derived inside an ancestor solve and their revision may
+  // not bump independently).
+  const getMeasuredTable = (
+    t: TableBlock,
+    width: number,
+    getLinesF: (p: Paragraph, w: number) => LineBox[],
+    listCtx: CellListCtx,
+  ): ReturnType<typeof measureTable> => {
+    touched?.add(t.id);
+    const hit = tableCache.get(t.id);
+    if (hit && hit.revision === t.revision && hit.width === width) return hit.measured;
+    const measured = measureTable(t, width, getLinesF, listCtx);
+    tableCache.set(t.id, { revision: t.revision, width, measured });
+    return measured;
   };
 
   return {
@@ -76,9 +102,10 @@ export function createLayoutEngine(fontRegistry?: CustomFontRegistry): LayoutEng
         const tree = layoutDocument(doc, getLines, (p) => {
           touched?.add(p.id);
           return prepCache.get(p);
-        }, rawBand);
+        }, rawBand, getMeasuredTable);
         if (touched) {
           for (const id of linesCache.keys()) if (!touched.has(id)) linesCache.delete(id);
+          for (const id of tableCache.keys()) if (!touched.has(id)) tableCache.delete(id);
           prepCache.retainOnly(touched);
         }
         return tree;
@@ -89,10 +116,12 @@ export function createLayoutEngine(fontRegistry?: CustomFontRegistry): LayoutEng
     evict(blockId: string): void {
       prepCache.evict(blockId);
       linesCache.delete(blockId);
+      tableCache.delete(blockId);
     },
     reset(): void {
       prepCache.clear();
       linesCache.clear();
+      tableCache.clear();
     },
   };
 }
@@ -752,6 +781,12 @@ function layoutDocument(
   getLines: (p: Paragraph, width: number) => LineBox[],
   getPrepared: (p: Paragraph) => PreparedSegment[],
   rawBand: "header" | "footer" | null,
+  measureTableCached: (
+    t: TableBlock,
+    width: number,
+    getLinesF: (p: Paragraph, w: number) => LineBox[],
+    listCtx: CellListCtx,
+  ) => ReturnType<typeof measureTable> = measureTable,
 ): LayoutTree {
   // Tall bands PUSH the content box (Word): a header taller than its margin
   // moves contentTop down; a tall footer raises contentBottom. Heights are
@@ -951,7 +986,7 @@ function layoutDocument(
       // Anchored (out-of-flow) images contribute no flow height.
       measured.push({ kind: "image", block, height: block.anchor ? 0 : block.heightPx });
     } else {
-      const t = measureTable(block, colWidth, getLines, cellListCtx);
+      const t = measureTableCached(block, colWidth, getLines, cellListCtx);
       measured.push({ kind: "table", block, ...t });
     }
   }

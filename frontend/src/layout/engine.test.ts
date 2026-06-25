@@ -996,3 +996,54 @@ describe("engine — autofit tables", () => {
     expect(placed.colWidths[0]!).toBeGreaterThanOrEqual(299); // preference wins over the tiny "x"
   });
 });
+
+describe("engine — table measure cache", () => {
+  const long = "word ".repeat(60); // wraps to several lines in a content-width cell
+
+  it("re-measures when a cell paragraph grows (revision bump invalidates)", () => {
+    const eng = createLayoutEngine();
+    const t = table([[cell("short")]], [1]);
+    const h1 = placedOf(eng.layout(doc([t])), t.id)!.pb.table!.height;
+    // Edit the cell paragraph exactly as replaceParagraphAt would: longer runs +
+    // bumped paragraph AND table revisions.
+    const cp = t.rows[0]!.cells[0]!.blocks[0] as Paragraph;
+    const t2: TableBlock = {
+      ...t,
+      revision: t.revision + 1,
+      rows: [{ cells: [{ ...t.rows[0]!.cells[0]!, blocks: [{ ...cp, revision: cp.revision + 1, runs: [{ text: long, style: CHAR }] }] }] }],
+    };
+    const h2 = placedOf(eng.layout(doc([t2])), t.id)!.pb.table!.height;
+    expect(h2).toBeGreaterThan(h1); // not stale — the table re-measured taller
+  });
+
+  it("produces identical geometry across re-layouts of an unchanged table", () => {
+    const eng = createLayoutEngine();
+    const t = table([[cell("a"), cell("b")]], [0.5, 0.5]);
+    const d = doc([para("intro"), t]);
+    const a = placedOf(eng.layout(d), t.id)!.pb.table!;
+    const b = placedOf(eng.layout(d), t.id)!.pb.table!;
+    expect(b.height).toBe(a.height);
+    expect(b.colWidths).toEqual(a.colWidths);
+  });
+
+  it("invalidates on a column-width (section width) change", () => {
+    const eng = createLayoutEngine();
+    const t = table([[cell("a"), cell("b")]], [0.5, 0.5]);
+    const wide = placedOf(eng.layout(doc([t])), t.id)!.pb.table!;
+    const narrow = placedOf(eng.layout(doc([t], { pageWidthPx: 560 })), t.id)!.pb.table!;
+    expect(narrow.colWidths[0]!).toBeLessThan(wide.colWidths[0]!);
+  });
+
+  it("prunes a removed table so a re-minted same-id table re-measures", () => {
+    const eng = createLayoutEngine();
+    const t = table([[cell(long)]], [1]);
+    const p = para("keep");
+    const tall = placedOf(eng.layout(doc([p, t])), t.id)!.pb.table!.height;
+    eng.layout(doc([p])); // t absent this pass → pruned from the table cache
+    // Same id at revision 0 but short content; without the prune the cache would
+    // serve the stale tall measurement (same id+revision+width).
+    const reminted: TableBlock = { ...t, rows: [{ cells: [{ ...t.rows[0]!.cells[0]!, blocks: [para("hi")] }] }] };
+    const short = placedOf(eng.layout(doc([p, reminted])), t.id)!.pb.table!.height;
+    expect(short).toBeLessThan(tall);
+  });
+});
