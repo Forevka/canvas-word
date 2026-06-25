@@ -1016,7 +1016,6 @@ export function createEditor(
   // ---- object selection (images): frame, resize, alignment, delete --------
 
   let selectedObject: string | null = null;
-  let resizeBase: { w: number; h: number } | null = null;
 
   const contentWidth = (): number =>
     doc.section.pageWidthPx - doc.section.marginPx.left - doc.section.marginPx.right;
@@ -1024,24 +1023,11 @@ export function createEditor(
   const objectFrame = createObjectFrame({
     getPageElement: (i) => paint.getPageElement(i),
     getZoom: () => paint.getZoom(),
-    onResizePreview: (w, h) => {
-      if (!selectedObject) return;
-      // locateImage (not doc.blocks) so images inside table cells — e.g. inside a
-      // content control — resize too; otherwise the handles drag but nothing moves.
-      const img = locateImage(doc, selectedObject)?.image;
-      if (!img) return;
-      resizeBase ??= { w: img.widthPx, h: img.heightPx };
-      dispatch(setImageProps(selectedObject, { widthPx: w, heightPx: h }, "transient"));
-    },
+    // The whole drag previews in the DOM overlay (objectController paints a scaled
+    // ghost) — no per-frame model ops or relayout. The model is mutated ONCE here,
+    // on mouseup, as a single undoable op.
     onResizeCommit: (w, h) => {
-      if (!selectedObject || !resizeBase) {
-        resizeBase = null;
-        return;
-      }
-      const base = resizeBase;
-      resizeBase = null;
-      // Revert the transient preview, then ONE undoable op for the whole drag.
-      dispatch(setImageProps(selectedObject, { widthPx: base.w, heightPx: base.h }, "transient"));
+      if (!selectedObject) return;
       dispatch(setImageProps(selectedObject, { widthPx: w, heightPx: h }));
     },
   });
@@ -1057,11 +1043,13 @@ export function createEditor(
       objectFrame.hide();
       return;
     }
+    // locateImage (not doc.blocks) so in-cell images resolve too — needed for both
+    // the anchor check and the ghost bitmap src.
+    const img = locateImage(doc, selectedObject)?.image;
     // Anchored (out-of-flow) images may bleed past the margins, so they resize up
     // to the full page width; in-flow images stay within the content box.
-    const sel = doc.blocks.find((b) => b.id === selectedObject);
-    const maxW = sel?.kind === "image" && sel.anchor ? doc.section.pageWidthPx : contentWidth();
-    objectFrame.show(rect, maxW);
+    const maxW = img?.anchor ? doc.section.pageWidthPx : contentWidth();
+    objectFrame.show(rect, maxW, img?.src);
   };
 
   const selectObject = (blockId: string | null): void => {
