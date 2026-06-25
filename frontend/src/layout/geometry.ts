@@ -202,10 +202,55 @@ export function spaceMarkXs(frag: InlineFragment): number[] {
 const localToModel = (frag: InlineFragment, local: number): number =>
   frag.offsetMap ? (frag.offsetMap[local] ?? frag.offsetMap[frag.offsetMap.length - 1]!) : local;
 
+/** A bidi-reordered line: at least one fragment carries an embedding level (set
+ *  by the engine only when it reordered the line). LTR-only lines keep `level`
+ *  undefined and take the original, monotonic-x fast path. */
+const isBidiLine = (line: LineBox): boolean => line.fragments.some((f) => f.level !== undefined);
+const isRtlFrag = (frag: InlineFragment): boolean => ((frag.level ?? 0) & 1) === 1;
+
+/** Block-local x of `offset` WITHIN one fragment, honoring its direction: in an
+ *  RTL fragment the logical prefix occupies the RIGHT side, so the boundary after
+ *  k logical clusters sits at (frag.x + width − prefixAdvance). */
+function xWithinFrag(frag: InlineFragment, offset: number): number {
+  const { boundaries, advances } = clustersOf(frag);
+  const modelLocal = offset - frag.startOffset;
+  let adv = advances[advances.length - 1]!;
+  for (let k = 0; k < boundaries.length; k++) {
+    if (localToModel(frag, boundaries[k]!) >= modelLocal) {
+      adv = advances[k]!;
+      break;
+    }
+  }
+  return isRtlFrag(frag) ? frag.x + frag.width - adv : frag.x + adv;
+}
+
+/** X of `offset` within a bidi-reordered line. Fragments are in VISUAL order, so
+ *  the offset can live anywhere in the array; find its owning fragment, else snap
+ *  to the visually-nearest fragment edge. */
+function xAtOffsetBidi(entry: LineEntry, offset: number): number {
+  const { block, line } = entry;
+  let bestX = block.x + line.fragments[0]!.x;
+  let bestDist = Infinity;
+  for (const frag of line.fragments) {
+    if (offset >= frag.startOffset && offset <= frag.endOffset) {
+      return block.x + xWithinFrag(frag, offset);
+    }
+    // Track the nearest boundary for the eaten-gap / out-of-range fallback.
+    const d = offset < frag.startOffset ? frag.startOffset - offset : offset - frag.endOffset;
+    if (d < bestDist) {
+      bestDist = d;
+      const edgeOff = offset < frag.startOffset ? frag.startOffset : frag.endOffset;
+      bestX = block.x + xWithinFrag(frag, edgeOff);
+    }
+  }
+  return bestX;
+}
+
 /** X of `offset` within a line, in page coordinates. Clamps into the line. */
 function xAtOffset(entry: LineEntry, offset: number): number {
   const { block, line } = entry;
   if (line.fragments.length === 0) return block.x;
+  if (isBidiLine(line)) return xAtOffsetBidi(entry, offset);
   const first = line.fragments[0]!;
   if (offset <= first.startOffset) return block.x + first.x;
   for (const frag of line.fragments) {
@@ -223,10 +268,58 @@ function xAtOffset(entry: LineEntry, offset: number): number {
   return block.x + lastFrag.x + advances[advances.length - 1]!;
 }
 
+/** Cluster-boundary offset nearest page-x within ONE fragment, honoring its
+ *  direction (RTL measures the cursor distance from the fragment's right edge). */
+function offsetWithinFrag(frag: InlineFragment, fx: number): number {
+  const { boundaries, advances } = clustersOf(frag);
+  const rtl = isRtlFrag(frag);
+  const target = rtl ? frag.width - fx : fx; // distance along the logical reading run
+  for (let k = 0; k + 1 < advances.length; k++) {
+    if (target <= advances[k + 1]!) {
+      const mid = (advances[k]! + advances[k + 1]!) / 2;
+      const boundary = target < mid ? boundaries[k]! : boundaries[k + 1]!;
+      return frag.startOffset + localToModel(frag, boundary);
+    }
+  }
+  return frag.endOffset;
+}
+
+/** Hit-test x within a bidi-reordered line. Fragments are in visual (L→R) order,
+ *  so walk them by x; map within the owning fragment honoring its direction. */
+function offsetAtXBidi(entry: LineEntry, x: number): number {
+  const { block, line } = entry;
+  const local = x - block.x;
+  const frags = line.fragments;
+  for (let fi = 0; fi < frags.length; fi++) {
+    const frag = frags[fi]!;
+    const next = frags[fi + 1];
+    const fragEnd = frag.x + frag.width;
+    if (local > fragEnd) {
+      if (next && local >= next.x) continue;
+      // In the visual gap after this fragment: snap to the nearer edge. The
+      // logical offset at a fragment's visual-right edge depends on direction.
+      const here = isRtlFrag(frag) ? frag.startOffset : frag.endOffset;
+      if (next) {
+        const mid = (fragEnd + next.x) / 2;
+        const there = isRtlFrag(next) ? next.endOffset : next.startOffset;
+        return local < mid ? here : there;
+      }
+      return here;
+    }
+    if (local <= frag.x) {
+      // Before the first/this fragment visually: its visual-left edge offset.
+      return isRtlFrag(frag) ? frag.endOffset : frag.startOffset;
+    }
+    return offsetWithinFrag(frag, local - frag.x);
+  }
+  return entry.endOffset;
+}
+
 /** Nearest cluster-boundary offset at page-x within a line (rounds to midpoint). */
 function offsetAtX(entry: LineEntry, x: number): number {
   const { block, line } = entry;
   if (line.fragments.length === 0) return entry.startOffset;
+  if (isBidiLine(line)) return offsetAtXBidi(entry, x);
   const local = x - block.x;
   const first = line.fragments[0]!;
   if (local <= first.x) return first.startOffset;
@@ -372,6 +465,25 @@ export function selectionRects(tree: LayoutTree, sel: DocSelection, scope?: GeoS
   const rects: Rect[] = [];
   for (let i = fromIdx; i <= toIdx; i++) {
     const e = idx.entries[i]!;
+    const y = e.block.y + e.line.y;
+    const lo = i === fromIdx ? from.offset : e.startOffset;
+    const hi = i === toIdx ? to.offset : e.endOffset;
+    if (isBidiLine(e.line)) {
+      // A logical range can be visually discontiguous: emit one rect per
+      // fragment-portion it covers (each fragment is single-direction).
+      for (const frag of e.line.fragments) {
+        const a = Math.max(lo, frag.startOffset);
+        const b = Math.min(hi, frag.endOffset);
+        if (b <= a) continue;
+        const xa = e.block.x + xWithinFrag(frag, a);
+        const xb = e.block.x + xWithinFrag(frag, b);
+        const x1 = Math.min(xa, xb);
+        const x2 = Math.max(xa, xb);
+        if (x2 <= x1) continue;
+        rects.push({ pageIndex: e.pageIndex, x: x1, y, width: x2 - x1, height: e.line.height });
+      }
+      continue;
+    }
     const x1 = i === fromIdx ? xAtOffset(e, from.offset) : xAtOffset(e, e.startOffset);
     // Interior lines extend a touch past the text end (Word marks the line break).
     const x2 = i === toIdx ? xAtOffset(e, to.offset) : xAtOffset(e, e.endOffset) + 4;
@@ -379,12 +491,44 @@ export function selectionRects(tree: LayoutTree, sel: DocSelection, scope?: GeoS
     rects.push({
       pageIndex: e.pageIndex,
       x: x1,
-      y: e.block.y + e.line.y,
+      y,
       width: x2 - x1,
       height: e.line.height,
     });
   }
   return rects;
+}
+
+/** Next caret stop VISUALLY left (-1) or right (+1) of `pos` within its own line,
+ *  for bidi-aware arrow movement. Returns null on a non-bidi line (the caller uses
+ *  the cheap logical step) or when `pos` is already at the line's visual edge (the
+ *  caller crosses to the adjacent line). Walks every cluster boundary on the line
+ *  and picks the nearest stop strictly beyond the caret's current x. */
+export function visualCaretStep(
+  tree: LayoutTree,
+  pos: DocPosition,
+  dir: -1 | 1,
+  scope?: GeoScope,
+): DocPosition | null {
+  const e = entryOf(getIndex(tree, scope), pos);
+  if (!e || !isBidiLine(e.line)) return null;
+  const curX = xAtOffset(e, pos.offset);
+  let bestOff = -1;
+  let bestX = dir === 1 ? Infinity : -Infinity;
+  const consider = (offset: number, x: number): void => {
+    if (dir === 1 ? x > curX + 0.01 && x < bestX : x < curX - 0.01 && x > bestX) {
+      bestX = x;
+      bestOff = offset;
+    }
+  };
+  for (const frag of e.line.fragments) {
+    const { boundaries } = clustersOf(frag);
+    for (const b of boundaries) {
+      const offset = frag.startOffset + localToModel(frag, b);
+      consider(offset, xAtOffset(e, offset));
+    }
+  }
+  return bestOff < 0 ? null : { blockId: e.block.blockId, offset: bestOff };
 }
 
 /** Home/End need line geometry, not just the model. */

@@ -30,6 +30,9 @@ export interface ToExportWorker {
   images?: ImageBytes;
   /** Custom fonts (defs + fetched face bytes), resolved on the main thread. */
   fonts?: CustomFontPayload;
+  /** CJK locale + fallback-font tuning (mirrors the editor's `cjk` config). The
+   *  fallback family must also be among `fonts` to embed. */
+  cjk?: { locale?: string; fallbackFont?: string };
 }
 
 export type FromExportWorker =

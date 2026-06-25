@@ -114,6 +114,8 @@ export interface IRRunProps {
   vertAlign?: string;
   /** w:vanish — hidden text (Word shows it only with ¶ marks on). */
   vanish?: boolean;
+  /** w:rtl — explicit right-to-left run direction. */
+  rtl?: boolean;
   /** Hyperlink membership (set on runs inside a w:hyperlink). Resolved to a URL
    *  in mapToModel: relId via the part's rels (external target), or anchor for
    *  an in-document bookmark (kept as "#name"). */
@@ -224,6 +226,8 @@ export interface IRParaProps {
   /** w:pPr/w:rPr — the paragraph MARK's run formatting. Word styles empty
    *  paragraphs (and the ¶ itself) with this; we use it for empty-run style. */
   markRunProps?: IRRunProps;
+  /** w:bidi — paragraph base direction is RTL. */
+  direction?: "ltr" | "rtl";
 }
 
 /** A w:bookmarkStart / w:bookmarkEnd seen while walking a paragraph: its w:id

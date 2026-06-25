@@ -14,8 +14,66 @@ import {
   type PreparedRichInline,
   type RichInlineItem,
 } from "@chenglou/pretext/rich-inline";
+import { clearAnalysisCaches, isCJK, setAnalysisLocale } from "@chenglou/pretext/analysis";
 import type { Paragraph, Run } from "@cw/shared";
 import { charStyleToFont } from "./metrics";
+import { firstFamilyToken } from "../fonts/clones";
+
+// ---------------------------------------------------------------------------
+// CJK tuning (instance config applied to pretext's process-global analyzer).
+
+let cjkFallbackFamily: string | null = null;
+
+/** Route CJK runs to this font family (for measurement / export consistency).
+ *  null = leave runs untouched (browser system fallback renders CJK on screen).
+ *  Invalidating callers must clear layout caches; the editor app does on mount. */
+export function setCjkFallbackFont(family: string | null | undefined): void {
+  cjkFallbackFamily = family && family.trim().length > 0 ? family : null;
+}
+
+/** Set pretext's analyzer locale (CJK line-break tuning). Process-global. */
+export function setCjkLocale(locale: string | undefined): void {
+  setAnalysisLocale(locale);
+  clearAnalysisCaches();
+}
+
+const hasCjk = (text: string): boolean => {
+  for (const ch of text) if (isCJK(ch)) return true;
+  return false;
+};
+
+/** Split runs at CJK ↔ non-CJK boundaries, retargeting the CJK pieces to the
+ *  configured fallback family. Offset-transparent: the concatenated text and its
+ *  length are unchanged, so every downstream offset/itemIndex mapping still holds.
+ *  No-op when no fallback font is configured or a run carries no CJK. */
+export function scriptSplitRuns(runs: Run[]): Run[] {
+  const fam = cjkFallbackFamily;
+  if (!fam) return runs;
+  const out: Run[] = [];
+  let changed = false;
+  for (const run of runs) {
+    if (run.text.length === 0 || firstFamilyToken(run.style.fontFamily) === fam || !hasCjk(run.text)) {
+      out.push(run);
+      continue;
+    }
+    changed = true;
+    let buf = "";
+    let bufCjk: boolean | null = null;
+    const flush = (): void => {
+      if (buf.length === 0) return;
+      out.push(bufCjk ? { text: buf, style: { ...run.style, fontFamily: fam } } : { text: buf, style: run.style });
+      buf = "";
+    };
+    for (const ch of run.text) {
+      const cjk = isCJK(ch);
+      if (bufCjk !== null && cjk !== bufCjk) flush();
+      bufCjk = cjk;
+      buf += ch;
+    }
+    flush();
+  }
+  return changed ? out : runs;
+}
 
 export interface PreparedSegment {
   prepared: PreparedRichInline;
@@ -69,10 +127,18 @@ function toItems(runs: Run[]): RichInlineItem[] {
   });
 }
 
+/** Prepare an arbitrary run list AND return the (CJK-split) run list it was
+ *  prepared from. Callers that map pretext itemIndex/offsets back to runs MUST use
+ *  the returned `runs` (not the originals) — splitting changes the item count. */
+export function prepareRunSegment(runs: Run[]): { prepared: PreparedRichInline; runs: Run[] } {
+  const split = scriptSplitRuns(runs);
+  return { prepared: prepareRichInline(toItems(split)), runs: split };
+}
+
 /** Prepare an arbitrary run list (used for tab-stop pieces, which are laid out
  *  outside the per-paragraph segment cache). */
 export function prepareRuns(runs: Run[]): PreparedRichInline {
-  return prepareRichInline(toItems(runs));
+  return prepareRunSegment(runs).prepared;
 }
 
 export class PrepareCache {
@@ -82,11 +148,11 @@ export class PrepareCache {
     const hit = this.map.get(p.id);
     if (hit && hit.revision === p.revision) return hit.segments;
 
-    const segments: PreparedSegment[] = segmentRuns(p.runs).map((seg) => ({
-      prepared: prepareRichInline(toItems(seg.runs)),
-      runs: seg.runs,
-      startOffset: seg.startOffset,
-    }));
+    const segments: PreparedSegment[] = segmentRuns(p.runs).map((seg) => {
+      // Script-split for CJK fallback BEFORE prepare so item indices, fragment
+      // styles, and offsets all derive from the same (split) run list.
+      return { ...prepareRunSegment(seg.runs), startOffset: seg.startOffset };
+    });
     this.map.set(p.id, { revision: p.revision, segments });
     return segments;
   }

@@ -13,8 +13,9 @@ import type { Block, CharStyle, Document, ImageBlock, Paragraph, Run, SectionPat
 import { effectiveFractions, isHiddenParagraph } from "@cw/shared";
 import { formatListNumber, markerText, type ListDefinition, type ListLevel } from "@cw/shared";
 import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock, PlacedImage } from "./layoutTree";
-import { PrepareCache, prepareRuns, type PreparedSegment } from "./prepareCache";
+import { PrepareCache, prepareRunSegment, type PreparedSegment } from "./prepareCache";
 import { charStyleToFont, fontMetrics, measureTextWidth } from "./metrics";
+import { baseLevelFor, effectiveAlign, hasRtlChars, levelsFor, visualOrder } from "./bidi";
 import { setActiveFontRegistry, type CustomFontRegistry } from "../fonts/customRegistry";
 
 /** Word's default tab interval when a `\t` runs past the last explicit stop
@@ -155,6 +156,7 @@ function mapFragmentToRun(
 interface RawFrag {
   frag: InlineFragment;
   hadGap: boolean; // eaten separator whitespace preceded this fragment
+  gap: number; // width (px) of that separator gap — needed to rebuild x after bidi reorder
   spaces: number; // U+0020 count inside the fragment text
 }
 
@@ -232,7 +234,7 @@ function breakNextLine(
         width: f.occupiedWidth,
       };
       if (m.map) frag.offsetMap = m.map;
-      frags.push({ frag, hadGap: f.gapBefore > 0, spaces: countSpaces(f.text) });
+      frags.push({ frag, hadGap: f.gapBefore > 0, gap: f.gapBefore, spaces: countSpaces(f.text) });
     }
     x += f.occupiedWidth;
   }
@@ -266,6 +268,8 @@ interface RawLine {
   tabArrows?: LineBox["tabArrows"];
   paragraphEnd?: boolean;
   lineBreak?: boolean;
+  /** Tab-stop line with absolute fragment x baked in — never bidi-reordered. */
+  tabbed?: boolean;
 }
 
 /** Next tab stop strictly past `curX`: the first explicit stop, else the next
@@ -358,6 +362,7 @@ function layoutTabbedSegment(
       // A tab-positioned line stays ragged (its manual x must not be re-justified);
       // pure wrapped continuation lines justify normally when the paragraph does.
       lastOfSegment: isLast || hasTab,
+      ...(hasTab ? { tabbed: true } : {}),
       ...(curLeaders.length > 0 ? { leaders: curLeaders } : {}),
       ...(curArrows.length > 0 ? { tabArrows: curArrows } : {}),
     });
@@ -393,10 +398,12 @@ function layoutTabbedSegment(
     if (pc.runs.length === 0) return; // empty piece (e.g. text before a leading tab)
 
     // Lay the piece out with wrapping: first sub-line continues from curX; any
-    // overflow opens new full-width lines at the left margin.
-    const pseg: PreparedSegment = { prepared: prepareRuns(pc.runs), runs: pc.runs, startOffset: pc.start };
-    const runStarts = segRunOffsets(pc.runs, pc.start);
-    const runCursors = pc.runs.map(() => 0);
+    // overflow opens new full-width lines at the left margin. Use the CJK-split
+    // runs the prepare actually saw so itemIndex/offset/cursor stay in sync.
+    const prep = prepareRunSegment(pc.runs);
+    const pseg: PreparedSegment = { prepared: prep.prepared, runs: prep.runs, startOffset: pc.start };
+    const runStarts = segRunOffsets(prep.runs, pc.start);
+    const runCursors = prep.runs.map(() => 0);
     let cursor: RichInlineCursor | undefined = undefined;
     let firstSub = true;
     for (;;) {
@@ -444,9 +451,109 @@ function justifyLine(frags: RawFrag[], slack: number): void {
   }
 }
 
+/** Per-code-unit bidi embedding levels over the WHOLE paragraph text (global
+ *  offsets — fragments carry the same), or null when the paragraph is purely its
+ *  base direction and needs no reordering (the LTR fast path AND a pure-Latin RTL
+ *  paragraph, which only needs right-alignment, handled by effectiveAlign). */
+function paragraphLevels(p: Paragraph): Int8Array | null {
+  const base = baseLevelFor(p.style.direction);
+  let text = "";
+  const forced: [number, number][] = [];
+  for (const r of p.runs) {
+    const start = text.length;
+    text += r.text;
+    if (r.style.rtl) forced.push([start, text.length]);
+  }
+  if (base === 0 && forced.length === 0 && !hasRtlChars(text)) return null;
+  let levels = levelsFor(text, base);
+  if (levels === null) {
+    // No strong-RTL characters resolved (e.g. an RTL paragraph of Latin text):
+    // alignment alone makes it right-aligned, so only an explicit run `rtl` flag
+    // forces any reordering.
+    if (forced.length === 0) return null;
+    levels = new Int8Array(text.length); // base-LTR fill; forced ranges go RTL below
+  }
+  for (const [a, b] of forced) {
+    for (let i = a; i < b; i++) if ((levels[i]! & 1) === 0) levels[i] = levels[i]! + 1;
+  }
+  return levels;
+}
+
+/** Split a fragment whose model range spans more than one embedding level into
+ *  per-level sub-fragments (each becomes a single-direction fillText). Skips the
+ *  collapsed-whitespace case (offsetMap present), tagging the whole fragment with
+ *  its start level — mixed-script inside a single collapsed run is vanishingly
+ *  rare. Returns sub-RawFrags in LOGICAL order; only the first keeps the gap. */
+function splitFragByLevel(rf: RawFrag, levels: Int8Array): RawFrag[] {
+  const { frag } = rf;
+  const s = frag.startOffset;
+  const e = frag.endOffset;
+  const startLevel = levels[s] ?? 0;
+  // Keep collapsed-whitespace fragments and field results (PAGE/{page} tokens are
+  // resolved as ONE fragment by a later post-pass — splitting "{page}" across the
+  // brace/letter level boundary would stop the token from ever matching) atomic.
+  if (frag.offsetMap || frag.style.fieldId !== undefined || frag.text.length !== e - s) {
+    frag.level = startLevel;
+    return [rf];
+  }
+  // Find level-change boundaries within [s, e).
+  const bounds: number[] = [0];
+  for (let i = s + 1; i < e; i++) if (levels[i] !== levels[i - 1]) bounds.push(i - s);
+  if (bounds.length === 1) {
+    frag.level = startLevel;
+    return [rf];
+  }
+  bounds.push(e - s);
+  const font = charStyleToFont(frag.style);
+  const fullW = measureTextWidth(frag.text, font) || frag.width;
+  const out: RawFrag[] = [];
+  for (let k = 0; k < bounds.length - 1; k++) {
+    const a = bounds[k]!;
+    const b = bounds[k + 1]!;
+    const sub = frag.text.slice(a, b);
+    // Proportional width keeps the sub-pieces summing to the fragment's measured
+    // width (pretext's occupiedWidth includes letter-spacing this measure omits).
+    // Guard fullW===0 (zero-width control/combining runs) so we never emit NaN.
+    const w = fullW > 0 ? (measureTextWidth(sub, font) / fullW) * frag.width : 0;
+    out.push({
+      hadGap: k === 0 ? rf.hadGap : false,
+      gap: k === 0 ? rf.gap : 0,
+      spaces: countSpaces(sub),
+      frag: {
+        ...frag,
+        text: sub,
+        startOffset: s + a,
+        endOffset: s + b,
+        width: w,
+        level: levels[s + a] ?? startLevel,
+      },
+    });
+  }
+  return out;
+}
+
+/** Reorder a line's fragments into VISUAL (left-to-right) order per UAX#9 L2 and
+ *  rebuild their line-local x. Returns the reordered frags and the new line width.
+ *  Pure-LTR lines never reach here (paragraphLevels returns null). */
+function bidiReorderLine(frags: RawFrag[], levels: Int8Array): { frags: RawFrag[]; width: number } {
+  const split: RawFrag[] = [];
+  for (const rf of frags) split.push(...splitFragByLevel(rf, levels));
+  const order = visualOrder(split.map((rf) => rf.frag.level ?? 0));
+  const visual = order.map((i) => split[i]!);
+  let x = 0;
+  for (const rf of visual) {
+    x += rf.gap;
+    rf.frag.x = x;
+    x += rf.frag.width;
+  }
+  return { frags: visual, width: x };
+}
+
 function paragraphLines(p: Paragraph, contentWidth: number, cache: PrepareCache): LineBox[] {
   const segments = cache.get(p);
   const lines: LineBox[] = [];
+  const levels = paragraphLevels(p);
+  const dir = p.style.direction;
 
   // Phase 1: break lines per SEGMENT (segments = soft-break "\v" pieces).
   // Fragments are line-LOCAL; justification needs to know each segment's last
@@ -525,14 +632,25 @@ function paragraphLines(p: Paragraph, contentWidth: number, cache: PrepareCache)
     else raw[idx]!.lineBreak = true;
   }
 
-  // Phase 2: alignment + justification, then final LineBoxes.
+  // Phase 2: bidi reorder (RTL/mixed only), alignment + justification, final boxes.
+  const align = effectiveAlign(p.style.align, dir);
   let y = 0;
   for (const rl of raw) {
+    // Tabbed lines bake absolute x at tab stops; bidi reorder (which rebuilds x
+    // edge-to-edge) would fight that, so a paragraph mixing tabs + RTL renders in
+    // logical order. Known limitation — tab + bidi is a rare combination.
+    if (levels !== null && rl.frags.length > 0 && !rl.tabbed) {
+      const r = bidiReorderLine(rl.frags, levels);
+      rl.frags = r.frags;
+      rl.width = r.width;
+    }
     const slack = rl.lineMaxWidth - rl.width;
     let startX = rl.indent;
-    if (p.style.align === "center") startX += slack / 2;
-    else if (p.style.align === "right") startX += slack;
-    else if (p.style.align === "justify" && !rl.lastOfSegment) justifyLine(rl.frags, slack);
+    if (align === "center") startX += slack / 2;
+    else if (align === "right") startX += slack;
+    // Justify works on the VISUAL fragment order (bidi reorder already ran), so it
+    // distributes slack across the line's gaps edge-to-edge regardless of direction.
+    else if (align === "justify" && !rl.lastOfSegment) justifyLine(rl.frags, slack);
     for (const rf of rl.frags) rf.frag.x += startX;
     const box: LineBox = { y, height: rl.height, ascent: rl.ascent, fragments: rl.frags.map((rf) => rf.frag) };
     if (rl.emptyOffset !== undefined) box.emptyOffset = rl.emptyOffset;
@@ -755,9 +873,14 @@ function layoutDocument(
     if (!def) return null;
     return def.levels[Math.min(ref.level, def.levels.length - 1)] ?? null;
   };
+  // Indents are mirrored for RTL paragraphs: the "start" indent (left + list) moves
+  // to the RIGHT edge — which also opens the right-side gutter the list marker hangs
+  // in — and the "end" indent (right) moves to the left. LTR is unchanged.
+  const startIndentOf = (p: Paragraph): number => p.style.indentLeftPx + (listLevelOf(p)?.indentLeftPx ?? 0);
   const indentOf = (p: Paragraph): number =>
-    p.style.indentLeftPx + (listLevelOf(p)?.indentLeftPx ?? 0);
-  const rightIndentOf = (p: Paragraph): number => p.style.indentRightPx ?? 0;
+    p.style.direction === "rtl" ? (p.style.indentRightPx ?? 0) : startIndentOf(p);
+  const rightIndentOf = (p: Paragraph): number =>
+    p.style.direction === "rtl" ? startIndentOf(p) : (p.style.indentRightPx ?? 0);
   // The list-level indent alone (table cells add it ON TOP of the paragraph's
   // own indent, which their placement already applies).
   const listIndentOf = (p: Paragraph): number => listLevelOf(p)?.indentLeftPx ?? 0;
@@ -965,6 +1088,23 @@ function layoutDocument(
     }
   };
 
+  /** Absolute x of a list marker. LTR: it hangs `hangingPx` left of the text
+   *  start (placedX). RTL: the indent gutter is on the RIGHT, so the marker hangs
+   *  just past the line's (right-aligned) right edge, pushed to the far side of the
+   *  gutter to mirror the LTR gap. */
+  const markerX = (
+    block: Paragraph,
+    placedX: number,
+    line: LineBox | undefined,
+    marker: { text: string; style: CharStyle; hangingPx: number },
+  ): number => {
+    if (block.style.direction !== "rtl") return placedX - marker.hangingPx;
+    let rightEdge = 0;
+    for (const f of line?.fragments ?? []) rightEdge = Math.max(rightEdge, f.x + f.width);
+    const markerW = measureTextWidth(marker.text, charStyleToFont(marker.style));
+    return placedX + rightEdge + Math.max(0, marker.hangingPx - markerW);
+  };
+
   const placeRun = (block: Paragraph, lines: LineBox[], from: number, count: number): void => {
     const placed: PlacedBlock = {
       blockId: block.id,
@@ -974,7 +1114,9 @@ function layoutDocument(
       lines: [],
     };
     const marker = from === 0 ? markers.get(block.id) : undefined;
-    if (marker) placed.marker = { text: marker.text, style: marker.style, x: placed.x - marker.hangingPx };
+    if (marker) {
+      placed.marker = { text: marker.text, style: marker.style, x: markerX(block, placed.x, lines[from], marker) };
+    }
     if (block.style.tocEntry) {
       // The number decorates the LAST chunk's last line; right edge = this column's.
       tocPlacements.set(block.id, { chunk: placed, rightEdge: colX() + colWidth, para: block });
@@ -1210,6 +1352,8 @@ function layoutDocument(
    *  segment's last — which stays ragged, like a paragraph's final line). */
   const placeParagraphFloating = (p: Paragraph): void => {
     const segments = getPrepared(p);
+    const levels = paragraphLevels(p);
+    const palign = effectiveAlign(p.style.align, p.style.direction);
     let first = true;
     let lineIdx = 0;
     let placed: PlacedBlock | null = null;
@@ -1228,8 +1372,17 @@ function layoutDocument(
           // offset); hang the marker off the FIRST line's actual start so it tracks
           // the text instead of stranding at the left margin ON TOP of the float.
           // Equals placed.x - hangingPx when there's no shift (frag.x === 0).
-          const firstX = frags[0]?.frag.x ?? 0;
-          placed.marker = { text: marker.text, style: marker.style, x: placed.x + firstX - marker.hangingPx };
+          // RTL: hang past the line's right edge instead (mirrored gutter).
+          let mx: number;
+          if (p.style.direction === "rtl") {
+            let rightEdge = 0;
+            for (const rf of frags) rightEdge = Math.max(rightEdge, rf.frag.x + rf.frag.width);
+            const markerW = measureTextWidth(marker.text, charStyleToFont(marker.style));
+            mx = placed.x + rightEdge + Math.max(0, marker.hangingPx - markerW);
+          } else {
+            mx = placed.x + (frags[0]?.frag.x ?? 0) - marker.hangingPx;
+          }
+          placed.marker = { text: marker.text, style: marker.style, x: mx };
         }
         page.blocks.push(placed);
       }
@@ -1268,14 +1421,20 @@ function layoutDocument(
           placed = null;
           continue;
         }
+        if (levels !== null && bl.frags.length > 0) {
+          const r = bidiReorderLine(bl.frags, levels);
+          bl.frags = r.frags;
+          bl.width = r.width;
+        }
         const slack = box.width - indent - rightIndentOf(p) - bl.width;
         let startX = box.x0 - colX() + indent;
-        if (p.style.align === "center") startX += slack / 2;
-        else if (p.style.align === "right") startX += slack;
+        if (palign === "center") startX += slack / 2;
+        else if (palign === "right") startX += slack;
         for (const rf of bl.frags) rf.frag.x += startX;
         // Justify the PREVIOUS line now that this one exists (so it's non-last);
-        // buffer this line for the same decision next iteration.
-        if (p.style.align === "justify") {
+        // buffer this line for the same decision next iteration. Justify runs on the
+        // visual fragment order, so bidi-reordered lines justify too.
+        if (palign === "justify") {
           if (justifyPrev) justifyLine(justifyPrev.frags, justifyPrev.slack);
           justifyPrev = { frags: bl.frags, slack };
         }

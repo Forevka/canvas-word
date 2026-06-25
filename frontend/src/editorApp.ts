@@ -6,6 +6,7 @@ import { SyncClient } from "./sync/SyncClient";
 import { createEditor, type CurrentFormat, type EditMode, type InspectorProbe, type ReviewOpEnvelope } from "./index";
 import type { Command } from "./editor/state";
 import { createLayoutEngine } from "./layout/engine";
+import { setCjkFallbackFont, setCjkLocale } from "./layout/prepareCache";
 import { sampleDoc } from "./model/sampleDoc";
 import { stressDoc } from "./model/stressDoc";
 import { importDocx, type ImportResult, type ImportPhase } from "./import/docx/importDocx";
@@ -55,6 +56,7 @@ import {
   toggleMultilevelList,
   toggleHighlight,
   toggleVerticalAlign,
+  setDirection,
   changeCaseCmd,
   adjustIndentCmd,
   clearCharFormatting,
@@ -104,6 +106,7 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
     ...(runtime.overrideDefaultStyles ? { overrideDefaultStyles: runtime.overrideDefaultStyles } : {}),
     ...(runtime.behavior ? { behavior: runtime.behavior } : {}),
     ...(runtime.fonts ? { fonts: runtime.fonts } : {}),
+    ...(runtime.cjk ? { cjk: runtime.cjk } : {}),
     ...(runtime.develop !== undefined ? { develop: runtime.develop } : {}),
   });
   // This editor instance's own font registry — threaded into its layout engine and
@@ -120,6 +123,10 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
   // the registry below, so registration must happen before the first engine.layout.)
   fontRegistry.register({ fonts: config.fonts.fonts.filter((f) => loadedFamilies.has(normalizeFamily(f.family))) });
   await document.fonts.ready;
+  // CJK analyzer locale + fallback font (applied after fonts register so the
+  // fallback family resolves; both touch pretext's process-global analyzer).
+  setCjkLocale(config.cjk.locale);
+  setCjkFallbackFont(config.cjk.fallbackFont);
 
   // Give this editor session a unique siteId so every block/cell id it mints is
   // disjoint from other collaborating clients' ids (see shared/ids). A short
@@ -532,7 +539,7 @@ const openDocxFile = async (file: File | ArrayBuffer): Promise<void> => {
 // handle's exportDocx()/exportPdf() share one path.
 const exportBaked = (format: ExportFormat): Promise<{ bytes: Uint8Array; warnings: ExportWarning[] }> => {
   const baked = bakeReview(editor.getDocument(), editor.getReview(), "reject");
-  return exportDocument(baked, format, config.fonts);
+  return exportDocument(baked, format, config.fonts, config.cjk);
 };
 const blobFor = (format: ExportFormat, bytes: Uint8Array): Blob =>
   new Blob([bytes as BlobPart], { type: format === "pdf" ? PDF_MIME : DOCX_MIME });
@@ -1334,6 +1341,10 @@ if (toolbar) {
   toggle(btn(ICONS.alignCenter, "Center", () => editor.align("center")), (f) => f.align === "center");
   toggle(btn(ICONS.alignRight, "Align right", () => editor.align("right")), (f) => f.align === "right");
   toggle(btn(ICONS.alignJustify, "Justify", () => editor.align("justify")), (f) => f.align === "justify");
+  sep();
+  // Paragraph writing direction (OOXML w:bidi). RTL right-aligns + reorders.
+  toggle(txtBtn("LTR", "Left-to-right paragraph", () => editor.dispatch(setDirection("ltr"))), (f) => f.direction !== "rtl");
+  toggle(txtBtn("RTL", "Right-to-left paragraph", () => editor.dispatch(setDirection("rtl"))), (f) => f.direction === "rtl");
   sep();
   const SPACINGS = [
     { v: 1, l: "1.0" },

@@ -12,6 +12,7 @@
     "examples/*"
   ],
   "scripts": {
+    "postinstall": "patch-package --patch-dir pretext-patch",
     "dev": "npm run dev --workspace @forevka/wordcanvas",
     "dev:dashboard": "npm run dev --workspace @cw/dashboard",
     "dev:example": "npm run dev --workspace @cw/example-embed-live",
@@ -32,6 +33,7 @@
     "typescript": "^5.6.0"
   },
   "dependencies": {
-    "@forevka/wordcanvas": "^0.2.0"
+    "@forevka/wordcanvas": "^0.2.0",
+    "patch-package": "^8.0.1"
   }
 }

@@ -83,6 +83,38 @@ const mergedTable = (): TableBlock => ({
   ],
 });
 
+/** A cell paragraph carrying an explicit base direction (RTL) — for the bidi
+ *  table demo, so the cell's text right-aligns and reorders inside its column. */
+const dirCellPara = (runs: Run[], direction?: "rtl"): Paragraph => ({
+  kind: "paragraph", id: id(), revision: 0, runs,
+  style: { ...PARA, lineHeight: 1.35, spaceAfterPx: 0, ...(direction ? { direction } : {}) },
+});
+const dirCell = (runs: Run[], direction?: "rtl", opts: Partial<TableCell> = {}): TableCell =>
+  ({ id: id(), blocks: [dirCellPara(runs, direction)], ...opts });
+
+/** Bidi + CJK inside a table: an RTL Arabic column, a Japanese column, and a
+ *  value cell that combines a content control with a live PAGE field — proving
+ *  direction composes with tables, SDTs, and fields. */
+const bidiCjkTable = (): TableBlock => ({
+  kind: "table", id: id(), revision: 0,
+  rows: [
+    { cells: [
+      dirCell([run("العربية (RTL)", { bold: true, fontSizePx: 14, color: "#fff" })], "rtl", { shading: "#1a73e8" }),
+      dirCell([run("日本語 (CJK)", { bold: true, fontSizePx: 14, color: "#fff" })], undefined, { shading: "#1a73e8" }),
+      dirCell([run("Control + field", { bold: true, fontSizePx: 14, color: "#fff" })], undefined, { shading: "#1a73e8" }),
+    ] },
+    { cells: [
+      dirCell([run("نص عربي داخل خلية، يُحاذى إلى اليمين تلقائيًا.", { fontSizePx: 14 })], "rtl"),
+      dirCell([run("日本語のセル。スペースなしで折り返し、禁則処理も働きます。", { fontSizePx: 14 })]),
+      dirCell([
+        sdtRun({ type: "plainText", alias: "RTL value" }, "قيمة قابلة للتحرير", { fontSizePx: 14 }),
+        run(" · ص ", { fontSizePx: 14 }),
+        pageField(),
+      ], "rtl"),
+    ] },
+  ],
+});
+
 /** A table tall enough to cross a page boundary (row-level pagination). */
 const tallTable = (): TableBlock => ({
   kind: "table", id: id(), revision: 0,
@@ -231,7 +263,50 @@ export function sampleDoc(): Document {
     para([run("markers are paint-only")], { list: { listId: DEFAULT_BULLET_LIST_ID, level: 0 }, spaceAfterPx: 2 }),
     para([run("so caches survive renumbering")], { list: { listId: DEFAULT_BULLET_LIST_ID, level: 1 }, spaceAfterPx: 2 }),
     para([run("A fully justified, multi-page paragraph exercises line-level pagination. " + LOREM.repeat(12))], { align: "justify" }),
-    para([run("複雑なスクリプトの行分割も Intl.Segmenter が処理します。日本語のテキストは単語間にスペースがありませんが、pretext は文節の境界を正しく検出して行を折り返します。")]),
+
+    // --- International text: CJK + bidirectional (RTL) -------------------------
+    heading("International text — CJK & bidirectional", 1),
+    para([run("East-Asian and right-to-left scripts lay out the way Word does — measured on canvas, with Unicode line-breaking and the bidirectional algorithm (UAX #9), not the browser's contenteditable.")], { spaceAfterPx: 8 }),
+
+    para([run("日本語 — CJK line-breaking & kinsoku", { bold: true, color: "#1a1a2e" })], { spaceBeforePx: 6, spaceAfterPx: 2 }),
+    para([run("日本語の文章は単語の間にスペースを入れません。それでもエンジンは文字単位で行を折り返し、句読点が行頭に来ないように禁則処理（kinsoku）を行います。「角括弧」のような約物も正しく扱われ、長い段落でもページをまたいで自然に流れます。")]),
+
+    para([run("العربية — right-to-left", { bold: true, color: "#1a1a2e" })], { spaceBeforePx: 8, spaceAfterPx: 2 }),
+    para([run("اللغة العربية تُكتب من اليمين إلى اليسار. يعيد المحرّر ترتيب النص بصريًا وفق خوارزمية يونيكود ثنائية الاتجاه، ويحاذي الفقرة إلى اليمين تلقائيًا، ويضع المؤشر في المكان الصحيح عند الكتابة والتحديد.")], { direction: "rtl" }),
+
+    para([run("עברית — right-to-left", { bold: true, color: "#1a1a2e" })], { spaceBeforePx: 8, spaceAfterPx: 2 }),
+    para([run("עברית נכתבת מימין לשמאל. העורך מסדר מחדש את הרצף החזותי, מיישר את הפסקה לימין כברירת מחדל, וממשיך לתמוך בעימוד מרובה עמודים.")], { direction: "rtl" }),
+
+    para([run("Nested bidi — numbers & Latin inside RTL", { bold: true, color: "#1a1a2e" })], { spaceBeforePx: 8, spaceAfterPx: 2 }),
+    para([run("المنتج «canvas-word» متوفر بسعر 1,299 درهمًا منذ عام 2026 — تبقى الأرقام والكلمات اللاتينية بترتيبها الصحيح من اليسار إلى اليمين داخل النص العربي.")], { direction: "rtl" }),
+    para([
+      run("And the reverse, inside this left-to-right line: an embedded Hebrew phrase "),
+      run("שלום עולם"),
+      run(" and an Arabic one "),
+      run("مرحبا بالعالم"),
+      run(" each reorder on their own while the English keeps reading left-to-right — caret, selection, and arrow keys follow the visual order."),
+    ]),
+
+    para([run("Tables, content controls & fields — in CJK / RTL", { bold: true, color: "#1a1a2e" })], { spaceBeforePx: 10, spaceAfterPx: 4 }),
+    para([run("Direction composes with every other feature. This table mixes a right-to-left Arabic column with a Japanese one, and its last cell holds a content control plus a live page field:")], { spaceAfterPx: 6 }),
+    bidiCjkTable(),
+
+    para([run("A content control with a right-to-left value: "), sdtRun({ type: "richText", alias: "RTL rich text" }, "نصٌّ غنيٌّ قابل للتحرير"), run(" — and one with Japanese: "), sdtRun({ type: "richText", alias: "日本語" }, "編集可能なテキスト"), run(".")], { spaceBeforePx: 10 }),
+
+    para([
+      run("وحقول ديناميكية داخل فقرة عربية: هذه هي الصفحة رقم "),
+      pageField(),
+      run("، أُنشئت بتاريخ "),
+      dateField("yyyy-MM-dd"),
+      run(" — تُعاد حسابتها تلقائيًا عند التحديث."),
+    ], { direction: "rtl" }),
+
+    para([run("RTL lists & justification", { bold: true, color: "#1a1a2e" })], { spaceBeforePx: 10, spaceAfterPx: 4 }),
+    para([run("قائمة نقطية بالعربية، والعلامة تتدلّى على اليمين")], { direction: "rtl", list: { listId: DEFAULT_BULLET_LIST_ID, level: 0 }, spaceAfterPx: 2 }),
+    para([run("العنصر الثاني في القائمة")], { direction: "rtl", list: { listId: DEFAULT_BULLET_LIST_ID, level: 0 }, spaceAfterPx: 2 }),
+    para([run("مستوى متداخل داخل القائمة")], { direction: "rtl", list: { listId: DEFAULT_BULLET_LIST_ID, level: 1 }, spaceAfterPx: 2 }),
+    para([run("وفقرة عربية مضبوطة (justify) تمتد على عدة أسطر: تُوزَّع المسافات بين الكلمات حتى يمتلئ كل سطر من الحافة إلى الحافة، مع إعادة الترتيب البصري للكلمات والأرقام — تمامًا كما يفعل Word مع النص ثنائي الاتجاه. ".repeat(3))], { direction: "rtl", align: "justify", spaceBeforePx: 6 }),
+
     para([run("— a tour of canvas-word —", { italic: true, color: "#5f6368" })], { align: "center", spaceBeforePx: 20 }),
   ];
 

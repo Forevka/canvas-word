@@ -37,6 +37,7 @@ import {
   linkAt,
   objectRect,
   positionOnAdjacentLine,
+  visualCaretStep,
   type ColumnBoundaryHit,
   type GeoScope,
 } from "../layout/geometry";
@@ -155,6 +156,21 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
     }
     const next = blocks[bi + 1];
     return next ? { blockId: next.id, offset: 0 } : pos;
+  };
+
+  /** Visual-order horizontal step (bidi-aware). On a bidi line, ArrowLeft/Right
+   *  move to the visually adjacent caret stop; at the line's visual edge (or on a
+   *  plain LTR line, or for Ctrl+word steps) it falls back to the logical step,
+   *  with the direction flipped inside an RTL-base paragraph so the caret crosses
+   *  lines/blocks in the correct visual sense. */
+  const moveHorizontalVisual = (pos: DocPosition, dir: -1 | 1, byWord: boolean): DocPosition => {
+    if (!byWord) {
+      const v = visualCaretStep(deps.getTree(), pos, dir, scope());
+      if (v) return v;
+    }
+    const rtlBase = paragraphs().find((b) => b.id === pos.blockId)?.style.direction === "rtl";
+    const logicalDir: -1 | 1 = rtlBase ? (dir === -1 ? 1 : -1) : dir;
+    return moveHorizontal(pos, logicalDir, byWord);
   };
 
   const applyMove = (target: DocPosition, extend: boolean, goalX?: number): void => {
@@ -589,10 +605,15 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
         const dir: -1 | 1 = ev.key === "ArrowLeft" ? -1 : 1;
         // A plain arrow on a non-collapsed selection collapses to its edge
         // without moving (Word/native behavior); otherwise step from focus.
-        const target =
-          !ev.shiftKey && !isCollapsed(sel) && !ctrl
-            ? collapseTo(dir === -1 ? "min" : "max")
-            : moveHorizontal(sel.focus, dir, ctrl);
+        let target: DocPosition;
+        if (!ev.shiftKey && !isCollapsed(sel) && !ctrl) {
+          // Visual edge: in an RTL paragraph "min" (logical) is the right edge.
+          const rtl = paragraphs().find((b) => b.id === sel.focus.blockId)?.style.direction === "rtl";
+          const leftEdge = rtl ? "max" : "min";
+          target = collapseTo(dir === -1 ? leftEdge : leftEdge === "min" ? "max" : "min");
+        } else {
+          target = moveHorizontalVisual(sel.focus, dir, ctrl);
+        }
         applyMove(target, ev.shiftKey);
         ev.preventDefault();
         return;

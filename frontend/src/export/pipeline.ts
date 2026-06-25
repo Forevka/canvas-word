@@ -15,7 +15,15 @@ import {
   type CustomFontPayload,
 } from "../fonts/customRegistry";
 import { createLayoutEngine } from "../layout/engine";
+import { setCjkFallbackFont, setCjkLocale } from "../layout/prepareCache";
 import { pageOfBlockMap } from "../recalc/recalcToc";
+
+/** CJK tuning for an export job (mirror of the editor's `cjk` config). The
+ *  fallback family must also appear in the `fonts` payload so it embeds. */
+export interface CjkExportConfig {
+  locale?: string;
+  fallbackFont?: string;
+}
 
 /** Does the doc carry a generated table of contents (tocEntry paragraphs)? Their
  *  page numbers are paint-only in the model, so docx export needs a layout pass to
@@ -34,6 +42,29 @@ export async function runExport(
   doc: Document,
   format: ExportFormat,
   images: ImageBytes = {},
+  fonts?: CustomFontPayload,
+  cjk?: CjkExportConfig,
+): Promise<ExportResult> {
+  // CJK fallback/locale touch the process-global analyzer; set for the duration
+  // of the job. (The fallback font itself must be in `fonts` to embed.)
+  if (cjk) {
+    setCjkLocale(cjk.locale);
+    setCjkFallbackFont(cjk.fallbackFont);
+  }
+  try {
+    return await runExportInner(doc, format, images, fonts);
+  } finally {
+    if (cjk) {
+      setCjkFallbackFont(null);
+      setCjkLocale(undefined);
+    }
+  }
+}
+
+async function runExportInner(
+  doc: Document,
+  format: ExportFormat,
+  images: ImageBytes,
   fonts?: CustomFontPayload,
 ): Promise<ExportResult> {
   // Each job owns its custom-font state: renderPdf builds + tears down a per-job

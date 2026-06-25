@@ -81,6 +81,22 @@ export interface EditorTheme {
   ruler?: RulerTheme;
 }
 
+/** East-Asian / CJK tuning. Line-breaking between CJK characters and the kinsoku
+ *  rules work out of the box (pretext); these only tune the edge cases and the
+ *  font used for CJK glyphs. */
+export interface CjkConfig {
+  /** BCP-47 locale passed to pretext's analyzer (e.g. "ja", "ko", "zh"). Tunes
+   *  locale-specific breaking such as Korean word-keep. Absent = language-neutral.
+   *  NOTE: pretext's analyzer locale is process-global, so the LAST editor to
+   *  mount wins when several use different locales on one page. */
+  locale?: string;
+  /** Family name of a registered custom font (see `fonts`) to use for CJK runs.
+   *  Browsers already fall back to a system CJK face for on-screen rendering;
+   *  set this so MEASUREMENT, PDF/DOCX export, and embedding all use a known CJK
+   *  font instead of an arbitrary (and server-absent) system one. */
+  fallbackFont?: string;
+}
+
 /** Editor behavior tuning — every field optional. Pass to `WordCanvas({ behavior })`. */
 export interface EditorBehavior {
   /** Multiplicative zoom step for +/- and Ctrl+wheel. Default 1.1. */
@@ -202,6 +218,8 @@ export interface ResolvedConfig {
   stylesheet: Stylesheet;
   /** Custom fonts + toolbar disables (per-instance toolbar; global font registry). */
   fonts: ResolvedFontsConfig;
+  /** CJK locale + fallback-font tuning (applied to the global analyzer at mount). */
+  cjk: CjkConfig;
   /** Develop mode: when true, reveal the "Developer" ribbon tab whose Document-tree
    *  inspector lets a developer browse the parsed model. Off by default; even when
    *  on, nothing dev-related runs until the inspector is opened from that tab. */
@@ -213,6 +231,8 @@ export interface EditorConfigInput {
   overrideDefaultStyles?: DefaultStyleOverrides | undefined;
   behavior?: EditorBehavior | undefined;
   fonts?: FontsConfig | undefined;
+  /** CJK locale + fallback font. */
+  cjk?: CjkConfig | undefined;
   /** Reveal the "Developer" ribbon tab + Document-tree inspector. Default false. */
   develop?: boolean | undefined;
 }
@@ -226,6 +246,7 @@ export function resolveConfig(input: EditorConfigInput = {}): ResolvedConfig {
     typography,
     stylesheet: makeDefaultStylesheet(typography),
     fonts: resolveFonts(input.fonts),
+    cjk: input.cjk ? stripUndefined(input.cjk) : {},
     develop: input.develop ?? false,
   };
 }

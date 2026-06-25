@@ -21,6 +21,11 @@ export interface InlineFragment {
    *  rendered text shorter than its model range. offsetMap[localIndex] = model
    *  offset delta from startOffset (length text.length + 1). Absent = identity. */
   offsetMap?: number[];
+  /** Bidi embedding level (UAX#9). Even = left-to-right, odd = right-to-left.
+   *  Absent (treated as 0) on the LTR fast path. Geometry reverses per-cluster
+   *  caret math when this is odd, and paint relies on the canvas to shape/render
+   *  the (single-level) fragment text in its own direction. */
+  level?: number;
 }
 
 export interface LineBox {

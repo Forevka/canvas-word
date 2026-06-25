@@ -1,0 +1,88 @@
+diff --git a/node_modules/@chenglou/pretext/dist/bidi.d.ts b/node_modules/@chenglou/pretext/dist/bidi.d.ts
+index 312434f..50d492b 100644
+--- a/node_modules/@chenglou/pretext/dist/bidi.d.ts
++++ b/node_modules/@chenglou/pretext/dist/bidi.d.ts
+@@ -1 +1 @@
+-export declare function computeSegmentLevels(normalized: string, segStarts: number[]): Int8Array | null;
++export declare function computeSegmentLevels(normalized: string, segStarts: number[], baseLevel?: 0 | 1): Int8Array | null;
+diff --git a/node_modules/@chenglou/pretext/dist/bidi.js b/node_modules/@chenglou/pretext/dist/bidi.js
+index f1b9d19..4beb059 100644
+--- a/node_modules/@chenglou/pretext/dist/bidi.js
++++ b/node_modules/@chenglou/pretext/dist/bidi.js
+@@ -24,7 +24,7 @@ function classifyCodePoint(codePoint) {
+     }
+     return 'L';
+ }
+-function computeBidiLevels(str) {
++function computeBidiLevels(str, baseLevel) {
+     const len = str.length;
+     if (len === 0)
+         return null;
+@@ -55,19 +55,22 @@ function computeBidiLevels(str) {
+     }
+     if (!sawBidi)
+         return null;
+-    // Use the first strong character to pick the paragraph base direction.
+-    // Rich-path bidi metadata is only an approximation, but this keeps mixed
+-    // LTR/RTL text aligned with the common UBA paragraph rule.
+-    let startLevel = 0;
+-    for (let i = 0; i < len; i++) {
+-        const t = types[i];
+-        if (t === 'L') {
+-            startLevel = 0;
+-            break;
+-        }
+-        if (t === 'R' || t === 'AL') {
+-            startLevel = 1;
+-            break;
++    // Base direction: an explicit override (canvas-word /pretext-patch: Word's
++    // w:bidi forces the paragraph base regardless of the first strong char) takes
++    // precedence; otherwise use the first strong character (the common UBA P2/P3
++    // paragraph rule). Rich-path bidi metadata is only an approximation.
++    let startLevel = baseLevel === 0 || baseLevel === 1 ? baseLevel : 0;
++    if (baseLevel !== 0 && baseLevel !== 1) {
++        for (let i = 0; i < len; i++) {
++            const t = types[i];
++            if (t === 'L') {
++                startLevel = 0;
++                break;
++            }
++            if (t === 'R' || t === 'AL') {
++                startLevel = 1;
++                break;
++            }
+         }
+     }
+     const levels = new Int8Array(len);
+@@ -163,8 +166,8 @@ function computeBidiLevels(str) {
+     }
+     return levels;
+ }
+-export function computeSegmentLevels(normalized, segStarts) {
+-    const bidiLevels = computeBidiLevels(normalized);
++export function computeSegmentLevels(normalized, segStarts, baseLevel) {
++    const bidiLevels = computeBidiLevels(normalized, baseLevel);
+     if (bidiLevels === null)
+         return null;
+     const segLevels = new Int8Array(segStarts.length);
+diff --git a/node_modules/@chenglou/pretext/package.json b/node_modules/@chenglou/pretext/package.json
+index fe59788..0c25dd8 100644
+--- a/node_modules/@chenglou/pretext/package.json
++++ b/node_modules/@chenglou/pretext/package.json
+@@ -34,6 +34,16 @@
+       "import": "./dist/rich-inline.js",
+       "default": "./dist/rich-inline.js"
+     },
++    "./analysis": {
++      "types": "./dist/analysis.d.ts",
++      "import": "./dist/analysis.js",
++      "default": "./dist/analysis.js"
++    },
++    "./bidi": {
++      "types": "./dist/bidi.d.ts",
++      "import": "./dist/bidi.js",
++      "default": "./dist/bidi.js"
++    },
+     "./package.json": "./package.json"
+   },
+   "files": [

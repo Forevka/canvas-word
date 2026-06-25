@@ -12,7 +12,7 @@
 import type { AgentToolsOptions, EditMode, EditorHandle, FieldResolver, Participant, SaveEvent, SaveFormat, SaveHandler, WordCanvasEvent, WordCanvasRuntime, WordCanvasViewOptions } from "./app/runtime";
 import type { ChildContent, ChildDocument, ChildEditorHandle, ChildRenderOptions, FieldResolveRequest, FieldResult } from "./index";
 import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
-import type { CustomFontDef, CustomFontFaces, DefaultStyleOverrides, EditorBehavior, EditorTheme, FontsConfig } from "./config";
+import type { CjkConfig, CustomFontDef, CustomFontFaces, DefaultStyleOverrides, EditorBehavior, EditorTheme, FontsConfig } from "./config";
 import { darkCanvasTheme } from "./config";
 import type { CustomizeRibbon, RibbonActionContext, RibbonApi, RibbonButtonSpec } from "./ribbon";
 import { makeFloatingDialog } from "./ui/floatingDialog";
@@ -21,7 +21,7 @@ import { BUNDLE_SHARE, type LoadProgress } from "./app/loadProgress";
 
 export type { Document, UserInfo, Participant, EditMode, ReviewLayer, Fragment, FieldResolver, FieldResolveRequest, FieldResult, AgentToolsOptions, LoadProgress, WordCanvasViewOptions, SaveEvent, SaveFormat, SaveHandler };
 export type { ChildDocument, ChildContent, ChildRenderOptions, ChildEditorHandle };
-export type { EditorTheme, DefaultStyleOverrides, EditorBehavior, FontsConfig, CustomFontDef, CustomFontFaces };
+export type { EditorTheme, DefaultStyleOverrides, EditorBehavior, FontsConfig, CjkConfig, CustomFontDef, CustomFontFaces };
 export type { CustomizeRibbon, RibbonApi, RibbonButtonSpec, RibbonActionContext, DocSelection };
 export { darkCanvasTheme, makeFloatingDialog };
 
@@ -111,6 +111,11 @@ export interface WordCanvasOptions {
    *  only — they stay loaded so a loaded .docx that uses them still renders.
    *  TTF/OTF only (WOFF2 is not supported). Font hosts must allow CORS. */
   fonts?: FontsConfig;
+  /** CJK (Chinese/Japanese/Korean) tuning. Line-breaking and kinsoku work without
+   *  config; set `cjk.locale` ("ja"/"ko"/"zh") to tune locale-specific breaking,
+   *  and `cjk.fallbackFont` to a registered `fonts` family so CJK glyphs measure,
+   *  export, and embed with a known font instead of an arbitrary system one. */
+  cjk?: CjkConfig;
   /** Customize the ribbon toolbar. Called once at mount with a `RibbonApi` to
    *  reorder/remove built-in tabs/groups/buttons (by id — discover them with
    *  `api.tabs()/groups()/items()`) and add your own tabs, groups, and buttons.
@@ -171,6 +176,7 @@ export class WordCanvas {
         behavior: opts.behavior,
         develop: opts.develop,
         fonts: opts.fonts,
+        cjk: opts.cjk,
         customizeRibbon: opts.customizeRibbon,
         onLoadProgress: opts.onLoadProgress,
         onReady: (h) => {

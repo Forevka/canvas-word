@@ -32,6 +32,10 @@ export function runPropsXml(s: CharStyle): string {
     if (name) children.push(el("w:highlight", { "w:val": name }));
   }
   if (s.verticalAlign) children.push(el("w:vertAlign", { "w:val": s.verticalAlign === "super" ? "superscript" : "subscript" }));
+  // Emit an explicit OFF (w:val="0") so an imported w:rtl="0" round-trips and can
+  // still clear an inherited RTL run style; undefined stays absent.
+  if (s.rtl === true) children.push(el("w:rtl"));
+  else if (s.rtl === false) children.push(el("w:rtl", { "w:val": "0" }));
   return el("w:rPr", undefined, children.join(""));
 }
 
@@ -41,6 +45,11 @@ export function runPropsXml(s: CharStyle): string {
 // wraps it directly. Emission order matches OOXML's tolerant exporter convention.
 export function paraCoreXml(style: ParaStyle): string {
   const c: string[] = [];
+  // w:bidi precedes w:spacing/w:ind/w:jc in the CT_PPr schema sequence. An explicit
+  // "ltr" emits w:bidi="0" so an imported w:bidi="0" round-trips (clears inherited
+  // RTL); undefined stays absent.
+  if (style.direction === "rtl") c.push(el("w:bidi"));
+  else if (style.direction === "ltr") c.push(el("w:bidi", { "w:val": "0" }));
   c.push(el("w:spacing", {
     "w:before": pxToTwips(style.spaceBeforePx),
     "w:after": pxToTwips(style.spaceAfterPx),
@@ -95,6 +104,8 @@ export function partialRPrXml(c: Partial<CharStyle>): string {
 
 export function partialPPrXml(p: Partial<ParaStyle>): string {
   const out: string[] = [];
+  if (p.direction === "rtl") out.push(el("w:bidi"));
+  else if (p.direction === "ltr") out.push(el("w:bidi", { "w:val": "0" }));
   if (p.align) out.push(el("w:jc", { "w:val": JC[p.align] ?? "left" }));
   const sp: Record<string, number | string> = {};
   if (p.spaceBeforePx !== undefined) sp["w:before"] = pxToTwips(p.spaceBeforePx);

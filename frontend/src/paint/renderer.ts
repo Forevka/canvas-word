@@ -946,7 +946,13 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
         ctx.fillStyle = rp.color;
         (ctx as CanvasRenderingContext2D & { wordSpacing: string }).wordSpacing =
           `${frag.wordSpacingPx ?? 0}px`;
-        ctx.fillText(frag.text, x, baselineY + vShift);
+        // RTL fragment: anchor at its RIGHT edge with an RTL base so the canvas
+        // shapes/orders the glyphs correctly (matters for Arabic joining and for
+        // neutrals at the run edges). LTR uses the default left anchor.
+        const rtl = ((frag.level ?? 0) & 1) === 1;
+        ctx.direction = rtl ? "rtl" : "ltr";
+        ctx.textAlign = rtl ? "right" : "left";
+        ctx.fillText(frag.text, rtl ? x + frag.width : x, baselineY + vShift);
 
         const th = decorationThickness(s.fontSizePx);
         if (rp.underline) {
@@ -956,6 +962,10 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
           ctx.fillRect(x, baselineY + vShift + strikeOffset(s.fontSizePx), frag.width, th);
         }
       }
+      // Reset the text-direction state RTL fragments may have left, so markers,
+      // the next block, and overlays draw with the default left anchor.
+      ctx.direction = "ltr";
+      ctx.textAlign = "left";
       if (showFormattingMarks) paintFormattingMarks(ctx, block, line, baselineY);
     }
   }
