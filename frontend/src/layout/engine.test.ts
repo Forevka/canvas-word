@@ -1047,3 +1047,43 @@ describe("engine — table measure cache", () => {
     expect(short).toBeLessThan(tall);
   });
 });
+
+describe("engine — band (header/footer) layout cache", () => {
+  const footerText = (tree: ReturnType<typeof layout>, pageIndex: number): string =>
+    (tree.pages[pageIndex]!.footer ?? []).flatMap((b) => b.lines.flatMap((l) => l.fragments.map((f) => f.text))).join("");
+  const tall = (): Block[] => Array.from({ length: 160 }, (_, i) => para(`body line ${i}`)); // spans several pages
+
+  it("substitutes the correct page number per page (cache keyed by pageNum)", () => {
+    const eng = createLayoutEngine();
+    const d = doc(tall(), { footer: [para("{page}")] });
+    const t = eng.layout(d);
+    expect(t.pages.length).toBeGreaterThan(2);
+    t.pages.forEach((_, i) => expect(footerText(t, i)).toContain(String(i + 1)));
+    // Re-layout hits the band cache and must still be correct per page.
+    const t2 = eng.layout(d);
+    t2.pages.forEach((_, i) => expect(footerText(t2, i)).toContain(String(i + 1)));
+  });
+
+  it("a body edit reuses the (unchanged) band cache without corrupting page numbers", () => {
+    const eng = createLayoutEngine();
+    const footer = [para("Page {page}")];
+    const body = tall();
+    const t1 = eng.layout(doc(body, { footer }));
+    // Edit a body paragraph (bump revision); the SAME footer array → band cache hit.
+    const body2 = body.slice();
+    const bp = body2[0] as Paragraph;
+    body2[0] = { ...bp, revision: bp.revision + 1, runs: [{ text: "edited", style: CHAR }] };
+    const t2 = eng.layout(doc(body2, { footer }));
+    expect(footerText(t2, 1)).toBe(footerText(t1, 1)); // page 2 footer unchanged + correct
+    expect(footerText(t2, 1)).toContain("2");
+  });
+
+  it("invalidates when the footer blocks change (new array identity)", () => {
+    const eng = createLayoutEngine();
+    const body = tall();
+    const a = footerText(eng.layout(doc(body, { footer: [para("{page}")] })), 0);
+    const b = footerText(eng.layout(doc(body, { footer: [para("p{page}")] })), 0);
+    expect(a).toBe("1");
+    expect(b).toBe("p1");
+  });
+});

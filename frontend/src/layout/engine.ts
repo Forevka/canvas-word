@@ -89,6 +89,55 @@ export function createLayoutEngine(fontRegistry?: CustomFontRegistry): LayoutEng
     return measured;
   };
 
+  // Fourth cache tier: per-page header/footer layout. On a 98-page report this is
+  // ~196 layoutBand calls (header+footer × page) re-shaped from scratch EVERY pass
+  // — ~20ms, and a body keystroke never touches a band. layoutBand's output is a
+  // pure function of (band blocks, width, originX, pageNum, pageCount, rawMode) +
+  // the active font registry, and the result is shiftPlaced into fresh objects
+  // before use, so cache it. Band blocks are keyed by array identity: a body edit
+  // keeps doc.section.header's reference (cache hit); a band edit mints a new array
+  // (miss). Page-count / page-number changes vary the key (correct: {numpages} /
+  // {page} must re-render).
+  const bandArrayId = new WeakMap<object, number>();
+  let bandArraySeq = 0;
+  const idOfBandArray = (blocks: Block[]): number => {
+    let id = bandArrayId.get(blocks);
+    if (id === undefined) { id = ++bandArraySeq; bandArrayId.set(blocks, id); }
+    return id;
+  };
+  // {date}/{time} resolve against `new Date()` at layout time (not in the cache
+  // key), so a band carrying them must never be cached — otherwise a footer clock
+  // would freeze. Detected once per band-array identity.
+  const bandVolatile = new WeakMap<object, boolean>();
+  const hasVolatileToken = (blocks: Block[]): boolean => {
+    let v = bandVolatile.get(blocks);
+    if (v === undefined) {
+      v = blockTexts(blocks).some((t) => /\{(date|time)\}/.test(t));
+      bandVolatile.set(blocks, v);
+    }
+    return v;
+  };
+  const bandLayoutCache = new Map<string, { placed: PlacedBlock[]; height: number }>();
+  let touchedBands: Set<string> | null = null;
+  const getBandLayout = (
+    blocks: Block[],
+    width: number,
+    originX: number,
+    pageNum: number,
+    pageCount: number,
+    bandCache: PrepareCache,
+    rawMode: boolean,
+  ): { placed: PlacedBlock[]; height: number } => {
+    if (hasVolatileToken(blocks)) return layoutBand(blocks, width, originX, pageNum, pageCount, bandCache, rawMode);
+    const key = `${idOfBandArray(blocks)}|${width}|${originX}|${pageNum}|${pageCount}|${rawMode ? 1 : 0}`;
+    touchedBands?.add(key);
+    const hit = bandLayoutCache.get(key);
+    if (hit) return hit;
+    const res = layoutBand(blocks, width, originX, pageNum, pageCount, bandCache, rawMode);
+    bandLayoutCache.set(key, res);
+    return res;
+  };
+
   return {
     layout(doc: Document, _dirtyBlockIds?: string[], options?: LayoutOptions): LayoutTree {
       // Assert this engine's font registry for the whole (synchronous) layout pass
@@ -98,19 +147,24 @@ export function createLayoutEngine(fontRegistry?: CustomFontRegistry): LayoutEng
       if (fontRegistry) setActiveFontRegistry(fontRegistry);
       const rawBand = options?.rawBand ?? null;
       touched = rawBand === null ? new Set<string>() : null;
+      touchedBands = rawBand === null ? new Set<string>() : null;
       try {
         const tree = layoutDocument(doc, getLines, (p) => {
           touched?.add(p.id);
           return prepCache.get(p);
-        }, rawBand, getMeasuredTable);
+        }, rawBand, getMeasuredTable, getBandLayout);
         if (touched) {
           for (const id of linesCache.keys()) if (!touched.has(id)) linesCache.delete(id);
           for (const id of tableCache.keys()) if (!touched.has(id)) tableCache.delete(id);
           prepCache.retainOnly(touched);
         }
+        if (touchedBands) {
+          for (const k of bandLayoutCache.keys()) if (!touchedBands.has(k)) bandLayoutCache.delete(k);
+        }
         return tree;
       } finally {
         touched = null;
+        touchedBands = null;
       }
     },
     evict(blockId: string): void {
@@ -122,6 +176,7 @@ export function createLayoutEngine(fontRegistry?: CustomFontRegistry): LayoutEng
       prepCache.clear();
       linesCache.clear();
       tableCache.clear();
+      bandLayoutCache.clear();
     },
   };
 }
@@ -787,6 +842,15 @@ function layoutDocument(
     getLinesF: (p: Paragraph, w: number) => LineBox[],
     listCtx: CellListCtx,
   ) => ReturnType<typeof measureTable> = measureTable,
+  layoutBandCached: (
+    blocks: Block[],
+    width: number,
+    originX: number,
+    pageNum: number,
+    pageCount: number,
+    bandCache: PrepareCache,
+    rawMode: boolean,
+  ) => { placed: PlacedBlock[]; height: number } = layoutBand,
 ): LayoutTree {
   // Tall bands PUSH the content box (Word): a header taller than its margin
   // moves contentTop down; a tall footer raises contentBottom. Heights are
@@ -1856,7 +1920,7 @@ function layoutDocument(
       const header = pickBand(ps, "header", firstOfSection, even);
       if (header) {
         const raw = rawBand === "header";
-        const band = layoutBand(header.blocks, cw, cx, pageNum, pages.length, bandCache, raw);
+        const band = layoutBandCached(header.blocks, cw, cx, pageNum, pages.length, bandCache, raw);
         const y0 = headerBandTop(ps, band.height);
         pg.header = band.placed.map((b) => shiftPlaced(b, y0));
         pg.headerSource = header.source;
@@ -1864,7 +1928,7 @@ function layoutDocument(
       const footer = pickBand(ps, "footer", firstOfSection, even);
       if (footer) {
         const raw = rawBand === "footer";
-        const band = layoutBand(footer.blocks, cw, cx, pageNum, pages.length, bandCache, raw);
+        const band = layoutBandCached(footer.blocks, cw, cx, pageNum, pages.length, bandCache, raw);
         const y0 = footerBandTop(ps, band.height);
         pg.footer = band.placed.map((b) => shiftPlaced(b, y0));
         pg.footerSource = footer.source;
@@ -1900,6 +1964,17 @@ function substituteTokens(s: string, page: number, pages: number): string {
     .replace(/\{pages\}/g, String(pages))
     .replace(/\{date\}/g, () => new Date().toLocaleDateString())
     .replace(/\{time\}/g, () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+}
+
+/** All run texts in a band's blocks (paragraphs + one-level cell paragraphs) —
+ *  used to detect volatile {date}/{time} tokens that must bypass the band cache. */
+function blockTexts(blocks: Block[]): string[] {
+  const out: string[] = [];
+  for (const b of blocks) {
+    if (b.kind === "paragraph") for (const r of b.runs) out.push(r.text);
+    else if (b.kind === "table") for (const row of b.rows) for (const cell of row.cells) for (const cb of cell.blocks) if (cb.kind === "paragraph") for (const r of cb.runs) out.push(r.text);
+  }
+  return out;
 }
 
 function substituteBlock(b: Block, page: number, pages: number): Block {
