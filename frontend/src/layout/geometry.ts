@@ -565,6 +565,9 @@ export interface ColumnBoundaryHit {
   pageIndex: number;
   tableY: number;
   tableHeight: number;
+  /** The table's CURRENTLY RENDERED per-column widths — lets a resize that exits
+   *  autofit pin the on-screen proportions instead of a stale fractions snapshot. */
+  colWidths: number[];
 }
 
 const COLUMN_GRIP_PX = 6;
@@ -590,7 +593,7 @@ export function hitTestColumnBoundary(
       if (Math.abs(x - edge) <= COLUMN_GRIP_PX) {
         return {
           tableId: block.blockId, boundaryIndex: ci, x: edge, tableX: t.x, tableWidth: t.width,
-          pageIndex, tableY: t.y, tableHeight: t.height,
+          pageIndex, tableY: t.y, tableHeight: t.height, colWidths: t.colWidths,
         };
       }
     }

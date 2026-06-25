@@ -851,12 +851,18 @@ export function createEditor(
   const startColumnDrag = (hit: ColumnBoundaryHit, ev: MouseEvent): void => {
     const table = doc.blocks.find((b) => b.id === hit.tableId);
     if (table?.kind !== "table") return;
-    // Manual column resize cancels autofit (Word): pin the table to fixed widths,
-    // keeping the current column proportions, then drag it as a fixed table.
+    // Manual column resize cancels autofit (Word): pin the table to fixed widths.
+    // Freeze the CURRENTLY RENDERED column proportions (solved from content), not
+    // effectiveFractions() — that returns the stale colFractions snapshot (an equal
+    // split when absent), which would snap the columns before the drag.
+    let base: number[];
     if (table.widthMode && table.widthMode !== "fixed") {
-      dispatch(setTableWidthModeCmd(hit.tableId, "fixed", effectiveFractions(table)));
+      const total = hit.colWidths.reduce((s, w) => s + w, 0) || 1;
+      base = hit.colWidths.map((w) => w / total);
+      dispatch(setTableWidthModeCmd(hit.tableId, "fixed", base));
+    } else {
+      base = effectiveFractions(table);
     }
-    const base = effectiveFractions(table);
     const minFrac = 24 / hit.tableWidth; // columns never shrink below 24px
     const startX = ev.clientX;
     let lastFractions = base;
