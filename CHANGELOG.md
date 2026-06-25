@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Enter inside a block-level content control.** Pressing Enter in a paragraph or
+  table cell wrapped by a block-level SDT (e.g. a "section" control) was swallowed —
+  the guard treated every control at the caret as inline. Now only *inline* controls
+  block the split; block-level controls hold multiple paragraphs (like Word), and the
+  new paragraph inherits the control (`splitParagraph` carries the block `sdtPath` to
+  the tail, with the merge inverse restoring it so undo round-trips).
+- **Caret / selection on multi-run RTL paragraphs.** Lines store their fragments in
+  visual order, so on a bidi-reordered line with more than one run the flattened line
+  index took its start/end offset from the visually-, not logically-, first/last
+  fragment. The caret jumped to the previous line and whole-paragraph selection broke
+  on RTL paragraphs mixing runs (e.g. Arabic text with embedded `PAGE`/`DATE` fields).
+  The line index now derives each line's logical span from the min/max offset across
+  its fragments. (Single-run and LTR lines are unaffected.)
+
 ## [0.7.5] — 2026-06-25
 
 ### Added

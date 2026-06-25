@@ -4,7 +4,7 @@
 import "./test-canvas-setup";
 
 import { describe, it, expect } from "vitest";
-import type { CharStyle, Document, Paragraph, ParaStyle, Run, SectionProps } from "@cw/shared";
+import type { CharStyle, Document, Paragraph, ParaStyle, Run, SectionProps, TableBlock, TableCell } from "@cw/shared";
 import { baseLevelFor, effectiveAlign, hasRtlChars, levelsFor, visualOrder } from "./bidi";
 import { createLayoutEngine } from "./engine";
 import { caretRect, hitTest, selectionRects } from "./geometry";
@@ -188,6 +188,150 @@ describe("bidi geometry (caret / hit-test / selection)", () => {
     const rects = selectionRects(tree, { anchor: { blockId: id, offset: 2 }, focus: { blockId: id, offset: 5 } });
     expect(rects.length).toBeGreaterThanOrEqual(1);
     expect(rects[0]!.width).toBeGreaterThan(0);
+  });
+
+  // Regression: a MULTI-run RTL paragraph that wraps to several lines. Each line
+  // holds several fragments stored in VISUAL (reversed) order, so the flattened
+  // line index must derive each line's logical start/end from the min/max offset
+  // across its fragments — not fragments[0]/[last]. With the old first/last logic
+  // an offset at the logical start of a line (the visual RIGHT edge in RTL) was
+  // attributed to the PREVIOUS line: the caret jumped up a line and whole-paragraph
+  // selection broke.
+  const multiRunRtlDoc = () => {
+    // Alternating styles keep adjacent words as SEPARATE fragments; spaces give
+    // wrap opportunities so the paragraph spans multiple lines.
+    const runs: Run[] = [];
+    for (let i = 0; i < 40; i++) {
+      runs.push({ text: "מילה ", style: i % 2 === 0 ? CHAR : { ...CHAR, bold: true } });
+    }
+    const p = para(runs, { direction: "rtl" });
+    return { doc: doc(p), id: p.id };
+  };
+
+  it("attributes each offset to its own visual line on a multi-run RTL paragraph", () => {
+    const { doc: d, id } = multiRunRtlDoc();
+    const tree = layout(d);
+    const pb = tree.pages[0]!.blocks[0]!;
+    expect(pb.lines.length).toBeGreaterThan(1); // must actually wrap
+
+    for (const line of pb.lines) {
+      // Logical span of this line, regardless of visual fragment order.
+      const lineStart = Math.min(...line.fragments.map((f) => f.startOffset));
+      const lineEnd = Math.max(...line.fragments.map((f) => f.endOffset));
+      const expectedY = pb.y + line.y;
+      // An offset safely INSIDE the line must render its caret on THIS line.
+      const mid = Math.floor((lineStart + lineEnd) / 2);
+      const c = caretRect(tree, { blockId: id, offset: mid })!;
+      expect(c.y).toBeCloseTo(expectedY, 1);
+      // And the line's own logical start belongs to this line, not the one above.
+      const cs = caretRect(tree, { blockId: id, offset: lineStart })!;
+      expect(cs.y).toBeCloseTo(expectedY, 1);
+    }
+  });
+
+  it("selects every line of a single-run RTL paragraph that wraps", () => {
+    // One Arabic run, no embedded LTR → one fragment PER LINE, but it wraps. The
+    // narrow column in the showcase's bidi table is the real-world trigger.
+    const word = "كلمة ";
+    const p = para([{ text: word.repeat(60), style: CHAR }], { direction: "rtl" });
+    const tree = layout(doc(p));
+    const pb = tree.pages[0]!.blocks[0]!;
+    expect(pb.lines.length).toBeGreaterThan(1);
+    const end = Math.max(...pb.lines.flatMap((l) => l.fragments.map((f) => f.endOffset)));
+    const rects = selectionRects(tree, {
+      anchor: { blockId: p.id, offset: 0 },
+      focus: { blockId: p.id, offset: end },
+    });
+    const ys = new Set(rects.map((r) => Math.round(r.y)));
+    expect(ys.size).toBe(pb.lines.length); // a highlight row for EVERY line
+    for (const r of rects) expect(r.width).toBeGreaterThan(0);
+  });
+
+  it("selects the whole multi-run RTL paragraph across every line", () => {
+    const { doc: d, id } = multiRunRtlDoc();
+    const tree = layout(d);
+    const pb = tree.pages[0]!.blocks[0]!;
+    const end = Math.max(...pb.lines.flatMap((l) => l.fragments.map((f) => f.endOffset)));
+    const rects = selectionRects(tree, {
+      anchor: { blockId: id, offset: 0 },
+      focus: { blockId: id, offset: end },
+    });
+    // One row of highlight per visual line (each line is a contiguous logical range).
+    const ys = new Set(rects.map((r) => Math.round(r.y)));
+    expect(ys.size).toBe(pb.lines.length);
+  });
+});
+
+describe("RTL text inside a narrow table cell (wraps to multiple lines)", () => {
+  // Mirrors the showcase's bidi table: a right-to-left Arabic cell in a 3-column
+  // table, so the column is narrow enough to wrap the text onto several lines.
+  const tableDoc = () => {
+    const cellPara: Paragraph = {
+      kind: "paragraph",
+      id: `cell${nextId++}`,
+      revision: 0,
+      runs: [{ text: "كلمة ".repeat(12), style: CHAR }],
+      style: { ...PARA, direction: "rtl" },
+    };
+    const mk = (txt: string): TableCell => ({
+      id: `c${nextId++}`,
+      blocks: [{ kind: "paragraph", id: `p${nextId++}`, revision: 0, runs: [{ text: txt, style: CHAR }], style: PARA }],
+    });
+    const table: TableBlock = {
+      kind: "table",
+      id: `tbl${nextId++}`,
+      revision: 0,
+      rows: [{ cells: [{ id: `c${nextId++}`, blocks: [cellPara] }, mk("ltr"), mk("ltr")] }],
+    };
+    return { doc: { section: SECTION, blocks: [table] } as Document, id: cellPara.id };
+  };
+
+  const cellBlock = (tree: ReturnType<typeof layout>, id: string) => {
+    for (const page of tree.pages) {
+      for (const block of page.blocks) {
+        for (const row of block.table?.rows ?? []) {
+          for (const c of row.cells) {
+            const pb = c.blocks.find((b) => b.blockId === id);
+            if (pb) return pb;
+          }
+        }
+      }
+    }
+    throw new Error("cell block not found");
+  };
+
+  it("wraps the RTL cell text across more than one line", () => {
+    const { doc: d, id } = tableDoc();
+    const pb = cellBlock(layout(d), id);
+    expect(pb.lines.length).toBeGreaterThan(1);
+  });
+
+  it("highlights EVERY wrapped line when the whole cell paragraph is selected", () => {
+    const { doc: d, id } = tableDoc();
+    const tree = layout(d);
+    const pb = cellBlock(tree, id);
+    const end = Math.max(...pb.lines.flatMap((l) => l.fragments.map((f) => f.endOffset)));
+    const rects = selectionRects(tree, {
+      anchor: { blockId: id, offset: 0 },
+      focus: { blockId: id, offset: end },
+    });
+    const ys = new Set(rects.map((r) => Math.round(r.y)));
+    expect(ys.size).toBe(pb.lines.length);
+  });
+
+  it("round-trips a click on each wrapped line back to that line", () => {
+    const { doc: d, id } = tableDoc();
+    const tree = layout(d);
+    const pb = cellBlock(tree, id);
+    for (const line of pb.lines) {
+      const mid = Math.floor(
+        (Math.min(...line.fragments.map((f) => f.startOffset)) +
+          Math.max(...line.fragments.map((f) => f.endOffset))) / 2,
+      );
+      const c = caretRect(tree, { blockId: id, offset: mid })!;
+      const hit = hitTest(tree, c.pageIndex, c.x, c.y + 2)!;
+      expect(hit.blockId).toBe(id);
+    }
   });
 });
 

@@ -83,6 +83,7 @@ import {
   replaceSdtBlockSpan,
   replaceSdtCellContent,
   sdtAtPosition,
+  inlineSdtAtPosition,
   sdtStackAtPosition,
   setAlignment,
   setCharStyle as setCharStyleCmd,
@@ -1842,7 +1843,12 @@ export function createEditor(
       dispatch(deleteForward());
     },
     onSplitParagraph: () => {
-      if (sdtAtCaret()) return; // controls are inline — no paragraph splits inside
+      // Only INLINE controls block Enter (they can't span a paragraph break).
+      // Block-level controls wrap whole paragraphs/tables and may hold several
+      // paragraphs (Word's behaviour), so Enter splits and the new paragraph
+      // stays inside the control — see splitParagraph / the splitParagraph op.
+      const focus = selection?.focus;
+      if (focus && inlineSdtAtPosition(doc, focus)) return;
       dispatch(splitParagraph());
     },
     onPaste: ({ html, text }) => {

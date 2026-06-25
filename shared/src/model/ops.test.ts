@@ -54,6 +54,40 @@ describe("applyOp setTocInstruction", () => {
   });
 });
 
+describe("applyOp splitParagraph — block-level content control", () => {
+  it("carries newSdtPath onto the tail so Enter stays inside a block-level SDT", () => {
+    const src: Paragraph = { ...para("p", "hello world"), sdtPath: ["sec"] };
+    const r = applyOp(docOf(src), {
+      type: "splitParagraph",
+      at: { blockId: "p", offset: 5 },
+      newBlockId: "p2",
+      newSdtPath: ["sec"],
+    });
+    const [head, tail] = r.doc.blocks as Paragraph[];
+    expect(head!.sdtPath).toEqual(["sec"]); // head keeps it (untouched)
+    expect(tail!.sdtPath).toEqual(["sec"]); // tail inherits it
+  });
+
+  it("a split with no newSdtPath leaves the tail outside any block control", () => {
+    const r = applyOp(docOf(para("p", "hello world")), {
+      type: "splitParagraph",
+      at: { blockId: "p", offset: 5 },
+      newBlockId: "p2",
+    });
+    expect((r.doc.blocks[1] as Paragraph).sdtPath).toBeUndefined();
+  });
+
+  it("merge inverse restores the tail's block-level control (undo round-trip)", () => {
+    const head: Paragraph = { ...para("p", "hello "), sdtPath: ["sec"] };
+    const tail: Paragraph = { ...para("p2", "world"), sdtPath: ["sec"] };
+    const merge = applyOp(docOf(head, tail), { type: "mergeParagraphs", firstBlockId: "p" });
+    expect(merge.doc.blocks).toHaveLength(1);
+    // Undo: the re-split must put the control back on the restored tail.
+    const undo = applyOp(merge.doc, merge.inverse);
+    expect((undo.doc.blocks[1] as Paragraph).sdtPath).toEqual(["sec"]);
+  });
+});
+
 describe("styleEq — inline field marker", () => {
   it("runs differing only in fieldId are NOT equal (boundaries survive normalization)", () => {
     expect(styleEq({ ...CHAR, fieldId: "f0" }, { ...CHAR })).toBe(false);

@@ -85,15 +85,29 @@ function buildIndex(
       byBlock.set(block.blockId, list);
     }
     for (const line of block.lines) {
-      const first = line.fragments[0];
-      const last = line.fragments[line.fragments.length - 1];
+      // Fragments are stored in VISUAL order, so on a bidi-reordered (RTL/mixed)
+      // line fragments[0]/[last] are the visually-, not logically-, first/last —
+      // their offsets can run backwards. Scan for the logical min/max so line
+      // ownership (entryOf), the caret's line pick, and selection rects stay
+      // correct on multi-run RTL lines. (Single-fragment & LTR lines are
+      // unaffected: min/max == first/last there.)
+      let startOffset = line.emptyOffset ?? 0;
+      let endOffset = line.emptyOffset ?? 0;
+      if (line.fragments.length > 0) {
+        startOffset = Infinity;
+        endOffset = -Infinity;
+        for (const f of line.fragments) {
+          if (f.startOffset < startOffset) startOffset = f.startOffset;
+          if (f.endOffset > endOffset) endOffset = f.endOffset;
+        }
+      }
       list.push(entries.length);
       entries.push({
         pageIndex,
         block,
         line,
-        startOffset: first ? first.startOffset : (line.emptyOffset ?? 0),
-        endOffset: last ? last.endOffset : (line.emptyOffset ?? 0),
+        startOffset,
+        endOffset,
         ...(cell ? { cell } : {}),
       });
     }

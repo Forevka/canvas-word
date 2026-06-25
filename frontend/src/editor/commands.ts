@@ -363,9 +363,17 @@ export function splitParagraph(): Command {
     }
     // Works everywhere: body, band stories, AND table cells (the op splices
     // within the cell's paragraph list) — multi-paragraph cells, like Word.
-    // List membership is inherited by the split (style is cloned).
+    // List membership is inherited by the split (style is cloned). A block-level
+    // content control wrapping this paragraph is inherited too, so Enter inside a
+    // block-level SDT keeps the new paragraph in the control (carry its sdtPath).
+    const splitBlock = blockById(state.doc, base.at.blockId);
     const newBlockId = freshBlockId();
-    base.ops.push({ type: "splitParagraph", at: base.at, newBlockId });
+    base.ops.push({
+      type: "splitParagraph",
+      at: base.at,
+      newBlockId,
+      ...(splitBlock?.sdtPath?.length ? { newSdtPath: splitBlock.sdtPath } : {}),
+    });
     return tr(base.ops, caret(newBlockId, 0), "command");
   };
 }
@@ -897,6 +905,26 @@ export function sdtAtPosition(doc: EditorState["doc"], pos: DocPosition): string
   // A block-level control wrapping the whole table, else the dominant cell control.
   if (table.sdtPath?.length) return table.sdtPath[table.sdtPath.length - 1]!;
   return dominantCellSdt(table);
+}
+
+/** The INLINE content control directly on the run at `pos`, ignoring any
+ *  block-level control wrapping the whole paragraph/table. Splitting a paragraph
+ *  is only unsafe INSIDE an inline control (it can't span a paragraph break); a
+ *  block-level control can legitimately hold many paragraphs, so Enter must work
+ *  there. Used by the Enter handler to decide whether to allow the split. */
+export function inlineSdtAtPosition(doc: EditorState["doc"], pos: DocPosition): string | null {
+  const block = blockById(doc, pos.blockId);
+  if (!block) return null;
+  let off = 0;
+  let before: string | null = null;
+  let after: string | null = null;
+  for (const r of block.runs) {
+    const end = off + r.text.length;
+    if (pos.offset > off && pos.offset <= end) before = innermostSdtId(r.style) ?? null;
+    if (pos.offset >= off && pos.offset < end) after = innermostSdtId(r.style) ?? null;
+    off = end;
+  }
+  return after ?? before;
 }
 
 /** The full outer→inner content-control chain at a position: a containing table's

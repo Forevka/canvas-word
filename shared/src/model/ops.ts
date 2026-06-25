@@ -50,7 +50,7 @@ export type Op =
   | { type: "deleteRange"; blockId: string; start: number; end: number }
   | { type: "setRuns"; blockId: string; runs: Run[] }
   | { type: "setParaStyle"; blockId: string; patch: Partial<ParaStyle> }
-  | { type: "splitParagraph"; at: DocPosition; newBlockId: string; newStyle?: ParaStyle }
+  | { type: "splitParagraph"; at: DocPosition; newBlockId: string; newStyle?: ParaStyle; newSdtPath?: string[] }
   | { type: "mergeParagraphs"; firstBlockId: string }
   | { type: "insertBlock"; index: number; block: Block; where?: Container }
   | { type: "removeBlock"; blockId: string }
@@ -461,6 +461,10 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
         revision: 0,
         runs: normalizeRuns(tailRuns, carry),
         style: op.newStyle ?? { ...block.style },
+        // The tail's block-level content control is declared by the op (the split
+        // command carries the source paragraph's path; the merge inverse restores
+        // the original tail's). Absent → the tail belongs to no block control.
+        ...(op.newSdtPath?.length ? { sdtPath: op.newSdtPath } : {}),
       };
       let next: Document;
       if (loc.kind === "cell") {
@@ -541,6 +545,8 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
           at: { blockId: block.id, offset: headLen },
           newBlockId: nextPara.id,
           newStyle: nextPara.style,
+          // Restore the merged-away tail's block-level control on undo.
+          ...(nextPara.sdtPath?.length ? { newSdtPath: nextPara.sdtPath } : {}),
         },
         mapPosition: (p) =>
           p.blockId === nextPara.id ? { blockId: block.id, offset: headLen + p.offset } : p,
