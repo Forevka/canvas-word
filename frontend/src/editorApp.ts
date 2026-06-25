@@ -6,6 +6,7 @@ import { SyncClient } from "./sync/SyncClient";
 import { createEditor, type CurrentFormat, type EditMode, type InspectorProbe, type ReviewOpEnvelope } from "./index";
 import type { Command } from "./editor/state";
 import { createLayoutEngine } from "./layout/engine";
+import { setCjkFallbackFont, setCjkLocale } from "./layout/prepareCache";
 import { sampleDoc } from "./model/sampleDoc";
 import { stressDoc } from "./model/stressDoc";
 import { importDocx, type ImportResult, type ImportPhase } from "./import/docx/importDocx";
@@ -102,6 +103,7 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
     ...(runtime.overrideDefaultStyles ? { overrideDefaultStyles: runtime.overrideDefaultStyles } : {}),
     ...(runtime.behavior ? { behavior: runtime.behavior } : {}),
     ...(runtime.fonts ? { fonts: runtime.fonts } : {}),
+    ...(runtime.cjk ? { cjk: runtime.cjk } : {}),
     ...(runtime.develop !== undefined ? { develop: runtime.develop } : {}),
   });
   // This editor instance's own font registry — threaded into its layout engine and
@@ -118,6 +120,10 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
   // the registry below, so registration must happen before the first engine.layout.)
   fontRegistry.register({ fonts: config.fonts.fonts.filter((f) => loadedFamilies.has(normalizeFamily(f.family))) });
   await document.fonts.ready;
+  // CJK analyzer locale + fallback font (applied after fonts register so the
+  // fallback family resolves; both touch pretext's process-global analyzer).
+  setCjkLocale(config.cjk.locale);
+  setCjkFallbackFont(config.cjk.fallbackFont);
 
   // Give this editor session a unique siteId so every block/cell id it mints is
   // disjoint from other collaborating clients' ids (see shared/ids). A short
