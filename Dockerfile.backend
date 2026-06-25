@@ -18,6 +18,10 @@ COPY backend/package.json ./backend/
 COPY dashboard/package.json ./dashboard/
 # Desktop (Tauri) workspace manifest — present so `npm ci` matches the lockfile.
 COPY desktop/package.json ./desktop/
+# Local @chenglou/pretext patch (exposes ./analysis + ./bidi exports) applied by
+# the root `postinstall` (patch-package --patch-dir pretext-patch). Must be present
+# BEFORE `npm ci` runs postinstall, or build:node fails to resolve those subpaths.
+COPY pretext-patch ./pretext-patch
 RUN npm ci
 
 # 2. Build the frontend's compiled Node pipeline bundle (dist-node) — the headless
