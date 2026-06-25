@@ -1966,14 +1966,18 @@ function substituteTokens(s: string, page: number, pages: number): string {
     .replace(/\{time\}/g, () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
 }
 
-/** All run texts in a band's blocks (paragraphs + one-level cell paragraphs) —
- *  used to detect volatile {date}/{time} tokens that must bypass the band cache. */
+/** All run texts in a band's blocks (paragraphs + cell paragraphs at any table
+ *  nesting depth) — used to detect volatile {date}/{time} tokens that must bypass
+ *  the band cache. */
 function blockTexts(blocks: Block[]): string[] {
   const out: string[] = [];
-  for (const b of blocks) {
-    if (b.kind === "paragraph") for (const r of b.runs) out.push(r.text);
-    else if (b.kind === "table") for (const row of b.rows) for (const cell of row.cells) for (const cb of cell.blocks) if (cb.kind === "paragraph") for (const r of cb.runs) out.push(r.text);
-  }
+  const visit = (bs: Block[]): void => {
+    for (const b of bs) {
+      if (b.kind === "paragraph") for (const r of b.runs) out.push(r.text);
+      else if (b.kind === "table") for (const row of b.rows) for (const cell of row.cells) visit(cell.blocks);
+    }
+  };
+  visit(blocks);
   return out;
 }
 

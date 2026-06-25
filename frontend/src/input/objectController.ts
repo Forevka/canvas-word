@@ -21,11 +21,19 @@ export interface ObjectFrameDeps {
 
 export interface ObjectFrame {
   /** Show the frame over a rect (page coords) for an image of natural ratio.
-   *  `src` is the image URL used to paint the live resize ghost during a drag. */
-  show(rect: Rect, maxWidth: number, src?: string): void;
+   *  `src` is the image URL used to paint the live resize ghost during a drag.
+   *  `anchor` is the horizontal edge the layout keeps fixed as the width changes
+   *  (in-flow images re-align on resize): "left" for left-aligned / anchored
+   *  images, "center" / "right" for those alignments — so the ghost tracks the
+   *  committed position instead of jumping on mouseup. */
+  show(rect: Rect, maxWidth: number, src?: string, anchor?: ResizeAnchor): void;
   hide(): void;
   destroy(): void;
 }
+
+/** Horizontal edge held fixed while an in-flow image resizes (mirrors the layout
+ *  engine: x = colX + slack·alignFactor, slack = colWidth − width). */
+export type ResizeAnchor = "left" | "center" | "right";
 
 interface HandleSpec {
   name: string;
@@ -77,13 +85,15 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     return el;
   });
 
-  let current: { rect: Rect; maxWidth: number } | null = null;
+  let current: { rect: Rect; maxWidth: number; anchor: ResizeAnchor } | null = null;
   let drag: {
     spec: HandleSpec;
     startX: number;
     startY: number;
     startW: number;
     startH: number;
+    /** Horizontal edge the committed layout keeps fixed as the width changes. */
+    anchor: ResizeAnchor;
     /** Image footprint at drag start (page coords), in document px. The ghost is
      *  anchored here — in-flow images keep their layout position while resizing,
      *  so only width/height change during the preview. */
@@ -120,18 +130,25 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     if (!drag) return;
     const r = drag.startRect;
     const z = deps.getZoom();
-    // Backdrop covers the union of old and new footprints, anchored at the
-    // image's (fixed) top-left; the bitmap is drawn at the new size within it.
-    const coverW = Math.max(r.width, w) * z;
+    // Hold the same horizontal edge the committed layout will: left-aligned and
+    // anchored images keep their left edge; centered images keep their center;
+    // right-aligned keep their right edge. Without this the ghost grows from the
+    // left and the image jumps sideways on mouseup once layout re-aligns it.
+    const x = drag.anchor === "center" ? r.x + (r.width - w) / 2 : drag.anchor === "right" ? r.x + (r.width - w) : r.x;
+    // Backdrop covers the union of old and new footprints; the bitmap is drawn at
+    // the new size, top-left, within it.
+    const coverLeft = Math.min(r.x, x);
+    const coverW = (Math.max(r.x + r.width, x + w) - coverLeft) * z;
     const coverH = Math.max(r.height, h) * z;
-    ghost.style.left = `${r.x * z}px`;
+    ghost.style.left = `${coverLeft * z}px`;
     ghost.style.top = `${r.y * z}px`;
     ghost.style.width = `${coverW}px`;
     ghost.style.height = `${coverH}px`;
+    ghost.style.backgroundPosition = `${(x - coverLeft) * z}px 0`;
     ghost.style.backgroundSize = `${w * z}px ${h * z}px`;
     ghost.style.display = "block";
-    // Frame border + handles track the new size; in-flow images keep position.
-    frame.style.left = `${r.x * z - 2}px`;
+    // Frame border + handles track the new size at the anchored position.
+    frame.style.left = `${x * z - 2}px`;
     frame.style.top = `${r.y * z - 2}px`;
     frame.style.width = `${w * z + 4}px`;
     frame.style.height = `${h * z + 4}px`;
@@ -168,6 +185,7 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
       startY: ev.clientY,
       startW: current.rect.width,
       startH: current.rect.height,
+      anchor: current.anchor,
       startRect: current.rect,
     };
     // Arm the ghost with the image bitmap and a backdrop matching the page color,
@@ -232,10 +250,10 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
   for (const el of handleEls) el.addEventListener("pointerdown", onHandleDown);
 
   return {
-    show(rect: Rect, maxWidth: number, src?: string): void {
+    show(rect: Rect, maxWidth: number, src?: string, anchor: ResizeAnchor = "left"): void {
       const host = deps.getPageElement(rect.pageIndex);
       if (!host) return;
-      current = { rect, maxWidth };
+      current = { rect, maxWidth, anchor };
       ghostSrc = src;
       if (frame.parentElement !== host) {
         host.appendChild(frame);

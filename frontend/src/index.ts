@@ -1049,7 +1049,11 @@ export function createEditor(
     // Anchored (out-of-flow) images may bleed past the margins, so they resize up
     // to the full page width; in-flow images stay within the content box.
     const maxW = img?.anchor ? doc.section.pageWidthPx : contentWidth();
-    objectFrame.show(rect, maxW, img?.src);
+    // In-flow images re-align on resize (the engine re-centers/right-aligns from
+    // remaining slack), so the ghost must hold the same edge fixed; anchored
+    // images are offset-positioned and keep their left edge.
+    const anchor = !img || img.anchor ? "left" : img.align;
+    objectFrame.show(rect, maxW, img?.src, anchor);
   };
 
   const selectObject = (blockId: string | null): void => {
