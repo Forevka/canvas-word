@@ -57,3 +57,38 @@ frame (~30fps ceiling); the structural fixes below remove the cost itself:
 
 Re-run the identical `engine.layout` micro-benchmark after each item to compare.
 Raw DevTools trace of a 30-frame resize burst: `perf/baseline-resize-burst-trace.json`.
+
+---
+
+## Results after implementing items 1–5
+
+Same document, same `engine.layout` micro-benchmark, CPU 1x, median of 21 runs.
+
+| scenario | baseline | final | speedup |
+|---|---|---|---|
+| **warm relayout** (per-mutation floor) | 38.0 ms | **4.5 ms** | 8.4× |
+| keystroke (1 paragraph dirtied) | 33.9 ms | **3.8 ms** | 8.9× |
+| in-cell image resize (per drag frame) | 33.1 ms | **0 relayouts** | n/a (item 1) |
+| top-level image resize (per drag frame) | 37.5 ms | **0 relayouts** | n/a (item 1) |
+| cold (first load / full reshape) | 141.5 ms | 122.6 ms | 1.15× |
+
+### What each item contributed (measured)
+
+- **Item 1 — overlay-preview resize:** a resize drag does **zero** relayouts (was
+  one ~33 ms relayout per frame). Verified live: model unchanged during drag, one
+  undoable op on release, aspect preserved.
+- **Item 2 — table measure cache:** warm relayout 38 → 23 ms (reclaimed the ~9–15
+  ms of per-pass table re-measurement).
+- **Item 3 — per-page band cache:** warm 23 → 4.5 ms. Profiling found band
+  (header/footer) layout was 20.2 ms of the remaining 24 ms — 196 `layoutBand`
+  calls re-shaped every pass; caching their pure output collapsed it to 0.18 ms.
+  (The planned dirty-id incremental *pagination* was dropped: the pagination walk
+  is only ~2 ms, not worth the regression risk.)
+- **Item 4 — slim transient afterMutation:** defers search / peer-caret /
+  review-overlay re-measurement during drag & IME frames to the commit that ends
+  them.
+- **Item 5 — per-page paint diffing:** repaint only the live pages whose content
+  changed (signature cost 0.01–0.23 ms/page vs a multi-ms repaint).
+
+Phase breakdown of a warm relayout, before → after item 3:
+`{ measure 0.9, walk 2.4, band 20.2 }` → `{ measure 0.9, walk 2.4, band 0.18 }`.
