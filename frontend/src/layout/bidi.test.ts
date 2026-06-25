@@ -7,6 +7,7 @@ import { describe, it, expect } from "vitest";
 import type { CharStyle, Document, Paragraph, ParaStyle, Run, SectionProps } from "@cw/shared";
 import { baseLevelFor, effectiveAlign, hasRtlChars, levelsFor, visualOrder } from "./bidi";
 import { createLayoutEngine } from "./engine";
+import { caretRect, hitTest, selectionRects } from "./geometry";
 
 describe("visualOrder (UAX#9 L2)", () => {
   it("leaves an all-LTR line in logical order", () => {
@@ -34,14 +35,14 @@ describe("levelsFor / base direction", () => {
   it("marks Hebrew runs RTL under an LTR base", () => {
     const lv = levelsFor("ab אב", 0)!; // "ab א ב"
     expect(lv).not.toBeNull();
-    expect(lv[0]).toBe(0); // 'a' LTR
-    expect(lv[3] & 1).toBe(1); // aleph RTL
+    expect(lv[0]!).toBe(0); // 'a' LTR
+    expect(lv[3]! & 1).toBe(1); // aleph RTL
   });
   it("honours an explicit RTL base even when the first strong char is Latin", () => {
     // /pretext-patch base-level override: 'A' first, but base forced RTL.
     const lv = levelsFor("Aא", 1)!;
     expect(lv).not.toBeNull();
-    expect(lv[1] & 1).toBe(1); // aleph stays RTL
+    expect(lv[1]! & 1).toBe(1); // aleph stays RTL
   });
   it("baseLevelFor maps direction to embedding level", () => {
     expect(baseLevelFor("rtl")).toBe(1);
@@ -152,5 +153,39 @@ describe("engine bidi reorder", () => {
     expect(abc.x).toBeLessThan(heb2.x);
     // Within the Hebrew sequence, the logically-first (heb1) is to the RIGHT.
     expect(heb1.x).toBeGreaterThan(heb2.x);
+  });
+});
+
+describe("bidi geometry (caret / hit-test / selection)", () => {
+  const rtlDoc = () => {
+    const p = para([{ text: "שלוםעולם", style: CHAR }], { direction: "rtl" }); // 8 RTL chars
+    return { doc: doc(p), id: p.id };
+  };
+
+  it("places the caret at offset 0 to the RIGHT of the caret at the end", () => {
+    const { doc: d, id } = rtlDoc();
+    const tree = layout(d);
+    const xStart = caretRect(tree, { blockId: id, offset: 0 })!.x;
+    const xEnd = caretRect(tree, { blockId: id, offset: 8 })!.x;
+    expect(xStart).toBeGreaterThan(xEnd); // RTL: logical start is on the right
+  });
+
+  it("round-trips caret x → hitTest → same offset in an RTL run", () => {
+    const { doc: d, id } = rtlDoc();
+    const tree = layout(d);
+    for (let off = 0; off <= 8; off++) {
+      const c = caretRect(tree, { blockId: id, offset: off })!;
+      const hit = hitTest(tree, c.pageIndex, c.x, c.y + 2)!;
+      expect(hit.blockId).toBe(id);
+      expect(hit.offset).toBe(off);
+    }
+  });
+
+  it("produces a selection rect for a sub-range of an RTL run", () => {
+    const { doc: d, id } = rtlDoc();
+    const tree = layout(d);
+    const rects = selectionRects(tree, { anchor: { blockId: id, offset: 2 }, focus: { blockId: id, offset: 5 } });
+    expect(rects.length).toBeGreaterThanOrEqual(1);
+    expect(rects[0]!.width).toBeGreaterThan(0);
   });
 });
