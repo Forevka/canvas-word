@@ -73,6 +73,14 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     "background-repeat:no-repeat;background-position:top left;";
   let ghostSrc: string | undefined;
 
+  // Original-size silhouette: a dashed outline pinned to the image's footprint at
+  // drag start, so the user sees the "before" size next to the live "after" ghost
+  // and frame. Sits above the ghost backdrop, below the blue frame.
+  const sizeGhost = document.createElement("div");
+  sizeGhost.style.cssText =
+    "position:absolute;display:none;pointer-events:none;z-index:1;box-sizing:border-box;" +
+    "border:1px dashed #5f6368;background:rgba(95,99,104,0.06);";
+
   const handleEls: HTMLDivElement[] = HANDLES.map((h) => {
     const el = document.createElement("div");
     el.dataset["handle"] = h.name;
@@ -157,6 +165,7 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
   const hideGhost = (): void => {
     ghost.style.display = "none";
     ghost.style.backgroundImage = "";
+    sizeGhost.style.display = "none";
   };
 
   const endDrag = (): void => {
@@ -196,6 +205,18 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
       const pageBg = getComputedStyle(host).backgroundColor;
       ghost.style.backgroundColor = pageBg && pageBg !== "rgba(0, 0, 0, 0)" ? pageBg : "#fff";
       ghost.style.backgroundImage = `url("${ghostSrc}")`;
+    }
+    // Pin the original-size silhouette to the starting footprint (it stays put for
+    // the whole drag) so the user can compare the old size against the live ghost.
+    if (host) {
+      if (sizeGhost.parentElement !== host) host.appendChild(sizeGhost);
+      const z = deps.getZoom();
+      const r = drag.startRect;
+      sizeGhost.style.left = `${r.x * z}px`;
+      sizeGhost.style.top = `${r.y * z}px`;
+      sizeGhost.style.width = `${r.width * z}px`;
+      sizeGhost.style.height = `${r.height * z}px`;
+      sizeGhost.style.display = "block";
     }
     dragEl = el;
     dragPointerId = ev.pointerId;
@@ -287,6 +308,7 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
       cancelPendingMove(); // drop any in-flight resize frame so it can't fire post-teardown
       hideGhost();
       ghost.remove();
+      sizeGhost.remove();
       frame.remove();
     },
   };
