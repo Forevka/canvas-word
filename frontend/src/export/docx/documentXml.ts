@@ -242,7 +242,10 @@ function pPrXml(style: ParaStyle, ctx: PartCtx, markRun?: CharStyle): string {
   if (style.pageBreakBefore) c.push(el("w:pageBreakBefore"));
   if (style.keepWithNext) c.push(el("w:keepNext"));
   if (style.keepLinesTogether) c.push(el("w:keepLines"));
+  // Explicit "ltr" emits w:bidi="0" (round-trips an imported w:bidi="0", clearing
+  // an inherited RTL style); undefined stays absent.
   if (style.direction === "rtl") c.push(el("w:bidi"));
+  else if (style.direction === "ltr") c.push(el("w:bidi", { "w:val": "0" }));
 
   // spacing / indent / jc / tabs — shared with the TOC generator.
   c.push(paraCoreXml(style));

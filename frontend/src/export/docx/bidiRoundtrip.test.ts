@@ -105,6 +105,14 @@ describe("bidi round-trip", () => {
     const p = paras(doc)[0]!;
     expect(p.style.direction).toBe("ltr"); // explicit off, not undefined
     expect(p.runs[0]!.style.rtl).toBe(false);
+
+    // Export must emit the OFF state (w:val="0") so it survives a round-trip.
+    const xml = exportedDocumentXml(doc);
+    expect(xml).toContain('<w:bidi w:val="0"/>');
+    expect(xml).toContain('<w:rtl w:val="0"/>');
+    const rt = paras(roundTrip(doc))[0]!;
+    expect(rt.style.direction).toBe("ltr");
+    expect(rt.runs[0]!.style.rtl).toBe(false);
   });
 
   it("emits <w:bidi/> for an RTL named paragraph style (partialPPrXml / paraCoreXml)", () => {
