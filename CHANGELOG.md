@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **CJK & bidirectional (RTL) text.** The layout engine now lays out East-Asian and
+  right-to-left scripts the way Word does — all measured on canvas:
+  - **CJK line-breaking & kinsoku** work out of the box (between Han/Kana characters
+    with no spaces, no line-start/-end punctuation), via the pretext analyzer.
+    `WordCanvas({ cjk: { locale: "ja" | "ko" | "zh" } })` tunes locale-specific
+    breaking; `cjk.fallbackFont` (a registered `fonts` family) routes CJK runs to a
+    known font for consistent measurement, PDF/DOCX export, and embedding.
+  - **Bidirectional layout (UAX #9).** New `ParaStyle.direction` (`"ltr"`/`"rtl"`,
+    OOXML `w:bidi`) and `CharStyle.rtl` (`w:rtl`). RTL paragraphs reorder runs into
+    visual order, right-align by default, and mirror left/right indents; caret,
+    hit-testing, selection rectangles, and Left/Right arrow keys all follow the
+    visual order. A **LTR/RTL** toggle was added to the ribbon's Paragraph group,
+    and `w:bidi`/`w:rtl`/`w:jc` round-trip through `.docx`.
+  - The default showcase document gains an **"International text — CJK &
+    bidirectional"** section demonstrating all of the above.
+  - *Implementation note:* the bidi reorder reuses pretext's Unicode Bidi
+    Algorithm via two small, documented patches under `/pretext-patch`
+    (applied by `patch-package` on `postinstall`).
 - **Inspector: ergonomics.** Keyboard navigation in the trees (↑/↓ move, →/←
   expand/collapse, Enter reveals), a right-click context menu (copy block id / JSON
   / label, reveal), a **Follow caret** toggle that scrolls the tree to the node

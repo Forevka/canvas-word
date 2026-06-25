@@ -83,6 +83,38 @@ const mergedTable = (): TableBlock => ({
   ],
 });
 
+/** A cell paragraph carrying an explicit base direction (RTL) — for the bidi
+ *  table demo, so the cell's text right-aligns and reorders inside its column. */
+const dirCellPara = (runs: Run[], direction?: "rtl"): Paragraph => ({
+  kind: "paragraph", id: id(), revision: 0, runs,
+  style: { ...PARA, lineHeight: 1.35, spaceAfterPx: 0, ...(direction ? { direction } : {}) },
+});
+const dirCell = (runs: Run[], direction?: "rtl", opts: Partial<TableCell> = {}): TableCell =>
+  ({ id: id(), blocks: [dirCellPara(runs, direction)], ...opts });
+
+/** Bidi + CJK inside a table: an RTL Arabic column, a Japanese column, and a
+ *  value cell that combines a content control with a live PAGE field — proving
+ *  direction composes with tables, SDTs, and fields. */
+const bidiCjkTable = (): TableBlock => ({
+  kind: "table", id: id(), revision: 0,
+  rows: [
+    { cells: [
+      dirCell([run("العربية (RTL)", { bold: true, fontSizePx: 14, color: "#fff" })], "rtl", { shading: "#1a73e8" }),
+      dirCell([run("日本語 (CJK)", { bold: true, fontSizePx: 14, color: "#fff" })], undefined, { shading: "#1a73e8" }),
+      dirCell([run("Control + field", { bold: true, fontSizePx: 14, color: "#fff" })], undefined, { shading: "#1a73e8" }),
+    ] },
+    { cells: [
+      dirCell([run("نص عربي داخل خلية، يُحاذى إلى اليمين تلقائيًا.", { fontSizePx: 14 })], "rtl"),
+      dirCell([run("日本語のセル。スペースなしで折り返し、禁則処理も働きます。", { fontSizePx: 14 })]),
+      dirCell([
+        sdtRun({ type: "plainText", alias: "RTL value" }, "قيمة قابلة للتحرير", { fontSizePx: 14 }),
+        run(" · ص ", { fontSizePx: 14 }),
+        pageField(),
+      ]),
+    ] },
+  ],
+});
+
 /** A table tall enough to cross a page boundary (row-level pagination). */
 const tallTable = (): TableBlock => ({
   kind: "table", id: id(), revision: 0,
@@ -240,6 +272,20 @@ export function sampleDoc(): Document {
       run("مرحبا بالعالم"),
       run(" each reorder on their own while the English keeps reading left-to-right — caret, selection, and arrow keys follow the visual order."),
     ]),
+
+    para([run("Tables, content controls & fields — in CJK / RTL", { bold: true, color: "#1a1a2e" })], { spaceBeforePx: 10, spaceAfterPx: 4 }),
+    para([run("Direction composes with every other feature. This table mixes a right-to-left Arabic column with a Japanese one, and its last cell holds a content control plus a live page field:")], { spaceAfterPx: 6 }),
+    bidiCjkTable(),
+
+    para([run("A content control with a right-to-left value: "), sdtRun({ type: "richText", alias: "RTL rich text" }, "نصٌّ غنيٌّ قابل للتحرير"), run(" — and one with Japanese: "), sdtRun({ type: "richText", alias: "日本語" }, "編集可能なテキスト"), run(".")], { spaceBeforePx: 10 }),
+
+    para([
+      run("وحقول ديناميكية داخل فقرة عربية: هذه هي الصفحة رقم "),
+      pageField(),
+      run("، أُنشئت بتاريخ "),
+      dateField("yyyy-MM-dd"),
+      run(" — تُعاد حسابتها تلقائيًا عند التحديث."),
+    ], { direction: "rtl" }),
 
     para([run("— a tour of canvas-word —", { italic: true, color: "#5f6368" })], { align: "center", spaceBeforePx: 20 }),
   ];

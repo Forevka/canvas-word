@@ -487,7 +487,10 @@ function splitFragByLevel(rf: RawFrag, levels: Int8Array): RawFrag[] {
   const s = frag.startOffset;
   const e = frag.endOffset;
   const startLevel = levels[s] ?? 0;
-  if (frag.offsetMap || frag.text.length !== e - s) {
+  // Keep collapsed-whitespace fragments and field results (PAGE/{page} tokens are
+  // resolved as ONE fragment by a later post-pass — splitting "{page}" across the
+  // brace/letter level boundary would stop the token from ever matching) atomic.
+  if (frag.offsetMap || frag.style.fieldId !== undefined || frag.text.length !== e - s) {
     frag.level = startLevel;
     return [rf];
   }
