@@ -217,7 +217,30 @@ export function sampleDoc(): Document {
     para([run("markers are paint-only")], { list: { listId: DEFAULT_BULLET_LIST_ID, level: 0 }, spaceAfterPx: 2 }),
     para([run("so caches survive renumbering")], { list: { listId: DEFAULT_BULLET_LIST_ID, level: 1 }, spaceAfterPx: 2 }),
     para([run("A fully justified, multi-page paragraph exercises line-level pagination. " + LOREM.repeat(12))], { align: "justify" }),
-    para([run("複雑なスクリプトの行分割も Intl.Segmenter が処理します。日本語のテキストは単語間にスペースがありませんが、pretext は文節の境界を正しく検出して行を折り返します。")]),
+
+    // --- International text: CJK + bidirectional (RTL) -------------------------
+    heading("International text — CJK & bidirectional", 1),
+    para([run("East-Asian and right-to-left scripts lay out the way Word does — measured on canvas, with Unicode line-breaking and the bidirectional algorithm (UAX #9), not the browser's contenteditable.")], { spaceAfterPx: 8 }),
+
+    para([run("日本語 — CJK line-breaking & kinsoku", { bold: true, color: "#1a1a2e" })], { spaceBeforePx: 6, spaceAfterPx: 2 }),
+    para([run("日本語の文章は単語の間にスペースを入れません。それでもエンジンは文字単位で行を折り返し、句読点が行頭に来ないように禁則処理（kinsoku）を行います。「角括弧」のような約物も正しく扱われ、長い段落でもページをまたいで自然に流れます。")]),
+
+    para([run("العربية — right-to-left", { bold: true, color: "#1a1a2e" })], { spaceBeforePx: 8, spaceAfterPx: 2 }),
+    para([run("اللغة العربية تُكتب من اليمين إلى اليسار. يعيد المحرّر ترتيب النص بصريًا وفق خوارزمية يونيكود ثنائية الاتجاه، ويحاذي الفقرة إلى اليمين تلقائيًا، ويضع المؤشر في المكان الصحيح عند الكتابة والتحديد.")], { direction: "rtl" }),
+
+    para([run("עברית — right-to-left", { bold: true, color: "#1a1a2e" })], { spaceBeforePx: 8, spaceAfterPx: 2 }),
+    para([run("עברית נכתבת מימין לשמאל. העורך מסדר מחדש את הרצף החזותי, מיישר את הפסקה לימין כברירת מחדל, וממשיך לתמוך בעימוד מרובה עמודים.")], { direction: "rtl" }),
+
+    para([run("Nested bidi — numbers & Latin inside RTL", { bold: true, color: "#1a1a2e" })], { spaceBeforePx: 8, spaceAfterPx: 2 }),
+    para([run("المنتج «canvas-word» متوفر بسعر 1,299 درهمًا منذ عام 2026 — تبقى الأرقام والكلمات اللاتينية بترتيبها الصحيح من اليسار إلى اليمين داخل النص العربي.")], { direction: "rtl" }),
+    para([
+      run("And the reverse, inside this left-to-right line: an embedded Hebrew phrase "),
+      run("שלום עולם"),
+      run(" and an Arabic one "),
+      run("مرحبا بالعالم"),
+      run(" each reorder on their own while the English keeps reading left-to-right — caret, selection, and arrow keys follow the visual order."),
+    ]),
+
     para([run("— a tour of canvas-word —", { italic: true, color: "#5f6368" })], { align: "center", spaceBeforePx: 20 }),
   ];
 
