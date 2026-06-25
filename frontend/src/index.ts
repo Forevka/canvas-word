@@ -2733,6 +2733,12 @@ export function createEditor(
       lastInspectorHover = null;
       options.onInspectorHover?.(null);
     }
+    // Mirror the hover clear for the probe: leaving the container skips the
+    // off-page path in updateInspectorHover, so clear it here to avoid a stale read.
+    if (probeActive && lastProbeKey !== "") {
+      lastProbeKey = "";
+      options.onInspectorProbe?.(null);
+    }
     if (hoverSdtChain.length === 0) return;
     hoverSdtChain = [];
     lastHoverKey = "";

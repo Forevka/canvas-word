@@ -107,7 +107,7 @@ export function layoutSignature(tree: LayoutTree): string {
   let h = tree.pages.length;
   for (const p of tree.pages) {
     h = (h * 31 + p.blocks.length) | 0;
-    for (const b of p.blocks) h = (h * 31 + Math.round(b.y)) | 0;
+    for (const b of p.blocks) h = (((h * 31 + Math.round(b.x)) | 0) * 31 + Math.round(b.y)) | 0;
   }
   return String(h);
 }

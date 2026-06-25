@@ -207,6 +207,7 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
       frame.style.display = "none";
     },
     destroy(): void {
+      cancelPendingMove(); // drop any in-flight resize frame so it can't fire post-teardown
       frame.remove();
     },
   };

@@ -253,7 +253,8 @@ export function showDevPanel(opts: DevPanelOptions): DevPanelHandle {
     setProbe(probe: unknown): void { active.onProbe?.(probe); },
   };
   window.addEventListener("keydown", (ev: KeyboardEvent) => {
-    if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); handle.close(); }
+    // Let the search filter's native Escape-to-clear run; only close on a global Escape.
+    if (ev.key === "Escape" && ev.target !== filterInput) { ev.preventDefault(); ev.stopPropagation(); handle.close(); }
   }, { capture: true, signal: ac.signal });
   makeFloatingDialog({ backdrop, modal, handle: head, signal: ac.signal, noDrag: ".cw-dev-x" });
   xBtn.addEventListener("click", () => handle.close());
