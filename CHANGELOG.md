@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.5] — 2026-06-25
+
 ### Added
 - **CJK & bidirectional (RTL) text.** The layout engine now lays out East-Asian and
   right-to-left scripts the way Word does — all measured on canvas:
@@ -142,6 +144,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/examples/custom-fonts`): a no-build offline embed that self-hosts PT Serif (4
   faces) via the `fonts` option, hides the built-in Calibri from the toolbar, and
   exports a PDF with the custom faces embedded.
+
+### Changed
+- **Incremental relayout & repaint (large-document responsiveness).** Editing,
+  dragging, and resizing on long documents no longer pay the cost of a full
+  re-layout and full-canvas repaint per frame. Relayout now reuses cached
+  per-page header/footer layout across passes, memoizes top-level table
+  measurement by `(revision, width)`, and `afterMutation` skips redundant work on
+  transient drag/composition frames; repaint targets only the pages that actually
+  changed instead of every live page. Image resize is previewed in a lightweight
+  DOM overlay during the drag and committed to the model once on release. Behavior
+  is unchanged — the document lays out and paints identically — but interaction
+  stays smooth as documents grow. See `perf/baseline.md` for measured results.
 
 ### Fixed
 - **Images inside table cells can now be resized and aligned.** Selecting an image
@@ -736,6 +750,7 @@ implementation history in [README.md](./README.md)):
   docId, integration tokens for third-party `/upload`, and session webhooks.
 - Mobile/touch input and a responsive ribbon.
 
+[0.7.5]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.5
 [0.7.4]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.4
 [0.7.3]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.3
 [0.7.2]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.2
