@@ -62,6 +62,8 @@ const editor = new WordCanvas({
   ...(collab ? { collabId: collab } : {}),
   ...(user ? { user } : {}),
   ...(view ? { view } : {}),
+  // `?devMode=true` reveals the Developer tab + Document-tree inspector.
+  ...(params.get("devMode") === "true" ? { develop: true } : {}),
   knownUsers,
   onLoadProgress,
 });

@@ -92,6 +92,7 @@ interface State {
     headingFontFamily: string;
   };
   behavior: typeof BEHAVIOR_DEFAULTS;
+  develop: boolean;
   callbacks: { onShareLink: boolean; onSave: boolean; resolveField: boolean; customizeRibbon: boolean };
 }
 
@@ -149,6 +150,7 @@ function createState(): State {
     },
     overrideDefaultStyles: { fontFamily: "", fontSizePx: 16, color: slot("#202124"), lineHeight: 1.5, headingFontFamily: "" },
     behavior: { ...BEHAVIOR_DEFAULTS },
+    develop: false,
     callbacks: { onShareLink: false, onSave: false, resolveField: false, customizeRibbon: false },
   };
 }
@@ -257,6 +259,8 @@ function collect(): Record<string, unknown> {
     BEHAVIOR_DEFAULTS as unknown as Record<string, unknown>,
   );
   if (behavior) o.behavior = behavior;
+
+  if (state.develop) o.develop = true;
 
   return o;
 }
@@ -445,6 +449,13 @@ const SCHEMA: Section[] = [
         set: (v) => (state.agentTools.capabilities = v as Cap[]),
       },
       { kind: "text", label: "name — tool-name prefix", sub: true, get: () => state.agentTools.name, set: (v) => (state.agentTools.name = v) },
+    ],
+  },
+  {
+    legend: "Develop mode",
+    intro: "Reveal the Developer ribbon tab. Its “Inspect document tree” button opens a devtools-style panel over the parsed Document model — hover a node to highlight it on the page, click to jump to it, and read each node's JSON.",
+    fields: [
+      { kind: "bool", label: "develop — Document-tree inspector", get: () => state.develop, set: (v) => (state.develop = v) },
     ],
   },
   {

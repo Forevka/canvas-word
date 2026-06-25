@@ -8,6 +8,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Inspector: ergonomics.** Keyboard navigation in the trees (↑/↓ move, →/←
+  expand/collapse, Enter reveals), a right-click context menu (copy block id / JSON
+  / label, reveal), a **Follow caret** toggle that scrolls the tree to the node
+  under the caret as you edit, and toolbar buttons to copy the **Document** /
+  **LayoutTree** JSON or **load** a Document JSON snapshot.
+- **Inspector: History tab (edit log).** A new tab streams the recorded change log
+  — each entry's origin (typing/command/paste/undo/redo), op summary, and time —
+  click to inspect its ops; Undo / Redo buttons step the document from the panel.
+- **Inspector: Probe tab (hit-test readout).** A new tab shows, live under the
+  pointer, exactly what the input layer resolves there — the page point, caret
+  position (block id + offset), content-control chain, field, and table cell — with
+  a Freeze chip to pin a reading. New `Editor.setInspectorProbe(active)` +
+  `onInspectorProbe` callback + `InspectorProbe` type.
+- **Inspector: Layout tab (geometry tree).** A new tab renders the laid-out geometry
+  — pages → placed blocks → lines → fragments, and tables → rows → cells → blocks —
+  each node showing its position/size and highlighting its exact painted rect on
+  hover (fragment-precise). New `{ kind: "rect" }` inspector target.
+- **Inspector: Problems tab (model validator).** A new tab runs a pure model walk
+  and lists integrity problems grouped by severity — dangling content-control /
+  field / style / list / table-style / bookmark / TOC / footnote references,
+  duplicate block ids, and unused content controls / fields — each linking to the
+  offending block. The tab shows an error+warning count badge.
+- **Inspector: canvas layout overlays.** The develop-mode panel gains a row of
+  toggle chips that draw the layout structure directly on the page — block boxes,
+  line boxes, inline-fragment boxes, baselines, table cell boxes, the content
+  margins, and a per-page info badge — for debugging "why does this render like
+  that." Drawn from the live layout tree on every repaint (survives scroll/zoom),
+  cleared when the panel closes. New `Editor.setDebugOverlay(kind, on)` + a paint
+  channel. The inspector panel was also refactored into a tabbed shell (Model tab
+  today; Layout / Problems / History to follow).
+- **Wrap a selected image in a content control (picture content control authoring).**
+  The *Rich text content control* ribbon button and a new *Wrap in Content Control*
+  image right-click entry now act on a selected image, tagging the image block with a
+  fresh control id (nesting-aware — it appends to any existing ancestry) and
+  registering the control. Previously content controls could only be authored around
+  a text selection, so picture content controls could only arrive via import. The
+  control's frame + breadcrumb appear immediately, and *Content control properties*
+  and *Remove content control* work on the image's control too (the ribbon exposes the
+  active control via `Editor.activeContentControlId()`). `removeContentControl` now
+  strips block-level membership off image blocks (top-level and in table cells), so
+  wrap/unwrap round-trips cleanly. Works for an image anywhere it's selectable —
+  body or table cell.
+- **Develop mode via the `develop` constructor option (`develop: true`).** Reveals a
+  dedicated **Developer** ribbon tab whose *Inspect document tree* button opens a
+  floating, draggable, devtools-Elements-style panel over the parsed `Document`
+  model. The tree covers body blocks → runs, tables → rows → cells, header/footer
+  bands, footnotes, and the side-tables (styles, lists, table styles, content
+  controls, fields, bookmarks). **Content-control and field membership is
+  reconstructed as tree structure** — body/cell-level SDTs show as `SDT ->
+  paragraph -> runs`, and inline fields as `Field -> run` — instead of flat
+  paragraphs/runs. Hovering a node paints a highlight box over its region on the
+  canvas (paragraphs, runs, images, **table rows and cells**, content controls, and
+  fields all resolve to their painted rects); hovering the page reveals the matching node
+  in the tree (reverse sync); clicking selects + scrolls to it (cells and images
+  included); selecting shows the node's properties + raw JSON. A filter box narrows
+  the tree. It's a pure debugging aid,
+  gated twice over: the tab only exists when the flag is set, and nothing dev-related
+  runs until the panel is opened from it (the canvas↔tree hover signal is dormant
+  otherwise). The editor surface gains `setInspectorHighlight(blockId | null)` and
+  `setInspectorActive(active)` with an `onInspectorHover` callback, and the paint
+  layer a `setInspectorRects` overlay channel. The panel is draggable by its header
+  and **resizable** (drag the bottom-right corner). Off by default; leave it off for
+  production embeds. The dev harness (`npm run dev` / `dev:online`) and the
+  **offline embed example** opt in with `?devMode=true` in the URL; the constructor
+  builder example exposes a `develop` toggle.
 - **Custom fonts via the `fonts` constructor option.** Embedders can now supply their
   own fonts, loaded from URLs at runtime, instead of being limited to the bundled
   metric clones: `fonts: { fonts: [{ family, faces: { regular, bold?, italic?,
@@ -48,6 +113,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   though the underlying op (and every other image command: delete, layer/z-order,
   move) already resolved images in cells. Both paths now use the cell-aware
   `locateImage`, so in-cell images resize and align like any other.
+- **Smooth image-resize dragging (no more lag inside large tables).** The resize
+  handle ran a full relayout on every `pointermove`. For a top-level image that's a
+  few milliseconds and keeps up, but an image in a big table makes each relayout far
+  heavier than the gap between move events, so previews queued up and the image
+  trailed the cursor by a fraction of a second. Resize previews are now coalesced to
+  one per animation frame (the same per-frame throttle pinch-zoom already used), so
+  the image stays glued to the handle regardless of table size; the final committed
+  size is unaffected. Table **column-boundary drags** were throttled the same way —
+  they ran a transient relayout per `mousemove` and lagged identically on big tables.
+- **Selecting an image inside a content control now shows that it's in one.** When a
+  control's only content was an image, selecting the image (object selection clears
+  the text caret, which is what drove the chrome) left no frame, no breadcrumb, and a
+  greyed-out Controls ribbon group — the user had no way to tell the picture was
+  inside a `w:sdt`. Object selection now derives the control ancestry from the image
+  (its block-level `sdtPath`, plus the wrapping table's for a cell image), so the
+  control frame + breadcrumb tab render and the *Content control properties* / *Remove*
+  buttons light up. Image-only controls that sit in a table cell — which the
+  block-level and run-based frame paths both miss — are framed around the image.
 
 ## [0.7.4] — 2026-06-23
 

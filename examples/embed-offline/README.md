@@ -17,6 +17,15 @@ npx serve .            # or: python -m http.server
 Then open `http://localhost:3000/examples/embed-offline/` (port depends on your
 static server).
 
+> **Develop mode.** Append `?devMode=true` to the URL
+> (`…/examples/embed-offline/?devMode=true`) to reveal a **Developer** ribbon tab.
+> Its *Inspect document tree* button opens a floating, devtools-Elements-style panel
+> over the parsed `Document` model — browse the tree, hover a node to highlight its
+> region on the page (and hover the page to reveal the matching node), click to jump
+> to it, and read each node's raw JSON. It's a pure debugging aid; omit the query
+> param and nothing dev-related is added. Re-run `npm run build:lib` after pulling so
+> `dist-lib` carries the feature.
+
 ## What to look at
 
 - `index.html` — the import map mapping `@forevka/wordcanvas` to the built bundle,

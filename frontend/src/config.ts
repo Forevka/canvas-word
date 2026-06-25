@@ -202,6 +202,10 @@ export interface ResolvedConfig {
   stylesheet: Stylesheet;
   /** Custom fonts + toolbar disables (per-instance toolbar; global font registry). */
   fonts: ResolvedFontsConfig;
+  /** Develop mode: when true, reveal the "Developer" ribbon tab whose Document-tree
+   *  inspector lets a developer browse the parsed model. Off by default; even when
+   *  on, nothing dev-related runs until the inspector is opened from that tab. */
+  develop: boolean;
 }
 
 export interface EditorConfigInput {
@@ -209,6 +213,8 @@ export interface EditorConfigInput {
   overrideDefaultStyles?: DefaultStyleOverrides | undefined;
   behavior?: EditorBehavior | undefined;
   fonts?: FontsConfig | undefined;
+  /** Reveal the "Developer" ribbon tab + Document-tree inspector. Default false. */
+  develop?: boolean | undefined;
 }
 
 /** Resolve the public partial options into the fully-populated internal config. */
@@ -220,6 +226,7 @@ export function resolveConfig(input: EditorConfigInput = {}): ResolvedConfig {
     typography,
     stylesheet: makeDefaultStylesheet(typography),
     fonts: resolveFonts(input.fonts),
+    develop: input.develop ?? false,
   };
 }
 

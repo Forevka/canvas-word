@@ -1127,6 +1127,43 @@ export function insertContentControl(type: SdtType, props: Partial<SdtProps> = {
   };
 }
 
+/** Wrap a SELECTED IMAGE OBJECT in a block-level content control. The text-based
+ *  insertContentControl can't act on an object selection (its `state.selection` is
+ *  null while an image is selected), so this is the object-side entry: tag the image
+ *  block with a fresh sdtId — appended to any existing block-level ancestry, so it
+ *  nests — and register the control's props. The image is the control's real content
+ *  (no placeholder). Works for a top-level image and one inside a table cell. */
+export function wrapImageInContentControl(blockId: string, type: SdtType = "richText", props: Partial<SdtProps> = {}): Command {
+  return (state) => {
+    const loc = locateImage(state.doc, blockId);
+    if (!loc) return null;
+    const id = freshSdtId();
+    const full: SdtProps = { type, ...props };
+    const updated: ImageBlock = {
+      ...loc.image,
+      sdtPath: pushSdt(loc.image.sdtPath, id),
+      revision: loc.image.revision + 1,
+    };
+    const ops: Op[] = [{ type: "setSdtProps", id, props: full }];
+    if (loc.kind === "top") {
+      // No "set block sdtPath" op exists; remove+insert the same id is the
+      // established block-rewrite pattern (cf. replaceSdtBlockSpan).
+      ops.push({ type: "removeBlock", blockId });
+      ops.push({ type: "insertBlock", index: loc.index, block: updated, where: loc.where });
+    } else {
+      const table = state.doc.blocks[loc.bi] as TableBlock;
+      const row = table.rows[loc.ri]!;
+      const cells = row.cells.map((c, ci) =>
+        ci === loc.ci ? { ...c, blocks: c.blocks.map((b, ii) => (ii === loc.ii ? updated : b)) } : c,
+      );
+      ops.push({ type: "setTableRow", tableId: table.id, rowIndex: loc.ri, row: { ...row, cells } });
+    }
+    // Keep the object selection (state.selection stays null) so the new control
+    // chrome appears around the still-selected image.
+    return tr(ops, state.selection, "command");
+  };
+}
+
 /** Replace a control's content with `text` (dropdown pick, date pick, first
  *  typed character into a placeholder). Clears the placeholder flag. */
 export function setSdtContent(id: string, text: string, patch: Partial<SdtProps> = {}): Command {
@@ -1337,6 +1374,33 @@ export function removeContentControl(id: string, deleteContents: boolean): Comma
         const runs = mapRunStylesInRange(block.runs, r.start, r.end, (s) => ({ ...s, sdtPath: removeSdt(s.sdtPath, id) }));
         ops.push({ type: "setRuns", blockId: r.blockId, runs });
       }
+    }
+    // Block-level IMAGE controls (created by wrapImageInContentControl) carry the id
+    // on Block.sdtPath, which findSdtRanges (paragraph-runs only) can't see — strip
+    // it from the image block itself, else it would point at a now-deleted control.
+    if (!deleteContents) {
+      const stripImage = (img: ImageBlock): ImageBlock => {
+        const path = removeSdt(img.sdtPath, id); // undefined once the path is empty
+        const next: ImageBlock = { ...img, revision: img.revision + 1 };
+        if (path) next.sdtPath = path;
+        else delete next.sdtPath;
+        return next;
+      };
+      state.doc.blocks.forEach((b, bi) => {
+        if (b.kind === "image" && b.sdtPath?.includes(id)) {
+          ops.push({ type: "removeBlock", blockId: b.id });
+          ops.push({ type: "insertBlock", index: bi, block: stripImage(b), where: "body" });
+        } else if (b.kind === "table") {
+          b.rows.forEach((row, ri) => {
+            if (!row.cells.some((c) => c.blocks.some((cb) => cb.kind === "image" && cb.sdtPath?.includes(id)))) return;
+            const cells = row.cells.map((c) => ({
+              ...c,
+              blocks: c.blocks.map((cb) => (cb.kind === "image" && cb.sdtPath?.includes(id) ? stripImage(cb) : cb)),
+            }));
+            ops.push({ type: "setTableRow", tableId: b.id, rowIndex: ri, row: { ...row, cells } });
+          });
+        }
+      });
     }
     ops.push({ type: "setSdtProps", id, props: null });
     const first = ranges[0];

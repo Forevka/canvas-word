@@ -94,6 +94,14 @@ export interface WordCanvasOptions {
   /** Behavior tuning: zoom step (default 1.1), zoom clamp (0.25–5), indent step
    *  (36px), and default drawing-grid spacing (24px; `view.gridSpacingPx` wins). */
   behavior?: EditorBehavior;
+  /** Develop mode (default false). When true, the ribbon gains a dedicated
+   *  **Developer** tab whose "Inspect Document Tree" button opens a floating
+   *  devtools-style panel: it renders the parsed `Document` model as a navigable
+   *  tree, highlights a node's painted region on hover, reveals the matching tree
+   *  node when you hover the canvas, and shows each node's properties + raw JSON.
+   *  Purely a debugging aid — it adds no chrome and runs nothing until the
+   *  developer opens it from that tab. Leave off for production embeds. */
+  develop?: boolean;
   /** Supply your OWN fonts, loaded from URLs at runtime. Each custom font needs a
    *  `family` (stored in the model + shown in the toolbar), per-style face URLs
    *  (`regular` required; bold/italic/boldItalic optional, falling back to regular),
@@ -161,6 +169,7 @@ export class WordCanvas {
         theme: opts.theme,
         overrideDefaultStyles: opts.overrideDefaultStyles,
         behavior: opts.behavior,
+        develop: opts.develop,
         fonts: opts.fonts,
         customizeRibbon: opts.customizeRibbon,
         onLoadProgress: opts.onLoadProgress,

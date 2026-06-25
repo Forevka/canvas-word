@@ -3,7 +3,7 @@ import { resolveConfig } from "./config";
 import { emptyParagraphFor } from "./builder/blockFactory";
 import { mediaStore, mediaUrl, registerMediaBytes, rehydrateDocMedia } from "./media/store";
 import { SyncClient } from "./sync/SyncClient";
-import { createEditor, type CurrentFormat, type EditMode, type ReviewOpEnvelope } from "./index";
+import { createEditor, type CurrentFormat, type EditMode, type InspectorProbe, type ReviewOpEnvelope } from "./index";
 import type { Command } from "./editor/state";
 import { createLayoutEngine } from "./layout/engine";
 import { sampleDoc } from "./model/sampleDoc";
@@ -19,6 +19,7 @@ import { buildShell } from "./app/shell";
 import { ensureWordCanvasStyles } from "./ui/styles";
 import { showContextMenu, type MenuEntry } from "./ui/contextMenu";
 import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
+import { showDevPanel, type DevPanelHandle } from "./ui/devPanel";
 import { showPageLayout, type PageLayoutHandle } from "./ui/pageLayout";
 import { loadCollabDocument, loadCollabReview, publishDocument } from "./sync/collab";
 import { attachMentionAutocomplete } from "./review/mentions";
@@ -62,8 +63,8 @@ import {
   insertTocCmd,
   insertFootnoteCmd,
   insertContentControl,
+  wrapImageInContentControl,
   removeContentControl,
-  sdtAtPosition,
   applyPageSetup,
   pageSetupAt,
 } from "./editor/commands";
@@ -101,6 +102,7 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
     ...(runtime.overrideDefaultStyles ? { overrideDefaultStyles: runtime.overrideDefaultStyles } : {}),
     ...(runtime.behavior ? { behavior: runtime.behavior } : {}),
     ...(runtime.fonts ? { fonts: runtime.fonts } : {}),
+    ...(runtime.develop !== undefined ? { develop: runtime.develop } : {}),
   });
   // This editor instance's own font registry — threaded into its layout engine and
   // paint layer (below) so its custom fonts can't be clobbered by another WordCanvas
@@ -236,6 +238,15 @@ let toggleBookmarks: () => void = () => {};
 let refreshReview: () => void = () => {};
 let toggleReview: () => void = () => {};
 let syncMode: () => void = () => {};
+// Develop-mode Document-tree inspector hooks (assigned when the panel is open;
+// no-ops otherwise, so non-develop mounts pay nothing). refreshDevPanel re-reads
+// the tree on edits; inspectorHoverSink routes the canvas→tree hover signal.
+let refreshDevPanel: () => void = () => {};
+let inspectorHoverSink: (blockId: string | null) => void = () => {};
+let inspectorProbeSink: (probe: InspectorProbe | null) => void = () => {};
+// Close the inspector (it captures the live editor) when the editor is rebuilt on
+// document replacement. Assigned when the panel opens; no-op otherwise.
+let closeDevPanel: () => void = () => {};
 // Ships a locally-authored review op on the collab review channel (assigned by
 // the sync wiring; no-op offline). Forward-declared so editorOpts can reference it.
 let onLocalReviewOp: (env: ReviewOpEnvelope) => void = () => {};
@@ -272,7 +283,12 @@ const editorOpts = {
   // Broadcast the local caret to collaborators on every move.
   onSelectionChange: (sel: DocSelection | null) => {
     sync?.localPresence(sel);
+    refreshDevPanel();
   },
+  // Develop mode only: the inspector turns this signal on while open (dormant
+  // otherwise) — route the hovered block id to the tree for the reverse highlight.
+  onInspectorHover: (blockId: string | null) => inspectorHoverSink(blockId),
+  onInspectorProbe: (probe: InspectorProbe | null) => inspectorProbeSink(probe),
   onChange: () => {
     syncToolbar();
     refreshOutline();
@@ -281,6 +297,7 @@ const editorOpts = {
     refreshVRuler();
     refreshImageBar();
     refreshBookmarks();
+    refreshDevPanel();
   },
   onZoomChange: (z: number) => {
     syncZoom(z);
@@ -431,6 +448,7 @@ const goOnlineWithCurrentDoc = async (): Promise<string> => {
 // The layout engine instance is reused (cheap to keep its allocations), but its
 // caches MUST be dropped first — see engine.reset() below.
 const replaceDocument = (next: typeof doc): void => {
+  closeDevPanel(); // the inspector captures the outgoing editor — drop it first
   editor.destroy();
   // Drop the outgoing document's layout caches. The shared engine keys cached
   // lines by (block id, revision, width); the docx importer re-mints ids from i0
@@ -1352,6 +1370,7 @@ if (toolbar) {
   // rebuild so removed cards' surfaces are torn down.
   let galleryChild: ReturnType<typeof editor.createChild> | null = null;
   let styleMgr: StyleManagerHandle | null = null;
+  let devPanel: DevPanelHandle | null = null;
   let pageLayoutDlg: PageLayoutHandle | null = null;
   // "Show only styles in use" filter. Since import now keeps every defined style
   // (so authored styles round-trip), a heavy imported doc can crowd the gallery —
@@ -1532,9 +1551,18 @@ if (toolbar) {
     editor.focus();
   }, "font-size:11px;");
   group(insert, "Controls");
-  btn(ICONS.sdtText, "Rich text content control (wraps the selection)", () => {
-    editor.dispatch(insertContentControl("richText", { alias: "Text" }));
-    editor.focus();
+  btn(ICONS.sdtText, "Rich text content control (wraps the selection or selected image)", () => {
+    // A selected image is an object selection (no text caret), so route it to the
+    // image-wrapping command; otherwise wrap the text selection/caret as before.
+    const imgId = editor.getSelectedObject();
+    if (imgId) {
+      editor.dispatch(wrapImageInContentControl(imgId, "richText", { alias: "Text" }));
+      // Keep the image selected so the new control frame is visible — don't refocus
+      // the doc (which would drop the object selection).
+    } else {
+      editor.dispatch(insertContentControl("richText", { alias: "Text" }));
+      editor.focus();
+    }
   });
   btn(ICONS.sdtCheckbox, "Check box content control", () => {
     editor.dispatch(insertContentControl("checkbox", { alias: "Check Box" }));
@@ -1563,11 +1591,10 @@ if (toolbar) {
     "place the caret in a content control",
   );
   enable(
-    btn(ICONS.sdtRemove, "Remove the content control at the caret (keeps its text)", () => {
-      const sel = editor.getSelection();
-      const id = sel ? sdtAtPosition(editor.getDocument(), sel.focus) : null;
+    btn(ICONS.sdtRemove, "Remove the content control at the caret or around the selected image (keeps its content)", () => {
+      const id = editor.activeContentControlId();
       if (id) editor.dispatch(removeContentControl(id, false));
-      editor.focus();
+      // Don't force focus to the doc — that would drop an active image selection.
     }),
     (f) => f.inContentControl,
     "place the caret in a content control",
@@ -1632,6 +1659,41 @@ if (toolbar) {
   });
   marksToggleBtn();
   if (online) btn(ICONS.activity, "Activity — who created/edited this document and when", () => toggleActivity());
+
+  // ===== Developer tab (develop mode only) =================================
+  // Gated on the `develop` config flag: the tab only EXISTS when the embedder
+  // opts in, and even then nothing dev-related runs until the developer clicks
+  // "Inspect document tree" to open the floating Document-tree inspector.
+  if (config.develop) {
+    const dev = tab("developer", "Developer");
+    group(dev, "Inspect");
+    const toggleDevPanel = (): void => {
+      if (devPanel) { devPanel.close(); return; } // toggle: a second click closes it
+      devPanel = showDevPanel({
+        editor,
+        setDocument: (next) => replaceDocument(next),
+        onClose: () => {
+          devPanel = null;
+          refreshDevPanel = () => {};
+          inspectorHoverSink = () => {};
+          inspectorProbeSink = () => {};
+          closeDevPanel = () => {};
+          devBtn.classList.remove("active");
+        },
+      });
+      refreshDevPanel = () => devPanel?.refresh();
+      inspectorHoverSink = (blockId) => devPanel?.highlightNode(blockId);
+      inspectorProbeSink = (probe) => devPanel?.setProbe(probe);
+      closeDevPanel = () => devPanel?.close();
+      devBtn.classList.add("active");
+    };
+    const devBtn = btn(
+      ICONS.devtools + "<span>Inspect document tree</span>",
+      "Open the Document-tree inspector — browse the parsed model, highlight nodes on the page, and read each node's JSON",
+      toggleDevPanel,
+    );
+    devBtn.style.cssText = "width:100%;justify-content:flex-start;gap:4px;";
+  }
 
   // ---- Review controls live in the ribbon HEADER (right of the tab strip,
   //      by the collapse button) so the mode switch + pane toggle are reachable
@@ -3033,6 +3095,7 @@ const handle: EditorHandle = {
   resolveThread: (threadId, resolved) => editor.resolveThread(threadId, resolved),
   destroy: () => {
     disposeAgentTools?.(); // unregister WebMCP tools before tearing the editor down
+    closeDevPanel(); // remove the floating inspector (body-level) if it's open
     teardown.abort(); // drop every global window/document listener this instance added
     compactRO?.disconnect(); // ResizeObserver isn't signal-aware — stop it explicitly
     for (const el of detachables) el.remove(); // body-level floats (find bar, image bar, …)

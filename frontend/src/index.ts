@@ -77,6 +77,7 @@ import {
   setCellsBordersCmd,
   setCellsShadingCmd,
   removeContentControl,
+  wrapImageInContentControl,
   replaceBackAndInsert,
   replaceSdtContent,
   replaceSdtBlockSpan,
@@ -155,6 +156,38 @@ export interface SearchState {
   total: number;
 }
 
+/** A node the develop-mode Document-tree inspector can point at — used by both
+ *  `setInspectorHighlight` (paint its region) and `revealInspectorTarget` (scroll
+ *  to it). Covers every tree-node kind, each resolved to rects via the matching
+ *  geometry path (whole-block box, run range, table cell, content-control, field). */
+export type InspectorTarget =
+  | { kind: "block"; blockId: string }
+  | { kind: "run"; blockId: string; start: number; end: number }
+  | { kind: "cell"; tableId: string; ri: number; ci: number }
+  | { kind: "row"; tableId: string; ri: number }
+  | { kind: "sdt"; sdtId: string }
+  | { kind: "field"; fieldId: string }
+  /** A literal page-coordinate rect (Layout-tab geometry nodes). */
+  | { kind: "rect"; pageIndex: number; x: number; y: number; width: number; height: number; label?: string };
+
+/** What the develop-mode hit-test probe resolves under the pointer — the input
+ *  layer's view of a page point (caret position, content-control chain, field,
+ *  table cell). Powers the inspector's Probe readout. */
+export interface InspectorProbe {
+  pageIndex: number;
+  /** Page-local coordinates (CSS px, zoom-agnostic). */
+  x: number;
+  y: number;
+  /** Resolved caret position, or null when the point hits no text. */
+  position: { blockId: string; offset: number } | null;
+  /** Content-control ancestry at the position (outer→inner sdt ids). */
+  sdtChain: string[];
+  /** Field id whose result contains the position, or null. */
+  fieldId: string | null;
+  /** Table cell under the point, or null. */
+  cell: { tableId: string; row: number; col: number } | null;
+}
+
 export interface Editor {
   focus(): void;
   getDocument(): Document;
@@ -182,9 +215,14 @@ export interface Editor {
   align(align: ParaStyle["align"]): void;
   /** Formatting at the caret — drives toolbar control state. */
   currentFormat(): CurrentFormat;
-  /** Open the content-control inspector for the control at the caret (ribbon
-   *  button). Returns false when the caret isn't inside a content control. */
+  /** Open the content-control inspector for the active control — the one at the
+   *  caret, or the one wrapping the selected image. Returns false when neither is
+   *  in a content control. */
   inspectContentControl(): boolean;
+  /** The innermost content-control id at the caret or around the selected image,
+   *  or null. Drives ribbon buttons that act on "the current control" (e.g. Remove)
+   *  for both text and object (image) selections. */
+  activeContentControlId(): string | null;
   /** Update every TOC entry's page number to its target's current page (the
    *  imported pre-calculated numbers are shown until the user asks for this).
    *  Returns the count of entries whose number changed. */
@@ -226,6 +264,24 @@ export interface Editor {
   getSelectedObjectRect(): { left: number; top: number; width: number; height: number } | null;
   /** Delete the selected image and clear the object selection. */
   deleteSelectedObject(): void;
+  // ---- develop-mode Document-tree inspector --------------------------------
+  /** Paint a devtools-style highlight over an inspector node's region on the
+   *  canvas (block, run range, table cell, content control, or field). Pass null
+   *  to clear. Presentational only — no model/selection change. */
+  setInspectorHighlight(target: InspectorTarget | null): void;
+  /** Scroll an inspector node into view (and move the caret into text targets, so
+   *  it mirrors clicking there). Handles every node kind — paragraphs, runs,
+   *  images, tables, cells, content controls, and fields. */
+  revealInspectorTarget(target: InspectorTarget): void;
+  /** Turn the develop-mode hover signal (EditorOptions.onInspectorHover) on/off.
+   *  The inspector panel enables it while open and disables it on close, so the
+   *  canvas→tree reverse highlight costs nothing when no inspector is attached. */
+  setInspectorActive(active: boolean): void;
+  /** Turn the develop-mode hit-test probe (EditorOptions.onInspectorProbe) on/off. */
+  setInspectorProbe(active: boolean): void;
+  /** Develop-mode layout overlay toggle drawn on the canvas — kinds: blockBoxes,
+   *  lineBoxes, fragments, baselines, margins, cells, pageInfo. Presentational. */
+  setDebugOverlay(kind: string, on: boolean): void;
   /** Find & replace. search() highlights all matches and returns state. */
   search(query: string, opts?: { matchCase?: boolean; wholeWord?: boolean }): SearchState;
   searchNav(dir: 1 | -1): SearchState;
@@ -338,6 +394,15 @@ export interface EditorOptions {
   theme?: ResolvedTheme;
   /** Resolved behavior tuning (zoom step/clamp, indent step). Omit ⇒ defaults. */
   behavior?: ResolvedBehavior;
+  /** Develop-mode hook: fires as the pointer moves over the page with the blockId
+   *  of the top-level body block under the cursor (or null when over none). Only
+   *  emitted while the Document-tree inspector is attached (see setInspectorActive)
+   *  — it powers the canvas→tree reverse-highlight and stays dormant otherwise. */
+  onInspectorHover?: (blockId: string | null) => void;
+  /** Develop-mode hit-test probe: fires as the pointer moves with the resolved
+   *  page point (caret position, sdt chain, field, cell), or null when off-page.
+   *  Only emitted while `setInspectorProbe(true)` — dormant otherwise. */
+  onInspectorProbe?: (probe: InspectorProbe | null) => void;
 }
 
 /** Request passed to a custom-field resolver. */
@@ -524,18 +589,52 @@ export function createEditor(
     return rects.length > 0 ? rects : null;
   };
 
+  /** Image-only controls inside table cells: blockLevelSdtRects only scans body
+   *  top-level blocks and findSdtRanges only walks paragraph runs, so a control
+   *  whose sole content is an image sitting in a cell would frame nothing. Frame
+   *  the image itself (a top-level image-only control already frames via the
+   *  block-level path, since the image is a body block). */
+  const cellImageSdtRects = (id: string): Rect[] => {
+    const rects: Rect[] = [];
+    for (const b of doc.blocks) {
+      if (b.kind !== "table") continue;
+      for (const row of b.rows)
+        for (const cell of row.cells)
+          for (const cb of cell.blocks)
+            if (cb.kind === "image" && cb.sdtPath?.includes(id)) {
+              const r = objectRect(tree, cb.id);
+              if (r) rects.push(r);
+            }
+    }
+    return rects;
+  };
+
   /** Frame + label for one control id: a single bounding box for block-level
    *  controls (Word's boundingBox chrome), else text-shaped per-line rects. */
   const sdtLayerFor = (id: string): { rects: Rect[]; label: string } | null => {
     const props = doc.sdts?.[id];
     if (!props) return null;
     const rects =
-      blockLevelSdtRects(id) ??
-      findSdtRanges(doc, id).flatMap((r) =>
-        selectionRects(tree, { anchor: { blockId: r.blockId, offset: r.start }, focus: { blockId: r.blockId, offset: r.end } }, scope()),
-      );
+      blockLevelSdtRects(id) ?? [
+        ...findSdtRanges(doc, id).flatMap((r) =>
+          selectionRects(tree, { anchor: { blockId: r.blockId, offset: r.start }, focus: { blockId: r.blockId, offset: r.end } }, scope()),
+        ),
+        ...cellImageSdtRects(id),
+      ];
     if (rects.length === 0) return null;
     return { rects, label: props.alias ?? SDT_LABELS[props.type] ?? "Content control" };
+  };
+
+  /** SDT ancestry (outer→inner) of a selected image — the caret-less analogue of
+   *  sdtStackAtPosition: the wrapping table's block path (for a cell image) then
+   *  the image block's own path. Lets selecting an image inside a control still
+   *  raise the control chrome + light up the ribbon, so its membership is visible. */
+  const objectSdtChain = (blockId: string): string[] => {
+    const loc = locateImage(doc, blockId);
+    if (!loc) return [];
+    const table = loc.kind === "cell" ? doc.blocks[loc.bi] : undefined;
+    const tablePath = table?.kind === "table" ? table.sdtPath ?? [] : [];
+    return [...tablePath, ...(loc.image.sdtPath ?? [])];
   };
 
   // Content-control chrome: an OUTER→INNER stack of frames (concentric, with a
@@ -549,11 +648,17 @@ export function createEditor(
     paint.setSdtAdornment(chain.length > 0 ? chain.map(sdtLayerFor).filter((l): l is { rects: Rect[]; label: string } => l !== null) : null);
   };
 
-  /** Word's active-control chrome, recomputed from the caret. Cleared when the
-   *  caret leaves all controls (unless the pointer is hovering one). */
+  /** Word's active-control chrome, recomputed from the caret — or, when an image
+   *  object is selected (which clears the text caret), from that image's control
+   *  ancestry, so a picture inside a control still shows its frame + breadcrumb.
+   *  Cleared when neither is in a control (unless the pointer is hovering one). */
   const updateSdtAdornment = (): void => {
     const focus = selection?.focus;
-    caretSdtChain = focus ? sdtStackAtPosition(doc, focus) : [];
+    caretSdtChain = focus
+      ? sdtStackAtPosition(doc, focus)
+      : selectedObject
+        ? objectSdtChain(selectedObject)
+        : [];
     renderSdtAdornment();
   };
 
@@ -574,6 +679,134 @@ export function createEditor(
     lastHoverKey = key;
     hoverSdtChain = chain;
     renderSdtAdornment();
+  };
+
+  // ---- develop-mode Document-tree inspector --------------------------------
+  // Two cooperating signals for the floating inspector panel: tree→canvas (paint a
+  // node's region on demand) and canvas→tree (emit the block under the pointer).
+  // Both are inert unless the panel turns the hover signal on via setInspectorActive,
+  // so non-develop embeds pay nothing.
+  let inspectorActive = false;
+  let lastInspectorHover: string | null = null;
+  let probeActive = false;
+  let lastProbeKey = "";
+  // Any-kind block lookup across body blocks + table cells (blockById finds only
+  // paragraphs). Used to pick the right doc→rect strategy per node kind.
+  const findBlockDeep = (blocks: Block[], id: string): Block | undefined => {
+    for (const b of blocks) {
+      if (b.id === id) return b;
+      if (b.kind === "table") {
+        for (const row of b.rows) for (const cell of row.cells) {
+          const hit = findBlockDeep(cell.blocks, id);
+          if (hit) return hit;
+        }
+      }
+    }
+    return undefined;
+  };
+  // Resolve any inspector node to its painted rects + a label, reusing the same
+  // geometry the live adornments use (objectRect/selectionRects/cellRangeRects/
+  // sdtLayerFor/field rects). Powers both the hover highlight and the scroll-to.
+  const inspectorRectsFor = (t: InspectorTarget): { rects: Rect[]; label: string } | null => {
+    if (t.kind === "block") {
+      const block = findBlockDeep(doc.blocks, t.blockId);
+      if (!block) return null;
+      if (block.kind === "image") {
+        const r = objectRect(tree, t.blockId);
+        return r ? { rects: [r], label: "image" } : null;
+      }
+      if (block.kind === "paragraph") {
+        const len = textOfRuns(block.runs).length;
+        const rects = selectionRects(tree, { anchor: { blockId: t.blockId, offset: 0 }, focus: { blockId: t.blockId, offset: len } }, scope());
+        // Empty paragraph (no runs) — fall back to its full-width block box.
+        const boxed = rects.length > 0 ? rects : boxRectsForBlockIds(new Set([t.blockId]));
+        return boxed.length > 0 ? { rects: boxed, label: "¶" } : null;
+      }
+      // Table: the placed block's full-width box (selectionRects has no text anchor).
+      const rects = boxRectsForBlockIds(new Set([t.blockId]));
+      return rects.length > 0 ? { rects, label: "table" } : null;
+    }
+    if (t.kind === "run") {
+      const rects = selectionRects(tree, { anchor: { blockId: t.blockId, offset: t.start }, focus: { blockId: t.blockId, offset: t.end } }, scope());
+      return rects.length > 0 ? { rects, label: "run" } : null;
+    }
+    if (t.kind === "cell") {
+      const found = findTableById(doc, t.tableId);
+      if (!found) return null;
+      const origin = gridOriginOfCell(buildTableGrid(found.table), t.ri, t.ci);
+      if (!origin) return null;
+      const cell = found.table.rows[t.ri]?.cells[t.ci];
+      const rects = cellRangeRects(tree, t.tableId, origin.row, origin.col, origin.row + (cell?.rowSpan ?? 1) - 1, origin.col + (cell?.colSpan ?? 1) - 1);
+      return rects.length > 0 ? { rects, label: "cell" } : null;
+    }
+    if (t.kind === "row") {
+      const found = findTableById(doc, t.tableId);
+      if (!found) return null;
+      const grid = buildTableGrid(found.table);
+      const rects: Rect[] = [];
+      (found.table.rows[t.ri]?.cells ?? []).forEach((cell, ci) => {
+        const origin = gridOriginOfCell(grid, t.ri, ci);
+        if (origin) rects.push(...cellRangeRects(tree, t.tableId, origin.row, origin.col, origin.row + (cell.rowSpan ?? 1) - 1, origin.col + (cell.colSpan ?? 1) - 1));
+      });
+      return rects.length > 0 ? { rects, label: "row" } : null;
+    }
+    if (t.kind === "rect") {
+      return { rects: [{ pageIndex: t.pageIndex, x: t.x, y: t.y, width: t.width, height: t.height }], label: t.label ?? "rect" };
+    }
+    if (t.kind === "sdt") {
+      return sdtLayerFor(t.sdtId);
+    }
+    // field: block-region (Block.fieldId) or inline (CharStyle.fieldId).
+    const def = doc.fields?.[t.fieldId];
+    const isBlock = containerBlocks(doc, "body").some((b) => b.fieldId === t.fieldId);
+    const rects = isBlock
+      ? blockLevelFieldRects(t.fieldId)
+      : findFieldRanges(doc, t.fieldId).flatMap((r) => selectionRects(tree, { anchor: { blockId: r.blockId, offset: r.start }, focus: { blockId: r.blockId, offset: r.end } }, scope()));
+    return rects.length > 0 ? { rects, label: def?.name ?? "field" } : null;
+  };
+  // Scroll an inspector node into view; move the caret into text targets so the
+  // reveal matches clicking there (images/tables/cells just scroll).
+  const revealInspector = (t: InspectorTarget): void => {
+    if (t.kind === "run") {
+      setSelection({ anchor: { blockId: t.blockId, offset: t.start }, focus: { blockId: t.blockId, offset: t.end } });
+    } else if (t.kind === "block" && findBlockDeep(doc.blocks, t.blockId)?.kind === "paragraph") {
+      setSelection({ anchor: { blockId: t.blockId, offset: 0 }, focus: { blockId: t.blockId, offset: 0 } });
+    } else if (t.kind === "cell" || t.kind === "row") {
+      const ci = t.kind === "cell" ? t.ci : 0;
+      const firstPara = findTableById(doc, t.tableId)?.table.rows[t.ri]?.cells[ci]?.blocks.find((b) => b.kind === "paragraph");
+      if (firstPara) setSelection({ anchor: { blockId: firstPara.id, offset: 0 }, focus: { blockId: firstPara.id, offset: 0 } });
+    }
+    const r = inspectorRectsFor(t)?.rects[0];
+    if (r) paint.ensureVisible({ pageIndex: r.pageIndex, x: r.x, y: r.y, height: r.height }, "center");
+  };
+  const updateInspectorHover = (clientX: number, clientY: number, buttons: number): void => {
+    if (!inspectorActive && !probeActive) return;
+    const pt = buttons === 0 && !selectedObject ? paint.clientToPage(clientX, clientY) : null;
+    const inside = pt !== null && pt.inside;
+    // Reverse highlight: emit the block under the pointer.
+    if (inspectorActive) {
+      const blockId = inside ? hitTest(tree, pt!.pageIndex, pt!.x, pt!.y, scope())?.blockId ?? null : null;
+      if (blockId !== lastInspectorHover) { lastInspectorHover = blockId; options.onInspectorHover?.(blockId); }
+    }
+    // Hit-test probe: emit the resolved page point (position, sdt chain, field, cell).
+    if (probeActive) {
+      let probe: InspectorProbe | null = null;
+      if (inside) {
+        const pos = hitTest(tree, pt!.pageIndex, pt!.x, pt!.y, scope()) ?? null;
+        const cellHit = hitTestCell(tree, pt!.pageIndex, pt!.x, pt!.y);
+        probe = {
+          pageIndex: pt!.pageIndex,
+          x: Math.round(pt!.x),
+          y: Math.round(pt!.y),
+          position: pos ? { blockId: pos.blockId, offset: pos.offset } : null,
+          sdtChain: pos ? sdtStackAtPosition(doc, pos) : [],
+          fieldId: pos ? fieldAtPosition(doc, pos) ?? null : null,
+          cell: cellHit ? { tableId: cellHit.tableId, row: cellHit.row, col: cellHit.col } : null,
+        };
+      }
+      const key = probe ? JSON.stringify(probe) : "";
+      if (key !== lastProbeKey) { lastProbeKey = key; options.onInspectorProbe?.(probe); }
+    }
   };
 
   /** Block-region field (contiguous top-level blocks sharing Block.fieldId): one
@@ -836,10 +1069,11 @@ export function createEditor(
       return;
     }
     selectedObject = blockId;
-    if (blockId) {
-      selection = null; // object selection replaces the text selection (Word)
-      refreshSelectionVisuals();
-    }
+    if (blockId) selection = null; // object selection replaces the text selection (Word)
+    // Always refresh: selecting an image raises its control chrome (if any), and
+    // deselecting must tear that chrome back down (recomputed from the caret, which
+    // may be null). Previously only the select path refreshed.
+    refreshSelectionVisuals();
     refreshObjectFrame();
     notifyChange(); // object selection drives the floating image toolbar
   };
@@ -865,13 +1099,28 @@ export function createEditor(
       return f;
     };
 
+    // Coalesce preview relayouts to one per animation frame: each transient op runs
+    // a full relayout, and mousemove fires faster than a big table re-measures, so
+    // dispatching per event backs up a queue and the boundary lags the cursor (same
+    // backlog as image resize). Keep only the latest fractions per frame.
+    let pendingFractions: number[] | null = null;
+    let moveRaf = 0;
+    const flushMove = (): void => {
+      moveRaf = 0;
+      if (pendingFractions) dispatch(setTableColFractionsCmd(hit.tableId, pendingFractions, "transient"));
+      pendingFractions = null;
+    };
     const onMove = (e: MouseEvent): void => {
       lastFractions = fractionsFor(e);
-      dispatch(setTableColFractionsCmd(hit.tableId, lastFractions, "transient"));
+      pendingFractions = lastFractions;
+      if (!moveRaf) moveRaf = requestAnimationFrame(flushMove);
     };
     const onUp = (e: MouseEvent): void => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      if (moveRaf) cancelAnimationFrame(moveRaf); // drop any queued preview
+      moveRaf = 0;
+      pendingFractions = null;
       lastFractions = fractionsFor(e);
       // Revert preview, commit one undoable op.
       dispatch(setTableColFractionsCmd(hit.tableId, base, "transient"));
@@ -1912,10 +2161,20 @@ export function createEditor(
       onClose: () => child.destroy(),
     });
   };
-  /** Inspect the control at the caret (ribbon button). Returns false if none. */
-  const inspectSdtAtCaret = (): boolean => {
+  /** The innermost content-control id at the caret OR around the selected image —
+   *  the single "active control" the ribbon's inspect/remove buttons act on. */
+  const activeSdtId = (): string | null => {
+    if (selectedObject) {
+      const chain = objectSdtChain(selectedObject);
+      return chain[chain.length - 1] ?? null;
+    }
     const focus = selection?.focus;
-    const id = focus ? sdtAtPosition(doc, focus) : null;
+    return focus ? sdtAtPosition(doc, focus) : null;
+  };
+
+  /** Inspect the active control (ribbon button). Returns false if none. */
+  const inspectSdtAtCaret = (): boolean => {
+    const id = activeSdtId();
     if (!id || !doc.sdts?.[id]) return false;
     openSdtInspector(id);
     return true;
@@ -2106,7 +2365,9 @@ export function createEditor(
     const imgId = selectedObject;
     const imgInCell = imgId ? locateImage(doc, imgId)?.kind === "cell" : false;
     const inCell = loc?.kind === "cell" || imgInCell || hasCellSel;
-    const sdtId = focus && !imgId ? sdtAtPosition(doc, focus) : null;
+    // The active control: around a selected image, or at the caret.
+    const imgSdtChain = imgId ? objectSdtChain(imgId) : [];
+    const sdtId = imgId ? imgSdtChain[imgSdtChain.length - 1] ?? null : focus ? sdtAtPosition(doc, focus) : null;
     const linkUrl = linkAt(tree, pt.pageIndex, pt.x, pt.y, scope());
     const band = bandAtPoint(pt);
 
@@ -2242,6 +2503,7 @@ export function createEditor(
         },
         item("Bring to Front", () => dispatch(bringImageToFront(imgId))),
         item("Send to Back", () => dispatch(sendImageToBack(imgId))),
+        item("Wrap in Content Control", () => dispatch(wrapImageInContentControl(imgId, "richText", { alias: "Text" })), { icon: ICONS.sdtText }),
         item("Delete Image", () => {
           selectObject(null);
           dispatch(deleteImage(imgId));
@@ -2462,8 +2724,21 @@ export function createEditor(
 
   // Hover highlighting for content controls (incl. nested) — point at any control
   // to see its frame(s) and breadcrumb, without moving the caret.
-  const onSdtHoverMove = (ev: MouseEvent): void => updateHoverAdornment(ev.clientX, ev.clientY, ev.buttons);
+  const onSdtHoverMove = (ev: MouseEvent): void => {
+    updateHoverAdornment(ev.clientX, ev.clientY, ev.buttons);
+    updateInspectorHover(ev.clientX, ev.clientY, ev.buttons);
+  };
   const onSdtHoverLeave = (): void => {
+    if (inspectorActive && lastInspectorHover !== null) {
+      lastInspectorHover = null;
+      options.onInspectorHover?.(null);
+    }
+    // Mirror the hover clear for the probe: leaving the container skips the
+    // off-page path in updateInspectorHover, so clear it here to avoid a stale read.
+    if (probeActive && lastProbeKey !== "") {
+      lastProbeKey = "";
+      options.onInspectorProbe?.(null);
+    }
     if (hoverSdtChain.length === 0) return;
     hoverSdtChain = [];
     lastHoverKey = "";
@@ -2672,7 +2947,13 @@ export function createEditor(
         listKind,
         imageSelected: selectedObject !== null,
         inTable: !!cellSelection || (focus ? locateParagraph(doc, focus.blockId)?.kind === "cell" : false),
-        inContentControl: focus && !selectedObject ? sdtAtPosition(doc, focus) !== null : false,
+        // A selected image inside a control counts too (its caret is cleared), so
+        // the Controls ribbon group lights up instead of leaving the user no clue.
+        inContentControl: selectedObject
+          ? objectSdtChain(selectedObject).length > 0
+          : focus
+            ? sdtAtPosition(doc, focus) !== null
+            : false,
       };
     },
     align(align: ParaStyle["align"]): void {
@@ -2683,11 +2964,13 @@ export function createEditor(
       dispatch(setAlignment(align));
     },
     inspectContentControl: inspectSdtAtCaret,
+    activeContentControlId: activeSdtId,
     recalculateToc,
     setZoom: (z: number): void => applyZoom(z),
     getZoom: () => paint.getZoom(),
     setShowGrid: (show: boolean): void => paint.setShowGrid(show),
     getShowGrid: () => paint.getShowGrid(),
+    setDebugOverlay: (kind: string, on: boolean): void => paint.setDebugOverlay(kind, on),
     setSnapToGrid: (snap: boolean): void => paint.setSnapToGrid(snap),
     getSnapToGrid: () => paint.getSnapToGrid(),
     setGridSpacing: (px: number): void => paint.setGridSpacing(px),
@@ -2765,6 +3048,25 @@ export function createEditor(
       const id = selectedObject;
       selectObject(null);
       dispatch(deleteImage(id));
+    },
+    setInspectorHighlight: (target: InspectorTarget | null): void => {
+      paint.setInspectorRects(target ? inspectorRectsFor(target) : null);
+    },
+    revealInspectorTarget: (target: InspectorTarget): void => {
+      revealInspector(target);
+    },
+    setInspectorActive: (active: boolean): void => {
+      if (active === inspectorActive) return;
+      inspectorActive = active;
+      if (!active) {
+        lastInspectorHover = null;
+        paint.setInspectorRects(null);
+      }
+    },
+    setInspectorProbe: (active: boolean): void => {
+      if (active === probeActive) return;
+      probeActive = active;
+      if (!active) { lastProbeKey = ""; options.onInspectorProbe?.(null); }
     },
     search,
     searchNav,
