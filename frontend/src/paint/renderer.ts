@@ -97,6 +97,9 @@ export interface PaintScheduler {
   /** Inline/block FIELD focus adornment: gray field-shading fill + a labelled tab
    *  (Word's field highlight). Distinct from the SDT frame. Null clears. */
   setFieldAdornment(adorn: { rects: Rect[]; label: string } | null): void;
+  /** Highlight the column boundary the pointer is poised to drag (a vertical
+   *  accent line + soft grab-zone band over the table chunk). Null clears. */
+  setColumnGuide(guide: ColumnGuide | null): void;
   setCaret(caret: CaretRect | null): void;
   /** Remote collaborators' carets (DOM overlays with name flags). Replaces the
    *  whole set each call; pass [] to clear. */
@@ -186,6 +189,15 @@ export interface RemoteCaret {
   rects?: Rect[];
 }
 
+/** A column-resize hover guide: the boundary x and the table chunk's vertical
+ *  span on `pageIndex`, all in page-local document coords. */
+export interface ColumnGuide {
+  pageIndex: number;
+  x: number;
+  y: number;
+  height: number;
+}
+
 let caretCssInjected = false;
 function injectCaretCss(): void {
   if (caretCssInjected) return;
@@ -259,6 +271,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
   // Pure overlay over the already-positioned fragments — no relayout.
   let showFormattingMarks = false;
   let lastCaret: CaretRect | null = null;
+  let colGuide: ColumnGuide | null = null;
   // Remote collaborators' presence: per siteId a caret overlay (colored bar +
   // name flag) plus selection-highlight rect overlays, repositioned on zoom.
   const remoteCaretEls = new Map<string, { caret: HTMLDivElement; sels: HTMLDivElement[] }>();
@@ -647,6 +660,19 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       ctx.stroke();
       ctx.setLineDash([]);
     }
+
+    // 6. column-resize hover guide: the vertical boundary the pointer will drag,
+    //    drawn as a crisp accent line with a soft grab-zone band behind it.
+    if (colGuide && colGuide.pageIndex === page.index) {
+      const gx = colGuide.x;
+      ctx.save();
+      ctx.fillStyle = theme.accent;
+      ctx.globalAlpha = 0.16;
+      ctx.fillRect(gx - 3, colGuide.y, 6, colGuide.height); // grab zone (matches the 6px grip)
+      ctx.globalAlpha = 1;
+      ctx.fillRect(gx - 0.75, colGuide.y, 1.5, colGuide.height); // the line itself
+      ctx.restore();
+    }
   }
 
   const imageCache = new Map<string, HTMLImageElement>();
@@ -939,6 +965,22 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     setFieldAdornment(adorn: { rects: Rect[]; label: string } | null): void {
       const affected = new Set([...pagesOf(fieldAdorn?.rects ?? []), ...pagesOf(adorn?.rects ?? [])]);
       fieldAdorn = adorn;
+      for (const i of affected) if (liveCanvases.has(i)) dirty.add(i);
+      schedule();
+    },
+
+    setColumnGuide(guide: ColumnGuide | null): void {
+      // Value-dedupe: hover fires every mousemove; only repaint when it moves.
+      const same =
+        colGuide === guide ||
+        (!!colGuide && !!guide &&
+          colGuide.pageIndex === guide.pageIndex && colGuide.x === guide.x &&
+          colGuide.y === guide.y && colGuide.height === guide.height);
+      if (same) return;
+      const affected = new Set<number>();
+      if (colGuide) affected.add(colGuide.pageIndex);
+      if (guide) affected.add(guide.pageIndex);
+      colGuide = guide;
       for (const i of affected) if (liveCanvases.has(i)) dirty.add(i);
       schedule();
     },

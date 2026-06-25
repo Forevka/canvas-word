@@ -17,8 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   width** to fit; *AutoFit to Window* solves the same way then fills the available
   width. Column-spanning cells distribute their demand across the columns they
   cover; per-cell preferred widths (`w:tcW`) clamp a column's content min/max up to
-  the preference. A manual column-border drag **cancels autofit** and pins the
-  table back to fixed widths (Word's behavior). The default sample document now
+  the preference. Hovering a column border now **highlights the boundary** with a
+  vertical accent guide (over a soft grab-zone band) so the resize affordance is
+  discoverable; dragging it **cancels autofit** and pins the table back to fixed
+  widths (Word's behavior). The default sample document now
   includes an AutoFit-to-Contents table. The mode round-trips through `.docx`
   (`w:tblLayout` + `w:tblW` + `w:tcW`) and renders pixel-exact in PDF export (which
   replays the layout engine). **Export is hint-based** — the writer emits

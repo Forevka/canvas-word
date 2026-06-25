@@ -1638,6 +1638,7 @@ export function createEditor(
       dispatch(deleteImage(id));
     },
     startColumnDrag,
+    setColumnGuide: (guide) => paint.setColumnGuide(guide),
     applyObjectMove: (blockId, x, y, transient) =>
       dispatch(moveAnchoredImage(blockId, x, y, transient ? "transient" : "command")),
     onTab: tabInTable,

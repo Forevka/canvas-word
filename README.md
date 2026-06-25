@@ -284,8 +284,8 @@ column ops, **row-level page breaks** (14-row table verified splitting 5+9),
 and **content-driven autofit** (Table → AutoFit): *AutoFit to Contents* solves
 column widths from each cell's min/max content so the table shrinks to fit, and
 *AutoFit to Window* fills the page; per-cell preferred widths (`w:tcW`) and the
-`w:tblLayout`/`w:tblW` mode round-trip, and a manual column drag pins the table
-back to fixed widths (Word).
+`w:tblLayout`/`w:tblW` mode round-trip. Hovering a column border highlights it
+with a draggable guide; dragging it pins the table back to fixed widths (Word).
 
 **Images** — insert (body or inside cells), click-select with 8-handle frame,
 proportional corner resize with live reflow, alignment, **square text-wrap**

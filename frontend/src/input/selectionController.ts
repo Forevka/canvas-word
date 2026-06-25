@@ -40,7 +40,7 @@ import {
   type ColumnBoundaryHit,
   type GeoScope,
 } from "../layout/geometry";
-import type { PagePoint } from "../paint/renderer";
+import type { ColumnGuide, PagePoint } from "../paint/renderer";
 import type { CellSelection } from "../editor/state";
 import { extractFragment, fragmentToHtml, fragmentToPlainText, tableRectToClipboard } from "./clipboard";
 
@@ -74,6 +74,8 @@ export interface SelectionControllerDeps {
   deleteSelectedObject(): void;
   /** Begin a table column-boundary drag (wiring owns the transient/commit loop). */
   startColumnDrag(hit: ColumnBoundaryHit, ev: MouseEvent): void;
+  /** Highlight (or clear) the column boundary under the pointer before a drag. */
+  setColumnGuide(guide: ColumnGuide | null): void;
   /** Reposition an anchored image during a drag. `transient` = live preview
    *  (outside undo); false = the committed drop (one undoable step). */
   applyObjectMove(blockId: string, offsetXPx: number, offsetYPx: number, transient: boolean): void;
@@ -296,6 +298,7 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
           const colHit = hitTestColumnBoundary(deps.getTree(), pt.pageIndex, pt.x, pt.y);
           if (colHit) {
             ev.preventDefault();
+            deps.setColumnGuide(null); // the live border itself shows the drag now
             deps.startColumnDrag(colHit, ev);
             return;
           }
@@ -498,6 +501,11 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
     return !!(pos && paragraphs().find((p) => p.id === pos.blockId)?.style.tocEntry);
   };
 
+  // Pointer left the editor: drop any column-resize guide so it doesn't linger.
+  const onHoverLeave = (): void => {
+    if (!drag) deps.setColumnGuide(null);
+  };
+
   // Hover affordances: col-resize over column grips, pointer + tooltip over links.
   const onHoverMove = (ev: MouseEvent): void => {
     if (drag) return;
@@ -514,6 +522,10 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
     // A TOC entry is Ctrl-clickable (jumps to its heading via tocEntry.targetId)
     // even with no run link — match the cursor to that click affordance, so
     // regenerated/link-free entries still read as clickable.
+    // Paint a highlight on the boundary the pointer can grab (cleared otherwise).
+    deps.setColumnGuide(
+      hit ? { pageIndex: hit.pageIndex, x: hit.x, y: hit.tableY, height: hit.tableHeight } : null,
+    );
     const overTocEntry = !hit && !href && pt ? isTocEntryAt(pt) : false;
     // Over an image, swap the I-beam for an object cursor: a move cursor on a
     // draggable anchored image, an arrow on an in-flow one.
@@ -662,6 +674,7 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
   window.addEventListener("mousemove", onMouseMove);
   window.addEventListener("mouseup", onMouseUp);
   container.addEventListener("mousemove", onHoverMove);
+  container.addEventListener("mouseleave", onHoverLeave);
   container.addEventListener("keydown", onKeyDown);
   container.addEventListener("copy", onCopy);
   container.addEventListener("cut", onCut);
@@ -676,6 +689,7 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
       container.removeEventListener("mousemove", onHoverMove);
+      container.removeEventListener("mouseleave", onHoverLeave);
       container.removeEventListener("keydown", onKeyDown);
       container.removeEventListener("copy", onCopy);
       container.removeEventListener("cut", onCut);
