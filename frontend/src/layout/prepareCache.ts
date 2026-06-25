@@ -127,10 +127,18 @@ function toItems(runs: Run[]): RichInlineItem[] {
   });
 }
 
+/** Prepare an arbitrary run list AND return the (CJK-split) run list it was
+ *  prepared from. Callers that map pretext itemIndex/offsets back to runs MUST use
+ *  the returned `runs` (not the originals) — splitting changes the item count. */
+export function prepareRunSegment(runs: Run[]): { prepared: PreparedRichInline; runs: Run[] } {
+  const split = scriptSplitRuns(runs);
+  return { prepared: prepareRichInline(toItems(split)), runs: split };
+}
+
 /** Prepare an arbitrary run list (used for tab-stop pieces, which are laid out
  *  outside the per-paragraph segment cache). */
 export function prepareRuns(runs: Run[]): PreparedRichInline {
-  return prepareRichInline(toItems(scriptSplitRuns(runs)));
+  return prepareRunSegment(runs).prepared;
 }
 
 export class PrepareCache {
@@ -143,8 +151,7 @@ export class PrepareCache {
     const segments: PreparedSegment[] = segmentRuns(p.runs).map((seg) => {
       // Script-split for CJK fallback BEFORE prepare so item indices, fragment
       // styles, and offsets all derive from the same (split) run list.
-      const runs = scriptSplitRuns(seg.runs);
-      return { prepared: prepareRichInline(toItems(runs)), runs, startOffset: seg.startOffset };
+      return { ...prepareRunSegment(seg.runs), startOffset: seg.startOffset };
     });
     this.map.set(p.id, { revision: p.revision, segments });
     return segments;

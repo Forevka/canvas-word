@@ -110,7 +110,7 @@ const bidiCjkTable = (): TableBlock => ({
         sdtRun({ type: "plainText", alias: "RTL value" }, "قيمة قابلة للتحرير", { fontSizePx: 14 }),
         run(" · ص ", { fontSizePx: 14 }),
         pageField(),
-      ]),
+      ], "rtl"),
     ] },
   ],
 });

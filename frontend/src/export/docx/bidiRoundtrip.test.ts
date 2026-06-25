@@ -4,9 +4,20 @@
 import { describe, expect, it } from "vitest";
 import { strFromU8, unzipSync } from "fflate";
 import type { Document, Paragraph } from "@cw/shared";
+import type { ParaStyle } from "@cw/shared";
 import { runImport } from "../../import/docx/pipeline";
 import { simpleDocx } from "../../import/docx/fixture";
 import { writeDocx } from "./writeDocx";
+import { paraCoreXml, partialPPrXml } from "./styleProps";
+
+const BASE_PARA: ParaStyle = {
+  align: "left",
+  lineHeight: 1.5,
+  spaceBeforePx: 0,
+  spaceAfterPx: 0,
+  indentFirstLinePx: 0,
+  indentLeftPx: 0,
+};
 
 const roundTrip = (doc: Document): Document => runImport(writeDocx(doc).bytes).doc;
 const exportedDocumentXml = (doc: Document): string =>
@@ -81,6 +92,27 @@ describe("bidi round-trip", () => {
     ).doc;
     const xml = exportedDocumentXml(doc);
     expect(xml).not.toContain("<w:rtl/>");
+  });
+
+  it("preserves an explicit w:bidi=\"0\" / w:rtl=\"0\" as a direction/rtl override (not absent)", () => {
+    // An explicit OFF must clear inherited RTL, so it must NOT be dropped on import.
+    const doc = runImport(
+      simpleDocx(
+        `<w:p><w:pPr><w:bidi w:val="0"/></w:pPr>` +
+          `<w:r><w:rPr><w:rtl w:val="0"/></w:rPr><w:t>hello</w:t></w:r></w:p>`,
+      ),
+    ).doc;
+    const p = paras(doc)[0]!;
+    expect(p.style.direction).toBe("ltr"); // explicit off, not undefined
+    expect(p.runs[0]!.style.rtl).toBe(false);
+  });
+
+  it("emits <w:bidi/> for an RTL named paragraph style (partialPPrXml / paraCoreXml)", () => {
+    // Named-style export goes through styleProps, not documentXml.pPrXml.
+    expect(partialPPrXml({ direction: "rtl" })).toContain("<w:bidi/>");
+    expect(partialPPrXml({})).not.toContain("<w:bidi/>");
+    expect(paraCoreXml({ ...BASE_PARA, direction: "rtl" })).toContain("<w:bidi/>");
+    expect(paraCoreXml(BASE_PARA)).not.toContain("<w:bidi/>");
   });
 
   it("w:bidi ordering: <w:bidi/> appears before <w:spacing/> in exported pPr", () => {

@@ -42,6 +42,8 @@ export function runPropsXml(s: CharStyle): string {
 // wraps it directly. Emission order matches OOXML's tolerant exporter convention.
 export function paraCoreXml(style: ParaStyle): string {
   const c: string[] = [];
+  // w:bidi precedes w:spacing/w:ind/w:jc in the CT_PPr schema sequence.
+  if (style.direction === "rtl") c.push(el("w:bidi"));
   c.push(el("w:spacing", {
     "w:before": pxToTwips(style.spaceBeforePx),
     "w:after": pxToTwips(style.spaceAfterPx),
@@ -96,6 +98,7 @@ export function partialRPrXml(c: Partial<CharStyle>): string {
 
 export function partialPPrXml(p: Partial<ParaStyle>): string {
   const out: string[] = [];
+  if (p.direction === "rtl") out.push(el("w:bidi"));
   if (p.align) out.push(el("w:jc", { "w:val": JC[p.align] ?? "left" }));
   const sp: Record<string, number | string> = {};
   if (p.spaceBeforePx !== undefined) sp["w:before"] = pxToTwips(p.spaceBeforePx);

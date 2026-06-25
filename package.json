@@ -30,10 +30,10 @@
     "dev:online": "node scripts/dev-online.mjs"
   },
   "devDependencies": {
-    "patch-package": "^8.0.1",
     "typescript": "^5.6.0"
   },
   "dependencies": {
-    "@forevka/wordcanvas": "^0.2.0"
+    "@forevka/wordcanvas": "^0.2.0",
+    "patch-package": "^8.0.1"
   }
 }

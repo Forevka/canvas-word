@@ -13,7 +13,7 @@ import type { Block, CharStyle, Document, ImageBlock, Paragraph, Run, SectionPat
 import { effectiveFractions, isHiddenParagraph } from "@cw/shared";
 import { formatListNumber, markerText, type ListDefinition, type ListLevel } from "@cw/shared";
 import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock, PlacedImage } from "./layoutTree";
-import { PrepareCache, prepareRuns, type PreparedSegment } from "./prepareCache";
+import { PrepareCache, prepareRunSegment, type PreparedSegment } from "./prepareCache";
 import { charStyleToFont, fontMetrics, measureTextWidth } from "./metrics";
 import { baseLevelFor, effectiveAlign, hasRtlChars, levelsFor, visualOrder } from "./bidi";
 import { setActiveFontRegistry, type CustomFontRegistry } from "../fonts/customRegistry";
@@ -398,10 +398,12 @@ function layoutTabbedSegment(
     if (pc.runs.length === 0) return; // empty piece (e.g. text before a leading tab)
 
     // Lay the piece out with wrapping: first sub-line continues from curX; any
-    // overflow opens new full-width lines at the left margin.
-    const pseg: PreparedSegment = { prepared: prepareRuns(pc.runs), runs: pc.runs, startOffset: pc.start };
-    const runStarts = segRunOffsets(pc.runs, pc.start);
-    const runCursors = pc.runs.map(() => 0);
+    // overflow opens new full-width lines at the left margin. Use the CJK-split
+    // runs the prepare actually saw so itemIndex/offset/cursor stay in sync.
+    const prep = prepareRunSegment(pc.runs);
+    const pseg: PreparedSegment = { prepared: prep.prepared, runs: prep.runs, startOffset: pc.start };
+    const runStarts = segRunOffsets(prep.runs, pc.start);
+    const runCursors = prep.runs.map(() => 0);
     let cursor: RichInlineCursor | undefined = undefined;
     let firstSub = true;
     for (;;) {
@@ -511,7 +513,8 @@ function splitFragByLevel(rf: RawFrag, levels: Int8Array): RawFrag[] {
     const sub = frag.text.slice(a, b);
     // Proportional width keeps the sub-pieces summing to the fragment's measured
     // width (pretext's occupiedWidth includes letter-spacing this measure omits).
-    const w = (measureTextWidth(sub, font) / fullW) * frag.width;
+    // Guard fullW===0 (zero-width control/combining runs) so we never emit NaN.
+    const w = fullW > 0 ? (measureTextWidth(sub, font) / fullW) * frag.width : 0;
     out.push({
       hadGap: k === 0 ? rf.hadGap : false,
       gap: k === 0 ? rf.gap : 0,
@@ -633,6 +636,9 @@ function paragraphLines(p: Paragraph, contentWidth: number, cache: PrepareCache)
   const align = effectiveAlign(p.style.align, dir);
   let y = 0;
   for (const rl of raw) {
+    // Tabbed lines bake absolute x at tab stops; bidi reorder (which rebuilds x
+    // edge-to-edge) would fight that, so a paragraph mixing tabs + RTL renders in
+    // logical order. Known limitation — tab + bidi is a rare combination.
     if (levels !== null && rl.frags.length > 0 && !rl.tabbed) {
       const r = bidiReorderLine(rl.frags, levels);
       rl.frags = r.frags;
