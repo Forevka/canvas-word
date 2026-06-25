@@ -561,9 +561,16 @@ export interface ColumnBoundaryHit {
   x: number;
   tableX: number;
   tableWidth: number;
+  /** This table chunk's vertical extent on the hit page — drives the hover guide. */
+  pageIndex: number;
+  tableY: number;
+  tableHeight: number;
+  /** The table's CURRENTLY RENDERED per-column widths — lets a resize that exits
+   *  autofit pin the on-screen proportions instead of a stale fractions snapshot. */
+  colWidths: number[];
 }
 
-const COLUMN_GRIP_PX = 4;
+const COLUMN_GRIP_PX = 6;
 
 /** Interior column boundary of a body table within grip distance of a point.
  *  Boundaries come from colWidths, not row cells — merged cells make row-cell
@@ -584,7 +591,10 @@ export function hitTestColumnBoundary(
     for (let ci = 0; ci + 1 < t.colWidths.length; ci++) {
       edge += t.colWidths[ci]!;
       if (Math.abs(x - edge) <= COLUMN_GRIP_PX) {
-        return { tableId: block.blockId, boundaryIndex: ci, x: edge, tableX: t.x, tableWidth: t.width };
+        return {
+          tableId: block.blockId, boundaryIndex: ci, x: edge, tableX: t.x, tableWidth: t.width,
+          pageIndex, tableY: t.y, tableHeight: t.height, colWidths: t.colWidths,
+        };
       }
     }
   }

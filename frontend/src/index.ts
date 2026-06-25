@@ -95,11 +95,13 @@ import {
   setParaProps,
   setSdtContent,
   setTableColFractionsCmd,
+  setTableWidthModeCmd,
   splitParagraph,
   toggleCharStyle,
   toggleList,
   toggleSdtCheckbox,
   unmergeCellCmd,
+  setTableWidthModeAtSelectionCmd,
 } from "./editor/commands";
 import type { SdtType } from "@cw/shared";
 import { ICONS } from "./ui/icons";
@@ -1083,7 +1085,18 @@ export function createEditor(
   const startColumnDrag = (hit: ColumnBoundaryHit, ev: MouseEvent): void => {
     const table = doc.blocks.find((b) => b.id === hit.tableId);
     if (table?.kind !== "table") return;
-    const base = effectiveFractions(table);
+    // Manual column resize cancels autofit (Word): pin the table to fixed widths.
+    // Freeze the CURRENTLY RENDERED column proportions (solved from content), not
+    // effectiveFractions() — that returns the stale colFractions snapshot (an equal
+    // split when absent), which would snap the columns before the drag.
+    let base: number[];
+    if (table.widthMode && table.widthMode !== "fixed") {
+      const total = hit.colWidths.reduce((s, w) => s + w, 0) || 1;
+      base = hit.colWidths.map((w) => w / total);
+      dispatch(setTableWidthModeCmd(hit.tableId, "fixed", base));
+    } else {
+      base = effectiveFractions(table);
+    }
     const minFrac = 24 / hit.tableWidth; // columns never shrink below 24px
     const startX = ev.clientX;
     let lastFractions = base;
@@ -1880,6 +1893,7 @@ export function createEditor(
       dispatch(deleteImage(id));
     },
     startColumnDrag,
+    setColumnGuide: (guide) => paint.setColumnGuide(guide),
     applyObjectMove: (blockId, x, y, transient) =>
       dispatch(moveAnchoredImage(blockId, x, y, transient ? "transient" : "command")),
     onTab: tabInTable,
@@ -2622,6 +2636,25 @@ export function createEditor(
         },
         item("Merge Cells", () => dispatch(mergeCellsCmd()), { icon: ICONS.mergeCells, disabled: !hasSel && !hasCellSel }),
         item("Unmerge Cell", () => dispatch(unmergeCellCmd()), { icon: ICONS.unmergeCells }),
+        (() => {
+          const captured = cellSelection ?? singleCellAtCaret();
+          const curMode = (captured ? findTableById(doc, captured.tableId)?.table.widthMode : undefined) ?? "fixed";
+          const fit = (label: string, mode: "fixed" | "autofitContents" | "autofitWindow"): MenuEntry => ({
+            kind: "item",
+            label: curMode === mode ? `${label} ✓` : label,
+            onClick: () => dispatch(setTableWidthModeAtSelectionCmd(mode)),
+          });
+          return {
+            kind: "submenu",
+            label: "AutoFit",
+            icon: ICONS.table,
+            items: [
+              fit("AutoFit to Contents", "autofitContents"),
+              fit("AutoFit to Window", "autofitWindow"),
+              fit("Fixed Column Width", "fixed"),
+            ],
+          } as MenuEntry;
+        })(),
         sep,
         item("Borders & Shading…", () => openTableProperties(), { icon: ICONS.borders }),
         (() => {

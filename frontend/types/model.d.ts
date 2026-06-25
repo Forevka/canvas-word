@@ -119,6 +119,8 @@ export interface TableCell {
   shading?: string;
   borders?: CellBorders;
   margin?: CellMargin;
+  /** Preferred cell width (w:tcW); clamps content-derived min/max in autofit modes. */
+  preferredWidth?: { px: number; type: "abs" | "pct" };
 }
 
 export interface TableRow {
@@ -139,8 +141,11 @@ export interface TableBlock {
   id: string;
   revision: number;
   rows: TableRow[];
-  /** Column widths as fractions of content width (sum = 1). Absent = equal. */
+  /** Column widths as fractions of content width (sum = 1). Absent = equal. In
+   *  autofit modes this is the last-known snapshot / export grid hint. */
   colFractions?: number[];
+  /** Column sizing strategy (w:tblLayout + w:tblW). Absent = "fixed". */
+  widthMode?: "fixed" | "autofitContents" | "autofitWindow";
   /** Table-style reference (→ Document.tableStyles); effective cell formatting is baked. */
   styleId?: string | undefined;
   /** Which conditional bands of the referenced style are active (w:tblLook). */

@@ -927,3 +927,72 @@ describe("engine — formatting marks", () => {
     expect(xs[1]!).toBeCloseTo(frag.x + 3 * 8 + 4, 0);
   });
 });
+
+describe("engine — autofit tables", () => {
+  // Stub font: 16px → 8px/char; default cell margin adds 7.2px L+R = 14.4 pad.
+  // Content box is 624px wide (816 − 96 − 96).
+  const sum = (xs: number[]): number => xs.reduce((s, x) => s + x, 0);
+  const autofit = (rows: TableCell[][], mode: "autofitContents" | "autofitWindow"): TableBlock => ({
+    ...table(rows),
+    widthMode: mode,
+  });
+
+  it("AutoFit to Contents shrinks the table below the page width and sizes columns by content", () => {
+    const t = autofit(
+      [
+        [cell("ID"), cell("Description")],
+        [cell("1"), cell("short")],
+        [cell("42"), cell("a much longer description cell")],
+      ],
+      "autofitContents",
+    );
+    const placed = placedOf(layout(doc([t])), t.id)!.pb.table!;
+    // ID col ≈ "ID"(16) + 14.4 = 30.4; the table is far narrower than the 624 box.
+    expect(placed.colWidths[0]!).toBeCloseTo(30.4, 0);
+    expect(placed.colWidths[0]!).toBeLessThan(placed.colWidths[1]!);
+    expect(sum(placed.colWidths)).toBeLessThan(400);
+    expect(placed.width).toBeLessThan(400); // placed table width follows the solved total
+  });
+
+  it("AutoFit to Window solves by content then fills the available width", () => {
+    const t = autofit(
+      [
+        [cell("ID"), cell("Description")],
+        [cell("42"), cell("a much longer description cell")],
+      ],
+      "autofitWindow",
+    );
+    const placed = placedOf(layout(doc([t])), t.id)!.pb.table!;
+    expect(sum(placed.colWidths)).toBeCloseTo(624, 0); // exactly fills the content box
+    expect(placed.colWidths[1]!).toBeGreaterThan(placed.colWidths[0]!); // proportions preserved
+  });
+
+  it("fixed tables (no widthMode) keep the exact colFractions × content-width layout", () => {
+    const t = table([[cell("a"), cell("b"), cell("c")]]); // equal thirds, no widthMode
+    const placed = placedOf(layout(doc([t])), t.id)!.pb.table!;
+    for (const w of placed.colWidths) expect(w).toBeCloseTo(208, 0); // 624 / 3
+    expect(sum(placed.colWidths)).toBeCloseTo(624, 0);
+  });
+
+  it("distributes a colSpan cell's demand across the columns it covers without breaking the grid", () => {
+    const t = autofit(
+      [
+        [cell("A wide spanning header", { colSpan: 3 })],
+        [cell("a"), cell("bb"), cell("ccc")],
+      ],
+      "autofitContents",
+    );
+    const placed = placedOf(layout(doc([t])), t.id)!.pb.table!;
+    expect(placed.colWidths).toHaveLength(3);
+    expect(placed.colWidths.every((w) => Number.isFinite(w) && w > 0)).toBe(true);
+  });
+
+  it("clamps a column up to a cell's preferred width (w:tcW)", () => {
+    const t = autofit(
+      [[cell("x", { preferredWidth: { px: 300, type: "abs" } }), cell("y")]],
+      "autofitContents",
+    );
+    const placed = placedOf(layout(doc([t])), t.id)!.pb.table!;
+    expect(placed.colWidths[0]!).toBeGreaterThanOrEqual(299); // preference wins over the tiny "x"
+  });
+});

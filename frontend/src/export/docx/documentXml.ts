@@ -332,6 +332,16 @@ function bordersXml(tag: string, b: NonNullable<TableCell["borders"]>): string {
 
 function cellXml(cell: TableCell, ctx: PartCtx, vMergeRestart = false): string {
   const pr: string[] = [];
+  // w:tcW preferred width (precedes w:gridSpan per CT_TcPr). pct: px holds the
+  // 0..1 fraction of the table width → fiftieths of a percent.
+  if (cell.preferredWidth) {
+    const w = cell.preferredWidth;
+    pr.push(
+      w.type === "pct"
+        ? el("w:tcW", { "w:w": Math.round(w.px * 5000), "w:type": "pct" })
+        : el("w:tcW", { "w:w": pxToTwips(w.px), "w:type": "dxa" }),
+    );
+  }
   if (cell.colSpan && cell.colSpan > 1) pr.push(el("w:gridSpan", { "w:val": cell.colSpan }));
   // vMerge restart opens a vertical merge whose continue cells are synthesized in
   // the rows below (see tableXml). gridSpan precedes vMerge per CT_TcPr.
@@ -444,11 +454,19 @@ function tableXml(table: TableBlock, ctx: PartCtx): string {
   // the table renders correctly even without the style.
   const styleRef = table.styleId ? el("w:tblStyle", { "w:val": table.styleId }) : "";
   const look = table.styleId && table.condOverrides ? tblLookXml(table.condOverrides) : "";
-  const tblPr = el(
-    "w:tblPr",
-    undefined,
-    styleRef + el("w:tblW", { "w:w": 0, "w:type": "auto" }) + el("w:tblLayout", { "w:type": "fixed" }) + look,
-  );
+  // Column-sizing strategy. Autofit is hint-based: we emit w:tblLayout="autofit"
+  // (+ a 100% w:tblW for "fit to window") and let Word re-autofit from the
+  // w:gridCol hints, which carry our last-known column snapshot.
+  // TODO: exact-width export (write the solved column widths into w:gridCol /
+  // w:tcW) so non-Word consumers that don't re-autofit match our layout — see
+  // "Known limitations" in README.md.
+  const mode = table.widthMode ?? "fixed";
+  const tblWEl =
+    mode === "autofitWindow"
+      ? el("w:tblW", { "w:w": 5000, "w:type": "pct" })
+      : el("w:tblW", { "w:w": 0, "w:type": "auto" });
+  const tblLayoutEl = el("w:tblLayout", { "w:type": mode === "fixed" ? "fixed" : "autofit" });
+  const tblPr = el("w:tblPr", undefined, styleRef + tblWEl + tblLayoutEl + look);
   return el("w:tbl", undefined, tblPr + el("w:tblGrid", undefined, grid) + rowsXml.join(""));
 }
 

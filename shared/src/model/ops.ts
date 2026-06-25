@@ -59,6 +59,7 @@ export type Op =
   | { type: "setTableStructure"; tableId: string; rows: TableRow[]; colFractions?: number[] }
   | { type: "setTableStyleRef"; tableId: string; styleId: string | null; condOverrides?: import("./document").TableCondOverrides | null }
   | { type: "setTableColFractions"; blockId: string; fractions: number[] }
+  | { type: "setTableWidthMode"; blockId: string; mode: TableBlock["widthMode"] }
   | { type: "insertTableRow"; tableId: string; rowIndex: number; row: TableRow }
   | { type: "removeTableRow"; tableId: string; rowIndex: number }
   | { type: "insertTableColumn"; tableId: string; colIndex: number; cells: TableCell[]; fractions?: number[] }
@@ -627,6 +628,20 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       return {
         doc: replaceTable(doc, where, bi, { ...block, colFractions: op.fractions }),
         inverse: { type: "setTableColFractions", blockId: op.blockId, fractions: old },
+        mapPosition: identity,
+        dirtyBlockIds: [op.blockId],
+      };
+    }
+
+    case "setTableWidthMode": {
+      const { where, bi, block } = mustTable(doc, op.blockId);
+      const old = block.widthMode;
+      const next: TableBlock = { ...block };
+      if (op.mode && op.mode !== "fixed") next.widthMode = op.mode;
+      else delete next.widthMode;
+      return {
+        doc: replaceTable(doc, where, bi, next),
+        inverse: { type: "setTableWidthMode", blockId: op.blockId, mode: old },
         mapPosition: identity,
         dirtyBlockIds: [op.blockId],
       };

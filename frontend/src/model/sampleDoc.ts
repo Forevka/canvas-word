@@ -94,6 +94,18 @@ const tallTable = (): TableBlock => ({
   ],
 });
 
+/** AutoFit to Contents: columns are solved from cell content, so the table
+ *  shrinks below the page width to fit (narrow ID, wider Notes). */
+const autofitTable = (): TableBlock => ({
+  kind: "table", id: id(), revision: 0, widthMode: "autofitContents",
+  rows: [
+    { cells: [cell("ID", { bold: true }), cell("Name", { bold: true }), cell("Notes", { bold: true })] },
+    { cells: [cell("1"), cell("Ada Lovelace"), cell("first programmer")] },
+    { cells: [cell("2"), cell("Grace Hopper"), cell("compiler pioneer")] },
+    { cells: [cell("3"), cell("Linus Torvalds"), cell("kernel maintainer")] },
+  ],
+});
+
 const LOREM = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. ";
 
 export function sampleDoc(): Document {
@@ -200,6 +212,8 @@ export function sampleDoc(): Document {
     fieldInCellTable,
     para([run("And a table tall enough to paginate across pages — rows break cleanly:")], { spaceBeforePx: 10, spaceAfterPx: 6 }),
     tallTable(),
+    para([run("AutoFit to Contents — columns are solved from cell content so the table shrinks to fit (Table → AutoFit, or drag a border to pin it back to fixed widths):")], { spaceBeforePx: 10, spaceAfterPx: 6 }),
+    autofitTable(),
 
     richHeading,
     para([run("An inline block image:")], { spaceAfterPx: 6 }),

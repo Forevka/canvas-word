@@ -2240,6 +2240,38 @@ export function setTableColFractionsCmd(
     tr([{ type: "setTableColFractions", blockId: tableId, fractions }], state.selection, origin);
 }
 
+/** Set a table's column-sizing mode. When switching to "fixed" (or cancelling
+ *  autofit via a column drag), pass `freezeFractions` to pin the currently-
+ *  rendered widths in the SAME transaction, so one undo reverts both. */
+export function setTableWidthModeCmd(
+  tableId: string,
+  mode: TableBlock["widthMode"],
+  freezeFractions?: number[],
+  origin: TransactionOrigin = "command",
+): Command {
+  return (state) => {
+    const ops: Op[] = [];
+    if (freezeFractions) ops.push({ type: "setTableColFractions", blockId: tableId, fractions: freezeFractions });
+    ops.push({ type: "setTableWidthMode", blockId: tableId, mode });
+    return tr(ops, state.selection, origin);
+  };
+}
+
+/** Set the column-sizing mode of the table containing the caret (ribbon/menu). */
+export function setTableWidthModeAtSelectionCmd(mode: TableBlock["widthMode"]): Command {
+  return (state) => {
+    const ctx = cellContext(state);
+    if (!ctx) return null;
+    return tr([{ type: "setTableWidthMode", blockId: ctx.table.id, mode }], state.selection, "command");
+  };
+}
+
+/** The table the caret/cell-selection sits in, or null. Lets the UI reflect the
+ *  current table's state (e.g. tick the active AutoFit mode). */
+export function tableAtSelection(state: EditorState): TableBlock | null {
+  return cellContext(state)?.table ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Direct formatting (absolute patches — power the font/size/spacing controls)
 

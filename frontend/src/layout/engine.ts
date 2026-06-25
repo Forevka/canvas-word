@@ -804,7 +804,7 @@ function layoutDocument(
   type Measured =
     | { kind: "para"; block: Paragraph; lines: LineBox[] }
     | { kind: "image"; block: ImageBlock; height: number }
-    | { kind: "table"; block: TableBlock; rows: MeasuredRow[]; colWidths: number[]; height: number };
+    | { kind: "table"; block: TableBlock; rows: MeasuredRow[]; colWidths: number[]; height: number; tableWidth: number };
 
   // Measured at each block's OWN section width (the section pointer advances
   // through the same block order the walk uses).
@@ -1350,7 +1350,7 @@ function layoutDocument(
       }
       if (pendingNotes.length > 0) commitNotes(pendingNotes, pendingNotesH);
       const chunk = m.rows.slice(ri, ri + fit);
-      page.blocks.push(placeTable(m.block, chunk, m.colWidths, colX(), y, colWidth, ri, cellListCtx));
+      page.blocks.push(placeTable(m.block, chunk, m.colWidths, colX(), y, m.tableWidth, ri, cellListCtx));
       y += chunk.reduce((s, r) => s + r.height, 0);
       ri += fit;
       if (ri < m.rows.length) newPage();
@@ -1765,7 +1765,7 @@ function layoutBand(
       y += b.heightPx;
     } else {
       const m = measureTable(b, width, getBandLines, EMPTY_LIST_CTX);
-      placed.push(placeTable(b, m.rows, m.colWidths, originX, y, width, 0, EMPTY_LIST_CTX));
+      placed.push(placeTable(b, m.rows, m.colWidths, originX, y, m.tableWidth, 0, EMPTY_LIST_CTX));
       y += m.height;
     }
   }
@@ -1807,10 +1807,198 @@ const DEFAULT_CELL_MARGIN = { top: 0, right: 7.2, bottom: 0, left: 7.2 } as cons
 const cellMargin = (c: TableCell): { top: number; right: number; bottom: number; left: number } =>
   c.margin ?? DEFAULT_CELL_MARGIN;
 
+// ---------------------------------------------------------------------------
+// Autofit (content-driven) column sizing — only exercised when a table's
+// widthMode is "autofitContents"/"autofitWindow". The fixed path (the default)
+// never touches any of this.
+
+/** A column's content-width demand: `min` = it cannot be painted narrower than
+ *  this without clipping its widest unbreakable token; `max` = its natural width
+ *  if nothing wraps. */
+interface ColMinMax {
+  min: number;
+  max: number;
+}
+
+/** Width pretext lays the paragraph out at when we want it effectively
+ *  unwrapped (one line per hard break) — its natural max content width. */
+const AUTOFIT_NATURAL_W = 1_000_000;
+/** Floor a solved column at this px so an empty/degenerate column never collapses. */
+const AUTOFIT_MIN_COL = 16;
+
+/** Content width of a laid-out line = Σ fragment widths. Alignment-independent
+ *  (we sum widths rather than read fragment x), so a centered/right cell measures
+ *  the same as a left one. Tab gaps (gapBefore) are not captured — a known minor
+ *  gap for tab-heavy autofit cells. */
+function lineContentWidth(l: LineBox): number {
+  let w = 0;
+  for (const f of l.fragments) w += f.width;
+  return w;
+}
+
+/** Widest laid-out line when the paragraph is broken at `width` (reusing the
+ *  cached prepared segments — only the cheap re-break runs). At a huge width this
+ *  yields the natural max; at width 1 it yields the widest unbreakable token. */
+function paragraphExtent(p: Paragraph, getLines: (p: Paragraph, w: number) => LineBox[], width: number): number {
+  let m = 0;
+  for (const l of getLines(p, width)) m = Math.max(m, lineContentWidth(l));
+  return m;
+}
+
+/** Content min/max of one cell BLOCK, in column-width terms (paragraph indents
+ *  count toward the required column width; images are treated as unbreakable;
+ *  nested tables contribute their own solved-grid min/max). */
+function blockMinMax(
+  b: Block,
+  listCtx: CellListCtx,
+  getLines: (p: Paragraph, w: number) => LineBox[],
+  available: number,
+): ColMinMax {
+  if (b.kind === "paragraph") {
+    const indent = b.style.indentLeftPx + listCtx.indentOf(b) + (b.style.indentRightPx ?? 0);
+    return {
+      min: paragraphExtent(b, getLines, 1) + indent,
+      max: paragraphExtent(b, getLines, AUTOFIT_NATURAL_W) + indent,
+    };
+  }
+  if (b.kind === "image") {
+    // Anchored images are out of flow; in-flow images are unbreakable blocks
+    // (the renderer scales them DOWN if a column ends up narrower, so this never
+    // forces an overflow — it only expresses the natural-size preference).
+    if (b.anchor) return { min: 0, max: 0 };
+    return { min: b.widthPx, max: b.widthPx };
+  }
+  const cols = autofitColMinMax(b, listCtx, getLines, available);
+  return {
+    min: cols.reduce((s, c) => s + c.min, 0),
+    max: cols.reduce((s, c) => s + c.max, 0),
+  };
+}
+
+/** Content min/max of a whole cell: the widest block sets each (cell blocks stack
+ *  vertically), plus L/R padding, clamped up to any preferred width (w:tcW). */
+function cellMinMax(
+  cell: TableCell,
+  listCtx: CellListCtx,
+  getLines: (p: Paragraph, w: number) => LineBox[],
+  available: number,
+): ColMinMax {
+  let min = 0;
+  let max = 0;
+  for (const b of cell.blocks) {
+    const mm = blockMinMax(b, listCtx, getLines, available);
+    if (mm.min > min) min = mm.min;
+    if (mm.max > max) max = mm.max;
+  }
+  const mgn = cellMargin(cell);
+  const pad = mgn.left + mgn.right;
+  min += pad;
+  max += pad;
+  const pref = cell.preferredWidth;
+  if (pref) {
+    // abs: px is literal. pct: px holds the fraction (0..1) of the table width,
+    // resolved against the available width (close enough; the exact table width
+    // is circular with the solve).
+    const prefPx = pref.type === "pct" ? pref.px * available : pref.px;
+    if (prefPx > min) min = prefPx;
+    if (prefPx > max) max = prefPx;
+  }
+  return { min, max };
+}
+
+/** Push `demand` into a group of columns, growing each proportionally to its
+ *  current width (so wider columns absorb more), but never shrinking. */
+function distributeDemand(arr: number[], cols: number[], demand: number): void {
+  let cur = 0;
+  for (const c of cols) cur += arr[c]!;
+  if (demand <= cur) return;
+  const extra = demand - cur;
+  let wsum = 0;
+  for (const c of cols) wsum += arr[c]! + 1;
+  for (const c of cols) arr[c]! += extra * ((arr[c]! + 1) / wsum);
+}
+
+/** Per-column {min,max} for a table, walking the span-aware grid exactly like
+ *  the height pass: span-1 cells set their column directly; spanning cells are
+ *  deferred and their demand distributed across the columns they cover. */
+function autofitColMinMax(
+  t: TableBlock,
+  listCtx: CellListCtx,
+  getLines: (p: Paragraph, w: number) => LineBox[],
+  available: number,
+): ColMinMax[] {
+  const ncols = effectiveFractions(t).length;
+  const colMin = new Array<number>(ncols).fill(0);
+  const colMax = new Array<number>(ncols).fill(0);
+  const spans: { colStart: number; cols: number[]; mm: ColMinMax }[] = [];
+  const rowsRemaining = new Array<number>(ncols).fill(0);
+  for (const row of t.rows) {
+    let col = 0;
+    for (const cell of row.cells) {
+      while (col < ncols && rowsRemaining[col]! > 0) col++;
+      const span = Math.max(1, cell.colSpan ?? 1);
+      const rowSpan = Math.max(1, cell.rowSpan ?? 1);
+      const colStart = col;
+      const mm = cellMinMax(cell, listCtx, getLines, available);
+      if (span === 1) {
+        if (colStart < ncols) {
+          if (mm.min > colMin[colStart]!) colMin[colStart] = mm.min;
+          if (mm.max > colMax[colStart]!) colMax[colStart] = mm.max;
+        }
+      } else {
+        const cols: number[] = [];
+        for (let k = 0; k < span && colStart + k < ncols; k++) cols.push(colStart + k);
+        if (cols.length > 0) spans.push({ colStart, cols, mm });
+      }
+      if (rowSpan > 1) for (let k = 0; k < span && colStart + k < ncols; k++) rowsRemaining[colStart + k] = rowSpan;
+      col = colStart + span;
+    }
+    for (let c = 0; c < ncols; c++) if (rowsRemaining[c]! > 0) rowsRemaining[c]!--;
+  }
+  // Narrower spans first, so a 2-col span settles before a 3-col span layered on it.
+  spans.sort((a, b) => a.cols.length - b.cols.length);
+  for (const s of spans) {
+    distributeDemand(colMin, s.cols, s.mm.min);
+    distributeDemand(colMax, s.cols, s.mm.max);
+  }
+  const out: ColMinMax[] = [];
+  for (let c = 0; c < ncols; c++) {
+    const min = Math.max(AUTOFIT_MIN_COL, colMin[c]!);
+    out.push({ min, max: Math.max(min, colMax[c]!) });
+  }
+  return out;
+}
+
+/** Solve final column widths from per-column min/max and the available width.
+ *  CSS automatic-table-layout rules; "autofitWindow" always fills `available`,
+ *  "autofitContents" lets the table end up narrower. */
+function solveColumns(perCol: ColMinMax[], available: number, mode: "autofitContents" | "autofitWindow"): number[] {
+  const ncols = perCol.length;
+  if (ncols === 0) return [];
+  const min = perCol.map((c) => c.min);
+  const max = perCol.map((c) => c.max);
+  const sumMin = min.reduce((s, v) => s + v, 0);
+  const sumMax = max.reduce((s, v) => s + v, 0);
+  if (sumMax <= available) {
+    if (mode === "autofitWindow") {
+      const slack = available - sumMax;
+      const wsum = sumMax > 0 ? sumMax : ncols;
+      return max.map((m) => m + slack * ((sumMax > 0 ? m : 1) / wsum));
+    }
+    return max.slice();
+  }
+  if (sumMin < available) {
+    const slack = available - sumMin;
+    const span = sumMax - sumMin;
+    return min.map((mn, i) => mn + (span > 0 ? slack * ((max[i]! - mn) / span) : slack / ncols));
+  }
+  return min.slice(); // overflow: pin to min, content clips/wraps as today
+}
+
 type MeasuredCellItem =
   | { kind: "para"; block: Paragraph; lines: LineBox[] }
   | { kind: "image"; block: ImageBlock; width: number; height: number } // scaled to fit the cell
-  | { kind: "table"; block: TableBlock; rows: MeasuredRow[]; colWidths: number[]; height: number };
+  | { kind: "table"; block: TableBlock; rows: MeasuredRow[]; colWidths: number[]; height: number; tableWidth: number };
 
 interface MeasuredCell {
   cell: TableCell;
@@ -1847,9 +2035,18 @@ function measureTable(
   contentWidth: number,
   getLines: (p: Paragraph, width: number) => LineBox[],
   listCtx: CellListCtx,
-): { rows: MeasuredRow[]; colWidths: number[]; height: number } {
-  const fractions = effectiveFractions(t);
-  const colWidths = fractions.map((f) => f * contentWidth);
+): { rows: MeasuredRow[]; colWidths: number[]; height: number; tableWidth: number } {
+  const mode = t.widthMode ?? "fixed";
+  let colWidths: number[];
+  if (mode === "fixed") {
+    colWidths = effectiveFractions(t).map((f) => f * contentWidth);
+  } else {
+    // Content-driven: measure each cell's min/max, solve the grid, THEN run the
+    // existing height pass below at the solved widths (two passes over the cells;
+    // the expensive prepared segments are cached so only re-breaks repeat).
+    const perCol = autofitColMinMax(t, listCtx, getLines, contentWidth);
+    colWidths = solveColumns(perCol, contentWidth, mode);
+  }
   const ncols = colWidths.length;
 
   // Grid walk: rowsRemaining[c] > 0 means column c is still covered by a rowspan
@@ -1921,7 +2118,11 @@ function measureTable(
   });
   rows.forEach((r, ri) => (r.height = rowHeight[ri]!));
 
-  return { rows, colWidths, height: rowHeight.reduce((s, h) => s + h, 0) };
+  // Fixed tables render at exactly the box width (fractions sum to 1); autofit
+  // tables render at the solved column total, which may be narrower (contents) or
+  // exactly the box (window).
+  const tableWidth = mode === "fixed" ? contentWidth : colWidths.reduce((s, w) => s + w, 0);
+  return { rows, colWidths, height: rowHeight.reduce((s, h) => s + h, 0), tableWidth };
 }
 
 function totalLinesHeight(lines: LineBox[]): number {
@@ -2042,7 +2243,7 @@ function placeTable(
           }
         } else {
           // nested table — placed recursively, read-only inner cells
-          blocks.push(placeTable(it.block, it.rows, it.colWidths, cx + mgn.left, py, innerWidth, 0, listCtx));
+          blocks.push(placeTable(it.block, it.rows, it.colWidths, cx + mgn.left, py, it.tableWidth, 0, listCtx));
           py += it.height + CELL_BLOCK_GAP;
         }
       }

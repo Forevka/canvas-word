@@ -99,3 +99,40 @@ describe("table style .docx round-trip", () => {
     expect(t.condOverrides?.bandRows).toBe(true);
   });
 });
+
+describe("autofit table .docx round-trip", () => {
+  const tableOf = (back: Document): TableBlock =>
+    back.blocks.find((b): b is TableBlock => b.kind === "table")!;
+
+  it("round-trips widthMode=autofitContents (w:tblLayout=autofit + w:tblW auto)", () => {
+    const t: TableBlock = { ...mkTable(), widthMode: "autofitContents" };
+    const back = runImport(writeDocx({ section: SECTION, blocks: [t] }).bytes).doc;
+    expect(tableOf(back).widthMode).toBe("autofitContents");
+  });
+
+  it("round-trips widthMode=autofitWindow (w:tblLayout=autofit + 100% w:tblW)", () => {
+    const t: TableBlock = { ...mkTable(), widthMode: "autofitWindow" };
+    const back = runImport(writeDocx({ section: SECTION, blocks: [t] }).bytes).doc;
+    expect(tableOf(back).widthMode).toBe("autofitWindow");
+  });
+
+  it("keeps fixed tables fixed (absent widthMode survives as undefined)", () => {
+    const back = runImport(writeDocx({ section: SECTION, blocks: [mkTable()] }).bytes).doc;
+    expect(tableOf(back).widthMode).toBeUndefined();
+  });
+
+  it("round-trips a per-cell preferred width (w:tcW, dxa) within rounding", () => {
+    const base = mkTable();
+    const withPref: TableBlock = {
+      ...base,
+      widthMode: "autofitContents",
+      rows: base.rows.map((r, ri) =>
+        ri === 0 ? { cells: [{ ...r.cells[0]!, preferredWidth: { px: 120, type: "abs" } }, r.cells[1]!] } : r,
+      ),
+    };
+    const back = runImport(writeDocx({ section: SECTION, blocks: [withPref] }).bytes).doc;
+    const pref = tableOf(back).rows[0]!.cells[0]!.preferredWidth;
+    expect(pref?.type).toBe("abs");
+    expect(pref!.px).toBeCloseTo(120, 0); // px → twips (dxa) → px, exact to the pixel
+  });
+});
