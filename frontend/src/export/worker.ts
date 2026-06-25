@@ -13,8 +13,8 @@ interface WorkerScope {
 const ctx = self as unknown as WorkerScope;
 
 ctx.onmessage = (e: MessageEvent<ToExportWorker>): void => {
-  const { id, doc, format, images, fonts } = e.data;
-  runExport(doc, format, images, fonts)
+  const { id, doc, format, images, fonts, cjk } = e.data;
+  runExport(doc, format, images, fonts, cjk)
     .then(({ bytes, warnings }) => {
       ctx.postMessage({ id, type: "done", bytes, warnings }, [bytes.buffer]);
     })

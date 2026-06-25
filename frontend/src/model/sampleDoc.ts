@@ -287,6 +287,12 @@ export function sampleDoc(): Document {
       run(" — تُعاد حسابتها تلقائيًا عند التحديث."),
     ], { direction: "rtl" }),
 
+    para([run("RTL lists & justification", { bold: true, color: "#1a1a2e" })], { spaceBeforePx: 10, spaceAfterPx: 4 }),
+    para([run("قائمة نقطية بالعربية، والعلامة تتدلّى على اليمين")], { direction: "rtl", list: { listId: DEFAULT_BULLET_LIST_ID, level: 0 }, spaceAfterPx: 2 }),
+    para([run("العنصر الثاني في القائمة")], { direction: "rtl", list: { listId: DEFAULT_BULLET_LIST_ID, level: 0 }, spaceAfterPx: 2 }),
+    para([run("مستوى متداخل داخل القائمة")], { direction: "rtl", list: { listId: DEFAULT_BULLET_LIST_ID, level: 1 }, spaceAfterPx: 2 }),
+    para([run("وفقرة عربية مضبوطة (justify) تمتد على عدة أسطر: تُوزَّع المسافات بين الكلمات حتى يمتلئ كل سطر من الحافة إلى الحافة، مع إعادة الترتيب البصري للكلمات والأرقام — تمامًا كما يفعل Word مع النص ثنائي الاتجاه. ".repeat(3))], { direction: "rtl", align: "justify", spaceBeforePx: 6 }),
+
     para([run("— a tour of canvas-word —", { italic: true, color: "#5f6368" })], { align: "center", spaceBeforePx: 20 }),
   ];
 

@@ -19,8 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     OOXML `w:bidi`) and `CharStyle.rtl` (`w:rtl`). RTL paragraphs reorder runs into
     visual order, right-align by default, and mirror left/right indents; caret,
     hit-testing, selection rectangles, and Left/Right arrow keys all follow the
-    visual order. A **LTR/RTL** toggle was added to the ribbon's Paragraph group,
-    and `w:bidi`/`w:rtl`/`w:jc` round-trip through `.docx`.
+    visual order. List markers hang in the mirrored right-side gutter, justified
+    RTL lines fill edge-to-edge, and left/right indents mirror. A **LTR/RTL**
+    toggle was added to the ribbon's Paragraph group, and `w:bidi`/`w:rtl`/`w:jc`
+    round-trip through `.docx`.
   - The default showcase document gains an **"International text — CJK &
     bidirectional"** section demonstrating all of the above.
   - *Implementation note:* the bidi reorder reuses pretext's Unicode Bidi

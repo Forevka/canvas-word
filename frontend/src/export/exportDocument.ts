@@ -172,18 +172,20 @@ export async function exportDocument(
   doc: Document,
   format: ExportFormat,
   fontConfig?: ResolvedFontsConfig,
+  cjk?: { locale?: string; fallbackFont?: string },
 ): Promise<ExportResult> {
   const [images, fonts] = await Promise.all([resolveImages(doc), resolveFonts(fontConfig)]);
   const w = ensureWorker();
   const id = nextId++;
   return new Promise<ExportResult>((resolve, reject) => {
     pending.set(id, { resolve, reject });
-    const msg: ToExportWorker = { id, doc, format, images, ...(fonts ? { fonts } : {}) };
+    const hasCjk = cjk && (cjk.locale !== undefined || cjk.fallbackFont !== undefined);
+    const msg: ToExportWorker = { id, doc, format, images, ...(fonts ? { fonts } : {}), ...(hasCjk ? { cjk } : {}) };
     w.postMessage(msg);
   });
 }
 
-export const exportPdf = (doc: Document, fontConfig?: ResolvedFontsConfig): Promise<ExportResult> =>
-  exportDocument(doc, "pdf", fontConfig);
-export const exportDocx = (doc: Document, fontConfig?: ResolvedFontsConfig): Promise<ExportResult> =>
-  exportDocument(doc, "docx", fontConfig);
+export const exportPdf = (doc: Document, fontConfig?: ResolvedFontsConfig, cjk?: { locale?: string; fallbackFont?: string }): Promise<ExportResult> =>
+  exportDocument(doc, "pdf", fontConfig, cjk);
+export const exportDocx = (doc: Document, fontConfig?: ResolvedFontsConfig, cjk?: { locale?: string; fallbackFont?: string }): Promise<ExportResult> =>
+  exportDocument(doc, "docx", fontConfig, cjk);

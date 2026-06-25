@@ -633,21 +633,18 @@ function paragraphLines(p: Paragraph, contentWidth: number, cache: PrepareCache)
   const align = effectiveAlign(p.style.align, dir);
   let y = 0;
   for (const rl of raw) {
-    let reordered = false;
     if (levels !== null && rl.frags.length > 0 && !rl.tabbed) {
       const r = bidiReorderLine(rl.frags, levels);
       rl.frags = r.frags;
       rl.width = r.width;
-      reordered = true;
     }
     const slack = rl.lineMaxWidth - rl.width;
     let startX = rl.indent;
     if (align === "center") startX += slack / 2;
     else if (align === "right") startX += slack;
-    // Justification redistributes inter-word gaps in logical order, which a bidi
-    // reorder has already consumed — skip it on reordered lines (they stay
-    // start/end-aligned, like Word's behaviour for short RTL paragraphs).
-    else if (align === "justify" && !rl.lastOfSegment && !reordered) justifyLine(rl.frags, slack);
+    // Justify works on the VISUAL fragment order (bidi reorder already ran), so it
+    // distributes slack across the line's gaps edge-to-edge regardless of direction.
+    else if (align === "justify" && !rl.lastOfSegment) justifyLine(rl.frags, slack);
     for (const rf of rl.frags) rf.frag.x += startX;
     const box: LineBox = { y, height: rl.height, ascent: rl.ascent, fragments: rl.frags.map((rf) => rf.frag) };
     if (rl.emptyOffset !== undefined) box.emptyOffset = rl.emptyOffset;
@@ -870,9 +867,14 @@ function layoutDocument(
     if (!def) return null;
     return def.levels[Math.min(ref.level, def.levels.length - 1)] ?? null;
   };
+  // Indents are mirrored for RTL paragraphs: the "start" indent (left + list) moves
+  // to the RIGHT edge — which also opens the right-side gutter the list marker hangs
+  // in — and the "end" indent (right) moves to the left. LTR is unchanged.
+  const startIndentOf = (p: Paragraph): number => p.style.indentLeftPx + (listLevelOf(p)?.indentLeftPx ?? 0);
   const indentOf = (p: Paragraph): number =>
-    p.style.indentLeftPx + (listLevelOf(p)?.indentLeftPx ?? 0);
-  const rightIndentOf = (p: Paragraph): number => p.style.indentRightPx ?? 0;
+    p.style.direction === "rtl" ? (p.style.indentRightPx ?? 0) : startIndentOf(p);
+  const rightIndentOf = (p: Paragraph): number =>
+    p.style.direction === "rtl" ? startIndentOf(p) : (p.style.indentRightPx ?? 0);
   // The list-level indent alone (table cells add it ON TOP of the paragraph's
   // own indent, which their placement already applies).
   const listIndentOf = (p: Paragraph): number => listLevelOf(p)?.indentLeftPx ?? 0;
@@ -1080,6 +1082,23 @@ function layoutDocument(
     }
   };
 
+  /** Absolute x of a list marker. LTR: it hangs `hangingPx` left of the text
+   *  start (placedX). RTL: the indent gutter is on the RIGHT, so the marker hangs
+   *  just past the line's (right-aligned) right edge, pushed to the far side of the
+   *  gutter to mirror the LTR gap. */
+  const markerX = (
+    block: Paragraph,
+    placedX: number,
+    line: LineBox | undefined,
+    marker: { text: string; style: CharStyle; hangingPx: number },
+  ): number => {
+    if (block.style.direction !== "rtl") return placedX - marker.hangingPx;
+    let rightEdge = 0;
+    for (const f of line?.fragments ?? []) rightEdge = Math.max(rightEdge, f.x + f.width);
+    const markerW = measureTextWidth(marker.text, charStyleToFont(marker.style));
+    return placedX + rightEdge + Math.max(0, marker.hangingPx - markerW);
+  };
+
   const placeRun = (block: Paragraph, lines: LineBox[], from: number, count: number): void => {
     const placed: PlacedBlock = {
       blockId: block.id,
@@ -1089,7 +1108,9 @@ function layoutDocument(
       lines: [],
     };
     const marker = from === 0 ? markers.get(block.id) : undefined;
-    if (marker) placed.marker = { text: marker.text, style: marker.style, x: placed.x - marker.hangingPx };
+    if (marker) {
+      placed.marker = { text: marker.text, style: marker.style, x: markerX(block, placed.x, lines[from], marker) };
+    }
     if (block.style.tocEntry) {
       // The number decorates the LAST chunk's last line; right edge = this column's.
       tocPlacements.set(block.id, { chunk: placed, rightEdge: colX() + colWidth, para: block });
@@ -1345,8 +1366,17 @@ function layoutDocument(
           // offset); hang the marker off the FIRST line's actual start so it tracks
           // the text instead of stranding at the left margin ON TOP of the float.
           // Equals placed.x - hangingPx when there's no shift (frag.x === 0).
-          const firstX = frags[0]?.frag.x ?? 0;
-          placed.marker = { text: marker.text, style: marker.style, x: placed.x + firstX - marker.hangingPx };
+          // RTL: hang past the line's right edge instead (mirrored gutter).
+          let mx: number;
+          if (p.style.direction === "rtl") {
+            let rightEdge = 0;
+            for (const rf of frags) rightEdge = Math.max(rightEdge, rf.frag.x + rf.frag.width);
+            const markerW = measureTextWidth(marker.text, charStyleToFont(marker.style));
+            mx = placed.x + rightEdge + Math.max(0, marker.hangingPx - markerW);
+          } else {
+            mx = placed.x + (frags[0]?.frag.x ?? 0) - marker.hangingPx;
+          }
+          placed.marker = { text: marker.text, style: marker.style, x: mx };
         }
         page.blocks.push(placed);
       }
@@ -1390,16 +1420,15 @@ function layoutDocument(
           bl.frags = r.frags;
           bl.width = r.width;
         }
-        const reordered = levels !== null && bl.frags.length > 0;
         const slack = box.width - indent - rightIndentOf(p) - bl.width;
         let startX = box.x0 - colX() + indent;
         if (palign === "center") startX += slack / 2;
         else if (palign === "right") startX += slack;
         for (const rf of bl.frags) rf.frag.x += startX;
         // Justify the PREVIOUS line now that this one exists (so it's non-last);
-        // buffer this line for the same decision next iteration. Reordered (bidi)
-        // lines stay start/end-aligned — see paragraphLines.
-        if (palign === "justify" && !reordered) {
+        // buffer this line for the same decision next iteration. Justify runs on the
+        // visual fragment order, so bidi-reordered lines justify too.
+        if (palign === "justify") {
           if (justifyPrev) justifyLine(justifyPrev.frags, justifyPrev.slack);
           justifyPrev = { frags: bl.frags, slack };
         }

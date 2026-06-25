@@ -537,7 +537,7 @@ const openDocxFile = async (file: File | ArrayBuffer): Promise<void> => {
 // handle's exportDocx()/exportPdf() share one path.
 const exportBaked = (format: ExportFormat): Promise<{ bytes: Uint8Array; warnings: ExportWarning[] }> => {
   const baked = bakeReview(editor.getDocument(), editor.getReview(), "reject");
-  return exportDocument(baked, format, config.fonts);
+  return exportDocument(baked, format, config.fonts, config.cjk);
 };
 const blobFor = (format: ExportFormat, bytes: Uint8Array): Blob =>
   new Blob([bytes as BlobPart], { type: format === "pdf" ? PDF_MIME : DOCX_MIME });

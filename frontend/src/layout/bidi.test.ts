@@ -8,6 +8,7 @@ import type { CharStyle, Document, Paragraph, ParaStyle, Run, SectionProps } fro
 import { baseLevelFor, effectiveAlign, hasRtlChars, levelsFor, visualOrder } from "./bidi";
 import { createLayoutEngine } from "./engine";
 import { caretRect, hitTest, selectionRects } from "./geometry";
+import { defaultListDefinition, DEFAULT_BULLET_LIST_ID } from "@cw/shared";
 
 describe("visualOrder (UAX#9 L2)", () => {
   it("leaves an all-LTR line in logical order", () => {
@@ -187,5 +188,48 @@ describe("bidi geometry (caret / hit-test / selection)", () => {
     const rects = selectionRects(tree, { anchor: { blockId: id, offset: 2 }, focus: { blockId: id, offset: 5 } });
     expect(rects.length).toBeGreaterThanOrEqual(1);
     expect(rects[0]!.width).toBeGreaterThan(0);
+  });
+});
+
+describe("RTL list marker + justification", () => {
+  const listDoc = (direction?: "rtl") => {
+    const p = para([{ text: "פריט ברשימה", style: CHAR }], {
+      ...(direction ? { direction } : {}),
+      list: { listId: DEFAULT_BULLET_LIST_ID, level: 0 },
+    });
+    return { doc: { ...doc(p), lists: { [DEFAULT_BULLET_LIST_ID]: defaultListDefinition("bullet") } }, id: p.id };
+  };
+
+  it("hangs the list marker to the RIGHT of the text in an RTL paragraph", () => {
+    const tree = layout(listDoc("rtl").doc);
+    const pb = tree.pages[0]!.blocks[0]!;
+    const line = pb.lines[0]!;
+    const textRight = pb.x + Math.max(...line.fragments.map((f) => f.x + f.width));
+    expect(pb.marker).toBeDefined();
+    // RTL: marker sits at/right of the text's right edge (not in the left gutter).
+    expect(pb.marker!.x).toBeGreaterThan(textRight - 1);
+  });
+
+  it("keeps the LTR list marker to the LEFT of the text", () => {
+    const tree = layout(listDoc().doc);
+    const pb = tree.pages[0]!.blocks[0]!;
+    expect(pb.marker!.x).toBeLessThan(pb.x);
+  });
+
+  it("justifies the non-last lines of a multi-line RTL paragraph to full width", () => {
+    // Long Hebrew text forces several lines; justify should fill the content box.
+    const word = "מילה";
+    const p = para([{ text: Array.from({ length: 60 }, () => word).join(" "), style: CHAR }], {
+      direction: "rtl",
+      align: "left", // → start/end-aware: "left" under RTL maps to right, but justify wins
+    });
+    const pj = { ...p, style: { ...p.style, align: "justify" as const } };
+    const tree = layout(doc(pj));
+    const lines = tree.pages[0]!.blocks[0]!.lines;
+    expect(lines.length).toBeGreaterThan(1);
+    const contentWidth = 624; // 816 - 2*96
+    // A justified non-last line fills (nearly) the full content width.
+    const firstLineRight = Math.max(...lines[0]!.fragments.map((f) => f.x + f.width));
+    expect(firstLineRight).toBeGreaterThan(contentWidth - 24);
   });
 });
