@@ -351,6 +351,8 @@ export interface IRMath {
   kind: "math";
   root: MathRow;
   display: boolean;
+  /** m:oMathParaPr/m:jc — mapped onto EquationBlock.align. */
+  align?: "left" | "center" | "right";
   /** Custom-field result membership — mapped onto Block.fieldId. */
   fieldId?: string;
   /** Block-level content-control ancestry — mapped onto Block.sdtPath. */

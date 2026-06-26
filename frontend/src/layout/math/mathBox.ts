@@ -101,16 +101,21 @@ export function overlayCentered(boxes: MathBox[], _align: "left" | "center" = "l
   return { width, ascent, descent, glyphs, rules, italicCorrection };
 }
 
-/** A bare horizontal rule (e.g. fraction bar) of the given width/thickness whose
- *  TOP sits `topAboveBaseline` above the baseline (positive = up). */
+/** A bare horizontal rule (e.g. fraction bar). `topAboveBaseline` is the distance
+ *  from the baseline to the rule's BOTTOM edge (positive = up); the rule occupies
+ *  `[-topAboveBaseline - thickness, -topAboveBaseline]`. ascent/descent are kept
+ *  non-negative per the box contract (a rule entirely above the baseline has 0
+ *  descent), so it never reports a negative extent into `overlayCentered`. */
 export function ruleBox(width: number, thickness: number, topAboveBaseline: number): MathBox {
+  const ruleTop = -topAboveBaseline - thickness;
+  const ruleBottom = -topAboveBaseline;
   return {
     width,
-    ascent: topAboveBaseline + thickness,
-    descent: -topAboveBaseline,
+    ascent: Math.max(0, -ruleTop),
+    descent: Math.max(0, ruleBottom),
     italicCorrection: 0,
     glyphs: [],
-    rules: [{ x: 0, y: -topAboveBaseline - thickness, w: width, h: thickness }],
+    rules: [{ x: 0, y: ruleTop, w: width, h: thickness }],
   };
 }
 

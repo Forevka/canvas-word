@@ -159,6 +159,16 @@ function bookmarkName(node: XmlNode): string | null {
 // ---------------------------------------------------------------------------
 // Block-level walk
 
+/** Alignment of a display equation from `m:oMathPara/m:oMathParaPr/m:jc`. */
+function mathParaJc(node: XmlNode): "left" | "center" | "right" | undefined {
+  const pr = el(node, "m:oMathParaPr");
+  const jc = pr ? el(pr, "m:jc") : undefined;
+  const v = jc ? attr(jc, "m:val") : undefined;
+  if (v === "left" || v === "right") return v;
+  if (v === "center" || v === "centerGroup") return "center";
+  return undefined;
+}
+
 function walkBlocks(nodes: XmlNode[], out: IRBlock[], ctx: ParseCtx): void {
   for (const node of nodes) {
     // A custom field open here marks the block being built; one that opens/closes
@@ -215,8 +225,14 @@ function walkBlocks(nodes: XmlNode[], out: IRBlock[], ctx: ParseCtx): void {
         break;
       }
       case "m:oMathPara": {
-        // Display (block) equation — convert OMML → MathML AST.
-        out.push({ kind: "math", root: ommlToMathml(node), display: true });
+        // Display (block) equation — convert OMML → MathML AST, carrying alignment
+        // (m:oMathParaPr/m:jc) and the same field/control block metadata as w:p/w:tbl.
+        const jc = mathParaJc(node);
+        const m: IRBlock = { kind: "math", root: ommlToMathml(node), display: true };
+        if (jc) m.align = jc;
+        if (ctx.trackFields && ctx.fieldTrack.markBlock) m.fieldId = ctx.fieldTrack.markBlock;
+        if (ctx.blockSdtStack.length) m.sdtPath = [...ctx.blockSdtStack];
+        out.push(m);
         break;
       }
       case "w:sectPr":

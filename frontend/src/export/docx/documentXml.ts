@@ -501,9 +501,14 @@ export function blockXml(block: Block, ctx: PartCtx): string {
 }
 
 /** Display equation -> a block-level `m:oMathPara` (Word's block math is a sibling
- *  of w:p in the body, not wrapped in one). */
+ *  of w:p in the body, not wrapped in one), carrying the equation's alignment in
+ *  `m:oMathParaPr/m:jc`. The inner content is always the `m:oMath` (display form),
+ *  regardless of the stored `display` flag. */
 function equationParagraphXml(block: EquationBlock): string {
-  return mathmlToOmml(block.equation);
+  const oMath = mathmlToOmml({ ...block.equation, display: false }); // inner m:oMath only
+  const jc = block.align === "left" ? "left" : block.align === "right" ? "right" : "center";
+  const pr = el("m:oMathParaPr", undefined, el("m:jc", { "m:val": jc }));
+  return el("m:oMathPara", undefined, pr + oMath);
 }
 
 /** Emit a block list, reconstructing NESTED block-level content controls from each

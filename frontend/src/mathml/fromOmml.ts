@@ -141,11 +141,17 @@ function nodeFrom(n: TNode): MathNode {
       const op = (naryPr ? mathVal(naryPr, "chr") : undefined) ?? "∫";
       const subHidden = naryPr ? mathOn(naryPr, "subHide") : false;
       const supHidden = naryPr ? mathOn(naryPr, "supHide") : false;
+      const subEl = childByLocal(n, "sub");
+      const supEl = childByLocal(n, "sup");
+      // An integral with no bounds has empty (or absent) m:sub/m:sup — omit them
+      // rather than emitting empty limit slots.
+      const sub = !subHidden && subEl && childEls(subEl).length > 0 ? rowLike(childEls(subEl)) : undefined;
+      const sup = !supHidden && supEl && childEls(supEl).length > 0 ? rowLike(childEls(supEl)) : undefined;
       return {
         type: "nary",
         op,
-        ...(subHidden ? {} : { sub: slot(n, "sub") }),
-        ...(supHidden ? {} : { sup: slot(n, "sup") }),
+        ...(sub ? { sub } : {}),
+        ...(sup ? { sup } : {}),
         body: slot(n, "e"),
       };
     }

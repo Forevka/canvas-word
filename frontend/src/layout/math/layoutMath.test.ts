@@ -15,11 +15,13 @@ const mi = (ch: string) => styledMathText(ch, undefined);
 
 const SIZE = 20;
 
-/** Deterministic font: every glyph is 0.5em wide, 0.7em up, 0.2em down. */
+/** Deterministic font: every glyph is 0.5em wide, 0.7em up, 0.2em down. Measured
+ *  by code point (not UTF-16 units) so a single astral math-italic glyph counts
+ *  as one, like a real font. */
 const stubFont: MathFont = {
   family: "stub",
   measure: (text, sizePx) => ({
-    width: text.length * sizePx * 0.5,
+    width: [...text].length * sizePx * 0.5,
     ascent: sizePx * 0.7,
     descent: sizePx * 0.2,
     italicCorrection: 0,

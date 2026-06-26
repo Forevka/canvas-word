@@ -195,7 +195,7 @@ export function showEquationEditor(opts: EquationEditorOptions): EquationEditorH
       r.name = "cw-eqe-mode";
       r.checked = displayMode === val;
       r.style.marginRight = "4px";
-      r.addEventListener("change", () => { if (r.checked) displayMode = val; });
+      r.addEventListener("change", () => { if (r.checked) { displayMode = val; update(); } });
       l.append(r, document.createTextNode(label));
       return l;
     };
@@ -245,7 +245,9 @@ export function showEquationEditor(opts: EquationEditorOptions): EquationEditorH
     const eq = currentEquation();
     const ctx = canvas.getContext("2d");
     if (!eq || !ctx) {
-      err.textContent = eq ? "" : "Could not parse MathML.";
+      err.textContent = eq ? "" : "Could not parse — check the syntax.";
+      // Clear any stale render so a parse failure doesn't show the previous result.
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
       return;
     }
     err.textContent = "";

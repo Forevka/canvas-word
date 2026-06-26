@@ -27,6 +27,12 @@ describe("mathToLatex", () => {
     expect(m).toContain("&");
     expect(m).toContain("\\\\");
   });
+
+  it("round-trips \\begin{cases} as cases (not Bmatrix)", () => {
+    const m = mathToLatex(fromLatex("\\begin{cases} a & x>0 \\\\ b & x<0 \\end{cases}"));
+    expect(m).toContain("\\begin{cases}");
+    expect(m).not.toContain("Bmatrix");
+  });
 });
 
 describe("editor view switch preserves the equation", () => {

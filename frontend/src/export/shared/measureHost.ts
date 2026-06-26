@@ -42,9 +42,11 @@ export function installMeasureHost(): Promise<void> {
       // clones so equations measure + embed identically across editor/export.
       try {
         registerFont(MATH_FONT_FILE, await readFontBytes(MATH_FONT_FILE));
-      } catch {
+      } catch (e) {
         // Math font missing — equations fall back to the default clone (tofu for
         // math-alphanumeric glyphs), but the rest of the document is unaffected.
+        // Surfaced (not silent) so a broken bundle is diagnosable.
+        console.warn(`[wordcanvas] math font ${MATH_FONT_FILE} failed to load; equations will not typeset correctly`, e);
       }
     }
     // Route pretext + metrics through the fontkit shim over the bundled clones.

@@ -126,7 +126,7 @@ function toItems(runs: Run[]): RichInlineItem[] {
     // keep the sentinel as the item text (pretext drops empty-text items) and add
     // extraWidth so the occupied width equals the box; `break:'never'` keeps it
     // atomic. breakNextLine then swaps the box's metrics in for the line.
-    if (run.style.equation) {
+    if (run.style.equation && !run.style.hidden) {
       const font = charStyleToFont(run.style);
       const box = equationBox(run.style.equation, MATH_FONT_FAMILY, run.style.fontSizePx);
       const sentinelW = measureTextWidth(run.text, font);

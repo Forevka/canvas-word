@@ -41,10 +41,17 @@ const HOLES: Partial<Record<MathVariant, Record<string, number>>> = {
   "double-struck": { C: 0x2102, H: 0x210d, N: 0x2115, P: 0x2119, Q: 0x211a, R: 0x211d, Z: 0x2124 },
 };
 
-// Greek: italic base (Α=0x1D6E2, α=0x1D6FC). Bold/etc. exist too but italic covers
-// the overwhelmingly common <mi>α</mi> case; others fall back to the literal char.
+// Greek math blocks. The uppercase math block reserves a slot (the theta-symbol
+// variant) exactly where Unicode Greek reserves U+03A2 between Ρ and Σ, so the
+// straight `cp - GREEK_UPPER` offset stays aligned across the whole range
+// (Α 0x391→0x1D6E2 … Ω 0x3A9→0x1D6FA). Italic is the default; bold-italic Greek
+// has its own block, so don't fold it into italic.
 const GREEK_UPPER = 0x391, GREEK_LOWER = 0x3b1, GREEK_LAST_LOWER = 0x3c9;
-const GREEK_ITALIC_UPPER = 0x1d6e2, GREEK_ITALIC_LOWER = 0x1d6fc;
+const GREEK_BASE: Partial<Record<MathVariant, { upper: number; lower: number }>> = {
+  italic: { upper: 0x1d6e2, lower: 0x1d6fc },
+  "bold-italic": { upper: 0x1d71c, lower: 0x1d736 },
+  bold: { upper: 0x1d6a8, lower: 0x1d6c2 },
+};
 
 /** The code point STIX should render for an identifier char under `variant`
  *  (default = italic). Non-letters and unmapped chars return their own code point. */
@@ -62,10 +69,12 @@ export function styledMathCodePoint(ch: string, variant: MathVariant | undefined
     return isAsciiUpper(cp) ? base + (cp - A) : base + 26 + (cp - a);
   }
 
-  // Greek letters — italic only (the default).
-  if (v === "italic" || v === "bold-italic") {
-    if (cp >= GREEK_UPPER && cp <= GREEK_UPPER + 24) return GREEK_ITALIC_UPPER + (cp - GREEK_UPPER);
-    if (cp >= GREEK_LOWER && cp <= GREEK_LAST_LOWER) return GREEK_ITALIC_LOWER + (cp - GREEK_LOWER);
+  // Greek letters — italic / bold-italic / bold (other variants fall back to the
+  // literal char, which still renders upright in STIX).
+  const gb = GREEK_BASE[v];
+  if (gb) {
+    if (cp >= GREEK_UPPER && cp <= GREEK_UPPER + 24) return gb.upper + (cp - GREEK_UPPER);
+    if (cp >= GREEK_LOWER && cp <= GREEK_LAST_LOWER) return gb.lower + (cp - GREEK_LOWER);
   }
   return cp;
 }

@@ -179,11 +179,13 @@ function drawMathBoxPdf(ctx: PaintCtx, box: MathBox, originX: number, baselineY:
 function paintLine(ctx: PaintCtx, block: PlacedBlock, line: LineBox, baselineY: number): void {
   const { doc } = ctx;
   for (const frag of line.fragments) {
-    if (frag.text.length === 0) continue;
+    // Equation fragments paint the math box regardless of their (sentinel) text —
+    // check before the empty-text skip.
     if (frag.equation) {
       drawMathBoxPdf(ctx, frag.equation, block.x + frag.x, baselineY, frag.style.color);
       continue;
     }
+    if (frag.text.length === 0) continue;
     const s = frag.style;
     const x = block.x + frag.x;
     const vShift = verticalShift(s.verticalAlign, s.fontSizePx);

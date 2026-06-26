@@ -40,6 +40,19 @@ describe("equation docx round-trip", () => {
     }
   });
 
+  it("preserves a right-aligned display equation through export then import", async () => {
+    const doc: Document = {
+      section: { pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } },
+      blocks: [
+        { kind: "equation", id: "e1", revision: 0, align: "right", equation: { ...parseMathml(FRAC), display: true } } satisfies EquationBlock,
+      ],
+    };
+    const { bytes } = await runExport(doc, "docx");
+    const { doc: back } = runImport(bytes);
+    const eq = back.blocks.find((b): b is EquationBlock => b.kind === "equation");
+    expect(eq?.align).toBe("right");
+  });
+
   it("exports an equation to PDF without crashing and emits real bytes", async () => {
     const doc: Document = {
       section: { pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } },

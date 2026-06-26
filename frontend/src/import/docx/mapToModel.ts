@@ -350,7 +350,7 @@ export function createMapper(
         irBlock.kind === "paragraph"
           ? mapParagraph(irBlock, media, resolveLink)
           : irBlock.kind === "math"
-            ? [{ kind: "equation", id: id(), revision: 0, equation: { root: irBlock.root, display: irBlock.display }, align: "center" }]
+            ? [{ kind: "equation", id: id(), revision: 0, equation: { root: irBlock.root, display: irBlock.display }, align: irBlock.align ?? "center" }]
             : [mapTable(irBlock, media, resolveLink)];
 
       // Custom-field membership: an IR block in a field's result region stamps its
@@ -727,7 +727,7 @@ export function createMapper(
           b.kind === "paragraph"
             ? mapParagraph(b, media, resolveLink)
             : b.kind === "math"
-              ? [{ kind: "equation", id: id(), revision: 0, equation: { root: b.root, display: b.display }, align: "center" }]
+              ? [{ kind: "equation", id: id(), revision: 0, equation: { root: b.root, display: b.display }, align: b.align ?? "center" }]
               : [mapTable(b, media, resolveLink)]; // nested table — model renders one level
         // Block-level control inside a cell: stamp every produced model block.
         if (b.sdtPath) for (const mb of mapped) mb.sdtPath = b.sdtPath;

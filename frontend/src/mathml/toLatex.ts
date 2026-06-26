@@ -105,7 +105,9 @@ function node(n: MathNode): { tex: string; tight: boolean } {
     case "phantom":
       return { tex: `\\phantom{${inner(n.child)}}`, tight: true };
     case "unknown":
-      return { tex: n.mathml ? "" : "", tight: true };
+      // Don't silently erase — emit a visible placeholder so the equation isn't
+      // quietly truncated when re-serialized to LaTeX.
+      return { tex: "\\square", tight: true };
   }
 }
 
@@ -133,7 +135,9 @@ function spaceCmd(em: number): string {
 function fenced(n: Extract<MathNode, { type: "fenced" }>): string {
   // A delimited matrix becomes \begin{pmatrix} … (nicer than \left( … \right)).
   if (n.child.type === "matrix") {
-    const env = ENV_FOR_FENCE[n.open];
+    // `{` with no closing delimiter is the cases form; `{`+`}` is Bmatrix. Key on
+    // BOTH delimiters so cases doesn't serialize back as \begin{Bmatrix}.
+    const env = n.open === "{" && !n.close ? "cases" : ENV_FOR_FENCE[n.open];
     if (env) return matrix(n.child.rows, env);
   }
   const open = n.open || ".";

@@ -366,7 +366,7 @@ function naryBox(n: Extract<MathNode, { type: "nary" }>, ctx: MathLayoutCtx): Ma
   const opCluster: MathNode = limits
     ? { type: "limit", base: opNode, ...(n.sub ? { under: n.sub } : {}), ...(n.sup ? { over: n.sup } : {}) }
     : { type: "script", base: opNode, ...(n.sub ? { sub: n.sub } : {}), ...(n.sup ? { sup: n.sup } : {}) };
-  return hbox([layoutMathNode(opCluster, ctx), layoutMathNode(n.body, ctx)], [0, c.thinSpace]);
+  return hbox([layoutMathNode(opCluster, ctx), layoutMathNode(n.body, ctx)], [0, n.hideOp ? 0 : c.thinSpace]);
 }
 
 // ── Matrices ─────────────────────────────────────────────────────────────────
@@ -378,6 +378,7 @@ function matrixBox(rows: MathNode[][], ctx: MathLayoutCtx): MathBox {
   if (rows.length === 0) return emptyBox();
   const cells = rows.map((r) => r.map((cell) => layoutMathNode(cell, ctx)));
   const nCols = Math.max(...cells.map((r) => r.length));
+  if (nCols === 0) return emptyBox(); // all-empty rows → no negative width
   const colW: number[] = [];
   for (let j = 0; j < nCols; j++) colW[j] = Math.max(0, ...cells.map((r) => (r[j] ? r[j]!.width : 0)));
   const rowH = cells.map((r) => ({

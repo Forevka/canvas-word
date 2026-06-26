@@ -65,8 +65,11 @@ function nodeFrom(n: TNode): MathNode {
     case "mrow":
     case "mstyle":
     case "mpadded":
-    case "semantics":
       return rowOf(els);
+    case "semantics":
+      // The presentation node is the FIRST child; the rest are <annotation> /
+      // <annotation-xml> metadata, not renderable content.
+      return els[0] ? nodeFrom(els[0]!) : emptyMathRow();
     case "mi": {
       const v = attr(n, "mathvariant");
       return { type: "ident", text: text(n), ...(v && KNOWN_VARIANTS.has(v) ? { variant: v as MathVariant } : {}) };
@@ -149,6 +152,8 @@ function matrixFrom(rowEls: TNode[]): MathMatrix {
 
 function parseEm(w: string | undefined): number | undefined {
   if (!w) return undefined;
-  const m = /^(-?[\d.]+)\s*em$/.exec(w.trim());
-  return m ? Number(m[1]) : undefined;
+  const m = /^(-?(?:\d+(?:\.\d+)?|\.\d+))\s*em$/.exec(w.trim());
+  if (!m) return undefined;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : undefined;
 }

@@ -31,6 +31,7 @@ for (let i = 0; i < numTables; i++) {
   if (tag === "head") headOff = off;
 }
 if (!mathOff) throw new Error("no MATH table in font");
+if (!headOff) throw new Error("no head table in font (cannot read unitsPerEm)");
 const unitsPerEm = u16(headOff + 18);
 
 // --- MATH header -> MathConstants subtable -----------------------------------
