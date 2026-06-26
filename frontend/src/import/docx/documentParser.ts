@@ -26,6 +26,7 @@ import type {
 import { decodeBorders, decodeShdFill } from "./borders";
 import { decodeParaProps, decodeRunProps } from "./props";
 import { attr, children, el, els, findDeep, numAttr, parseXml, rootEl, textOf, val, type XmlNode } from "./xml";
+import { ommlToMathml } from "../../mathml/fromOmml";
 
 interface ParseCtx {
   warnings: WarningSink;
@@ -213,6 +214,11 @@ function walkBlocks(nodes: XmlNode[], out: IRBlock[], ctx: ParseCtx): void {
         if (idAttr) ctx.pendingMarkers.push({ id: idAttr, kind: "end", offset: 0 });
         break;
       }
+      case "m:oMathPara": {
+        // Display (block) equation — convert OMML → MathML AST.
+        out.push({ kind: "math", root: ommlToMathml(node), display: true });
+        break;
+      }
       case "w:sectPr":
         break; // handled by the caller
       default:
@@ -370,6 +376,11 @@ function walkInlines(nodes: XmlNode[], out: IRInline[], ctx: ParseCtx, field: Fi
       case "w:bookmarkEnd": {
         const idAttr = attr(node, "w:id");
         if (idAttr && ctx.currentMarkers) ctx.currentMarkers.push({ id: idAttr, kind: "end", offset: inlineOffset(out) });
+        break;
+      }
+      case "m:oMath": {
+        // Inline equation → a single-U+FFFC run carrying the MathML AST.
+        out.push({ kind: "mathInline", root: ommlToMathml(node) });
         break;
       }
       default:

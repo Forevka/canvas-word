@@ -11,6 +11,12 @@ PDFs. The OFL/Apache faces below are freely redistributable.
 | Gelasio        | Georgia              | Eben Sorkin (Sorkin Type)                   | SIL OFL 1.1        |
 | Arimo          | Arial / Helvetica    | Steve Matteson (Ascender / Google Croscore) | Apache License 2.0 |
 | Cousine        | Courier New          | Steve Matteson (Ascender / Google Croscore) | Apache License 2.0 |
+| StixTwoMath    | (math typesetting)   | The STIX Fonts project / Tiro Typeworks     | SIL OFL 1.1        |
+
+`StixTwoMath-Regular.ttf` is **STIX Two Math** — the math font equations are
+typeset and rendered with (real math glyphs + the Mathematical Alphanumeric block
+for true italic/bold/blackboard letters). Single Regular face; not a metric clone.
+Source: https://github.com/stipub/stixfonts (OFL 1.1).
 
 Full license texts: SIL OFL 1.1 — https://openfontlicense.org ;
 Apache 2.0 — https://www.apache.org/licenses/LICENSE-2.0

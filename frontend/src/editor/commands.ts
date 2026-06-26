@@ -1,7 +1,7 @@
 // Commands: pure (state) -> Transaction | null. The keymap, the IME proxy, and
 // (later) toolbar buttons all dispatch through these.
 
-import type { Block, CellBorder, CellBorders, CharStyle, FieldDef, FieldSpec, ImageBlock, ParaStyle, Paragraph, Run, SdtProps, SdtType, TableBlock, TableCell, TableCondOverrides, TableRow, TableStyle, TocOptions, TocSwitches } from "@cw/shared";
+import type { Block, CellBorder, CellBorders, CharStyle, EquationBlock, FieldDef, FieldSpec, ImageBlock, MathEquation, ParaStyle, Paragraph, Run, SdtProps, SdtType, TableBlock, TableCell, TableCondOverrides, TableRow, TableStyle, TocOptions, TocSwitches } from "@cw/shared";
 import { cellCondFlags, effectiveCellProps, resolveTableStyle } from "@cw/shared";
 import { buildTocParagraphs, buildTocInstruction, buildInstruction, evaluateField } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, GridRect } from "@cw/shared";
@@ -22,6 +22,7 @@ import {
   prevGrapheme,
   nextGrapheme,
   styleAtRuns,
+  styleOfCharAt,
   textOfBlock,
   textOfRuns,
   words,
@@ -1621,6 +1622,73 @@ export function insertImage(src: string, widthPx: number, heightPx: number, medi
     });
 }
 
+/** Insert a display equation as its own block at the caret. */
+export function insertEquation(equation: MathEquation): Command {
+  return (state) =>
+    insertBlockAtCaret(state, (): EquationBlock => ({
+      kind: "equation",
+      id: freshBlockId(),
+      revision: 0,
+      equation,
+      align: "center",
+    }));
+}
+
+/** Replace an existing display equation's MathML (the editor's Apply). */
+export function editEquationCmd(blockId: string, equation: MathEquation): Command {
+  return (state) => tr([{ type: "setEquation", blockId, equation }], state.selection, "command");
+}
+
+/** Set a display equation's horizontal alignment (left / center / right). */
+export function setEquationAlignCmd(blockId: string, align: "left" | "center" | "right"): Command {
+  return (state) => {
+    const b = state.doc.blocks.find((x) => x.id === blockId);
+    if (!b || b.kind !== "equation") return null;
+    return tr([{ type: "setEquationAlign", blockId, align }], state.selection, "command");
+  };
+}
+
+/** Insert an inline equation (a single U+FFFC run carrying the MathML) at the
+ *  caret, in the surrounding text style. Mirrors insertFieldCmd. */
+export function insertInlineEquation(equation: MathEquation): Command {
+  return (state) => {
+    const base = withSelectionDeleted(state);
+    if (!base) return null;
+    const baseStyle = fieldBaseStyle(state.doc, base.at.blockId, base.at.offset);
+    if (!baseStyle) return null;
+    const runs: Run[] = [{ text: "￼", style: { ...baseStyle, equation: { ...equation, display: false } } }];
+    base.ops.push({ type: "insertRuns", at: base.at, runs });
+    return tr(base.ops, caret(base.at.blockId, base.at.offset + 1), "command");
+  };
+}
+
+/** Replace an existing inline equation (the run at `blockId`/`offset`) with new
+ *  MathML, preserving the run's surrounding style. */
+export function editInlineEquationCmd(blockId: string, offset: number, equation: MathEquation): Command {
+  return (state) => {
+    const b = blockById(state.doc, blockId);
+    if (!b || b.kind !== "paragraph") return null;
+    // `offset` is the equation char's INDEX (the run AT it), not a caret position.
+    const style = styleOfCharAt(b.runs, offset);
+    if (!style?.equation) return null;
+    const ops: Op[] = [
+      { type: "deleteRange", blockId, start: offset, end: offset + 1 },
+      { type: "insertRuns", at: { blockId, offset }, runs: [{ text: "￼", style: { ...style, equation: { ...equation, display: false } } }] },
+    ];
+    return tr(ops, caret(blockId, offset + 1), "command");
+  };
+}
+
+/** Delete an inline equation (the single U+FFFC run at char index `offset`). */
+export function removeInlineEquationCmd(blockId: string, offset: number): Command {
+  return (state) => {
+    const b = blockById(state.doc, blockId);
+    if (!b || b.kind !== "paragraph") return null;
+    if (!styleOfCharAt(b.runs, offset)?.equation) return null;
+    return tr([{ type: "deleteRange", blockId, start: offset, end: offset + 1 }], caret(blockId, offset), "command");
+  };
+}
+
 export function insertTable(rows: number, cols: number): Command {
   return (state) => {
     const sel = state.selection;
@@ -2201,6 +2269,17 @@ export function moveAnchoredImage(
     if (!loc?.image.anchor) return null; // only anchored (out-of-flow) images move
     const anchor: ImageAnchor = { ...loc.image.anchor, offsetXPx, offsetYPx };
     return tr([{ type: "setImageProps", blockId, patch: { anchor } }], state.selection, origin);
+  };
+}
+
+/** Remove a top-level block object (e.g. a display equation) and park the caret on
+ *  a neighbour. For images use deleteImage (it also handles in-cell images). */
+export function removeBlockObject(blockId: string): Command {
+  return (state) => {
+    const bi = state.doc.blocks.findIndex((b) => b.id === blockId);
+    if (bi < 0) return null;
+    const neighbour = state.doc.blocks[bi + 1] ?? state.doc.blocks[bi - 1];
+    return tr([{ type: "removeBlock", blockId }], neighbour ? caret(neighbour.id, 0) : state.selection, "command");
   };
 }
 

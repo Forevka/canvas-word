@@ -5,10 +5,11 @@
 // Built as plain model data (the same Document the editor/exporter/collab consume).
 
 import type {
-  BookmarkRange, CharStyle, Document, FieldDef, FieldSpec, ImageBlock, ParaStyle, Paragraph, Run, SdtProps, TableBlock, TableCell,
+  BookmarkRange, CharStyle, Document, EquationBlock, FieldDef, FieldSpec, ImageBlock, ParaStyle, Paragraph, Run, SdtProps, TableBlock, TableCell,
 } from "@cw/shared";
 import { buildInstruction, buildTocParagraphs, DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE, defaultStylesheet, evaluateIf, formatFieldDate } from "@cw/shared";
 import { defaultListDefinition, DEFAULT_BULLET_LIST_ID, DEFAULT_NUMBER_LIST_ID } from "@cw/shared";
+import { parseMathml } from "../mathml/parse";
 
 const BODY: CharStyle = DEFAULT_CHAR_STYLE;
 const PARA: ParaStyle = DEFAULT_PARA_STYLE;
@@ -67,6 +68,18 @@ const SVG = (label: string, w: number, h: number): string =>
   );
 const image = (label: string, w: number, h: number, align: ImageBlock["align"], wrap?: "block" | "square"): ImageBlock => ({
   kind: "image", id: id(), revision: 0, src: SVG(label, w, h), widthPx: w, heightPx: h, align, ...(wrap ? { wrap } : {}) });
+
+// --- equations (MathML) --------------------------------------------------------
+/** A display equation block from a MathML string. Stored as the MathML AST (the
+ *  canonical form); typeset by the layout engine and round-tripped to .docx as
+ *  OMML. `display: true` centers it on its own line like Word's block math. */
+const eq = (mathml: string, align: EquationBlock["align"] = "center"): EquationBlock => ({
+  kind: "equation", id: id(), revision: 0, equation: { ...parseMathml(mathml), display: true }, align,
+});
+/** Caption + monospace MathML source, so the demo SHOWS the MathML behind a render. */
+const mathmlSource = (xml: string): Run => run(xml, { fontFamily: "Consolas, monospace", fontSizePx: 11, color: "#5f6368" });
+/** An INLINE equation run: a single U+FFFC carrying the MathML, sized to the text. */
+const inlineEq = (xml: string): Run => ({ text: "￼", style: { ...BODY, equation: { ...parseMathml(xml), display: false } } });
 
 // --- tables --------------------------------------------------------------------
 const cellPara = (text: string, patch: Partial<CharStyle> = {}, runs?: Run[]): Paragraph => ({
@@ -137,6 +150,26 @@ const autofitTable = (): TableBlock => ({
     { cells: [cell("3"), cell("Linus Torvalds"), cell("kernel maintainer")] },
   ],
 });
+
+// MathML sources for the equations demo (Presentation MathML, the W3C standard).
+const MATH_QUADRATIC =
+  "<math><mi>x</mi><mo>=</mo><mfrac><mrow><mo>-</mo><mi>b</mi><mo>±</mo>" +
+  "<msqrt><mrow><msup><mi>b</mi><mn>2</mn></msup><mo>-</mo><mn>4</mn><mi>a</mi><mi>c</mi></mrow></msqrt>" +
+  "</mrow><mrow><mn>2</mn><mi>a</mi></mrow></mfrac></math>";
+const MATH_SUM =
+  "<math><munderover><mo>∑</mo><mrow><mi>n</mi><mo>=</mo><mn>1</mn></mrow><mo>∞</mo></munderover>" +
+  "<mfrac><mn>1</mn><msup><mi>n</mi><mn>2</mn></msup></mfrac><mo>=</mo>" +
+  "<mfrac><msup><mi>π</mi><mn>2</mn></msup><mn>6</mn></mfrac></math>";
+const MATH_INTEGRAL =
+  "<math><munderover><mo>∫</mo><mrow><mo>-</mo><mi>∞</mi></mrow><mo>∞</mo></munderover>" +
+  "<msup><mi>e</mi><mrow><mo>-</mo><msup><mi>x</mi><mn>2</mn></msup></mrow></msup>" +
+  "<mspace width=\"0.2em\"/><mi>d</mi><mi>x</mi><mo>=</mo><msqrt><mi>π</mi></msqrt></math>";
+const MATH_EULER =
+  "<math><msup><mi>e</mi><mrow><mi>i</mi><mi>π</mi></mrow></msup><mo>+</mo><mn>1</mn><mo>=</mo><mn>0</mn></math>";
+const MATH_MATRIX =
+  "<math><mfenced open=\"[\" close=\"]\"><mtable>" +
+  "<mtr><mtd><mn>1</mn></mtd><mtd><mn>0</mn></mtd></mtr>" +
+  "<mtr><mtd><mn>0</mn></mtd><mtd><mn>1</mn></mtd></mtr></mtable></mfenced></math>";
 
 const LOREM = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. ";
 
@@ -217,7 +250,7 @@ export function sampleDoc(): Document {
 
   const richHeading = heading("Rich text, lists & images", 1);
 
-  const bodyBlocks: (Paragraph | TableBlock | ImageBlock)[] = [
+  const bodyBlocks: (Paragraph | TableBlock | ImageBlock | EquationBlock)[] = [
     fieldsHeading,
     fieldsPara,
     para([
@@ -306,6 +339,48 @@ export function sampleDoc(): Document {
     para([run("العنصر الثاني في القائمة")], { direction: "rtl", list: { listId: DEFAULT_BULLET_LIST_ID, level: 0 }, spaceAfterPx: 2 }),
     para([run("مستوى متداخل داخل القائمة")], { direction: "rtl", list: { listId: DEFAULT_BULLET_LIST_ID, level: 1 }, spaceAfterPx: 2 }),
     para([run("وفقرة عربية مضبوطة (justify) تمتد على عدة أسطر: تُوزَّع المسافات بين الكلمات حتى يمتلئ كل سطر من الحافة إلى الحافة، مع إعادة الترتيب البصري للكلمات والأرقام — تمامًا كما يفعل Word مع النص ثنائي الاتجاه. ".repeat(3))], { direction: "rtl", align: "justify", spaceBeforePx: 6 }),
+
+    // --- Mathematics: MathML equations ----------------------------------------
+    heading("Mathematics — MathML equations", 1),
+    para([
+      run("Equations are first-class objects. They are stored as "),
+      run("MathML", { bold: true }),
+      run(" (the W3C standard), typeset by the very same layout engine that paginates these pages — fractions, radicals, scripts, summation/integral limits and matrices are all measured on the canvas — and they round-trip through "),
+      run(".docx", { fontFamily: "Consolas, monospace", fontSizePx: 14 }),
+      run(" as "),
+      run("OMML", { bold: true }),
+      run(", the math format Word itself uses. They typeset with the STIX Two Math font (real math glyphs, growing delimiters and big operators), and you can author them by typing "),
+      run("LaTeX", { bold: true }),
+      run(" — Insert → Equation, e.g. "),
+      run("\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}", { fontFamily: "Consolas, monospace", fontSizePx: 13 }),
+      run(". A few display equations, rendered live below:"),
+    ], { spaceAfterPx: 10 }),
+
+    para([
+      run("Equations also flow "),
+      run("inline", { italic: true }),
+      run(" inside a sentence and sit on the text baseline — for example the Pythagorean identity "),
+      inlineEq("<math><msup><mi>a</mi><mn>2</mn></msup><mo>+</mo><msup><mi>b</mi><mn>2</mn></msup><mo>=</mo><msup><mi>c</mi><mn>2</mn></msup></math>"),
+      run(", or a quick fraction "),
+      inlineEq("<math><mfrac><mn>1</mn><mn>2</mn></mfrac></math>"),
+      run(" — right-click either one to edit it (in LaTeX or MathML)."),
+    ], { spaceBeforePx: 6, spaceAfterPx: 8 }),
+
+    para([run("The quadratic formula — nested radicals, a fraction and a ± operator. Its MathML source is shown beneath the rendered result:", { color: "#3c4043" })], { spaceBeforePx: 6, spaceAfterPx: 6 }),
+    eq(MATH_QUADRATIC),
+    para([mathmlSource(MATH_QUADRATIC)], { spaceBeforePx: 2, spaceAfterPx: 10 }),
+
+    para([run("A convergent series, with limits set above and below the summation sign (Basel problem):", { color: "#3c4043" })], { spaceBeforePx: 6, spaceAfterPx: 6 }),
+    eq(MATH_SUM),
+
+    para([run("The Gaussian integral — super/subscript bounds on the integral and a nested exponential:", { color: "#3c4043" })], { spaceBeforePx: 10, spaceAfterPx: 6 }),
+    eq(MATH_INTEGRAL),
+
+    para([run("Euler's identity — the most beautiful equation in mathematics:", { color: "#3c4043" })], { spaceBeforePx: 10, spaceAfterPx: 6 }),
+    eq(MATH_EULER),
+
+    para([run("A delimited matrix, laid out as a grid (the 2×2 identity):", { color: "#3c4043" })], { spaceBeforePx: 10, spaceAfterPx: 6 }),
+    eq(MATH_MATRIX),
 
     para([run("— a tour of canvas-word —", { italic: true, color: "#5f6368" })], { align: "center", spaceBeforePx: 20 }),
   ];

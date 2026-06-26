@@ -55,8 +55,8 @@ and an export pipeline for `.docx` and PDF (`frontend/src/export/`, see
 
 ### Non-goals
 
-- Re-implementing the long tail of Word (VBA, SmartArt, equation editor,
-  WordArt, charts). Each is its own product.
+- Re-implementing the long tail of Word (VBA, SmartArt, WordArt, charts). Each is
+  its own product. (Math **equations** are now supported — see below.)
 - Full OOXML fidelity. We target a **clean, honest subset** that round-trips;
   exotic constructs degrade with explicit warnings, never silently.
 - Being a rich-text *component*. This is a paged document editor; if you need
@@ -77,9 +77,12 @@ buys live collaboration. It also goes **past** the incumbents in one place that
 matters for generated reports: **nested content controls** (a w:sdt inside a
 w:sdt, to any depth — including complex Word fields nested inside them)
 round-trip faithfully, which the commercial editors flatten. Right-to-left,
-bidi, and CJK editing now work out of the box; the honest gaps versus the
-incumbents are a bundled CJK font (CJK needs a registered font to embed in
-export) and charts/equations (see Known limitations below).
+bidi, and CJK editing now work out of the box — and so do **mathematical
+equations**: MathML-native, typeset with the bundled STIX Two Math font (real
+math glyphs, growing delimiters, display-size big operators), round-tripped to
+`.docx` as OMML, with a visual editor that also accepts LaTeX. The honest gaps
+versus the incumbents are now a bundled CJK font (CJK needs a registered font to
+embed in export) and charts (see Known limitations below).
 A full side-by-side writeup lives at
 [Best embeddable JS Word editors](https://forevka.dev/articles/best-embeddable-js-word-editors/).
 
@@ -512,6 +515,14 @@ Everything in it is done; the editor covers ~95% of everyday Word usage.
   lays out (bidi + kinsoku) and renders on-screen via system fonts, but a CJK
   font must be registered (`cjk.fallbackFont` / `fonts`) to embed it in PDF/DOCX
   export — without one, export renders tofu.
+- **Math equations are a focused subset.** Equations are Presentation MathML
+  (the canonical form), typeset with the bundled STIX Two Math font using its real
+  OpenType MATH constants, and round-trip through `.docx` as OMML (both inline
+  `m:oMath` and display `m:oMathPara`). Display and inline equations are
+  selectable/editable; the editor accepts MathML or LaTeX (the common command set
+  — no AsciiMath, no full LaTeX engine). Stretchy delimiters use glyph size-scaling
+  rather than the MATH table's piecewise glyph assembly, and OMML constructs
+  outside the supported element set are surfaced rather than silently dropped.
 - Raster browser-print was skipped — use PDF export instead.
 - `font-feature-settings` / optical sizing unsupported (pretext limitation).
 - Child-document previews render a single content flow (no pagination, cropped to

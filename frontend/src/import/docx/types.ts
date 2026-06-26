@@ -5,7 +5,7 @@
 // everything it understands (even what the model can't hold yet); mapToModel
 // decides what survives and emits an ImportWarning for every lossy decision.
 
-import type { Document, FieldDef } from "@cw/shared";
+import type { Document, FieldDef, MathRow } from "@cw/shared";
 
 export type ImportPhase = "unzip" | "styles" | "parse" | "map";
 
@@ -143,6 +143,9 @@ export interface IRSdtProps {
 
 export type IRInline =
   | { kind: "run"; text: string; props: IRRunProps; sdtPath?: string[]; fieldId?: string }
+  /** Inline equation (w:p-level m:oMath) — becomes a single-U+FFFC run carrying
+   *  the MathML on CharStyle.equation. */
+  | { kind: "mathInline"; root: MathRow }
   /** w:br / w:cr — soft line break (model has none; mapToModel splits the
    *  paragraph). page=true for w:br w:type="page" (→ pageBreakBefore on the
    *  follower); column=true for w:br w:type="column" (→ columnBreakBefore). */
@@ -342,7 +345,19 @@ export interface IRTable {
   sdtPath?: string[];
 }
 
-export type IRBlock = IRParagraph | IRTable;
+/** w:oMathPara — a display (block) equation. The OMML is converted to a MathML
+ *  AST at parse time (see import/docx/documentParser → ommlToMathml). */
+export interface IRMath {
+  kind: "math";
+  root: MathRow;
+  display: boolean;
+  /** Custom-field result membership — mapped onto Block.fieldId. */
+  fieldId?: string;
+  /** Block-level content-control ancestry — mapped onto Block.sdtPath. */
+  sdtPath?: string[];
+}
+
+export type IRBlock = IRParagraph | IRTable | IRMath;
 
 // ---------------------------------------------------------------------------
 // Numbering (numbering.xml) — raw decode; mapToModel converts to model lists.

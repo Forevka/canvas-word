@@ -14,7 +14,7 @@
 import { setMeasureContext } from "../../layout/metrics";
 import { FontkitMeasureContext } from "./fontkitContext";
 import { builtinsRegistered, registerFont } from "./fontRegistry";
-import { FONT_FILES } from "../../fonts/clones";
+import { FONT_FILES, MATH_FONT_FILE } from "../../fonts/clones";
 
 async function readFontBytes(file: string): Promise<Uint8Array> {
   const url = new URL(`./fonts/${file}`, import.meta.url);
@@ -38,6 +38,14 @@ export function installMeasureHost(): Promise<void> {
   installPromise = (async () => {
     if (!builtinsRegistered()) {
       await Promise.all(FONT_FILES.map(async (f) => registerFont(f, await readFontBytes(f))));
+      // The bundled math font (single Regular face) — registered alongside the
+      // clones so equations measure + embed identically across editor/export.
+      try {
+        registerFont(MATH_FONT_FILE, await readFontBytes(MATH_FONT_FILE));
+      } catch {
+        // Math font missing — equations fall back to the default clone (tofu for
+        // math-alphanumeric glyphs), but the rest of the document is unaffected.
+      }
     }
     // Route pretext + metrics through the fontkit shim over the bundled clones.
     // Override the globals unconditionally — this host runs only off the main

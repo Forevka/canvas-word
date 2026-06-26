@@ -368,6 +368,7 @@ td.mtx-scorecell{background:#fff; border-left:1px solid var(--line)}
     <span class="chip">Live multi-user collaboration</span>
     <span class="chip">Track changes &amp; comments</span>
     <span class="chip">Right-to-left &amp; CJK</span>
+    <span class="chip">Math equations (MathML)</span>
     <span class="chip">Headless on Node</span>
   </div>
 </div>
@@ -475,7 +476,7 @@ td.mtx-scorecell{background:#fff; border-left:1px solid var(--line)}
         </tbody>
       </table>
     </div>
-    <p class="cmp-note">Right-to-left, bidi, and CJK editing now work out of the box. Where the commercial editors still win today: charts and equations (OMML math is on our roadmap), a CJK font bundled in the box, and an enterprise support contract. We tell you that up front.</p>
+    <p class="cmp-note">Right-to-left, bidi, CJK editing, and mathematical equations (MathML, typeset with STIX Two Math, round-tripped to <code>.docx</code> as OMML) now work out of the box. Where the commercial editors still win today: charts, a CJK font bundled in the box, and an enterprise support contract. We tell you that up front.</p>
   </div>
 </section>
 
@@ -558,6 +559,7 @@ editor.<span class="c-fn">on</span>(<span class="c-str">"ready"</span>, () =&gt;
       <div class="feat"><div class="ic">✍️</div><h3>Track changes &amp; comments</h3><p>Review workflows with suggestions and comment threads built into the editor.</p></div>
       <div class="feat"><div class="ic">📊</div><h3>Tables, fields, TOC &amp; styles</h3><p>Span-aware tables, PAGE/NUMPAGES/DATE fields, generated tables of contents, and a full style manager.</p></div>
       <div class="feat"><div class="ic">🌍</div><h3>Right-to-left, bidi &amp; CJK</h3><p>Full Unicode bidi (UAX#9) with multi-run caret and selection, RTL <code>.docx</code> round-trip, and out-of-the-box CJK line-breaking with kinsoku rules.</p></div>
+      <div class="feat"><div class="ic">∑</div><h3>Math equations</h3><p>MathML-native equations typeset with the bundled STIX Two Math font — fractions, radicals, scripts, growing delimiters, big operators and matrices. Insert via a visual editor (MathML or LaTeX) with a live preview; equations are selectable and editable, and round-trip to <code>.docx</code> as OMML.</p></div>
       <div class="feat"><div class="ic">🪆</div><h3>Nested content controls</h3><p>Content controls inside content controls — to any depth, with complex Word fields nested inside — round-trip through <code>.docx</code> intact. No other browser-native editor keeps the nesting; generated report section→field structure survives editing.</p></div>
       <div class="feat"><div class="ic">🖥️</div><h3>Headless on Node</h3><p>Build or import documents server-side and export to DOCX/PDF with no browser and no DOM.</p></div>
       <div class="feat"><div class="ic">👁️</div><h3>Read-only viewer mode</h3><p><code>readonly: true</code> mounts a selectable, copyable, find-enabled viewer with editing disabled.</p></div>
@@ -833,7 +835,7 @@ wireCopy('copy-npm'); wireCopy('copy-npm-2');
       fnp:["y","Footnotes placed on their reference page and painted into the exported PDF"],
       fld:["y","PAGE/NUMPAGES/DATE/TIME/IF + custom fields; live TOC build/update with PAGEREF"],
       rtl:["y","Full UAX#9 bidi with multi-run caret/selection, RTL .docx round-trip, and out-of-the-box CJK kinsoku line-breaking — register a CJK font for export embedding"],
-      eqn:["n","OMML math not yet implemented — on the roadmap"],
+      eqn:["y","MathML equations typeset with STIX Two Math (growing delimiters, big operators, matrices); inline + display OMML round-trip; visual editor accepts MathML or LaTeX"],
       emb:["y","Zero runtime deps; import/edit/export in Web Workers; no server required"],
       lic:["y","MIT, fully client-side, no per-connection cap"]
     }},

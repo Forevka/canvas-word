@@ -4,7 +4,8 @@
 // into nested "SDT → … → runs" and "Field → run" group nodes.
 
 import type { Block, Document, ImageBlock, Paragraph, Run, TableBlock } from "@cw/shared";
-import { BAND_CONTAINERS, textOfRuns } from "@cw/shared";
+import type { MathNode } from "@cw/shared";
+import { BAND_CONTAINERS, mathSlots, mathToPlainText, textOfRuns } from "@cw/shared";
 import type { TreeNode } from "./types";
 import { previewText, shortId } from "./types";
 
@@ -113,22 +114,63 @@ function groupByPath<T>(
 
 /** Build the tree node for one block, recursing into table cells, with inline runs
  *  grouped under their content-control / field membership. */
+/** A MathML AST node as a tree node (recursive). Atoms show their text; every
+ *  node highlights the equation it belongs to (math nodes have no own range). */
+function mathNode(n: MathNode, key: string, target: TreeNode["target"]): TreeNode {
+  const slots = mathSlots(n);
+  const text = n.type === "ident" || n.type === "number" || n.type === "op" || n.type === "text" ? n.text : "";
+  const badges: string[] = [];
+  if (n.type === "ident" && n.variant) badges.push(n.variant);
+  if (n.type === "op" && n.stretchy) badges.push("stretchy");
+  if (n.type === "frac" && n.thickness === "0") badges.push("no-bar");
+  if (n.type === "nary") badges.push(`op ${n.op}`);
+  if (n.type === "fenced") badges.push(`${n.open || "·"} ${n.close || "·"}`);
+  return {
+    key,
+    kind: "tag",
+    label: text ? `${n.type} "${text}"` : n.type,
+    preview: slots.length ? "" : mathToPlainText(n),
+    badges,
+    target,
+    data: n,
+    children: slots.map((c, i) => mathNode(c, `${key}.${i}`, target)),
+  };
+}
+
 function blockNode(doc: Document, block: Block): TreeNode {
   if (block.kind === "paragraph") {
     type RunItem = { run: Run; index: number; start: number; end: number };
     const items: RunItem[] = [];
     let off = 0;
     block.runs.forEach((r, i) => { const start = off; off += r.text.length; items.push({ run: r, index: i, start, end: off }); });
-    const runLeaf = (it: RunItem): TreeNode => ({
-      key: `${block.id}#run${it.index}`,
-      kind: "run",
-      label: "run",
-      preview: previewText(it.run.text) || "∅",
-      badges: runBadges(it.run.style),
-      target: { kind: "run", blockId: block.id, start: it.start, end: it.end },
-      data: it.run,
-      children: [],
-    });
+    const runLeaf = (it: RunItem): TreeNode => {
+      const target = { kind: "run" as const, blockId: block.id, start: it.start, end: it.end };
+      const eq = it.run.style.equation;
+      // An inline equation run (a single U+FFFC) shows as "∑ equation" and expands
+      // into its MathML AST, instead of an opaque object-replacement char.
+      if (eq) {
+        return {
+          key: `${block.id}#run${it.index}`,
+          kind: "run",
+          label: "∑ equation (inline)",
+          preview: mathToPlainText(eq.root) || "∅",
+          badges: ["inline"],
+          target,
+          data: it.run,
+          children: eq.root.children.map((n, i) => mathNode(n, `${block.id}#run${it.index}.m${i}`, target)),
+        };
+      }
+      return {
+        key: `${block.id}#run${it.index}`,
+        kind: "run",
+        label: "run",
+        preview: previewText(it.run.text) || "∅",
+        badges: runBadges(it.run.style),
+        target,
+        data: it.run,
+        children: [],
+      };
+    };
     return {
       key: block.id, kind: "block",
       label: "¶ paragraph",
@@ -150,6 +192,20 @@ function blockNode(doc: Document, block: Block): TreeNode {
       target: { kind: "block", blockId: block.id },
       data: block,
       children: [],
+    };
+  }
+  if (block.kind === "equation") {
+    return {
+      key: block.id, kind: "block",
+      label: "∑ equation",
+      preview: mathToPlainText(block.equation.root),
+      badges: [block.equation.display ? "display" : "inline"],
+      blockId: block.id,
+      target: { kind: "block", blockId: block.id },
+      data: block,
+      // Expand into the MathML AST so the structure (fractions, scripts, …) is
+      // inspectable; every math node highlights the whole equation.
+      children: block.equation.root.children.map((n, i) => mathNode(n, `${block.id}#m${i}`, { kind: "block", blockId: block.id })),
     };
   }
   // table → rows → cells → (grouped) blocks

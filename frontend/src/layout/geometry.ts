@@ -177,6 +177,13 @@ const advCtx = document.createElement("canvas").getContext("2d")!;
 function clustersOf(frag: InlineFragment): ClusterInfo {
   let info = clusterCache.get(frag);
   if (info) return info;
+  // Inline equation: one atomic cluster spanning the whole box width, so the
+  // caret lands only before/after the equation (never "inside" the sentinel).
+  if (frag.equation) {
+    info = { boundaries: [0, frag.text.length], advances: [0, frag.width] };
+    clusterCache.set(frag, info);
+    return info;
+  }
   advCtx.font = charStyleToFont(frag.style);
   // letter/wordSpacing are supported in all evergreen canvases; must match paint.
   const ctx2 = advCtx as CanvasRenderingContext2D & { letterSpacing: string; wordSpacing: string };
@@ -655,6 +662,28 @@ export function pointOnText(tree: LayoutTree, pageIndex: number, x: number, y: n
   return false;
 }
 
+/** Display-equation block under a page point (incl. equations inside table cells).
+ *  Equations aren't object-selectable like images (no resize frame); this is used
+ *  by the context menu to offer "Edit Equation…". Returns the topmost match. */
+export function hitTestEquation(tree: LayoutTree, pageIndex: number, x: number, y: number): ObjectHit | null {
+  const page = tree.pages[pageIndex];
+  if (!page) return null;
+  let hit: ObjectHit | null = null;
+  const scan = (blocks: PlacedBlock[]): void => {
+    for (const block of blocks) {
+      if (block.equation) {
+        const { width, height } = block.equation;
+        if (x >= block.x && x <= block.x + width && y >= block.y && y <= block.y + height) {
+          hit = { blockId: block.blockId, rect: { pageIndex, x: block.x, y: block.y, width, height } };
+        }
+      }
+      if (block.table) for (const row of block.table.rows) for (const cell of row.cells) scan(cell.blocks);
+    }
+  };
+  scan(page.blocks);
+  return hit;
+}
+
 /** Object to select for a click/right-click at a page point: a foreground image
  *  wins anywhere it's hit; a behind-text image is selectable only where no text
  *  covers it (so text on top stays clickable). */
@@ -667,11 +696,14 @@ export function hitTestSelectableObject(
 ): ObjectHit | null {
   const fg = hitTestObject(tree, pageIndex, x, y);
   if (fg) return fg;
+  const eq = hitTestEquation(tree, pageIndex, x, y);
+  if (eq) return eq;
   if (pointOnText(tree, pageIndex, x, y, scope)) return null;
   return hitTestBehindObject(tree, pageIndex, x, y);
 }
 
-/** Where the selection frame for an image block lives right now (post-relayout). */
+/** Where the selection frame for an image OR equation block lives right now
+ *  (post-relayout) — drives the object frame for both. */
 export function objectRect(tree: LayoutTree, blockId: string): Rect | null {
   for (const page of tree.pages) {
     let rect: Rect | null = null;
@@ -687,6 +719,53 @@ export function objectRect(tree: LayoutTree, blockId: string): Rect | null {
       return true;
     });
     if (rect) return rect;
+  }
+  // Equations aren't image blocks; scan them separately (incl. table cells).
+  for (const page of tree.pages) {
+    const found = scanEquationRect(page.blocks, blockId, page.index);
+    if (found) return found;
+  }
+  return null;
+}
+
+function scanEquationRect(blocks: PlacedBlock[], blockId: string, pageIndex: number): Rect | null {
+  for (const block of blocks) {
+    if (block.equation && block.blockId === blockId) {
+      return { pageIndex, x: block.x, y: block.y, width: block.equation.width, height: block.equation.height };
+    }
+    if (block.table) {
+      for (const row of block.table.rows) {
+        for (const cell of row.cells) {
+          const r = scanEquationRect(cell.blocks, blockId, pageIndex);
+          if (r) return r;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/** Inline equation under a page point: the character RANGE of the equation run
+ *  (one U+FFFC), so a click can select it like a small inline object. */
+export function inlineEquationAt(
+  tree: LayoutTree,
+  pageIndex: number,
+  x: number,
+  y: number,
+  scope?: GeoScope,
+): { blockId: string; start: number; end: number } | null {
+  const idx = getIndex(tree, scope);
+  for (const e of idx.entries) {
+    if (e.pageIndex !== pageIndex) continue;
+    const top = e.block.y + e.line.y;
+    if (y < top || y >= top + e.line.height) continue;
+    for (const frag of e.line.fragments) {
+      if (!frag.equation) continue;
+      const fx = e.block.x + frag.x;
+      if (x >= fx && x <= fx + frag.width) {
+        return { blockId: frag.blockId, start: frag.startOffset, end: frag.endOffset };
+      }
+    }
   }
   return null;
 }

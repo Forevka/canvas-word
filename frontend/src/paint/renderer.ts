@@ -14,7 +14,10 @@ import type { LayoutTree, LineBox, Page, PlacedBlock, PlacedTableCell } from "..
 import type { CaretRect, Rect } from "../layout/geometry";
 import { spaceMarkXs } from "../layout/geometry";
 import type { CellBorder } from "@cw/shared";
+import { DEFAULT_CHAR_STYLE } from "@cw/shared";
 import { charStyleToFont } from "../layout/metrics";
+import { paintMathBoxCanvas, paintMathBoxCanvasRaw } from "./paintMath";
+import { MATH_FONT_FAMILY } from "../fonts/clones";
 import { setActiveFontRegistry, type CustomFontRegistry } from "../fonts/customRegistry";
 import {
   cellBorderDash,
@@ -872,6 +875,17 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       if (clip) ctx.restore();
       return;
     }
+    if (block.equation) {
+      paintMathBoxCanvas(
+        ctx,
+        block.equation,
+        block.x,
+        block.y + block.equation.baseline,
+        MATH_FONT_FAMILY,
+        DEFAULT_CHAR_STYLE.color,
+      );
+      return;
+    }
     if (block.table) {
       const rows = block.table.rows;
       // Cell fills are painted earlier (paintCellFills) so the highlight layers
@@ -956,6 +970,12 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
         if (s.highlightColor) {
           ctx.fillStyle = s.highlightColor;
           ctx.fillRect(x, block.y + line.y, frag.width, line.height);
+        }
+        if (frag.equation) {
+          ctx.direction = "ltr";
+          ctx.textAlign = "left";
+          paintMathBoxCanvasRaw(ctx, frag.equation, x, baselineY, MATH_FONT_FAMILY, s.color);
+          continue;
         }
         ctx.font = charStyleToFont(s);
         // EXTERNAL hyperlinks paint blue+underlined as an affordance. In-document

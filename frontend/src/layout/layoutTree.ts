@@ -2,6 +2,7 @@
 // input layers consume. Coordinates are CSS px, page-relative.
 
 import type { BandContainer, CellBorders, CharStyle, PageBorders, TabLeader } from "@cw/shared";
+import type { MathBox } from "./math/mathBox";
 
 /** A same-styled slice of text placed on a line. One ctx.fillText call each.
  *  Per-cluster advances for caret math are computed lazily by geometry.ts and
@@ -26,6 +27,10 @@ export interface InlineFragment {
    *  caret math when this is odd, and paint relies on the canvas to shape/render
    *  the (single-level) fragment text in its own direction. */
   level?: number;
+  /** Inline equation (OOXML inline m:oMath): this fragment is a single U+FFFC that
+   *  paints as the typeset math box instead of text. `width` is the box width; the
+   *  box glyphs/rules are relative to the line baseline. */
+  equation?: MathBox;
 }
 
 export interface LineBox {
@@ -64,6 +69,17 @@ export interface PlacedImage {
   front?: boolean;
   /** Stacking order within the behind/front layer (ImageBlock.anchor.z). */
   z?: number;
+}
+
+/** A placed display equation — the typeset math box plus where its baseline sits
+ *  within the block. Painters draw `box.glyphs`/`box.rules` at (blockX + glyph.x,
+ *  blockY + baseline + glyph.y). */
+export interface PlacedEquation {
+  box: MathBox;
+  width: number;
+  height: number;
+  /** Baseline offset from the placed block's top (= box.ascent). */
+  baseline: number;
 }
 
 export interface PlacedTableCell {
@@ -122,9 +138,10 @@ export interface PlacedBlock {
    *  an engine post-pass from the final page map, so it is never stale.
    *  `targetId` is the heading block this entry points at (PDF emits a GoTo link). */
   toc?: { numText: string; numX: number; lineIndex: number; style: CharStyle; targetId: string };
-  /** Present when this placed block is an image / table (lines stays empty). */
+  /** Present when this placed block is an image / table / equation (lines stays empty). */
   image?: PlacedImage;
   table?: PlacedTable;
+  equation?: PlacedEquation;
 }
 
 export interface Page {

@@ -48,11 +48,16 @@ collapse on edit.
 
 Right-to-left, bidirectional, and CJK editing now work out of the box (full
 UAX#9 bidi with multi-run caret/selection, RTL `.docx` round-trip, and CJK
-kinsoku line-breaking). Where the commercial editors still win today: charts
-and equations (OMML math is on the roadmap), a CJK font bundled in the box
-(CJK renders on-screen via system fonts but needs a registered font to embed in
-PDF/DOCX export — see `cjk.fallbackFont`), and an enterprise support contract.
-The full breakdown, including what each one does better, lives in
+kinsoku line-breaking). **Mathematical equations** are supported too: Presentation
+MathML is the canonical form, typeset with the bundled STIX Two Math font (real
+math glyphs, growing delimiters, display-size big operators) and round-tripped to
+`.docx` as OMML (inline `m:oMath` + display `m:oMathPara`); the visual equation
+editor accepts MathML or LaTeX, with a live preview, and equations are
+selectable/right-click-editable like images. Where the commercial editors still
+win today: charts, a CJK font bundled in the box (CJK renders on-screen via system
+fonts but needs a registered font to embed in PDF/DOCX export — see
+`cjk.fallbackFont`), and an enterprise support contract. The full breakdown,
+including what each one does better, lives in
 [Best embeddable JS Word editors](https://forevka.dev/articles/best-embeddable-js-word-editors/).
 
 ## Install
