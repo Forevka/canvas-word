@@ -76,9 +76,10 @@ runtime dependencies, and runs fully offline; a backend is optional and only
 buys live collaboration. It also goes **past** the incumbents in one place that
 matters for generated reports: **nested content controls** (a w:sdt inside a
 w:sdt, to any depth — including complex Word fields nested inside them)
-round-trip faithfully, which the commercial editors flatten. The honest gaps
-versus the incumbents are RTL/complex scripts, bundled CJK fonts, and
-charts/equations (see Known limitations below).
+round-trip faithfully, which the commercial editors flatten. Right-to-left,
+bidi, and CJK editing now work out of the box; the honest gaps versus the
+incumbents are a bundled CJK font (CJK needs a registered font to embed in
+export) and charts/equations (see Known limitations below).
 A full side-by-side writeup lives at
 [Best embeddable JS Word editors](https://forevka.dev/articles/best-embeddable-js-word-editors/).
 
@@ -490,7 +491,6 @@ Everything in it is done; the editor covers ~95% of everyday Word usage.
 
 ## Known limitations (honest list)
 
-- RTL/bidi caret affinity unhandled (pretext renders bidi; editing it is open).
 - Real-IME tested via synthetic events only — needs a hands-on CJK keyboard pass.
 - A11y mirror is minimal (aria-label sync + live region; full mirror planned).
 - No repeat-header-row on table chunks; a vertical-merge (rowSpan) table taller
@@ -508,8 +508,10 @@ Everything in it is done; the editor covers ~95% of everyday Word usage.
   or a percentage `w:tblW`); an absent layout stays fixed-proportional so existing
   imports never shift. Tab-stop gaps inside an autofit cell are not counted toward
   its content width.
-- Only Latin metric-clone fonts are bundled, so CJK/complex scripts render as
-  tofu in PDF export (same gap as the importer).
+- Only Latin metric-clone fonts are bundled. CJK/complex-script text edits and
+  lays out (bidi + kinsoku) and renders on-screen via system fonts, but a CJK
+  font must be registered (`cjk.fallbackFont` / `fonts`) to embed it in PDF/DOCX
+  export — without one, export renders tofu.
 - Raster browser-print was skipped — use PDF export instead.
 - `font-feature-settings` / optical sizing unsupported (pretext limitation).
 - Child-document previews render a single content flow (no pagination, cropped to

@@ -46,9 +46,13 @@ round-trip through `.docx` without flattening. That matters for C#/OOXML
 generated reports, whose section→field control structure the commercial editors
 collapse on edit.
 
-Where the commercial editors win today: RTL and complex-script editing, bundled
-CJK fonts, charts and equations, and an enterprise support contract. The full
-breakdown, including what each one does better, lives in
+Right-to-left, bidirectional, and CJK editing now work out of the box (full
+UAX#9 bidi with multi-run caret/selection, RTL `.docx` round-trip, and CJK
+kinsoku line-breaking). Where the commercial editors still win today: charts
+and equations (OMML math is on the roadmap), a CJK font bundled in the box
+(CJK renders on-screen via system fonts but needs a registered font to embed in
+PDF/DOCX export — see `cjk.fallbackFont`), and an enterprise support contract.
+The full breakdown, including what each one does better, lives in
 [Best embeddable JS Word editors](https://forevka.dev/articles/best-embeddable-js-word-editors/).
 
 ## Install
