@@ -341,5 +341,6 @@ Every feature above has shipped — including `.docx` and PDF export (see
 `EXPORT.md`). The only item dropped from the original plan is raster
 browser-print, covered by the vector PDF path. The editor covers ~95% of everyday
 Word usage. Work since then has moved past this plan into collaboration, a Node
-backend, an admin dashboard, npm distribution, and a track-changes + comments
-review layer — see `README.md`.
+backend, an admin dashboard, npm distribution, a track-changes + comments review
+layer, and **MathML equations** (STIX Two Math typesetting, a visual editor, and
+OMML `.docx` round-trip) — see `README.md`.

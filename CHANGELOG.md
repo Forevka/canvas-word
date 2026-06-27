@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Mathematical equations (MathML).** First-class math, MathML-native end to end:
+  - **Display & inline equations.** Block equations (`EquationBlock`) sit on their own
+    line (left/center/right aligned); inline equations ride inside a text line via a
+    `U+FFFC` sentinel run carrying `CharStyle.equation`, so every caret / selection /
+    offset invariant is preserved.
+  - **STIX Two Math typesetting.** The bundled STIX Two Math font (OFL), driven by the
+    font's real OpenType **MATH** table constants (extracted at build time), typesets
+    fractions, radicals, sub/superscripts, n-ary operators, matrices, accents, and
+    growing delimiters. Identifiers remap to the Mathematical Alphanumeric block so
+    italic / bold / blackboard / script glyphs are true glyphs (no faux slant).
+  - **Visual editor (MathML or LaTeX).** A floating equation editor with a template /
+    symbol palette and a live canvas preview; accepts Presentation MathML or a common
+    LaTeX subset, switchable both ways. Insert via the ribbon (Insert → Equation) or
+    right-click → **"Edit Equation…"** on any existing equation; Display/Inline toggle
+    and alignment controls.
+  - **`.docx` round-trip (OMML).** Equations import from and export to OMML — display
+    `m:oMathPara` and inline `m:oMath`, including under/over limits, `m:scr` script
+    variants (double-struck / fraktur / script / sans-serif / monospace), `mspace`
+    widths, and hyperlinked inline equations. PDF export paints equations vectorially
+    (with run-style decorations and links).
+  - The default showcase document gains a **"Mathematics — MathML equations"** section.
+
 ### Fixed
 - **Enter inside a block-level content control.** Pressing Enter in a paragraph or
   table cell wrapped by a block-level SDT (e.g. a "section" control) was swallowed —
