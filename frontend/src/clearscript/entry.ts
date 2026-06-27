@@ -115,7 +115,7 @@ function pinPdfId(buf: Uint8Array): Uint8Array {
   for (let i = 0; i < buf.length; i++) {
     if ((i >= h1 && i < h1 + 32) || (i >= h2 && i < h2 + 32)) continue;
     const l = i & 3;
-    lanes[l] = Math.imul(lanes[l] ^ buf[i]!, 0x01000193) >>> 0;
+    lanes[l] = Math.imul(lanes[l]! ^ buf[i]!, 0x01000193) >>> 0;
   }
   let hex = "";
   for (let j = 0; j < 4; j++) hex += ("00000000" + (lanes[j]! >>> 0).toString(16)).slice(-8);
@@ -164,7 +164,7 @@ function importDocx(bytes: Uint8Array): ImportHandle {
   for (const m of res.media) images[m.src] = m.bytes;
   return {
     doc: res.doc as Document,
-    warnings: res.warnings.map((w) => ({ code: w.code, ...(w.detail ? { detail: w.detail } : {}) })),
+    warnings: res.warnings.map((w) => ({ code: w.code, ...(w.message ? { detail: w.message } : {}) })),
     images,
     mediaCount: res.media.length,
     blockCount: countBlocks(res.doc as Document),
