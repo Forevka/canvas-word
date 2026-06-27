@@ -911,7 +911,11 @@ function layoutDocument(
       const bandVisibleHeight = (blocks: Block[]): number => {
         const band = layoutBand(blocks, cw, cx, 999, 999, bandProbeCache!, false);
         for (const pb of band.placed) {
-          const visible = !!pb.table || !!pb.image || pb.lines.some((l) => l.fragments.some((f) => f.text.trim().length > 0));
+          const visible =
+            !!pb.table ||
+            !!pb.image ||
+            !!pb.equation ||
+            pb.lines.some((l) => l.fragments.some((f) => f.text.trim().length > 0 || !!f.equation));
           if (visible) return band.height - pb.y;
         }
         return 0;

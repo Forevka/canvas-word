@@ -33,6 +33,30 @@ describe("mathToLatex", () => {
     expect(m).toContain("\\begin{cases}");
     expect(m).not.toContain("Bmatrix");
   });
+
+  it("preserves whitespace inside \\text (no global collapse)", () => {
+    expect(mathToLatex(fromLatex("\\text{a  b}"))).toBe("\\text{a  b}");
+    expect(mathToLatex(parseMathml("<math><mtext>hello world</mtext></math>").root)).toBe("\\text{hello world}");
+  });
+
+  it("maps every imported mathvariant to a style command (no plain-identifier fallback)", () => {
+    // fromOmml can emit these compound variants; the LaTeX view must keep a style
+    // command rather than dropping back to an unstyled identifier.
+    const variants: [string, string][] = [
+      ["double-struck", "mathbb"],
+      ["script", "mathcal"],
+      ["fraktur", "mathfrak"],
+      ["bold-fraktur", "mathfrak"],
+      ["bold-script", "mathcal"],
+      ["bold-sans-serif", "mathsf"],
+      ["sans-serif-italic", "mathsf"],
+      ["sans-serif-bold-italic", "mathsf"],
+    ];
+    for (const [variant, cmd] of variants) {
+      const tex = mathToLatex(parseMathml(`<math><mi mathvariant="${variant}">X</mi></math>`).root);
+      expect(tex).toBe(`\\${cmd}{X}`);
+    }
+  });
 });
 
 describe("editor view switch preserves the equation", () => {

@@ -180,9 +180,25 @@ function paintLine(ctx: PaintCtx, block: PlacedBlock, line: LineBox, baselineY: 
   const { doc } = ctx;
   for (const frag of line.fragments) {
     // Equation fragments paint the math box regardless of their (sentinel) text —
-    // check before the empty-text skip.
+    // check before the empty-text skip. Mirror the run path so a styled or
+    // hyperlinked inline equation keeps its highlight, color, rules, and link.
     if (frag.equation) {
-      drawMathBoxPdf(ctx, frag.equation, block.x + frag.x, baselineY, frag.style.color);
+      const s = frag.style;
+      const x = block.x + frag.x;
+      if (s.highlightColor) {
+        doc.rect(x, block.y + line.y, frag.width, line.height).fill(s.highlightColor as string);
+      }
+      const rp = runPaint(s);
+      drawMathBoxPdf(ctx, frag.equation, x, baselineY, rp.color);
+      const th = decorationThickness(s.fontSizePx);
+      if (rp.underline) doc.rect(x, baselineY + UNDERLINE_OFFSET_PX, frag.width, th).fill(rp.color);
+      if (rp.strike) doc.rect(x, baselineY + strikeOffset(s.fontSizePx), frag.width, th).fill(rp.color);
+      if (rp.externalLink && s.link) {
+        doc.link(x, block.y + line.y, frag.width, line.height, s.link);
+      } else if (s.link && s.link.startsWith("#")) {
+        const name = ctx.destName?.({ anchor: s.link.slice(1) });
+        if (name) doc.goTo(x, block.y + line.y, frag.width, line.height, name);
+      }
       continue;
     }
     if (frag.text.length === 0) continue;

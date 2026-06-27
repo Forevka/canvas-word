@@ -128,8 +128,18 @@ function runBodyWithFields(text: string, rPr: string): string {
 function singleRun(run: Run, ctx: PartCtx): string {
   const s = run.style;
   // Inline equation: the run is a single U+FFFC carrying MathML; emit inline OMML
-  // (m:oMath, a valid sibling of w:r in the paragraph) instead of a text run.
-  if (s.equation) return mathmlToOmml({ root: s.equation.root, display: false });
+  // (m:oMath, a valid sibling of w:r in the paragraph) instead of a text run. A
+  // hyperlinked equation keeps its w:hyperlink wrapper (the importer reads math
+  // under w:hyperlink) so the link survives a round-trip.
+  if (s.equation) {
+    const oMath = mathmlToOmml({ root: s.equation.root, display: false });
+    if (s.link) {
+      if (s.link.startsWith("#")) return el("w:hyperlink", { "w:anchor": s.link.slice(1) }, oMath);
+      const id = ctx.rels.add(REL.hyperlink, s.link, true);
+      return el("w:hyperlink", { "r:id": id }, oMath);
+    }
+    return oMath;
+  }
   const rPr = rPrXml(s);
   if (s.footnoteRef) {
     // model footnoteRef "fn<docxId>" -> w:footnoteReference w:id="<docxId>".

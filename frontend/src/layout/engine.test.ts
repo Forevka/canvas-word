@@ -17,6 +17,7 @@ import type {
   TableCell,
 } from "@cw/shared";
 import { createLayoutEngine, effectiveSection, resolveSections } from "./engine";
+import { parseMathml } from "../mathml/parse";
 import { gridColumnCount, effectiveFractions, defaultListDefinition } from "@cw/shared";
 import { hitTestObject, hitTestSelectableObject, spaceMarkXs } from "./geometry";
 import type { PlacedBlock } from "./layoutTree";
@@ -81,6 +82,14 @@ const image = (widthPx: number, heightPx: number): ImageBlock => ({
   widthPx,
   heightPx,
   align: "center",
+});
+
+const equationBlock = (mathml: string): Block => ({
+  kind: "equation",
+  id: fresh(),
+  revision: 0,
+  align: "center",
+  equation: { ...parseMathml(mathml), display: true },
 });
 
 const doc = (blocks: Block[], section: Partial<SectionProps> = {}): Document => ({
@@ -615,6 +624,17 @@ describe("engine — footer band distance", () => {
     const bottom = footerBottom(tree);
     expect(bottom).toBeLessThan(SECTION.pageHeightPx);
     expect(bottom).toBeGreaterThan(SECTION.pageHeightPx - SECTION.marginPx.bottom);
+  });
+
+  it("reserves body space for an equation block in an anchored footer", () => {
+    // Anchored footer (footerDistancePx) high enough that its top sits above the
+    // bottom margin, so the band reservation drives contentBottomPx. A footer whose
+    // only content is an equation must still count as visible (issue #13).
+    const sec = { footerDistancePx: 200 };
+    const eq = layout(doc([para("body")], { ...sec, footer: [equationBlock("<math><mfrac><mn>1</mn><mn>2</mn></mfrac></math>")] }));
+    const blank = layout(doc([para("body")], { ...sec, footer: [para("")] }));
+    // The equation reserves real height; a blank footer reserves nothing.
+    expect(eq.pages[0]!.contentBottomPx).toBeLessThan(blank.pages[0]!.contentBottomPx);
   });
 });
 

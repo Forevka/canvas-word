@@ -339,9 +339,12 @@ function walkInlines(nodes: XmlNode[], out: IRInline[], ctx: ParseCtx, field: Fi
         if (relId || anchor) {
           for (let i = start; i < out.length; i++) {
             const inline = out[i]!;
-            if (inline.kind !== "run") continue;
-            if (relId) inline.props.linkRelId = relId;
-            else if (anchor) inline.props.linkAnchor = anchor;
+            // Runs and inline equations both carry link metadata (math under
+            // w:hyperlink is valid OOXML); other inline kinds don't.
+            const props = inline.kind === "run" ? inline.props : inline.kind === "mathInline" ? (inline.props ??= {}) : undefined;
+            if (!props) continue;
+            if (relId) props.linkRelId = relId;
+            else if (anchor) props.linkAnchor = anchor;
           }
         }
         break;

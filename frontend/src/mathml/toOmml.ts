@@ -15,29 +15,67 @@ export function mathmlToOmml(eq: MathEquation): string {
   return eq.display ? el("m:oMathPara", undefined, oMath) : oMath;
 }
 
-/** OMML run style (`m:sty`) for a variant. OMML's math-run default is italic;
- *  numbers/operators/text are plain ("p"). */
-function styFor(variant: MathVariant | undefined): "i" | "b" | "bi" | "p" {
+type Sty = "i" | "b" | "bi" | "p";
+type Scr = "double-struck" | "script" | "fraktur" | "sans-serif" | "monospace";
+
+/** OMML run properties for a MathML variant: `m:sty` (bold/italic) plus an
+ *  optional `m:scr` (the alphanumeric SCRIPT family — blackboard / script /
+ *  fraktur / sans-serif / monospace). OMML's math-run default is italic;
+ *  numbers/operators/text are plain ("p"). The inverse lives in fromOmml. */
+function runPropsFor(variant: MathVariant | undefined): { sty: Sty; scr?: Scr } {
   switch (variant) {
     case undefined:
     case "italic":
-      return "i";
+      return { sty: "i" };
     case "bold":
-      return "b";
+      return { sty: "b" };
     case "bold-italic":
-      return "bi";
-    default:
-      return "p";
+      return { sty: "bi" };
+    case "normal":
+      return { sty: "p" };
+    case "double-struck":
+      return { sty: "p", scr: "double-struck" };
+    case "script":
+      return { sty: "p", scr: "script" };
+    case "bold-script":
+      return { sty: "b", scr: "script" };
+    case "fraktur":
+      return { sty: "p", scr: "fraktur" };
+    case "bold-fraktur":
+      return { sty: "b", scr: "fraktur" };
+    case "sans-serif":
+      return { sty: "p", scr: "sans-serif" };
+    case "bold-sans-serif":
+      return { sty: "b", scr: "sans-serif" };
+    case "sans-serif-italic":
+      return { sty: "i", scr: "sans-serif" };
+    case "sans-serif-bold-italic":
+      return { sty: "bi", scr: "sans-serif" };
+    case "monospace":
+      return { sty: "p", scr: "monospace" };
   }
 }
 
 const needsPreserve = (s: string): boolean => /^\s|\s$|\s\s/.test(s) || s.includes("\t");
 
-/** A math run: `m:r` with an optional `m:rPr/m:sty` and the `m:t` text. */
-function runXml(content: string, sty: "i" | "b" | "bi" | "p"): string {
-  const rPr = sty === "i" ? "" : el("m:rPr", undefined, el("m:sty", { "m:val": sty }));
+/** A math run: `m:r` with an optional `m:rPr` (`m:scr` then `m:sty`, schema
+ *  order) and the `m:t` text. */
+function runXml(content: string, sty: Sty, scr?: Scr): string {
+  const scrEl = scr ? el("m:scr", { "m:val": scr }) : "";
+  const styEl = sty === "i" ? "" : el("m:sty", { "m:val": sty });
+  const inner = scrEl + styEl;
+  const rPr = inner ? el("m:rPr", undefined, inner) : "";
   const t = el("m:t", needsPreserve(content) ? { "xml:space": "preserve" } : undefined, escapeText(content));
   return el("m:r", undefined, rPr + t);
+}
+
+/** Approximate an `mspace` width (ems) as a run of literal spaces — OMML has no
+ *  `mspace`. ~0.25em per space; negative/zero widths emit nothing. */
+function spaceRunXml(widthEm: number | undefined): string {
+  const em = widthEm ?? 0.25;
+  if (em <= 0) return "";
+  const n = Math.max(1, Math.round(em / 0.25));
+  return runXml(" ".repeat(n), "p");
 }
 
 /** `m:e`/`m:num`/… operand wrapper holding a node's serialized content. */
@@ -62,15 +100,17 @@ function nodeXml(n: MathNode): string {
   switch (n.type) {
     case "row":
       return n.children.map(nodeXml).join("");
-    case "ident":
-      return runXml(n.text, styFor(n.variant));
+    case "ident": {
+      const { sty, scr } = runPropsFor(n.variant);
+      return runXml(n.text, sty, scr);
+    }
     case "number":
       return runXml(n.text, "p");
     case "op":
     case "text":
       return runXml(n.text, "p");
     case "space":
-      return runXml(" ", "p");
+      return spaceRunXml(n.widthEm);
     case "frac": {
       const type = n.thickness === "0" ? "noBar" : n.bevelled ? "skw" : undefined;
       const fPr = type ? el("m:fPr", undefined, el("m:type", { "m:val": type })) : "";

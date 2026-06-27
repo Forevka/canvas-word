@@ -73,4 +73,16 @@ describe("latexToMath", () => {
   it("is lenient: unknown commands become text, no throw", () => {
     expect(() => latexToMath("\\foobar x")).not.toThrow();
   });
+
+  it("preserves whitespace inside \\text / \\mbox / \\operatorname", () => {
+    expect(latexToMath("\\text{hello world}").children[0]).toMatchObject({ type: "text", text: "hello world" });
+    expect(latexToMath("\\mbox{a   b}").children[0]).toMatchObject({ type: "text", text: "a   b" });
+    expect(latexToMath("\\operatorname{arg max}").children[0]).toMatchObject({ type: "text", text: "arg max" });
+    // The text group keeps spaces even when surrounded by math.
+    expect(mml("a + \\text{is positive}")).toContain("<mtext>is positive</mtext>");
+  });
+
+  it("balances nested braces in a \\text argument", () => {
+    expect(latexToMath("\\text{f(x) = {y}}").children[0]).toMatchObject({ type: "text", text: "f(x) = {y}" });
+  });
 });

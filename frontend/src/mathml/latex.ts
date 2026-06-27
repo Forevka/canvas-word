@@ -93,12 +93,40 @@ const ENV_FENCES: Record<string, [string, string]> = {
 type Tok =
   | { k: "cmd"; v: string }
   | { k: "char"; v: string }
+  | { k: "rawtext"; v: string }
   | { k: "{" }
   | { k: "}" }
   | { k: "^" }
   | { k: "_" }
   | { k: "&" }
   | { k: "\\\\" };
+
+// Commands whose `{...}` argument is TEXT, not math: whitespace inside is
+// significant (`\text{hello world}`). The tokenizer captures that brace group
+// verbatim as a single `rawtext` token instead of math-tokenizing it (which
+// would drop the spaces). Nested braces are kept as literal characters.
+const RAW_TEXT_CMDS = new Set(["text", "mbox", "operatorname"]);
+
+/** Capture a `{...}` group starting at `src[start]` ("{") as its inner text,
+ *  whitespace preserved, balancing nested braces. Returns the inner string and
+ *  the index just past the closing brace. If `src[start]` isn't "{", returns null. */
+function captureBraceText(src: string, start: number): { text: string; end: number } | null {
+  if (src[start] !== "{") return null;
+  let depth = 0;
+  let buf = "";
+  for (let k = start; k < src.length; k++) {
+    const c = src[k]!;
+    if (c === "{") {
+      depth++;
+      if (depth === 1) continue; // skip the outermost opening brace
+    } else if (c === "}") {
+      depth--;
+      if (depth === 0) return { text: buf, end: k + 1 };
+    }
+    buf += c;
+  }
+  return { text: buf, end: src.length }; // unbalanced — take the rest
+}
 
 function tokenize(src: string): Tok[] {
   const out: Tok[] = [];
@@ -112,6 +140,16 @@ function tokenize(src: string): Tok[] {
       if (word) {
         out.push({ k: "cmd", v: word[0] });
         i += 1 + word[0].length;
+        // \text{…}-family: grab the following brace group as raw (spaced) text.
+        if (RAW_TEXT_CMDS.has(word[0])) {
+          let j = i;
+          while (j < src.length && /\s/.test(src[j]!)) j++; // skip space before {
+          const grp = captureBraceText(src, j);
+          if (grp) {
+            out.push({ k: "rawtext", v: grp.text });
+            i = grp.end;
+          }
+        }
       } else if (rest[0] === "\\") {
         out.push({ k: "\\\\" });
         i += 2;
@@ -193,6 +231,8 @@ class Parser {
         return null; // only meaningful inside environments
       case "char":
         return charNode(t.v);
+      case "rawtext":
+        return { type: "text", text: t.v }; // stray text group (no preceding \text)
       case "cmd":
         return this.command(t.v);
       default:
@@ -214,6 +254,14 @@ class Parser {
       return this.row(list, true);
     }
     return this.parseAtom() ?? emptyMathRow();
+  }
+
+  /** Consume a `\text`-family argument as raw (whitespace-preserving) text. The
+   *  tokenizer already captured the brace group as one `rawtext` token; fall back
+   *  to a math atom flattened to text if it wasn't (e.g. `\text x`). */
+  private rawTextArg(): string {
+    if (this.peek()?.k === "rawtext") return (this.next() as { v: string }).v;
+    return plainText(this.arg());
   }
 
   /** Consume an optional `[...]` argument; returns null if absent. */
@@ -256,7 +304,7 @@ class Parser {
       case "text":
       case "mbox":
       case "operatorname":
-        return { type: "text", text: plainText(this.arg()) };
+        return { type: "text", text: this.rawTextArg() };
       case "overset":
       case "stackrel": {
         const over = this.arg();
