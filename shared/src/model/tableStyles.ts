@@ -6,7 +6,8 @@
 // layout engine reads those directly), while the TableStyle entity + TableBlock.styleId
 // are retained for re-editing and docx round-trip.
 
-import type { CellBorders, CellMargin, CharStyle, ParaStyle } from "./document";
+import type { CellBorders, CellMargin, CharStyle, ParaStyle, TableBlock, TableCell, TableCondOverrides, TableRow } from "./document";
+import { buildTableGrid, rebuildRows } from "./tableGrid";
 
 /** Conditional-format slots (OOXML w:tblStylePr w:type values). "wholeTable" is
  *  the base applied to every cell. */
@@ -157,6 +158,41 @@ export function cellCondFlags(
     flags.colBand = band % 2 === 0 ? 1 : 2;
   }
   return flags;
+}
+
+/** Word's default w:tblLook: header row on, row banding on. */
+export const DEFAULT_TBL_LOOK: TableCondOverrides = { firstRow: true, bandRows: true };
+
+/** Recompute every cell's baked shading/borders/margin from a resolved table style
+ *  + the table's active bands (span-aware). The TableStyle entity + TableBlock.styleId
+ *  are kept for re-editing and docx round-trip; the layout engine reads the baked
+ *  concrete cell props. Shared by the editor's applyTableStyle and the document
+ *  builder so both produce identical tables. Applying a style is destructive — it
+ *  replaces direct cell shading/borders/margin (like Word). */
+export function bakeTableStyleRows(
+  table: TableBlock,
+  style: TableStyle,
+  styles: Record<string, TableStyle>,
+  overrides: TableCondOverrides,
+): TableRow[] {
+  const resolved = resolveTableStyle(styles, style.id);
+  const grid = buildTableGrid(table);
+  return rebuildRows(grid, (cell, s) => {
+    const flags = cellCondFlags(s.originRow, s.originCol, grid.rows, grid.cols, {
+      ...overrides,
+      rowBandSize: style.rowBandSize ?? 1,
+      colBandSize: style.colBandSize ?? 1,
+    });
+    const props = effectiveCellProps(resolved, flags);
+    const next: TableCell = { ...cell };
+    if (props.shading !== undefined) next.shading = props.shading;
+    else delete next.shading;
+    if (props.borders && Object.keys(props.borders).length > 0) next.borders = props.borders;
+    else delete next.borders;
+    if (props.margin) next.margin = props.margin;
+    else delete next.margin;
+    return next;
+  });
 }
 
 export const TABLE_COND_LABELS: Record<TableCond, string> = {

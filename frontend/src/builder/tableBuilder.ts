@@ -4,7 +4,8 @@
 // Cells hold full block stories; a cell callback gets a StoryBuilder, so
 // paragraphs/images/lists inside cells reuse the normal scope surface.
 
-import type { Block, CellBorders, CellMargin, CharStyle, ParaStyle, TableBlock, TableCell, TableRow } from "@cw/shared";
+import type { Block, CellBorders, CellMargin, CharStyle, ParaStyle, TableBlock, TableCell, TableCondOverrides, TableRow } from "@cw/shared";
+import { bakeTableStyleRows, DEFAULT_TBL_LOOK } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import { StoryBuilder } from "./storyBuilder";
 import type { TableStylePreset } from "./tableStyles";
@@ -25,6 +26,8 @@ export interface CellSpec {
   /** Char formatting for the cell's text. */
   style?: Partial<CharStyle>;
   align?: ParaStyle["align"];
+  /** Preferred cell width (w:tcW): absolute px or a percent of table width. */
+  preferredWidth?: { px: number; type: "abs" | "pct" };
 }
 
 export type CellContent = string | CellSpec;
@@ -39,6 +42,17 @@ export interface TableOptions {
   /** Apply a registered table-style preset (header styling, borders, shading,
    *  striping). Builder-only sugar; explicit per-cell values win. */
   style?: string;
+  /** Reference a REAL table style registered via DocumentBuilder.tableStyle() and
+   *  BAKE its effective per-cell formatting onto the cells (so it renders) while
+   *  keeping the styleId reference for docx round-trip. Destructive on cell
+   *  shading/borders/margin, like applying a style in Word. */
+  styleId?: string;
+  /** Which conditional bands of the referenced `styleId` are active (w:tblLook).
+   *  Default: header row + row banding. */
+  condOverrides?: TableCondOverrides;
+  /** Column sizing strategy (w:tblLayout): "fixed" (default), "autofitContents",
+   *  or "autofitWindow". */
+  widthMode?: "fixed" | "autofitContents" | "autofitWindow";
 }
 
 /** Cell paragraphs are compact (no after-spacing, tighter leading) — matching
@@ -109,7 +123,28 @@ export class TableBuilder {
       const sum = this.fractions.reduce((a, b) => a + b, 0);
       if (sum > 0) table.colFractions = this.fractions.map((f) => f / sum);
     }
+    if (this.opts.widthMode && this.opts.widthMode !== "fixed") table.widthMode = this.opts.widthMode;
+    // A REAL table-style reference: bake the style's effective per-cell formatting
+    // onto the cells (the layout engine reads concrete props) and keep the
+    // styleId + active bands for docx round-trip. Shares the editor's bake path.
+    if (this.opts.styleId !== undefined) this.applyTableStyleRef(table, this.opts.styleId, this.opts.condOverrides);
     return table;
+  }
+
+  private applyTableStyleRef(table: TableBlock, styleId: string, overrides?: TableCondOverrides): void {
+    const look = overrides ?? DEFAULT_TBL_LOOK;
+    const styles = this.ctx.doc.tableStyles ?? {};
+    const style = styles[styleId];
+    table.styleId = styleId;
+    table.condOverrides = look;
+    if (!style) {
+      this.ctx.warn(
+        `table-style-ref-missing:${styleId}`,
+        `Table style "${styleId}" is not registered (DocumentBuilder.tableStyle) — the reference was set but no formatting was baked.`,
+      );
+      return;
+    }
+    table.rows = bakeTableStyleRows(table, style, styles, look);
   }
 }
 
@@ -140,6 +175,7 @@ export class RowBuilder {
     if (spec.shading !== undefined) cell.shading = spec.shading;
     if (spec.borders !== undefined) cell.borders = spec.borders;
     if (spec.margin !== undefined) cell.margin = spec.margin;
+    if (spec.preferredWidth !== undefined) cell.preferredWidth = spec.preferredWidth;
     this.cells.push(cell);
     return this;
   }

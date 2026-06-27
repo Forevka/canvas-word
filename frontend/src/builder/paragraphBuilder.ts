@@ -8,11 +8,12 @@
 // text() in this scope — "make this paragraph bold" is the dominant authoring
 // intent. Mixed formatting within a paragraph uses text(t, { …patch }).
 
-import type { Block, CharStyle, Document, FieldSpec, IfOp, NamedStyle, PageNumFmt, ParaStyle, Paragraph, Run, SdtProps } from "@cw/shared";
+import type { Block, CharStyle, Document, FieldSpec, IfOp, NamedStyle, PageNumFmt, ParaStyle, Paragraph, Run, SdtProps, TableStyle, TabStop } from "@cw/shared";
 import { buildInstruction, evaluateField, textOfRuns } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import type { BandOptions, DocumentBuilder, ListDefinitionSpec, PageSetup, SectionBreakOptions } from "./documentBuilder";
-import type { ImageOptions, ListItem, ListOptions } from "./storyBuilder";
+import { equationFromLatex, equationFromMathml } from "./mathInput";
+import type { EquationOptions, ImageOptions, ListItem, ListOptions } from "./storyBuilder";
 import { StoryBuilder } from "./storyBuilder";
 import type { CellContent, TableBuilder, TableOptions } from "./tableBuilder";
 import type { TableStylePreset } from "./tableStyles";
@@ -140,6 +141,32 @@ export class ParagraphBuilder<P extends StoryBuilder> {
   /** Hidden text — kept in the model + .docx, never laid out/painted. */
   hidden(on = true): this {
     return on ? this.applyChar({ hidden: true }) : this.clearChar("hidden");
+  }
+
+  /** Force this run's text to a right-to-left embedding (OOXML w:rtl), regardless
+   *  of its characters. For the paragraph's base direction use .direction("rtl"). */
+  rtl(on = true): this {
+    return on ? this.applyChar({ rtl: true }) : this.clearChar("rtl");
+  }
+
+  /** Apply a registered character style (a type:"character" NamedStyle): bakes its
+   *  formatting onto the runs AND sets the w:rStyle reference (kept for round-trip).
+   *  Unknown ids are ignored with a warning, like .withStyle(). */
+  charStyle(id: string): this {
+    const resolved = this.ctx.lookupStyle(id);
+    if (!resolved) return this;
+    return this.applyChar({ ...resolved.char, charStyleId: id });
+  }
+
+  /** Append an INLINE equation from a LaTeX source — a single replaced glyph in the
+   *  run flow (e.g. "the identity ", inlineEquation("e^{i\\pi}+1=0"), "."). */
+  inlineEquation(latex: string, style?: Partial<CharStyle>): this {
+    return this.pushRun(this.ctx.run("￼", { ...this.charPatch, ...style, equation: equationFromLatex(latex, false) }));
+  }
+
+  /** Append an inline equation from a presentation-MathML string. */
+  inlineEquationMathml(mathml: string, style?: Partial<CharStyle>): this {
+    return this.pushRun(this.ctx.run("￼", { ...this.charPatch, ...style, equation: equationFromMathml(mathml, false) }));
   }
 
   // ---- inline fields -------------------------------------------------------
@@ -298,6 +325,33 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     return this;
   }
 
+  /** Never split this paragraph across pages/columns (docx w:keepLines). */
+  keepTogether(on = true): this {
+    this.para.style.keepLinesTogether = on;
+    return this;
+  }
+
+  /** Base writing direction (OOXML w:bidi). "rtl" lays the paragraph out
+   *  right-to-left and mirrors start/end alignment + indents. */
+  direction(dir: "ltr" | "rtl"): this {
+    this.para.style.direction = dir;
+    return this;
+  }
+
+  /** Outline level 0..8 (TOC levels 1..9; docx w:outlineLvl) — makes a paragraph a
+   *  TOC entry without a heading style. Clamped to range. */
+  outlineLevel(level: number): this {
+    this.para.style.outlineLevel = Math.max(0, Math.min(8, Math.floor(level)));
+    return this;
+  }
+
+  /** Explicit tab stops (docx w:tabs); a `\t` in run text advances to the next.
+   *  Stored sorted by position, matching the layout engine's expectation. */
+  tabStops(stops: TabStop[]): this {
+    this.para.style.tabStops = [...stops].sort((a, b) => a.posPx - b.posPx);
+    return this;
+  }
+
   /** Escape the paragraph scope explicitly (rarely needed — any block-starting
    *  call below does it implicitly). */
   end(): P {
@@ -328,6 +382,14 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     return this.parent.bulletList(items) as P;
   }
 
+  equation(latex: string, opts?: EquationOptions): P {
+    return this.parent.equation(latex, opts) as P;
+  }
+
+  equationMathml(mathml: string, opts?: EquationOptions): P {
+    return this.parent.equationMathml(mathml, opts) as P;
+  }
+
   numberedList(items: (string | ListItem)[]): P {
     return this.parent.numberedList(items) as P;
   }
@@ -342,6 +404,10 @@ export class ParagraphBuilder<P extends StoryBuilder> {
 
   bookmarkRange(name: string, build: (s: StoryBuilder) => void): P {
     return this.parent.bookmarkRange(name, build) as P;
+  }
+
+  contentControlRange(props: SdtProps, build: (s: StoryBuilder) => void): P {
+    return this.parent.contentControlRange(props, build as (s: P) => void) as P;
   }
 
   // ---- document-level delegators (only when the parent is the root builder) -
@@ -384,5 +450,9 @@ export class ParagraphBuilder<P extends StoryBuilder> {
 
   tableStylePreset(this: ParagraphBuilder<DocumentBuilder>, name: string, preset: TableStylePreset): DocumentBuilder {
     return this.parent.tableStylePreset(name, preset);
+  }
+
+  tableStyle(this: ParagraphBuilder<DocumentBuilder>, def: TableStyle): DocumentBuilder {
+    return this.parent.tableStyle(def);
   }
 }

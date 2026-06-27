@@ -111,6 +111,33 @@ if (args.Length > 0 && args[0].Equals("tocsmoke", StringComparison.OrdinalIgnore
     return 0;
 }
 
+if (args.Length > 0 && args[0].Equals("builddump", StringComparison.OrdinalIgnoreCase))
+{
+    var outPath = args.Length > 1 ? args[1] : "out-cs.pdf";
+    using var eng = new WordCanvasEngine();
+    eng.SetExportDate(DateTimeOffset.FromUnixTimeMilliseconds(1_700_000_000_000));
+    // IDENTICAL document to frontend/scripts/build-doc.mjs (same idSeed + content).
+    var b = eng.NewBuilder(new WordCanvas.ClearScript.Builder.CreateOptions { IdSeed = "verify", PageSize = WordCanvas.ClearScript.Builder.PageSizeName.Letter })
+        .Style(new WordCanvas.ClearScript.Builder.NamedStyle { Id = "Heading1", Name = "Heading 1", Type = "paragraph", Char = new WordCanvas.ClearScript.Builder.CharStyle { Bold = true, FontSizePx = 24, Color = "#1a1a2e" }, Para = new WordCanvas.ClearScript.Builder.ParaStylePatch { SpaceBeforePx = 18, SpaceAfterPx = 8 } })
+        .Paragraph("canvas-word", p => p.Align(WordCanvas.ClearScript.Builder.TextAlign.Center).Font("Arial, sans-serif").FontSize(32).Bold().Color("#1a1a2e"))
+        .Paragraph("a typed-builder parity check", p => p.Align(WordCanvas.ClearScript.Builder.TextAlign.Center).Italic().Color("#5f6368"))
+        .Paragraph("Section One", p => p.WithStyle("Heading1"))
+        .Paragraph(p => p.Text("Plain, ").Text("bold", new WordCanvas.ClearScript.Builder.CharStyle { Bold = true }).Text(", a ").Text("hyperlink", new WordCanvas.ClearScript.Builder.CharStyle { Link = "https://forevka.dev", Color = "#0b57d0", Underline = true }).Text(", and page ").PageField().Text("."))
+        .Table(new[] { new WordCanvas.ClearScript.Builder.CellContent[] { "Feature", "Status" }, new WordCanvas.ClearScript.Builder.CellContent[] { "Tables", "ok" }, new WordCanvas.ClearScript.Builder.CellContent[] { "Lists", "ok" } }, new WordCanvas.ClearScript.Builder.TableOptions { HeaderRow = true })
+        .BulletList("bullet one", "bullet two")
+        .NumberedList("number one", "number two")
+        .Paragraph("Body paragraph. " + string.Concat(Enumerable.Repeat("lorem ", 20)))
+        .Header(h => h.Paragraph(p => p.Text("canvas-word — parity")))
+        .Footer(f => f.Paragraph(p => p.Align(WordCanvas.ClearScript.Builder.TextAlign.Center).Text("Page ").PageField().Text(" of ").NumPagesField()));
+    var built = b.Build();
+    var pdf = built.ExportPdf();
+    File.WriteAllBytes(outPath, pdf);
+    var docx = built.ExportDocx();
+    File.WriteAllBytes(System.Text.RegularExpressions.Regex.Replace(outPath, @"\.pdf$", ".docx", System.Text.RegularExpressions.RegexOptions.IgnoreCase), docx);
+    Console.WriteLine($"cs build → pdf {pdf.Length} bytes, docx {docx.Length} bytes → {outPath}");
+    return 0;
+}
+
 BenchmarkSwitcher.FromAssembly(typeof(Smoke).Assembly).Run(args);
 return 0;
 
@@ -142,7 +169,7 @@ internal static class Smoke
                 new WordCanvas.ClearScript.Builder.CellContent[] { "Widget", "10", "$4.00" },
                 new WordCanvas.ClearScript.Builder.CellContent[] { "Gadget", "3", "$9.50" },
             }, new WordCanvas.ClearScript.Builder.TableOptions { HeaderRow = true, ColFractions = new[] { 0.5, 0.25, 0.25 } })
-            .Footer(f => f.Paragraph(null, p => p.Text("Page ").PageField().Text(" of ").NumPagesField()))
+            .Footer(f => f.Paragraph(p => p.Text("Page ").PageField().Text(" of ").NumPagesField()))
             .Build();
         var bPdf = built.ExportPdf();
         var bDocx = built.ExportDocx();

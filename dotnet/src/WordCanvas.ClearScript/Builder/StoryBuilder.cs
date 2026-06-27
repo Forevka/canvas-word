@@ -23,13 +23,40 @@ public abstract class StoryBuilderBase<TSelf> where TSelf : StoryBuilderBase<TSe
 
     private protected abstract TSelf Self { get; }
 
-    /// <summary>Append a paragraph; configure its runs/formatting via the lambda.</summary>
-    public TSelf Paragraph(string? text = null, Action<ParagraphBuilder>? configure = null)
+    /// <summary>Append an empty paragraph (a spacer / caret home).</summary>
+    public TSelf Paragraph() => ParagraphCore(null, null);
+
+    /// <summary>Append a paragraph with the given text.</summary>
+    public TSelf Paragraph(string text) => ParagraphCore(text, null);
+
+    /// <summary>Append a paragraph and configure its runs/formatting via the lambda.</summary>
+    public TSelf Paragraph(Action<ParagraphBuilder> configure) => ParagraphCore(null, configure);
+
+    /// <summary>Append a paragraph with the given text, then configure it via the lambda.</summary>
+    public TSelf Paragraph(string text, Action<ParagraphBuilder> configure) => ParagraphCore(text, configure);
+
+    private TSelf ParagraphCore(string? text, Action<ParagraphBuilder>? configure)
     {
         var pb = text is null
             ? (ScriptObject)JsScope.InvokeMethod("paragraph")
             : (ScriptObject)JsScope.InvokeMethod("paragraph", text);
         configure?.Invoke(new ParagraphBuilder(Engine, pb));
+        return Self;
+    }
+
+    /// <summary>Append a display (block) equation from a LaTeX source (e.g. <c>\frac{a}{2}</c>).</summary>
+    public TSelf Equation(string latex, EquationOptions? opts = null)
+    {
+        if (opts is not null) JsScope.InvokeMethod("equation", latex, opts.ToJs(Engine));
+        else JsScope.InvokeMethod("equation", latex);
+        return Self;
+    }
+
+    /// <summary>Append a display (block) equation from a presentation-MathML string.</summary>
+    public TSelf EquationMathml(string mathml, EquationOptions? opts = null)
+    {
+        if (opts is not null) JsScope.InvokeMethod("equationMathml", mathml, opts.ToJs(Engine));
+        else JsScope.InvokeMethod("equationMathml", mathml);
         return Self;
     }
 
@@ -108,6 +135,20 @@ public abstract class StoryBuilderBase<TSelf> where TSelf : StoryBuilderBase<TSe
         JsScope.InvokeMethod("bookmarkRange", name, cb);
         return Self;
     }
+
+    /// <summary>Wrap every block the callback appends in a BLOCK-LEVEL content control
+    /// (a rich-text <c>w:sdt</c> around whole paragraphs/tables — the multi-block analog of
+    /// the inline controls). Nesting composes outer→inner.</summary>
+    public TSelf ContentControlRange(Action<TSelf> build, SdtOptions? opts = null)
+    {
+        var props = Js.Obj(Engine);
+        Js.Set(props, "type", "richText");
+        if (opts?.Alias is { } a) Js.Set(props, "alias", a);
+        if (opts?.Tag is { } t) Js.Set(props, "tag", t);
+        Action<object> cb = _ => build(Self);
+        JsScope.InvokeMethod("contentControlRange", props, cb);
+        return Self;
+    }
 }
 
 /// <summary>Concrete block scope for header/footer bands and table cells.</summary>
@@ -156,11 +197,46 @@ public sealed class ParagraphBuilder
     public ParagraphBuilder Subscript(bool on = true) { _js.InvokeMethod("subscript", on); return this; }
     public ParagraphBuilder LetterSpacing(double px) { _js.InvokeMethod("letterSpacing", px); return this; }
     public ParagraphBuilder Hidden(bool on = true) { _js.InvokeMethod("hidden", on); return this; }
+    /// <summary>Force this run's text to a right-to-left embedding (OOXML w:rtl).</summary>
+    public ParagraphBuilder Rtl(bool on = true) { _js.InvokeMethod("rtl", on); return this; }
+
+    /// <summary>Apply a registered character style (a character NamedStyle): bakes its
+    /// formatting onto the runs AND sets the w:rStyle reference.</summary>
+    public ParagraphBuilder CharStyle(string id) { _js.InvokeMethod("charStyle", id); return this; }
+
+    /// <summary>Append an inline equation from a LaTeX source (a single replaced glyph).</summary>
+    public ParagraphBuilder InlineEquation(string latex, CharStyle? style = null)
+    {
+        if (style is not null) _js.InvokeMethod("inlineEquation", latex, style.ToJs(_engine));
+        else _js.InvokeMethod("inlineEquation", latex);
+        return this;
+    }
+
+    /// <summary>Append an inline equation from a presentation-MathML string.</summary>
+    public ParagraphBuilder InlineEquationMathml(string mathml, CharStyle? style = null)
+    {
+        if (style is not null) _js.InvokeMethod("inlineEquationMathml", mathml, style.ToJs(_engine));
+        else _js.InvokeMethod("inlineEquationMathml", mathml);
+        return this;
+    }
 
     public ParagraphBuilder Align(TextAlign align) { _js.InvokeMethod("align", EnumJs.Align(align)); return this; }
     public ParagraphBuilder Spacing(SpacingOptions opts) { _js.InvokeMethod("spacing", opts.ToJs(_engine)); return this; }
     public ParagraphBuilder Indent(IndentOptions opts) { _js.InvokeMethod("indent", opts.ToJs(_engine)); return this; }
     public ParagraphBuilder KeepWithNext(bool on = true) { _js.InvokeMethod("keepWithNext", on); return this; }
+    /// <summary>Never split this paragraph across pages/columns (docx w:keepLines).</summary>
+    public ParagraphBuilder KeepTogether(bool on = true) { _js.InvokeMethod("keepTogether", on); return this; }
+    /// <summary>Base writing direction (OOXML w:bidi); "rtl" lays the paragraph out right-to-left.</summary>
+    public ParagraphBuilder Direction(Direction dir) { _js.InvokeMethod("direction", EnumJs.Dir(dir)); return this; }
+    /// <summary>Outline level 0..8 (TOC levels 1..9) — a TOC entry without a heading style.</summary>
+    public ParagraphBuilder OutlineLevel(int level) { _js.InvokeMethod("outlineLevel", level); return this; }
+
+    /// <summary>Set explicit tab stops (docx w:tabs); a <c>\t</c> in text advances to the next.</summary>
+    public ParagraphBuilder TabStops(IEnumerable<TabStop> stops)
+    {
+        _js.InvokeMethod("tabStops", Js.ToArray(_engine, stops.Select(s => (object?)s.ToJs(_engine))));
+        return this;
+    }
 
     // ---- inline fields ----
     public ParagraphBuilder PageField() { _js.InvokeMethod("pageField"); return this; }
@@ -180,6 +256,16 @@ public sealed class ParagraphBuilder
     public ParagraphBuilder IfField(string operandA, string op, string operandB, string ifTrue, string ifFalse)
     {
         _js.InvokeMethod("ifField", operandA, op, operandB, ifTrue, ifFalse);
+        return this;
+    }
+
+    /// <summary>A cross-reference to a bookmark as a REF/PAGEREF field.</summary>
+    /// <param name="pageRef">true → PAGEREF (the target's page number); false → REF (its text).</param>
+    public ParagraphBuilder CrossReference(string bookmarkName, bool pageRef = false)
+    {
+        var opts = Js.Obj(_engine);
+        Js.Set(opts, "kind", pageRef ? "pageRef" : "ref");
+        _js.InvokeMethod("crossReference", bookmarkName, opts);
         return this;
     }
 

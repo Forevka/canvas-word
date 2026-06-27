@@ -1,8 +1,8 @@
 // Commands: pure (state) -> Transaction | null. The keymap, the IME proxy, and
 // (later) toolbar buttons all dispatch through these.
 
-import type { Block, CellBorder, CellBorders, CharStyle, EquationBlock, FieldDef, FieldSpec, ImageBlock, MathEquation, ParaStyle, Paragraph, Run, SdtProps, SdtType, TableBlock, TableCell, TableCondOverrides, TableRow, TableStyle, TocOptions, TocSwitches } from "@cw/shared";
-import { cellCondFlags, effectiveCellProps, resolveTableStyle } from "@cw/shared";
+import type { Block, CellBorder, CellBorders, CharStyle, EquationBlock, FieldDef, FieldSpec, ImageBlock, MathEquation, ParaStyle, Paragraph, Run, SdtProps, SdtType, TableBlock, TableCell, TableRow, TableStyle, TocOptions, TocSwitches } from "@cw/shared";
+import { bakeTableStyleRows, DEFAULT_TBL_LOOK } from "@cw/shared";
 import { buildTocParagraphs, buildTocInstruction, buildInstruction, evaluateField } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, GridRect } from "@cw/shared";
 import { isCollapsed, BAND_CONTAINERS } from "@cw/shared";
@@ -2091,33 +2091,6 @@ export function deleteTableCmd(): Command {
 // Table styles — round-trippable TableStyle entities whose effective per-cell
 // formatting is BAKED onto the cells (the engine reads concrete cell props).
 
-/** Word's default w:tblLook: header row on, row banding on. */
-const DEFAULT_TBL_LOOK: TableCondOverrides = { firstRow: true, bandRows: true };
-
-/** Recompute every cell's baked shading/borders/margin from a resolved table
- *  style + the table's active bands. Replaces direct cell formatting (applying a
- *  table style is destructive, like Word). */
-function bakeTableRows(table: TableBlock, style: TableStyle, styles: Record<string, TableStyle>, overrides: TableCondOverrides): TableRow[] {
-  const resolved = resolveTableStyle(styles, style.id);
-  const grid = buildTableGrid(table);
-  return rebuildRows(grid, (cell, s) => {
-    const flags = cellCondFlags(s.originRow, s.originCol, grid.rows, grid.cols, {
-      ...overrides,
-      rowBandSize: style.rowBandSize ?? 1,
-      colBandSize: style.colBandSize ?? 1,
-    });
-    const props = effectiveCellProps(resolved, flags);
-    const next: TableCell = { ...cell };
-    if (props.shading !== undefined) next.shading = props.shading;
-    else delete next.shading;
-    if (props.borders && Object.keys(props.borders).length > 0) next.borders = props.borders;
-    else delete next.borders;
-    if (props.margin) next.margin = props.margin;
-    else delete next.margin;
-    return next;
-  });
-}
-
 /** Every TableBlock in the document body (recursing into cells). */
 function allTables(blocks: Block[], out: TableBlock[] = []): TableBlock[] {
   for (const b of blocks) {
@@ -2139,7 +2112,7 @@ export function applyTableStyle(styleId: string): Command {
     const style = styles[styleId];
     if (!style) return null;
     const overrides = ctx.table.condOverrides ?? DEFAULT_TBL_LOOK;
-    const rows = bakeTableRows(ctx.table, style, styles, overrides);
+    const rows = bakeTableStyleRows(ctx.table, style, styles, overrides);
     const ops: Op[] = [
       { type: "setTableStyleRef", tableId: ctx.table.id, styleId, condOverrides: overrides },
       structureOp(ctx.table, rows),
@@ -2157,7 +2130,7 @@ export function upsertTableStyle(style: TableStyle): Command {
     for (const table of allTables(state.doc.blocks)) {
       if (table.styleId !== style.id) continue;
       const overrides = table.condOverrides ?? DEFAULT_TBL_LOOK;
-      ops.push(structureOp(table, bakeTableRows(table, style, styles, overrides)));
+      ops.push(structureOp(table, bakeTableStyleRows(table, style, styles, overrides)));
     }
     return tr(ops, state.selection, "command");
   };

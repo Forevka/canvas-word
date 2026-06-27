@@ -118,7 +118,7 @@ WordDocument doc = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName
         new CellContent[] { "Item", "Qty" },
         new CellContent[] { "Widget", "10" },
     }, new TableOptions { HeaderRow = true })
-    .Footer(f => f.Paragraph(null, p => p.Text("Page ").PageField().Text(" of ").NumPagesField()))
+    .Footer(f => f.Paragraph(p => p.Text("Page ").PageField().Text(" of ").NumPagesField()))
     .Build();
 
 byte[] pdf = doc.ExportPdf();
@@ -131,22 +131,73 @@ var b = engine.NewBuilderFromTemplate(File.ReadAllBytes("template.docx"));
 var doc = b.Paragraph("Body generated against the template's styles").Build();
 ```
 
+The `Paragraph` family is fully overloaded — `Paragraph()`, `Paragraph(text)`,
+`Paragraph(configure)`, `Paragraph(text, configure)` — so you never pass a placeholder
+`null`.
+
+#### Equations, right-to-left & real table styles
+
+The builder authors every model feature — not just the common ones. Equations accept
+**LaTeX or MathML** (typeset on the same canvas as the editor, round-tripped to OMML on
+export); paragraphs carry a base **writing direction** (OOXML `w:bidi`); and **real table
+styles** register a conditional-band entity that is baked onto the cells *and* emitted as
+`w:tblStyle`:
+
+```csharp
+WordDocument doc = engine.NewBuilder()
+    // A real table style with conditional bands (header + zebra striping + borders).
+    .TableStyle(new TableStyleDef
+    {
+        Id = "Grid", Name = "Grid",
+        Conds = new Dictionary<TableCond, TableCondProps>
+        {
+            [TableCond.WholeTable] = new() { Borders = CellBorders.All(new CellBorder { Color = "#c8ccd0", WidthPx = 1 }) },
+            [TableCond.FirstRow]   = new() { Shading = "#1a1a2e", Char = new CharStyle { Bold = true, Color = "#fff" } },
+            [TableCond.Band2Horz]  = new() { Shading = "#f1f3f4" },
+        },
+    })
+
+    // Inline + display equations (LaTeX and MathML).
+    .Paragraph(p => p.Text("The identity ").InlineEquation("e^{i\\pi}+1=0").Text(" flows inline."))
+    .Equation("\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}")
+    .EquationMathml("<math><msup><mi>a</mi><mn>2</mn></msup><mo>+</mo><msup><mi>b</mi><mn>2</mn></msup></math>",
+                    new EquationOptions { Align = EquationAlign.Right })
+
+    // Right-to-left base direction (mirrors alignment + start/end indents).
+    .Paragraph("هذا نص عربي", p => p.Direction(Direction.Rtl))
+
+    // Outline level (a TOC entry without a heading style), keep-together, tab stops.
+    .Paragraph("Appendix", p => p.OutlineLevel(0).KeepTogether())
+
+    // Reference the registered table style by id (cells are baked + reference kept).
+    .Table(new[]
+    {
+        new CellContent[] { "Layer", "Role" },
+        new CellContent[] { "Model", "invertible ops" },
+        new CellContent[] { "Paint", "fillText per fragment" },
+    }, new TableOptions { StyleId = "Grid" })
+    .Build();
+```
+
 ### Worked example — rebuild the editor's default document
 
 `examples/WordCanvas.Example.Showcase` rebuilds the editor's flagship "no docId"
 sample document **entirely with the typed builder** and exports it to PDF + DOCX — a
-6-page tour exercising headings + TOC, inline fields (DATE/PAGE/NUMPAGES/IF), every
+7-page tour exercising headings + TOC, inline fields (DATE/PAGE/NUMPAGES/IF), every
 content-control kind, merged / tall (paginating) / field-in-cell tables, embedded
 images, multilevel + bullet lists, footnotes, bookmarks, hidden text, hyperlinks,
-sub/superscript, CJK text, and header/footer page fields:
+sub/superscript, CJK text, display + inline equations (LaTeX & MathML), a right-to-left
+paragraph, a registered real table style, and header/footer page fields:
 
 ```sh
 dotnet run -c Release --project dotnet/examples/WordCanvas.Example.Showcase
-# → showcase.pdf (6 pages) + showcase.docx, re-imports to 120 blocks, 0 warnings
+# → showcase.pdf (7 pages) + showcase.docx, re-imports to 140 blocks, 0 warnings
 ```
 
-(Equations and explicit right-to-left paragraph direction — also in the editor sample
-— are authored via the model API, not the fluent builder.)
+> The headless PDF export bundles Latin + STIX-math + a CJK fallback font only, so the
+> RTL demo uses Latin text (the base-direction effect — right alignment + mirrored
+> indents — is script-independent); Arabic/Hebrew flow through the same bidi engine and
+> round-trip in the `.docx`.
 
 ### Headless TOC / field calculation (the Syncfusion replacement)
 

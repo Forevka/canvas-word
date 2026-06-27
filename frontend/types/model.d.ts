@@ -33,6 +33,9 @@ export interface CharStyle {
   /** Inline equation payload (OOXML inline m:oMath) — the run is a single U+FFFC
    *  that renders as the laid-out MathML. Block equations use EquationBlock. */
   equation?: MathEquation | undefined;
+  /** Explicit right-to-left run (OOXML w:rPr/w:rtl). Forces a bidi-RTL embedding
+   *  regardless of the run's characters. Absent = resolve from Unicode bidi classes. */
+  rtl?: boolean | undefined;
 }
 
 export interface TabStop {
@@ -44,6 +47,10 @@ export interface TabStop {
 
 export interface ParaStyle {
   align: "left" | "center" | "right" | "justify";
+  /** Base writing direction (OOXML w:bidi). "rtl" lays the paragraph out
+   *  right-to-left: align "left"/"right" read as START/END (mirrored), and
+   *  left/right indents swap to start/end. Absent = "ltr". */
+  direction?: "ltr" | "rtl";
   /** Line height multiplier. */
   lineHeight: number;
   spaceBeforePx: number;
@@ -59,6 +66,9 @@ export interface ParaStyle {
   list?: { listId: string; level: number } | undefined;
   /** Named style reference into Document.stylesheet (e.g. "Heading1"). */
   namedStyle?: string;
+  /** Effective outline level (OOXML w:outlineLvl), 0-8 = TOC levels 1-9. Absent =
+   *  body text. Makes a paragraph a TOC entry without a heading style. */
+  outlineLevel?: number;
   columnBreakBefore?: boolean;
   tabStops?: TabStop[];
 }

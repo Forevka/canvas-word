@@ -118,6 +118,30 @@ public sealed class DocumentBuilder : StoryBuilderBase<DocumentBuilder>
         return this;
     }
 
+    /// <summary>Register (or override) a REAL table style (OOXML w:style[type=table]) with
+    /// conditional bands. Reference it from <c>.Table(rows, new TableOptions { StyleId = def.Id })</c>.</summary>
+    public DocumentBuilder TableStyle(TableStyleDef def)
+    {
+        JsScope.InvokeMethod("tableStyle", def.ToJs(Engine));
+        return this;
+    }
+
+    /// <summary>Register (or override) a builder-only table-style PRESET — reusable cell
+    /// formatting applied via <c>.Table(rows, new TableOptions { Style = name })</c>.</summary>
+    public DocumentBuilder TableStylePreset(string name, TableStylePreset preset)
+    {
+        JsScope.InvokeMethod("tableStylePreset", name, preset.ToJs(Engine));
+        return this;
+    }
+
+    /// <summary>Register a custom list definition; reference it via
+    /// <c>.List(items, new ListOptions { ListId = id })</c>.</summary>
+    public DocumentBuilder ListDefinition(string id, ListDefinitionSpec spec)
+    {
+        JsScope.InvokeMethod("listDefinition", id, spec.ToJs(Engine));
+        return this;
+    }
+
     /// <summary>Insert a table of contents built from the document's headings at Build().</summary>
     public DocumentBuilder TableOfContents(TocOptions? opts = null)
     {
