@@ -1012,7 +1012,7 @@ wireCopy('copy-npm'); wireCopy('copy-npm-2');
   var SYM = {y:"✓", p:"◐", n:"✕", na:"–"};
   var grid = document.getElementById("mtx-grid");
   if(!grid) return;
-  var esc = function(s){ return s.replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;"); };
+  var esc = function(s){ return s.replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/'/g,"&#39;"); };
 
   var thead = "<tr><th class='mtx-name'>Editor / engine</th>";
   COLS.forEach(function(c){ thead += "<th title='"+esc(c.s+" — "+c.f)+"'>"+c.s+"<span class='full'>"+c.f+"</span></th>"; });
