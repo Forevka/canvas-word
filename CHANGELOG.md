@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **CJK (Chinese) text in export.** A subset of **Noto Sans SC** (OFL; ~3,755 common
+  GB2312 Level-1 hanzi + ASCII + CJK punctuation, ~1.4 MB) now ships as a built-in
+  fallback face (`NotoSansSC`). CJK runs are script-split onto it automatically, so
+  Chinese text no longer renders as `.notdef`/tofu (the "x" boxes) in PDF export — it
+  works with **zero configuration** across the editor, the browser export worker, and
+  the headless backend (`/render.pdf`). The face is a single Regular (every style maps
+  to it), registered like the bundled math font; the editor loads it **lazily** and
+  re-lays-out when it arrives (new `Editor.refreshFonts()`), so Latin-only documents
+  pay no first-paint cost. `CjkConfig.fallbackFont` now defaults to it; set a custom
+  font's family to override, or `""` to opt out (keeps the browser's on-screen system
+  fallback, CJK then tofu in PDF). DOCX is unchanged — it writes the document's own
+  family and Word substitutes its CJK font. Builds on the existing CJK line-breaking
+  and `scriptSplitRuns` fallback machinery.
 - **Mathematical equations (MathML).** First-class math, MathML-native end to end:
   - **Display & inline equations.** Block equations (`EquationBlock`) sit on their own
     line (left/center/right aligned); inline equations ride inside a text line via a

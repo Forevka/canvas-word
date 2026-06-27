@@ -11,7 +11,8 @@ import { sampleDoc } from "./model/sampleDoc";
 import { stressDoc } from "./model/stressDoc";
 import { importDocx, type ImportResult, type ImportPhase } from "./import/docx/importDocx";
 import { exportDocument, type ExportFormat, type ExportWarning } from "./export/exportDocument";
-import { loadEditorFonts } from "./export/shared/editorFonts";
+import { loadCjkFallbackFont, loadEditorFonts } from "./export/shared/editorFonts";
+import { CJK_FONT_FAMILY } from "./fonts/clones";
 import { fontsProgress } from "./app/loadProgress";
 import { toolbarFonts } from "./fonts/clones";
 import { createFontRegistry, normalizeFamily } from "./fonts/customRegistry";
@@ -320,6 +321,17 @@ const editorOpts = {
   },
 };
 let editor = createEditor(app, doc, editorOpts);
+
+// When the bundled CJK fallback is active, load it lazily (it's multi-MB; blocking
+// first paint on it would penalize Latin-only documents) and re-lay-out once it
+// arrives so CJK widths re-measure against the bundled face instead of the browser's
+// interim system substitute. A custom fallback family is already loaded eagerly by
+// loadEditorFonts; an explicit "" opt-out skips this entirely.
+if (config.cjk.fallbackFont === CJK_FONT_FAMILY) {
+  void loadCjkFallbackFont().then((ok) => {
+    if (ok) editor.refreshFonts();
+  });
+}
 
 // Drawing-grid view state (persisted across document replacement, since the
 // editor — and its paint layer — is rebuilt on docx open / setDocument). Seeded

@@ -55,11 +55,31 @@ export const CLONE_OF: Record<string, string> = {
   // math layer's family resolves to itself. NOT in CLONE_FAMILIES (it has only a
   // Regular face — math styling comes from the Mathematical Alphanumeric block).
   stixtwomath: "StixTwoMath",
+  // Noto Sans SC — the bundled CJK fallback (single Regular face); identity so the
+  // CJK fallback family resolves to itself. NOT in CLONE_FAMILIES (single face;
+  // bold/italic map to the same Regular, see resolveFont's single-face handling).
+  notosanssc: "NotoSansSC",
 };
 
 /** Family name of the bundled math font. Math glyphs render with this face. */
 export const MATH_FONT_FAMILY = "StixTwoMath";
 export const MATH_FONT_FILE = "StixTwoMath-Regular.ttf";
+
+/** Family name of the bundled CJK fallback font. Script-split CJK runs render with
+ *  this face (a subset of Noto Sans SC covering the common Chinese characters), so
+ *  CJK text isn't `.notdef`/tofu in the export when no embedder font is configured.
+ *  It is the default {@link CjkConfig.fallbackFont}. */
+export const CJK_FONT_FAMILY = "NotoSansSC";
+export const CJK_FONT_FILE = "NotoSansSC-Regular.ttf";
+
+/** Built-in faces that ship a single Regular face only (math + CJK fallback). Every
+ *  requested style resolves to this one file — there are no bold/italic faces, so
+ *  the renderer/embedder use Regular outlines for all four styles (matching how the
+ *  custom-font path falls a missing style back to its Regular). */
+export const SINGLE_FACE_FILES: Record<string, string> = {
+  [MATH_FONT_FAMILY]: MATH_FONT_FILE,
+  [CJK_FONT_FAMILY]: CJK_FONT_FILE,
+};
 
 // Per-clone vertical metrics as a fraction of font size (ascent, descent above/
 // below the baseline). Used by fontMetrics so line heights are computed the SAME
@@ -77,6 +97,11 @@ export const CLONE_METRICS: Record<string, { ascent: number; descent: number }> 
   Cousine: { ascent: 0.625, descent: 0.1875 },
   // STIX Two Math (hhea ascent 762 / descent 238 at upem 1000).
   StixTwoMath: { ascent: 0.762, descent: 0.238 },
+  // Noto Sans SC (hhea ascent 1160 / descent 288 at upem 1000). CJK faces carry
+  // tall vertical metrics; using the face's own ratios keeps glyphs from clipping
+  // and — since BOTH the editor and the exporters read these baked ratios — keeps
+  // pagination identical across every environment.
+  NotoSansSC: { ascent: 1.16, descent: 0.288 },
 };
 
 /** Resolve one CSS-stack family token to the face family the editor/exporters

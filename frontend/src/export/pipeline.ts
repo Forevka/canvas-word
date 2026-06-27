@@ -16,10 +16,13 @@ import {
 } from "../fonts/customRegistry";
 import { createLayoutEngine } from "../layout/engine";
 import { setCjkFallbackFont, setCjkLocale } from "../layout/prepareCache";
+import { CJK_FONT_FAMILY } from "../fonts/clones";
 import { pageOfBlockMap } from "../recalc/recalcToc";
 
 /** CJK tuning for an export job (mirror of the editor's `cjk` config). The
- *  fallback family must also appear in the `fonts` payload so it embeds. */
+ *  fallback family defaults to the bundled CJK face (`NotoSansSC`), which is a
+ *  built-in and embeds without a `fonts` payload entry; a custom fallback family
+ *  must also appear in `fonts` so it embeds. Pass `fallbackFont: ""` to opt out. */
 export interface CjkExportConfig {
   locale?: string;
   fallbackFont?: string;
@@ -45,19 +48,18 @@ export async function runExport(
   fonts?: CustomFontPayload,
   cjk?: CjkExportConfig,
 ): Promise<ExportResult> {
-  // CJK fallback/locale touch the process-global analyzer; set for the duration
-  // of the job. (The fallback font itself must be in `fonts` to embed.)
-  if (cjk) {
-    setCjkLocale(cjk.locale);
-    setCjkFallbackFont(cjk.fallbackFont);
-  }
+  // CJK fallback/locale touch the process-global analyzer; set for the duration of
+  // the job and reset after. The fallback defaults to the bundled CJK face so a
+  // consumer that calls runExport without a cjk config still gets Chinese glyphs
+  // (not tofu); pass `fallbackFont: ""` to opt out.
+  const fallbackFont = cjk?.fallbackFont ?? CJK_FONT_FAMILY;
+  setCjkLocale(cjk?.locale);
+  setCjkFallbackFont(fallbackFont);
   try {
     return await runExportInner(doc, format, images, fonts);
   } finally {
-    if (cjk) {
-      setCjkFallbackFont(null);
-      setCjkLocale(undefined);
-    }
+    setCjkFallbackFont(null);
+    setCjkLocale(undefined);
   }
 }
 

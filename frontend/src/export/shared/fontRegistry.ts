@@ -5,7 +5,7 @@
 
 import * as fontkit from "fontkit";
 import type { Font } from "fontkit";
-import { cloneFamilyFor, FONT_FILES } from "../../fonts/clones";
+import { cloneFamilyFor, FONT_FILES, SINGLE_FACE_FILES } from "../../fonts/clones";
 import {
   activeFontRegistry,
   customFontFor,
@@ -98,7 +98,9 @@ export function resolveFont(family: string, bold: boolean, italic: boolean): Res
     return { file: "Arimo-Regular.ttf", font: fb.font, bytes: fb.bytes, substituted: true };
   }
 
-  const file = `${clone}-${style}.ttf`;
+  // Single-face built-ins (math, CJK fallback) ship only a Regular face: every
+  // style resolves to it, so bold/italic CJK don't fall through to Arimo (tofu).
+  const file = SINGLE_FACE_FILES[clone] ?? `${clone}-${style}.ttf`;
   const hit = loaded.get(file) ?? loaded.get("Arimo-Regular.ttf");
   if (!hit) {
     throw new Error("fontRegistry: no fonts loaded — call installMeasureHost() before measuring/exporting");

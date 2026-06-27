@@ -14,7 +14,7 @@
 import { setMeasureContext } from "../../layout/metrics";
 import { FontkitMeasureContext } from "./fontkitContext";
 import { builtinsRegistered, registerFont } from "./fontRegistry";
-import { FONT_FILES, MATH_FONT_FILE } from "../../fonts/clones";
+import { CJK_FONT_FILE, FONT_FILES, MATH_FONT_FILE } from "../../fonts/clones";
 
 async function readFontBytes(file: string): Promise<Uint8Array> {
   const url = new URL(`./fonts/${file}`, import.meta.url);
@@ -47,6 +47,16 @@ export function installMeasureHost(): Promise<void> {
         // math-alphanumeric glyphs), but the rest of the document is unaffected.
         // Surfaced (not silent) so a broken bundle is diagnosable.
         console.warn(`[wordcanvas] math font ${MATH_FONT_FILE} failed to load; equations will not typeset correctly`, e);
+      }
+      // The bundled CJK fallback (subset of Noto Sans SC) — registered alongside the
+      // clones so script-split CJK runs measure + embed identically across editor/
+      // export instead of rendering as .notdef/tofu.
+      try {
+        registerFont(CJK_FONT_FILE, await readFontBytes(CJK_FONT_FILE));
+      } catch (e) {
+        // CJK font missing — CJK text falls back to a Latin clone (tofu), but the
+        // rest of the document is unaffected. Surfaced so a broken bundle is visible.
+        console.warn(`[wordcanvas] CJK font ${CJK_FONT_FILE} failed to load; Chinese text will not render correctly`, e);
       }
     }
     // Route pretext + metrics through the fontkit shim over the bundled clones.
