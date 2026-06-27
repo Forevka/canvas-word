@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/bench/">
+    <Project Path="bench/WordCanvas.Benchmarks/WordCanvas.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/WordCanvas.ClearScript/WordCanvas.ClearScript.csproj" />
+  </Folder>
+</Solution>
