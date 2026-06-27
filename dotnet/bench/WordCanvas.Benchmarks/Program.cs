@@ -38,6 +38,26 @@ if (args.Length > 0 && args[0].Equals("pdfdump", StringComparison.OrdinalIgnoreC
     return 0;
 }
 
+if (args.Length > 0 && args[0].Equals("sfsmoke", StringComparison.OrdinalIgnoreCase))
+{
+    var hasKey = SyncfusionOps.EnsureLicense();
+    Console.WriteLine($"Syncfusion license: {(hasKey ? "registered" : "TRIAL (SYNCFUSION_LICENSE_KEY not set)")}");
+    foreach (var file in DocCorpus.Files())
+    {
+        var bytes = File.ReadAllBytes(file);
+        var sw = Stopwatch.StartNew();
+        using var sf = SyncfusionOps.Open(bytes);
+        var tOpen = sw.Elapsed; sw.Restart();
+        var docxLen = SyncfusionOps.SaveDocx(sf);
+        var tDocx = sw.Elapsed; sw.Restart();
+        var pdfLen = SyncfusionOps.ConvertToPdf(sf);
+        var tPdf = sw.Elapsed;
+        Console.WriteLine($"{Path.GetFileName(file)}: open={tOpen.TotalMilliseconds:F0}ms " +
+                          $"docx={tDocx.TotalMilliseconds:F0}ms ({docxLen / 1024}KB) pdf={tPdf.TotalMilliseconds:F0}ms ({pdfLen / 1024}KB)");
+    }
+    return 0;
+}
+
 BenchmarkSwitcher.FromAssembly(typeof(Smoke).Assembly).Run(args);
 return 0;
 

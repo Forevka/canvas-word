@@ -164,6 +164,51 @@ fast import/PDF but heavier DOCX re-zip.)
 These are end-to-end host→V8→host times including all marshalling — a 9 MB, 3353-block
 real estate report imports in ~270 ms and renders a page-accurate PDF in ~0.4 s.
 
+## Comparison vs Syncfusion
+
+`VsSyncfusionBenchmarks` runs the WordCanvas pipeline **head-to-head against
+Syncfusion** ([DocIO](https://www.syncfusion.com/document-processing/word-framework/net) +
+DocIORenderer) over the same reports and the same three operations — open a `.docx`,
+export to PDF, export to DOCX — grouped by operation with WordCanvas as the baseline,
+so the report shows a direct **Ratio** per document.
+
+**1. Provide a Syncfusion license key (Essential Studio v33 — matches the pinned
+`Syncfusion.*` v33.2.15 packages):**
+
+```powershell
+$env:SYNCFUSION_LICENSE_KEY = "<your v33 community/trial/commercial key>"
+```
+
+Without a key Syncfusion runs in **trial mode** (watermark + license overhead) and the
+numbers are not representative — the benchmark prints a warning in that case.
+
+**2. Run the comparison:**
+
+```sh
+dotnet run -c Release --project dotnet/bench/WordCanvas.Benchmarks -- --filter *VsSyncfusion*
+# quick non-statistical Syncfusion-only timings:
+dotnet run -c Release --project dotnet/bench/WordCanvas.Benchmarks -- sfsmoke
+```
+
+### Results
+
+<!-- SYNCFUSION_RESULTS -->
+_Run the comparison with a valid `SYNCFUSION_LICENSE_KEY` to populate this table._
+<!-- /SYNCFUSION_RESULTS -->
+
+**Fairness notes.** Both sides do the same logical work on the same machine and corpus.
+Differences to keep in mind when reading the numbers:
+
+- **Fonts/layout.** WordCanvas measures + embeds bundled metric-clone fonts (no system
+  fonts; deterministic, identical to its Node backend). Syncfusion lays out with the
+  machine's installed fonts. So the PDFs differ visually — this compares *throughput*,
+  not pixel parity.
+- **Import.** WordCanvas import = parse → in-V8 document model (crosses the C#↔V8
+  boundary); Syncfusion open = parse → in-memory DOM. Both produce a reusable document.
+- **Export.** Both export benchmarks reuse a document loaded once in `[GlobalSetup]`.
+  WordCanvas PDF reuses its own layout engine + pdfkit; Syncfusion PDF uses
+  DocIORenderer. WordCanvas timings include host↔V8 marshalling of the output bytes.
+
 ## Notes & limitations
 
 - **One engine per thread.** A `WordCanvasEngine` owns one V8 isolate and is not

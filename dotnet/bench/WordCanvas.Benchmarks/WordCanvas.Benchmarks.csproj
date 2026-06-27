@@ -6,6 +6,8 @@
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
+    <PackageReference Include="Syncfusion.DocIO.Net.Core" Version="33.2.15" />
+    <PackageReference Include="Syncfusion.DocIORenderer.Net.Core" Version="33.2.15" />
   </ItemGroup>
 
   <PropertyGroup>
