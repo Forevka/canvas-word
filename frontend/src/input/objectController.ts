@@ -26,7 +26,7 @@ export interface ObjectFrame {
    *  (in-flow images re-align on resize): "left" for left-aligned / anchored
    *  images, "center" / "right" for those alignments — so the ghost tracks the
    *  committed position instead of jumping on mouseup. */
-  show(rect: Rect, maxWidth: number, src?: string, anchor?: ResizeAnchor): void;
+  show(rect: Rect, maxWidth: number, src?: string, anchor?: ResizeAnchor, resizable?: boolean): void;
   hide(): void;
   destroy(): void;
 }
@@ -271,11 +271,13 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
   for (const el of handleEls) el.addEventListener("pointerdown", onHandleDown);
 
   return {
-    show(rect: Rect, maxWidth: number, src?: string, anchor: ResizeAnchor = "left"): void {
+    show(rect: Rect, maxWidth: number, src?: string, anchor: ResizeAnchor = "left", resizable = true): void {
       const host = deps.getPageElement(rect.pageIndex);
       if (!host) return;
       current = { rect, maxWidth, anchor };
       ghostSrc = src;
+      // Non-resizable objects (equations) get a plain selection box — no handles.
+      for (const el of handleEls) el.style.display = resizable ? "block" : "none";
       if (frame.parentElement !== host) {
         host.appendChild(frame);
         // Re-parenting the frame detaches it from the document for an instant.

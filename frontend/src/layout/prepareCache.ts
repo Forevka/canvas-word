@@ -16,8 +16,9 @@ import {
 } from "@chenglou/pretext/rich-inline";
 import { clearAnalysisCaches, isCJK, setAnalysisLocale } from "@chenglou/pretext/analysis";
 import type { Paragraph, Run } from "@cw/shared";
-import { charStyleToFont } from "./metrics";
-import { firstFamilyToken } from "../fonts/clones";
+import { charStyleToFont, measureTextWidth } from "./metrics";
+import { firstFamilyToken, MATH_FONT_FAMILY } from "../fonts/clones";
+import { equationBox } from "./math/equationLayout";
 
 // ---------------------------------------------------------------------------
 // CJK tuning (instance config applied to pretext's process-global analyzer).
@@ -121,6 +122,16 @@ function toItems(runs: Run[]): RichInlineItem[] {
   // run-offset accounting is unchanged) but contribute EMPTY text to pretext — no
   // fragment, zero width, never painted. Offsets still span the full text.
   return runs.map((run) => {
+    // Inline equation: the run is a single U+FFFC reserving the math box width. We
+    // keep the sentinel as the item text (pretext drops empty-text items) and add
+    // extraWidth so the occupied width equals the box; `break:'never'` keeps it
+    // atomic. breakNextLine then swaps the box's metrics in for the line.
+    if (run.style.equation && !run.style.hidden) {
+      const font = charStyleToFont(run.style);
+      const box = equationBox(run.style.equation, MATH_FONT_FAMILY, run.style.fontSizePx);
+      const sentinelW = measureTextWidth(run.text, font);
+      return { text: run.text, font, break: "never", extraWidth: Math.max(0, box.width - sentinelW) };
+    }
     const item: RichInlineItem = { text: run.style.hidden ? "" : run.text, font: charStyleToFont(run.style) };
     if (!run.style.hidden && run.style.letterSpacingPx !== undefined) item.letterSpacing = run.style.letterSpacingPx;
     return item;

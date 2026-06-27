@@ -267,6 +267,33 @@ footer{padding:54px 0 40px; border-top:1px solid var(--line); margin-top:90px}
 }
 .skip{position:absolute; left:-9999px}
 .skip:focus{position:fixed; left:16px; top:16px; background:#fff; padding:10px 16px; border:1px solid var(--accent); border-radius:8px; z-index:100}
+
+/* Competitor matrix (failure-mode heatmap) */
+.mtx-legend{display:flex; flex-wrap:wrap; gap:10px 20px; justify-content:center; margin:0 0 26px; font-size:13.5px; color:var(--ink-soft)}
+.mtx-legend > span{display:inline-flex; align-items:center; gap:8px}
+.mtx-key{display:inline-grid; place-items:center; width:22px; height:22px; border-radius:6px; font-family:var(--mono); font-weight:700; font-size:13px}
+.mtx-key.y,.mtx-cell.y{background:var(--good-soft); color:var(--good)}
+.mtx-key.p,.mtx-cell.p{background:#fdf3e0; color:#a4660a}
+.mtx-key.n,.mtx-cell.n{background:#fdeceb; color:#b23b34}
+.mtx-key.na,.mtx-cell.na{background:var(--paper-2); color:var(--muted)}
+table.mtx{border-collapse:separate; border-spacing:0; width:100%; min-width:980px; font-size:14px}
+table.mtx thead th{background:var(--paper-2); border-bottom:1px solid var(--line); font-family:var(--sans); font-size:12px; font-weight:600; color:var(--muted); padding:11px 6px; text-align:center; vertical-align:middle; width:72px}
+table.mtx thead th .full{display:block; font-size:10.5px; color:#9aa0ab; font-weight:500; margin-top:3px; line-height:1.25}
+table.mtx th.mtx-name{background:var(--paper-2); text-align:center; width:208px; min-width:208px; padding:11px 14px}
+table.mtx th.mtx-score{background:var(--paper-2); width:92px}
+table.mtx tbody td{padding:0; text-align:center; border-bottom:1px solid var(--line-soft)}
+table.mtx tbody tr:last-child td{border-bottom:0}
+td.mtx-namecell{background:#fff; text-align:center; padding:13px 14px; border-right:1px solid var(--line)}
+td.mtx-namecell .nm{font-weight:700; font-size:14px; font-family:var(--sans)}
+td.mtx-namecell .cls{display:inline-block; margin-top:5px; font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.04em; padding:3px 7px; border-radius:6px; border:1px solid var(--line); color:var(--muted); background:var(--paper-2); white-space:nowrap}
+table.mtx tbody td.mtx-cell{vertical-align:middle; height:52px; cursor:help; font-family:var(--mono); font-weight:700; font-size:15px; transition:filter .12s ease}
+td.mtx-cell:hover{filter:brightness(.95)}
+tr.mtx-me td.mtx-namecell{background:var(--accent-soft)}
+td.mtx-scorecell{background:#fff; border-left:1px solid var(--line)}
+.mtx-scorebar{display:flex; align-items:center; gap:8px; justify-content:center; padding:0 12px}
+.mtx-scorebar .num{font-family:var(--mono); font-weight:700; font-size:13px; min-width:36px; text-align:right; color:var(--ink-soft)}
+.mtx-scorebar .track{display:inline-block; height:7px; border-radius:4px; background:var(--line); overflow:hidden; width:48px}
+.mtx-scorebar .fill{display:block; height:100%; background:linear-gradient(90deg,var(--accent),var(--good))}
 </style>
 </head>
 <body>
@@ -281,6 +308,7 @@ footer{padding:54px 0 40px; border-top:1px solid var(--line); margin-top:90px}
     <nav class="nav-links" id="nav-links" aria-label="Primary">
       <a href="#why">Why</a>
       <a href="#compare">Compare</a>
+      <a href="#matrix">Matrix</a>
       <a href="#how">How it works</a>
       <a href="#features">Features</a>
       <a href="#examples">Examples</a>
@@ -339,6 +367,8 @@ footer{padding:54px 0 40px; border-top:1px solid var(--line); margin-top:90px}
     <span class="chip">Paginates exactly like Word</span>
     <span class="chip">Live multi-user collaboration</span>
     <span class="chip">Track changes &amp; comments</span>
+    <span class="chip">Right-to-left &amp; CJK</span>
+    <span class="chip">Math equations (MathML)</span>
     <span class="chip">Headless on Node</span>
   </div>
 </div>
@@ -446,7 +476,28 @@ footer{padding:54px 0 40px; border-top:1px solid var(--line); margin-top:90px}
         </tbody>
       </table>
     </div>
-    <p class="cmp-note">Where the commercial editors win today: RTL &amp; complex-script editing, bundled CJK fonts, charts &amp; equations, and an enterprise support contract. We tell you that up front.</p>
+    <p class="cmp-note">Right-to-left, bidi, CJK editing, and mathematical equations (MathML, typeset with STIX Two Math, round-tripped to <code>.docx</code> as OMML) now work out of the box. Where the commercial editors still win today: charts, a CJK font bundled in the box, and an enterprise support contract. We tell you that up front.</p>
+  </div>
+</section>
+
+<!-- ============ FULL COMPETITOR MATRIX ============ -->
+<section id="matrix">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">The whole field</span>
+      <h2>Every embeddable Word editor, one failure mode at a time</h2>
+      <p>The big three above are just the start. Here's WordCanvas against thirteen editors and engines, scored on the problems that recur across all of them. Hover any cell for the evidence.</p>
+    </div>
+    <div class="mtx-legend">
+      <span><span class="mtx-key y">✓</span> Handled / strength</span>
+      <span><span class="mtx-key p">◐</span> Partial — works with caveats</span>
+      <span><span class="mtx-key n">✕</span> Fails / unsupported / paywalled</span>
+      <span><span class="mtx-key na">–</span> N/A (no editing UI)</span>
+    </div>
+    <div class="tablewrap">
+      <table class="mtx" id="mtx-grid" aria-label="Competitor comparison across Word-editing failure modes"><thead></thead><tbody></tbody></table>
+    </div>
+    <p class="cmp-note">Verdicts derived from public vendor changelogs, GitHub issues, official docs and forums. Some cited bugs may be fixed in current releases but recur because they're architectural — <a href="https://forevka.dev/articles/best-embeddable-js-word-editors/" target="_blank" rel="noopener" style="color:var(--accent); text-decoration:underline; text-underline-offset:2px">read the full write-up</a>.</p>
   </div>
 </section>
 
@@ -507,10 +558,13 @@ editor.<span class="c-fn">on</span>(<span class="c-str">"ready"</span>, () =&gt;
       <div class="feat"><div class="ic">👥</div><h3>Live collaboration</h3><p>Opt-in backend adds multi-user editing, presence, carets, and one-click share links.</p></div>
       <div class="feat"><div class="ic">✍️</div><h3>Track changes &amp; comments</h3><p>Review workflows with suggestions and comment threads built into the editor.</p></div>
       <div class="feat"><div class="ic">📊</div><h3>Tables, fields, TOC &amp; styles</h3><p>Span-aware tables, PAGE/NUMPAGES/DATE fields, generated tables of contents, and a full style manager.</p></div>
+      <div class="feat"><div class="ic">🌍</div><h3>Right-to-left, bidi &amp; CJK</h3><p>Full Unicode bidi (UAX#9) with multi-run caret and selection, RTL <code>.docx</code> round-trip, and out-of-the-box CJK line-breaking with kinsoku rules.</p></div>
+      <div class="feat"><div class="ic">∑</div><h3>Math equations</h3><p>MathML-native equations typeset with the bundled STIX Two Math font — fractions, radicals, scripts, growing delimiters, big operators and matrices. Insert via a visual editor (MathML or LaTeX) with a live preview; equations are selectable and editable, and round-trip to <code>.docx</code> as OMML.</p></div>
       <div class="feat"><div class="ic">🪆</div><h3>Nested content controls</h3><p>Content controls inside content controls — to any depth, with complex Word fields nested inside — round-trip through <code>.docx</code> intact. No other browser-native editor keeps the nesting; generated report section→field structure survives editing.</p></div>
       <div class="feat"><div class="ic">🖥️</div><h3>Headless on Node</h3><p>Build or import documents server-side and export to DOCX/PDF with no browser and no DOM.</p></div>
       <div class="feat"><div class="ic">👁️</div><h3>Read-only viewer mode</h3><p><code>readonly: true</code> mounts a selectable, copyable, find-enabled viewer with editing disabled.</p></div>
       <div class="feat"><div class="ic">🧱</div><h3>Multiple instances</h3><p>Class-scoped chrome means you can run several editors on one page, each mounted independently.</p></div>
+      <div class="feat"><div class="ic">🛠️</div><h3>Developer mode</h3><p>Flip on <code>develop: true</code> for a devtools-style inspector — browse the parsed model and layout tree, hover to highlight on the canvas, and probe hit-tests. Plus a WebMCP bridge that exposes the editor to AI agents.</p></div>
     </div>
   </div>
 </section>
@@ -624,7 +678,7 @@ editor.<span class="c-fn">on</span>(<span class="c-str">"ready"</span>, () =&gt;
       </details>
       <details class="qa">
         <summary>What does it <em>not</em> do well yet? <span class="plus"></span></summary>
-        <div class="ans">We're upfront about the gaps. Today the commercial editors lead on RTL and complex-script editing, bundled CJK fonts, charts and equations, and enterprise support contracts. If those are hard requirements, evaluate carefully — and read our <a href="https://github.com/Forevka/canvas-word#readme" target="_blank" rel="noopener">full comparison</a>.</div>
+        <div class="ans">We're upfront about the gaps. Right-to-left, bidirectional, and CJK editing now work out of the box — you only register a CJK font when you need it embedded in exports. Mathematical equations are supported too (MathML, STIX typesetting, OMML round-trip, visual editor). What's still missing: charts, a CJK font bundled in the box, and an enterprise support contract. If those are hard requirements, evaluate carefully — and read our <a href="https://github.com/Forevka/canvas-word#readme" target="_blank" rel="noopener">full comparison</a>.</div>
       </details>
       <details class="qa">
         <summary>Can I generate documents on the server? <span class="plus"></span></summary>
@@ -670,6 +724,7 @@ editor.<span class="c-fn">on</span>(<span class="c-str">"ready"</span>, () =&gt;
           <h4>Product</h4>
           <a href="#why">Why WordCanvas</a>
           <a href="#compare">Comparison</a>
+          <a href="#matrix">Full matrix</a>
           <a href="#features">Features</a>
           <a href="#examples">Examples</a>
         </div>
@@ -752,6 +807,232 @@ function wireCopy(id){
   });
 }
 wireCopy('copy-npm'); wireCopy('copy-npm-2');
+</script>
+
+<!-- Competitor matrix data + render -->
+<script>
+(function(){
+  var COLS = [
+    {k:"oox", s:"OOXML",   f:"round-trip, no HTML loss"},
+    {k:"pag", s:"Pages",   f:"cross-section page #s"},
+    {k:"tbl", s:"Tables",  f:"nested + autofit, no freeze"},
+    {k:"trk", s:"Review",  f:"track changes + comments, free"},
+    {k:"hdr", s:"Hdr/Ftr", f:"headers / footers"},
+    {k:"fnp", s:"Ftn→PDF", f:"footnotes rendered to PDF"},
+    {k:"fld", s:"Fields",  f:"fields + TOC build/update"},
+    {k:"rtl", s:"RTL/CJK", f:"bidi + East-Asian"},
+    {k:"eqn", s:"Math",    f:"equations / OMML"},
+    {k:"emb", s:"Embed",   f:"client-side, no heavy server"},
+    {k:"lic", s:"Open",    f:"open / no connection cap"}
+  ];
+  var ROWS = [
+    {nm:"WordCanvas", cls:"Canvas-native", me:true, cells:{
+      oox:["y","Independent OOXML import + export over one model; round-trip page/block-count tests"],
+      pag:["y","One layout engine for editor + PDF; per-section start-at, PAGE/NUMPAGES resolved per page"],
+      tbl:["y","Span-aware grid, nested tables, autofit + border-cascade round-trip"],
+      trk:["y","Built-in attributed insert/delete/format/structural suggestions + threaded comments — not paywalled"],
+      hdr:["y","Per-section first / even / odd headers & footers"],
+      fnp:["y","Footnotes placed on their reference page and painted into the exported PDF"],
+      fld:["y","PAGE/NUMPAGES/DATE/TIME/IF + custom fields; live TOC build/update with PAGEREF"],
+      rtl:["y","Full UAX#9 bidi with multi-run caret/selection, RTL .docx round-trip, and out-of-the-box CJK kinsoku line-breaking — register a CJK font for export embedding"],
+      eqn:["y","MathML equations typeset with STIX Two Math (growing delimiters, big operators, matrices); inline + display OMML round-trip; visual editor accepts MathML or LaTeX"],
+      emb:["y","Zero runtime deps; import/edit/export in Web Workers; no server required"],
+      lic:["y","MIT, fully client-side, no per-connection cap"]
+    }},
+    {nm:"CKEditor 5", cls:"HTML-first", cells:{
+      oox:["n","DOCX→HTML→DOCX loses borders/lists/colors; import-from-Word is a premium server REST service"],
+      pag:["n","Pagination is decoupled-only, export-only, broken in Firefox; auto page-break 'problematic and error-prone'"],
+      tbl:["p","Tables work but 'may overwrite some table borders with its built-in styles'"],
+      trk:["n","Track changes is a premium paid add-on; disables commands in suggestion mode"],
+      hdr:["n","'Document headers and footers are not supported yet'"],
+      fnp:["n","No footnote model and no Word page model"],
+      fld:["n","No field model; multi-level marker continuation 'not supported for now'; import premium"],
+      rtl:["p","Basic bidi; not a focus"],
+      eqn:["n","Math is a separate premium plugin, not OMML round-trip"],
+      emb:["p","Editor is client-side, but import-from-Word & pagination need a server / cloud token"],
+      lic:["n","Track changes, comments, import, export and pagination are all premium + license key"]
+    }},
+    {nm:"TinyMCE", cls:"HTML-first", cells:{
+      oox:["n","PowerPaste uses clipboard HTML; 'may not be an exact representation'; drops charts/drawings/WordArt"],
+      pag:["n","No real pagination or DOCX page model"],
+      tbl:["p","Basic tables; no Word autofit semantics"],
+      trk:["n","Revision history & comments are premium"],
+      hdr:["n","No headers/footers"],
+      fnp:["n","No footnotes; no PDF page model"],
+      fld:["n","No field or TOC model"],
+      rtl:["p","Basic bidi"],
+      eqn:["n","Math is a premium plugin"],
+      emb:["p","Editor client-side; PowerPaste import is premium and server-assisted"],
+      lic:["n","PowerPaste and advanced features are premium"]
+    }},
+    {nm:"Froala", cls:"HTML-first", cells:{
+      oox:["n","Paste-from-Word & Import-from-DOCX lossy: fonts, lists, table widths, underline lost"],
+      pag:["n","No pagination"],
+      tbl:["n","Large Word/Excel tables overflow; tables forced to 100% width; centered cells left-aligned"],
+      trk:["n","No track changes"],
+      hdr:["n","No headers/footers"],
+      fnp:["n","No footnotes"],
+      fld:["n","Pasted TOC renders wrong; no field model"],
+      rtl:["n","Loses Arabic RTL direction on paste"],
+      eqn:["n","No OMML math round-trip"],
+      emb:["p","Client-side editor; lossy import"],
+      lic:["n","Commercial; import plugins"]
+    }},
+    {nm:"Kendo / Telerik", cls:"HTML-first", cells:{
+      oox:["n","Kendo Angular can't import DOCX (bolt on mammoth.js); Telerik DP = DOCX→HTML→DOCX lossy"],
+      pag:["n","No Word pagination"],
+      tbl:["p","Cell paddings local not inherited; layout drift on HTML round-trip"],
+      trk:["n","No native track changes in the client editor"],
+      hdr:["n","Section margins not preserved on HTML export"],
+      fnp:["n","No footnotes to PDF in the client editor"],
+      fld:["n","No field / TOC model"],
+      rtl:["p","Limited"],
+      eqn:["n","No OMML math"],
+      emb:["p","Telerik Document Processing is server-side"],
+      lic:["n","Commercial"]
+    }},
+    {nm:"OnlyOffice", cls:"Server office", cells:{
+      oox:["y","Highest-fidelity open editor, OOXML-native (ODT round-trip weaker)"],
+      pag:["y","Real layout engine paginates DOCX"],
+      tbl:["y","Handles complex tables"],
+      trk:["p","Built-in & free, but changelog shows crashes pasting/removing paragraphs in track-changes mode"],
+      hdr:["y","Headers/footers supported"],
+      fnp:["y","Full office engine renders footnotes"],
+      fld:["p","Changelog: editor crash building a DOCX with an updated table of contents"],
+      rtl:["p","Shipped a large batch of RTL fixes: cursor, indent, margins, sign-swap on save"],
+      eqn:["p","Equation line-break bugs when opening some DOCX files"],
+      emb:["n","~1.1 GiB idle server, server-side rendering; not an embeddable component"],
+      lic:["n","Community edition hard 20-connection cap; recompile-hostile; enterprise updates stop after 1 yr"]
+    }},
+    {nm:"Syncfusion", cls:"Custom engine + server", cells:{
+      oox:["p","Proprietary SFDT JSON; needs a .NET/Java server for DOCX↔SFDT; documented fidelity bugs"],
+      pag:["n","Page numbering inconsistent across sections (Word shows 7, editor shows 2 — reproduced)"],
+      tbl:["n","Autofit tables freeze the editor; row-height 'Exactly' cuts off cell text"],
+      trk:["p","Supported; not a documented strength"],
+      hdr:["p","Header content not preserved properly on resave (acknowledged, later fixed)"],
+      fnp:["p","DocIO can render; not documented as a strength"],
+      fld:["p","Continuous section / nested-index TOC quirks (always starts a new page)"],
+      rtl:["p","Mixed"],
+      eqn:["p","Limited"],
+      emb:["n","Requires a server-side conversion tier (DocIO)"],
+      lic:["n","Commercial component licensing"]
+    }},
+    {nm:"TX Text Control", cls:"Custom engine + server", cells:{
+      oox:["p","Pixel-perfect WYSIWYG, but 'Invalid style list' DOCX load errors; Webdings PDF export issues"],
+      pag:["y","Pixel-perfect pagination"],
+      tbl:["p","Tables supported; some rendering quirks"],
+      trk:["p","Supported"],
+      hdr:["y","Headers/footers supported"],
+      fnp:["p","Footnotes supported; PDF font/encoding export gaps"],
+      fld:["p","Fields supported"],
+      rtl:["p","Mixed"],
+      eqn:["n","No OMML focus"],
+      emb:["n","Editor backend is a Windows service + WebSocket sync — not client-side"],
+      lic:["n","Commercial; heavy, poorly-documented deployment"]
+    }},
+    {nm:"DevExpress RichEdit", cls:"Custom engine + server", cells:{
+      oox:["p","DOCX/RTF; DOC needs a separate server; must set DocumentFormat before open or it misparses"],
+      pag:["p","Paginates; some quirks"],
+      tbl:["p","Tables supported"],
+      trk:["p","Supported"],
+      hdr:["p","Supported"],
+      fnp:["p","Supported"],
+      fld:["p","Supported"],
+      rtl:["p","Mixed"],
+      eqn:["n","No OMML math"],
+      emb:["n","Blazor needs interactivity/server; DOC needs RichEditDocumentServer"],
+      lic:["n","Commercial"]
+    }},
+    {nm:"SuperDoc", cls:"Canvas-native (OSS)", cells:{
+      oox:["y","Native OOXML from the start — explicitly rejects 'DOCX→HTML→hope→DOCX'"],
+      pag:["p","Built a bespoke DomPainter layout engine; pre-1.0, churning v1→v2 architecture"],
+      tbl:["p","Table-based image grid layouts render with overlapping images in the editor (issue #2341)"],
+      trk:["p","Headless redline shipped empty comment bodies + missing comment anchors; block IDs unstable across loads"],
+      hdr:["y","Built specifically to fix broken headers — its core fidelity claim"],
+      fnp:["p","Downloaded DOCX/PDF correct, but editor render bugs"],
+      fld:["p","docx-templates SDT content-locked tables render read-only with no override"],
+      rtl:["p","Not documented"],
+      eqn:["n","MathML not yet supported (explicit roadmap)"],
+      emb:["y","Client-side ProseMirror; embeddable (Yjs for collaboration)"],
+      lic:["p","AGPLv3 + commercial dual; small team, pre-1.0 release pace"]
+    }},
+    {nm:"Collabora Online", cls:"Server office", cells:{
+      oox:["p","LibreOffice core; round-trip bugs and corruption reported by Word (tdf#170516, #169101)"],
+      pag:["p","Paginates, but section-break + table-spacing layout issues (tdf#170003)"],
+      tbl:["p","Floating table positioning / splitting issues"],
+      trk:["p","Overlapping redlines need multiple accept/reject passes (tdf#168737)"],
+      hdr:["y","Headers/footers supported"],
+      fnp:["y","LibreOffice renders footnotes to PDF"],
+      fld:["p","Structured-document-tag data binding not exporting (tdf#169274); date-picker round-trip bugs"],
+      rtl:["p","LibreOffice bidi; interop quirks"],
+      eqn:["p","LibreOffice Math; interop quirks"],
+      emb:["n","Tile-rendering server over WebSocket, ~1–1.3 GB idle, +50 MB / active user"],
+      lic:["p","Open source but heavy infra; '15 active users / CPU thread'; commercial support"]
+    }},
+    {nm:"Aspose.Words", cls:"Library (no UI)", cells:{
+      oox:["y","Robust OOXML library"],
+      pag:["p","DOCX→PDF layout inconsistency across environments; Baskerville renders semi-bold"],
+      tbl:["p","Tables supported; some rendering issues"],
+      trk:["na","No editing UI — API only"],
+      hdr:["y","Supported"],
+      fnp:["y","Renders footnotes to PDF (the footnote-to-PDF gap is MESCIUS, not Aspose)"],
+      fld:["y","Updates fields / TOC via API"],
+      rtl:["p","Supported; some issues"],
+      eqn:["p","Office Math supported in the model"],
+      emb:["n","Server-side, whole doc in memory (~2.5–3 s for a 2-page DOCX); no browser editor"],
+      lic:["n","Commercial"]
+    }},
+    {nm:"MESCIUS / GrapeCity", cls:"Library (no UI)", cells:{
+      oox:["y","OOXML object-model library"],
+      pag:["p","Conversion-based layout"],
+      tbl:["p","Supported"],
+      trk:["na","No editing UI — API only"],
+      hdr:["y","Supported"],
+      fnp:["n","'Footnotes are not exported' to PDF / image (explicit)"],
+      fld:["p","Supported with limits"],
+      rtl:["p","Supported"],
+      eqn:["n","Office Math 'no export support to PDF or image formats'"],
+      emb:["n","Server-side API; no browser rendering / no editing UI"],
+      lic:["n","Commercial"]
+    }},
+    {nm:"Office Online (WOPI)", cls:"Microsoft cloud", cells:{
+      oox:["y","It is Word — full OOXML fidelity"],
+      pag:["y","Real Word pagination & page numbers"],
+      tbl:["y","Full Word tables"],
+      trk:["p","Word JS API can't toggle TrackRevisions; many comment/footnote APIs are preview-only"],
+      hdr:["y","Full headers/footers"],
+      fnp:["y","Full footnotes"],
+      fld:["y","Full fields/TOC (JS API requirement-set fragmented)"],
+      rtl:["y","Full RTL / CJK"],
+      eqn:["y","Full equation editor"],
+      emb:["n","CANNOT be embedded on a non-Microsoft domain (CSP frame-ancestors); ISV-only CSPP"],
+      lic:["n","Microsoft cloud; WOPI/locking complexity; not a self-hostable component"]
+    }}
+  ];
+  var SYM = {y:"✓", p:"◐", n:"✕", na:"–"};
+  var grid = document.getElementById("mtx-grid");
+  if(!grid) return;
+  var esc = function(s){ return s.replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;"); };
+
+  var thead = "<tr><th class='mtx-name'>Editor / engine</th>";
+  COLS.forEach(function(c){ thead += "<th title='"+esc(c.s+" — "+c.f)+"'>"+c.s+"<span class='full'>"+c.f+"</span></th>"; });
+  thead += "<th class='mtx-score'>Score</th></tr>";
+  grid.querySelector("thead").innerHTML = thead;
+
+  var tb = "";
+  ROWS.forEach(function(r){
+    var green = 0, applicable = 0;
+    COLS.forEach(function(c){ var s = r.cells[c.k][0]; if(s!=="na"){ applicable++; if(s==="y") green++; } });
+    tb += "<tr class='"+(r.me?"mtx-me":"")+"'><td class='mtx-namecell'><div class='nm'>"+r.nm+"</div><span class='cls'>"+r.cls+"</span></td>";
+    COLS.forEach(function(c){
+      var cell = r.cells[c.k], s = cell[0], t = cell[1];
+      tb += "<td class='mtx-cell "+s+"' title='"+esc(c.s+": "+t)+"'>"+SYM[s]+"</td>";
+    });
+    var pct = Math.round(green/applicable*100);
+    tb += "<td class='mtx-scorecell'><div class='mtx-scorebar'><span class='num'>"+green+"/"+applicable+"</span><span class='track'><span class='fill' style='width:"+pct+"%'></span></span></div></td></tr>";
+  });
+  grid.querySelector("tbody").innerHTML = tb;
+})();
 </script>
 </body>
 </html>

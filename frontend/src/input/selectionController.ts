@@ -32,6 +32,7 @@ import {
   hitTestCell,
   hitTestSelectableObject,
   hitTestColumnBoundary,
+  inlineEquationAt,
   caretRect,
   lineEdges,
   linkAt,
@@ -371,6 +372,18 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
 
     const pos = posFromEvent(ev);
     if (!pos) return;
+    // A plain single click ON an inline equation selects it (its one U+FFFC char),
+    // so it highlights and can be edited/deleted like a small inline object. A
+    // shift-click falls through to the normal range-extend so a selection can grow
+    // across the equation.
+    if (ev.detail === 1 && pt.inside && !ev.shiftKey) {
+      const eq = inlineEquationAt(deps.getTree(), pt.pageIndex, pt.x, pt.y, scope());
+      if (eq) {
+        ev.preventDefault();
+        deps.setSelection({ anchor: { blockId: eq.blockId, offset: eq.start }, focus: { blockId: eq.blockId, offset: eq.end } });
+        return;
+      }
+    }
     // Content controls intercept single clicks (checkbox toggles consume the
     // press; dropdown/date open beside the normally-placed caret).
     if (ev.detail === 1 && deps.onSdtPress(pos)) {

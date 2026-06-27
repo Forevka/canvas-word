@@ -233,3 +233,17 @@ export function styleAtRuns(runs: Run[], offset: number): CharStyle | undefined 
   }
   return runs[0]?.style;
 }
+
+/** Style of the character AT `index` (the run covering it), or undefined when out
+ *  of range. Distinct from styleAtRuns (which returns the char BEFORE a caret
+ *  offset): use this to inspect a specific character, e.g. an inline-equation
+ *  sentinel located by its run index. */
+export function styleOfCharAt(runs: Run[], index: number): CharStyle | undefined {
+  if (index < 0) return undefined;
+  let cum = 0;
+  for (const r of runs) {
+    if (index >= cum && index < cum + r.text.length) return r.style;
+    cum += r.text.length;
+  }
+  return undefined;
+}

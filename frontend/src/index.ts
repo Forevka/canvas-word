@@ -9,7 +9,7 @@ import { isCollapsed, colorForId, userDisplayName, freshId, DEFAULT_CHAR_STYLE }
 import type { ResolvedBehavior, ResolvedTheme } from "./config";
 import { ZOOM_STEP } from "./uiConstants";
 import { applyOp, containerBlocks, containerOf, effectiveFractions, locateImage, sliceRuns, type Op } from "@cw/shared";
-import { bandParagraphs, blockById, buildTableGrid, containerListOf, gridOriginOfCell, locateParagraph, normalizeRect, paragraphsOf, styleAtRuns, textOfRuns } from "@cw/shared";
+import { bandParagraphs, blockById, buildTableGrid, containerListOf, gridOriginOfCell, locateParagraph, normalizeRect, paragraphsOf, styleAtRuns, styleOfCharAt, textOfRuns } from "@cw/shared";
 import type { CellBorders } from "@cw/shared";
 import { createLayoutEngine, type LayoutEngine } from "./layout/engine";
 import {
@@ -18,6 +18,8 @@ import {
   comparePositions,
   hitTest,
   hitTestCell,
+  hitTestEquation,
+  inlineEquationAt,
   hitTestSelectableObject,
   linkAt,
   objectRect,
@@ -44,6 +46,7 @@ import { importDocx } from "./import/docx/importDocx";
 import { showContextMenu, type ContextMenuHandle, type MenuEntry } from "./ui/contextMenu";
 import { showSdtInspector, type SdtInspectorData, type SdtInspectorHandle } from "./ui/sdtInspector";
 import { showFieldConstructor } from "./ui/fieldConstructor";
+import { showEquationEditor, equationToMathmlString } from "./ui/equationEditor";
 import { showTocProperties } from "./ui/tocProperties";
 import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
 import { showTableProperties, type BorderStyleName, type TablePropertiesHandle } from "./ui/tableProperties";
@@ -63,12 +66,17 @@ import {
   deleteBackward,
   deleteForward,
   deleteImage,
+  removeBlockObject,
   findTableById,
   insertTableColumnCmd,
   insertTableRowCmd,
   fieldAtBlock,
   insertFieldCmd,
   editFieldCmd,
+  editEquationCmd,
+  editInlineEquationCmd,
+  removeInlineEquationCmd,
+  setEquationAlignCmd,
   updateFieldCmd,
   updateTocFieldCmd,
   setTocSwitchesCmd,
@@ -720,6 +728,10 @@ export function createEditor(
         const r = objectRect(tree, t.blockId);
         return r ? { rects: [r], label: "image" } : null;
       }
+      if (block.kind === "equation") {
+        const r = objectRect(tree, t.blockId);
+        return r ? { rects: [r], label: "equation" } : null;
+      }
       if (block.kind === "paragraph") {
         const len = textOfRuns(block.runs).length;
         const rects = selectionRects(tree, { anchor: { blockId: t.blockId, offset: 0 }, focus: { blockId: t.blockId, offset: len } }, scope());
@@ -1054,7 +1066,20 @@ export function createEditor(
     // remaining slack), so the ghost must hold the same edge fixed; anchored
     // images are offset-positioned and keep their left edge.
     const anchor = !img || img.anchor ? "left" : img.align;
-    objectFrame.show(rect, maxW, img?.src, anchor);
+    // Non-image objects (equations) are selectable but NOT resizable — show a plain
+    // selection box with no handles.
+    objectFrame.show(rect, maxW, img?.src, anchor, !!img);
+  };
+
+  /** Is the current object selection an image (vs an equation / other block)? */
+  const selectedIsImage = (): boolean => !!selectedObject && locateImage(doc, selectedObject) !== null;
+
+  /** Delete the selected object — image or equation — and clear the selection. */
+  const deleteSelectedObjectInternal = (): void => {
+    if (!selectedObject) return;
+    const id = selectedObject;
+    selectObject(null);
+    dispatch(locateImage(doc, id) ? deleteImage(id) : removeBlockObject(id));
   };
 
   const selectObject = (blockId: string | null): void => {
@@ -1893,12 +1918,7 @@ export function createEditor(
     setStory,
     selectObject,
     hasSelectedObject: () => selectedObject !== null,
-    deleteSelectedObject: () => {
-      if (!selectedObject) return;
-      const id = selectedObject;
-      selectObject(null);
-      dispatch(deleteImage(id));
-    },
+    deleteSelectedObject: deleteSelectedObjectInternal,
     startColumnDrag,
     setColumnGuide: (guide) => paint.setColumnGuide(guide),
     applyObjectMove: (blockId, x, y, transient) =>
@@ -2383,7 +2403,9 @@ export function createEditor(
     const focus = selection?.focus ?? null;
     const para = focus ? blockById(doc, focus.blockId) : undefined;
     const loc = focus ? locateParagraph(doc, focus.blockId) : null;
-    const imgId = selectedObject;
+    // Image-specific menu items key on imgId — only when the selection is an image
+    // (an equation selection is handled by its own "Edit/Delete Equation" entries).
+    const imgId = selectedObject && locateImage(doc, selectedObject) ? selectedObject : null;
     const imgInCell = imgId ? locateImage(doc, imgId)?.kind === "cell" : false;
     const inCell = loc?.kind === "cell" || imgInCell || hasCellSel;
     // The active control: around a selected image, or at the caret.
@@ -2494,6 +2516,59 @@ export function createEditor(
       entries.push(sep, item("Insert Field…", () =>
         openFieldConstructor({ baseStyle: caretStyle(focus), onApply: (s) => dispatch(insertFieldCmd(s)) }),
       ));
+    }
+
+    // Display equation under the pointer — edit its MathML in the equation editor.
+    const eqHit = hitTestEquation(tree, pt.pageIndex, pt.x, pt.y);
+    if (eqHit) {
+      const eqBlock = doc.blocks.find((b) => b.id === eqHit.blockId);
+      if (eqBlock && eqBlock.kind === "equation") {
+        const blk = eqBlock;
+        entries.push(
+          sep,
+          item("Edit Equation…", () =>
+            showEquationEditor({
+              editing: true,
+              initialMathml: equationToMathmlString(blk.equation),
+              onApply: (eq) => dispatch(editEquationCmd(blk.id, eq)),
+            }),
+          ),
+          {
+            kind: "submenu",
+            label: "Align",
+            icon: ICONS.alignCenter,
+            items: [
+              { kind: "item", label: "Left", icon: ICONS.alignLeft, onClick: () => dispatch(setEquationAlignCmd(blk.id, "left")) },
+              { kind: "item", label: "Center", icon: ICONS.alignCenter, onClick: () => dispatch(setEquationAlignCmd(blk.id, "center")) },
+              { kind: "item", label: "Right", icon: ICONS.alignRight, onClick: () => dispatch(setEquationAlignCmd(blk.id, "right")) },
+            ],
+          },
+          item("Delete Equation", () => { selectObject(null); dispatch(removeBlockObject(blk.id)); }, { danger: true }),
+        );
+      }
+    } else {
+      // Inline equation under the pointer — match the whole equation BOX (not a
+      // caret offset, which only resolves on one half), then read the equation
+      // from the run AT that index.
+      const eqInline = inlineEquationAt(tree, pt.pageIndex, pt.x, pt.y, scope());
+      const pblk = eqInline ? blockById(doc, eqInline.blockId) : undefined;
+      const eqStyle = eqInline && pblk?.kind === "paragraph" ? styleOfCharAt(pblk.runs, eqInline.start) : undefined;
+      if (eqInline && eqStyle?.equation) {
+        const off = eqInline.start;
+        const blockId = eqInline.blockId;
+        const equation = eqStyle.equation;
+        entries.push(
+          sep,
+          item("Edit Equation…", () =>
+            showEquationEditor({
+              editing: true,
+              initialMathml: equationToMathmlString(equation),
+              onApply: (eq) => dispatch(editInlineEquationCmd(blockId, off, eq)),
+            }),
+          ),
+          item("Delete Equation", () => dispatch(removeInlineEquationCmd(blockId, off)), { danger: true }),
+        );
+      }
     }
 
     // Image.
@@ -2986,7 +3061,7 @@ export function createEditor(
         align: block?.style.align ?? null,
         direction: block?.style.direction ?? null,
         listKind,
-        imageSelected: selectedObject !== null,
+        imageSelected: selectedIsImage(),
         inTable: !!cellSelection || (focus ? locateParagraph(doc, focus.blockId)?.kind === "cell" : false),
         // A selected image inside a control counts too (its caret is cleared), so
         // the Controls ribbon group lights up instead of leaving the user no clue.
@@ -2999,7 +3074,9 @@ export function createEditor(
     },
     align(align: ParaStyle["align"]): void {
       if (selectedObject) {
-        if (align !== "justify") dispatch(setImageProps(selectedObject, { align }));
+        if (align === "justify") return; // objects don't justify
+        if (selectedIsImage()) dispatch(setImageProps(selectedObject, { align }));
+        else dispatch(setEquationAlignCmd(selectedObject, align)); // display equation
         return;
       }
       dispatch(setAlignment(align));
@@ -3075,8 +3152,10 @@ export function createEditor(
       return { pageCount, currentPage };
     },
     getSelectedObjectRect: (): { left: number; top: number; width: number; height: number } | null => {
-      if (!selectedObject) return null;
-      const r = objectRect(tree, selectedObject);
+      // Only images get the floating image toolbar; an equation still shows its
+      // selection frame (driven by objectRect directly, not this method).
+      if (!selectedIsImage()) return null;
+      const r = objectRect(tree, selectedObject!);
       if (!r) return null;
       const ph = paint.getPageElement(r.pageIndex);
       if (!ph) return null;
@@ -3084,12 +3163,7 @@ export function createEditor(
       const pr = ph.getBoundingClientRect();
       return { left: pr.left + r.x * z, top: pr.top + r.y * z, width: r.width * z, height: r.height * z };
     },
-    deleteSelectedObject: (): void => {
-      if (!selectedObject) return;
-      const id = selectedObject;
-      selectObject(null);
-      dispatch(deleteImage(id));
-    },
+    deleteSelectedObject: deleteSelectedObjectInternal,
     setInspectorHighlight: (target: InspectorTarget | null): void => {
       paint.setInspectorRects(target ? inspectorRectsFor(target) : null);
     },

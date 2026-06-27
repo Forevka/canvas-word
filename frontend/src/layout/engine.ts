@@ -9,7 +9,7 @@ import {
   materializeRichInlineLineRange,
   type RichInlineCursor,
 } from "@chenglou/pretext/rich-inline";
-import type { Block, CharStyle, Document, ImageBlock, Paragraph, Run, SectionPatch, SectionProps, TableBlock, TableCell, TabStop } from "@cw/shared";
+import type { Block, CharStyle, Document, EquationBlock, ImageBlock, Paragraph, Run, SectionPatch, SectionProps, TableBlock, TableCell, TabStop } from "@cw/shared";
 import { effectiveFractions, isHiddenParagraph } from "@cw/shared";
 import { formatListNumber, markerText, type ListDefinition, type ListLevel } from "@cw/shared";
 import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock, PlacedImage } from "./layoutTree";
@@ -17,6 +17,12 @@ import { PrepareCache, prepareRunSegment, type PreparedSegment } from "./prepare
 import { charStyleToFont, fontMetrics, measureTextWidth } from "./metrics";
 import { baseLevelFor, effectiveAlign, hasRtlChars, levelsFor, visualOrder } from "./bidi";
 import { setActiveFontRegistry, type CustomFontRegistry } from "../fonts/customRegistry";
+import { equationBox, EQUATION_DISPLAY_PX } from "./math/equationLayout";
+import type { MathBox } from "./math/mathBox";
+import { MATH_FONT_FAMILY } from "../fonts/clones";
+
+/** Display equations are typeset with the bundled math font (STIX Two Math). */
+const eqBox = (b: EquationBlock): MathBox => equationBox(b.equation, MATH_FONT_FAMILY, EQUATION_DISPLAY_PX);
 
 /** Word's default tab interval when a `\t` runs past the last explicit stop
  *  (0.5 inch at 96 dpi). */
@@ -301,6 +307,33 @@ function breakNextLine(
   for (const f of line.fragments) {
     x += f.gapBefore;
     const run = seg.runs[f.itemIndex]!;
+    // Inline equation: the math box drives the line's vertical metrics (not the
+    // sentinel font), and the box rides on the fragment for paint/geometry.
+    if (run.style.equation) {
+      const box = equationBox(run.style.equation, MATH_FONT_FAMILY, run.style.fontSizePx);
+      maxAscent = Math.max(maxAscent, box.ascent);
+      maxDescent = Math.max(maxDescent, box.descent);
+      maxFontSize = Math.max(maxFontSize, run.style.fontSizePx);
+      const m = mapFragmentToRun(run.text, runCursors[f.itemIndex]!, f.text);
+      runCursors[f.itemIndex] = m.end;
+      frags.push({
+        frag: {
+          blockId: p.id,
+          startOffset: runStarts[f.itemIndex]! + m.start,
+          endOffset: runStarts[f.itemIndex]! + m.end,
+          text: f.text,
+          style: run.style,
+          x,
+          width: f.occupiedWidth,
+          equation: box,
+        },
+        hadGap: f.gapBefore > 0,
+        gap: f.gapBefore,
+        spaces: 0,
+      });
+      x += f.occupiedWidth;
+      continue;
+    }
     const fm = fontMetrics(charStyleToFont(run.style));
     maxAscent = Math.max(maxAscent, fm.ascent);
     maxDescent = Math.max(maxDescent, fm.descent);
@@ -1026,6 +1059,7 @@ function layoutDocument(
   type Measured =
     | { kind: "para"; block: Paragraph; lines: LineBox[] }
     | { kind: "image"; block: ImageBlock; height: number }
+    | { kind: "equation"; block: EquationBlock; box: MathBox; height: number }
     | { kind: "table"; block: TableBlock; rows: MeasuredRow[]; colWidths: number[]; height: number; tableWidth: number };
 
   // Measured at each block's OWN section width (the section pointer advances
@@ -1049,6 +1083,9 @@ function layoutDocument(
     } else if (block.kind === "image") {
       // Anchored (out-of-flow) images contribute no flow height.
       measured.push({ kind: "image", block, height: block.anchor ? 0 : block.heightPx });
+    } else if (block.kind === "equation") {
+      const box = eqBox(block);
+      measured.push({ kind: "equation", block, box, height: box.ascent + box.descent });
     } else {
       const t = measureTableCached(block, colWidth, getLines, cellListCtx);
       measured.push({ kind: "table", block, ...t });
@@ -1443,6 +1480,23 @@ function layoutDocument(
     }
   };
 
+  const placeEquation = (eqb: EquationBlock, box: MathBox): void => {
+    const h = box.ascent + box.descent;
+    if (y + h > bottomY() && colHasContent()) newPage();
+    const align = eqb.align ?? "center";
+    const slack = colWidth - box.width;
+    const x = colX() + (align === "center" ? slack / 2 : align === "right" ? slack : 0);
+    page.blocks.push({
+      blockId: eqb.id,
+      x,
+      y,
+      firstLineIndex: 0,
+      lines: [],
+      equation: { box, width: box.width, height: h, baseline: box.ascent },
+    });
+    y += h;
+  };
+
   /** Float-affected paragraphs: re-break per line with the float-shrunk width
    *  at the line's own y (pretext's per-line maxWidth makes this cheap). A line
    *  that doesn't fit the page is ROLLED BACK (runCursors snapshot) and
@@ -1629,7 +1683,7 @@ function layoutDocument(
     // Anchored (behind/in-front) images are out of flow — transparent to the
     // gap logic so they neither take a gap nor suppress one between neighbours.
     const atomicKind = (x: Measured | undefined): boolean =>
-      x?.kind === "table" || (x?.kind === "image" && x.block.anchor === undefined);
+      x?.kind === "table" || x?.kind === "equation" || (x?.kind === "image" && x.block.anchor === undefined);
     const prevAtomic = atomicKind(measured[bi - 1]);
     const nextAtomic = atomicKind(measured[bi + 1]);
 
@@ -1639,6 +1693,13 @@ function layoutDocument(
       if (!prevAtomic) y += ATOMIC_GAP;
       placeImage(m.block);
       if (!nextAtomic && (m.block.wrap !== "square" || m.block.align === "center")) y += ATOMIC_GAP;
+      continue;
+    }
+    if (m.kind === "equation") {
+      if (!prevAtomic) y += ATOMIC_GAP;
+      for (const f of floats) if (f.bottom > y) y = f.bottom;
+      placeEquation(m.block, m.box);
+      if (!nextAtomic) y += ATOMIC_GAP;
       continue;
     }
     if (m.kind === "table") {
@@ -2036,6 +2097,13 @@ function layoutBand(
         image: { src: b.src, width: b.widthPx, height: b.heightPx },
       });
       y += b.heightPx;
+    } else if (b.kind === "equation") {
+      const box = eqBox(b);
+      const align = b.align ?? "center";
+      const slack = width - box.width;
+      const x = originX + (align === "center" ? slack / 2 : align === "right" ? slack : 0);
+      placed.push({ blockId: b.id, x, y, firstLineIndex: 0, lines: [], equation: { box, width: box.width, height: box.ascent + box.descent, baseline: box.ascent } });
+      y += box.ascent + box.descent;
     } else {
       const m = measureTable(b, width, getBandLines, EMPTY_LIST_CTX);
       placed.push(placeTable(b, m.rows, m.colWidths, originX, y, m.tableWidth, 0, EMPTY_LIST_CTX));
@@ -2140,6 +2208,10 @@ function blockMinMax(
     // forces an overflow — it only expresses the natural-size preference).
     if (b.anchor) return { min: 0, max: 0 };
     return { min: b.widthPx, max: b.widthPx };
+  }
+  if (b.kind === "equation") {
+    const w = eqBox(b).width;
+    return { min: w, max: w };
   }
   const cols = autofitColMinMax(b, listCtx, getLines, available);
   return {
@@ -2271,6 +2343,7 @@ function solveColumns(perCol: ColMinMax[], available: number, mode: "autofitCont
 type MeasuredCellItem =
   | { kind: "para"; block: Paragraph; lines: LineBox[] }
   | { kind: "image"; block: ImageBlock; width: number; height: number } // scaled to fit the cell
+  | { kind: "equation"; block: EquationBlock; box: MathBox; width: number; height: number }
   | { kind: "table"; block: TableBlock; rows: MeasuredRow[]; colWidths: number[]; height: number; tableWidth: number };
 
 interface MeasuredCell {
@@ -2366,6 +2439,12 @@ function measureTable(
           const ih = b.heightPx * scale;
           h += ih + CELL_BLOCK_GAP;
           return { kind: "image", block: b, width: w, height: ih };
+        }
+        if (b.kind === "equation") {
+          const box = eqBox(b);
+          const hh = box.ascent + box.descent;
+          h += hh + CELL_BLOCK_GAP;
+          return { kind: "equation", block: b, box, width: box.width, height: hh };
         }
         const m = measureTable(b, innerWidth, getLines, listCtx); // nested table
         h += m.height + CELL_BLOCK_GAP;
@@ -2514,6 +2593,19 @@ function placeTable(
             });
             py += it.height + CELL_BLOCK_GAP;
           }
+        } else if (it.kind === "equation") {
+          const align = it.block.align ?? "center";
+          const slack = innerWidth - it.width;
+          const ix = cx + mgn.left + (align === "center" ? slack / 2 : align === "right" ? slack : 0);
+          blocks.push({
+            blockId: it.block.id,
+            x: ix,
+            y: py,
+            firstLineIndex: 0,
+            lines: [],
+            equation: { box: it.box, width: it.width, height: it.height, baseline: it.box.ascent },
+          });
+          py += it.height + CELL_BLOCK_GAP;
         } else {
           // nested table — placed recursively, read-only inner cells
           blocks.push(placeTable(it.block, it.rows, it.colWidths, cx + mgn.left, py, it.tableWidth, 0, listCtx));

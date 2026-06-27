@@ -346,10 +346,12 @@ export function createMapper(
 
     for (let bi = 0; bi < blocks.length; bi++) {
       const irBlock = blocks[bi]!;
-      const mapped =
+      const mapped: Block[] =
         irBlock.kind === "paragraph"
           ? mapParagraph(irBlock, media, resolveLink)
-          : [mapTable(irBlock, media, resolveLink)];
+          : irBlock.kind === "math"
+            ? [{ kind: "equation", id: id(), revision: 0, equation: { root: irBlock.root, display: irBlock.display }, align: irBlock.align ?? "center" }]
+            : [mapTable(irBlock, media, resolveLink)];
 
       // Custom-field membership: an IR block in a field's result region stamps its
       // fieldId onto every model block it produced (a paragraph may split).
@@ -554,6 +556,14 @@ export function createMapper(
           trailingBreak = false;
           break;
         }
+        case "mathInline": {
+          // Inline equation → a single-U+FFFC run with CharStyle.equation.
+          const eqRun = mapRun("￼", resolver.run(ir.props.styleId, {}), resolveLink);
+          eqRun.style = { ...eqRun.style, equation: { root: inline.root, display: false } };
+          runs.push(eqRun);
+          trailingBreak = false;
+          break;
+        }
       }
     }
     flushPara();
@@ -713,10 +723,12 @@ export function createMapper(
     const buildCell = (irCell: IRTableCell): TableCell => {
       const blocks: Block[] = [];
       for (const b of irCell.blocks) {
-        const mapped =
+        const mapped: Block[] =
           b.kind === "paragraph"
             ? mapParagraph(b, media, resolveLink)
-            : [mapTable(b, media, resolveLink)]; // nested table — model renders one level
+            : b.kind === "math"
+              ? [{ kind: "equation", id: id(), revision: 0, equation: { root: b.root, display: b.display }, align: b.align ?? "center" }]
+              : [mapTable(b, media, resolveLink)]; // nested table — model renders one level
         // Block-level control inside a cell: stamp every produced model block.
         if (b.sdtPath) for (const mb of mapped) mb.sdtPath = b.sdtPath;
         blocks.push(...mapped);

@@ -46,4 +46,5 @@ export const WML_NS = {
   "xmlns:pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",
   "xmlns:w14": "http://schemas.microsoft.com/office/word/2010/wordml",
   "xmlns:mc": "http://schemas.openxmlformats.org/markup-compatibility/2006",
+  "xmlns:m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
 } as const;

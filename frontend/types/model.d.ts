@@ -30,6 +30,9 @@ export interface CharStyle {
   /** Character-style reference (w:rStyle → a type==="character" NamedStyle).
    *  Reference only — concrete formatting stays baked on the run. */
   charStyleId?: string | undefined;
+  /** Inline equation payload (OOXML inline m:oMath) — the run is a single U+FFFC
+   *  that renders as the laid-out MathML. Block equations use EquationBlock. */
+  equation?: MathEquation | undefined;
 }
 
 export interface TabStop {
@@ -152,7 +155,45 @@ export interface TableBlock {
   condOverrides?: TableCondOverrides;
 }
 
-export type Block = Paragraph | ImageBlock | TableBlock;
+// ── Math (MathML AST) — mirrors shared/src/model/math.ts ─────────────────────
+export type MathVariant =
+  | "normal" | "bold" | "italic" | "bold-italic" | "double-struck" | "fraktur"
+  | "bold-fraktur" | "script" | "bold-script" | "sans-serif" | "bold-sans-serif"
+  | "sans-serif-italic" | "sans-serif-bold-italic" | "monospace";
+
+export interface MathRow { type: "row"; children: MathNode[]; }
+export interface MathIdent { type: "ident"; text: string; variant?: MathVariant; }
+export interface MathNumber { type: "number"; text: string; }
+export interface MathOperator { type: "op"; text: string; stretchy?: boolean; form?: "prefix" | "infix" | "postfix"; }
+export interface MathText { type: "text"; text: string; }
+export interface MathSpace { type: "space"; widthEm?: number; }
+export interface MathFrac { type: "frac"; num: MathNode; den: MathNode; bevelled?: boolean; thickness?: "0" | "normal"; }
+export interface MathScript { type: "script"; base: MathNode; sub?: MathNode; sup?: MathNode; }
+export interface MathRadical { type: "radical"; radicand: MathNode; index?: MathNode; }
+export interface MathFenced { type: "fenced"; open: string; close: string; separators?: string; child: MathNode; }
+export interface MathLimit { type: "limit"; base: MathNode; under?: MathNode; over?: MathNode; accent?: boolean; }
+export interface MathNary { type: "nary"; op: string; sub?: MathNode; sup?: MathNode; body: MathNode; hideOp?: boolean; }
+export interface MathMatrix { type: "matrix"; rows: MathNode[][]; colAlign?: ("left" | "center" | "right")[]; }
+export interface MathPhantom { type: "phantom"; child: MathNode; }
+export interface MathUnknown { type: "unknown"; omml?: string; mathml?: string; }
+export type MathNode =
+  | MathRow | MathIdent | MathNumber | MathOperator | MathText | MathSpace
+  | MathFrac | MathScript | MathRadical | MathFenced | MathLimit | MathNary
+  | MathMatrix | MathPhantom | MathUnknown;
+export interface MathEquation { root: MathRow; display: boolean; }
+
+/** A display (block) equation — Word's m:oMathPara. */
+export interface EquationBlock {
+  kind: "equation";
+  id: string;
+  revision: number;
+  equation: MathEquation;
+  align?: "left" | "center" | "right";
+  fieldId?: string | undefined;
+  sdtPath?: string[] | undefined;
+}
+
+export type Block = Paragraph | ImageBlock | TableBlock | EquationBlock;
 
 /** Conditional-format slots of a table style (OOXML w:tblStylePr types). */
 export type TableCond =

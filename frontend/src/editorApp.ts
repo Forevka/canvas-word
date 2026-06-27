@@ -22,6 +22,7 @@ import { showContextMenu, type MenuEntry } from "./ui/contextMenu";
 import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
 import { showDevPanel, type DevPanelHandle } from "./ui/devPanel";
 import { showPageLayout, type PageLayoutHandle } from "./ui/pageLayout";
+import { showEquationEditor } from "./ui/equationEditor";
 import { loadCollabDocument, loadCollabReview, publishDocument } from "./sync/collab";
 import { attachMentionAutocomplete } from "./review/mentions";
 import { showBusy } from "./app/busyOverlay";
@@ -33,6 +34,8 @@ import {
   insertText as insertTextCmd,
   insertImage,
   insertImageInCell,
+  insertEquation,
+  insertInlineEquation,
   insertTable,
   insertTableRowCmd,
   insertTableColumnCmd,
@@ -1546,6 +1549,16 @@ if (toolbar) {
     (f) => f.imageSelected,
     "select an image first",
   );
+  group(insert, "Equation");
+  txtBtn("√x", "Insert equation (MathML)", () => {
+    showEquationEditor({
+      onApply: (eq) => {
+        editor.dispatch(eq.display ? insertEquation(eq) : insertInlineEquation(eq));
+        editor.focus();
+      },
+    });
+  }, "font-family:Georgia,serif;font-style:italic;");
+
   group(insert, "Links");
   const insLinkBtn = btn(ICONS.link, "Insert/remove hyperlink", () => {});
   insLinkBtn.addEventListener("click", () => linkDialog(insLinkBtn));

@@ -26,6 +26,7 @@ import type {
 import { decodeBorders, decodeShdFill } from "./borders";
 import { decodeParaProps, decodeRunProps } from "./props";
 import { attr, children, el, els, findDeep, numAttr, parseXml, rootEl, textOf, val, type XmlNode } from "./xml";
+import { ommlToMathml } from "../../mathml/fromOmml";
 
 interface ParseCtx {
   warnings: WarningSink;
@@ -158,6 +159,16 @@ function bookmarkName(node: XmlNode): string | null {
 // ---------------------------------------------------------------------------
 // Block-level walk
 
+/** Alignment of a display equation from `m:oMathPara/m:oMathParaPr/m:jc`. */
+function mathParaJc(node: XmlNode): "left" | "center" | "right" | undefined {
+  const pr = el(node, "m:oMathParaPr");
+  const jc = pr ? el(pr, "m:jc") : undefined;
+  const v = jc ? attr(jc, "m:val") : undefined;
+  if (v === "left" || v === "right") return v;
+  if (v === "center" || v === "centerGroup") return "center";
+  return undefined;
+}
+
 function walkBlocks(nodes: XmlNode[], out: IRBlock[], ctx: ParseCtx): void {
   for (const node of nodes) {
     // A custom field open here marks the block being built; one that opens/closes
@@ -211,6 +222,17 @@ function walkBlocks(nodes: XmlNode[], out: IRBlock[], ctx: ParseCtx): void {
       case "w:bookmarkEnd": {
         const idAttr = attr(node, "w:id");
         if (idAttr) ctx.pendingMarkers.push({ id: idAttr, kind: "end", offset: 0 });
+        break;
+      }
+      case "m:oMathPara": {
+        // Display (block) equation — convert OMML → MathML AST, carrying alignment
+        // (m:oMathParaPr/m:jc) and the same field/control block metadata as w:p/w:tbl.
+        const jc = mathParaJc(node);
+        const m: IRBlock = { kind: "math", root: ommlToMathml(node), display: true };
+        if (jc) m.align = jc;
+        if (ctx.trackFields && ctx.fieldTrack.markBlock) m.fieldId = ctx.fieldTrack.markBlock;
+        if (ctx.blockSdtStack.length) m.sdtPath = [...ctx.blockSdtStack];
+        out.push(m);
         break;
       }
       case "w:sectPr":
@@ -370,6 +392,11 @@ function walkInlines(nodes: XmlNode[], out: IRInline[], ctx: ParseCtx, field: Fi
       case "w:bookmarkEnd": {
         const idAttr = attr(node, "w:id");
         if (idAttr && ctx.currentMarkers) ctx.currentMarkers.push({ id: idAttr, kind: "end", offset: inlineOffset(out) });
+        break;
+      }
+      case "m:oMath": {
+        // Inline equation → a single-U+FFFC run carrying the MathML AST.
+        out.push({ kind: "mathInline", root: ommlToMathml(node) });
         break;
       }
       default:

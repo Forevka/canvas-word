@@ -5,7 +5,10 @@
 // metric-clone glyph shapes). pdfkit shares y-down, top-left coords with canvas.
 
 import type { CellBorder } from "@cw/shared";
+import { DEFAULT_CHAR_STYLE } from "@cw/shared";
 import type { LineBox, PlacedBlock, PlacedTableCell } from "../../layout/layoutTree";
+import type { MathBox } from "../../layout/math/mathBox";
+import { MATH_FONT_FAMILY } from "../../fonts/clones";
 import {
   cellBorderDash,
   cellBorderWidth,
@@ -62,6 +65,11 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
       placeholderBox(ctx, block.x, block.y, width, height);
     }
     if (clip) doc.restore();
+    return;
+  }
+
+  if (block.equation) {
+    drawMathBoxPdf(ctx, block.equation.box, block.x, block.y + block.equation.baseline, DEFAULT_CHAR_STYLE.color);
     return;
   }
 
@@ -156,9 +164,27 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
   }
 }
 
+/** Paint a MathBox to pdfkit at an absolute (originX, baselineY). Shared by block
+ *  equations and inline equation fragments. */
+function drawMathBoxPdf(ctx: PaintCtx, box: MathBox, originX: number, baselineY: number, color: string): void {
+  const { doc } = ctx;
+  const family = firstFamily(MATH_FONT_FAMILY);
+  for (const r of box.rules) doc.rect(originX + r.x, baselineY + r.y, r.w, r.h).fill(color);
+  for (const g of box.glyphs) {
+    const name = ctx.font(family, g.bold, g.italic);
+    doc.font(name).fontSize(g.sizePx).fillColor(color).text(g.text, originX + g.x, baselineY + g.y, { lineBreak: false, baseline: "alphabetic" });
+  }
+}
+
 function paintLine(ctx: PaintCtx, block: PlacedBlock, line: LineBox, baselineY: number): void {
   const { doc } = ctx;
   for (const frag of line.fragments) {
+    // Equation fragments paint the math box regardless of their (sentinel) text —
+    // check before the empty-text skip.
+    if (frag.equation) {
+      drawMathBoxPdf(ctx, frag.equation, block.x + frag.x, baselineY, frag.style.color);
+      continue;
+    }
     if (frag.text.length === 0) continue;
     const s = frag.style;
     const x = block.x + frag.x;

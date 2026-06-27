@@ -1,6 +1,7 @@
 // Layer 1: Document model — single source of truth. Pure data, no DOM/canvas imports.
 
 import type { DocPosition } from "./position";
+import type { MathEquation } from "./math";
 
 export interface CharStyle {
   fontFamily: string;
@@ -50,6 +51,14 @@ export interface CharStyle {
    *  exists for docx round-trip and for "what style is this run?" UI. `| undefined`
    *  so removing a character style can strip the marker. */
   charStyleId?: string | undefined;
+  /** Inline equation payload (OOXML inline `m:oMath`). When present, this run is
+   *  a single OBJECT REPLACEMENT CHARACTER (U+FFFC) in `text` that renders as the
+   *  laid-out MathML — an inline replaced element. The AST travels on the run
+   *  (not a registry) so the layout prepare-cache stays self-contained; `styleEq`
+   *  compares it by reference so equation runs never merge with their neighbours.
+   *  Block (display) equations use `EquationBlock` instead. `| undefined` so a
+   *  patch can strip it. */
+  equation?: MathEquation | undefined;
   /** Explicit right-to-left run (OOXML w:rPr/w:rtl). Forces this run's text to a
    *  bidi-RTL embedding regardless of its characters, mirroring Word's per-run
    *  "rtl" toggle. Absent = resolve direction from the characters' Unicode bidi
@@ -321,7 +330,23 @@ export interface TableBlock {
   sdtPath?: string[] | undefined;
 }
 
-export type Block = Paragraph | ImageBlock | TableBlock;
+/** A display (block) equation — Word's `m:oMathPara`. Stands on its own line(s)
+ *  like an image; the MathML AST lives directly on the block (no registry). */
+export interface EquationBlock {
+  kind: "equation";
+  id: string;
+  revision: number;
+  /** The equation as a Presentation-MathML AST (the canonical form). */
+  equation: MathEquation;
+  /** Horizontal placement of the equation. Default "center" (Word display math). */
+  align?: "left" | "center" | "right";
+  /** Field result membership — see Paragraph.fieldId. */
+  fieldId?: string | undefined;
+  /** Block-level content-control ancestry — see Paragraph.sdtPath. */
+  sdtPath?: string[] | undefined;
+}
+
+export type Block = Paragraph | ImageBlock | TableBlock | EquationBlock;
 
 /** OOXML page-number / list format (the field `\* <fmt>` switch). */
 export type PageNumFmt = "arabic" | "roman" | "Roman" | "alpha" | "Alpha";

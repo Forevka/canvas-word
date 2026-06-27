@@ -10,6 +10,7 @@ import type {
   Block,
   CellBorders,
   CharStyle,
+  EquationBlock,
   FieldDef,
   Paragraph,
   ParaStyle,
@@ -28,6 +29,7 @@ import { MediaManager } from "./mediaPack";
 import { REL, RelManager } from "./relationships";
 import { paraCoreXml, runPropsXml as rPrXml } from "./styleProps";
 import { el, escapeText, textEl, WML_NS, XML_DECL } from "./xmlWrite";
+import { mathmlToOmml } from "../../mathml/toOmml";
 export interface ExportBookmarkMark {
   id: number;
   name?: string;
@@ -125,6 +127,9 @@ function runBodyWithFields(text: string, rPr: string): string {
 
 function singleRun(run: Run, ctx: PartCtx): string {
   const s = run.style;
+  // Inline equation: the run is a single U+FFFC carrying MathML; emit inline OMML
+  // (m:oMath, a valid sibling of w:r in the paragraph) instead of a text run.
+  if (s.equation) return mathmlToOmml({ root: s.equation.root, display: false });
   const rPr = rPrXml(s);
   if (s.footnoteRef) {
     // model footnoteRef "fn<docxId>" -> w:footnoteReference w:id="<docxId>".
@@ -491,7 +496,19 @@ function tblLookXml(o: TableCondOverrides): string {
 export function blockXml(block: Block, ctx: PartCtx): string {
   if (block.kind === "paragraph") return paragraphXml(block, ctx);
   if (block.kind === "table") return tableXml(block, ctx);
+  if (block.kind === "equation") return equationParagraphXml(block);
   return imageParagraphXml(block, ctx);
+}
+
+/** Display equation -> a block-level `m:oMathPara` (Word's block math is a sibling
+ *  of w:p in the body, not wrapped in one), carrying the equation's alignment in
+ *  `m:oMathParaPr/m:jc`. The inner content is always the `m:oMath` (display form),
+ *  regardless of the stored `display` flag. */
+function equationParagraphXml(block: EquationBlock): string {
+  const oMath = mathmlToOmml({ ...block.equation, display: false }); // inner m:oMath only
+  const jc = block.align === "left" ? "left" : block.align === "right" ? "right" : "center";
+  const pr = el("m:oMathParaPr", undefined, el("m:jc", { "m:val": jc }));
+  return el("m:oMathPara", undefined, pr + oMath);
 }
 
 /** Emit a block list, reconstructing NESTED block-level content controls from each

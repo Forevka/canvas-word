@@ -51,7 +51,15 @@ export const CLONE_OF: Record<string, string> = {
   arimo: "Arimo",
   timesnewroman: "TimesNewRoman",
   cousine: "Cousine",
+  // STIX Two Math — the bundled math font (single Regular face); identity so the
+  // math layer's family resolves to itself. NOT in CLONE_FAMILIES (it has only a
+  // Regular face — math styling comes from the Mathematical Alphanumeric block).
+  stixtwomath: "StixTwoMath",
 };
+
+/** Family name of the bundled math font. Math glyphs render with this face. */
+export const MATH_FONT_FAMILY = "StixTwoMath";
+export const MATH_FONT_FILE = "StixTwoMath-Regular.ttf";
 
 // Per-clone vertical metrics as a fraction of font size (ascent, descent above/
 // below the baseline). Used by fontMetrics so line heights are computed the SAME
@@ -67,6 +75,8 @@ export const CLONE_METRICS: Record<string, { ascent: number; descent: number }> 
   Arimo: { ascent: 0.875, descent: 0.1875 },
   TimesNewRoman: { ascent: 0.875, descent: 0.1875 },
   Cousine: { ascent: 0.625, descent: 0.1875 },
+  // STIX Two Math (hhea ascent 762 / descent 238 at upem 1000).
+  StixTwoMath: { ascent: 0.762, descent: 0.238 },
 };
 
 /** Resolve one CSS-stack family token to the face family the editor/exporters

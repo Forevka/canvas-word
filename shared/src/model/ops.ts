@@ -9,6 +9,7 @@ import type {
   BookmarkRange,
   CharStyle,
   Document,
+  EquationBlock,
   FieldDef,
   ImageBlock,
   ParaStyle,
@@ -20,6 +21,7 @@ import type {
   TableRow,
 } from "./document";
 import { BAND_CONTAINERS } from "./document";
+import type { MathEquation } from "./math";
 import { sdtPathEq } from "./sdt";
 import { DEFAULT_CHAR_STYLE } from "./defaults";
 import type { DocPosition } from "./position";
@@ -55,6 +57,8 @@ export type Op =
   | { type: "insertBlock"; index: number; block: Block; where?: Container }
   | { type: "removeBlock"; blockId: string }
   | { type: "setImageProps"; blockId: string; patch: ImagePropsPatch }
+  | { type: "setEquation"; blockId: string; equation: MathEquation }
+  | { type: "setEquationAlign"; blockId: string; align: "left" | "center" | "right" }
   | { type: "setTableRow"; tableId: string; rowIndex: number; row: TableRow }
   | { type: "setTableStructure"; tableId: string; rows: TableRow[]; colFractions?: number[] }
   | { type: "setTableStyleRef"; tableId: string; styleId: string | null; condOverrides?: import("./document").TableCondOverrides | null }
@@ -129,7 +133,8 @@ export function styleEq(a: CharStyle, b: CharStyle): boolean {
     a.link === b.link &&
     a.footnoteRef === b.footnoteRef && // adjacent refs must never merge into one run
     sdtPathEq(a.sdtPath, b.sdtPath) && // content-control boundaries (incl. nesting) survive normalization
-    a.fieldId === b.fieldId // inline-field boundaries survive normalization
+    a.fieldId === b.fieldId && // inline-field boundaries survive normalization
+    a.equation === b.equation // inline equations are atomic — never merge (reference identity)
   );
 }
 
@@ -623,6 +628,39 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       return {
         doc: next,
         inverse: { type: "setImageProps", blockId: op.blockId, patch: oldPatch },
+        mapPosition: identity,
+        dirtyBlockIds: [op.blockId],
+      };
+    }
+
+    case "setEquation": {
+      // Replace a display equation's MathML (the editor's Apply). Body-level only.
+      const bi = doc.blocks.findIndex((b) => b.id === op.blockId);
+      const block = bi >= 0 ? doc.blocks[bi] : undefined;
+      if (!block || block.kind !== "equation") throw new Error(`equation ${op.blockId} not found`);
+      const old = (block as EquationBlock).equation;
+      const updated: EquationBlock = { ...(block as EquationBlock), revision: block.revision + 1, equation: op.equation };
+      const blocks = doc.blocks.slice();
+      blocks[bi] = updated;
+      return {
+        doc: { ...doc, blocks },
+        inverse: { type: "setEquation", blockId: op.blockId, equation: old },
+        mapPosition: identity,
+        dirtyBlockIds: [op.blockId],
+      };
+    }
+
+    case "setEquationAlign": {
+      const bi = doc.blocks.findIndex((b) => b.id === op.blockId);
+      const block = bi >= 0 ? doc.blocks[bi] : undefined;
+      if (!block || block.kind !== "equation") throw new Error(`equation ${op.blockId} not found`);
+      const old = (block as EquationBlock).align ?? "center";
+      const updated: EquationBlock = { ...(block as EquationBlock), revision: block.revision + 1, align: op.align };
+      const blocks = doc.blocks.slice();
+      blocks[bi] = updated;
+      return {
+        doc: { ...doc, blocks },
+        inverse: { type: "setEquationAlign", blockId: op.blockId, align: old },
         mapPosition: identity,
         dirtyBlockIds: [op.blockId],
       };
