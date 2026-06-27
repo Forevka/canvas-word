@@ -14,8 +14,7 @@ import {
   setActiveFontRegistry,
   type CustomFontPayload,
 } from "../fonts/customRegistry";
-import { createLayoutEngine } from "../layout/engine";
-import { setCjkFallbackFont, setCjkLocale } from "../layout/prepareCache";
+import { createLayoutEngine, type LayoutEngineOptions } from "../layout/engine";
 import { CJK_FONT_FAMILY } from "../fonts/clones";
 import { pageOfBlockMap } from "../recalc/recalcToc";
 
@@ -41,16 +40,6 @@ function hasTocEntries(doc: Document): boolean {
   return scan(doc.blocks);
 }
 
-// CJK locale + fallback live on pretext's PROCESS-GLOBAL analyzer (setCjkLocale /
-// setCjkFallbackFont), and the job reads them across the `await`s inside layout.
-// Two overlapping runExport calls in one process (e.g. the backend serving
-// concurrent renders) would otherwise clobber each other's settings and clear them
-// in each other's `finally`. Exports are infrequent and CPU-bound, so we serialize
-// the whole job on a process-wide chain rather than thread the state through every
-// layout site. (The browser runs exports in a worker — one at a time — so this is
-// effectively free there.)
-let exportLock: Promise<void> = Promise.resolve();
-
 export async function runExport(
   doc: Document,
   format: ExportFormat,
@@ -58,38 +47,31 @@ export async function runExport(
   fonts?: CustomFontPayload,
   cjk?: CjkExportConfig,
 ): Promise<ExportResult> {
-  const prev = exportLock;
-  let release!: () => void;
-  exportLock = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await prev;
-
-  // The fallback defaults to the bundled CJK face so a consumer that calls runExport
-  // without a cjk config still gets Chinese glyphs (not tofu); `fallbackFont: ""`
-  // opts out. Set for the duration of the (now-serialized) job and reset after.
-  const fallbackFont = cjk?.fallbackFont ?? CJK_FONT_FAMILY;
-  setCjkLocale(cjk?.locale);
-  setCjkFallbackFont(fallbackFont);
-  try {
-    return await runExportInner(doc, format, images, fonts);
-  } finally {
-    setCjkFallbackFont(null);
-    setCjkLocale(undefined);
-    release();
-  }
+  // Resolve the CJK config once and THREAD it into every layout this job runs
+  // (renderPdf's layout + the docx live-TOC pass). No process-global state and no
+  // lock: each layout engine re-asserts its own fallback/locale synchronously at the
+  // top of each (await-free) layout pass, so concurrent exports never cross-
+  // contaminate. The fallback defaults to the bundled CJK face so a consumer that
+  // calls runExport without a cjk config still gets Chinese glyphs (not tofu);
+  // `fallbackFont: ""` opts out (the engine treats empty as "no fallback").
+  const cjkOpts: LayoutEngineOptions = {
+    cjkFallback: cjk?.fallbackFont ?? CJK_FONT_FAMILY,
+    ...(cjk?.locale !== undefined ? { cjkLocale: cjk.locale } : {}),
+  };
+  return runExportInner(doc, format, images, cjkOpts, fonts);
 }
 
 async function runExportInner(
   doc: Document,
   format: ExportFormat,
   images: ImageBytes,
+  cjkOpts: LayoutEngineOptions,
   fonts?: CustomFontPayload,
 ): Promise<ExportResult> {
   // Each job owns its custom-font state: renderPdf builds + tears down a per-job
   // CustomFontRegistry internally, so a later export that omits a family can't
   // inherit an earlier job's fonts.
-  if (format === "pdf") return renderPdf(doc, { images, ...(fonts ? { fonts } : {}) });
+  if (format === "pdf") return renderPdf(doc, { images, cjk: cjkOpts, ...(fonts ? { fonts } : {}) });
 
   // DOCX writes family names verbatim, but a live TOC field export still needs a
   // layout pass for each heading's real page (cached PAGEREF result). Scope that
@@ -101,7 +83,7 @@ async function runExportInner(
   setActiveFontRegistry(fontReg);
   if (fonts) registerCustomFontBytes(fonts.faces);
   try {
-    const tocPages = pageOfBlockMap(createLayoutEngine(fontReg).layout(doc));
+    const tocPages = pageOfBlockMap(createLayoutEngine(fontReg, cjkOpts).layout(doc));
     return await writeDocx(doc, images, tocPages);
   } finally {
     clearCustomFontBytes(fontReg);

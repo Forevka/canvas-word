@@ -21,21 +21,35 @@ import { firstFamilyToken, MATH_FONT_FAMILY } from "../fonts/clones";
 import { equationBox } from "./math/equationLayout";
 
 // ---------------------------------------------------------------------------
-// CJK tuning (instance config applied to pretext's process-global analyzer).
+// CJK tuning. The fallback family + analyzer locale are RE-ASSERTED by the engine
+// at the top of each layout() pass (a synchronous, await-free span) from its
+// per-instance config — exactly like setActiveFontRegistry. So concurrent editors /
+// export jobs each see their own CJK config with no shared-mutable-state race and no
+// lock: the values are set and read within the same atomic layout span, never across
+// an `await`.
 
-let cjkFallbackFamily: string | null = null;
+// The CJK fallback family active for the CURRENT layout pass (null = leave CJK runs
+// untouched, so the browser's system fallback renders them on screen).
+let activeCjkFallback: string | null = null;
 
-/** Route CJK runs to this font family (for measurement / export consistency).
- *  null = leave runs untouched (browser system fallback renders CJK on screen).
- *  Invalidating callers must clear layout caches; the editor app does on mount. */
-export function setCjkFallbackFont(family: string | null | undefined): void {
-  cjkFallbackFamily = family && family.trim().length > 0 ? family : null;
+/** Set the CJK fallback family for the upcoming layout pass. The engine calls this
+ *  synchronously at layout() top; `""`/whitespace is treated as "no fallback". */
+export function setActiveCjkFallback(family: string | null | undefined): void {
+  activeCjkFallback = family && family.trim().length > 0 ? family.trim() : null;
 }
 
-/** Set pretext's analyzer locale (CJK line-break tuning). Process-global. */
-export function setCjkLocale(locale: string | undefined): void {
+// pretext's analyzer locale is PROCESS-GLOBAL inside the library (it can't be made
+// per-call), so the engine applies it synchronously at layout() top too — within the
+// same await-free span, so concurrent layouts each assert their own. Idempotent per
+// value so the editor's per-keystroke relayouts don't thrash the analyzer cache.
+let lastLocale: string | undefined;
+let lastLocaleApplied = false;
+export function applyCjkLocale(locale: string | undefined): void {
+  if (lastLocaleApplied && lastLocale === locale) return;
   setAnalysisLocale(locale);
   clearAnalysisCaches();
+  lastLocale = locale;
+  lastLocaleApplied = true;
 }
 
 const hasCjk = (text: string): boolean => {
@@ -48,7 +62,7 @@ const hasCjk = (text: string): boolean => {
  *  length are unchanged, so every downstream offset/itemIndex mapping still holds.
  *  No-op when no fallback font is configured or a run carries no CJK. */
 export function scriptSplitRuns(runs: Run[]): Run[] {
-  const fam = cjkFallbackFamily;
+  const fam = activeCjkFallback;
   if (!fam) return runs;
   const out: Run[] = [];
   let changed = false;

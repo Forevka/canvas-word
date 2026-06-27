@@ -6,7 +6,6 @@ import { SyncClient } from "./sync/SyncClient";
 import { createEditor, type CurrentFormat, type EditMode, type InspectorProbe, type ReviewOpEnvelope } from "./index";
 import type { Command } from "./editor/state";
 import { createLayoutEngine } from "./layout/engine";
-import { setCjkFallbackFont, setCjkLocale } from "./layout/prepareCache";
 import { sampleDoc } from "./model/sampleDoc";
 import { stressDoc } from "./model/stressDoc";
 import { importDocx, type ImportResult, type ImportPhase } from "./import/docx/importDocx";
@@ -127,10 +126,8 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
   // the registry below, so registration must happen before the first engine.layout.)
   fontRegistry.register({ fonts: config.fonts.fonts.filter((f) => loadedFamilies.has(normalizeFamily(f.family))) });
   await document.fonts.ready;
-  // CJK analyzer locale + fallback font (applied after fonts register so the
-  // fallback family resolves; both touch pretext's process-global analyzer).
-  setCjkLocale(config.cjk.locale);
-  setCjkFallbackFont(config.cjk.fallbackFont);
+  // CJK fallback + locale are passed to this instance's layout engine (below), which
+  // re-asserts them at the top of every layout pass — no process-global juggling.
 
   // Give this editor session a unique siteId so every block/cell id it mints is
   // disjoint from other collaborating clients' ids (see shared/ids). A short
@@ -226,7 +223,10 @@ if (collabId !== null && BACKEND_HTTP) {
 // always arrives WITH its own stylesheet, so its w:docDefaults/Normal win.
 if (!doc.stylesheet) doc = { ...doc, stylesheet: config.stylesheet };
 
-const engine = createLayoutEngine(fontRegistry);
+const engine = createLayoutEngine(fontRegistry, {
+  ...(config.cjk.fallbackFont !== undefined ? { cjkFallback: config.cjk.fallbackFont } : {}),
+  ...(config.cjk.locale !== undefined ? { cjkLocale: config.cjk.locale } : {}),
+});
 const t0 = performance.now();
 const tree = engine.layout(doc); // cold: every paragraph hits prepareRichInline
 const t1 = performance.now();

@@ -13,7 +13,7 @@ import type { Block, CharStyle, Document, EquationBlock, ImageBlock, Paragraph, 
 import { effectiveFractions, isHiddenParagraph } from "@cw/shared";
 import { formatListNumber, markerText, type ListDefinition, type ListLevel } from "@cw/shared";
 import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock, PlacedImage } from "./layoutTree";
-import { PrepareCache, prepareRunSegment, type PreparedSegment } from "./prepareCache";
+import { PrepareCache, prepareRunSegment, setActiveCjkFallback, applyCjkLocale, type PreparedSegment } from "./prepareCache";
 import { charStyleToFont, fontMetrics, measureTextWidth } from "./metrics";
 import { baseLevelFor, effectiveAlign, hasRtlChars, levelsFor, visualOrder } from "./bidi";
 import { setActiveFontRegistry, type CustomFontRegistry } from "../fonts/customRegistry";
@@ -45,10 +45,23 @@ export interface LayoutEngine {
   reset(): void;
 }
 
+/** Per-engine CJK config, re-asserted at the top of every layout pass so it's never
+ *  read across an `await` (concurrency-safe without a lock — see prepareCache.ts). */
+export interface LayoutEngineOptions {
+  /** CJK fallback family: script-split CJK runs render with it. `""`/whitespace or
+   *  omitted = no fallback (browser system fallback renders CJK on screen). */
+  cjkFallback?: string | null;
+  /** pretext analyzer locale (CJK line-break tuning) for this engine's layouts. */
+  cjkLocale?: string;
+}
+
 /** @param fontRegistry custom-font registry to make active for this engine's layout
  *  passes (editor mount / export job). Omit to leave the active registry untouched
- *  (tests + recalc paths that use the process-default global). */
-export function createLayoutEngine(fontRegistry?: CustomFontRegistry): LayoutEngine {
+ *  (tests + recalc paths that use the process-default global).
+ *  @param opts per-engine CJK fallback + locale (defaults: no fallback, neutral). */
+export function createLayoutEngine(fontRegistry?: CustomFontRegistry, opts?: LayoutEngineOptions): LayoutEngine {
+  const cjkFallback = opts?.cjkFallback ?? null;
+  const cjkLocale = opts?.cjkLocale;
   const prepCache = new PrepareCache();
   // Second cache tier: LineBox[] per (block revision, width). A keystroke
   // re-breaks ONE paragraph; every other block's lines are reused as-is and
@@ -151,6 +164,10 @@ export function createLayoutEngine(fontRegistry?: CustomFontRegistry): LayoutEng
       // for concurrent editors/jobs: layout() never awaits, so nothing can swap the
       // active registry mid-pass.
       if (fontRegistry) setActiveFontRegistry(fontRegistry);
+      // Same await-free re-assert for this engine's CJK config (see prepareCache.ts):
+      // scriptSplitRuns reads the active fallback during this synchronous pass.
+      setActiveCjkFallback(cjkFallback);
+      applyCjkLocale(cjkLocale);
       const rawBand = options?.rawBand ?? null;
       touched = rawBand === null ? new Set<string>() : null;
       touchedBands = rawBand === null ? new Set<string>() : null;

@@ -83,10 +83,11 @@ describe("export with CJK text", () => {
     expect(warnings.find((w) => w.code === "font-substituted")).toBeUndefined();
   });
 
-  it("keeps concurrent exports from cross-contaminating the global CJK state", async () => {
-    // runExport mutates pretext's process-global CJK fallback; overlapping jobs are
-    // serialized so a default-fallback render and an opt-out render each get their
-    // own setting (one embeds NotoSansSC, the other doesn't).
+  it("keeps concurrent exports from cross-contaminating CJK state", async () => {
+    // The CJK fallback is threaded into each job's layout engine and re-asserted
+    // synchronously per (await-free) layout pass, so overlapping jobs don't share
+    // state: a default-fallback render and an opt-out render each get their own
+    // setting (one embeds NotoSansSC, the other doesn't) even when interleaved.
     const decode = (b: Uint8Array): string => new TextDecoder("latin1").decode(b);
     const [withFallback, optedOut] = await Promise.all([
       runExport(docOf(CJK), "pdf"),

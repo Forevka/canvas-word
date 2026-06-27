@@ -11,6 +11,7 @@ import PDFDocument from "pdfkit";
 import type { Document } from "@cw/shared";
 import { detectTocHeadings, textOfRuns } from "@cw/shared";
 import type { PlacedBlock } from "../../layout/layoutTree";
+import type { LayoutEngineOptions } from "../../layout/engine";
 import type { ExportResult, ImageBytes } from "../types";
 import { WarningSink } from "../warnings";
 import { installMeasureHost } from "../shared/measureHost";
@@ -37,6 +38,10 @@ export interface RenderPdfOptions {
   /** This export job's custom fonts (defs + fetched face bytes). Scoped to the
    *  render so concurrent jobs never share custom-font state. */
   fonts?: CustomFontPayload;
+  /** CJK fallback family + analyzer locale for this render's layout. Threaded into
+   *  the layout engine (re-asserted per pass), so concurrent renders never share CJK
+   *  state. Absent / empty `cjkFallback` = no CJK fallback. */
+  cjk?: LayoutEngineOptions;
 }
 
 /** pdfkit's outline addItem accepts these at runtime (@types only declares
@@ -74,10 +79,10 @@ async function renderPdfInner(doc: Document, opts: RenderPdfOptions, fontReg: Cu
   // Imported after the host is installed: the engine measures lazily at layout(),
   // but this keeps the ordering contract explicit and avoids any module-load DOM.
   const { createLayoutEngine } = await import("../../layout/engine");
-  // layout() re-asserts fontReg active (no await between it and the paint loop), so
-  // the whole resolution span sees this job's fonts even if another job swapped the
-  // active registry during the awaits above.
-  const tree = createLayoutEngine(fontReg).layout(doc);
+  // layout() re-asserts fontReg + this job's CJK fallback/locale (no await between it
+  // and the paint loop), so the whole resolution span sees this job's config even if
+  // another job swapped the active state during the awaits above.
+  const tree = createLayoutEngine(fontReg, opts.cjk).layout(doc);
 
   const warnings = new WarningSink();
   const images = opts.images ?? {};

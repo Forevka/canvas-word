@@ -6,7 +6,7 @@ import "./test-canvas-setup";
 import { describe, it, expect, afterEach } from "vitest";
 import type { CharStyle, Document, Paragraph, ParaStyle, Run, SectionProps } from "@cw/shared";
 import { createLayoutEngine } from "./engine";
-import { scriptSplitRuns, setCjkFallbackFont } from "./prepareCache";
+import { scriptSplitRuns, setActiveCjkFallback } from "./prepareCache";
 
 const CHAR: CharStyle = {
   fontFamily: "Arial, sans-serif",
@@ -41,17 +41,17 @@ const para = (runs: Run[], style: Partial<ParaStyle> = {}): Paragraph => ({
 });
 const doc = (p: Paragraph): Document => ({ section: SECTION, blocks: [p] });
 
-afterEach(() => setCjkFallbackFont(null));
+afterEach(() => setActiveCjkFallback(null));
 
 describe("scriptSplitRuns (CJK fallback)", () => {
   it("is a no-op when no fallback font is configured", () => {
-    setCjkFallbackFont(null);
+    setActiveCjkFallback(null);
     const runs: Run[] = [{ text: "abc世界xyz", style: CHAR }];
     expect(scriptSplitRuns(runs)).toBe(runs);
   });
 
   it("splits a mixed run into Latin + CJK pieces, retargeting CJK to the fallback", () => {
-    setCjkFallbackFont("NotoCJK");
+    setActiveCjkFallback("NotoCJK");
     const runs: Run[] = [{ text: "abc世界xyz", style: CHAR }];
     const split = scriptSplitRuns(runs);
     expect(split.map((r) => r.text)).toEqual(["abc", "世界", "xyz"]);
@@ -63,7 +63,7 @@ describe("scriptSplitRuns (CJK fallback)", () => {
   });
 
   it("leaves a pure-Latin run untouched even with a fallback configured", () => {
-    setCjkFallbackFont("NotoCJK");
+    setActiveCjkFallback("NotoCJK");
     const runs: Run[] = [{ text: "hello", style: CHAR }];
     expect(scriptSplitRuns(runs)).toBe(runs);
   });
