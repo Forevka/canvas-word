@@ -49,9 +49,10 @@ export function layoutMathNode(n: MathNode, ctx: MathLayoutCtx): MathBox {
     case "frac":
       return fracBox(n.num, n.den, ctx, n.thickness === "0", n.bevelled === true);
     case "script":
-      // Scripts on a big operator in display style sit UNDER/OVER (∑_{i=1}^{n}),
-      // matching munderover; everywhere else they're true sub/superscripts.
-      if (ctx.style.display && n.base.type === "op" && BIG_OPS.has(n.base.text)) {
+      // Scripts on a limit-style operator in display style sit UNDER/OVER
+      // (∑_{i=1}^{n}); integrals keep sub/superscripts (LIMITS_OPS, not BIG_OPS —
+      // matching naryBox), everywhere else they're true sub/superscripts.
+      if (ctx.style.display && n.base.type === "op" && LIMITS_OPS.has(n.base.text)) {
         return layoutMathNode(
           { type: "limit", base: n.base, ...(n.sub ? { under: n.sub } : {}), ...(n.sup ? { over: n.sup } : {}) },
           ctx,

@@ -29,6 +29,15 @@ const VARIANT_CMD: Partial<Record<MathVariant, string>> = {
   monospace: "mathtt",
   script: "mathcal",
   fraktur: "mathfrak",
+  // Compound variants fromOmml can emit (m:scr + m:sty). LaTeX has no single
+  // command for the bold/italic-qualified families, so we map to the family
+  // command — the alphanumeric style survives; the bold/italic qualifier is the
+  // documented lossy edge (better than dropping back to a plain identifier).
+  "bold-fraktur": "mathfrak",
+  "bold-script": "mathcal",
+  "bold-sans-serif": "mathsf",
+  "sans-serif-italic": "mathsf",
+  "sans-serif-bold-italic": "mathsf",
 };
 
 const ENV_FOR_FENCE: Record<string, string> = {
@@ -162,7 +171,9 @@ function matrix(rows: MathNode[][], env: string): string {
   return `\\begin{${env}} ${body} \\end{${env}}`;
 }
 
-/** Serialize an equation root to a LaTeX string. */
+/** Serialize an equation root to a LaTeX string. NB: no global whitespace
+ *  collapse — that would rewrite the spaces inside `\text{…}` (which the LaTeX
+ *  parser now preserves), so `\text{a  b}` must round-trip verbatim. */
 export function mathToLatex(root: MathRow): string {
-  return root.children.map(inner).join(" ").replace(/\s+/g, " ").trim();
+  return root.children.map(inner).join(" ").trim();
 }

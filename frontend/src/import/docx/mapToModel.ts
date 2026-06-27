@@ -557,8 +557,10 @@ export function createMapper(
           break;
         }
         case "mathInline": {
-          // Inline equation → a single-U+FFFC run with CharStyle.equation.
-          const eqRun = mapRun("￼", resolver.run(ir.props.styleId, {}), resolveLink);
+          // Inline equation → a single-U+FFFC run with CharStyle.equation. Pass
+          // the inline props (e.g. linkRelId/linkAnchor from a w:hyperlink) so a
+          // hyperlinked equation keeps its link via mapRun's resolveLink.
+          const eqRun = mapRun("￼", resolver.run(ir.props.styleId, inline.props ?? {}), resolveLink);
           eqRun.style = { ...eqRun.style, equation: { root: inline.root, display: false } };
           runs.push(eqRun);
           trailingBreak = false;

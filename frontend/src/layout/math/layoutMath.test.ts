@@ -92,6 +92,16 @@ describe("scripts", () => {
     expect(glyph(b, "0")!.y).toBeGreaterThan(0);
     expect(glyph(b, "1")!.y).toBeLessThan(0);
   });
+
+  it("in display style: integrals keep sub/sup; sums move them under/over", () => {
+    const dctx: MathLayoutCtx = { font: stubFont, style: { sizePx: SIZE, cramped: false, display: true } };
+    const layoutD = (m: string) => layoutMathRow(parseMathml(m).root.children, dctx);
+    const intg = layoutD("<math><msubsup><mo>∫</mo><mn>0</mn><mn>1</mn></msubsup></math>");
+    const sum = layoutD("<math><msubsup><mo>∑</mo><mn>0</mn><mn>1</mn></msubsup></math>");
+    // The integral's lower bound stays a subscript (to the RIGHT of the operator);
+    // the sum's lower bound is a limit, centered under it (further left).
+    expect(glyph(intg, "0")!.x).toBeGreaterThan(glyph(sum, "0")!.x);
+  });
 });
 
 describe("stretchy fences", () => {

@@ -2529,6 +2529,7 @@ export function createEditor(
           item("Edit Equation…", () =>
             showEquationEditor({
               editing: true,
+              initialDisplay: true, // a display-equation block
               initialMathml: equationToMathmlString(blk.equation),
               onApply: (eq) => dispatch(editEquationCmd(blk.id, eq)),
             }),
@@ -2562,6 +2563,7 @@ export function createEditor(
           item("Edit Equation…", () =>
             showEquationEditor({
               editing: true,
+              initialDisplay: false, // an inline equation — don't flip it to display
               initialMathml: equationToMathmlString(equation),
               onApply: (eq) => dispatch(editInlineEquationCmd(blockId, off, eq)),
             }),

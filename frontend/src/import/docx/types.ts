@@ -144,8 +144,10 @@ export interface IRSdtProps {
 export type IRInline =
   | { kind: "run"; text: string; props: IRRunProps; sdtPath?: string[]; fieldId?: string }
   /** Inline equation (w:p-level m:oMath) — becomes a single-U+FFFC run carrying
-   *  the MathML on CharStyle.equation. */
-  | { kind: "mathInline"; root: MathRow }
+   *  the MathML on CharStyle.equation. `props` carries run-like metadata the
+   *  w:hyperlink backfill tags on (linkRelId/linkAnchor) so a linked equation
+   *  keeps its hyperlink. */
+  | { kind: "mathInline"; root: MathRow; props?: IRRunProps }
   /** w:br / w:cr — soft line break (model has none; mapToModel splits the
    *  paragraph). page=true for w:br w:type="page" (→ pageBreakBefore on the
    *  follower); column=true for w:br w:type="column" (→ columnBreakBefore). */
