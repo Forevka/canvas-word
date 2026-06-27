@@ -2,6 +2,9 @@
   <Folder Name="/bench/">
     <Project Path="bench/WordCanvas.Benchmarks/WordCanvas.Benchmarks.csproj" />
   </Folder>
+  <Folder Name="/examples/">
+    <Project Path="examples/WordCanvas.Example.Showcase/WordCanvas.Example.Showcase.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/WordCanvas.ClearScript/WordCanvas.ClearScript.csproj" />
   </Folder>

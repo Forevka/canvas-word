@@ -131,6 +131,23 @@ var b = engine.NewBuilderFromTemplate(File.ReadAllBytes("template.docx"));
 var doc = b.Paragraph("Body generated against the template's styles").Build();
 ```
 
+### Worked example — rebuild the editor's default document
+
+`examples/WordCanvas.Example.Showcase` rebuilds the editor's flagship "no docId"
+sample document **entirely with the typed builder** and exports it to PDF + DOCX — a
+6-page tour exercising headings + TOC, inline fields (DATE/PAGE/NUMPAGES/IF), every
+content-control kind, merged / tall (paginating) / field-in-cell tables, embedded
+images, multilevel + bullet lists, footnotes, bookmarks, hidden text, hyperlinks,
+sub/superscript, CJK text, and header/footer page fields:
+
+```sh
+dotnet run -c Release --project dotnet/examples/WordCanvas.Example.Showcase
+# → showcase.pdf (6 pages) + showcase.docx, re-imports to 120 blocks, 0 warnings
+```
+
+(Equations and explicit right-to-left paragraph direction — also in the editor sample
+— are authored via the model API, not the fluent builder.)
+
 ### Headless TOC / field calculation (the Syncfusion replacement)
 
 `TOC`, `PAGEREF`, and page-number fields can't be evaluated by OpenXML /

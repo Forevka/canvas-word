@@ -175,6 +175,57 @@ public sealed class ParagraphBuilder
         return this;
     }
 
+    /// <summary>A conditional (IF) field — branch text by comparing two operands.
+    /// <paramref name="op"/> is one of <c>= &lt;&gt; &lt; &gt; &lt;= &gt;=</c>.</summary>
+    public ParagraphBuilder IfField(string operandA, string op, string operandB, string ifTrue, string ifFalse)
+    {
+        _js.InvokeMethod("ifField", operandA, op, operandB, ifTrue, ifFalse);
+        return this;
+    }
+
+    // ---- inline content controls (SDT) ----
+    public ParagraphBuilder RichTextControl(string text, SdtOptions? opts = null) => Sdt("richTextControl", text, opts);
+    public ParagraphBuilder PlainTextControl(string text, SdtOptions? opts = null) => Sdt("plainTextControl", text, opts);
+
+    /// <summary>A checkbox content control (☒ / ☐).</summary>
+    public ParagraphBuilder Checkbox(bool isChecked, SdtOptions? opts = null)
+    {
+        if (opts is not null) _js.InvokeMethod("checkbox", isChecked, opts.ToJs(_engine));
+        else _js.InvokeMethod("checkbox", isChecked);
+        return this;
+    }
+
+    /// <summary>A drop-down content control (fixed list).</summary>
+    public ParagraphBuilder DropDown(string selected, IEnumerable<SdtListItem> items, SdtOptions? opts = null)
+        => SdtList("dropDown", selected, items, opts);
+
+    /// <summary>A combo-box content control (list + free text).</summary>
+    public ParagraphBuilder ComboBox(string selected, IEnumerable<SdtListItem> items, SdtOptions? opts = null)
+        => SdtList("comboBox", selected, items, opts);
+
+    /// <summary>A date-picker content control.</summary>
+    public ParagraphBuilder DateControl(string text, string dateFormat = "M/d/yyyy", SdtOptions? opts = null)
+    {
+        if (opts is not null) _js.InvokeMethod("dateControl", text, dateFormat, opts.ToJs(_engine));
+        else _js.InvokeMethod("dateControl", text, dateFormat);
+        return this;
+    }
+
+    private ParagraphBuilder Sdt(string method, string text, SdtOptions? opts)
+    {
+        if (opts is not null) _js.InvokeMethod(method, text, opts.ToJs(_engine));
+        else _js.InvokeMethod(method, text);
+        return this;
+    }
+
+    private ParagraphBuilder SdtList(string method, string selected, IEnumerable<SdtListItem> items, SdtOptions? opts)
+    {
+        var arr = Js.ToArray(_engine, items.Select(i => (object?)i.ToJs(_engine)));
+        if (opts is not null) _js.InvokeMethod(method, selected, arr, opts.ToJs(_engine));
+        else _js.InvokeMethod(method, selected, arr);
+        return this;
+    }
+
     // ---- bookmarks + footnotes ----
     /// <summary>Append text and bookmark exactly that run's range.</summary>
     public ParagraphBuilder Bookmark(string name, string text, CharStyle? style = null)

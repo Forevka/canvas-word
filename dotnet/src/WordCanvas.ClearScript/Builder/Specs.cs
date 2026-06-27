@@ -93,10 +93,13 @@ public sealed record CharStyle
     public string? Link { get; init; }
     public double? LetterSpacingPx { get; init; }
     public bool? Hidden { get; init; }
+    /// <summary>Sub/superscript: "sub" or "super" (measured at 0.65× size, baseline-shifted).</summary>
+    public string? VerticalAlign { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
         var o = Js.Obj(e);
+        if (VerticalAlign is { } va) Js.Set(o, "verticalAlign", va);
         if (Bold is { } b) Js.Set(o, "bold", b);
         if (Italic is { } i) Js.Set(o, "italic", i);
         if (Underline is { } u) Js.Set(o, "underline", u);
@@ -308,6 +311,35 @@ public sealed record CellOptions
         if (Shading is { } sh) Js.Set(o, "shading", sh);
         if (Style is { } st) Js.Set(o, "style", st.ToJs(e));
         if (Align is { } a) Js.Set(o, "align", EnumJs.Align(a));
+        return o;
+    }
+}
+
+/// <summary>Common content-control (SDT) options.</summary>
+public sealed record SdtOptions
+{
+    /// <summary>Friendly label shown in Word's control chrome.</summary>
+    public string? Alias { get; init; }
+    /// <summary>Programmatic tag (machine identifier).</summary>
+    public string? Tag { get; init; }
+
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        if (Alias is { } a) Js.Set(o, "alias", a);
+        if (Tag is { } t) Js.Set(o, "tag", t);
+        return o;
+    }
+}
+
+/// <summary>A drop-down / combo-box list item (display text + stored value).</summary>
+public sealed record SdtListItem(string Display, string Value)
+{
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        Js.Set(o, "display", Display);
+        Js.Set(o, "value", Value);
         return o;
     }
 }

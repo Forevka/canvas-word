@@ -119,6 +119,33 @@ const BANNER = `(function (g) {
   if (typeof g.URL === "undefined") { g.URL = {}; }
   if (!g.URL.createObjectURL) { g.URL.createObjectURL = function () { return "blob:wc"; }; }
   if (!g.URL.revokeObjectURL) { g.URL.revokeObjectURL = function () {}; }
+  // Bare V8 has no btoa/atob; the builder's bytesToDataUrl base64-encodes image bytes
+  // through btoa. Self-contained base64 over binary strings (each char = one byte).
+  if (!g.btoa || !g.atob) {
+    var B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    g.btoa = function (s) {
+      s = String(s); var out = "", i = 0;
+      while (i < s.length) {
+        var c1 = s.charCodeAt(i++) & 0xff, c2 = s.charCodeAt(i++), c3 = s.charCodeAt(i++);
+        var e2 = ((c1 & 3) << 4) | (isNaN(c2) ? 0 : (c2 & 0xff) >> 4);
+        var e3 = isNaN(c2) ? 64 : (((c2 & 15) << 2) | (isNaN(c3) ? 0 : (c3 & 0xff) >> 6));
+        var e4 = isNaN(c3) ? 64 : (c3 & 63);
+        out += B64[c1 >> 2] + B64[e2] + B64[e3] + B64[e4];
+      }
+      return out;
+    };
+    g.atob = function (s) {
+      s = String(s).replace(/[^A-Za-z0-9+/]/g, ""); var out = "", i = 0;
+      while (i < s.length) {
+        var e1 = B64.indexOf(s.charAt(i++)), e2 = B64.indexOf(s.charAt(i++));
+        var e3 = B64.indexOf(s.charAt(i++)), e4 = B64.indexOf(s.charAt(i++));
+        out += String.fromCharCode((e1 << 2) | (e2 >> 4));
+        if (e3 >= 0 && e3 < 64) out += String.fromCharCode(((e2 & 15) << 4) | (e3 >> 2));
+        if (e4 >= 0 && e4 < 64) out += String.fromCharCode(((e3 & 3) << 6) | e4);
+      }
+      return out;
+    };
+  }
   // The jspm stream polyfill reads AbortController/AbortSignal off self/window and
   // crashes if neither exists. Point self at the global and provide inert stubs
   // (pdfkit never aborts a stream, so these are never actually exercised).

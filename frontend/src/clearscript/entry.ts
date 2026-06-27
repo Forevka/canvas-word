@@ -171,18 +171,53 @@ function importDocx(bytes: Uint8Array): ImportHandle {
   };
 }
 
+/** Decode any `data:*;base64,...` image sources in the document into the export image
+ *  map, so builder-authored / data-URL images embed in PDF + DOCX (the export resolves
+ *  image bytes by src). Non-base64 data URLs (e.g. raw SVG, which pdfkit can't embed)
+ *  are skipped. Merges over caller-supplied images (which win). */
+function withDataUrlImages(doc: Document, images?: ImageBytes): ImageBytes {
+  const out: ImageBytes = { ...(images ?? {}) };
+  const atob = (globalThis as unknown as { atob(s: string): string }).atob;
+  const add = (src: string): void => {
+    if (out[src] || !src.startsWith("data:")) return;
+    const comma = src.indexOf(",");
+    if (comma < 0 || !/;base64/i.test(src.slice(0, comma))) return;
+    try {
+      const bin = atob(src.slice(comma + 1));
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i) & 0xff;
+      out[src] = bytes;
+    } catch {
+      /* leave unembedded → export draws a placeholder box */
+    }
+  };
+  const walk = (blocks: Document["blocks"]): void => {
+    for (const b of blocks) {
+      if (b.kind === "image") add(b.src);
+      else if (b.kind === "table") for (const r of b.rows) for (const c of r.cells) walk(c.blocks);
+    }
+  };
+  walk(doc.blocks);
+  const s = doc.section as unknown as Record<string, Document["blocks"] | undefined>;
+  for (const band of ["header", "footer", "headerFirst", "footerFirst", "headerEven", "footerEven"]) {
+    const story = s[band];
+    if (story) walk(story);
+  }
+  return out;
+}
+
 async function exportPdf(
   doc: Document,
   images?: ImageBytes,
   fonts?: CustomFontPayload,
   cjk?: CjkExportConfig,
 ): Promise<Uint8Array> {
-  const res = await runExport(doc, "pdf", images ?? {}, fonts, cjk);
+  const res = await runExport(doc, "pdf", withDataUrlImages(doc, images), fonts, cjk);
   return res.bytes;
 }
 
 async function exportDocx(doc: Document, images?: ImageBytes): Promise<Uint8Array> {
-  const res = await runExport(doc, "docx", images ?? {});
+  const res = await runExport(doc, "docx", withDataUrlImages(doc, images));
   return res.bytes;
 }
 
