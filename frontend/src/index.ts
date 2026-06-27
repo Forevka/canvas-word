@@ -3097,7 +3097,20 @@ export function createEditor(
     refreshFonts(): void {
       engine.reset();
       relayout();
+      // Re-measure every geometry-dependent overlay against the new layout (mirror
+      // afterMutation's overlay pass), so review pins, search highlights, peer
+      // carets, and the object frame don't keep stale positions until the next edit.
+      // No model change occurred, so DON'T call notifyChange() (it fires onChange)
+      // and DON'T chase the caret into view (the load mustn't scroll the viewport).
       refreshSelectionVisuals();
+      refreshObjectFrame();
+      if (searchQuery) {
+        runSearch();
+        paintSearch();
+      }
+      paintRemoteCarets();
+      refreshReviewDecorations();
+      mirror.sync(state());
     },
     setZoom: (z: number): void => applyZoom(z),
     getZoom: () => paint.getZoom(),

@@ -41,6 +41,16 @@ function hasTocEntries(doc: Document): boolean {
   return scan(doc.blocks);
 }
 
+// CJK locale + fallback live on pretext's PROCESS-GLOBAL analyzer (setCjkLocale /
+// setCjkFallbackFont), and the job reads them across the `await`s inside layout.
+// Two overlapping runExport calls in one process (e.g. the backend serving
+// concurrent renders) would otherwise clobber each other's settings and clear them
+// in each other's `finally`. Exports are infrequent and CPU-bound, so we serialize
+// the whole job on a process-wide chain rather than thread the state through every
+// layout site. (The browser runs exports in a worker — one at a time — so this is
+// effectively free there.)
+let exportLock: Promise<void> = Promise.resolve();
+
 export async function runExport(
   doc: Document,
   format: ExportFormat,
@@ -48,10 +58,16 @@ export async function runExport(
   fonts?: CustomFontPayload,
   cjk?: CjkExportConfig,
 ): Promise<ExportResult> {
-  // CJK fallback/locale touch the process-global analyzer; set for the duration of
-  // the job and reset after. The fallback defaults to the bundled CJK face so a
-  // consumer that calls runExport without a cjk config still gets Chinese glyphs
-  // (not tofu); pass `fallbackFont: ""` to opt out.
+  const prev = exportLock;
+  let release!: () => void;
+  exportLock = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await prev;
+
+  // The fallback defaults to the bundled CJK face so a consumer that calls runExport
+  // without a cjk config still gets Chinese glyphs (not tofu); `fallbackFont: ""`
+  // opts out. Set for the duration of the (now-serialized) job and reset after.
   const fallbackFont = cjk?.fallbackFont ?? CJK_FONT_FAMILY;
   setCjkLocale(cjk?.locale);
   setCjkFallbackFont(fallbackFont);
@@ -60,6 +76,7 @@ export async function runExport(
   } finally {
     setCjkFallbackFont(null);
     setCjkLocale(undefined);
+    release();
   }
 }
 

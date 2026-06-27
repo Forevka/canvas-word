@@ -329,7 +329,10 @@ let editor = createEditor(app, doc, editorOpts);
 // loadEditorFonts; an explicit "" opt-out skips this entirely.
 if (config.cjk.fallbackFont === CJK_FONT_FAMILY) {
   void loadCjkFallbackFont().then((ok) => {
-    if (ok) editor.refreshFonts();
+    // The fetch is uncancellable; if the editor was destroyed while it was in
+    // flight, skip — refreshFonts() would touch a torn-down editor/root.
+    if (!ok || teardown.signal.aborted) return;
+    editor.refreshFonts();
   });
 }
 

@@ -83,6 +83,19 @@ describe("export with CJK text", () => {
     expect(warnings.find((w) => w.code === "font-substituted")).toBeUndefined();
   });
 
+  it("keeps concurrent exports from cross-contaminating the global CJK state", async () => {
+    // runExport mutates pretext's process-global CJK fallback; overlapping jobs are
+    // serialized so a default-fallback render and an opt-out render each get their
+    // own setting (one embeds NotoSansSC, the other doesn't).
+    const decode = (b: Uint8Array): string => new TextDecoder("latin1").decode(b);
+    const [withFallback, optedOut] = await Promise.all([
+      runExport(docOf(CJK), "pdf"),
+      runExport(docOf(CJK), "pdf", {}, undefined, { fallbackFont: "" }),
+    ]);
+    expect(decode(withFallback.bytes).includes(CJK_FONT_FAMILY)).toBe(true);
+    expect(decode(optedOut.bytes).includes(CJK_FONT_FAMILY)).toBe(false);
+  });
+
   it("keeps the document's own family in DOCX (CJK survives via Word; no bundled-clone leak)", async () => {
     const { bytes } = await runExport(docOf(CJK), "docx");
     const xml = strFromU8(unzipSync(bytes)["word/document.xml"]!);
