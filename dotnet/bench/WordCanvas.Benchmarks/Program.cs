@@ -133,7 +133,11 @@ if (args.Length > 0 && args[0].Equals("builddump", StringComparison.OrdinalIgnor
     var pdf = built.ExportPdf();
     File.WriteAllBytes(outPath, pdf);
     var docx = built.ExportDocx();
-    File.WriteAllBytes(System.Text.RegularExpressions.Regex.Replace(outPath, @"\.pdf$", ".docx", System.Text.RegularExpressions.RegexOptions.IgnoreCase), docx);
+    // Derive a DISTINCT .docx path so a non-".pdf" outPath can't clobber the PDF.
+    var docxPath = outPath.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)
+        ? outPath[..^4] + ".docx"
+        : outPath + ".docx";
+    File.WriteAllBytes(docxPath, docx);
     Console.WriteLine($"cs build → pdf {pdf.Length} bytes, docx {docx.Length} bytes → {outPath}");
     return 0;
 }

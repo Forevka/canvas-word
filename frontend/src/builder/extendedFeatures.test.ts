@@ -82,6 +82,15 @@ describe("character styles", () => {
     expect(run.style.fontFamily).toBe("Consolas, monospace");
     expect(run.style.color).toBe("#a31515");
   });
+
+  it("charStyle rejects a PARAGRAPH style (w:rStyle must be a character style)", () => {
+    const builder = DocumentBuilder.create()
+      .style({ id: "Body", name: "Body", type: "paragraph", char: { color: "#111" }, para: {} });
+    builder.paragraph("x").charStyle("Body");
+    const doc = builder.build();
+    expect(para(doc.blocks[0]).runs[0]!.style.charStyleId).toBeUndefined();
+    expect(builder.warnings.some((w) => w.code.startsWith("char-style-invalid"))).toBe(true);
+  });
 });
 
 describe("table cell width + autofit", () => {
@@ -119,6 +128,20 @@ describe("real table styles", () => {
     expect(t.rows[0]!.cells[0]!.shading).toBe("#1a1a2e");
     // Banded body row (row index 2, second body row) gets band2Horz shading.
     expect(t.rows[2]!.cells[0]!.shading).toBe("#f1f3f4");
+    // The header band's char (bold + white) is baked onto the cell content so it
+    // renders headlessly, not just shipped in w:tblStyle.
+    const headerRun = para(t.rows[0]!.cells[0]!.blocks[0]).runs[0]!;
+    expect(headerRun.style.bold).toBe(true);
+    expect(headerRun.style.color).toBe("#ffffff");
+  });
+
+  it("style (preset) and styleId (real) are mutually exclusive — styleId wins with a warning", () => {
+    const builder = DocumentBuilder.create({ idSeed: "tx" })
+      .tableStyle(gridStyle)
+      .table([["H"], ["x"]], { style: "headerBand", styleId: "GridAccent" });
+    const doc = builder.build();
+    expect(tableOf(doc.blocks[0]).styleId).toBe("GridAccent");
+    expect(builder.warnings.some((w) => w.code === "table-style-conflict")).toBe(true);
   });
 
   it("an unregistered styleId sets the reference but warns and bakes nothing", () => {

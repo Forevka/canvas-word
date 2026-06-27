@@ -210,7 +210,12 @@ export class DocumentBuilder extends StoryBuilder {
   /** Register (or override) a REAL table style (OOXML w:style[type=table]) in
    *  Document.tableStyles — conditional bands (wholeTable/firstRow/band1Horz/…),
    *  banding sizes, basedOn. Reference it from .table(rows, { styleId: def.id });
-   *  the docx export emits the style and tables keep their w:tblStyle reference. */
+   *  the docx export emits the style and tables keep their w:tblStyle reference.
+   *
+   *  Register BEFORE referencing it: .table({ styleId }) resolves and bakes the
+   *  style at call time, so re-registering or overriding a style afterwards does
+   *  NOT rebake already-built tables (same call-order contract as .style() /
+   *  .withStyle() and .listDefinition()). */
   tableStyle(def: TableStyle): this {
     const styles = (this.ctx.doc.tableStyles ??= {});
     styles[def.id] = def;

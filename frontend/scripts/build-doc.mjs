@@ -33,5 +33,7 @@ const outPdf = process.argv[2] ?? here("../../out-js.pdf");
 const pdf = await WC.exportPdf(doc);
 writeFileSync(outPdf, Buffer.from(pdf));
 const docx = await WC.exportDocx(doc);
-writeFileSync(outPdf.replace(/\.pdf$/i, ".docx"), Buffer.from(docx));
+// Derive a DISTINCT .docx path so a non-".pdf" outPdf can't clobber the PDF.
+const outDocx = /\.pdf$/i.test(outPdf) ? outPdf.replace(/\.pdf$/i, ".docx") : `${outPdf}.docx`;
+writeFileSync(outDocx, Buffer.from(docx));
 console.log(`js build → pdf ${pdf.length} bytes, docx ${docx.length} bytes`);

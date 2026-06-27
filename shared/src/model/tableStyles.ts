@@ -168,12 +168,20 @@ export const DEFAULT_TBL_LOOK: TableCondOverrides = { firstRow: true, bandRows: 
  *  are kept for re-editing and docx round-trip; the layout engine reads the baked
  *  concrete cell props. Shared by the editor's applyTableStyle and the document
  *  builder so both produce identical tables. Applying a style is destructive — it
- *  replaces direct cell shading/borders/margin (like Word). */
+ *  replaces direct cell shading/borders/margin (like Word).
+ *
+ *  `bakeContent` (default false) ALSO bakes the band's char/para onto the cell's
+ *  content (e.g. a header band's bold/white text) so it renders in the headless
+ *  layout engine, which reads concrete run/paragraph styles. The editor leaves it
+ *  off (applying a style must not clobber the user's direct run formatting); the
+ *  document builder turns it on, since its freshly-built cells carry no competing
+ *  direct formatting — so the style fully renders without a precedence conflict. */
 export function bakeTableStyleRows(
   table: TableBlock,
   style: TableStyle,
   styles: Record<string, TableStyle>,
   overrides: TableCondOverrides,
+  bakeContent = false,
 ): TableRow[] {
   const resolved = resolveTableStyle(styles, style.id);
   const grid = buildTableGrid(table);
@@ -191,6 +199,17 @@ export function bakeTableStyleRows(
     else delete next.borders;
     if (props.margin) next.margin = props.margin;
     else delete next.margin;
+    if (bakeContent && (props.char || props.para)) {
+      next.blocks = next.blocks.map((b) =>
+        b.kind === "paragraph"
+          ? {
+              ...b,
+              style: props.para ? { ...b.style, ...props.para } : b.style,
+              runs: props.char ? b.runs.map((r) => ({ ...r, style: { ...r.style, ...props.char } })) : b.runs,
+            }
+          : b,
+      );
+    }
     return next;
   });
 }

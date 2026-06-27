@@ -121,7 +121,8 @@ export interface TableOptions {
   colFractions?: number[];
   /** Bold every run in the first row. */
   headerRow?: boolean;
-  /** Apply a registered builder-only table-style PRESET by name (baked into cells). */
+  /** Apply a registered builder-only table-style PRESET by name (baked into cells).
+   *  Mutually exclusive with `styleId` — if both are given, `styleId` wins. */
   style?: string;
   /** Reference a REAL table style (DocumentBuilder.tableStyle) and bake its effective
    *  per-cell formatting onto the cells while keeping the styleId for docx round-trip. */

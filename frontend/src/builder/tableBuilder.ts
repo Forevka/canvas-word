@@ -40,7 +40,8 @@ export interface TableOptions {
   /** Bold every run in the first row. */
   headerRow?: boolean;
   /** Apply a registered table-style preset (header styling, borders, shading,
-   *  striping). Builder-only sugar; explicit per-cell values win. */
+   *  striping). Builder-only sugar; explicit per-cell values win. Mutually
+   *  exclusive with `styleId` — if both are given, `styleId` wins (with a warning). */
   style?: string;
   /** Reference a REAL table style registered via DocumentBuilder.tableStyle() and
    *  BAKE its effective per-cell formatting onto the cells (so it renders) while
@@ -96,7 +97,16 @@ export class TableBuilder {
       this.ctx.warn("table-empty", "A table was built with no rows — a single empty cell was inserted.");
       this.row([""]);
     }
-    const preset: TableStylePreset | undefined = this.opts.style ? this.ctx.tableStyle(this.opts.style) : undefined;
+    // `style` (builder preset) and `styleId` (real table style) are mutually
+    // exclusive — a real style reference takes precedence; the preset is ignored.
+    if (this.opts.style && this.opts.styleId !== undefined) {
+      this.ctx.warn(
+        "table-style-conflict",
+        "Both `style` (preset) and `styleId` (real table style) were passed to .table() — `styleId` wins; the preset was ignored.",
+      );
+    }
+    const preset: TableStylePreset | undefined =
+      this.opts.styleId === undefined && this.opts.style ? this.ctx.tableStyle(this.opts.style) : undefined;
     const headerRow = this.opts.headerRow ?? preset?.headerRow ?? false;
     // Apply header styling, borders, shading and striping. Explicit per-cell values
     // (cell.shading/borders set via CellSpec) always win; the preset is the base.
@@ -144,7 +154,10 @@ export class TableBuilder {
       );
       return;
     }
-    table.rows = bakeTableStyleRows(table, style, styles, look);
+    // bakeContent=true: also bake the style's char/para (e.g. a header band's
+    // bold/white text) onto cell content so it renders headlessly — the builder's
+    // fresh cells have no direct run formatting to clobber.
+    table.rows = bakeTableStyleRows(table, style, styles, look, true);
   }
 }
 

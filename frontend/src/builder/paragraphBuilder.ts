@@ -9,7 +9,7 @@
 // intent. Mixed formatting within a paragraph uses text(t, { …patch }).
 
 import type { Block, CharStyle, Document, FieldSpec, IfOp, NamedStyle, PageNumFmt, ParaStyle, Paragraph, Run, SdtProps, TableStyle, TabStop } from "@cw/shared";
-import { buildInstruction, evaluateField, textOfRuns } from "@cw/shared";
+import { buildInstruction, evaluateField, styleById, textOfRuns } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import type { BandOptions, DocumentBuilder, ListDefinitionSpec, PageSetup, SectionBreakOptions } from "./documentBuilder";
 import { equationFromLatex, equationFromMathml } from "./mathInput";
@@ -151,8 +151,20 @@ export class ParagraphBuilder<P extends StoryBuilder> {
 
   /** Apply a registered character style (a type:"character" NamedStyle): bakes its
    *  formatting onto the runs AND sets the w:rStyle reference (kept for round-trip).
-   *  Unknown ids are ignored with a warning, like .withStyle(). */
+   *  Ids that are unknown OR refer to a paragraph style are ignored with a warning
+   *  (w:rStyle must reference a character style), like .withStyle() for unknowns. */
   charStyle(id: string): this {
+    const sheet = this.ctx.doc.stylesheet;
+    const def = sheet ? styleById(sheet, id) : undefined;
+    // NamedStyle.type defaults to "paragraph" when absent — only an explicit
+    // "character" style is a valid w:rStyle target.
+    if (!def || def.type !== "character") {
+      this.ctx.warn(
+        `char-style-invalid:${id}`,
+        `.charStyle("${id}") — no such character style (it is missing or a paragraph style); ignored.`,
+      );
+      return this;
+    }
     const resolved = this.ctx.lookupStyle(id);
     if (!resolved) return this;
     return this.applyChar({ ...resolved.char, charStyleId: id });
