@@ -139,6 +139,63 @@ public sealed class WordCanvasEngine : IDisposable
     /// checkpoint) until it settles. Blocking <c>await</c> would deadlock the single
     /// V8 thread; this does not.
     /// </summary>
+    // ---- TOC / field recalculation (layout-driven) -------------------------
+
+    /// <summary>
+    /// Generate a Word <c>TOC</c> field's result — the entries Word would render on
+    /// F9, with live <c>PAGEREF</c> page numbers and hyperlinks — directly in a .docx
+    /// that carries a TOC field. This is the layout-engine capability OpenXML lacks
+    /// (page numbers need pagination), and a drop-in replacement for using Syncfusion
+    /// to compute a headless TOC. Drift-free: the original document is patched and
+    /// re-zipped, every other byte preserved.
+    /// </summary>
+    public TocGenerateResult GenerateToc(byte[] docx, Builder.TocOptions? options = null)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(docx);
+        var promise = options is null
+            ? _api.InvokeMethod("generateToc", AllocBytes(docx))
+            : _api.InvokeMethod("generateToc", AllocBytes(docx), options.ToJs(this));
+        var res = (ScriptObject)ResolveValue(promise, "generateToc")!;
+        return new TocGenerateResult(
+            ReadBytes(res.GetProperty("bytes")),
+            Convert.ToInt32(res.GetProperty("generated")),
+            Convert.ToInt32(res.GetProperty("headings")),
+            Convert.ToInt32(res.GetProperty("bookmarksSynthesized")));
+    }
+
+    public TocGenerateResult GenerateToc(Stream docx, Builder.TocOptions? options = null)
+        => GenerateToc(ReadStream(docx), options);
+
+    /// <summary>
+    /// Recalculate cached TOC / cross-reference (<c>PAGEREF</c>) page numbers in a
+    /// .docx (Word's F9 for page numbers): lay the document out, then rewrite each
+    /// cached number to the heading's current page in the original document.xml.
+    /// Use when the TOC/refs already exist but the page numbers are stale.
+    /// </summary>
+    public TocRecalcResult RecalcTocPageNumbers(byte[] docx)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(docx);
+        var res = (ScriptObject)ResolveValue(_api.InvokeMethod("recalcTocPageNumbers", AllocBytes(docx)), "recalcTocPageNumbers")!;
+        return new TocRecalcResult(
+            ReadBytes(res.GetProperty("bytes")),
+            Convert.ToInt32(res.GetProperty("changed")),
+            Convert.ToInt32(res.GetProperty("skipped")));
+    }
+
+    public TocRecalcResult RecalcTocPageNumbers(Stream docx) => RecalcTocPageNumbers(ReadStream(docx));
+
+    private static byte[] ReadStream(Stream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        if (stream is MemoryStream ms && ms.TryGetBuffer(out var seg))
+            return seg.AsSpan().ToArray();
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
+        return buffer.ToArray();
+    }
+
     internal byte[] ExportBytes(bool pdf, object doc, object? images)
     {
         ThrowIfDisposed();

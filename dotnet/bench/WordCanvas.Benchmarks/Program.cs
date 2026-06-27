@@ -58,6 +58,36 @@ if (args.Length > 0 && args[0].Equals("sfsmoke", StringComparison.OrdinalIgnoreC
     return 0;
 }
 
+if (args.Length > 0 && args[0].Equals("tocsmoke", StringComparison.OrdinalIgnoreCase))
+{
+    using var eng = new WordCanvasEngine();
+    var dir = DocCorpus.DocsDirectory();
+
+    // 1) GENERATE a TOC field result into the report that ships an EMPTY TOC field
+    //    (the "C# emitted a TOC field but couldn't compute it" case).
+    var emptyToc = Directory.GetFiles(dir, "*EMPTY TOC*.docx").FirstOrDefault();
+    if (emptyToc is not null)
+    {
+        var sw = Stopwatch.StartNew();
+        var g = eng.GenerateToc(File.ReadAllBytes(emptyToc), new WordCanvas.ClearScript.Builder.TocOptions { MaxLevel = 3 });
+        Console.WriteLine($"generateToc({Path.GetFileName(emptyToc)}): {sw.ElapsedMilliseconds}ms " +
+                          $"generated={g.Generated} headings={g.Headings} synthBookmarks={g.BookmarksSynthesized} out={g.Docx.Length / 1024}KB " +
+                          $"reimport-blocks={eng.ImportDocx(g.Docx).BlockCount}");
+        File.WriteAllBytes("toc-generated.docx", g.Docx);
+    }
+    else Console.WriteLine("(no *EMPTY TOC*.docx in corpus — skipping generateToc)");
+
+    // 2) RECALC cached PAGEREF page numbers across every report (Word's F9).
+    foreach (var f in DocCorpus.Files())
+    {
+        var sw = Stopwatch.StartNew();
+        var r = eng.RecalcTocPageNumbers(File.ReadAllBytes(f));
+        Console.WriteLine($"recalc({Path.GetFileName(f)}): {sw.ElapsedMilliseconds}ms changed={r.Changed} skipped={r.Skipped} out={r.Docx.Length / 1024}KB");
+    }
+    Console.WriteLine("TOC SMOKE OK");
+    return 0;
+}
+
 BenchmarkSwitcher.FromAssembly(typeof(Smoke).Assembly).Run(args);
 return 0;
 
@@ -93,6 +123,9 @@ internal static class Smoke
             .Build();
         var bPdf = built.ExportPdf();
         var bDocx = built.ExportDocx();
+
+        File.WriteAllBytes("smoke-builder.docx", bDocx);
+
         Console.WriteLine($"builder: blocks={built.BlockCount} pdf={bPdf.Length / 1024}KB ({Header(bPdf)}) docx={bDocx.Length / 1024}KB reimport={engine.ImportDocx(bDocx).BlockCount} blocks");
         Require(Header(bPdf) == "%PDF-", "builder PDF header");
 

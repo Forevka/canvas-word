@@ -23,7 +23,10 @@ import { bytesToDataUrl } from "../builder/media";
 import { runImport } from "../import/docx/pipeline";
 import { runExport } from "../export/pipeline";
 import { registerFont } from "../export/shared/fontRegistry";
-import type { Document } from "@cw/shared";
+import { installMeasureHost } from "../export/shared/measureHost";
+import { generateTocInDocx } from "../recalc/generateTocDocx";
+import { patchTocFromLayout } from "../recalc/patchTocDocx";
+import type { Document, TocOptions } from "@cw/shared";
 import type { CustomFontPayload } from "../fonts/customRegistry";
 import type { CjkExportConfig } from "../export/pipeline";
 import type { ImageBytes } from "../export/types";
@@ -181,6 +184,32 @@ async function exportDocx(doc: Document, images?: ImageBytes): Promise<Uint8Arra
   return res.bytes;
 }
 
+/** Generate a Word TOC field's result (entries + live PAGEREF page numbers) IN PLACE
+ *  in a .docx that carries a `TOC` field — the layout-engine answer to "Word/OpenXML
+ *  can't compute field values without paginating". Drift-free: the original document
+ *  is patched + re-zipped, every other byte preserved. This is the Syncfusion
+ *  replacement for headless TOC calculation. */
+async function generateToc(
+  docxBytes: Uint8Array,
+  opts?: TocOptions,
+): Promise<{ bytes: Uint8Array; generated: number; headings: number; bookmarksSynthesized: number }> {
+  await installMeasureHost();
+  const r = generateTocInDocx(docxBytes, opts ?? {});
+  return { bytes: r.bytes, generated: r.generated, headings: r.headings, bookmarksSynthesized: r.bookmarksSynthesized };
+}
+
+/** Recalculate cached TOC/cross-reference (PAGEREF) page numbers IN PLACE (Word's
+ *  F9 for page numbers): lay the document out, then rewrite each cached number to the
+ *  heading's current page in the ORIGINAL document.xml. Drift-free. */
+async function recalcTocPageNumbers(
+  docxBytes: Uint8Array,
+): Promise<{ bytes: Uint8Array; changed: number; skipped: number }> {
+  await installMeasureHost();
+  const { doc } = runImport(docxBytes, undefined, { collectMediaBytes: true });
+  const r = patchTocFromLayout(docxBytes, doc as Document);
+  return { bytes: r.bytes, changed: r.changed, skipped: r.skipped };
+}
+
 const api = {
   // Builder surface (the host's typed C# wrapper drives these objects directly).
   DocumentBuilder,
@@ -192,6 +221,9 @@ const api = {
   importDocx,
   exportPdf,
   exportDocx,
+  // TOC / field recalculation (layout-driven; the Syncfusion replacement).
+  generateToc,
+  recalcTocPageNumbers,
   // Block counting helper (round-trip oracle for the smoke test / benchmark).
   countBlocks,
 };

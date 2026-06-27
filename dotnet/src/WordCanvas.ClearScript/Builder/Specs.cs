@@ -353,17 +353,21 @@ public sealed record ParaStylePatch
     }
 }
 
-/// <summary>Table-of-contents options.</summary>
+/// <summary>Table-of-contents options (builder + headless TOC recalc).</summary>
 public sealed record TocOptions
 {
     public int? MaxLevel { get; init; }
     public bool? Hyperlink { get; init; }
+    /// <summary>Show trailing page numbers in entries (default true). Used by the
+    /// headless TOC generator.</summary>
+    public bool? IncludePageNumbers { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
         var o = Js.Obj(e);
         if (MaxLevel is { } ml) Js.Set(o, "maxLevel", ml);
         if (Hyperlink is { } h) Js.Set(o, "hyperlink", h);
+        if (IncludePageNumbers is { } ipn) Js.Set(o, "includePageNumbers", ipn);
         return o;
     }
 }

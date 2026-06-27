@@ -131,6 +131,38 @@ var b = engine.NewBuilderFromTemplate(File.ReadAllBytes("template.docx"));
 var doc = b.Paragraph("Body generated against the template's styles").Build();
 ```
 
+### Headless TOC / field calculation (the Syncfusion replacement)
+
+`TOC`, `PAGEREF`, and page-number fields can't be evaluated by OpenXML /
+`WordprocessingDocument` — computing them needs a **layout engine** to know what
+lands on which page. WordCanvas has one, so it can do headlessly what teams otherwise
+reach for Syncfusion to do. Both operations are **drift-free**: only the field result
+/ cached numbers are rewritten in the original `document.xml`; every other byte (and
+every field your model doesn't represent) is preserved.
+
+**Generate a `TOC` field's content** — for a .docx that carries a TOC field with an
+empty/placeholder result (e.g. emitted by your C# pipeline). Produces the entries Word
+would render on F9, with live `PAGEREF` page numbers + hyperlinks:
+
+```csharp
+var result = engine.GenerateToc(File.ReadAllBytes("report.docx"),
+                                new TocOptions { MaxLevel = 3 });
+File.WriteAllBytes("report.docx", result.Docx);
+// result.Generated / result.Headings / result.BookmarksSynthesized
+```
+
+**Recalculate cached page numbers** — Word's F9 for `TOC`/`PAGEREF` numbers that
+already exist but are stale:
+
+```csharp
+var result = engine.RecalcTocPageNumbers(stream);   // byte[] or Stream
+// result.Changed = how many cached numbers were rewritten; result.Skipped = non-arabic
+```
+
+Both lay the document out with the same engine the PDF export uses, so the page numbers
+match the rendered pages. Measured on the real reports: generate a 30-entry TOC in
+~1.2 s; recalc page numbers in ~0.5–1.3 s.
+
 ## Benchmark
 
 ```sh
@@ -193,7 +225,40 @@ dotnet run -c Release --project dotnet/bench/WordCanvas.Benchmarks -- sfsmoke
 ### Results
 
 <!-- SYNCFUSION_RESULTS -->
-_Run the comparison with a valid `SYNCFUSION_LICENSE_KEY` to populate this table._
+BenchmarkDotNet v0.15.8 · i7-11700K · .NET 10.0.9 · Syncfusion v33.2.15 (licensed).
+Mean times; "Speedup" = Syncfusion ÷ WordCanvas (>1 → WordCanvas faster).
+
+**Export PDF** — WordCanvas wins decisively (and allocates 11–335× less):
+
+| Document | Blocks | WordCanvas | Syncfusion | Speedup |
+|---|--:|--:|--:|--:|
+| SignedReport (9.4 MB)    | 2062 | **0.42 s** | 6.89 s | **16.6×** |
+| PARTY INVITATION (13 MB) |   11 | **47 ms**  | 0.43 s | **9.1×**  |
+| AppraiseRequest (9 MB)   | 3353 | **0.53 s** | 1.07 s | **2.0×**  |
+| RenderedReport (2.7 MB)  | 1249 | **0.28 s** | 0.90 s | **3.2×**  |
+| RenderedReport (2.7 MB)  | 1220 | **0.23 s** | 0.76 s | **3.2×**  |
+
+**Import / open** — WordCanvas 1.3–1.8× faster, **~700–1500× less allocation**
+(AppraiseRequest: 148 KB vs 182 MB):
+
+| Document | WordCanvas | Syncfusion | Speedup |
+|---|--:|--:|--:|
+| AppraiseRequest (9 MB)  | **281 ms** | 500 ms | 1.8× |
+| SignedReport (9.4 MB)   | **187 ms** | 289 ms | 1.5× |
+| RenderedReport (2.6 MB) | **78 ms**  | 121 ms | 1.6× |
+
+**Export DOCX** — Syncfusion is faster here (2–4×), though WordCanvas still allocates
+10–14× less:
+
+| Document | WordCanvas | Syncfusion | Speedup |
+|---|--:|--:|--:|
+| AppraiseRequest (9 MB)  | 565 ms | **136 ms** | 0.24× |
+| SignedReport (9.4 MB)   | 458 ms | **142 ms** | 0.31× |
+| RenderedReport (2.7 MB) | 103 ms | **49 ms**  | 0.48× |
+
+**Takeaway:** WordCanvas dominates the layout-bound operation (PDF, where it reuses
+its own engine instead of a full re-render) and import, with order-of-magnitude lower
+memory throughout. Syncfusion's hand-tuned OOXML writer is faster at plain DOCX save.
 <!-- /SYNCFUSION_RESULTS -->
 
 **Fairness notes.** Both sides do the same logical work on the same machine and corpus.

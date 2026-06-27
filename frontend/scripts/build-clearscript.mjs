@@ -106,6 +106,14 @@ const BANNER = `(function (g) {
   if (!g.navigator) {
     g.navigator = { language: "en-US", languages: ["en-US"], userAgent: "", vendor: "", platform: "" };
   }
+  // Minimal Blob + URL.createObjectURL: importing a doc WITHOUT collectMediaBytes
+  // (e.g. inside the headless TOC recalc functions) mints blob: URLs for images. The
+  // layout engine places images by their MODEL dimensions, never the URL, so a dummy
+  // is harmless — this just keeps that path from throwing under bare V8.
+  if (!g.Blob) { g.Blob = function () {}; }
+  if (typeof g.URL === "undefined") { g.URL = {}; }
+  if (!g.URL.createObjectURL) { g.URL.createObjectURL = function () { return "blob:wc"; }; }
+  if (!g.URL.revokeObjectURL) { g.URL.revokeObjectURL = function () {}; }
   // The jspm stream polyfill reads AbortController/AbortSignal off self/window and
   // crashes if neither exists. Point self at the global and provide inert stubs
   // (pdfkit never aborts a stream, so these are never actually exercised).
