@@ -17,7 +17,10 @@ import { ommlToMathml } from "./fromOmml";
  *  fixed point (parse∘serialize∘parse == parse). */
 const canonical = (mathml: string): string => serializeMathml(parseMathml(mathml));
 
-const firstEl = (xml: string): TNode => parse(xml).filter(isElementNode)[0] as TNode;
+// Parse the way the real docx importer does (import/docx/xml.ts): keepWhitespace
+// matters — a math run whose text is a single/multiple space must survive.
+const firstEl = (xml: string): TNode =>
+  parse(xml, { keepWhitespace: true, decodeEntities: true }).filter(isElementNode)[0] as TNode;
 
 const ommlOf = (mathml: string): string => mathmlToOmml(parseMathml(mathml));
 
@@ -162,5 +165,50 @@ describe("OMML -> AST -> OMML round-trip (import then re-export)", () => {
       "<m:e><m:r><m:t>x</m:t></m:r></m:e></m:d></m:oMath>";
     const root = ommlToMathml(firstEl(omml));
     expect(root.children[0]).toMatchObject({ type: "fenced", open: "[", close: "]" });
+  });
+
+  // ── #11 fidelity gaps ──────────────────────────────────────────────────────
+
+  it("munderover round-trips (nested limUpp/limLow collapses back to one limit)", () => {
+    const eq = parseMathml("<math><munderover><mi>x</mi><mn>1</mn><mn>2</mn></munderover></math>");
+    const root = ommlToMathml(firstEl(mathmlToOmml(eq)));
+    expect(root.children[0]).toMatchObject({
+      type: "limit",
+      under: { children: [{ type: "number", text: "1" }] },
+      over: { children: [{ type: "number", text: "2" }] },
+    });
+    // Merged, not left nested: the base is the identifier, not another limit.
+    const lim = root.children[0] as { base: { type: string } };
+    expect(lim.base.type).not.toBe("limit");
+    expect(JSON.stringify(lim.base)).toContain('"x"');
+  });
+
+  it("double-struck identifier round-trips via m:scr", () => {
+    const omml = mathmlToOmml(parseMathml('<math><mi mathvariant="double-struck">R</mi></math>'));
+    expect(omml).toContain('<m:scr m:val="double-struck"/>');
+    const root = ommlToMathml(firstEl(omml));
+    expect(root.children[0]).toMatchObject({ type: "ident", text: "R", variant: "double-struck" });
+  });
+
+  it("fraktur / script / sans-serif / monospace variants survive m:scr", () => {
+    const cases: [string, string][] = [
+      ["fraktur", "g"],
+      ["script", "L"],
+      ["sans-serif", "A"],
+      ["monospace", "x"],
+    ];
+    for (const [variant, ch] of cases) {
+      const omml = mathmlToOmml(parseMathml(`<math><mi mathvariant="${variant}">${ch}</mi></math>`));
+      expect(omml).toContain(`<m:scr m:val="${variant}"/>`);
+      expect(ommlToMathml(firstEl(omml)).children[0]).toMatchObject({ type: "ident", text: ch, variant });
+    }
+  });
+
+  it("mspace width survives approximately through OMML", () => {
+    const eq = parseMathml('<math><mi>a</mi><mspace width="0.5em"/><mi>b</mi></math>');
+    const root = ommlToMathml(firstEl(mathmlToOmml(eq)));
+    const space = root.children.find((c) => c.type === "space") as { widthEm?: number } | undefined;
+    expect(space).toBeTruthy();
+    expect(space!.widthEm).toBeGreaterThan(0);
   });
 });

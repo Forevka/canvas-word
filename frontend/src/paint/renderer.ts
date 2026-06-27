@@ -974,7 +974,15 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
         if (frag.equation) {
           ctx.direction = "ltr";
           ctx.textAlign = "left";
-          paintMathBoxCanvasRaw(ctx, frag.equation, x, baselineY, MATH_FONT_FAMILY, s.color);
+          // Honor the run's color/decorations: a hyperlinked or underlined/struck
+          // inline equation paints in the link color with the rule(s) drawn over
+          // its box (highlight was already filled above, with the other frags).
+          const rp = runPaint(s, theme.externalLink);
+          paintMathBoxCanvasRaw(ctx, frag.equation, x, baselineY, MATH_FONT_FAMILY, rp.color);
+          const th = decorationThickness(s.fontSizePx);
+          ctx.fillStyle = rp.color;
+          if (rp.underline) ctx.fillRect(x, baselineY + UNDERLINE_OFFSET_PX, frag.width, th);
+          if (rp.strike) ctx.fillRect(x, baselineY + strikeOffset(s.fontSizePx), frag.width, th);
           continue;
         }
         ctx.font = charStyleToFont(s);

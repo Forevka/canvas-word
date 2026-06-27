@@ -53,6 +53,36 @@ describe("equation docx round-trip", () => {
     expect(eq?.align).toBe("right");
   });
 
+  it("preserves munderover, a double-struck variant, and mspace through the full pipeline", async () => {
+    const mathml =
+      "<math display=\"block\">" +
+      "<munderover><mi>X</mi><mrow><mi>n</mi><mo>=</mo><mn>1</mn></mrow><mi>∞</mi></munderover>" +
+      "<mspace width=\"0.5em\"/>" +
+      "<mi mathvariant=\"double-struck\">R</mi>" +
+      "</math>";
+    const doc: Document = {
+      section: { pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } },
+      blocks: [
+        { kind: "equation", id: "e1", revision: 0, align: "center", equation: parseMathml(mathml) } satisfies EquationBlock,
+      ],
+    };
+    const { bytes } = await runExport(doc, "docx");
+    const { doc: back } = runImport(bytes);
+    const eq = back.blocks.find((b): b is EquationBlock => b.kind === "equation");
+    expect(eq).toBeTruthy();
+    const json = JSON.stringify(eq!.equation.root);
+    // munderover came back as ONE limit with both under and over (not left nested).
+    const limit = eq!.equation.root.children.find((n) => n.type === "limit") as
+      | { type: "limit"; under?: unknown; over?: unknown }
+      | undefined;
+    expect(limit?.under).toBeTruthy();
+    expect(limit?.over).toBeTruthy();
+    // double-struck variant survived via m:scr.
+    expect(json).toContain("\"double-struck\"");
+    // mspace recovered as a space node.
+    expect(eq!.equation.root.children.some((n) => n.type === "space")).toBe(true);
+  });
+
   it("exports an equation to PDF without crashing and emits real bytes", async () => {
     const doc: Document = {
       section: { pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } },

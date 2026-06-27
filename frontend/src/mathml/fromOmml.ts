@@ -37,6 +37,12 @@ function slot(parent: TNode, name: string): MathNode {
   return c ? rowLike(childEls(c)) : emptyMathRow();
 }
 
+/** The single child of a one-element row (else undefined) — used to peek through
+ *  the row wrapper that `slot` always produces. */
+function soleChild(n: MathNode): MathNode | undefined {
+  return n.type === "row" && n.children.length === 1 ? n.children[0] : undefined;
+}
+
 /** Raw (untrimmed) text of an `m:r`'s `m:t` children. */
 function runText(r: TNode): string {
   let out = "";
@@ -60,14 +66,42 @@ function variantFromSty(sty: string | undefined): MathVariant | undefined {
   }
 }
 
+/** OMML run props (`m:sty` + `m:scr`) -> MathML variant. Inverse of
+ *  toOmml.runPropsFor: the SCRIPT family (`m:scr`) selects the alphanumeric
+ *  style, with `m:sty` adding bold/italic. */
+function variantFrom(sty: string | undefined, scr: string | undefined): MathVariant | undefined {
+  const bold = sty === "b" || sty === "bi";
+  switch (scr) {
+    case "double-struck":
+      return "double-struck";
+    case "fraktur":
+      return bold ? "bold-fraktur" : "fraktur";
+    case "script":
+      return bold ? "bold-script" : "script";
+    case "sans-serif":
+      if (sty === "bi") return "sans-serif-bold-italic";
+      if (sty === "i") return "sans-serif-italic";
+      if (sty === "b") return "bold-sans-serif";
+      return "sans-serif";
+    case "monospace":
+      return "monospace";
+    default:
+      return variantFromSty(sty);
+  }
+}
+
 function runNode(r: TNode): MathNode {
   const t = runText(r);
   const rPr = childByLocal(r, "rPr");
   const sty = rPr ? mathVal(rPr, "sty") : undefined;
+  const scr = rPr ? mathVal(rPr, "scr") : undefined;
+  // A whitespace-only run is intentional spacing (we have no other mspace
+  // representation in OMML) — recover it as a `space` node, ~0.25em per space.
+  if (t.length > 0 && /^\s+$/.test(t)) return { type: "space", widthEm: t.length * 0.25 };
   if (/^[0-9]+([.,][0-9]+)?$/.test(t)) return { type: "number", text: t };
   if (t.length > 0 && OP_RE.test(t)) return { type: "op", text: t };
   if (/\p{L}/u.test(t)) {
-    const variant = variantFromSty(sty);
+    const variant = variantFrom(sty, scr);
     return { type: "ident", text: t, ...(variant ? { variant } : {}) };
   }
   return { type: "text", text: t };
@@ -155,10 +189,24 @@ function nodeFrom(n: TNode): MathNode {
         body: slot(n, "e"),
       };
     }
-    case "limLow":
-      return { type: "limit", base: slot(n, "e"), under: slot(n, "lim") };
-    case "limUpp":
-      return { type: "limit", base: slot(n, "e"), over: slot(n, "lim") };
+    case "limLow": {
+      // Combined under+over (munderover) exports as nested limUpp/limLow; collapse
+      // the inner partner back into a single limit so it round-trips.
+      const base = slot(n, "e");
+      const under = slot(n, "lim");
+      const inner = soleChild(base);
+      if (inner && inner.type === "limit" && inner.over && !inner.under && !inner.accent)
+        return { type: "limit", base: inner.base, under, over: inner.over };
+      return { type: "limit", base, under };
+    }
+    case "limUpp": {
+      const base = slot(n, "e");
+      const over = slot(n, "lim");
+      const inner = soleChild(base);
+      if (inner && inner.type === "limit" && inner.under && !inner.over && !inner.accent)
+        return { type: "limit", base: inner.base, under: inner.under, over };
+      return { type: "limit", base, over };
+    }
     case "acc": {
       const accPr = childByLocal(n, "accPr");
       const chr = (accPr ? mathVal(accPr, "chr") : undefined) ?? "̂";
