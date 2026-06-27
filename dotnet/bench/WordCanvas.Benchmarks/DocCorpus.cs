@@ -9,8 +9,13 @@ public static class DocCorpus
     public static string DocsDirectory()
     {
         var env = Environment.GetEnvironmentVariable("WORDCANVAS_DOCS");
-        if (!string.IsNullOrWhiteSpace(env) && Directory.Exists(env))
+        if (!string.IsNullOrWhiteSpace(env))
+        {
+            if (!Directory.Exists(env) || !Directory.EnumerateFiles(env, "*.docx").Any())
+                throw new DirectoryNotFoundException(
+                    $"WORDCANVAS_DOCS ('{env}') must point to an existing directory containing .docx files.");
             return env;
+        }
 
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)

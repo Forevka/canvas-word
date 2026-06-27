@@ -13,8 +13,11 @@ const ctx = (buf, off, n = 60) => {
 };
 
 let allIdentical = true;
-for (const f of readdirSync(dirA)) {
-  if (!f.endsWith(".pdf")) continue;
+const files = new Set([
+  ...readdirSync(dirA).filter((f) => f.endsWith(".pdf")),
+  ...readdirSync(dirB).filter((f) => f.endsWith(".pdf")),
+]);
+for (const f of [...files].sort()) {
   let a, b;
   try { a = readFileSync(`${dirA}/${f}`); b = readFileSync(`${dirB}/${f}`); }
   catch { console.log(`MISSING pair for ${f}`); allIdentical = false; continue; }
@@ -36,6 +39,10 @@ for (const f of readdirSync(dirA)) {
       while (i < min && a[i] !== b[i]) i++;
       regions.push([start, i]);
     } else i++;
+  }
+  if (a.length !== b.length) {
+    if (first < 0) first = min; // shared prefix, only the tail differs
+    regions.push([min, Math.max(a.length, b.length)]);
   }
   console.log(`DIFFERS    ${f}  sizes=${a.length}/${b.length}  firstDiff@${first}  diffBytes=${diffs}  regions=${regions.length}`);
   for (const [s, e] of regions.slice(0, 6)) {

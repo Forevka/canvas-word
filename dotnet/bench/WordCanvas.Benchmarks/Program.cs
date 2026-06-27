@@ -103,6 +103,8 @@ if (args.Length > 0 && args[0].Equals("tocsmoke", StringComparison.OrdinalIgnore
     {
         var sw = Stopwatch.StartNew();
         var r = eng.RecalcTocPageNumbers(File.ReadAllBytes(f));
+        if (r.Docx.Length < 2 || r.Docx[0] != 0x50 || r.Docx[1] != 0x4B || eng.ImportDocx(r.Docx).BlockCount == 0)
+            throw new Exception($"recalc produced invalid DOCX for {Path.GetFileName(f)}");
         Console.WriteLine($"recalc({Path.GetFileName(f)}): {sw.ElapsedMilliseconds}ms changed={r.Changed} skipped={r.Skipped} out={r.Docx.Length / 1024}KB");
     }
     Console.WriteLine("TOC SMOKE OK");
@@ -193,7 +195,7 @@ internal static class Smoke
                 $"  import={tImport.TotalMilliseconds:F0}ms  pdf={tPdf.TotalMilliseconds:F0}ms ({pdf.Length / 1024}KB, {Header(pdf)})  " +
                 $"docx={tDocx.TotalMilliseconds:F0}ms ({docx.Length / 1024}KB)  re-import blocks={reblocks}");
             Require(Header(pdf) == "%PDF-", $"{name} PDF header");
-            Require(docx.Length > 0 && docx[0] == 0x50 && docx[1] == 0x4B, $"{name} DOCX PK header");
+            Require(docx.Length >= 2 && docx[0] == 0x50 && docx[1] == 0x4B, $"{name} DOCX PK header");
         }
 
         var (used, total) = engine.V8HeapBytes();

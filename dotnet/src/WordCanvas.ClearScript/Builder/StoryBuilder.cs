@@ -256,7 +256,7 @@ public sealed class RowBuilder
     }
 
     /// <summary>Append a cell from text/spec, with optional cell formatting.</summary>
-    public RowBuilder Cell(CellContent content, CellSpec? opts = null)
+    public RowBuilder Cell(CellContent content, CellOptions? opts = null)
     {
         if (opts is not null) _js.InvokeMethod("cell", content.ToJs(_engine), opts.ToJs(_engine));
         else _js.InvokeMethod("cell", content.ToJs(_engine));
@@ -264,7 +264,7 @@ public sealed class RowBuilder
     }
 
     /// <summary>Append a cell whose blocks are built via the callback scope.</summary>
-    public RowBuilder Cell(Action<StoryBuilder> build, CellSpec? opts = null)
+    public RowBuilder Cell(Action<StoryBuilder> build, CellOptions? opts = null)
     {
         Action<object> cb = s => build(new StoryBuilder(_engine, (ScriptObject)s));
         if (opts is not null) _js.InvokeMethod("cell", cb, opts.ToJs(_engine));

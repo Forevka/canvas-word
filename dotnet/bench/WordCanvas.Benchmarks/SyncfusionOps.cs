@@ -17,22 +17,27 @@ namespace WordCanvas.Benchmarks;
 /// </summary>
 internal static class SyncfusionOps
 {
+    private static readonly object InitLock = new();
     private static bool _initialized;
     private static bool _hasKey;
 
-    /// <summary>Register the license from the env var (idempotent). Returns whether a
-    /// key was actually present.</summary>
+    /// <summary>Register the license from the env var (idempotent, thread-safe).
+    /// Returns whether a key was actually present.</summary>
     public static bool EnsureLicense()
     {
         if (_initialized) return _hasKey;
-        _initialized = true;
-        var key = Environment.GetEnvironmentVariable("SYNCFUSION_LICENSE_KEY");
-        if (!string.IsNullOrWhiteSpace(key))
+        lock (InitLock)
         {
-            SyncfusionLicenseProvider.RegisterLicense(key.Trim());
-            _hasKey = true;
+            if (_initialized) return _hasKey;
+            var key = Environment.GetEnvironmentVariable("SYNCFUSION_LICENSE_KEY");
+            if (!string.IsNullOrWhiteSpace(key))
+            {
+                SyncfusionLicenseProvider.RegisterLicense(key.Trim());
+                _hasKey = true;
+            }
+            _initialized = true;
+            return _hasKey;
         }
-        return _hasKey;
     }
 
     /// <summary>Open (import) a .docx into a Syncfusion WordDocument.</summary>

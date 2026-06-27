@@ -77,8 +77,17 @@ public sealed class WordDocument
     /// <summary>Write to DOCX (hand-rolled OOXML, the inverse of the importer).</summary>
     public byte[] ExportDocx() => _engine.ExportBytes(pdf: false, Doc, Images);
 
-    public Task<byte[]> ExportPdfAsync() => Task.FromResult(ExportPdf());
-    public Task<byte[]> ExportDocxAsync() => Task.FromResult(ExportDocx());
+    public Task<byte[]> ExportPdfAsync()
+    {
+        try { return Task.FromResult(ExportPdf()); }
+        catch (Exception ex) { return Task.FromException<byte[]>(ex); }
+    }
+
+    public Task<byte[]> ExportDocxAsync()
+    {
+        try { return Task.FromResult(ExportDocx()); }
+        catch (Exception ex) { return Task.FromException<byte[]>(ex); }
+    }
 
     /// <summary>Render to PDF straight into <paramref name="destination"/> via a pooled
     /// buffer (no large output byte[] allocated) — pass a <c>RecyclableMemoryStream</c>

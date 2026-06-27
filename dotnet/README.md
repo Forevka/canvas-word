@@ -76,7 +76,7 @@ npm install
 node frontend/scripts/build-clearscript.mjs
 
 # 3. build the .NET solution
-dotnet build dotnet/WordCanvas.sln -c Release
+dotnet build dotnet/WordCanvas.slnx -c Release
 ```
 
 > Requires the Windows x64 ClearScript V8 native package (referenced by the csproj)

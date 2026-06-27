@@ -36,9 +36,14 @@ const BANNER = `(function (g) {
   // microtask progress (e.g. a Readable stream draining in nextTick batches) apart
   // from a genuinely stalled promise. See PumpUntilDone.
   g.__wc_microRan = 0;
-  if (!g.queueMicrotask) {
-    g.queueMicrotask = function (fn) { Promise.resolve().then(function () { g.__wc_microRan++; fn(); }); };
-  }
+  // Always wrap (even a host-provided queueMicrotask) so process.nextTick's progress
+  // is visible to the pump; otherwise a host queueMicrotask would hide it.
+  var realQueueMicrotask = g.queueMicrotask
+    ? g.queueMicrotask.bind(g)
+    : function (fn) { Promise.resolve().then(fn); };
+  g.queueMicrotask = function (fn) {
+    realQueueMicrotask(function () { g.__wc_microRan++; fn(); });
+  };
   // Bare V8 has no event loop. We own the whole scheduler so every async path the
   // export pipeline uses routes through queues the .NET host can drain:
   //   - microtasks (process.nextTick, queueMicrotask) -> native promise jobs, which
@@ -152,7 +157,13 @@ const BANNER = `(function (g) {
     g.TextDecoder = function (label) { this._enc = label ? String(label).toLowerCase() : "utf-8"; };
     g.TextDecoder.prototype.decode = function (buf) {
       if (!buf) return "";
-      var b = buf instanceof Uint8Array ? buf : new Uint8Array(buf.buffer || buf);
+      // Preserve the view's exact range (byteOffset/byteLength) for DataView and other
+      // typed-array views; falling back to the whole ArrayBuffer would pull stray bytes.
+      var b = buf instanceof Uint8Array
+        ? buf
+        : ArrayBuffer.isView(buf)
+          ? new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength)
+          : new Uint8Array(buf);
       var enc = this._enc, out = "", i, len = b.length;
       if (enc === "utf-16le" || enc === "utf-16" || enc === "unicode" || enc === "ucs-2") {
         for (i = 0; i + 1 < len; i += 2) out += String.fromCharCode(b[i] | (b[i + 1] << 8));
@@ -164,6 +175,11 @@ const BANNER = `(function (g) {
       }
       if (enc === "ascii" || enc === "latin1" || enc === "iso-8859-1" || enc === "windows-1252" ||
           enc === "x-user-defined" || enc === "macintosh" || enc === "mac-roman" || enc === "macroman") {
+        // Single-byte decode. NOTE: windows-1252 (0x80-0x9F) and mac-roman (0x80-0xFF)
+        // are APPROXIMATED as Latin-1 — exact only for bytes <= 0x7F. That's sufficient
+        // for the bundled fonts (their PostScript names are ASCII or UTF-16BE; the
+        // Node-vs-V8 byte-identity check confirms these labels are never hit with
+        // high bytes here). Add real mapping tables if non-Latin1 fonts are bundled.
         for (i = 0; i < len; i++) out += String.fromCharCode(b[i]);
         return out;
       }

@@ -33,7 +33,12 @@ public sealed class WordCanvasEngine : IDisposable
 
         var constraints = new V8RuntimeConstraints();
         if (options.MaxHeapSizeMb > 0)
-            constraints.MaxOldSpaceSize = (int)options.MaxHeapSizeMb * 1024 * 1024;
+        {
+            var heapBytes = (long)options.MaxHeapSizeMb * 1024 * 1024;
+            if (heapBytes > int.MaxValue)
+                throw new WordCanvasException($"MaxHeapSizeMb is too large: {options.MaxHeapSizeMb} MB (max ~2047).");
+            constraints.MaxOldSpaceSize = (int)heapBytes;
+        }
 
         _engine = new V8ScriptEngine(constraints, V8ScriptEngineFlags.EnableTaskPromiseConversion);
         try
@@ -126,20 +131,22 @@ public sealed class WordCanvasEngine : IDisposable
     {
         ArgumentNullException.ThrowIfNull(docxStream);
         if (docxStream is MemoryStream ms && ms.TryGetBuffer(out var seg))
-            return ImportDocx(seg.AsSpan());
+            return ImportDocx(RemainingSpan(ms, seg));
         using var buffer = new MemoryStream();
         docxStream.CopyTo(buffer);
         return ImportDocx(buffer.GetBuffer().AsSpan(0, (int)buffer.Length));
     }
 
-    /// <summary>
-    /// Run an async JS export to completion synchronously. The export pipeline is
-    /// async only through microtasks (no real timers/IO — our banner collapses
-    /// setTimeout/setImmediate onto promise microtasks), so we wrap the promise in
-    /// a pollable box and pump V8's microtask queue (each <c>Execute</c> triggers a
-    /// checkpoint) until it settles. Blocking <c>await</c> would deadlock the single
-    /// V8 thread; this does not.
-    /// </summary>
+    /// <summary>The unread tail of a MemoryStream's exposed buffer (honoring the
+    /// current Position), advancing the stream to its end.</summary>
+    private static ReadOnlySpan<byte> RemainingSpan(MemoryStream ms, ArraySegment<byte> seg)
+    {
+        var offset = checked((int)ms.Position);
+        var length = checked((int)(ms.Length - ms.Position));
+        ms.Position = ms.Length;
+        return seg.AsSpan(offset, length);
+    }
+
     // ---- TOC / field recalculation (layout-driven) -------------------------
 
     /// <summary>
@@ -147,8 +154,9 @@ public sealed class WordCanvasEngine : IDisposable
     /// F9, with live <c>PAGEREF</c> page numbers and hyperlinks — directly in a .docx
     /// that carries a TOC field. This is the layout-engine capability OpenXML lacks
     /// (page numbers need pagination), and a drop-in replacement for using Syncfusion
-    /// to compute a headless TOC. Drift-free: the original document is patched and
-    /// re-zipped, every other byte preserved.
+    /// to compute a headless TOC. Drift-free: only the TOC field's parts are rewritten
+    /// and the package is re-zipped — every other part is preserved verbatim (so there
+    /// is no import↔export pagination drift), though container bytes may differ.
     /// </summary>
     public TocGenerateResult GenerateToc(byte[] docx, Builder.TocOptions? options = null)
     {
@@ -212,7 +220,7 @@ public sealed class WordCanvasEngine : IDisposable
     {
         ArgumentNullException.ThrowIfNull(stream);
         if (stream is MemoryStream ms && ms.TryGetBuffer(out var seg))
-            return seg.AsSpan().ToArray();
+            return RemainingSpan(ms, seg).ToArray();
         using var buffer = new MemoryStream();
         stream.CopyTo(buffer);
         return buffer.ToArray();

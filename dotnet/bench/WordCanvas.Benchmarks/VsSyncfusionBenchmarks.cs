@@ -32,6 +32,11 @@ public class VsSyncfusionBenchmarks
     private WordDocument _wcDoc = null!;     // WordCanvas: imported once, reused for export
     private SfWordDocument _sfDoc = null!;   // Syncfusion: opened once, reused for export
 
+    // Both documents are loaded ONCE here and reused by the export benchmarks, so the
+    // export numbers measure steady-state (warm) throughput for BOTH engines — the
+    // realistic "load once, render many" server scenario. (Syncfusion docs suggest a
+    // fresh WordDocument per conversion; reusing it lets Syncfusion benefit from any
+    // warm-cache effect, so it only makes WordCanvas's PDF-export lead more conservative.)
     [GlobalSetup]
     public void Setup()
     {

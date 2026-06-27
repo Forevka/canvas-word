@@ -214,7 +214,12 @@ public sealed record ImageOptions
         var o = Js.Obj(e);
         Js.Set(o, "widthPx", WidthPx);
         Js.Set(o, "heightPx", HeightPx);
-        if (Align is { } a) Js.Set(o, "align", EnumJs.Align(a));
+        if (Align is { } a)
+        {
+            if (a == TextAlign.Justify)
+                throw new ArgumentOutOfRangeException(nameof(Align), "Image align supports left/center/right only (not Justify).");
+            Js.Set(o, "align", EnumJs.Align(a));
+        }
         if (Wrap is { } w) Js.Set(o, "wrap", EnumJs.Wrap(w));
         return o;
     }
@@ -275,6 +280,29 @@ public sealed record CellSpec
     {
         var o = Js.Obj(e);
         if (Text is { } t) Js.Set(o, "text", t);
+        if (ColSpan is { } cs) Js.Set(o, "colSpan", cs);
+        if (RowSpan is { } rs) Js.Set(o, "rowSpan", rs);
+        if (Shading is { } sh) Js.Set(o, "shading", sh);
+        if (Style is { } st) Js.Set(o, "style", st.ToJs(e));
+        if (Align is { } a) Js.Set(o, "align", EnumJs.Align(a));
+        return o;
+    }
+}
+
+/// <summary>Cell formatting options (a <see cref="CellSpec"/> without the text — the
+/// content is supplied separately as the first argument to <c>Cell()</c>), matching the
+/// JS <c>CellOptions = Omit&lt;CellSpec, "text"&gt;</c> contract.</summary>
+public sealed record CellOptions
+{
+    public int? ColSpan { get; init; }
+    public int? RowSpan { get; init; }
+    public string? Shading { get; init; }
+    public CharStyle? Style { get; init; }
+    public TextAlign? Align { get; init; }
+
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
         if (ColSpan is { } cs) Js.Set(o, "colSpan", cs);
         if (RowSpan is { } rs) Js.Set(o, "rowSpan", rs);
         if (Shading is { } sh) Js.Set(o, "shading", sh);
