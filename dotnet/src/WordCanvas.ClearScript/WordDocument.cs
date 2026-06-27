@@ -45,6 +45,15 @@ public sealed class WordDocument
     internal static WordDocument FromBuilt(WordCanvasEngine engine, object doc) =>
         new(engine, doc, null, engine.CountBlocks(doc), 0, Array.Empty<WordWarning>());
 
+    /// <summary>A new handle over a transformed model doc, preserving this document's
+    /// image bytes + warnings (used by UpdateFields).</summary>
+    internal WordDocument WithDoc(object newDoc) =>
+        new(_engine, newDoc, Images, _engine.CountBlocks(newDoc), MediaCount, Warnings);
+
+    /// <summary>Update fields (TOC entries + cached page numbers) on this in-memory
+    /// document and return the updated handle. See <see cref="WordCanvasEngine.UpdateFields"/>.</summary>
+    public WordDocument UpdateFields(Builder.TocOptions? options = null) => _engine.UpdateFields(this, options);
+
     private static IReadOnlyList<WordWarning> ReadWarnings(ScriptObject? arr)
     {
         if (arr is null) return Array.Empty<WordWarning>();

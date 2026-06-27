@@ -186,6 +186,27 @@ public sealed class WordCanvasEngine : IDisposable
 
     public TocRecalcResult RecalcTocPageNumbers(Stream docx) => RecalcTocPageNumbers(ReadStream(docx));
 
+    /// <summary>
+    /// Update fields on an in-memory document (Word's "Update Fields") — no docx
+    /// round-trip. Regenerates an empty TOC field's entries from the document's
+    /// CURRENT headings and refreshes any literal cached page numbers, returning a new
+    /// handle. For builder/editor TOCs the entry page numbers are layout-resolved and
+    /// baked automatically by <see cref="WordDocument.ExportPdf"/> /
+    /// <see cref="WordDocument.ExportDocx"/>, so the exported file is always correct
+    /// without a separate step.
+    /// </summary>
+    public WordDocument UpdateFields(WordDocument doc, Builder.TocOptions? options = null)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(doc);
+        var promise = options is null
+            ? _api.InvokeMethod("updateFields", doc.Doc)
+            : _api.InvokeMethod("updateFields", doc.Doc, options.ToJs(this));
+        var updated = ResolveValue(promise, "updateFields")
+                      ?? throw new WordCanvasException("updateFields returned no document");
+        return doc.WithDoc(updated);
+    }
+
     private static byte[] ReadStream(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);

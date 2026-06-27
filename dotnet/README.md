@@ -163,6 +163,30 @@ Both lay the document out with the same engine the PDF export uses, so the page 
 match the rendered pages. Measured on the real reports: generate a 30-entry TOC in
 ~1.2 s; recalc page numbers in ~0.5–1.3 s.
 
+**Building a document? You don't reopen or call anything extra.** The builder's
+`TableOfContents()` + `Build()` regenerates the TOC from the document's *current*
+headings (including ones added after the TOC), and TOC page numbers are
+*layout-resolved* — the export bakes them in the **same layout pass**, so the exported
+DOCX/PDF is always correct. The Syncfusion "save → reopen → UpdateFields → save again"
+round-trip simply isn't needed:
+
+```csharp
+var doc = engine.NewBuilder()
+    .Paragraph("Contents").TableOfContents(new TocOptions { MaxLevel = 1 })
+    .PageBreak().Paragraph("Section 1", p => p.WithStyle("Heading1"))
+    .PageBreak().Paragraph("Section 2", p => p.WithStyle("Heading1"))
+    .Build();
+byte[] docx = doc.ExportDocx();   // TOC field already carries live PAGEREF entries + pages
+```
+
+For an explicit, in-memory "Update Fields" on a loaded document (e.g. to materialize an
+empty TOC field's entries from the current headings without a docx round-trip), call
+`UpdateFields` — it returns a new handle:
+
+```csharp
+WordDocument updated = doc.UpdateFields();      // or engine.UpdateFields(doc, opts)
+```
+
 ## Benchmark
 
 ```sh

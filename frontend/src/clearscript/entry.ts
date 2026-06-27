@@ -26,6 +26,8 @@ import { registerFont } from "../export/shared/fontRegistry";
 import { installMeasureHost } from "../export/shared/measureHost";
 import { generateTocInDocx } from "../recalc/generateTocDocx";
 import { patchTocFromLayout } from "../recalc/patchTocDocx";
+import { recalcToc } from "../recalc/recalcToc";
+import { generateTocIntoDoc } from "@cw/shared";
 import type { Document, TocOptions } from "@cw/shared";
 import type { CustomFontPayload } from "../fonts/customRegistry";
 import type { CjkExportConfig } from "../export/pipeline";
@@ -210,6 +212,20 @@ async function recalcTocPageNumbers(
   return { bytes: r.bytes, changed: r.changed, skipped: r.skipped };
 }
 
+/** Update fields on an IN-MEMORY document handle (no docx round-trip) — Word's
+ *  "Update Fields" for a document already loaded in WordCanvas. (1) Fill an empty TOC
+ *  field from the CURRENT headings (so headings added after the TOC are included);
+ *  (2) refresh any literal cached TOC page numbers via a layout pass. Returns a NEW
+ *  document. Note: for builder/editor TOCs the entry page numbers are layout-resolved
+ *  (paint-only) and are baked automatically by export — there is nothing stale to
+ *  update; this mainly (re)materializes the entries from the headings. */
+async function updateFields(doc: Document, opts?: TocOptions): Promise<Document> {
+  await installMeasureHost();
+  let next = generateTocIntoDoc(doc, opts ?? {}).doc;
+  next = recalcToc(next).doc;
+  return next;
+}
+
 const api = {
   // Builder surface (the host's typed C# wrapper drives these objects directly).
   DocumentBuilder,
@@ -224,6 +240,7 @@ const api = {
   // TOC / field recalculation (layout-driven; the Syncfusion replacement).
   generateToc,
   recalcTocPageNumbers,
+  updateFields,
   // Block counting helper (round-trip oracle for the smoke test / benchmark).
   countBlocks,
 };

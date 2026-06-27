@@ -63,6 +63,27 @@ if (args.Length > 0 && args[0].Equals("tocsmoke", StringComparison.OrdinalIgnore
     using var eng = new WordCanvasEngine();
     var dir = DocCorpus.DocsDirectory();
 
+    // 0) BUILDER: the TOC is recalculated from the CURRENT headings at Build(), and
+    //    export bakes the page numbers in one layout pass — no reopen, no explicit
+    //    update needed. Five headings, each on its own page.
+    var bldr = eng.NewBuilder()
+        .Paragraph("Contents", p => p.Bold().FontSize(20))
+        .TableOfContents(new WordCanvas.ClearScript.Builder.TocOptions { MaxLevel = 1 });
+    for (var i = 1; i <= 5; i++)
+        bldr.PageBreak().Paragraph($"Section {i}", p => p.WithStyle("Heading1")).Paragraph($"Body text for section {i}.");
+    var builtDoc = bldr.Build();
+    var builtDocx = builtDoc.ExportDocx();
+    string docXml;
+    using (var msz = new MemoryStream(builtDocx))
+    using (var zip = new System.IO.Compression.ZipArchive(msz, System.IO.Compression.ZipArchiveMode.Read))
+    using (var r = new StreamReader(zip.GetEntry("word/document.xml")!.Open()))
+        docXml = r.ReadToEnd();
+    var pageRefs = System.Text.RegularExpressions.Regex.Matches(docXml, "PAGEREF").Count;
+    Console.WriteLine($"builder+TOC: blocks={builtDoc.BlockCount} docx={builtDocx.Length / 1024}KB " +
+                      $"PAGEREFs={pageRefs} tocHasSection5={docXml.Contains("Section 5")}");
+    var refreshed = builtDoc.UpdateFields();
+    Console.WriteLine($"UpdateFields(in-memory): blocks {builtDoc.BlockCount} -> {refreshed.BlockCount}");
+
     // 1) GENERATE a TOC field result into the report that ships an EMPTY TOC field
     //    (the "C# emitted a TOC field but couldn't compute it" case).
     var emptyToc = Directory.GetFiles(dir, "*EMPTY TOC*.docx").FirstOrDefault();
