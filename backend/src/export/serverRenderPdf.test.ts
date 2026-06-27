@@ -48,4 +48,13 @@ describe("renderPdfFromDocx", () => {
     const out = await renderPdfFromDocx(docxOf(EMPTY_TOC + heading("_Toc1", "Only")), { title: { text: "Contents" } });
     expect(isPdf(out)).toBe(true);
   });
+
+  it("renders Chinese text via the bundled CJK fallback (no config)", async () => {
+    // Before the bundled fallback, CJK runs hit a Latin clone and embedded as
+    // .notdef/tofu. The backend passes no cjk config, so this also covers that
+    // runExport defaults the fallback to the bundled face.
+    const out = await renderPdfFromDocx(docxOf(`<w:p><w:r><w:t>中文测试，你好世界。</w:t></w:r></w:p>`));
+    expect(isPdf(out)).toBe(true);
+    expect(out.length).toBeGreaterThan(1000);
+  });
 });

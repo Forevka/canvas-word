@@ -6,12 +6,12 @@ import { SyncClient } from "./sync/SyncClient";
 import { createEditor, type CurrentFormat, type EditMode, type InspectorProbe, type ReviewOpEnvelope } from "./index";
 import type { Command } from "./editor/state";
 import { createLayoutEngine } from "./layout/engine";
-import { setCjkFallbackFont, setCjkLocale } from "./layout/prepareCache";
 import { sampleDoc } from "./model/sampleDoc";
 import { stressDoc } from "./model/stressDoc";
 import { importDocx, type ImportResult, type ImportPhase } from "./import/docx/importDocx";
 import { exportDocument, type ExportFormat, type ExportWarning } from "./export/exportDocument";
-import { loadEditorFonts } from "./export/shared/editorFonts";
+import { loadCjkFallbackFont, loadEditorFonts } from "./export/shared/editorFonts";
+import { CJK_FONT_FAMILY } from "./fonts/clones";
 import { fontsProgress } from "./app/loadProgress";
 import { toolbarFonts } from "./fonts/clones";
 import { createFontRegistry, normalizeFamily } from "./fonts/customRegistry";
@@ -126,10 +126,8 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
   // the registry below, so registration must happen before the first engine.layout.)
   fontRegistry.register({ fonts: config.fonts.fonts.filter((f) => loadedFamilies.has(normalizeFamily(f.family))) });
   await document.fonts.ready;
-  // CJK analyzer locale + fallback font (applied after fonts register so the
-  // fallback family resolves; both touch pretext's process-global analyzer).
-  setCjkLocale(config.cjk.locale);
-  setCjkFallbackFont(config.cjk.fallbackFont);
+  // CJK fallback + locale are passed to this instance's layout engine (below), which
+  // re-asserts them at the top of every layout pass — no process-global juggling.
 
   // Give this editor session a unique siteId so every block/cell id it mints is
   // disjoint from other collaborating clients' ids (see shared/ids). A short
@@ -225,7 +223,10 @@ if (collabId !== null && BACKEND_HTTP) {
 // always arrives WITH its own stylesheet, so its w:docDefaults/Normal win.
 if (!doc.stylesheet) doc = { ...doc, stylesheet: config.stylesheet };
 
-const engine = createLayoutEngine(fontRegistry);
+const engine = createLayoutEngine(fontRegistry, {
+  ...(config.cjk.fallbackFont !== undefined ? { cjkFallback: config.cjk.fallbackFont } : {}),
+  ...(config.cjk.locale !== undefined ? { cjkLocale: config.cjk.locale } : {}),
+});
 const t0 = performance.now();
 const tree = engine.layout(doc); // cold: every paragraph hits prepareRichInline
 const t1 = performance.now();
@@ -320,6 +321,20 @@ const editorOpts = {
   },
 };
 let editor = createEditor(app, doc, editorOpts);
+
+// When the bundled CJK fallback is active, load it lazily (it's multi-MB; blocking
+// first paint on it would penalize Latin-only documents) and re-lay-out once it
+// arrives so CJK widths re-measure against the bundled face instead of the browser's
+// interim system substitute. A custom fallback family is already loaded eagerly by
+// loadEditorFonts; an explicit "" opt-out skips this entirely.
+if (config.cjk.fallbackFont === CJK_FONT_FAMILY) {
+  void loadCjkFallbackFont().then((ok) => {
+    // The fetch is uncancellable; if the editor was destroyed while it was in
+    // flight, skip — refreshFonts() would touch a torn-down editor/root.
+    if (!ok || teardown.signal.aborted) return;
+    editor.refreshFonts();
+  });
+}
 
 // Drawing-grid view state (persisted across document replacement, since the
 // editor — and its paint layer — is rebuilt on docx open / setDocument). Seeded

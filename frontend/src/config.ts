@@ -10,6 +10,7 @@
 import type { EditorTypography, Stylesheet } from "@cw/shared";
 import { makeDefaultStylesheet } from "@cw/shared";
 import type { FontsConfig, ResolvedFontsConfig } from "./fonts/customRegistry";
+import { CJK_FONT_FAMILY } from "./fonts/clones";
 import {
   ACCENT_BLUE,
   COLUMN_SEPARATOR_COLOR,
@@ -90,10 +91,12 @@ export interface CjkConfig {
    *  NOTE: pretext's analyzer locale is process-global, so the LAST editor to
    *  mount wins when several use different locales on one page. */
   locale?: string;
-  /** Family name of a registered custom font (see `fonts`) to use for CJK runs.
-   *  Browsers already fall back to a system CJK face for on-screen rendering;
-   *  set this so MEASUREMENT, PDF/DOCX export, and embedding all use a known CJK
-   *  font instead of an arbitrary (and server-absent) system one. */
+  /** Family name of the font to use for CJK runs. Defaults to the bundled CJK
+   *  fallback (`NotoSansSC`), so Chinese text measures, renders, and embeds with a
+   *  known face out of the box instead of an arbitrary (and server-absent) system
+   *  one. Set to a registered custom font's family (see `fonts`) to override it, or
+   *  to `""` to opt out and keep the browser's on-screen system fallback (CJK then
+   *  renders as tofu in PDF export). */
   fallbackFont?: string;
 }
 
@@ -246,9 +249,17 @@ export function resolveConfig(input: EditorConfigInput = {}): ResolvedConfig {
     typography,
     stylesheet: makeDefaultStylesheet(typography),
     fonts: resolveFonts(input.fonts),
-    cjk: input.cjk ? stripUndefined(input.cjk) : {},
+    cjk: resolveCjk(input.cjk),
     develop: input.develop ?? false,
   };
+}
+
+/** Resolve the public partial `cjk` option, defaulting the fallback font to the
+ *  bundled CJK face so Chinese text renders out of the box. An explicit `""`
+ *  fallbackFont is preserved (the opt-out: keeps system fallback on screen). */
+export function resolveCjk(c?: CjkConfig): CjkConfig {
+  const base = c ? stripUndefined(c) : {};
+  return { ...base, fallbackFont: base.fallbackFont ?? CJK_FONT_FAMILY };
 }
 
 /** Drop keys whose value is `undefined` so they don't clobber a default during

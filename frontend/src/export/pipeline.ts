@@ -14,12 +14,14 @@ import {
   setActiveFontRegistry,
   type CustomFontPayload,
 } from "../fonts/customRegistry";
-import { createLayoutEngine } from "../layout/engine";
-import { setCjkFallbackFont, setCjkLocale } from "../layout/prepareCache";
+import { createLayoutEngine, type LayoutEngineOptions } from "../layout/engine";
+import { CJK_FONT_FAMILY } from "../fonts/clones";
 import { pageOfBlockMap } from "../recalc/recalcToc";
 
 /** CJK tuning for an export job (mirror of the editor's `cjk` config). The
- *  fallback family must also appear in the `fonts` payload so it embeds. */
+ *  fallback family defaults to the bundled CJK face (`NotoSansSC`), which is a
+ *  built-in and embeds without a `fonts` payload entry; a custom fallback family
+ *  must also appear in `fonts` so it embeds. Pass `fallbackFont: ""` to opt out. */
 export interface CjkExportConfig {
   locale?: string;
   fallbackFont?: string;
@@ -45,32 +47,31 @@ export async function runExport(
   fonts?: CustomFontPayload,
   cjk?: CjkExportConfig,
 ): Promise<ExportResult> {
-  // CJK fallback/locale touch the process-global analyzer; set for the duration
-  // of the job. (The fallback font itself must be in `fonts` to embed.)
-  if (cjk) {
-    setCjkLocale(cjk.locale);
-    setCjkFallbackFont(cjk.fallbackFont);
-  }
-  try {
-    return await runExportInner(doc, format, images, fonts);
-  } finally {
-    if (cjk) {
-      setCjkFallbackFont(null);
-      setCjkLocale(undefined);
-    }
-  }
+  // Resolve the CJK config once and THREAD it into every layout this job runs
+  // (renderPdf's layout + the docx live-TOC pass). No process-global state and no
+  // lock: each layout engine re-asserts its own fallback/locale synchronously at the
+  // top of each (await-free) layout pass, so concurrent exports never cross-
+  // contaminate. The fallback defaults to the bundled CJK face so a consumer that
+  // calls runExport without a cjk config still gets Chinese glyphs (not tofu);
+  // `fallbackFont: ""` opts out (the engine treats empty as "no fallback").
+  const cjkOpts: LayoutEngineOptions = {
+    cjkFallback: cjk?.fallbackFont ?? CJK_FONT_FAMILY,
+    ...(cjk?.locale !== undefined ? { cjkLocale: cjk.locale } : {}),
+  };
+  return runExportInner(doc, format, images, cjkOpts, fonts);
 }
 
 async function runExportInner(
   doc: Document,
   format: ExportFormat,
   images: ImageBytes,
+  cjkOpts: LayoutEngineOptions,
   fonts?: CustomFontPayload,
 ): Promise<ExportResult> {
   // Each job owns its custom-font state: renderPdf builds + tears down a per-job
   // CustomFontRegistry internally, so a later export that omits a family can't
   // inherit an earlier job's fonts.
-  if (format === "pdf") return renderPdf(doc, { images, ...(fonts ? { fonts } : {}) });
+  if (format === "pdf") return renderPdf(doc, { images, cjk: cjkOpts, ...(fonts ? { fonts } : {}) });
 
   // DOCX writes family names verbatim, but a live TOC field export still needs a
   // layout pass for each heading's real page (cached PAGEREF result). Scope that
@@ -82,7 +83,7 @@ async function runExportInner(
   setActiveFontRegistry(fontReg);
   if (fonts) registerCustomFontBytes(fonts.faces);
   try {
-    const tocPages = pageOfBlockMap(createLayoutEngine(fontReg).layout(doc));
+    const tocPages = pageOfBlockMap(createLayoutEngine(fontReg, cjkOpts).layout(doc));
     return await writeDocx(doc, images, tocPages);
   } finally {
     clearCustomFontBytes(fontReg);

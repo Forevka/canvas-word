@@ -5,7 +5,7 @@
 
 import * as fontkit from "fontkit";
 import type { Font } from "fontkit";
-import { cloneFamilyFor, FONT_FILES } from "../../fonts/clones";
+import { cloneFamilyFor, FONT_FILES, SINGLE_FACE_FILES } from "../../fonts/clones";
 import {
   activeFontRegistry,
   customFontFor,
@@ -98,10 +98,18 @@ export function resolveFont(family: string, bold: boolean, italic: boolean): Res
     return { file: "Arimo-Regular.ttf", font: fb.font, bytes: fb.bytes, substituted: true };
   }
 
-  const file = `${clone}-${style}.ttf`;
-  const hit = loaded.get(file) ?? loaded.get("Arimo-Regular.ttf");
-  if (!hit) {
+  // Single-face built-ins (math, CJK fallback) ship only a Regular face: every
+  // style resolves to it, so bold/italic CJK don't fall through to Arimo (tofu).
+  const file = SINGLE_FACE_FILES[clone] ?? `${clone}-${style}.ttf`;
+  const hit = loaded.get(file);
+  if (hit) return { file, font: hit.font, bytes: hit.bytes, substituted };
+  // The requested face isn't loaded (e.g. a broken bundle, or the CJK font failed
+  // to register — installMeasureHost warns-and-continues). Fall back to Arimo, but
+  // report ITS file + substituted:true so the returned metadata describes the face
+  // actually used (never the requested filename with someone else's bytes).
+  const fb = loaded.get("Arimo-Regular.ttf");
+  if (!fb) {
     throw new Error("fontRegistry: no fonts loaded — call installMeasureHost() before measuring/exporting");
   }
-  return { file, font: hit.font, bytes: hit.bytes, substituted };
+  return { file: "Arimo-Regular.ttf", font: fb.font, bytes: fb.bytes, substituted: true };
 }

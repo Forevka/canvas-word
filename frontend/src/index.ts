@@ -240,6 +240,10 @@ export interface Editor {
    *  imported pre-calculated numbers are shown until the user asks for this).
    *  Returns the count of entries whose number changed. */
   recalculateToc(): number;
+  /** Drop all cached layout and re-lay-out + repaint. Call after a FontFace the
+   *  document depends on finishes loading post-mount (e.g. the lazily-loaded CJK
+   *  fallback) so text re-measures against the now-available face. */
+  refreshFonts(): void;
   /** Presentational zoom (1 = 100%, clamped to [.25, 5]). No relayout. */
   setZoom(zoom: number): void;
   getZoom(): number;
@@ -3086,6 +3090,28 @@ export function createEditor(
     inspectContentControl: inspectSdtAtCaret,
     activeContentControlId: activeSdtId,
     recalculateToc,
+    /** Drop all cached layout and re-lay-out + repaint. Call after a FontFace the
+     *  document depends on finishes loading post-mount (e.g. the lazily-loaded CJK
+     *  fallback), so widths re-measure against the now-available face instead of the
+     *  browser's interim system substitute. */
+    refreshFonts(): void {
+      engine.reset();
+      relayout();
+      // Re-measure every geometry-dependent overlay against the new layout (mirror
+      // afterMutation's overlay pass), so review pins, search highlights, peer
+      // carets, and the object frame don't keep stale positions until the next edit.
+      // No model change occurred, so DON'T call notifyChange() (it fires onChange)
+      // and DON'T chase the caret into view (the load mustn't scroll the viewport).
+      refreshSelectionVisuals();
+      refreshObjectFrame();
+      if (searchQuery) {
+        runSearch();
+        paintSearch();
+      }
+      paintRemoteCarets();
+      refreshReviewDecorations();
+      mirror.sync(state());
+    },
     setZoom: (z: number): void => applyZoom(z),
     getZoom: () => paint.getZoom(),
     setShowGrid: (show: boolean): void => paint.setShowGrid(show),
