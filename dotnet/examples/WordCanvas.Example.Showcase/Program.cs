@@ -1,0 +1,213 @@
+using System.IO.Compression;
+using WordCanvas.ClearScript;
+using WordCanvas.ClearScript.Builder;
+
+// =============================================================================
+// Showcase: rebuild the editor's DEFAULT document (the "no docId" sample) with the
+// typed C# DocumentBuilder, then export it to PDF + DOCX. It exercises most of the
+// builder surface — headings + TOC, inline fields (DATE/PAGE/NUMPAGES/IF), every
+// content-control kind, merged / tall (paginating) / field-in-cell tables, images,
+// multilevel + bullet lists, footnotes, bookmarks, hidden text, hyperlinks, sub/
+// superscript, CJK text, and header/footer page fields.
+//
+// (Equations and explicit right-to-left paragraph direction are authored through the
+//  model API, not the fluent builder, so they're called out but not built here.)
+// =============================================================================
+
+const string Ink = "#1a1a2e";
+const string Lorem = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod " +
+    "tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud " +
+    "exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. ";
+
+var blue = SolidPng(360, 110, 0x1a, 0x73, 0xe8);
+var purple = SolidPng(150, 110, 0x9c, 0x27, 0xb0);
+
+using var engine = new WordCanvasEngine();
+
+var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Letter })
+    // Heading styles so withStyle() resolves AND the TOC detects them by name.
+    .Style(new NamedStyle { Id = "Heading1", Name = "Heading 1", Char = new CharStyle { Bold = true, FontSizePx = 24, Color = Ink }, Para = new ParaStylePatch { SpaceBeforePx = 18, SpaceAfterPx = 8 } })
+    .Style(new NamedStyle { Id = "Heading2", Name = "Heading 2", Char = new CharStyle { Bold = true, FontSizePx = 19, Color = Ink }, Para = new ParaStylePatch { SpaceBeforePx = 14, SpaceAfterPx = 6 } })
+
+    // Title + subtitle + Table of Contents.
+    .Paragraph("canvas-word", p => p.Align(TextAlign.Center).Font("Arial, sans-serif").FontSize(32).Bold().Color(Ink))
+    .Paragraph("a canvas-rendered, page-accurate Word editor — rebuilt by the C# builder", p => p.Align(TextAlign.Center).Italic().Color("#5f6368"))
+    .Paragraph("Table of Contents", p => p.Bold().FontSize(20).Color(Ink))
+    .TableOfContents(new TocOptions { MaxLevel = 2 })
+
+    // ---- Fields ----
+    .Paragraph("Fields", p => p.WithStyle("Heading1"))
+    .Paragraph(null, p => p
+        .Text("Fields are first-class objects you can insert and edit. Today is ")
+        .DateField("MMMM d, yyyy")
+        .Text(", this is page ").PageField()
+        .Text(". A conditional (IF) field can branch: ")
+        .IfField("2", ">", "1", "the condition held", "it did not")
+        .Text(". Each recomputes on Update Field."))
+    .Paragraph(null, p => p
+        .Text("Footnotes", new CharStyle { Bold = true }).Text(" are supported")
+        .Footnote("Footnotes lay out at the bottom of their page, with a separator rule — just like Word.")
+        .Text(". So is ").Text("hidden metadata", new CharStyle { Hidden = true })
+        .Bookmark("sample", "bookmarked text")
+        .Text(" and inline formatting: ")
+        .Text("bold", new CharStyle { Bold = true }).Text(", ")
+        .Text("italic", new CharStyle { Italic = true }).Text(", ")
+        .Text("underline", new CharStyle { Underline = true }).Text(", ")
+        .Text("strike", new CharStyle { Strikethrough = true }).Text(", ")
+        .Text("highlight", new CharStyle { HighlightColor = "#fff3a3" }).Text(", x")
+        .Text("2", new CharStyle { VerticalAlign = "super", FontSizePx = 11 })
+        .Text(", and a ")
+        .Text("hyperlink", new CharStyle { Link = "https://forevka.dev", Color = "#0b57d0", Underline = true })
+        .Text("."))
+
+    // ---- Content controls ----
+    .Paragraph("Content controls", p => p.WithStyle("Heading1"))
+    .Paragraph(null, p => p
+        .Text("Every Word content-control kind round-trips: ")
+        .RichTextControl("rich text", new SdtOptions { Alias = "Rich text" }).Text(", ")
+        .PlainTextControl("plain text", new SdtOptions { Alias = "Plain text" }).Text(", a dropdown ")
+        .DropDown("One", new[] { new SdtListItem("One", "1"), new SdtListItem("Two", "2") }, new SdtOptions { Alias = "Choice" }).Text(", a combo box ")
+        .ComboBox("Alpha", new[] { new SdtListItem("Alpha", "a"), new SdtListItem("Beta", "b"), new SdtListItem("Gamma", "g") }, new SdtOptions { Alias = "Combo" }).Text(", a date picker ")
+        .DateControl("6/16/2026", "M/d/yyyy", new SdtOptions { Alias = "Pick a date" }).Text(", and a checkbox ")
+        .Checkbox(true).Text("."))
+
+    // ---- Tables ----
+    .Paragraph("Tables", p => p.WithStyle("Heading1"))
+    .Paragraph("Merged cells (column- and row-spanning), with shading:")
+    .Table(t => t
+        .Row(r => r.Cell("Merged header spanning all three columns",
+            new CellOptions { ColSpan = 3, Shading = "#1a73e8", Style = new CharStyle { Bold = true, Color = "#ffffff" } }))
+        .Row(r => r
+            .Cell("Spans 2 rows", new CellOptions { RowSpan = 2, Shading = "#e8f0fe", Style = new CharStyle { Bold = true } })
+            .Cell("B1").Cell("C1"))
+        .Row(r => r.Cell("B2").Cell("C2", new CellOptions { Style = new CharStyle { Color = "#188038" } })))
+    .Paragraph("Fields work inside table cells too:")
+    .Table(t => t
+        .Row(r => r.Cell("Metric", Bold()).Cell("Value", Bold()))
+        .Row(r => r.Cell("Rendered on").Cell(s => s.Paragraph(null, p => p.DateField("yyyy-MM-dd"))))
+        .Row(r => r.Cell("Page").Cell(s => s.Paragraph(null, p => p.Text("p. ").PageField()))))
+    .Paragraph("And a table tall enough to paginate across pages — rows break cleanly:")
+    .Table(t =>
+    {
+        t.Row(r => r.Cell("#", Bold()).Cell("Feature", Bold()).Cell("Status", Bold()));
+        for (var i = 1; i <= 22; i++)
+        {
+            var n = i;
+            t.Row(r => r.Cell(n.ToString())
+                .Cell($"Demonstrated capability number {n} that keeps the table running past the bottom of the page")
+                .Cell("supported", new CellOptions { Style = new CharStyle { Color = "#188038" } }));
+        }
+    })
+
+    // ---- Rich text, lists & images ----
+    .Paragraph("Rich text, lists & images", p => p.WithStyle("Heading1"))
+    .Paragraph("An inline block image (a builder-supplied PNG, embedded into the PDF/DOCX):")
+    .Image(blue, "image/png", new ImageOptions { WidthPx = 360, HeightPx = 110, Align = TextAlign.Center, Wrap = ImageWrap.Block })
+    .Paragraph("A square-wrapped image floats and text flows around it. " + Repeat(Lorem, 3))
+    .Image(purple, "image/png", new ImageOptions { WidthPx = 150, HeightPx = 110, Align = TextAlign.Left, Wrap = ImageWrap.Square })
+    .Paragraph("Multilevel numbered list:")
+    .List(new[]
+    {
+        new ListItem("Model — invertible ops"),
+        new ListItem("Layout — pretext pagination"),
+        new ListItem("line caches keyed by (revision, width)", Level: 1),
+        new ListItem("Paint — one fillText per fragment"),
+    }, new ListOptions { Kind = ListKind.Number })
+    .Paragraph("Bulleted list:")
+    .List(new[]
+    {
+        new ListItem("markers are paint-only"),
+        new ListItem("so caches survive renumbering", Level: 1),
+    }, new ListOptions { Kind = ListKind.Bullet })
+    .Paragraph("A fully justified, multi-page paragraph exercises line-level pagination. " + Repeat(Lorem, 12),
+        p => p.Align(TextAlign.Justify))
+
+    // ---- International text (CJK) ----
+    .Paragraph("International text — CJK", p => p.WithStyle("Heading1"))
+    .Paragraph("East-Asian scripts lay out the way Word does — measured on canvas, with Unicode line-breaking and kinsoku, not the browser's contenteditable.")
+    .Paragraph("日本語 — CJK line-breaking & kinsoku", p => p.Bold().Color(Ink))
+    .Paragraph("日本語の文章は単語の間にスペースを入れません。それでもエンジンは文字単位で行を折り返し、句読点が行頭に来ないように禁則処理（kinsoku）を行います。「角括弧」のような約物も正しく扱われ、長い段落でもページをまたいで自然に流れます。")
+    .Paragraph("(Right-to-left paragraph direction and MathML equations — also in the editor's sample — are authored through the model API, not the fluent builder.)",
+        p => p.Italic().Color("#5f6368"))
+
+    // ---- Header + footer with page fields ----
+    .Header(h => h.Paragraph(null, p => p.Font("Arial, sans-serif").FontSize(11)
+        .Text("canvas-word", new CharStyle { Bold = true, Color = "#5f6368" })
+        .Text("  ·  feature showcase", new CharStyle { Color = "#9aa0a6" })))
+    .Footer(f => f.Paragraph(null, p => p.Align(TextAlign.Center).Font("Arial, sans-serif").FontSize(11).Color("#9aa0a6")
+        .Text("Page ").PageField().Text(" of ").NumPagesField()));
+
+// ---- Build + export -------------------------------------------------------
+var doc = builder.Build();
+foreach (var w in builder.Warnings) Console.WriteLine($"  builder warning: {w.Code} {w.Detail}");
+
+var outDir = AppContext.BaseDirectory;
+var pdf = doc.ExportPdf();
+var docx = doc.ExportDocx();
+File.WriteAllBytes(Path.Combine(outDir, "showcase.pdf"), pdf);
+File.WriteAllBytes(Path.Combine(outDir, "showcase.docx"), docx);
+
+var re = engine.ImportDocx(docx);
+Console.WriteLine($"Built {doc.BlockCount} blocks with the typed builder.");
+Console.WriteLine($"  showcase.pdf  : {pdf.Length / 1024} KB");
+Console.WriteLine($"  showcase.docx : {docx.Length / 1024} KB");
+Console.WriteLine($"  round-trip    : re-imported to {re.BlockCount} blocks, {re.MediaCount} images, {re.Warnings.Count} warnings");
+Console.WriteLine($"Output written to: {outDir}");
+return;
+
+static CellOptions Bold() => new() { Style = new CharStyle { Bold = true } };
+
+static string Repeat(string s, int n) => string.Concat(Enumerable.Repeat(s, n));
+
+// Minimal solid-color PNG encoder (RGB, no deps) so the builder has real image bytes
+// to embed — pdfkit can't embed the SVG data URLs the in-browser sample uses.
+static byte[] SolidPng(int w, int h, byte r, byte g, byte b)
+{
+    var raw = new byte[h * (1 + w * 3)];
+    var p = 0;
+    for (var y = 0; y < h; y++)
+    {
+        raw[p++] = 0; // filter: none
+        for (var x = 0; x < w; x++) { raw[p++] = r; raw[p++] = g; raw[p++] = b; }
+    }
+
+    byte[] idat;
+    using (var z = new MemoryStream())
+    {
+        using (var zl = new ZLibStream(z, CompressionLevel.Optimal, leaveOpen: true)) zl.Write(raw, 0, raw.Length);
+        idat = z.ToArray();
+    }
+
+    using var ms = new MemoryStream();
+    ms.Write(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
+
+    var ihdr = new byte[13];
+    WriteBE(ihdr, 0, (uint)w);
+    WriteBE(ihdr, 4, (uint)h);
+    ihdr[8] = 8;  // bit depth
+    ihdr[9] = 2;  // color type: truecolor RGB
+    Chunk(ms, "IHDR", ihdr);
+    Chunk(ms, "IDAT", idat);
+    Chunk(ms, "IEND", Array.Empty<byte>());
+    return ms.ToArray();
+
+    static void WriteBE(byte[] a, int o, uint v) { a[o] = (byte)(v >> 24); a[o + 1] = (byte)(v >> 16); a[o + 2] = (byte)(v >> 8); a[o + 3] = (byte)v; }
+
+    static void Chunk(Stream s, string type, byte[] data)
+    {
+        var len = new byte[4]; WriteBE(len, 0, (uint)data.Length); s.Write(len);
+        var t = System.Text.Encoding.ASCII.GetBytes(type);
+        s.Write(t); s.Write(data);
+        uint c = 0xffffffff;
+        foreach (var bb in t) c = Crc(c, bb);
+        foreach (var bb in data) c = Crc(c, bb);
+        var crc = new byte[4]; WriteBE(crc, 0, c ^ 0xffffffff); s.Write(crc);
+    }
+
+    static uint Crc(uint c, byte bb)
+    {
+        c ^= bb;
+        for (var k = 0; k < 8; k++) c = (c & 1) != 0 ? 0xedb88320 ^ (c >> 1) : c >> 1;
+        return c;
+    }
+}

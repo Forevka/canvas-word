@@ -1,0 +1,219 @@
+using System.Diagnostics;
+using BenchmarkDotNet.Running;
+using WordCanvas.Benchmarks;
+using WordCanvas.ClearScript;
+
+// Pin the JS bundle, fonts, and docx corpus to absolute paths and publish them as
+// env vars so BenchmarkDotNet's generated child processes (which run from their own
+// output dir) resolve them. No-op if already set by the caller.
+var baseDir = AppContext.BaseDirectory;
+SetIfUnset("WORDCANVAS_BUNDLE", Path.Combine(baseDir, "assets", "wordcanvas.clearscript.js"));
+SetIfUnset("WORDCANVAS_FONTS", Path.Combine(baseDir, "fonts"));
+try { SetIfUnset("WORDCANVAS_DOCS", DocCorpus.DocsDirectory()); } catch { /* surfaced later if needed */ }
+
+static void SetIfUnset(string name, string value)
+{
+    if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(name)))
+        Environment.SetEnvironmentVariable(name, value);
+}
+
+if (args.Length > 0 && args[0].Equals("smoke", StringComparison.OrdinalIgnoreCase))
+{
+    return Smoke.Run(args.Skip(1).ToArray());
+}
+
+if (args.Length > 0 && args[0].Equals("pdfdump", StringComparison.OrdinalIgnoreCase))
+{
+    var outDir = args.Length > 1 ? args[1] : "out-cs";
+    Directory.CreateDirectory(outDir);
+    using var eng = new WordCanvasEngine();
+    eng.SetExportDate(DateTimeOffset.FromUnixTimeMilliseconds(1_700_000_000_000)); // deterministic
+    foreach (var file in DocCorpus.Files())
+    {
+        var name = Path.GetFileNameWithoutExtension(file);
+        var pdf = eng.ImportDocx(File.ReadAllBytes(file)).ExportPdf();
+        File.WriteAllBytes(Path.Combine(outDir, name + ".pdf"), pdf);
+        Console.WriteLine($"wrote {name}.pdf ({pdf.Length} bytes)");
+    }
+    return 0;
+}
+
+if (args.Length > 0 && args[0].Equals("sfsmoke", StringComparison.OrdinalIgnoreCase))
+{
+    var hasKey = SyncfusionOps.EnsureLicense();
+    Console.WriteLine($"Syncfusion license: {(hasKey ? "registered" : "TRIAL (SYNCFUSION_LICENSE_KEY not set)")}");
+    foreach (var file in DocCorpus.Files())
+    {
+        var bytes = File.ReadAllBytes(file);
+        var sw = Stopwatch.StartNew();
+        using var sf = SyncfusionOps.Open(bytes);
+        var tOpen = sw.Elapsed; sw.Restart();
+        var docxLen = SyncfusionOps.SaveDocx(sf);
+        var tDocx = sw.Elapsed; sw.Restart();
+        var pdfLen = SyncfusionOps.ConvertToPdf(sf);
+        var tPdf = sw.Elapsed;
+        Console.WriteLine($"{Path.GetFileName(file)}: open={tOpen.TotalMilliseconds:F0}ms " +
+                          $"docx={tDocx.TotalMilliseconds:F0}ms ({docxLen / 1024}KB) pdf={tPdf.TotalMilliseconds:F0}ms ({pdfLen / 1024}KB)");
+    }
+    return 0;
+}
+
+if (args.Length > 0 && args[0].Equals("tocsmoke", StringComparison.OrdinalIgnoreCase))
+{
+    using var eng = new WordCanvasEngine();
+    var dir = DocCorpus.DocsDirectory();
+
+    // 0) BUILDER: the TOC is recalculated from the CURRENT headings at Build(), and
+    //    export bakes the page numbers in one layout pass — no reopen, no explicit
+    //    update needed. Five headings, each on its own page.
+    var bldr = eng.NewBuilder()
+        .Paragraph("Contents", p => p.Bold().FontSize(20))
+        .TableOfContents(new WordCanvas.ClearScript.Builder.TocOptions { MaxLevel = 1 });
+    for (var i = 1; i <= 5; i++)
+        bldr.PageBreak().Paragraph($"Section {i}", p => p.WithStyle("Heading1")).Paragraph($"Body text for section {i}.");
+    var builtDoc = bldr.Build();
+    var builtDocx = builtDoc.ExportDocx();
+    string docXml;
+    using (var msz = new MemoryStream(builtDocx))
+    using (var zip = new System.IO.Compression.ZipArchive(msz, System.IO.Compression.ZipArchiveMode.Read))
+    using (var r = new StreamReader(zip.GetEntry("word/document.xml")!.Open()))
+        docXml = r.ReadToEnd();
+    var pageRefs = System.Text.RegularExpressions.Regex.Matches(docXml, "PAGEREF").Count;
+    Console.WriteLine($"builder+TOC: blocks={builtDoc.BlockCount} docx={builtDocx.Length / 1024}KB " +
+                      $"PAGEREFs={pageRefs} tocHasSection5={docXml.Contains("Section 5")}");
+    var refreshed = builtDoc.UpdateFields();
+    Console.WriteLine($"UpdateFields(in-memory): blocks {builtDoc.BlockCount} -> {refreshed.BlockCount}");
+
+    // 1) GENERATE a TOC field result into the report that ships an EMPTY TOC field
+    //    (the "C# emitted a TOC field but couldn't compute it" case).
+    var emptyToc = Directory.GetFiles(dir, "*EMPTY TOC*.docx").FirstOrDefault();
+    if (emptyToc is not null)
+    {
+        var sw = Stopwatch.StartNew();
+        var g = eng.GenerateToc(File.ReadAllBytes(emptyToc), new WordCanvas.ClearScript.Builder.TocOptions { MaxLevel = 3 });
+        Console.WriteLine($"generateToc({Path.GetFileName(emptyToc)}): {sw.ElapsedMilliseconds}ms " +
+                          $"generated={g.Generated} headings={g.Headings} synthBookmarks={g.BookmarksSynthesized} out={g.Docx.Length / 1024}KB " +
+                          $"reimport-blocks={eng.ImportDocx(g.Docx).BlockCount}");
+        File.WriteAllBytes("toc-generated.docx", g.Docx);
+    }
+    else Console.WriteLine("(no *EMPTY TOC*.docx in corpus — skipping generateToc)");
+
+    // 2) RECALC cached PAGEREF page numbers across every report (Word's F9).
+    foreach (var f in DocCorpus.Files())
+    {
+        var sw = Stopwatch.StartNew();
+        var r = eng.RecalcTocPageNumbers(File.ReadAllBytes(f));
+        if (r.Docx.Length < 2 || r.Docx[0] != 0x50 || r.Docx[1] != 0x4B || eng.ImportDocx(r.Docx).BlockCount == 0)
+            throw new Exception($"recalc produced invalid DOCX for {Path.GetFileName(f)}");
+        Console.WriteLine($"recalc({Path.GetFileName(f)}): {sw.ElapsedMilliseconds}ms changed={r.Changed} skipped={r.Skipped} out={r.Docx.Length / 1024}KB");
+    }
+    Console.WriteLine("TOC SMOKE OK");
+    return 0;
+}
+
+BenchmarkSwitcher.FromAssembly(typeof(Smoke).Assembly).Run(args);
+return 0;
+
+internal static class Smoke
+{
+    public static int Run(string[] args)
+    {
+        Console.WriteLine("== WordCanvas ClearScript smoke ==");
+        using var engine = new WordCanvasEngine();
+        Console.WriteLine("engine + fonts loaded OK");
+
+        // ---- typed Builder wrapper ----
+        var built = engine.NewBuilder(new WordCanvas.ClearScript.Builder.CreateOptions
+        {
+            PageSize = WordCanvas.ClearScript.Builder.PageSizeName.A4,
+        })
+            .Style(new WordCanvas.ClearScript.Builder.NamedStyle
+            {
+                Id = "Heading1", Name = "Heading 1",
+                Char = new WordCanvas.ClearScript.Builder.CharStyle { Bold = true, FontSizePx = 28, Color = "#1a3b5c" },
+            })
+            .Paragraph("Quarterly Report", p => p.WithStyle("Heading1"))
+            .Paragraph("Generated by the typed C# builder over ClearScript.", p => p.Italic().Color("#555"))
+            .TableOfContents(new WordCanvas.ClearScript.Builder.TocOptions { MaxLevel = 2 })
+            .BulletList("First point", "Second point", "Third point")
+            .Table(new[]
+            {
+                new WordCanvas.ClearScript.Builder.CellContent[] { "Item", "Qty", "Price" },
+                new WordCanvas.ClearScript.Builder.CellContent[] { "Widget", "10", "$4.00" },
+                new WordCanvas.ClearScript.Builder.CellContent[] { "Gadget", "3", "$9.50" },
+            }, new WordCanvas.ClearScript.Builder.TableOptions { HeaderRow = true, ColFractions = new[] { 0.5, 0.25, 0.25 } })
+            .Footer(f => f.Paragraph(null, p => p.Text("Page ").PageField().Text(" of ").NumPagesField()))
+            .Build();
+        var bPdf = built.ExportPdf();
+        var bDocx = built.ExportDocx();
+
+        File.WriteAllBytes("smoke-builder.docx", bDocx);
+
+        Console.WriteLine($"builder: blocks={built.BlockCount} pdf={bPdf.Length / 1024}KB ({Header(bPdf)}) docx={bDocx.Length / 1024}KB reimport={engine.ImportDocx(bDocx).BlockCount} blocks");
+        Require(Header(bPdf) == "%PDF-", "builder PDF header");
+
+        // Stream overload (pooled-buffer copy, no large output byte[]): same length, valid header.
+        using (var sp = new MemoryStream())
+        {
+            var written = built.ExportPdf(sp);
+            Require(written == sp.Length && sp.Length == bPdf.Length, "stream ExportPdf length matches byte[]");
+            sp.Position = 0;
+            Require(sp.ReadByte() == '%', "stream ExportPdf PDF header");
+            Console.WriteLine($"stream ExportPdf: wrote {written} bytes (no output byte[] allocated)");
+        }
+
+        // Round-trip every real docx (or just one if 'one' passed).
+        var files = DocCorpus.Files();
+        if (args.Contains("one")) files = files.Take(1).ToArray();
+        foreach (var file in files)
+        {
+            var name = Path.GetFileName(file);
+            var bytes = File.ReadAllBytes(file);
+            var sw = Stopwatch.StartNew();
+            var doc = engine.ImportDocx(bytes);
+            var tImport = sw.Elapsed;
+
+            sw.Restart();
+            byte[] pdf;
+            try { pdf = doc.ExportPdf(); }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"PDF export failed for {name}: {ex.Message}");
+                Console.WriteLine("---- JS console ring buffer ----");
+                foreach (var line in engine.Logs()) Console.WriteLine(line);
+                throw;
+            }
+            var tPdf = sw.Elapsed;
+
+            sw.Restart();
+            var docx = doc.ExportDocx();
+            var tDocx = sw.Elapsed;
+
+            var reblocks = engine.ImportDocx(docx).BlockCount;
+            Console.WriteLine(
+                $"{name}\n  in={bytes.Length / 1024}KB blocks={doc.BlockCount} media={doc.MediaCount} warn={doc.Warnings.Count}\n" +
+                $"  import={tImport.TotalMilliseconds:F0}ms  pdf={tPdf.TotalMilliseconds:F0}ms ({pdf.Length / 1024}KB, {Header(pdf)})  " +
+                $"docx={tDocx.TotalMilliseconds:F0}ms ({docx.Length / 1024}KB)  re-import blocks={reblocks}");
+            Require(Header(pdf) == "%PDF-", $"{name} PDF header");
+            Require(docx.Length >= 2 && docx[0] == 0x50 && docx[1] == 0x4B, $"{name} DOCX PK header");
+        }
+
+        var (used, total) = engine.V8HeapBytes();
+        var proc = Process.GetCurrentProcess();
+        proc.Refresh();
+        Console.WriteLine(
+            $"RAM after converting all reports: process working set={proc.WorkingSet64 / (1024 * 1024)}MB " +
+            $"(peak={proc.PeakWorkingSet64 / (1024 * 1024)}MB) | V8 heap used={used / (1024 * 1024)}MB total={total / (1024 * 1024)}MB " +
+            $"| .NET managed={GC.GetTotalMemory(false) / (1024 * 1024)}MB");
+        Console.WriteLine("SMOKE OK");
+        return 0;
+    }
+
+    private static string Header(byte[] b) =>
+        b.Length >= 5 ? System.Text.Encoding.ASCII.GetString(b, 0, 5) : "?";
+
+    private static void Require(bool ok, string what)
+    {
+        if (!ok) throw new Exception($"smoke assertion failed: {what}");
+    }
+}
