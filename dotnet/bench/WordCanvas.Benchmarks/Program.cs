@@ -150,6 +150,16 @@ internal static class Smoke
         Console.WriteLine($"builder: blocks={built.BlockCount} pdf={bPdf.Length / 1024}KB ({Header(bPdf)}) docx={bDocx.Length / 1024}KB reimport={engine.ImportDocx(bDocx).BlockCount} blocks");
         Require(Header(bPdf) == "%PDF-", "builder PDF header");
 
+        // Stream overload (pooled-buffer copy, no large output byte[]): same length, valid header.
+        using (var sp = new MemoryStream())
+        {
+            var written = built.ExportPdf(sp);
+            Require(written == sp.Length && sp.Length == bPdf.Length, "stream ExportPdf length matches byte[]");
+            sp.Position = 0;
+            Require(sp.ReadByte() == '%', "stream ExportPdf PDF header");
+            Console.WriteLine($"stream ExportPdf: wrote {written} bytes (no output byte[] allocated)");
+        }
+
         // Round-trip every real docx (or just one if 'one' passed).
         var files = DocCorpus.Files();
         if (args.Contains("one")) files = files.Take(1).ToArray();

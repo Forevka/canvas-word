@@ -1,3 +1,4 @@
+using System.Buffers;
 using Microsoft.ClearScript;
 using Microsoft.ClearScript.JavaScript;
 using Microsoft.ClearScript.V8;
@@ -217,12 +218,50 @@ public sealed class WordCanvasEngine : IDisposable
         return buffer.ToArray();
     }
 
-    internal byte[] ExportBytes(bool pdf, object doc, object? images)
+    private object? ExportValue(bool pdf, object doc, object? images)
     {
         ThrowIfDisposed();
         var method = pdf ? "exportPdf" : "exportDocx";
-        var value = ResolveValue(_api.InvokeMethod(method, doc, images ?? (object)Undefined.Value), method);
-        return ReadBytes(value);
+        return ResolveValue(_api.InvokeMethod(method, doc, images ?? (object)Undefined.Value), method);
+    }
+
+    internal byte[] ExportBytes(bool pdf, object doc, object? images) => ReadBytes(ExportValue(pdf, doc, images));
+
+    /// <summary>
+    /// Export straight into a caller-owned stream, copying the V8 result in chunks
+    /// through a pooled buffer — so the (often large-object-heap) output byte[] is
+    /// never allocated. Pass a <c>RecyclableMemoryStream</c> / pooled stream for
+    /// allocation-free, GC-friendly export under load. Returns the bytes written.
+    /// </summary>
+    internal long ExportToStream(bool pdf, object doc, object? images, Stream destination)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        var value = ExportValue(pdf, doc, images);
+        if (value is not IArrayBufferView view)
+            throw new WordCanvasException($"expected a Uint8Array result, got {value?.GetType().Name ?? "null"}");
+
+        var size = view.Size;
+        if (size == 0) return 0;
+
+        const int chunk = 256 * 1024;
+        var buffer = ArrayPool<byte>.Shared.Rent((int)Math.Min((ulong)chunk, size));
+        try
+        {
+            ulong offset = 0;
+            while (offset < size)
+            {
+                var toRead = Math.Min((ulong)buffer.Length, size - offset);
+                var read = view.ReadBytes(offset, toRead, buffer, 0);
+                if (read == 0) break;
+                destination.Write(buffer, 0, (int)read);
+                offset += read;
+            }
+            return (long)offset;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     /// <summary>Drive a JS promise to completion (the pipeline's async is microtask/

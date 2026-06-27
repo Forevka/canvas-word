@@ -79,4 +79,13 @@ public sealed class WordDocument
 
     public Task<byte[]> ExportPdfAsync() => Task.FromResult(ExportPdf());
     public Task<byte[]> ExportDocxAsync() => Task.FromResult(ExportDocx());
+
+    /// <summary>Render to PDF straight into <paramref name="destination"/> via a pooled
+    /// buffer (no large output byte[] allocated) — pass a <c>RecyclableMemoryStream</c>
+    /// for GC-friendly export under load. Returns the bytes written.</summary>
+    public long ExportPdf(Stream destination) => _engine.ExportToStream(pdf: true, Doc, Images, destination);
+
+    /// <summary>Write DOCX straight into <paramref name="destination"/> via a pooled
+    /// buffer (no large output byte[] allocated). Returns the bytes written.</summary>
+    public long ExportDocx(Stream destination) => _engine.ExportToStream(pdf: false, Doc, Images, destination);
 }

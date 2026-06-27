@@ -309,6 +309,19 @@ Differences to keep in mind when reading the numbers:
   native + CLR + bundle/font baseline paid once per engine. `WordCanvasEngine.V8HeapBytes()`
   reports live heap usage. The per-document marginal cost is the model + the output blob;
   drop each `WordDocument`/result between docs to keep a large batch flat.
+- **Allocation-free export (high throughput).** The bulk of the footprint is the V8 heap
+  (tune `MaxHeapSizeMb`, dispose handles) — on the .NET side only the output blob is
+  large. For sustained server load, use the **stream overloads** `ExportPdf(Stream)` /
+  `ExportDocx(Stream)` instead of the `byte[]` ones: they copy the V8 result in 256 KB
+  chunks through a shared `ArrayPool` buffer, so the large output `byte[]` is never
+  allocated (no LOH churn). They take a caller-owned `Stream`, so they compose with
+  `Microsoft.IO.RecyclableMemoryStream` (the library itself takes no dependency on it):
+
+  ```csharp
+  using var ms = recyclableManager.GetStream();   // RecyclableMemoryStream
+  doc.ExportPdf(ms);                                // pooled copy; returns bytes written
+  await ms.CopyToAsync(httpResponse.Body);
+  ```
 - **Fonts.** Only the bundled Latin metric clones (+ STIX math) are embedded, matching
   the Node export. CJK / complex scripts render as tofu in PDF (same gap as the
   backend). The model keeps original family names.
