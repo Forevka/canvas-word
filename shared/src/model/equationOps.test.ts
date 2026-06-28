@@ -8,8 +8,10 @@ import { applyOp, locateEquation, locateBlock } from "./ops";
 import type { Block, Document, EquationBlock, Paragraph, TableBlock } from "./document";
 import type { MathEquation } from "./math";
 
+/** A minimal single-number display equation (just enough to assert against). */
 const eq = (text: string): MathEquation => ({ root: { type: "row", children: [{ type: "number", text }] }, display: true });
 
+/** A center-aligned display-equation block carrying the given equation. */
 const equationBlock = (id: string, equation: MathEquation): EquationBlock => ({
   kind: "equation",
   id,
@@ -18,6 +20,7 @@ const equationBlock = (id: string, equation: MathEquation): EquationBlock => ({
   align: "center",
 });
 
+/** An empty paragraph block (used as a sibling/neighbour in fixtures). */
 const para = (id: string): Paragraph => ({
   kind: "paragraph",
   id,
@@ -34,11 +37,13 @@ const tableWith = (id: string, blocks: Block[]): TableBlock => ({
   rows: [{ cells: [{ id: `${id}-c0`, blocks }] }],
 });
 
+/** A document with the given body blocks and optional section overrides (bands). */
 const docOf = (blocks: Block[], section: Partial<Document["section"]> = {}): Document => ({
   section: { pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 }, ...section },
   blocks,
 });
 
+/** A document whose sole body block is a center-aligned equation (id "e1"). */
 const docWith = (equation: MathEquation): Document => docOf([equationBlock("e1", equation)]);
 
 describe("setEquation op", () => {
@@ -76,6 +81,7 @@ describe("setEquationAlign op", () => {
 });
 
 describe("nested equations (table cells / header-footer bands)", () => {
+  /** The first block of the first body table's single cell, as an equation. */
   const cellEquationOf = (doc: Document): EquationBlock =>
     (doc.blocks[0] as TableBlock).rows[0]!.cells[0]!.blocks[0] as EquationBlock;
 
