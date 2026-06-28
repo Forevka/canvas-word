@@ -814,9 +814,11 @@ function paragraphLines(p: Paragraph, contentWidth: number, cache: PrepareCache)
     // instead REFLECTS the line about the content box: tab stops then measure from
     // the right (start) edge and cells fill right-to-left, the Word w:bidi behavior.
     if (rl.tabbed) {
-      if (rtlBase && (rl.frags.length > 0 || (rl.leaders && rl.leaders.length > 0))) {
-        mirrorTabbedLineRtl(rl, levels, contentWidth);
-      }
+      // Mirror any RTL tabbed line that carries geometry — text, leaders, or just a
+      // tab-arrow overlay (a "\t"-only line has arrows but no fragments/leaders).
+      const hasGeometry =
+        rl.frags.length > 0 || (rl.leaders?.length ?? 0) > 0 || (rl.tabArrows?.length ?? 0) > 0;
+      if (rtlBase && hasGeometry) mirrorTabbedLineRtl(rl, levels, contentWidth);
     } else if (levels !== null && rl.frags.length > 0) {
       const r = bidiReorderLine(rl.frags, levels);
       rl.frags = r.frags;

@@ -506,6 +506,15 @@ describe("engine — tab stops", () => {
     expect(ld.x1).toBeLessThan(ld.x2);
   });
 
+  it("mirrors a tab-arrow overlay on a tab-only RTL line (no text/leaders)", () => {
+    // A "\t"-only line produces a formatting-mark arrow but no fragments or leaders;
+    // it must still mirror so the arrow opens at the start (right) edge.
+    const p = para("\t", { direction: "rtl" });
+    const line = placedOf(layout(doc([p])), p.id)!.pb.lines[0]!;
+    expect(line.tabArrows?.length).toBeGreaterThan(0);
+    expect(line.tabArrows![0]!.x2).toBeCloseTo(624, 0);
+  });
+
   it("leaves LTR tab stops left-anchored (no mirroring regression)", () => {
     const p = para("Left\tRight", { tabStops: [{ posPx: 300 }] });
     const line = placedOf(layout(doc([p])), p.id)!.pb.lines[0]!;
