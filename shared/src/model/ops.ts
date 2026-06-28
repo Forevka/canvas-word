@@ -342,15 +342,19 @@ export function locateImage(doc: Document, blockId: string): ImageLocation | nul
   return null;
 }
 
-/** Find a block of a given kind anywhere editable — a top-level block of any
- *  container (body or a header/footer band) OR a block nested one level deep in
- *  a table cell (of a body OR band table). The container-aware generalization of
- *  locateImage; equation editing/alignment/deletion resolve through it so display
- *  equations imported into cells or bands stay live. */
+/** Where a block lives: top-level in a container (body or a header/footer band)
+ *  or one level deep in a table cell. The path carries the container so callers
+ *  can clone the right story. */
 export type BlockLocation<B extends Block> =
   | { kind: "top"; where: Container; index: number; block: B }
   | { kind: "cell"; where: Container; bi: number; ri: number; ci: number; ii: number; block: B };
 
+/** Find a block of a given kind anywhere editable — a top-level block of any
+ *  container (body or a header/footer band) OR a block nested one level deep in
+ *  a table cell (of a body OR band table). The container-aware generalization of
+ *  locateImage; equation editing/alignment/deletion resolve through it so display
+ *  equations imported into cells or bands stay live. Returns null when no block
+ *  with that id and kind exists. */
 export function locateBlock<K extends Block["kind"]>(
   doc: Document,
   blockId: string,
