@@ -65,6 +65,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on RTL paragraphs mixing runs (e.g. Arabic text with embedded `PAGE`/`DATE` fields).
   The line index now derives each line's logical span from the min/max offset across
   its fragments. (Single-run and LTR lines are unaffected.)
+- **Tab stops in RTL paragraphs.** Tab-stopped lines were always laid out left-to-right
+  from the left margin, so in an RTL (`w:bidi`) paragraph the stops measured from the
+  wrong edge and the cells ran the wrong way (the tabs-on-an-RTL-line case was left in
+  logical order). An RTL tab line is now reflected about the content box: stop positions
+  are measured from the **right (start) edge**, tab cells fill **right-to-left**, and
+  right/center/decimal alignment plus leaders and tab arrows mirror with them. Each cell
+  keeps its own embedding level, so RTL-script cells right-anchor and caret / hit-testing
+  take the bidi path. The LTR fast path is byte-identical. (Issue #6.)
 
 ## [0.7.5] — 2026-06-25
 
