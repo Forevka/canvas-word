@@ -161,6 +161,23 @@ describe("latexToMath", () => {
     expect(list[2]).toMatchObject({ type: "ident", text: "S" });
   });
 
+  it("does not bind spacing/structural commands as the body", () => {
+    // A spacing command (\quad, \,) is not an operand: it stays a sibling and
+    // the body remains an empty placeholder rather than swallowing the space.
+    const list = latexToMath("\\sum_i \\quad x").children;
+    expect(list[0]).toMatchObject({ type: "nary", op: "∑", body: { type: "row", children: [] } });
+    expect(list[1]).toMatchObject({ type: "space" });
+    expect(list[2]).toMatchObject({ type: "ident", text: "x" });
+  });
+
+  it("binds a \\left..\\right fenced integrand as the body", () => {
+    expect(latexToMath("\\int_a^b \\left(x+1\\right)").children[0]).toMatchObject({
+      type: "nary",
+      op: "∫",
+      body: { type: "fenced", open: "(", close: ")" },
+    });
+  });
+
   // ── #21(b): styled numeric glyphs survive ───────────────────────────────────
   it("keeps the variant on styled numbers (\\mathbb{1}, \\mathtt{0})", () => {
     expect(latexToMath("\\mathbb{1}").children[0]).toMatchObject({ type: "number", text: "1", variant: "double-struck" });

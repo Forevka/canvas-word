@@ -489,17 +489,24 @@ class Parser {
 
 const OP_CHARS = new Set("+-*/=<>(),.;:!|[]'".split("").concat(["±", "×", "÷"]));
 
+/** Commands that do NOT yield an operand: explicit spacing (`\quad \, \; \! …`,
+ *  which become `space` nodes) and the structural enders `\right` / `\end`
+ *  (handled by their openers, not standalone). Mirrors `command()` — these must
+ *  not be pulled into a big operator's body. */
+const NON_OPERAND_CMDS = new Set(["quad", "qquad", ",", ":", ">", ";", "!", " ", "right", "end"]);
+
 /** Whether `t` begins an operand that a big operator should bind as its body.
- *  Groups, commands, and `\text` runs do; so do alphanumeric atoms. Operators,
- *  relations, punctuation, fences, and the structural tokens (`^ _ } & \\`) do
- *  NOT — they parse as ordinary siblings, leaving the body empty (e.g. the
- *  trailing `= S` in `\sum_{i} a_i = S`). */
+ *  Groups, `\text` runs, and operand-producing commands do; so do alphanumeric
+ *  atoms. Operators, relations, punctuation, fences, spacing/structural commands,
+ *  and the structural tokens (`^ _ } & \\`) do NOT — they parse as ordinary
+ *  siblings, leaving the body empty (e.g. the trailing `= S` in `\sum_{i} a_i = S`). */
 function startsNaryBody(t: Tok): boolean {
   switch (t.k) {
     case "{":
     case "rawtext":
-    case "cmd":
       return true;
+    case "cmd":
+      return !NON_OPERAND_CMDS.has(t.v);
     case "char":
       return /[A-Za-z0-9]/.test(t.v);
     default:
