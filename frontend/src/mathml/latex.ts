@@ -9,7 +9,7 @@
 // the common operator/relation symbols, function names, \mathbb/\mathbf/.. styles,
 // \text, and spacing. Not a full LaTeX engine — enough for authoring equations.
 
-import type { MathNode, MathRow, MathVariant } from "@cw/shared";
+import type { MathNary, MathNode, MathRow, MathVariant } from "@cw/shared";
 import { emptyMathRow } from "@cw/shared";
 
 // ── Symbol tables ────────────────────────────────────────────────────────────
@@ -257,6 +257,46 @@ class Parser {
     }
   }
 
+  /** Parse a big operator (∑ ∫ ∏ …) into a real n-ary node: consume its bounds
+   *  (`_`/`^`, in either order) and then the operand it applies to.
+   *
+   *  The operand binds as the immediately following FACTOR (an atom plus any of
+   *  its own scripts), which lands in `nary.body` so OMML export fills the
+   *  `<m:e>` base instead of letting the summand float outside the `<m:nary>`.
+   *  `\sum_{i=1}^{n} i`, `\int_a^b f`, and `\sum_i x^2` all bind correctly.
+   *
+   *  known limitation: in LaTeX a big operator scopes over the rest of the
+   *  expression up to the next lower-precedence boundary; we bind only the next
+   *  factor. Multi-term or parenthesised summands (`\sum_i a_i b_i`,
+   *  `\int (x+1) dx`) keep just the first factor in the body — the rest stay as
+   *  siblings. Full precedence handling is out of scope for this fix. */
+  private naryOp(op: string): MathNode {
+    const nary: MathNary = { type: "nary", op, body: emptyMathRow() };
+    while (this.peek()?.k === "_" || this.peek()?.k === "^") {
+      const kind = (this.next() as { k: "_" | "^" }).k;
+      const bound = this.parseAtom() ?? emptyMathRow();
+      if (kind === "^") nary.sup = bound;
+      else nary.sub = bound;
+    }
+    const next = this.peek();
+    if (next && startsNaryBody(next)) {
+      nary.body = this.parseFactor() ?? nary.body;
+    }
+    return nary;
+  }
+
+  /** Parse one factor — an atom together with any scripts applied to it
+   *  (`x`, `x^2`, `a_i^2`). Reuses the same script-folding as `parseList`. */
+  private parseFactor(): MathNode | null {
+    const atom = this.parseAtom();
+    if (atom === null) return null;
+    const stack: MathNode[] = [atom];
+    while (this.peek()?.k === "^" || this.peek()?.k === "_") {
+      this.applyScript(stack, (this.peek() as { k: "^" | "_" }).k);
+    }
+    return stack[stack.length - 1] ?? null;
+  }
+
   /** Parse a single atom (group, command, or character). */
   private parseAtom(): MathNode | null {
     const t = this.next();
@@ -321,10 +361,10 @@ class Parser {
   private command(name: string): MathNode | null {
     if (name in GREEK) return { type: "ident", text: GREEK[name]! };
     if (name in OPS) return { type: "op", text: OPS[name]! };
-    // Big operators are true n-ary objects: `_`/`^` fill their bounds (see
-    // applyScript) and OMML export emits a real `<m:nary>` instead of scripted
-    // text. The body (summand) stays empty — in LaTeX it follows as a sibling.
-    if (name in BIG) return { type: "nary", op: BIG[name]!, body: emptyMathRow() };
+    // Big operators are true n-ary objects: `_`/`^` fill their bounds and the
+    // following operand (summand / integrand) binds into the body, so OMML
+    // export emits a real `<m:nary>` with a populated `<m:e>` base.
+    if (name in BIG) return this.naryOp(BIG[name]!);
     if (FUNCS.has(name)) return { type: "ident", text: name, variant: "normal" };
     if (name in STYLES) {
       const variant = STYLES[name]!;
@@ -448,6 +488,31 @@ class Parser {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const OP_CHARS = new Set("+-*/=<>(),.;:!|[]'".split("").concat(["±", "×", "÷"]));
+
+/** Commands that do NOT yield an operand: explicit spacing (`\quad \, \; \! …`,
+ *  which become `space` nodes) and the structural enders `\right` / `\end`
+ *  (handled by their openers, not standalone). Mirrors `command()` — these must
+ *  not be pulled into a big operator's body. */
+const NON_OPERAND_CMDS = new Set(["quad", "qquad", ",", ":", ">", ";", "!", " ", "right", "end"]);
+
+/** Whether `t` begins an operand that a big operator should bind as its body.
+ *  Groups, `\text` runs, and operand-producing commands do; so do alphanumeric
+ *  atoms. Operators, relations, punctuation, fences, spacing/structural commands,
+ *  and the structural tokens (`^ _ } & \\`) do NOT — they parse as ordinary
+ *  siblings, leaving the body empty (e.g. the trailing `= S` in `\sum_{i} a_i = S`). */
+function startsNaryBody(t: Tok): boolean {
+  switch (t.k) {
+    case "{":
+    case "rawtext":
+      return true;
+    case "cmd":
+      return !NON_OPERAND_CMDS.has(t.v);
+    case "char":
+      return /[A-Za-z0-9]/.test(t.v);
+    default:
+      return false;
+  }
+}
 
 function charNode(ch: string): MathNode {
   if (/[0-9]/.test(ch)) return { type: "number", text: ch };
