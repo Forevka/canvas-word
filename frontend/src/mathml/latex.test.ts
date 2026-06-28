@@ -174,7 +174,12 @@ describe("latexToMath", () => {
     expect(latexToMath("\\int_a^b \\left(x+1\\right)").children[0]).toMatchObject({
       type: "nary",
       op: "∫",
-      body: { type: "fenced", open: "(", close: ")" },
+      body: {
+        type: "fenced",
+        open: "(",
+        close: ")",
+        child: { type: "row", children: [{ type: "ident", text: "x" }, { type: "op", text: "+" }, { type: "number", text: "1" }] },
+      },
     });
   });
 
