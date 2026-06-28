@@ -2,7 +2,7 @@
 // Proves the m: namespace, m:oMathPara emit, and the OMML→MathML import all line up.
 
 import { beforeAll, describe, expect, it } from "vitest";
-import type { CharStyle, Document, EquationBlock, Paragraph, Run } from "@cw/shared";
+import type { CharStyle, Document, EquationBlock, FieldDef, Paragraph, Run } from "@cw/shared";
 import { runExport } from "../pipeline";
 import { runImport } from "../../import/docx/pipeline";
 import { installMeasureHost } from "../shared/measureHost";
@@ -117,6 +117,44 @@ describe("equation docx round-trip", () => {
     const eqRun = para?.runs.find((r) => r.style.equation);
     expect(eqRun).toBeTruthy();
     expect(eqRun!.style.link).toBe(url);
+  });
+
+  it("preserves a display equation wrapped in a block-level content control", async () => {
+    // The equation lives inside a block-level w:sdt; its sdtPath must round-trip
+    // (the wrapper is reconstructed by emitBlocks, not dropped on export).
+    const doc: Document = {
+      section: { pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } },
+      sdts: { eqctl: { type: "richText", tag: "equation-control" } },
+      blocks: [
+        { kind: "equation", id: "e1", revision: 0, align: "center", equation: { ...parseMathml(FRAC), display: true }, sdtPath: ["eqctl"] } satisfies EquationBlock,
+      ],
+    };
+    const { bytes } = await runExport(doc, "docx");
+    const { doc: back } = runImport(bytes);
+    const eq = back.blocks.find((b): b is EquationBlock => b.kind === "equation");
+    expect(eq).toBeTruthy();
+    expect(eq!.sdtPath?.length).toBe(1);
+    expect(back.sdts![eq!.sdtPath![0]!]!.tag).toBe("equation-control");
+  });
+
+  it("preserves a display equation captured inside a custom field", async () => {
+    // The equation is the result region of a custom (host-resolvable) complex
+    // field; its fieldId must round-trip and the field definition must survive.
+    const fieldDef: FieldDef = { id: "f1", instruction: " MYEQUATION \"sales\" ", name: "MYEQUATION", kind: "custom" };
+    const doc: Document = {
+      section: { pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } },
+      fields: { f1: fieldDef },
+      blocks: [
+        { kind: "equation", id: "e1", revision: 0, align: "center", equation: { ...parseMathml(FRAC), display: true }, fieldId: "f1" } satisfies EquationBlock,
+      ],
+    };
+    const { bytes } = await runExport(doc, "docx");
+    const { doc: back } = runImport(bytes);
+    const eq = back.blocks.find((b): b is EquationBlock => b.kind === "equation");
+    expect(eq).toBeTruthy();
+    expect(eq!.fieldId).toBeTruthy();
+    const def = back.fields?.[eq!.fieldId!];
+    expect(def?.instruction).toBe(" MYEQUATION \"sales\" ");
   });
 
   it("exports an equation to PDF without crashing and emits real bytes", async () => {
