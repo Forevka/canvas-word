@@ -402,6 +402,24 @@ Differences to keep in mind when reading the numbers:
   `pdfdump` (ClearScript host) + `compare-pdfs.mjs` → **ALL IDENTICAL**. Without a
   fixed date, output is live-dated and not reproducible (same as any pdfkit export).
 
+## Keeping the bindings in sync
+
+The C# wrapper is a stringly-typed bridge (`InvokeMethod("name", …)`), so the compiler
+can't catch a JS builder method that gained no C# mirror, or a C# call to a method the
+builder renamed. A vitest parity test closes that gap and runs in the normal frontend
+CI:
+
+```sh
+npx vitest run src/builder/csharpParity.test.ts   # (in frontend/)
+```
+
+It reflects the JS builder's method surface off the class prototypes and scrapes the JS
+method names the bindings invoke out of `dotnet/src/WordCanvas.ClearScript/Builder/*.cs`,
+then asserts both directions: every C# call targets a real JS method, and every JS method
+is bridged (or in a small, documented allowlist of internal helpers / typed-variant escape
+hatches). A new public builder method fails the test until it's bridged or consciously
+allowlisted.
+
 ## Verifying Node ≡ ClearScript output
 
 The same JS bundle runs under Node and under V8, so their output can be byte-compared
