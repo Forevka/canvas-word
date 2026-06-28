@@ -506,15 +506,24 @@ function tblLookXml(o: TableCondOverrides): string {
 export function blockXml(block: Block, ctx: PartCtx): string {
   if (block.kind === "paragraph") return paragraphXml(block, ctx);
   if (block.kind === "table") return tableXml(block, ctx);
-  if (block.kind === "equation") return equationParagraphXml(block);
+  if (block.kind === "equation") return equationParagraphXml(block, ctx);
   return imageParagraphXml(block, ctx);
 }
 
 /** Display equation -> a block-level `m:oMathPara` (Word's block math is a sibling
  *  of w:p in the body, not wrapped in one), carrying the equation's alignment in
  *  `m:oMathParaPr/m:jc`. The inner content is always the `m:oMath` (display form),
- *  regardless of the stored `display` flag. */
-function equationParagraphXml(block: EquationBlock): string {
+ *  regardless of the stored `display` flag.
+ *
+ *  Takes `ctx` so `blockXml` dispatches every block kind through a uniform
+ *  ctx-aware serializer. The equation's `fieldId` / `sdtPath` wrappers are applied
+ *  upstream by `emitBlocks` (block-level `w:sdt`) and `emitLeafBlocks` /
+ *  `fieldRegionXml` (complex field region) — identical to paragraphs, tables and
+ *  images — so an equation inside a content control or captured field round-trips.
+ *  The OMML body itself is self-contained (no rels/media), hence `ctx` is unused
+ *  here; threading it keeps the dispatch symmetric and ready for any future need. */
+function equationParagraphXml(block: EquationBlock, ctx: PartCtx): string {
+  void ctx; // see above: OMML body needs no part context; kept for dispatch parity
   const oMath = mathmlToOmml({ ...block.equation, display: false }); // inner m:oMath only
   const jc = block.align === "left" ? "left" : block.align === "right" ? "right" : "center";
   const pr = el("m:oMathParaPr", undefined, el("m:jc", { "m:val": jc }));
