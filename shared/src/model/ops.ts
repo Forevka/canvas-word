@@ -342,6 +342,71 @@ export function locateImage(doc: Document, blockId: string): ImageLocation | nul
   return null;
 }
 
+/** Find a block of a given kind anywhere editable — a top-level block of any
+ *  container (body or a header/footer band) OR a block nested one level deep in
+ *  a table cell (of a body OR band table). The container-aware generalization of
+ *  locateImage; equation editing/alignment/deletion resolve through it so display
+ *  equations imported into cells or bands stay live. */
+export type BlockLocation<B extends Block> =
+  | { kind: "top"; where: Container; index: number; block: B }
+  | { kind: "cell"; where: Container; bi: number; ri: number; ci: number; ii: number; block: B };
+
+export function locateBlock<K extends Block["kind"]>(
+  doc: Document,
+  blockId: string,
+  blockKind: K,
+): BlockLocation<Extract<Block, { kind: K }>> | null {
+  type B = Extract<Block, { kind: K }>;
+  const found = containerOf(doc, blockId);
+  if (found) {
+    const block = containerBlocks(doc, found.where)[found.index];
+    if (block?.kind === blockKind) {
+      return { kind: "top", where: found.where, index: found.index, block: block as B };
+    }
+    return null; // id is a top-level block, but not of the requested kind
+  }
+  // Not top-level — scan table cells in the body and every band story.
+  for (const where of ["body", ...BAND_CONTAINERS] as Container[]) {
+    const blocks = containerBlocks(doc, where);
+    for (let bi = 0; bi < blocks.length; bi++) {
+      const b = blocks[bi]!;
+      if (b.kind !== "table") continue;
+      for (let ri = 0; ri < b.rows.length; ri++) {
+        const row = b.rows[ri]!;
+        for (let ci = 0; ci < row.cells.length; ci++) {
+          const cell = row.cells[ci]!;
+          for (let ii = 0; ii < cell.blocks.length; ii++) {
+            const cb = cell.blocks[ii]!;
+            if (cb.kind === blockKind && cb.id === blockId) {
+              return { kind: "cell", where, bi, ri, ci, ii, block: cb as B };
+            }
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/** Locate a display-equation block anywhere editable (body / band / table cell). */
+export function locateEquation(doc: Document, blockId: string): BlockLocation<EquationBlock> | null {
+  return locateBlock(doc, blockId, "equation");
+}
+
+/** Path-clone the document replacing a located block in place (top-level in any
+ *  container, or one level deep in a table cell). */
+function replaceLocatedBlock(doc: Document, loc: BlockLocation<Block>, block: Block): Document {
+  if (loc.kind === "top") {
+    const blocks = containerBlocks(doc, loc.where).slice();
+    blocks[loc.index] = block;
+    return withContainerBlocks(doc, loc.where, blocks);
+  }
+  const table = containerBlocks(doc, loc.where)[loc.bi] as TableBlock;
+  const cellBlocks = table.rows[loc.ri]!.cells[loc.ci]!.blocks.slice();
+  cellBlocks[loc.ii] = block;
+  return replaceCellBlocks(doc, loc.where, loc.bi, loc.ri, loc.ci, cellBlocks);
+}
+
 /** The table's true grid-column count: the widest row measured in GRID columns,
  *  not cells — colSpan widens a cell and a rowSpan from an earlier row leaves a
  *  hole that this row's cells shift past (HTML table model). Counting cells
@@ -634,16 +699,14 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
     }
 
     case "setEquation": {
-      // Replace a display equation's MathML (the editor's Apply). Body-level only.
-      const bi = doc.blocks.findIndex((b) => b.id === op.blockId);
-      const block = bi >= 0 ? doc.blocks[bi] : undefined;
-      if (!block || block.kind !== "equation") throw new Error(`equation ${op.blockId} not found`);
-      const old = (block as EquationBlock).equation;
-      const updated: EquationBlock = { ...(block as EquationBlock), revision: block.revision + 1, equation: op.equation };
-      const blocks = doc.blocks.slice();
-      blocks[bi] = updated;
+      // Replace a display equation's MathML (the editor's Apply). Container-aware:
+      // the equation may live in the body, a header/footer band, or a table cell.
+      const loc = locateEquation(doc, op.blockId);
+      if (!loc) throw new Error(`equation ${op.blockId} not found`);
+      const old = loc.block.equation;
+      const updated: EquationBlock = { ...loc.block, revision: loc.block.revision + 1, equation: op.equation };
       return {
-        doc: { ...doc, blocks },
+        doc: replaceLocatedBlock(doc, loc, updated),
         inverse: { type: "setEquation", blockId: op.blockId, equation: old },
         mapPosition: identity,
         dirtyBlockIds: [op.blockId],
@@ -651,15 +714,12 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
     }
 
     case "setEquationAlign": {
-      const bi = doc.blocks.findIndex((b) => b.id === op.blockId);
-      const block = bi >= 0 ? doc.blocks[bi] : undefined;
-      if (!block || block.kind !== "equation") throw new Error(`equation ${op.blockId} not found`);
-      const old = (block as EquationBlock).align ?? "center";
-      const updated: EquationBlock = { ...(block as EquationBlock), revision: block.revision + 1, align: op.align };
-      const blocks = doc.blocks.slice();
-      blocks[bi] = updated;
+      const loc = locateEquation(doc, op.blockId);
+      if (!loc) throw new Error(`equation ${op.blockId} not found`);
+      const old = loc.block.align ?? "center";
+      const updated: EquationBlock = { ...loc.block, revision: loc.block.revision + 1, align: op.align };
       return {
-        doc: { ...doc, blocks },
+        doc: replaceLocatedBlock(doc, loc, updated),
         inverse: { type: "setEquationAlign", blockId: op.blockId, align: old },
         mapPosition: identity,
         dirtyBlockIds: [op.blockId],
