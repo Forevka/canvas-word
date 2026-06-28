@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { FieldDef, Paragraph, TableBlock } from "@cw/shared";
-import { DEFAULT_CHAR_STYLE, formatFieldDate } from "@cw/shared";
+import { DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE, formatFieldDate } from "@cw/shared";
 import { DocumentBuilder } from "./index";
 
 const para = (b: unknown): Paragraph => b as Paragraph;
@@ -243,5 +243,69 @@ describe("real table-style content bake — explicit-default provenance (#30)", 
     expect(para(header.cells[0]!.blocks[0]).runs[0]!.style.color).toBe(def);
     // No explicit color → genuinely default-valued → the band's white wins.
     expect(para(header.cells[1]!.blocks[0]).runs[0]!.style.color).toBe("#ffffff");
+  });
+});
+
+// Issue #45: cell content authored via a StoryBuilder callback must record the
+// same explicit-key provenance as the data-driven CellSpec path, so both cell
+// shapes survive a conflicting band identically.
+describe("real table-style content bake — callback-cell provenance (#45)", () => {
+  it("preserves a callback run color set to the default while an unset cell picks up the band", () => {
+    const def = DEFAULT_CHAR_STYLE.color; // the builder's resolved default text color
+    const b = DocumentBuilder.create().tableStyle({
+      id: "Hdr",
+      name: "Hdr",
+      conds: { firstRow: { char: { color: "#ffffff" } } }, // header band recolors text white
+    });
+    b.table(
+      (t) =>
+        t.row((r) => {
+          r.cell((s) => s.paragraph("pinned", { color: def })); // explicit color === default
+          r.cell((s) => s.paragraph("auto")); // no explicit color
+        }),
+      { styleId: "Hdr" },
+    );
+    const header = table(b.build().blocks[0]).rows[0]!;
+    // Author explicitly pinned the default color in a callback cell → band must NOT override it.
+    expect(para(header.cells[0]!.blocks[0]).runs[0]!.style.color).toBe(def);
+    // No explicit color → genuinely default-valued → the band's white wins.
+    expect(para(header.cells[1]!.blocks[0]).runs[0]!.style.color).toBe("#ffffff");
+  });
+
+  it("preserves a callback run color pinned via .color() against the band", () => {
+    const def = DEFAULT_CHAR_STYLE.color;
+    const b = DocumentBuilder.create().tableStyle({
+      id: "Hdr",
+      name: "Hdr",
+      conds: { firstRow: { char: { color: "#ffffff" } } },
+    });
+    b.table(
+      (t) => t.row((r) => r.cell((s) => s.paragraph("pinned").color(def))), // direct-formatting API
+      { styleId: "Hdr" },
+    );
+    const header = table(b.build().blocks[0]).rows[0]!;
+    expect(para(header.cells[0]!.blocks[0]).runs[0]!.style.color).toBe(def);
+  });
+
+  it("preserves a callback paragraph align set to the default while an unset cell picks up the band", () => {
+    const def = DEFAULT_PARA_STYLE.align; // resolved default align
+    const b = DocumentBuilder.create().tableStyle({
+      id: "Align",
+      name: "Align",
+      conds: { firstRow: { para: { align: "center" } } }, // header band centers text
+    });
+    b.table(
+      (t) =>
+        t.row((r) => {
+          r.cell((s) => s.paragraph("pinned").align(def)); // explicit align === default
+          r.cell((s) => s.paragraph("auto")); // no explicit align
+        }),
+      { styleId: "Align" },
+    );
+    const header = table(b.build().blocks[0]).rows[0]!;
+    // Author explicitly pinned the default align → band must NOT override it.
+    expect(para(header.cells[0]!.blocks[0]).style.align).toBe(def);
+    // No explicit align → genuinely default-valued → the band's center wins.
+    expect(para(header.cells[1]!.blocks[0]).style.align).toBe("center");
   });
 });

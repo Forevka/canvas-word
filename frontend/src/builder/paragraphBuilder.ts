@@ -77,8 +77,26 @@ export class ParagraphBuilder<P extends StoryBuilder> {
 
   private applyChar(patch: Partial<CharStyle>): this {
     Object.assign(this.charPatch, patch);
-    for (const r of this.para.runs) Object.assign(r.style, patch);
+    const keys = Object.keys(patch);
+    for (const r of this.para.runs) {
+      Object.assign(r.style, patch);
+      // Direct formatting applied to existing runs is author-explicit too — record
+      // it so table-style baking preserves a value that equals the default against a
+      // conflicting band (#45). Runs added LATER inherit charPatch via ctx.run, which
+      // records their keys at creation, so this only needs the runs already present.
+      this.markRunCharKeys(r, keys);
+    }
     return this;
+  }
+
+  /** Merge `keys` into a run's explicit-char provenance (issue #45 — mirrors the
+   *  data-driven cell path, where author-set CharStyle keys are tracked so an
+   *  explicit value equal to the resolved default survives a conflicting band). */
+  private markRunCharKeys(run: Run, keys: Iterable<string>): void {
+    const prev = this.ctx.explicitCharKeys.get(run);
+    const next = new Set(prev);
+    for (const k of keys) next.add(k);
+    this.ctx.explicitCharKeys.set(run, next);
   }
 
   bold(on = true): this {
@@ -122,7 +140,16 @@ export class ParagraphBuilder<P extends StoryBuilder> {
    *  exactOptional-safe way to toggle an optional CharStyle field off). */
   private clearChar(key: keyof CharStyle): this {
     delete (this.charPatch as unknown as Record<string, unknown>)[key];
-    for (const r of this.para.runs) delete (r.style as unknown as Record<string, unknown>)[key];
+    for (const r of this.para.runs) {
+      delete (r.style as unknown as Record<string, unknown>)[key];
+      // No longer author-set — drop it from provenance so it falls back to value-equality.
+      const prov = this.ctx.explicitCharKeys.get(r);
+      if (prov?.has(key)) {
+        const next = new Set(prov);
+        next.delete(key);
+        this.ctx.explicitCharKeys.set(r, next);
+      }
+    }
     return this;
   }
 
@@ -315,6 +342,10 @@ export class ParagraphBuilder<P extends StoryBuilder> {
 
   align(align: ParaStyle["align"]): this {
     this.para.style.align = align;
+    // Author explicitly set align — record it (mirrors CellSpec.align in the data
+    // path) so table-style baking preserves it even when it equals the default (#45).
+    const prev = this.ctx.explicitParaKeys.get(this.para);
+    this.ctx.explicitParaKeys.set(this.para, new Set(prev).add("align"));
     return this;
   }
 
