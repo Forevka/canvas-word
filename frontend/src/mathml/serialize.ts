@@ -21,8 +21,14 @@ export function mathNodeToMathml(n: MathNode): string {
   return nodeXml(n);
 }
 
-function variantAttr(v: MathVariant | undefined): Record<string, string> | undefined {
+/** `<mi>` defaults to italic, so an explicit `italic` variant is redundant. */
+function identVariantAttr(v: MathVariant | undefined): Record<string, string> | undefined {
   return v && v !== "italic" ? { mathvariant: v } : undefined;
+}
+
+/** `<mn>` defaults to UPRIGHT, so `italic` is meaningful and must be emitted. */
+function numberVariantAttr(v: MathVariant | undefined): Record<string, string> | undefined {
+  return v ? { mathvariant: v } : undefined;
 }
 
 function nodeXml(n: MathNode): string {
@@ -30,9 +36,9 @@ function nodeXml(n: MathNode): string {
     case "row":
       return el("mrow", undefined, n.children.map(nodeXml).join(""));
     case "ident":
-      return el("mi", variantAttr(n.variant), escapeText(n.text));
+      return el("mi", identVariantAttr(n.variant), escapeText(n.text));
     case "number":
-      return el("mn", variantAttr(n.variant), escapeText(n.text));
+      return el("mn", numberVariantAttr(n.variant), escapeText(n.text));
     case "op": {
       const attrs: Record<string, string> = {};
       if (n.stretchy !== undefined) attrs.stretchy = String(n.stretchy);

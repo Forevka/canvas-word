@@ -60,9 +60,10 @@ function node(n: MathNode): { tex: string; tight: boolean } {
       return { tex: base, tight: [...base].length === 1 };
     }
     case "number": {
-      if (n.variant && n.variant !== "italic" && VARIANT_CMD[n.variant]) {
-        return { tex: `\\${VARIANT_CMD[n.variant]}{${n.text}}`, tight: true };
-      }
+      // Numbers are upright by default, so EVERY variant is meaningful — `italic`
+      // included (`\mathit{1}`), unlike identifiers where italic is the default.
+      const cmd = n.variant === "italic" ? "mathit" : n.variant ? VARIANT_CMD[n.variant] : undefined;
+      if (cmd) return { tex: `\\${cmd}{${n.text}}`, tight: true };
       return { tex: n.text, tight: [...n.text].length === 1 };
     }
     case "op":

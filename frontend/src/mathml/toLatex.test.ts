@@ -55,7 +55,9 @@ describe("mathToLatex", () => {
     for (const raw of ["a_b", "50% off", "C# & F#", "a\\b", "x^2", "~tilde~", "{braces}", "$math$", "100% \\ {x}"]) {
       const node = { type: "text" as const, text: raw };
       const round = latexToMath(mathToLatex({ type: "row", children: [node] }));
-      expect(round.children[0]).toMatchObject({ type: "text", text: raw });
+      // Compare the WHOLE row — a leaked sibling (bad brace capture/unescape)
+      // would slip past a first-child-only check.
+      expect(round.children).toEqual([{ type: "text", text: raw }]);
     }
   });
 

@@ -117,6 +117,9 @@ describe("latexToMath", () => {
     expect(latexToMath("\\mathbb{1}").children[0]).toMatchObject({ type: "number", text: "1", variant: "double-struck" });
     expect(latexToMath("\\mathtt{0}").children[0]).toMatchObject({ type: "number", text: "0", variant: "monospace" });
     expect(mml("\\mathbb{1}")).toContain('<mn mathvariant="double-struck">1</mn>');
+    // Numbers are upright by default, so \mathit{1} (italic digit) must survive.
+    expect(latexToMath("\\mathit{1}").children[0]).toMatchObject({ type: "number", text: "1", variant: "italic" });
+    expect(mml("\\mathit{1}")).toContain('<mn mathvariant="italic">1</mn>');
   });
 
   // ── #21(a): \phantom keeps its invisible-spacing wrapper ─────────────────────

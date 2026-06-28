@@ -39,6 +39,8 @@ describe("MathML parse <-> serialize is a stable canonical form", () => {
       '<math><munderover accent="true" accentunder="true"><mi>x</mi><mo>⏟</mo><mo>^</mo></munderover></math>',
     blackboardNumber: '<math><mn mathvariant="double-struck">1</mn></math>',
     monospaceNumber: '<math><mn mathvariant="monospace">0</mn></math>',
+    // Numbers are upright by default, so an explicit italic must NOT be dropped.
+    italicNumber: '<math><mn mathvariant="italic">1</mn></math>',
     phantom: "<math><mphantom><mi>x</mi></mphantom></math>",
     matrix:
       "<math><mtable><mtr><mtd><mn>1</mn></mtd><mtd><mn>0</mn></mtd></mtr>" +
@@ -261,6 +263,13 @@ describe("OMML -> AST -> OMML round-trip (import then re-export)", () => {
     const eq = parseMathml('<math><mn mathvariant="double-struck">1</mn></math>');
     const root = ommlToMathml(firstEl(mathmlToOmml(eq)));
     expect(root.children[0]).toMatchObject({ type: "number", text: "1", variant: "double-struck" });
+  });
+
+  it("italic number survives OMML (explicit m:sty=\"i\", not dropped as default)", () => {
+    const omml = mathmlToOmml(parseMathml('<math><mn mathvariant="italic">1</mn></math>'));
+    expect(omml).toContain('<m:sty m:val="i"/>');
+    const root = ommlToMathml(firstEl(omml));
+    expect(root.children[0]).toMatchObject({ type: "number", text: "1", variant: "italic" });
   });
 
   it("plain digits import without a spurious variant", () => {

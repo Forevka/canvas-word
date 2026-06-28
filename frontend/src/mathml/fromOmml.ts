@@ -101,7 +101,9 @@ function runNode(r: TNode): MathNode {
   if (/^[0-9]+([.,][0-9]+)?$/.test(t)) {
     // Numbers are upright/plain by default; keep only a non-plain alphanumeric
     // style (blackboard/monospace/bold/…) so ordinary digits stay variant-free.
-    const variant = variantFrom(sty, scr);
+    // An explicit `m:sty="i"` IS meaningful on a number (its default is upright),
+    // so recover it as `italic` — `variantFromSty` treats "i" as the run default.
+    const variant = variantFrom(sty, scr) ?? (sty === "i" ? "italic" : undefined);
     return { type: "number", text: t, ...(variant && variant !== "normal" ? { variant } : {}) };
   }
   if (t.length > 0 && OP_RE.test(t)) return { type: "op", text: t };

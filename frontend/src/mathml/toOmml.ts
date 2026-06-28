@@ -59,10 +59,12 @@ function runPropsFor(variant: MathVariant | undefined): { sty: Sty; scr?: Scr } 
 const needsPreserve = (s: string): boolean => /^\s|\s$|\s\s/.test(s) || s.includes("\t");
 
 /** A math run: `m:r` with an optional `m:rPr` (`m:scr` then `m:sty`, schema
- *  order) and the `m:t` text. */
-function runXml(content: string, sty: Sty, scr?: Scr): string {
+ *  order) and the `m:t` text. The math-run default is italic, so `m:sty="i"` is
+ *  normally omitted; `forceSty` keeps it when italic is non-default (e.g. an
+ *  upright-by-default number explicitly styled italic). */
+function runXml(content: string, sty: Sty, scr?: Scr, forceSty = false): string {
   const scrEl = scr ? el("m:scr", { "m:val": scr }) : "";
-  const styEl = sty === "i" ? "" : el("m:sty", { "m:val": sty });
+  const styEl = sty === "i" && !forceSty ? "" : el("m:sty", { "m:val": sty });
   const inner = scrEl + styEl;
   const rPr = inner ? el("m:rPr", undefined, inner) : "";
   const t = el("m:t", needsPreserve(content) ? { "xml:space": "preserve" } : undefined, escapeText(content));
@@ -107,9 +109,11 @@ function nodeXml(n: MathNode): string {
     case "number": {
       // Numbers are upright/plain by default; a `variant` selects an alphanumeric
       // style (blackboard-bold, monospace, …) — same run props as identifiers.
+      // `forceSty` emits an explicit `m:sty="i"` so an italic digit isn't dropped
+      // back to a plain one (italic is the run default, not the number default).
       if (!n.variant) return runXml(n.text, "p");
       const { sty, scr } = runPropsFor(n.variant);
-      return runXml(n.text, sty, scr);
+      return runXml(n.text, sty, scr, true);
     }
     case "op":
     case "text":

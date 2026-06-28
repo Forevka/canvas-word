@@ -361,8 +361,9 @@ class Parser {
         return { type: "limit", base: this.arg(), under };
       }
       case "phantom":
-      case "vphantom":
-      case "hphantom":
+        // Only full \phantom maps cleanly: the model has no horizontal/vertical
+        // axis, so \hphantom / \vphantom are left to fall through (they would
+        // change meaning if round-tripped back as a plain \phantom).
         return { type: "phantom", child: this.arg() };
       case "left":
         return this.leftRight();
