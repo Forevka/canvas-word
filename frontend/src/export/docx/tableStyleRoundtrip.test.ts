@@ -69,6 +69,19 @@ describe("table style commands", () => {
     expect(firstCellOf(out.blocks[0] as TableBlock, 0, 0).shading).toBe("#ff0000");
   });
 
+  it("upsertTableStyle re-bakes tables referencing a basedOn-derived style", () => {
+    // Table references a child style derived from GridAccent; editing the PARENT
+    // must rebake the table (it inherits the parent's wholeTable/banding props).
+    const derived: TableStyle = { id: "GridAccentChild", name: "Grid Accent Child", basedOn: "GridAccent", conds: {} };
+    const table = mkTable("GridAccentChild");
+    const doc: Document = { section: SECTION, tableStyles: { GridAccent: gridStyle, GridAccentChild: derived }, blocks: [table] };
+    const recolored: TableStyle = { ...gridStyle, conds: { ...gridStyle.conds, band1Horz: { shading: "#00ff00" } } };
+    const out = run({ doc, selection: null }, upsertTableStyle(recolored));
+    const t = out.blocks[0] as TableBlock;
+    expect(firstCellOf(t, 1, 0).shading).toBe("#00ff00"); // inherited band picks up parent edit
+    expect(firstCellOf(t, 0, 0).shading).toBe("#4472c4"); // inherited header retained
+  });
+
   it("deleteTableStyle drops the reference but keeps the baked cells", () => {
     const table = mkTable("GridAccent");
     table.rows[0]!.cells[0]!.shading = "#4472c4";
