@@ -21,7 +21,12 @@ describe("admin auth", () => {
 
   it("rejects a tampered token", () => {
     const { token } = issueToken("admin");
-    const tampered = token.slice(0, -2) + (token.endsWith("a") ? "b" : "a") + token.slice(-1);
+    // Flip the second-to-last character to one guaranteed to differ from it,
+    // so the tamper is never a no-op (the old logic keyed the replacement off
+    // the last char while overwriting the second-to-last — see issue #40).
+    const i = token.length - 2;
+    const replacement = token[i] === "a" ? "b" : "a";
+    const tampered = token.slice(0, i) + replacement + token.slice(i + 1);
     expect(verifyToken(tampered)).toBeNull();
     expect(verifyToken("garbage")).toBeNull();
     expect(verifyToken("")).toBeNull();
