@@ -2121,16 +2121,33 @@ export function applyTableStyle(styleId: string): Command {
   };
 }
 
-/** Create or replace a table style, then re-bake every table referencing it.
+/** Whether table style `id`'s basedOn ancestry includes `targetId` (cycle-guarded,
+ *  like `resolveTableStyle`). */
+function tableStyleChainIncludes(styles: Record<string, TableStyle>, id: string, targetId: string): boolean {
+  const seen = new Set<string>();
+  for (let cur = styles[id]; cur && !seen.has(cur.id); cur = cur.basedOn ? styles[cur.basedOn] : undefined) {
+    if (cur.id === targetId) return true;
+    seen.add(cur.id);
+  }
+  return false;
+}
+
+/** Create or replace a table style, then re-bake every table whose resolved style
+ *  chain includes it — including tables referencing a style DERIVED from it via
+ *  `basedOn`, whose baked cells would otherwise stay stale until reapplied.
  *  One undoable transaction (setTableStyleSheet + per-table structure ops). */
 export function upsertTableStyle(style: TableStyle): Command {
   return (state) => {
     const styles = { ...(state.doc.tableStyles ?? {}), [style.id]: style };
     const ops: Op[] = [{ type: "setTableStyleSheet", tableStyles: styles }];
     for (const table of allTables(state.doc.blocks)) {
-      if (table.styleId !== style.id) continue;
+      if (!table.styleId) continue;
+      const tableStyle = styles[table.styleId];
+      if (!tableStyle || !tableStyleChainIncludes(styles, table.styleId, style.id)) continue;
       const overrides = table.condOverrides ?? DEFAULT_TBL_LOOK;
-      ops.push(structureOp(table, bakeTableStyleRows(table, style, styles, overrides)));
+      // Bake with the table's OWN style (so its basedOn chain resolves correctly),
+      // not the edited style — they differ for basedOn-derived references.
+      ops.push(structureOp(table, bakeTableStyleRows(table, tableStyle, styles, overrides)));
     }
     return tr(ops, state.selection, "command");
   };
