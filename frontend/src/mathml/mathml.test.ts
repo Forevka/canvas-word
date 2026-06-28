@@ -167,6 +167,44 @@ describe("OMML -> AST -> OMML round-trip (import then re-export)", () => {
     expect(root.children[0]).toMatchObject({ type: "fenced", open: "[", close: "]" });
   });
 
+  it("multi-operand delimiter materializes the separator glyph (#18)", () => {
+    // A tuple `(a,b)`: two `m:e` operands, comma in `m:sepChr`. The separator
+    // must come back as a real `op` node, not vanish into `fenced.separators`.
+    const omml =
+      "<m:oMath><m:d><m:dPr><m:begChr m:val=\"(\"/><m:endChr m:val=\")\"/><m:sepChr m:val=\",\"/></m:dPr>" +
+      "<m:e><m:r><m:t>a</m:t></m:r></m:e><m:e><m:r><m:t>b</m:t></m:r></m:e></m:d></m:oMath>";
+    const root = ommlToMathml(firstEl(omml));
+    expect(root.children[0]).toMatchObject({
+      type: "fenced",
+      open: "(",
+      close: ")",
+      child: {
+        type: "row",
+        children: [
+          { type: "row", children: [{ type: "ident", text: "a" }] },
+          { type: "op", text: "," },
+          { type: "row", children: [{ type: "ident", text: "b" }] },
+        ],
+      },
+    });
+    // The unused `separators` field is no longer set on OMML import.
+    expect(root.children[0]).not.toHaveProperty("separators");
+    // The comma round-trips back into the OMML as a literal operator run.
+    const back = mathmlToOmml({ root, display: false });
+    expect(back).toContain("<m:t>,</m:t>");
+  });
+
+  it("multi-operand delimiter defaults the separator to a comma when m:sepChr is absent (#18)", () => {
+    const omml =
+      "<m:oMath><m:d><m:dPr><m:begChr m:val=\"(\"/><m:endChr m:val=\")\"/></m:dPr>" +
+      "<m:e><m:r><m:t>a</m:t></m:r></m:e><m:e><m:r><m:t>b</m:t></m:r></m:e></m:d></m:oMath>";
+    const root = ommlToMathml(firstEl(omml));
+    expect(root.children[0]).toMatchObject({
+      type: "fenced",
+      child: { type: "row", children: [{}, { type: "op", text: "," }, {}] },
+    });
+  });
+
   // ── #11 fidelity gaps ──────────────────────────────────────────────────────
 
   it("munderover round-trips (nested limUpp/limLow collapses back to one limit)", () => {
