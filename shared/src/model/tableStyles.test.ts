@@ -91,6 +91,34 @@ describe("bakeTableStyleRows content provenance (#30)", () => {
     });
     expect(bakedRun(rows).style.color).toBe("#ffffff");
   });
+
+  // The paragraph branch mirrors the run branch: explicitPara provenance must
+  // protect an author-set para field (align) that equals the default.
+  const alignBand: TableStyle = { id: "Align", name: "Align", conds: { firstRow: { para: { align: "center" } } } };
+  const bakedAlign = (rows: ReturnType<typeof bakeTableStyleRows>): string | undefined =>
+    (rows[0]!.cells[0]!.blocks[0] as Paragraph).style.align;
+
+  it("preserves an explicitly-set paragraph align that equals the default against a conflicting band", () => {
+    const { table } = headerTable();
+    const para = table.rows[0]!.cells[0]!.blocks[0]!; // align === default ("left")
+    const explicitPara = new WeakMap<object, ReadonlySet<string>>([[para, new Set(["align"])]]);
+    const rows = bakeTableStyleRows(table, alignBand, { Align: alignBand }, { firstRow: true }, {
+      char: DEFAULT_CHAR_STYLE,
+      para: DEFAULT_PARA_STYLE,
+      explicitPara,
+    });
+    expect(bakedAlign(rows)).toBe(DEFAULT_PARA_STYLE.align);
+  });
+
+  it("lets a genuinely-default (unset) paragraph align pick up the band", () => {
+    const { table } = headerTable(); // align === default, but no provenance recorded
+    const rows = bakeTableStyleRows(table, alignBand, { Align: alignBand }, { firstRow: true }, {
+      char: DEFAULT_CHAR_STYLE,
+      para: DEFAULT_PARA_STYLE,
+      explicitPara: new WeakMap(),
+    });
+    expect(bakedAlign(rows)).toBe("center");
+  });
 });
 
 describe("cellCondFlags banding", () => {
