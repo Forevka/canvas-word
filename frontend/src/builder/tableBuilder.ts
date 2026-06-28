@@ -156,8 +156,15 @@ export class TableBuilder {
     }
     // Pass the builder's defaults so the band's char/para also render headlessly
     // (e.g. a header band's bold/white text) — applied only where a cell property
-    // still equals the default, so an author's explicit CellSpec.style is preserved.
-    table.rows = bakeTableStyleRows(table, style, styles, look, { char: this.ctx.charDefault, para: this.ctx.paraDefault });
+    // was not explicitly set, so an author's explicit CellSpec.style is preserved.
+    // The explicit-key maps carry per-cell author provenance so an explicit value
+    // that equals the default still survives a conflicting band (#30).
+    table.rows = bakeTableStyleRows(table, style, styles, look, {
+      char: this.ctx.charDefault,
+      para: this.ctx.paraDefault,
+      explicitChar: this.ctx.explicitCharKeys,
+      explicitPara: this.ctx.explicitParaKeys,
+    });
   }
 }
 
@@ -178,7 +185,15 @@ export class RowBuilder {
       spec = typeof content === "string" ? { ...opts, text: content } : { ...content, ...opts };
       const paraPatch: Partial<ParaStyle> = { ...CELL_PARA };
       if (spec.align !== undefined) paraPatch.align = spec.align;
-      blocks.push(this.ctx.paragraph([this.ctx.run(spec.text ?? "", spec.style ?? {})], paraPatch));
+      const run = this.ctx.run(spec.text ?? "", spec.style ?? {});
+      const para = this.ctx.paragraph([run], paraPatch);
+      // Record which char/para keys the author explicitly supplied via CellSpec, so
+      // table-style baking preserves them even when the value equals the resolved
+      // default (#30). Only author-set keys are tracked; builder cell-formatting
+      // defaults (CELL_PARA) keep the value-equality fallback.
+      if (spec.style) this.ctx.explicitCharKeys.set(run, new Set(Object.keys(spec.style)));
+      if (spec.align !== undefined) this.ctx.explicitParaKeys.set(para, new Set(["align"]));
+      blocks.push(para);
     }
     // A cell needs at least one paragraph — it is the editor's caret target.
     if (blocks.length === 0) blocks.push(this.ctx.paragraph([], CELL_PARA));
