@@ -8,10 +8,8 @@ using WordCanvas.ClearScript.Builder;
 // builder surface — headings + TOC, inline fields (DATE/PAGE/NUMPAGES/IF), every
 // content-control kind, merged / tall (paginating) / field-in-cell tables, images,
 // multilevel + bullet lists, footnotes, bookmarks, hidden text, hyperlinks, sub/
-// superscript, CJK text, and header/footer page fields.
-//
-// (Equations and explicit right-to-left paragraph direction are authored through the
-//  model API, not the fluent builder, so they're called out but not built here.)
+// superscript, CJK text, display + inline equations (LaTeX & MathML), right-to-left
+// paragraphs, a registered real table style, and header/footer page fields.
 // =============================================================================
 
 const string Ink = "#1a1a2e";
@@ -29,6 +27,20 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
     .Style(new NamedStyle { Id = "Heading1", Name = "Heading 1", Char = new CharStyle { Bold = true, FontSizePx = 24, Color = Ink }, Para = new ParaStylePatch { SpaceBeforePx = 18, SpaceAfterPx = 8 } })
     .Style(new NamedStyle { Id = "Heading2", Name = "Heading 2", Char = new CharStyle { Bold = true, FontSizePx = 19, Color = Ink }, Para = new ParaStylePatch { SpaceBeforePx = 14, SpaceAfterPx = 6 } })
 
+    // A REAL table style (conditional bands) — registered once, referenced by id,
+    // baked onto the cells AND emitted as w:tblStyle so it survives the docx round-trip.
+    .TableStyle(new TableStyleDef
+    {
+        Id = "ShowcaseGrid",
+        Name = "Showcase Grid",
+        Conds = new Dictionary<TableCond, TableCondProps>
+        {
+            [TableCond.WholeTable] = new() { Borders = CellBorders.All(new CellBorder { Color = "#c8ccd0", WidthPx = 1 }) },
+            [TableCond.FirstRow] = new() { Shading = Ink, Char = new CharStyle { Bold = true, Color = "#ffffff" } },
+            [TableCond.Band2Horz] = new() { Shading = "#f1f3f4" },
+        },
+    })
+
     // Title + subtitle + Table of Contents.
     .Paragraph("canvas-word", p => p.Align(TextAlign.Center).Font("Arial, sans-serif").FontSize(32).Bold().Color(Ink))
     .Paragraph("a canvas-rendered, page-accurate Word editor — rebuilt by the C# builder", p => p.Align(TextAlign.Center).Italic().Color("#5f6368"))
@@ -37,14 +49,14 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
 
     // ---- Fields ----
     .Paragraph("Fields", p => p.WithStyle("Heading1"))
-    .Paragraph(null, p => p
+    .Paragraph(p => p
         .Text("Fields are first-class objects you can insert and edit. Today is ")
         .DateField("MMMM d, yyyy")
         .Text(", this is page ").PageField()
         .Text(". A conditional (IF) field can branch: ")
         .IfField("2", ">", "1", "the condition held", "it did not")
         .Text(". Each recomputes on Update Field."))
-    .Paragraph(null, p => p
+    .Paragraph(p => p
         .Text("Footnotes", new CharStyle { Bold = true }).Text(" are supported")
         .Footnote("Footnotes lay out at the bottom of their page, with a separator rule — just like Word.")
         .Text(". So is ").Text("hidden metadata", new CharStyle { Hidden = true })
@@ -62,7 +74,7 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
 
     // ---- Content controls ----
     .Paragraph("Content controls", p => p.WithStyle("Heading1"))
-    .Paragraph(null, p => p
+    .Paragraph(p => p
         .Text("Every Word content-control kind round-trips: ")
         .RichTextControl("rich text", new SdtOptions { Alias = "Rich text" }).Text(", ")
         .PlainTextControl("plain text", new SdtOptions { Alias = "Plain text" }).Text(", a dropdown ")
@@ -84,8 +96,8 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
     .Paragraph("Fields work inside table cells too:")
     .Table(t => t
         .Row(r => r.Cell("Metric", Bold()).Cell("Value", Bold()))
-        .Row(r => r.Cell("Rendered on").Cell(s => s.Paragraph(null, p => p.DateField("yyyy-MM-dd"))))
-        .Row(r => r.Cell("Page").Cell(s => s.Paragraph(null, p => p.Text("p. ").PageField()))))
+        .Row(r => r.Cell("Rendered on").Cell(s => s.Paragraph(p => p.DateField("yyyy-MM-dd"))))
+        .Row(r => r.Cell("Page").Cell(s => s.Paragraph(p => p.Text("p. ").PageField()))))
     .Paragraph("And a table tall enough to paginate across pages — rows break cleanly:")
     .Table(t =>
     {
@@ -127,14 +139,44 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
     .Paragraph("East-Asian scripts lay out the way Word does — measured on canvas, with Unicode line-breaking and kinsoku, not the browser's contenteditable.")
     .Paragraph("日本語 — CJK line-breaking & kinsoku", p => p.Bold().Color(Ink))
     .Paragraph("日本語の文章は単語の間にスペースを入れません。それでもエンジンは文字単位で行を折り返し、句読点が行頭に来ないように禁則処理（kinsoku）を行います。「角括弧」のような約物も正しく扱われ、長い段落でもページをまたいで自然に流れます。")
-    .Paragraph("(Right-to-left paragraph direction and MathML equations — also in the editor's sample — are authored through the model API, not the fluent builder.)",
-        p => p.Italic().Color("#5f6368"))
+    // ---- Equations (LaTeX + MathML, typeset on canvas, round-tripped to OMML) ----
+    .Paragraph("Equations", p => p.WithStyle("Heading1"))
+    .Paragraph(p => p
+        .Text("Equations are first-class — the identity ")
+        .InlineEquation("e^{i\\pi}+1=0")
+        .Text(" flows inline with the text, while display equations get their own centered line:"))
+    .Equation("\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}")
+    .Paragraph("The same equation can be authored as MathML, here right-aligned:")
+    .EquationMathml(
+        "<math><mrow><msup><mi>a</mi><mn>2</mn></msup><mo>+</mo><msup><mi>b</mi><mn>2</mn></msup><mo>=</mo><msup><mi>c</mi><mn>2</mn></msup></mrow></math>",
+        new EquationOptions { Align = EquationAlign.Right })
+
+    // ---- Right-to-left / bidirectional ----
+    // NOTE: .Direction(Rtl) drives a true bidi (OOXML w:bidi) layout. We demo it with
+    // Latin text because the HEADLESS PDF export bundles only Latin + STIX-math + CJK
+    // fallback fonts — Arabic/Hebrew glyphs would render as tofu here (the .docx still
+    // carries the text and Word renders it). The base-direction effect (right
+    // alignment + mirrored start/end indents) is visible regardless of script.
+    .Paragraph("Right-to-left & bidirectional", p => p.WithStyle("Heading1"))
+    .Paragraph("Setting a paragraph's base direction to RTL lays it out right-to-left (OOXML w:bidi): it starts at the right edge and start/end alignment + indents mirror. Arabic and Hebrew flow through this exact path; bracketed numbers like [2024] keep their bidi order.",
+        p => p.Direction(Direction.Rtl))
+
+    // ---- A table using the registered real table style ----
+    .Paragraph("Table styles", p => p.WithStyle("Heading1"))
+    .Paragraph("This table references the \"Showcase Grid\" style registered above — its header band, borders, and row banding are baked onto the cells and emitted as w:tblStyle:")
+    .Table(new CellContent[][]
+    {
+        new CellContent[] { "Layer", "Role" },
+        new CellContent[] { "Model", "invertible ops + undo" },
+        new CellContent[] { "Layout", "pretext pagination" },
+        new CellContent[] { "Paint", "one fillText per fragment" },
+    }, new TableOptions { StyleId = "ShowcaseGrid" })
 
     // ---- Header + footer with page fields ----
-    .Header(h => h.Paragraph(null, p => p.Font("Arial, sans-serif").FontSize(11)
+    .Header(h => h.Paragraph(p => p.Font("Arial, sans-serif").FontSize(11)
         .Text("canvas-word", new CharStyle { Bold = true, Color = "#5f6368" })
         .Text("  ·  feature showcase", new CharStyle { Color = "#9aa0a6" })))
-    .Footer(f => f.Paragraph(null, p => p.Align(TextAlign.Center).Font("Arial, sans-serif").FontSize(11).Color("#9aa0a6")
+    .Footer(f => f.Paragraph(p => p.Align(TextAlign.Center).Font("Arial, sans-serif").FontSize(11).Color("#9aa0a6")
         .Text("Page ").PageField().Text(" of ").NumPagesField()));
 
 // ---- Build + export -------------------------------------------------------

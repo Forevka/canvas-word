@@ -4,7 +4,7 @@
 // default style over editor-matching baselines — and every factory spreads
 // them. Modeled on the run/para closures in model/sampleDoc.ts.
 
-import type { CharStyle, Document, ImageBlock, ParaStyle, Paragraph, Run, Stylesheet } from "@cw/shared";
+import type { CharStyle, Document, EquationBlock, ImageBlock, MathEquation, ParaStyle, Paragraph, Run, Stylesheet } from "@cw/shared";
 import { createIdGenerator, DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE, resolveStyle, styleById, type IdGenerator } from "@cw/shared";
 import { builtinTableStyles, type TableStylePreset } from "./tableStyles";
 
@@ -98,6 +98,13 @@ export class BuilderContext {
     const img: ImageBlock = { kind: "image", id: this.ids.next(), revision: 0, src, widthPx, heightPx, align };
     if (wrap) img.wrap = wrap;
     return img;
+  }
+
+  /** A display (block) equation block from a ready MathEquation AST. */
+  equation(equation: MathEquation, align?: EquationBlock["align"]): EquationBlock {
+    const eq: EquationBlock = { kind: "equation", id: this.ids.next(), revision: 0, equation };
+    if (align) eq.align = align;
+    return eq;
   }
 
   /** The stylesheet, creating an empty one on demand for style registration. */

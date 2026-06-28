@@ -6,7 +6,8 @@
 // layout engine reads those directly), while the TableStyle entity + TableBlock.styleId
 // are retained for re-editing and docx round-trip.
 
-import type { CellBorders, CellMargin, CharStyle, ParaStyle } from "./document";
+import type { CellBorders, CellMargin, CharStyle, ParaStyle, TableBlock, TableCell, TableCondOverrides, TableRow } from "./document";
+import { buildTableGrid, rebuildRows } from "./tableGrid";
 
 /** Conditional-format slots (OOXML w:tblStylePr w:type values). "wholeTable" is
  *  the base applied to every cell. */
@@ -157,6 +158,70 @@ export function cellCondFlags(
     flags.colBand = band % 2 === 0 ? 1 : 2;
   }
   return flags;
+}
+
+/** Word's default w:tblLook: header row on, row banding on. */
+export const DEFAULT_TBL_LOOK: TableCondOverrides = { firstRow: true, bandRows: true };
+
+/** Apply a band's props onto a concrete style, but only where a property still
+ *  equals `defaults` (i.e. was not explicitly set) — so explicit formatting keeps
+ *  precedence while default-valued props pick up the band. */
+function applyBandProps<T extends object>(current: T, patch: Partial<T>, defaults: T): T {
+  const cur = current as Record<string, unknown>;
+  const def = defaults as Record<string, unknown>;
+  const out: Record<string, unknown> = { ...cur };
+  for (const [k, v] of Object.entries(patch as Record<string, unknown>)) {
+    if (v !== undefined && (cur[k] === undefined || cur[k] === def[k])) out[k] = v;
+  }
+  return out as T;
+}
+
+/** Recompute every cell's baked shading/borders/margin from a resolved table style
+ *  + the table's active bands (span-aware). The TableStyle entity + TableBlock.styleId
+ *  are kept for re-editing and docx round-trip; the layout engine reads the baked
+ *  concrete cell props. Applying a style replaces direct cell shading/borders/margin
+ *  (like Word).
+ *
+ *  When `contentDefaults` is given, the band's char/para are ALSO materialized as
+ *  concrete run/paragraph styles on the cell content — but only where a property
+ *  still equals the supplied default (i.e. was not explicitly set), so explicit
+ *  content formatting keeps precedence. Omit it to leave cell content untouched. */
+export function bakeTableStyleRows(
+  table: TableBlock,
+  style: TableStyle,
+  styles: Record<string, TableStyle>,
+  overrides: TableCondOverrides,
+  contentDefaults?: { char: CharStyle; para: ParaStyle },
+): TableRow[] {
+  const resolved = resolveTableStyle(styles, style.id);
+  const grid = buildTableGrid(table);
+  return rebuildRows(grid, (cell, s) => {
+    const flags = cellCondFlags(s.originRow, s.originCol, grid.rows, grid.cols, {
+      ...overrides,
+      rowBandSize: style.rowBandSize ?? 1,
+      colBandSize: style.colBandSize ?? 1,
+    });
+    const props = effectiveCellProps(resolved, flags);
+    const next: TableCell = { ...cell };
+    if (props.shading !== undefined) next.shading = props.shading;
+    else delete next.shading;
+    if (props.borders && Object.keys(props.borders).length > 0) next.borders = props.borders;
+    else delete next.borders;
+    if (props.margin) next.margin = props.margin;
+    else delete next.margin;
+    if (contentDefaults && (props.char || props.para)) {
+      next.blocks = next.blocks.map((b) =>
+        b.kind === "paragraph"
+          ? {
+              ...b,
+              style: props.para ? applyBandProps(b.style, props.para, contentDefaults.para) : b.style,
+              runs: props.char ? b.runs.map((r) => ({ ...r, style: applyBandProps(r.style, props.char!, contentDefaults.char) })) : b.runs,
+            }
+          : b,
+      );
+    }
+    return next;
+  });
 }
 
 export const TABLE_COND_LABELS: Record<TableCond, string> = {

@@ -8,7 +8,7 @@
 // stays usable afterwards (rebuild-on-data-change just calls the author's
 // function again with fresh data).
 
-import type { BandContainer, Block, Document, ListLevel, ListNumberFormat, NamedStyle, SectionPatch, SectionProps, Stylesheet, TocOptions, TocSwitches } from "@cw/shared";
+import type { BandContainer, Block, Document, ListLevel, ListNumberFormat, NamedStyle, SectionPatch, SectionProps, Stylesheet, TableStyle, TocOptions, TocSwitches } from "@cw/shared";
 import { buildTocInstruction, bulletListDefinition, defaultStylesheet, generateTocIntoDoc, multilevelListDefinition, numberListDefinition, styleById } from "@cw/shared";
 import { BuilderContext, type BuilderWarning } from "./blockFactory";
 import { StoryBuilder } from "./storyBuilder";
@@ -204,6 +204,21 @@ export class DocumentBuilder extends StoryBuilder {
    *  cell properties at build time; nothing style-id-like enters the model. */
   tableStylePreset(name: string, preset: TableStylePreset): this {
     this.ctx.tableStyles.set(name, preset);
+    return this;
+  }
+
+  /** Register (or override) a REAL table style (OOXML w:style[type=table]) in
+   *  Document.tableStyles — conditional bands (wholeTable/firstRow/band1Horz/…),
+   *  banding sizes, basedOn. Reference it from .table(rows, { styleId: def.id });
+   *  the docx export emits the style and tables keep their w:tblStyle reference.
+   *
+   *  Register BEFORE referencing it: .table({ styleId }) resolves and bakes the
+   *  style at call time, so re-registering or overriding a style afterwards does
+   *  NOT rebake already-built tables (same call-order contract as .style() /
+   *  .withStyle() and .listDefinition()). */
+  tableStyle(def: TableStyle): this {
+    const styles = (this.ctx.doc.tableStyles ??= {});
+    styles[def.id] = def;
     return this;
   }
 

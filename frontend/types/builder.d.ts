@@ -9,9 +9,9 @@
 // Works in the browser (live preview via WordCanvas.setDocument) and in Node
 // (server-side DOCX/PDF generation via the export subpath).
 
-import type { CellBorders, CellMargin, CharStyle, Document, NamedStyle, ParaStyle, Stylesheet } from "./model";
+import type { CellBorders, CellMargin, CharStyle, Document, NamedStyle, ParaStyle, Stylesheet, TableCondOverrides, TableStyle, TabStop } from "./model";
 
-export type { Block, CharStyle, Document, NamedStyle, ParaStyle, Stylesheet } from "./model";
+export type { Block, CharStyle, Document, NamedStyle, ParaStyle, Stylesheet, TableCondOverrides, TableStyle, TabStop } from "./model";
 
 // ---------------------------------------------------------------------------
 // Units
@@ -109,6 +109,8 @@ export interface CellSpec {
   /** Char formatting for the cell's text. */
   style?: Partial<CharStyle>;
   align?: ParaStyle["align"];
+  /** Preferred cell width (w:tcW): absolute px or percent of table width. */
+  preferredWidth?: { px: number; type: "abs" | "pct" };
 }
 
 export type CellContent = string | CellSpec;
@@ -119,6 +121,21 @@ export interface TableOptions {
   colFractions?: number[];
   /** Bold every run in the first row. */
   headerRow?: boolean;
+  /** Apply a registered builder-only table-style PRESET by name (baked into cells).
+   *  Mutually exclusive with `styleId` — if both are given, `styleId` wins. */
+  style?: string;
+  /** Reference a REAL table style (DocumentBuilder.tableStyle) and bake its effective
+   *  per-cell formatting onto the cells while keeping the styleId for docx round-trip. */
+  styleId?: string;
+  /** Which conditional bands of the referenced styleId are active (w:tblLook). */
+  condOverrides?: TableCondOverrides;
+  /** Column sizing strategy (w:tblLayout): "fixed" (default), "autofitContents", "autofitWindow". */
+  widthMode?: "fixed" | "autofitContents" | "autofitWindow";
+}
+
+export interface EquationOptions {
+  /** Horizontal placement of the display equation (default "center"). */
+  align?: "left" | "center" | "right";
 }
 
 export interface SpacingOptions {
@@ -147,6 +164,10 @@ export declare class StoryBuilder {
   list(items: (string | ListItem)[], opts?: ListOptions): this;
   bulletList(items: (string | ListItem)[]): this;
   numberedList(items: (string | ListItem)[]): this;
+  /** A display (block) equation from a LaTeX source (e.g. `\frac{a}{b}`). */
+  equation(latex: string, opts?: EquationOptions): this;
+  /** A display (block) equation from a presentation-MathML string. */
+  equationMathml(mathml: string, opts?: EquationOptions): this;
   /** The NEXT block starts a new page. */
   pageBreak(): this;
 }
@@ -170,10 +191,27 @@ export declare class ParagraphBuilder<P extends StoryBuilder> {
   fontSize(px: number): this;
   font(family: string): this;
   link(url: string): this;
+  /** Force this run's text to a right-to-left embedding (OOXML w:rtl). */
+  rtl(on?: boolean): this;
+  /** Apply a registered character style: bakes its formatting onto the runs AND
+   *  sets the w:rStyle reference. Unknown ids are ignored with a warning. */
+  charStyle(id: string): this;
+  /** Append an INLINE equation from a LaTeX source (a single replaced glyph). */
+  inlineEquation(latex: string, style?: Partial<CharStyle>): this;
+  /** Append an inline equation from a presentation-MathML string. */
+  inlineEquationMathml(mathml: string, style?: Partial<CharStyle>): this;
   align(align: ParaStyle["align"]): this;
   spacing(opts: SpacingOptions): this;
   indent(opts: IndentOptions): this;
   keepWithNext(on?: boolean): this;
+  /** Never split this paragraph across pages/columns (docx w:keepLines). */
+  keepTogether(on?: boolean): this;
+  /** Base writing direction (OOXML w:bidi); "rtl" lays the paragraph out right-to-left. */
+  direction(dir: "ltr" | "rtl"): this;
+  /** Outline level 0..8 (TOC levels 1..9) — a TOC entry without a heading style. */
+  outlineLevel(level: number): this;
+  /** Explicit tab stops (docx w:tabs); stored sorted by position. */
+  tabStops(stops: TabStop[]): this;
   /** Escape the paragraph scope explicitly (block-starting calls do it implicitly). */
   end(): P;
 
@@ -185,6 +223,8 @@ export declare class ParagraphBuilder<P extends StoryBuilder> {
   list(items: (string | ListItem)[], opts?: ListOptions): P;
   bulletList(items: (string | ListItem)[]): P;
   numberedList(items: (string | ListItem)[]): P;
+  equation(latex: string, opts?: EquationOptions): P;
+  equationMathml(mathml: string, opts?: EquationOptions): P;
   pageBreak(): P;
 
   // Document-level delegators (only when the parent is the root builder):
@@ -226,6 +266,9 @@ export declare class DocumentBuilder extends StoryBuilder {
   pageSetup(setup: PageSetup): this;
   /** Register (or override) a named style — BEFORE applying it via withStyle(). */
   style(def: NamedStyle): this;
+  /** Register (or override) a REAL table style (OOXML w:style[type=table]) with
+   *  conditional bands. Reference it via .table(rows, { styleId: def.id }). */
+  tableStyle(def: TableStyle): this;
   /** Snapshot the document: deep clone, guaranteed at least one paragraph. */
   build(): Document;
 }

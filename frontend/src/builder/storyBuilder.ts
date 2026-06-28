@@ -3,9 +3,10 @@
 // table cells — shares this surface. Methods append eagerly and return `this`
 // (or a ParagraphBuilder that delegates back), so chains never need a seal step.
 
-import type { Block, CharStyle, Paragraph, ParaStyle } from "@cw/shared";
+import type { Block, CharStyle, EquationBlock, Paragraph, ParaStyle, SdtProps } from "@cw/shared";
 import { DEFAULT_BULLET_LIST_ID, DEFAULT_NUMBER_LIST_ID, defaultListDefinition, textOfRuns } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
+import { equationFromLatex, equationFromMathml } from "./mathInput";
 import { bytesToDataUrl } from "./media";
 import { ParagraphBuilder } from "./paragraphBuilder";
 import { TableBuilder, type CellContent, type TableOptions } from "./tableBuilder";
@@ -33,6 +34,11 @@ export interface ListOptions {
   listId?: string;
   /** Default nesting level for all items (per-item `level` overrides). */
   level?: number;
+}
+
+export interface EquationOptions {
+  /** Horizontal placement of the display equation (default "center"). */
+  align?: EquationBlock["align"];
 }
 
 export class StoryBuilder {
@@ -124,6 +130,19 @@ export class StoryBuilder {
     return this;
   }
 
+  /** A display (block) equation from a LaTeX source (e.g. `\frac{a}{b}`) — its own
+   *  centered line. Uses the same LaTeX→math parser as the visual editor. */
+  equation(latex: string, opts: EquationOptions = {}): this {
+    this.push(this.ctx.equation(equationFromLatex(latex, true), opts.align));
+    return this;
+  }
+
+  /** A display (block) equation from a presentation-MathML string. */
+  equationMathml(mathml: string, opts: EquationOptions = {}): this {
+    this.push(this.ctx.equation(equationFromMathml(mathml, true), opts.align));
+    return this;
+  }
+
   bulletList(items: (string | ListItem)[]): this {
     return this.list(items, { kind: "bullet" });
   }
@@ -162,6 +181,31 @@ export class StoryBuilder {
       start: { blockId: first.id, offset: 0 },
       end: { blockId: last.id, offset: textOfRuns(last.runs).length },
     };
+    return this;
+  }
+
+  /** Wrap every block the callback appends in a BLOCK-LEVEL content control
+   *  (OOXML block-level w:sdt) — the whole-paragraph(s)/table analog of an inline
+   *  control. Properties go in Document.sdts; each wrapped block carries the id on
+   *  Block.sdtPath (outer→inner, so nesting composes). Used by report scrape /
+   *  write-back to tag editable regions. */
+  contentControlRange(props: SdtProps, build: (s: this) => void): this {
+    const sdts = (this.ctx.doc.sdts ??= {});
+    const sid = this.ctx.ids.next();
+    sdts[sid] = props;
+    const startIdx = this.blocks.length;
+    build(this);
+    if (this.blocks.length === startIdx) {
+      this.ctx.warn(`sdt-range-empty:${sid}`, "contentControlRange() wrapped no blocks — no control was recorded.");
+      delete sdts[sid];
+      return this;
+    }
+    // Prepend as the OUTER control: blocks an inner range already stamped keep
+    // their inner ids, with this id ahead of them (outer→inner ancestry).
+    for (let i = startIdx; i < this.blocks.length; i++) {
+      const b = this.blocks[i]!;
+      b.sdtPath = b.sdtPath ? [sid, ...b.sdtPath] : [sid];
+    }
     return this;
   }
 
