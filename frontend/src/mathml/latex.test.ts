@@ -4,8 +4,10 @@
 import { describe, expect, it } from "vitest";
 import { latexToMath } from "./latex";
 import { serializeMathml } from "./serialize";
+import { mathmlToOmml } from "./toOmml";
 
 const mml = (latex: string): string => serializeMathml({ root: latexToMath(latex), display: false });
+const omml = (latex: string): string => mathmlToOmml({ root: latexToMath(latex), display: false });
 
 describe("latexToMath", () => {
   it("parses a fraction", () => {
@@ -84,5 +86,45 @@ describe("latexToMath", () => {
 
   it("balances nested braces in a \\text argument", () => {
     expect(latexToMath("\\text{f(x) = {y}}").children[0]).toMatchObject({ type: "text", text: "f(x) = {y}" });
+  });
+
+  // ── #19: big operators become n-ary objects (real OMML m:nary) ──────────────
+  it("parses \\sum / \\int as n-ary objects, not plain scripted operators", () => {
+    const sum = latexToMath("\\sum_{i=1}^{n}").children[0];
+    expect(sum).toMatchObject({
+      type: "nary",
+      op: "∑",
+      sub: { children: [{ type: "ident", text: "i" }, { type: "op", text: "=" }, { type: "number", text: "1" }] },
+      sup: { type: "ident", text: "n" },
+    });
+    expect(latexToMath("\\int_0^1").children[0]).toMatchObject({ type: "nary", op: "∫" });
+    // A bare big operator with no bounds is still n-ary.
+    expect(latexToMath("\\prod").children[0]).toMatchObject({ type: "nary", op: "∏" });
+  });
+
+  it("exports LaTeX big operators as OMML m:nary with the operator char", () => {
+    const out = omml("\\sum_{i=1}^{n}");
+    expect(out).toContain("<m:nary>");
+    expect(out).toContain('<m:chr m:val="∑"/>');
+    expect(out).toContain("<m:sub>");
+    expect(out).toContain("<m:sup>");
+    // Not serialized as an ordinary scripted run.
+    expect(out).not.toContain("<m:sSubSup>");
+  });
+
+  // ── #21(b): styled numeric glyphs survive ───────────────────────────────────
+  it("keeps the variant on styled numbers (\\mathbb{1}, \\mathtt{0})", () => {
+    expect(latexToMath("\\mathbb{1}").children[0]).toMatchObject({ type: "number", text: "1", variant: "double-struck" });
+    expect(latexToMath("\\mathtt{0}").children[0]).toMatchObject({ type: "number", text: "0", variant: "monospace" });
+    expect(mml("\\mathbb{1}")).toContain('<mn mathvariant="double-struck">1</mn>');
+    // Numbers are upright by default, so \mathit{1} (italic digit) must survive.
+    expect(latexToMath("\\mathit{1}").children[0]).toMatchObject({ type: "number", text: "1", variant: "italic" });
+    expect(mml("\\mathit{1}")).toContain('<mn mathvariant="italic">1</mn>');
+  });
+
+  // ── #21(a): \phantom keeps its invisible-spacing wrapper ─────────────────────
+  it("parses \\phantom as a phantom node", () => {
+    expect(latexToMath("\\phantom{xy}").children[0]).toMatchObject({ type: "phantom" });
+    expect(omml("\\phantom{x}")).toContain("<m:phant>");
   });
 });

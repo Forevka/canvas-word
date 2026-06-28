@@ -51,10 +51,12 @@ export interface MathIdent {
   variant?: MathVariant;
 }
 
-/** Number literal (MathML `mn`). Rendered upright. */
+/** Number literal (MathML `mn`). Rendered upright by default; `variant` overrides
+ *  the alphanumeric style (e.g. blackboard-bold `𝟙`, monospace digits). */
 export interface MathNumber {
   type: "number";
   text: string;
+  variant?: MathVariant;
 }
 
 /** Operator, relation, fence, or separator (MathML `mo`). `stretchy` lets a
@@ -116,13 +118,17 @@ export interface MathFenced {
 }
 
 /** Under/over scripts (MathML `munder`/`mover`/`munderover`), unified — limits,
- *  overbars, hats, underbraces. `accent` keeps the script tight to the base. */
+ *  overbars, hats, underbraces. `accent` keeps the OVER script tight to the base
+ *  (MathML `accent`); `accentUnder` does the same for the UNDER script (MathML
+ *  `accentunder`). The two are independent so an over-accent (hat) and an
+ *  under-accent (underbrace/underbar) never collapse to the same encoding. */
 export interface MathLimit {
   type: "limit";
   base: MathNode;
   under?: MathNode;
   over?: MathNode;
   accent?: boolean;
+  accentUnder?: boolean;
 }
 
 /** N-ary operator with limits (OMML `m:nary`: ∑ ∏ ∫ …). MathML has no single

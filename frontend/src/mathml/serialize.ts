@@ -21,8 +21,14 @@ export function mathNodeToMathml(n: MathNode): string {
   return nodeXml(n);
 }
 
-function variantAttr(v: MathVariant | undefined): Record<string, string> | undefined {
+/** `<mi>` defaults to italic, so an explicit `italic` variant is redundant. */
+function identVariantAttr(v: MathVariant | undefined): Record<string, string> | undefined {
   return v && v !== "italic" ? { mathvariant: v } : undefined;
+}
+
+/** `<mn>` defaults to UPRIGHT, so `italic` is meaningful and must be emitted. */
+function numberVariantAttr(v: MathVariant | undefined): Record<string, string> | undefined {
+  return v ? { mathvariant: v } : undefined;
 }
 
 function nodeXml(n: MathNode): string {
@@ -30,9 +36,9 @@ function nodeXml(n: MathNode): string {
     case "row":
       return el("mrow", undefined, n.children.map(nodeXml).join(""));
     case "ident":
-      return el("mi", variantAttr(n.variant), escapeText(n.text));
+      return el("mi", identVariantAttr(n.variant), escapeText(n.text));
     case "number":
-      return el("mn", undefined, escapeText(n.text));
+      return el("mn", numberVariantAttr(n.variant), escapeText(n.text));
     case "op": {
       const attrs: Record<string, string> = {};
       if (n.stretchy !== undefined) attrs.stretchy = String(n.stretchy);
@@ -70,11 +76,19 @@ function nodeXml(n: MathNode): string {
       return el("mfenced", attrs, nodeXml(n.child));
     }
     case "limit": {
-      const accent = n.accent ? { accent: "true" } : undefined;
-      if (n.under && n.over)
-        return el("munderover", accent, nodeXml(n.base) + nodeXml(n.under) + nodeXml(n.over));
-      if (n.over) return el("mover", accent, nodeXml(n.base) + nodeXml(n.over));
-      if (n.under) return el("munder", accent, nodeXml(n.base) + nodeXml(n.under));
+      // `accent` belongs on the OVER script, `accentunder` on the UNDER script.
+      const overAcc = n.accent ? { accent: "true" } : undefined;
+      const underAcc = n.accentUnder ? { accentunder: "true" } : undefined;
+      if (n.under && n.over) {
+        const attrs = { ...overAcc, ...underAcc };
+        return el(
+          "munderover",
+          Object.keys(attrs).length ? attrs : undefined,
+          nodeXml(n.base) + nodeXml(n.under) + nodeXml(n.over),
+        );
+      }
+      if (n.over) return el("mover", overAcc, nodeXml(n.base) + nodeXml(n.over));
+      if (n.under) return el("munder", underAcc, nodeXml(n.base) + nodeXml(n.under));
       return nodeXml(n.base);
     }
     case "nary": {

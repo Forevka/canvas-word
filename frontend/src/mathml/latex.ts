@@ -108,14 +108,22 @@ type Tok =
 const RAW_TEXT_CMDS = new Set(["text", "mbox", "operatorname"]);
 
 /** Capture a `{...}` group starting at `src[start]` ("{") as its inner text,
- *  whitespace preserved, balancing nested braces. Returns the inner string and
- *  the index just past the closing brace. If `src[start]` isn't "{", returns null. */
+ *  whitespace preserved, balancing nested braces. An ESCAPED brace (`\{` / `\}`)
+ *  is copied verbatim and never counted toward nesting — that pairs with the
+ *  escaping done by toLatex so `\text{a\_b}` / `\text{a\}b}` round-trip. Returns
+ *  the inner string and the index just past the closing brace. If `src[start]`
+ *  isn't "{", returns null. */
 function captureBraceText(src: string, start: number): { text: string; end: number } | null {
   if (src[start] !== "{") return null;
   let depth = 0;
   let buf = "";
   for (let k = start; k < src.length; k++) {
     const c = src[k]!;
+    if (c === "\\" && k + 1 < src.length) {
+      buf += c + src[k + 1]!; // escaped char — copy both, skip brace counting
+      k++;
+      continue;
+    }
     if (c === "{") {
       depth++;
       if (depth === 1) continue; // skip the outermost opening brace
@@ -126,6 +134,40 @@ function captureBraceText(src: string, start: number): { text: string; end: numb
     buf += c;
   }
   return { text: buf, end: src.length }; // unbalanced — take the rest
+}
+
+/** Inverse of toLatex's `\text{…}` escaping. Single-pass so a decoded char is
+ *  never re-scanned. Longest control words first to avoid prefix ambiguity. */
+const TEXT_UNESCAPES: [string, string][] = [
+  ["\\textbackslash{}", "\\"],
+  ["\\textasciitilde{}", "~"],
+  ["\\textasciicircum{}", "^"],
+  ["\\{", "{"],
+  ["\\}", "}"],
+  ["\\$", "$"],
+  ["\\&", "&"],
+  ["\\#", "#"],
+  ["\\_", "_"],
+  ["\\%", "%"],
+];
+
+function unescapeTextLatex(s: string): string {
+  let out = "";
+  let i = 0;
+  outer: while (i < s.length) {
+    if (s[i] === "\\") {
+      for (const [from, to] of TEXT_UNESCAPES) {
+        if (s.startsWith(from, i)) {
+          out += to;
+          i += from.length;
+          continue outer;
+        }
+      }
+    }
+    out += s[i]!;
+    i++;
+  }
+  return out;
 }
 
 function tokenize(src: string): Tok[] {
@@ -146,7 +188,7 @@ function tokenize(src: string): Tok[] {
           while (j < src.length && /\s/.test(src[j]!)) j++; // skip space before {
           const grp = captureBraceText(src, j);
           if (grp) {
-            out.push({ k: "rawtext", v: grp.text });
+            out.push({ k: "rawtext", v: unescapeTextLatex(grp.text) });
             i = grp.end;
           }
         }
@@ -204,8 +246,9 @@ class Parser {
     this.next(); // consume ^ or _
     const arg = this.parseAtom() ?? emptyMathRow();
     const base = out.pop() ?? emptyMathRow();
-    if (base.type === "script") {
-      // x^a_b style — fill the missing slot.
+    if (base.type === "script" || base.type === "nary") {
+      // x^a_b style, or \sum_a^b — fill the missing bound slot in place. For an
+      // n-ary, this is what gives \sum/\int real OMML limits instead of scripts.
       if (kind === "^") base.sup = arg;
       else base.sub = arg;
       out.push(base);
@@ -278,7 +321,10 @@ class Parser {
   private command(name: string): MathNode | null {
     if (name in GREEK) return { type: "ident", text: GREEK[name]! };
     if (name in OPS) return { type: "op", text: OPS[name]! };
-    if (name in BIG) return { type: "op", text: BIG[name]! };
+    // Big operators are true n-ary objects: `_`/`^` fill their bounds (see
+    // applyScript) and OMML export emits a real `<m:nary>` instead of scripted
+    // text. The body (summand) stays empty — in LaTeX it follows as a sibling.
+    if (name in BIG) return { type: "nary", op: BIG[name]!, body: emptyMathRow() };
     if (FUNCS.has(name)) return { type: "ident", text: name, variant: "normal" };
     if (name in STYLES) {
       const variant = STYLES[name]!;
@@ -314,6 +360,11 @@ class Parser {
         const under = this.arg();
         return { type: "limit", base: this.arg(), under };
       }
+      case "phantom":
+        // Only full \phantom maps cleanly: the model has no horizontal/vertical
+        // axis, so \hphantom / \vphantom are left to fall through (they would
+        // change meaning if round-tripped back as a plain \phantom).
+        return { type: "phantom", child: this.arg() };
       case "left":
         return this.leftRight();
       case "right":
@@ -405,10 +456,12 @@ function charNode(ch: string): MathNode {
   return { type: "op", text: ch };
 }
 
-/** Re-tag identifiers inside a node with a math variant (for \mathbb{R} etc.). */
+/** Re-tag identifiers/numbers inside a node with a math variant (for `\mathbb{R}`,
+ *  `\mathbb{1}`, `\mathtt{0}`, …). Numbers carry the style too so blackboard /
+ *  monospace digits survive (mirrors the identifier path). */
 function applyVariant(node: MathNode, variant: MathVariant): MathNode {
   if (node.type === "ident") return { ...node, variant };
-  if (node.type === "number" && variant === "bold") return node;
+  if (node.type === "number") return { ...node, variant };
   if (node.type === "row") return { ...node, children: node.children.map((c) => applyVariant(c, variant)) };
   return node;
 }
