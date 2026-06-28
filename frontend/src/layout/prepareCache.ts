@@ -137,14 +137,20 @@ function toItems(runs: Run[]): RichInlineItem[] {
   // fragment, zero width, never painted. Offsets still span the full text.
   return runs.map((run) => {
     // Inline equation: the run is a single U+FFFC reserving the math box width. We
-    // keep the sentinel as the item text (pretext drops empty-text items) and add
-    // extraWidth so the occupied width equals the box; `break:'never'` keeps it
-    // atomic. breakNextLine then swaps the box's metrics in for the line.
+    // keep the sentinel as the item text (pretext drops empty-text items, so a
+    // true zero-width placeholder would erase the fragment entirely). pretext's
+    // occupied width for a `break:'never'` item is `naturalWidth + extraWidth`, so
+    // we set extraWidth to the SIGNED delta `box.width - sentinelW`: occupied then
+    // collapses to exactly `box.width` for narrow AND wide equations (the old
+    // `max(0, …)` clamp over-reserved whenever the box was narrower than the U+FFFC
+    // glyph — see #16). `naturalWidth === sentinelW` since both measure the sentinel
+    // through the same context. `break:'never'` keeps it atomic; breakNextLine then
+    // swaps the box's metrics in for the line.
     if (run.style.equation && !run.style.hidden) {
       const font = charStyleToFont(run.style);
       const box = equationBox(run.style.equation, MATH_FONT_FAMILY, run.style.fontSizePx);
       const sentinelW = measureTextWidth(run.text, font);
-      return { text: run.text, font, break: "never", extraWidth: Math.max(0, box.width - sentinelW) };
+      return { text: run.text, font, break: "never", extraWidth: box.width - sentinelW };
     }
     const item: RichInlineItem = { text: run.style.hidden ? "" : run.text, font: charStyleToFont(run.style) };
     if (!run.style.hidden && run.style.letterSpacingPx !== undefined) item.letterSpacing = run.style.letterSpacingPx;
