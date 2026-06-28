@@ -187,11 +187,11 @@ export class RowBuilder {
       if (spec.align !== undefined) paraPatch.align = spec.align;
       const run = this.ctx.run(spec.text ?? "", spec.style ?? {});
       const para = this.ctx.paragraph([run], paraPatch);
-      // Record which char/para keys the author explicitly supplied via CellSpec, so
-      // table-style baking preserves them even when the value equals the resolved
-      // default (#30). Only author-set keys are tracked; builder cell-formatting
-      // defaults (CELL_PARA) keep the value-equality fallback.
-      if (spec.style) this.ctx.explicitCharKeys.set(run, new Set(Object.keys(spec.style)));
+      // ctx.run records the author-supplied CharStyle keys (spec.style) on the run as
+      // provenance, so table-style baking preserves them even when the value equals the
+      // resolved default (#30). Para `align` has no such factory hook — paraPatch also
+      // carries builder cell-formatting defaults (CELL_PARA), which must keep the
+      // value-equality fallback — so only the author-set `align` is tracked here.
       if (spec.align !== undefined) this.ctx.explicitParaKeys.set(para, new Set(["align"]));
       blocks.push(para);
     }

@@ -78,7 +78,7 @@ const bridged = new Set<string>(
 // JS-only paragraph-scope escape (`end()` — C# uses a configure lambda instead).
 const JS_INTERNAL = new Set([
   "push", "flushPendingPageBreak", "band", "compileSectionPatch",
-  "pushRun", "applyChar", "clearChar", "emitField", "emitSdt",
+  "pushRun", "applyChar", "clearChar", "markRunCharKeys", "emitField", "emitSdt",
   "toBlock", "applyTableStyleRef", "end",
 ]);
 // Generic JS escape hatches the C# surface exposes through TYPED variants instead

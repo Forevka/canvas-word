@@ -88,7 +88,17 @@ export class BuilderContext {
   }
 
   run(text: string, patch: Partial<CharStyle> = {}): Run {
-    return { text, style: { ...this.charDefault, ...patch } };
+    const run: Run = { text, style: { ...this.charDefault, ...patch } };
+    // Record which char keys the author explicitly supplied via `patch`, keyed by
+    // run identity. Table-style baking (bakeTableStyleRows/applyBandProps) consults
+    // this provenance so an explicit value that EQUALS the resolved default still
+    // survives a conflicting band (#30). Centralizing here covers every run-authoring
+    // surface — data-driven cells, StoryBuilder callbacks, ParagraphBuilder.text,
+    // lists, fields — so both cell paths behave identically (#45). Harmless for
+    // non-table runs: the map is read only when a table style is baked.
+    const keys = Object.keys(patch);
+    if (keys.length > 0) this.explicitCharKeys.set(run, new Set(keys));
+    return run;
   }
 
   paragraph(runs: Run[], patch: Partial<ParaStyle> = {}): Paragraph {
