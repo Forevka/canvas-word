@@ -683,6 +683,44 @@ function bidiReorderLine(frags: RawFrag[], levels: Int8Array): { frags: RawFrag[
   return { frags: visual, width: x };
 }
 
+/** Mirror a tab-stopped line for an RTL base-direction paragraph. `layoutTabbedSegment`
+ *  always lays tab stops out in LOGICAL-advance space (the cursor starts at the start
+ *  edge and grows in reading order, stop positions measured from that edge). For an
+ *  RTL paragraph the start edge is the RIGHT margin, so the line is reflected about the
+ *  content box: a piece at logical distance `d` from the start edge ends up `d` from the
+ *  right edge, and the tab cells fill right-to-left.
+ *
+ *  Reflecting fragments in their LOGICAL order also yields the correct VISUAL order for
+ *  free (the first logical cell lands on the right), so no extra L2 reorder is needed.
+ *  Embedding levels are assigned (from `levels`, splitting mixed-level fragments; else
+ *  the RTL base) so the renderer anchors each fragment on the correct edge and caret /
+ *  hit-testing take the bidi (non-monotonic-x) path. Leaders and tab arrows mirror too. */
+function mirrorTabbedLineRtl(rl: RawLine, levels: Int8Array | null, contentWidth: number): void {
+  const split: RawFrag[] = [];
+  for (const rf of rl.frags) {
+    if (levels) {
+      // splitFragByLevel copies the parent x onto every sub-piece, so re-spread the
+      // sub-pieces sequentially across the parent's box before the reflection below.
+      let x = rf.frag.x;
+      for (const sub of splitFragByLevel(rf, levels)) {
+        sub.frag.x = x;
+        x += sub.frag.width;
+        split.push(sub);
+      }
+    } else {
+      rf.frag.level = 1; // pure base-direction RTL line — every fragment is RTL
+      split.push(rf);
+    }
+  }
+  for (const rf of split) rf.frag.x = contentWidth - rf.frag.x - rf.frag.width;
+  rl.frags = split;
+  // The reflected fragments already span the content box anchored at the right edge,
+  // so neutralize phase-2 alignment (slack === 0 → no further shift).
+  rl.width = contentWidth;
+  if (rl.leaders) rl.leaders = rl.leaders.map((l) => ({ ...l, x1: contentWidth - l.x2, x2: contentWidth - l.x1 }));
+  if (rl.tabArrows) rl.tabArrows = rl.tabArrows.map((a) => ({ x1: contentWidth - a.x2, x2: contentWidth - a.x1 }));
+}
+
 function paragraphLines(p: Paragraph, contentWidth: number, cache: PrepareCache): LineBox[] {
   const segments = cache.get(p);
   const lines: LineBox[] = [];
@@ -768,12 +806,20 @@ function paragraphLines(p: Paragraph, contentWidth: number, cache: PrepareCache)
 
   // Phase 2: bidi reorder (RTL/mixed only), alignment + justification, final boxes.
   const align = effectiveAlign(p.style.align, dir);
+  const rtlBase = baseLevelFor(dir) === 1;
   let y = 0;
   for (const rl of raw) {
-    // Tabbed lines bake absolute x at tab stops; bidi reorder (which rebuilds x
-    // edge-to-edge) would fight that, so a paragraph mixing tabs + RTL renders in
-    // logical order. Known limitation — tab + bidi is a rare combination.
-    if (levels !== null && rl.frags.length > 0 && !rl.tabbed) {
+    // Tabbed lines bake absolute x at tab stops, so the generic edge-to-edge bidi
+    // reorder (which discards those x positions) can't run on them. An RTL paragraph
+    // instead REFLECTS the line about the content box: tab stops then measure from
+    // the right (start) edge and cells fill right-to-left, the Word w:bidi behavior.
+    if (rl.tabbed) {
+      // Mirror any RTL tabbed line that carries geometry — text, leaders, or just a
+      // tab-arrow overlay (a "\t"-only line has arrows but no fragments/leaders).
+      const hasGeometry =
+        rl.frags.length > 0 || (rl.leaders?.length ?? 0) > 0 || (rl.tabArrows?.length ?? 0) > 0;
+      if (rtlBase && hasGeometry) mirrorTabbedLineRtl(rl, levels, contentWidth);
+    } else if (levels !== null && rl.frags.length > 0) {
       const r = bidiReorderLine(rl.frags, levels);
       rl.frags = r.frags;
       rl.width = r.width;

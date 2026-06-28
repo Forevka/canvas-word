@@ -457,6 +457,70 @@ describe("engine — tab stops", () => {
     expect(right.x + right.width).toBeCloseTo(300, 0);
     expect(line.leaders?.length).toBeGreaterThan(0);
   });
+
+  // --- RTL / bidi tab stops (issue #6) ------------------------------------
+  // The content box is 624px wide (816 − 96 − 96); test chars are 8px (½ × 16px).
+  // In an RTL paragraph tab stops are measured from the RIGHT (start) edge and the
+  // tab cells fill right-to-left (Word's w:bidi behavior).
+
+  it("measures RTL tab stops from the right (start) edge", () => {
+    const p = para("Left\tRight", { direction: "rtl", tabStops: [{ posPx: 300 }] });
+    const line = placedOf(layout(doc([p])), p.id)!.pb.lines[0]!;
+    const left = line.fragments.find((f) => f.text === "Left")!;
+    const right = line.fragments.find((f) => f.text === "Right")!;
+    // the pre-tab cell hugs the start (right) edge of the content box…
+    expect(left.x + left.width).toBeCloseTo(624, 0);
+    // …and the tabbed cell sits 300px IN from that right edge (not from the left).
+    expect(right.x + right.width).toBeCloseTo(624 - 300, 0);
+    // start-edge cell is visually to the RIGHT of the tabbed cell (RTL order).
+    expect(left.x).toBeGreaterThan(right.x);
+  });
+
+  it("marks RTL-script tab cells as RTL fragments anchored at the right", () => {
+    const heb1 = "אב";
+    const heb2 = "גד";
+    const p = para(`${heb1}\t${heb2}`, { direction: "rtl", tabStops: [{ posPx: 200 }] });
+    const line = placedOf(layout(doc([p])), p.id)!.pb.lines[0]!;
+    const f1 = line.fragments.find((f) => f.text === heb1)!;
+    const f2 = line.fragments.find((f) => f.text === heb2)!;
+    // Hebrew cells carry an odd (RTL) embedding level so the renderer right-anchors
+    // them and caret/hit-testing take the bidi path.
+    expect((f1.level ?? 0) & 1).toBe(1);
+    expect((f2.level ?? 0) & 1).toBe(1);
+    expect(f1.x + f1.width).toBeCloseTo(624, 0); // first cell at the right edge
+    expect(f2.x + f2.width).toBeCloseTo(624 - 200, 0); // tabbed cell 200px from the right
+  });
+
+  it("mirrors the leader and right-tab stop for an RTL page-number row", () => {
+    // "פרק" (3 chars = 24px) … dotted leader … "5" at a right tab 400px from the start.
+    const p = para("פרק\t5", { direction: "rtl", tabStops: [{ posPx: 400, align: "right", leader: "dot" }] });
+    const line = placedOf(layout(doc([p])), p.id)!.pb.lines[0]!;
+    const num = line.fragments.find((f) => f.text === "5")!;
+    // a right-aligned tab in RTL puts the cell's start (right) edge at the stop,
+    // measured from the right edge → physical left edge at 624 − 400.
+    expect(num.x).toBeCloseTo(624 - 400, 0);
+    expect(line.leaders?.length).toBeGreaterThan(0);
+    const ld = line.leaders![0]!;
+    // the leader fills the gap on the mirrored side, ending against the start-edge cell.
+    expect(ld.x2).toBeCloseTo(624 - 24, 0);
+    expect(ld.x1).toBeLessThan(ld.x2);
+  });
+
+  it("mirrors a tab-arrow overlay on a tab-only RTL line (no text/leaders)", () => {
+    // A "\t"-only line produces a formatting-mark arrow but no fragments or leaders;
+    // it must still mirror so the arrow opens at the start (right) edge.
+    const p = para("\t", { direction: "rtl" });
+    const line = placedOf(layout(doc([p])), p.id)!.pb.lines[0]!;
+    expect(line.tabArrows?.length).toBeGreaterThan(0);
+    expect(line.tabArrows![0]!.x2).toBeCloseTo(624, 0);
+  });
+
+  it("leaves LTR tab stops left-anchored (no mirroring regression)", () => {
+    const p = para("Left\tRight", { tabStops: [{ posPx: 300 }] });
+    const line = placedOf(layout(doc([p])), p.id)!.pb.lines[0]!;
+    const right = line.fragments.find((f) => f.text === "Right")!;
+    expect(right.x).toBeCloseTo(300, 0); // positioned at the stop from the LEFT edge
+  });
 });
 
 // --- sections & page numbers ----------------------------------------------

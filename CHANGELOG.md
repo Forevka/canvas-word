@@ -44,6 +44,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The default showcase document gains a **"Mathematics — MathML equations"** section.
 
 ### Fixed
+- **Nested display equations (table cells / header-footer bands) are now editable.**
+  The `setEquation` / `setEquationAlign` ops and the editor lookups (`setEquationAlignCmd`,
+  the right-click menu, object-selection delete) only scanned top-level `doc.blocks`, so
+  a display `EquationBlock` imported into a table cell or a header/footer band — e.g. from
+  a `.docx` `m:oMathPara` in a cell — couldn't be edited / aligned / deleted (the op threw
+  "not found"). They now resolve equations through a container-aware locator
+  (`locateEquation`/`locateBlock`, the generalization of `locateImage`) that searches the
+  body, every band story, and table cells in either; layout already rendered them there.
 - **Enter inside a block-level content control.** Pressing Enter in a paragraph or
   table cell wrapped by a block-level SDT (e.g. a "section" control) was swallowed —
   the guard treated every control at the caret as inline. Now only *inline* controls
@@ -57,6 +65,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on RTL paragraphs mixing runs (e.g. Arabic text with embedded `PAGE`/`DATE` fields).
   The line index now derives each line's logical span from the min/max offset across
   its fragments. (Single-run and LTR lines are unaffected.)
+- **Tab stops in RTL paragraphs.** Tab-stopped lines were always laid out left-to-right
+  from the left margin, so in an RTL (`w:bidi`) paragraph the stops measured from the
+  wrong edge and the cells ran the wrong way (the tabs-on-an-RTL-line case was left in
+  logical order). An RTL tab line is now reflected about the content box: stop positions
+  are measured from the **right (start) edge**, tab cells fill **right-to-left**, and
+  right/center/decimal alignment plus leaders and tab arrows mirror with them. Each cell
+  keeps its own embedding level, so RTL-script cells right-anchor and caret / hit-testing
+  take the bidi path. The LTR fast path is byte-identical. (Issue #6.)
 
 ## [0.7.5] — 2026-06-25
 

@@ -43,6 +43,20 @@ function soleChild(n: MathNode): MathNode | undefined {
   return n.type === "row" && n.children.length === 1 ? n.children[0] : undefined;
 }
 
+/** Interleave separator glyphs between delimiter (`m:d`) operands. `sep` is the
+ *  `m:sepChr` value: `undefined` defaults to `,`; an empty string means no
+ *  separator; multiple chars cycle (as MathML `mfenced` separators do). */
+function interleaveSeparators(operands: MathNode[], sep: string | undefined): MathNode[] {
+  const chars = sep ?? ",";
+  if (chars.length === 0) return operands;
+  const out: MathNode[] = [];
+  operands.forEach((operand, i) => {
+    if (i > 0) out.push({ type: "op", text: chars[(i - 1) % chars.length]! });
+    out.push(operand);
+  });
+  return out;
+}
+
 /** Raw (untrimmed) text of an `m:r`'s `m:t` children. */
 function runText(r: TNode): string {
   let out = "";
@@ -159,14 +173,21 @@ function nodeFrom(n: TNode): MathNode {
       const open = dPr ? mathVal(dPr, "begChr") : undefined;
       const close = dPr ? mathVal(dPr, "endChr") : undefined;
       const sep = dPr ? mathVal(dPr, "sepChr") : undefined;
-      const es = childEls(n).filter((c) => local(c.tagName) === "e");
+      const operands = childEls(n)
+        .filter((c) => local(c.tagName) === "e")
+        .map((e) => rowLike(childEls(e)));
+      // A multi-operand delimiter (e.g. the tuple `(a,b)`) carries its separator
+      // in `m:sepChr` (default `,`). The layout/LaTeX paths don't read
+      // `fenced.separators`, so materialize the separators as real `op` nodes
+      // between operands instead of storing them in that unused field.
       const child: MathNode =
-        es.length === 1 ? rowLike(childEls(es[0]!)) : { type: "row", children: es.map((e) => rowLike(childEls(e))) };
+        operands.length <= 1
+          ? operands[0] ?? emptyMathRow()
+          : { type: "row", children: interleaveSeparators(operands, sep) };
       return {
         type: "fenced",
         open: open ?? "(",
         close: close ?? ")",
-        ...(sep !== undefined ? { separators: sep } : {}),
         child,
       };
     }

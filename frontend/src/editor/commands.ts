@@ -7,7 +7,7 @@ import { buildTocParagraphs, buildTocInstruction, buildInstruction, evaluateFiel
 import type { BookmarkRange, DocPosition, DocSelection, GridRect } from "@cw/shared";
 import { isCollapsed, BAND_CONTAINERS } from "@cw/shared";
 import type { ImagePropsPatch, Op, SectionGeometry } from "@cw/shared";
-import { sliceRuns, applyStylePatchToRuns, mapTextInRuns, splitRunsAt, normalizeRuns, containerOf, containerBlocks, containerListOf, locateImage, freshId } from "@cw/shared";
+import { sliceRuns, applyStylePatchToRuns, mapTextInRuns, splitRunsAt, normalizeRuns, containerOf, containerBlocks, containerListOf, locateImage, locateEquation, freshId } from "@cw/shared";
 import { inSdt, innermostSdtId, pushSdt, removeSdt, ancestryThrough } from "@cw/shared";
 import { buildTableGrid, cellsInRect, gridOriginOfCell, mergeRows, normalizeRect, rebuildRows, unmergeRows } from "@cw/shared";
 import type { CellSelection } from "./state";
@@ -1639,11 +1639,12 @@ export function editEquationCmd(blockId: string, equation: MathEquation): Comman
   return (state) => tr([{ type: "setEquation", blockId, equation }], state.selection, "command");
 }
 
-/** Set a display equation's horizontal alignment (left / center / right). */
+/** Set a display equation's horizontal alignment (left / center / right).
+ *  Container-aware: resolves equations in the body, header/footer bands, or
+ *  table cells (cf. the cell-aware reducer op). */
 export function setEquationAlignCmd(blockId: string, align: "left" | "center" | "right"): Command {
   return (state) => {
-    const b = state.doc.blocks.find((x) => x.id === blockId);
-    if (!b || b.kind !== "equation") return null;
+    if (!locateEquation(state.doc, blockId)) return null;
     return tr([{ type: "setEquationAlign", blockId, align }], state.selection, "command");
   };
 }
@@ -2262,13 +2263,30 @@ export function moveAnchoredImage(
   };
 }
 
-/** Remove a top-level block object (e.g. a display equation) and park the caret on
- *  a neighbour. For images use deleteImage (it also handles in-cell images). */
+/** Remove a display-equation block object — wherever it lives (body, header/footer
+ *  band, or table cell) — and park the caret on a neighbour. For images use
+ *  deleteImage (it also handles in-cell images). */
 export function removeBlockObject(blockId: string): Command {
   return (state) => {
-    const bi = state.doc.blocks.findIndex((b) => b.id === blockId);
-    if (bi < 0) return null;
-    const neighbour = state.doc.blocks[bi + 1] ?? state.doc.blocks[bi - 1];
+    const loc = locateEquation(state.doc, blockId);
+    if (!loc) return null;
+    if (loc.kind === "cell") {
+      // In-cell equations can't go through removeBlock (it scans top-level only);
+      // rewrite the row with the equation filtered out, like deleteImage.
+      const table = containerBlocks(state.doc, loc.where)[loc.bi] as TableBlock;
+      const row = table.rows[loc.ri]!;
+      const cell = row.cells[loc.ci]!;
+      const cells = row.cells.slice();
+      cells[loc.ci] = { ...cell, blocks: cell.blocks.filter((b) => b.id !== blockId) };
+      const caretPara = firstCellPara(cells[loc.ci]);
+      return tr(
+        [{ type: "setTableRow", tableId: table.id, rowIndex: loc.ri, row: { cells } }],
+        caretPara ? caret(caretPara.id, 0) : state.selection,
+        "command",
+      );
+    }
+    const blocks = containerBlocks(state.doc, loc.where);
+    const neighbour = blocks[loc.index + 1] ?? blocks[loc.index - 1];
     return tr([{ type: "removeBlock", blockId }], neighbour ? caret(neighbour.id, 0) : state.selection, "command");
   };
 }

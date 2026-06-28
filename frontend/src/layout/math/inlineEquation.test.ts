@@ -8,6 +8,9 @@ import { createLayoutEngine } from "../engine";
 import { parseMathml } from "../../mathml/parse";
 import { runExport } from "../../export/pipeline";
 import { runImport } from "../../import/docx/pipeline";
+import { equationBox } from "./equationLayout";
+import { MATH_FONT_FAMILY } from "../../fonts/clones";
+import { charStyleToFont, measureTextWidth } from "../metrics";
 
 beforeAll(async () => {
   await installMeasureHost();
@@ -44,6 +47,24 @@ describe("inline equation", () => {
     // The line grew taller than a plain 16px text line to fit the stacked fraction.
     const line = tree.pages[0]!.blocks[0]!.lines[0]!;
     expect(line.height).toBeGreaterThan(16);
+  });
+
+  it("reserves exactly the math box width, not the U+FFFC sentinel width (#16)", () => {
+    // The U+FFFC placeholder glyph measures ~1em wide, but a simple fraction is
+    // narrower. The reserved/occupied fragment width must equal equationBox(...).width
+    // EXACTLY — the old additive `max(0, box.width - sentinelW)` over-reserved to the
+    // sentinel width whenever the box was narrower, wrapping early and hit-testing wide.
+    const box = equationBox({ ...parseMathml(FRAC), display: false }, MATH_FONT_FAMILY, CHAR.fontSizePx);
+    const sentinelW = measureTextWidth("￼", charStyleToFont(CHAR));
+    // Guard the regression is reproducible: the box really is narrower than the sentinel.
+    expect(box.width).toBeLessThan(sentinelW);
+
+    const tree = createLayoutEngine().layout(docWithInline());
+    const frags = tree.pages.flatMap((p) => p.blocks).flatMap((b) => b.lines).flatMap((l) => l.fragments);
+    const eqFrag = frags.find((f) => f.equation)!;
+    expect(eqFrag.width).toBeCloseTo(box.width, 5);
+    // And the carried box matches the reserved width — paint and hit-test agree.
+    expect(eqFrag.equation!.width).toBeCloseTo(eqFrag.width, 5);
   });
 
   it("round-trips through .docx as inline m:oMath", async () => {
