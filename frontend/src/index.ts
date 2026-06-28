@@ -8,7 +8,7 @@ import type { BookmarkRange, DocPosition, DocSelection, UserInfo } from "@cw/sha
 import { isCollapsed, colorForId, userDisplayName, freshId, DEFAULT_CHAR_STYLE } from "@cw/shared";
 import type { ResolvedBehavior, ResolvedTheme } from "./config";
 import { ZOOM_STEP } from "./uiConstants";
-import { applyOp, containerBlocks, containerOf, effectiveFractions, locateImage, sliceRuns, type Op } from "@cw/shared";
+import { applyOp, containerBlocks, containerOf, effectiveFractions, locateImage, locateEquation, sliceRuns, type Op } from "@cw/shared";
 import { bandParagraphs, blockById, buildTableGrid, containerListOf, gridOriginOfCell, locateParagraph, normalizeRect, paragraphsOf, styleAtRuns, styleOfCharAt, textOfRuns } from "@cw/shared";
 import type { CellBorders } from "@cw/shared";
 import { createLayoutEngine, type LayoutEngine } from "./layout/engine";
@@ -2525,8 +2525,10 @@ export function createEditor(
     // Display equation under the pointer — edit its MathML in the equation editor.
     const eqHit = hitTestEquation(tree, pt.pageIndex, pt.x, pt.y);
     if (eqHit) {
-      const eqBlock = doc.blocks.find((b) => b.id === eqHit.blockId);
-      if (eqBlock && eqBlock.kind === "equation") {
+      // Container-aware: equations imported into table cells or header/footer
+      // bands resolve too (doc.blocks.find would only catch top-level body ones).
+      const eqBlock = locateEquation(doc, eqHit.blockId)?.block;
+      if (eqBlock) {
         const blk = eqBlock;
         entries.push(
           sep,

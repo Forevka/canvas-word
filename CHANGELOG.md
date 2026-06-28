@@ -44,6 +44,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The default showcase document gains a **"Mathematics — MathML equations"** section.
 
 ### Fixed
+- **Nested display equations (table cells / header-footer bands) are now editable.**
+  The `setEquation` / `setEquationAlign` ops and the editor lookups (`setEquationAlignCmd`,
+  the right-click menu, object-selection delete) only scanned top-level `doc.blocks`, so
+  a display `EquationBlock` imported into a table cell or a header/footer band — e.g. from
+  a `.docx` `m:oMathPara` in a cell — couldn't be edited / aligned / deleted (the op threw
+  "not found"). They now resolve equations through a container-aware locator
+  (`locateEquation`/`locateBlock`, the generalization of `locateImage`) that searches the
+  body, every band story, and table cells in either; layout already rendered them there.
 - **Enter inside a block-level content control.** Pressing Enter in a paragraph or
   table cell wrapped by a block-level SDT (e.g. a "section" control) was swallowed —
   the guard treated every control at the caret as inline. Now only *inline* controls
