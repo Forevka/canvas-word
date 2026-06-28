@@ -59,12 +59,19 @@ function node(n: MathNode): { tex: string; tight: boolean } {
       }
       return { tex: base, tight: [...base].length === 1 };
     }
-    case "number":
+    case "number": {
+      if (n.variant && n.variant !== "italic" && VARIANT_CMD[n.variant]) {
+        return { tex: `\\${VARIANT_CMD[n.variant]}{${n.text}}`, tight: true };
+      }
       return { tex: n.text, tight: [...n.text].length === 1 };
+    }
     case "op":
       return { tex: OPS_R[n.text] ?? BIG_R[n.text] ?? n.text, tight: [...n.text].length === 1 };
     case "text":
-      return { tex: `\\text{${n.text}}`, tight: true };
+      // Special LaTeX chars in ordinary text must be escaped or the output is
+      // invalid LaTeX. The LaTeX parser's raw-text capture unescapes the inverse,
+      // so `\text{…}` still round-trips internally (see latex.ts).
+      return { tex: `\\text{${escapeTextLatex(n.text)}}`, tight: true };
     case "space":
       return { tex: spaceCmd(n.widthEm ?? 0), tight: true };
     case "frac":
@@ -118,6 +125,29 @@ function node(n: MathNode): { tex: string; tight: boolean } {
       // quietly truncated when re-serialized to LaTeX.
       return { tex: "\\square", tight: true };
   }
+}
+
+/** Escape the LaTeX special characters inside a `\text{…}` body. Backslash,
+ *  tilde and caret have no single-char escape in text mode, so they use the
+ *  standard `\textbackslash`/`\textasciitilde`/`\textasciicircum{}` control words.
+ *  Each mapping is invertible by latex.ts's raw-text unescape (round-trip safe). */
+const TEXT_ESCAPES: Record<string, string> = {
+  "\\": "\\textbackslash{}",
+  "~": "\\textasciitilde{}",
+  "^": "\\textasciicircum{}",
+  "{": "\\{",
+  "}": "\\}",
+  $: "\\$",
+  "&": "\\&",
+  "#": "\\#",
+  _: "\\_",
+  "%": "\\%",
+};
+
+function escapeTextLatex(s: string): string {
+  let out = "";
+  for (const ch of s) out += TEXT_ESCAPES[ch] ?? ch;
+  return out;
 }
 
 /** Bare (unbraced) serialization of a node's contents. */

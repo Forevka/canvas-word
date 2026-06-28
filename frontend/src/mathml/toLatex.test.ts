@@ -39,6 +39,26 @@ describe("mathToLatex", () => {
     expect(mathToLatex(parseMathml("<math><mtext>hello world</mtext></math>").root)).toBe("\\text{hello world}");
   });
 
+  it("escapes LaTeX special chars inside \\text{…}", () => {
+    const tex = mathToLatex(parseMathml("<math><mtext>a_b &amp; 50% #1</mtext></math>").root);
+    expect(tex).toBe("\\text{a\\_b \\& 50\\% \\#1}");
+    // Backslash / tilde / caret use control words (no single-char text escape).
+    expect(mathToLatex(parseMathml("<math><mtext>a\\b</mtext></math>").root)).toBe(
+      "\\text{a\\textbackslash{}b}",
+    );
+    expect(mathToLatex(parseMathml("<math><mtext>x^2~y</mtext></math>").root)).toBe(
+      "\\text{x\\textasciicircum{}2\\textasciitilde{}y}",
+    );
+  });
+
+  it("round-trips \\text{…} special chars through LaTeX (escape ∘ unescape == id)", () => {
+    for (const raw of ["a_b", "50% off", "C# & F#", "a\\b", "x^2", "~tilde~", "{braces}", "$math$", "100% \\ {x}"]) {
+      const node = { type: "text" as const, text: raw };
+      const round = latexToMath(mathToLatex({ type: "row", children: [node] }));
+      expect(round.children[0]).toMatchObject({ type: "text", text: raw });
+    }
+  });
+
   it("maps every imported mathvariant to a style command (no plain-identifier fallback)", () => {
     // fromOmml can emit these compound variants; the LaTeX view must keep a style
     // command rather than dropping back to an unstyled identifier.

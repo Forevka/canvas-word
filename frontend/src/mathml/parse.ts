@@ -74,8 +74,10 @@ function nodeFrom(n: TNode): MathNode {
       const v = attr(n, "mathvariant");
       return { type: "ident", text: text(n), ...(v && KNOWN_VARIANTS.has(v) ? { variant: v as MathVariant } : {}) };
     }
-    case "mn":
-      return { type: "number", text: text(n) };
+    case "mn": {
+      const v = attr(n, "mathvariant");
+      return { type: "number", text: text(n), ...(v && KNOWN_VARIANTS.has(v) ? { variant: v as MathVariant } : {}) };
+    }
     case "mo": {
       const stretchy = attr(n, "stretchy");
       const form = attr(n, "form");
@@ -122,11 +124,17 @@ function nodeFrom(n: TNode): MathNode {
         child: collapse(els),
       };
     case "mover":
-      return { type: "limit", base: slot(els, 0), over: slot(els, 1), ...accentFlag(n) };
+      return { type: "limit", base: slot(els, 0), over: slot(els, 1), ...accentFlags(n, { over: true }) };
     case "munder":
-      return { type: "limit", base: slot(els, 0), under: slot(els, 1), ...accentFlag(n) };
+      return { type: "limit", base: slot(els, 0), under: slot(els, 1), ...accentFlags(n, { under: true }) };
     case "munderover":
-      return { type: "limit", base: slot(els, 0), under: slot(els, 1), over: slot(els, 2), ...accentFlag(n) };
+      return {
+        type: "limit",
+        base: slot(els, 0),
+        under: slot(els, 1),
+        over: slot(els, 2),
+        ...accentFlags(n, { over: true, under: true }),
+      };
     case "mtable":
       return matrixFrom(els);
     case "mphantom":
@@ -137,8 +145,16 @@ function nodeFrom(n: TNode): MathNode {
   }
 }
 
-function accentFlag(n: TNode): { accent?: true } {
-  return attr(n, "accent") === "true" ? { accent: true } : {};
+/** Read MathML's two independent accent hints: `accent` ties the OVER script to
+ *  the base (hat/overbrace), `accentunder` ties the UNDER script (underbrace/
+ *  underbar). Each is only meaningful for the script it governs, so a caller
+ *  reads `accent` only when there's an over and `accentunder` only with an under
+ *  — a stray opposite attribute on the wrong element is ignored. */
+function accentFlags(n: TNode, slots: { over?: boolean; under?: boolean }): { accent?: true; accentUnder?: true } {
+  return {
+    ...(slots.over && attr(n, "accent") === "true" ? { accent: true } : {}),
+    ...(slots.under && attr(n, "accentunder") === "true" ? { accentUnder: true } : {}),
+  };
 }
 
 function matrixFrom(rowEls: TNode[]): MathMatrix {

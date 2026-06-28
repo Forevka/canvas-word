@@ -32,7 +32,7 @@ function nodeXml(n: MathNode): string {
     case "ident":
       return el("mi", variantAttr(n.variant), escapeText(n.text));
     case "number":
-      return el("mn", undefined, escapeText(n.text));
+      return el("mn", variantAttr(n.variant), escapeText(n.text));
     case "op": {
       const attrs: Record<string, string> = {};
       if (n.stretchy !== undefined) attrs.stretchy = String(n.stretchy);
@@ -70,11 +70,19 @@ function nodeXml(n: MathNode): string {
       return el("mfenced", attrs, nodeXml(n.child));
     }
     case "limit": {
-      const accent = n.accent ? { accent: "true" } : undefined;
-      if (n.under && n.over)
-        return el("munderover", accent, nodeXml(n.base) + nodeXml(n.under) + nodeXml(n.over));
-      if (n.over) return el("mover", accent, nodeXml(n.base) + nodeXml(n.over));
-      if (n.under) return el("munder", accent, nodeXml(n.base) + nodeXml(n.under));
+      // `accent` belongs on the OVER script, `accentunder` on the UNDER script.
+      const overAcc = n.accent ? { accent: "true" } : undefined;
+      const underAcc = n.accentUnder ? { accentunder: "true" } : undefined;
+      if (n.under && n.over) {
+        const attrs = { ...overAcc, ...underAcc };
+        return el(
+          "munderover",
+          Object.keys(attrs).length ? attrs : undefined,
+          nodeXml(n.base) + nodeXml(n.under) + nodeXml(n.over),
+        );
+      }
+      if (n.over) return el("mover", overAcc, nodeXml(n.base) + nodeXml(n.over));
+      if (n.under) return el("munder", underAcc, nodeXml(n.base) + nodeXml(n.under));
       return nodeXml(n.base);
     }
     case "nary": {

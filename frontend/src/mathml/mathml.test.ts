@@ -34,6 +34,12 @@ describe("MathML parse <-> serialize is a stable canonical form", () => {
     nthRoot: "<math><mroot><mi>x</mi><mn>3</mn></mroot></math>",
     fenced: '<math><mfenced close=")" open="("><mi>x</mi></mfenced></math>',
     overAccent: '<math><mover accent="true"><mi>x</mi><mo>^</mo></mover></math>',
+    underAccent: '<math><munder accentunder="true"><mi>x</mi><mo>⏟</mo></munder></math>',
+    underOverAccent:
+      '<math><munderover accent="true" accentunder="true"><mi>x</mi><mo>⏟</mo><mo>^</mo></munderover></math>',
+    blackboardNumber: '<math><mn mathvariant="double-struck">1</mn></math>',
+    monospaceNumber: '<math><mn mathvariant="monospace">0</mn></math>',
+    phantom: "<math><mphantom><mi>x</mi></mphantom></math>",
     matrix:
       "<math><mtable><mtr><mtd><mn>1</mn></mtd><mtd><mn>0</mn></mtd></mtr>" +
       "<mtr><mtd><mn>0</mn></mtd><mtd><mn>1</mn></mtd></mtr></mtable></math>",
@@ -61,6 +67,27 @@ describe("MathML parse <-> serialize is a stable canonical form", () => {
     expect(out).toContain("<mfrac>");
     expect(out).toContain("<msqrt>");
     expect(out).toContain("<msup>");
+  });
+
+  it("over- and under-accents have distinct, unambiguous encodings", () => {
+    const over = parseMathml('<math><mover accent="true"><mi>x</mi><mo>^</mo></mover></math>').root.children[0];
+    expect(over).toMatchObject({ type: "limit", accent: true });
+    expect(over).not.toHaveProperty("accentUnder");
+
+    const under = parseMathml('<math><munder accentunder="true"><mi>x</mi><mo>⏟</mo></munder></math>').root
+      .children[0];
+    expect(under).toMatchObject({ type: "limit", accentUnder: true });
+    expect(under).not.toHaveProperty("accent");
+
+    // `accent` reads ONLY as an over hint, `accentunder` ONLY as an under hint —
+    // a stray opposite attribute on the wrong element is ignored.
+    expect(parseMathml('<math><munder accent="true"><mi>x</mi><mo>⏟</mo></munder></math>').root.children[0])
+      .not.toHaveProperty("accent");
+
+    // munder serializes with accentunder — never the over-only `accent` attribute.
+    const underMml = serializeMathml(parseMathml('<math><munder accentunder="true"><mi>x</mi><mo>⏟</mo></munder></math>'));
+    expect(underMml).toContain('<munder accentunder="true">');
+    expect(underMml).not.toContain("<munder accent=");
   });
 });
 
@@ -114,6 +141,26 @@ describe("AST -> OMML golden output", () => {
     const omml = mathmlToOmml(eq);
     expect(omml).toContain("<m:nary>");
     expect(omml).toContain('<m:chr m:val="∑"/>');
+  });
+
+  it("phantom emits m:phant (invisible-spacing wrapper, not just its child)", () => {
+    const omml = ommlOf("<math><mphantom><mi>x</mi></mphantom></math>");
+    expect(omml).toContain("<m:phant>");
+    expect(omml).toContain('<m:show m:val="0"/>');
+    expect(omml).toContain("<m:e>");
+  });
+
+  it("styled number emits its alphanumeric run style (m:scr)", () => {
+    expect(ommlOf('<math><mn mathvariant="double-struck">1</mn></math>')).toContain(
+      '<m:scr m:val="double-struck"/>',
+    );
+    expect(ommlOf('<math><mn mathvariant="monospace">0</mn></math>')).toContain(
+      '<m:scr m:val="monospace"/>',
+    );
+    // A plain number stays plain (no scr, just m:sty="p").
+    const plain = ommlOf("<math><mn>2</mn></math>");
+    expect(plain).not.toContain("<m:scr");
+    expect(plain).toContain('<m:sty m:val="p"/>');
   });
 });
 
@@ -202,6 +249,24 @@ describe("OMML -> AST -> OMML round-trip (import then re-export)", () => {
       expect(omml).toContain(`<m:scr m:val="${variant}"/>`);
       expect(ommlToMathml(firstEl(omml)).children[0]).toMatchObject({ type: "ident", text: ch, variant });
     }
+  });
+
+  it("phantom round-trips through OMML (wrapper preserved, not flattened)", () => {
+    const eq = parseMathml("<math><mphantom><mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow></mphantom></math>");
+    const root = ommlToMathml(firstEl(mathmlToOmml(eq)));
+    expect(root.children[0]).toMatchObject({ type: "phantom" });
+  });
+
+  it("styled number round-trips through OMML via m:scr", () => {
+    const eq = parseMathml('<math><mn mathvariant="double-struck">1</mn></math>');
+    const root = ommlToMathml(firstEl(mathmlToOmml(eq)));
+    expect(root.children[0]).toMatchObject({ type: "number", text: "1", variant: "double-struck" });
+  });
+
+  it("plain digits import without a spurious variant", () => {
+    const root = ommlToMathml(firstEl("<m:oMath><m:r><m:rPr><m:sty m:val=\"p\"/></m:rPr><m:t>2</m:t></m:r></m:oMath>"));
+    expect(root.children[0]).toMatchObject({ type: "number", text: "2" });
+    expect(root.children[0]).not.toHaveProperty("variant");
   });
 
   it("mspace width survives approximately through OMML", () => {

@@ -98,7 +98,12 @@ function runNode(r: TNode): MathNode {
   // A whitespace-only run is intentional spacing (we have no other mspace
   // representation in OMML) — recover it as a `space` node, ~0.25em per space.
   if (t.length > 0 && /^\s+$/.test(t)) return { type: "space", widthEm: t.length * 0.25 };
-  if (/^[0-9]+([.,][0-9]+)?$/.test(t)) return { type: "number", text: t };
+  if (/^[0-9]+([.,][0-9]+)?$/.test(t)) {
+    // Numbers are upright/plain by default; keep only a non-plain alphanumeric
+    // style (blackboard/monospace/bold/…) so ordinary digits stay variant-free.
+    const variant = variantFrom(sty, scr);
+    return { type: "number", text: t, ...(variant && variant !== "normal" ? { variant } : {}) };
+  }
   if (t.length > 0 && OP_RE.test(t)) return { type: "op", text: t };
   if (/\p{L}/u.test(t)) {
     const variant = variantFrom(sty, scr);
@@ -231,6 +236,10 @@ function nodeFrom(n: TNode): MathNode {
     }
     case "func":
       return { type: "row", children: [slot(n, "fName"), slot(n, "e")] };
+    case "phant":
+      // Invisible-spacing wrapper — recover the phantom so its dimensions
+      // survive re-export (inverse of toOmml's `m:phant`).
+      return { type: "phantom", child: slot(n, "e") };
     case "box":
     case "borderBox":
       return slot(n, "e");

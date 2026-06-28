@@ -104,8 +104,13 @@ function nodeXml(n: MathNode): string {
       const { sty, scr } = runPropsFor(n.variant);
       return runXml(n.text, sty, scr);
     }
-    case "number":
-      return runXml(n.text, "p");
+    case "number": {
+      // Numbers are upright/plain by default; a `variant` selects an alphanumeric
+      // style (blackboard-bold, monospace, …) — same run props as identifiers.
+      if (!n.variant) return runXml(n.text, "p");
+      const { sty, scr } = runPropsFor(n.variant);
+      return runXml(n.text, sty, scr);
+    }
     case "op":
     case "text":
       return runXml(n.text, "p");
@@ -171,8 +176,13 @@ function nodeXml(n: MathNode): string {
           .map((row) => el("m:mr", undefined, row.map((c) => wrap("m:e", c)).join("")))
           .join(""),
       );
-    case "phantom":
-      return nodeXml(n.child);
+    case "phantom": {
+      // Preserve the invisible-spacing wrapper: `m:phant` keeps the child's
+      // dimensions while painting nothing (`m:show` off). Without this the
+      // phantom flattens to its visible child on a docx round-trip.
+      const phantPr = el("m:phantPr", undefined, el("m:show", { "m:val": "0" }));
+      return el("m:phant", undefined, phantPr + wrap("m:e", n.child));
+    }
     case "unknown":
       return n.omml ?? runXml("?", "p");
   }
