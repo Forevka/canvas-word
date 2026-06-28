@@ -147,7 +147,8 @@ export type TabAlign = "left" | "center" | "right" | "decimal";
 export type TabLeader = "none" | "dot" | "dash" | "underscore";
 
 export interface TabStop {
-  /** Position from the left content edge (after the paragraph's left indent). */
+  /** Position from the start content edge, after the paragraph's start indent —
+   *  the LEFT edge for an LTR paragraph, the RIGHT edge for an RTL (`w:bidi`) one. */
   posPx: number;
   /** Text alignment at the stop (default "left"). */
   align?: TabAlign;
