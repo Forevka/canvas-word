@@ -112,6 +112,55 @@ describe("latexToMath", () => {
     expect(out).not.toContain("<m:sSubSup>");
   });
 
+  // ── #43: the summand binds into MathNary.body (the n-ary's <m:e> base) ───────
+  it("binds the following operand into nary.body for \\sum_{i=1}^{n} i", () => {
+    const sum = latexToMath("\\sum_{i=1}^{n} i").children[0];
+    expect(sum).toMatchObject({
+      type: "nary",
+      op: "∑",
+      sub: { children: [{ type: "ident", text: "i" }, { type: "op", text: "=" }, { type: "number", text: "1" }] },
+      sup: { type: "ident", text: "n" },
+      body: { type: "ident", text: "i" },
+    });
+  });
+
+  it("exports the summand inside the n-ary's <m:e> base", () => {
+    const out = omml("\\sum_{i=1}^{n} i");
+    expect(out).toContain("<m:nary>");
+    expect(out).toContain("<m:e><m:r><m:t>i</m:t></m:r></m:e>");
+  });
+
+  it("binds a scripted summand (factor + its scripts) into the body", () => {
+    // The body is the whole following FACTOR, so `i^2` stays together.
+    expect(latexToMath("\\sum_{i=1}^{n} i^2").children[0]).toMatchObject({
+      type: "nary",
+      op: "∑",
+      body: { type: "script", base: { type: "ident", text: "i" }, sup: { type: "number", text: "2" } },
+    });
+  });
+
+  it("binds an integrand for \\int_a^b f", () => {
+    expect(latexToMath("\\int_a^b f").children[0]).toMatchObject({
+      type: "nary",
+      op: "∫",
+      body: { type: "ident", text: "f" },
+    });
+  });
+
+  it("leaves the body empty when no operand follows, and keeps relations as siblings", () => {
+    // A bare big operator (or one followed only by a relation) keeps an empty
+    // body; the relation `= S` stays a sibling rather than being swallowed.
+    expect(latexToMath("\\prod").children[0]).toMatchObject({ type: "nary", op: "∏", body: { type: "row", children: [] } });
+    const list = latexToMath("\\sum_{i} a_i = S").children;
+    expect(list[0]).toMatchObject({
+      type: "nary",
+      op: "∑",
+      body: { type: "script", base: { type: "ident", text: "a" }, sub: { type: "ident", text: "i" } },
+    });
+    expect(list[1]).toMatchObject({ type: "op", text: "=" });
+    expect(list[2]).toMatchObject({ type: "ident", text: "S" });
+  });
+
   // ── #21(b): styled numeric glyphs survive ───────────────────────────────────
   it("keeps the variant on styled numbers (\\mathbb{1}, \\mathtt{0})", () => {
     expect(latexToMath("\\mathbb{1}").children[0]).toMatchObject({ type: "number", text: "1", variant: "double-struck" });
