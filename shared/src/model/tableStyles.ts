@@ -163,14 +163,20 @@ export function cellCondFlags(
 /** Word's default w:tblLook: header row on, row banding on. */
 export const DEFAULT_TBL_LOOK: TableCondOverrides = { firstRow: true, bandRows: true };
 
-/** Apply a band's props onto a concrete style, but only where a property still
- *  equals `defaults` (i.e. was not explicitly set) — so explicit formatting keeps
- *  precedence while default-valued props pick up the band. */
-function applyBandProps<T extends object>(current: T, patch: Partial<T>, defaults: T): T {
+/** Apply a band's props onto a concrete style, but only where a property was not
+ *  explicitly set — so explicit formatting keeps precedence while default-valued
+ *  props pick up the band. "Explicitly set" is determined first by `explicit` (an
+ *  author-supplied-key set carried from the builder as provenance) and then, as a
+ *  fallback for fields with no provenance, by value-equality with `defaults`. The
+ *  provenance set is what lets an explicit value that HAPPENS to equal the default
+ *  survive a conflicting band (the value-equality heuristic alone can't tell that
+ *  case apart from genuinely-unset content). */
+function applyBandProps<T extends object>(current: T, patch: Partial<T>, defaults: T, explicit?: ReadonlySet<string>): T {
   const cur = current as Record<string, unknown>;
   const def = defaults as Record<string, unknown>;
   const out: Record<string, unknown> = { ...cur };
   for (const [k, v] of Object.entries(patch as Record<string, unknown>)) {
+    if (explicit?.has(k)) continue; // author explicitly set this field — keep it, even if it equals the default
     if (v !== undefined && (cur[k] === undefined || cur[k] === def[k])) out[k] = v;
   }
   return out as T;
@@ -184,14 +190,26 @@ function applyBandProps<T extends object>(current: T, patch: Partial<T>, default
  *
  *  When `contentDefaults` is given, the band's char/para are ALSO materialized as
  *  concrete run/paragraph styles on the cell content — but only where a property
- *  still equals the supplied default (i.e. was not explicitly set), so explicit
- *  content formatting keeps precedence. Omit it to leave cell content untouched. */
+ *  was not explicitly set (see `applyBandProps`), so explicit content formatting
+ *  keeps precedence. Omit it to leave cell content untouched.
+ *
+ *  `explicitChar`/`explicitPara` carry per-object provenance from the builder: a
+ *  map from a content run / paragraph block to the set of style keys the author
+ *  supplied. Object identity is preserved through the grid rebuild, so the bake
+ *  can look each run/paragraph up. This is what preserves an explicit value that
+ *  equals the resolved default against a conflicting band (issue #30); without
+ *  provenance the bake falls back to value-equality only. */
 export function bakeTableStyleRows(
   table: TableBlock,
   style: TableStyle,
   styles: Record<string, TableStyle>,
   overrides: TableCondOverrides,
-  contentDefaults?: { char: CharStyle; para: ParaStyle },
+  contentDefaults?: {
+    char: CharStyle;
+    para: ParaStyle;
+    explicitChar?: WeakMap<object, ReadonlySet<string>>;
+    explicitPara?: WeakMap<object, ReadonlySet<string>>;
+  },
 ): TableRow[] {
   const resolved = resolveTableStyle(styles, style.id);
   const grid = buildTableGrid(table);
@@ -214,8 +232,10 @@ export function bakeTableStyleRows(
         b.kind === "paragraph"
           ? {
               ...b,
-              style: props.para ? applyBandProps(b.style, props.para, contentDefaults.para) : b.style,
-              runs: props.char ? b.runs.map((r) => ({ ...r, style: applyBandProps(r.style, props.char!, contentDefaults.char) })) : b.runs,
+              style: props.para ? applyBandProps(b.style, props.para, contentDefaults.para, contentDefaults.explicitPara?.get(b)) : b.style,
+              runs: props.char
+                ? b.runs.map((r) => ({ ...r, style: applyBandProps(r.style, props.char!, contentDefaults.char, contentDefaults.explicitChar?.get(r)) }))
+                : b.runs,
             }
           : b,
       );

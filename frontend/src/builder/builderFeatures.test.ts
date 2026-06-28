@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { FieldDef, Paragraph, TableBlock } from "@cw/shared";
-import { formatFieldDate } from "@cw/shared";
+import { DEFAULT_CHAR_STYLE, formatFieldDate } from "@cw/shared";
 import { DocumentBuilder } from "./index";
 
 const para = (b: unknown): Paragraph => b as Paragraph;
@@ -223,5 +223,25 @@ describe("table-style presets", () => {
 
     b.table([["x"]], { style: "ghost" });
     expect(b.warnings.some((w) => w.code === "table-style-missing:ghost")).toBe(true);
+  });
+});
+
+describe("real table-style content bake — explicit-default provenance (#30)", () => {
+  it("preserves a cell color explicitly set to the default while unset cells pick up the band", () => {
+    const def = DEFAULT_CHAR_STYLE.color; // the builder's resolved default text color
+    const b = DocumentBuilder.create().tableStyle({
+      id: "Hdr",
+      name: "Hdr",
+      conds: { firstRow: { char: { color: "#ffffff" } } }, // header band recolors text white
+    });
+    b.table(
+      [[{ text: "pinned", style: { color: def } }, "auto"]],
+      { styleId: "Hdr" },
+    );
+    const header = table(b.build().blocks[0]).rows[0]!;
+    // Author explicitly pinned the default color → the band must NOT override it.
+    expect(para(header.cells[0]!.blocks[0]).runs[0]!.style.color).toBe(def);
+    // No explicit color → genuinely default-valued → the band's white wins.
+    expect(para(header.cells[1]!.blocks[0]).runs[0]!.style.color).toBe("#ffffff");
   });
 });

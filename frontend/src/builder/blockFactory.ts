@@ -45,6 +45,13 @@ export class BuilderContext {
   private footnoteCounter = 0;
   /** Builder-only table-style presets (seeded with built-ins; .tableStylePreset adds). */
   readonly tableStyles = builtinTableStyles();
+  /** Per-object provenance of author-supplied style keys: a run → the CharStyle
+   *  keys, a paragraph block → the ParaStyle keys the author explicitly set. Lets
+   *  table-style baking preserve an explicit value even when it equals the
+   *  resolved default (issue #30). Keyed by object identity, which survives the
+   *  grid rebuild in bakeTableStyleRows. */
+  readonly explicitCharKeys = new WeakMap<object, ReadonlySet<string>>();
+  readonly explicitParaKeys = new WeakMap<object, ReadonlySet<string>>();
 
   constructor(doc: Document, idSeed?: string) {
     this.doc = doc;

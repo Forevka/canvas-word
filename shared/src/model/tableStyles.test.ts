@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { cellCondFlags, effectiveCellProps, resolveTableStyle, type TableStyle } from "./tableStyles";
+import { DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE } from "./defaults";
+import type { Paragraph, Run, TableBlock } from "./document";
+import { bakeTableStyleRows, cellCondFlags, effectiveCellProps, resolveTableStyle, type TableStyle } from "./tableStyles";
 
 const style: TableStyle = {
   id: "Grid",
@@ -48,6 +50,46 @@ describe("effectiveCellProps precedence", () => {
     const flags = cellCondFlags(0, 0, 4, 3, { firstRow: true });
     const props = effectiveCellProps(resolved, flags, { shading: "#ff0000" });
     expect(props.shading).toBe("#ff0000");
+  });
+});
+
+describe("bakeTableStyleRows content provenance (#30)", () => {
+  // A header band that recolors first-row text white — conflicts with a cell whose
+  // run was explicitly set back to the default color.
+  const band: TableStyle = { id: "Hdr", name: "Hdr", conds: { firstRow: { char: { color: "#ffffff" } } } };
+  const styles = { Hdr: band };
+
+  // One header cell holding a single run whose color EQUALS the resolved default.
+  function headerTable(): { table: TableBlock; run: Run } {
+    const run: Run = { text: "H", style: { ...DEFAULT_CHAR_STYLE } }; // color === default (#202124)
+    const para: Paragraph = { kind: "paragraph", id: "p", revision: 0, runs: [run], style: { ...DEFAULT_PARA_STYLE } };
+    const table: TableBlock = { kind: "table", id: "t", revision: 0, rows: [{ cells: [{ id: "c", blocks: [para] }] }] };
+    return { table, run };
+  }
+
+  const bakedRun = (rows: ReturnType<typeof bakeTableStyleRows>): Run =>
+    (rows[0]!.cells[0]!.blocks[0] as Paragraph).runs[0]!;
+
+  it("preserves an explicitly-set value that equals the default against a conflicting band", () => {
+    const { table, run } = headerTable();
+    const explicitChar = new WeakMap<object, ReadonlySet<string>>([[run, new Set(["color"])]]);
+    const rows = bakeTableStyleRows(table, band, styles, { firstRow: true }, {
+      char: DEFAULT_CHAR_STYLE,
+      para: DEFAULT_PARA_STYLE,
+      explicitChar,
+    });
+    // The author pinned the default color explicitly, so the band must NOT win.
+    expect(bakedRun(rows).style.color).toBe(DEFAULT_CHAR_STYLE.color);
+  });
+
+  it("lets genuinely-default (unset) content pick up the band", () => {
+    const { table } = headerTable(); // same default color, but no provenance recorded
+    const rows = bakeTableStyleRows(table, band, styles, { firstRow: true }, {
+      char: DEFAULT_CHAR_STYLE,
+      para: DEFAULT_PARA_STYLE,
+      explicitChar: new WeakMap(),
+    });
+    expect(bakedRun(rows).style.color).toBe("#ffffff");
   });
 });
 
