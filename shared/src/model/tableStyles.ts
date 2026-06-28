@@ -163,25 +163,35 @@ export function cellCondFlags(
 /** Word's default w:tblLook: header row on, row banding on. */
 export const DEFAULT_TBL_LOOK: TableCondOverrides = { firstRow: true, bandRows: true };
 
+/** Apply a band's props onto a concrete style, but only where a property still
+ *  equals `defaults` (i.e. was not explicitly set) — so explicit formatting keeps
+ *  precedence while default-valued props pick up the band. */
+function applyBandProps<T extends object>(current: T, patch: Partial<T>, defaults: T): T {
+  const cur = current as Record<string, unknown>;
+  const def = defaults as Record<string, unknown>;
+  const out: Record<string, unknown> = { ...cur };
+  for (const [k, v] of Object.entries(patch as Record<string, unknown>)) {
+    if (v !== undefined && (cur[k] === undefined || cur[k] === def[k])) out[k] = v;
+  }
+  return out as T;
+}
+
 /** Recompute every cell's baked shading/borders/margin from a resolved table style
  *  + the table's active bands (span-aware). The TableStyle entity + TableBlock.styleId
  *  are kept for re-editing and docx round-trip; the layout engine reads the baked
- *  concrete cell props. Shared by the editor's applyTableStyle and the document
- *  builder so both produce identical tables. Applying a style is destructive — it
- *  replaces direct cell shading/borders/margin (like Word).
+ *  concrete cell props. Applying a style replaces direct cell shading/borders/margin
+ *  (like Word).
  *
- *  `bakeContent` (default false) ALSO bakes the band's char/para onto the cell's
- *  content (e.g. a header band's bold/white text) so it renders in the headless
- *  layout engine, which reads concrete run/paragraph styles. The editor leaves it
- *  off (applying a style must not clobber the user's direct run formatting); the
- *  document builder turns it on, since its freshly-built cells carry no competing
- *  direct formatting — so the style fully renders without a precedence conflict. */
+ *  When `contentDefaults` is given, the band's char/para are ALSO materialized as
+ *  concrete run/paragraph styles on the cell content — but only where a property
+ *  still equals the supplied default (i.e. was not explicitly set), so explicit
+ *  content formatting keeps precedence. Omit it to leave cell content untouched. */
 export function bakeTableStyleRows(
   table: TableBlock,
   style: TableStyle,
   styles: Record<string, TableStyle>,
   overrides: TableCondOverrides,
-  bakeContent = false,
+  contentDefaults?: { char: CharStyle; para: ParaStyle },
 ): TableRow[] {
   const resolved = resolveTableStyle(styles, style.id);
   const grid = buildTableGrid(table);
@@ -199,13 +209,13 @@ export function bakeTableStyleRows(
     else delete next.borders;
     if (props.margin) next.margin = props.margin;
     else delete next.margin;
-    if (bakeContent && (props.char || props.para)) {
+    if (contentDefaults && (props.char || props.para)) {
       next.blocks = next.blocks.map((b) =>
         b.kind === "paragraph"
           ? {
               ...b,
-              style: props.para ? { ...b.style, ...props.para } : b.style,
-              runs: props.char ? b.runs.map((r) => ({ ...r, style: { ...r.style, ...props.char } })) : b.runs,
+              style: props.para ? applyBandProps(b.style, props.para, contentDefaults.para) : b.style,
+              runs: props.char ? b.runs.map((r) => ({ ...r, style: applyBandProps(r.style, props.char!, contentDefaults.char) })) : b.runs,
             }
           : b,
       );

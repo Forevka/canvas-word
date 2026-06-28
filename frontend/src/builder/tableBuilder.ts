@@ -154,10 +154,10 @@ export class TableBuilder {
       );
       return;
     }
-    // bakeContent=true: also bake the style's char/para (e.g. a header band's
-    // bold/white text) onto cell content so it renders headlessly — the builder's
-    // fresh cells have no direct run formatting to clobber.
-    table.rows = bakeTableStyleRows(table, style, styles, look, true);
+    // Pass the builder's defaults so the band's char/para also render headlessly
+    // (e.g. a header band's bold/white text) — applied only where a cell property
+    // still equals the default, so an author's explicit CellSpec.style is preserved.
+    table.rows = bakeTableStyleRows(table, style, styles, look, { char: this.ctx.charDefault, para: this.ctx.paraDefault });
   }
 }
 

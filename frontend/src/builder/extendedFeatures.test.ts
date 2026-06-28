@@ -135,6 +135,19 @@ describe("real table styles", () => {
     expect(headerRun.style.color).toBe("#ffffff");
   });
 
+  it("preserves explicit cell content formatting over the band, but defaults pick it up", () => {
+    const doc = DocumentBuilder.create({ idSeed: "tp" })
+      .tableStyle(gridStyle)
+      .table([[{ text: "Red", style: { color: "#ff0000" } }, "Plain"]], { styleId: "GridAccent" })
+      .build();
+    const t = tableOf(doc.blocks[0]);
+    const explicit = para(t.rows[0]!.cells[0]!.blocks[0]).runs[0]!;
+    const plain = para(t.rows[0]!.cells[1]!.blocks[0]).runs[0]!;
+    expect(explicit.style.color).toBe("#ff0000"); // explicit color kept over the band's white
+    expect(explicit.style.bold).toBe(true); // bold was default → band's bold applies
+    expect(plain.style.color).toBe("#ffffff"); // default color → band's white applies
+  });
+
   it("style (preset) and styleId (real) are mutually exclusive — styleId wins with a warning", () => {
     const builder = DocumentBuilder.create({ idSeed: "tx" })
       .tableStyle(gridStyle)
