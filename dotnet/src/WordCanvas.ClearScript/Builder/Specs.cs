@@ -375,6 +375,13 @@ public sealed record TableOptions
     public TableCondOverrides? CondOverrides { get; init; }
     /// <summary>Column sizing strategy (w:tblLayout).</summary>
     public TableWidthMode? WidthMode { get; init; }
+    /// <summary>Table-level default borders (w:tblPr/w:tblBorders), incl. interior
+    /// edges; re-emitted at tblPr level and cascaded onto cells (issue #48).</summary>
+    public TableBorders? Borders { get; init; }
+    /// <summary>Table-level default shading fill (w:tblPr/w:shd); cells may override.</summary>
+    public string? Shading { get; init; }
+    /// <summary>Table-level default cell margins (w:tblPr/w:tblCellMar).</summary>
+    public CellMargin? CellMargin { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -385,6 +392,9 @@ public sealed record TableOptions
         if (StyleId is { } sid) Js.Set(o, "styleId", sid);
         if (CondOverrides is { } co) Js.Set(o, "condOverrides", co.ToJs(e));
         if (WidthMode is { } wm) Js.Set(o, "widthMode", EnumJs.WidthMode(wm));
+        if (Borders is { } bd) Js.Set(o, "borders", bd.ToJs(e));
+        if (Shading is { } sh) Js.Set(o, "shading", sh);
+        if (CellMargin is { } cm) Js.Set(o, "cellMargin", cm.ToJs(e));
         return o;
     }
 }
@@ -654,6 +664,36 @@ public sealed record CellBorders
         if (Right is { } r) Js.Set(o, "right", r.ToJs(e));
         if (Bottom is { } b) Js.Set(o, "bottom", b.ToJs(e));
         if (Left is { } l) Js.Set(o, "left", l.ToJs(e));
+        return o;
+    }
+}
+
+/// <summary>Table-level default borders (w:tblPr/w:tblBorders): the four outer edges
+/// plus the two INTERIOR edges Word draws between adjacent cells (insideH/insideV).</summary>
+public sealed record TableBorders
+{
+    public CellBorder? Top { get; init; }
+    public CellBorder? Right { get; init; }
+    public CellBorder? Bottom { get; init; }
+    public CellBorder? Left { get; init; }
+    /// <summary>Interior horizontal edge between vertically-adjacent cells (w:insideH).</summary>
+    public CellBorder? InsideH { get; init; }
+    /// <summary>Interior vertical edge between horizontally-adjacent cells (w:insideV).</summary>
+    public CellBorder? InsideV { get; init; }
+
+    /// <summary>The same border on every edge, interior and exterior (a uniform grid).</summary>
+    public static TableBorders All(CellBorder border) =>
+        new() { Top = border, Right = border, Bottom = border, Left = border, InsideH = border, InsideV = border };
+
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        if (Top is { } t) Js.Set(o, "top", t.ToJs(e));
+        if (Right is { } r) Js.Set(o, "right", r.ToJs(e));
+        if (Bottom is { } b) Js.Set(o, "bottom", b.ToJs(e));
+        if (Left is { } l) Js.Set(o, "left", l.ToJs(e));
+        if (InsideH is { } ih) Js.Set(o, "insideH", ih.ToJs(e));
+        if (InsideV is { } iv) Js.Set(o, "insideV", iv.ToJs(e));
         return o;
     }
 }

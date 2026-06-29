@@ -263,6 +263,18 @@ export interface CellBorders {
   left?: CellBorder;
 }
 
+/** Table-level default borders (OOXML w:tblPr/w:tblBorders). Extends the per-cell
+ *  edges with the two INTERIOR edges Word resolves between adjacent cells. The
+ *  importer cascades these onto individual cells for layout/paint; the table keeps
+ *  them so export re-emits the table-level defaults at tblPr level rather than only
+ *  the baked per-cell copies. */
+export interface TableBorders extends CellBorders {
+  /** Interior horizontal edge between vertically-adjacent cells (w:insideH). */
+  insideH?: CellBorder;
+  /** Interior vertical edge between horizontally-adjacent cells (w:insideV). */
+  insideV?: CellBorder;
+}
+
 /** Inner cell padding in px, resolved from the OOXML cell-margin cascade
  *  (w:tcMar over the table's w:tblCellMar over Word's defaults). Word's default
  *  is 0 top/bottom and ~7.2px (108 twips) left/right — vertical padding is NOT
@@ -345,6 +357,17 @@ export interface TableBlock {
   /** Horizontal alignment of the table within the content width (OOXML w:tblPr/w:jc),
    *  applied whenever the table is narrower than the band. Absent = "left". */
   align?: "left" | "center" | "right";
+  /** Table-level default borders (OOXML w:tblPr/w:tblBorders), including interior
+   *  edges. The importer cascades these onto each cell so layout/paint stay
+   *  per-cell; kept here so export hoists the table-level defaults back to tblPr
+   *  level instead of relying only on the baked per-cell copies. Absent = none. */
+  defaultBorders?: TableBorders;
+  /** Table-level default shading fill (OOXML w:tblPr/w:shd) — a CSS color applied to
+   *  every cell unless the cell overrides it. Absent = no table-level fill. */
+  defaultShading?: string;
+  /** Table-level default cell margins (OOXML w:tblPr/w:tblCellMar), the base each
+   *  cell's own w:tcMar overrides per side. Absent = Word's defaults. */
+  defaultCellMargin?: CellMargin;
   /** Table-style reference (OOXML w:tblStyle → Document.tableStyles). The effective
    *  per-cell formatting is baked onto the cells; this is kept for re-editing and
    *  round-trip. Absent = no table style (direct cell formatting only). */

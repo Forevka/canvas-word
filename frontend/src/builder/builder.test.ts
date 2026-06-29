@@ -105,6 +105,32 @@ describe("tables", () => {
     expect(t.rows[1]!.cells[1]!.blocks).toHaveLength(3);
   });
 
+  it("records table-level defaults and cascades shading + margin onto cells (issue #48)", () => {
+    const rule = { color: "#1a73e8", widthPx: 1 };
+    const doc = DocumentBuilder.create()
+      .table([["A", "B"], ["c", { text: "d", shading: "#ffffff" }]], {
+        borders: { top: rule, right: rule, bottom: rule, left: rule, insideH: rule, insideV: rule },
+        shading: "#eef5ff",
+        cellMargin: { top: 6, right: 10, bottom: 6, left: 10 },
+      })
+      .build();
+    const t = table(doc.blocks[0]);
+    // Table-level defaults live on the model (so export re-emits them at tblPr).
+    expect(t.defaultBorders?.insideH?.color).toBe("#1a73e8");
+    expect(t.defaultShading).toBe("#eef5ff");
+    expect(t.defaultCellMargin).toEqual({ top: 6, right: 10, bottom: 6, left: 10 });
+    // Shading + margin + borders cascade onto cells that didn't set their own…
+    expect(t.rows[0]!.cells[0]!.shading).toBe("#eef5ff");
+    expect(t.rows[0]!.cells[0]!.margin).toEqual({ top: 6, right: 10, bottom: 6, left: 10 });
+    const corner = t.rows[0]!.cells[0]!.borders!;
+    expect(corner.top).toEqual(rule);
+    expect(corner.left).toEqual(rule);
+    expect(corner.right).toEqual(rule); // interior insideV (same rule here)
+    expect(corner.bottom).toEqual(rule); // interior insideH
+    // …but an explicit per-cell value still wins.
+    expect(t.rows[1]!.cells[1]!.shading).toBe("#ffffff");
+  });
+
   it("an empty table warns and self-heals to one cell", () => {
     const b = DocumentBuilder.create();
     b.table((t) => void t);

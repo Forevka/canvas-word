@@ -19,6 +19,7 @@ import type {
   SectionPatch,
   SectionProps,
   TableBlock,
+  TableBorders,
   TableCell,
   TableCondOverrides,
 } from "@cw/shared";
@@ -335,13 +336,18 @@ function paragraphXml(p: Paragraph, ctx: PartCtx): string {
 // ---------------------------------------------------------------------------
 // Tables
 
-function bordersXml(tag: string, b: NonNullable<TableCell["borders"]>): string {
+function bordersXml(tag: string, b: CellBorders | TableBorders): string {
   const edge = (name: string, spec: { color: string; widthPx: number; style?: string } | undefined): string => {
     if (!spec) return "";
     const val = spec.style === "double" ? "double" : spec.style === "dashed" ? "dashed" : spec.style === "dotted" ? "dotted" : "single";
     return el("w:" + name, { "w:val": val, "w:sz": pxToEighthPoints(spec.widthPx), "w:space": 0, "w:color": hex(spec.color) });
   };
-  const inner = edge("top", b.top) + edge("left", b.left) + edge("bottom", b.bottom) + edge("right", b.right);
+  // CT_TblBorders / CT_TcBorders share the top/left/bottom/right prefix; the two
+  // interior edges (insideH/insideV) follow and exist only on table-level borders.
+  const inside = b as TableBorders;
+  const inner =
+    edge("top", b.top) + edge("left", b.left) + edge("bottom", b.bottom) + edge("right", b.right) +
+    edge("insideH", inside.insideH) + edge("insideV", inside.insideV);
   // Always emit the element when a borders object is present, even with no edges:
   // an empty <w:tcBorders/> is the author's explicit "no borders", which the
   // importer keys on (bordersSpecified) to suppress the renderer's gray default
@@ -497,8 +503,29 @@ function tableXml(table: TableBlock, ctx: PartCtx): string {
   const tblLayoutEl = el("w:tblLayout", { "w:type": mode === "fixed" ? "fixed" : "autofit" });
   // w:jc sits between w:tblW and w:tblLayout in CT_TblPrBase's element order.
   const jcEl = table.align && table.align !== "left" ? el("w:jc", { "w:val": table.align }) : "";
-  const tblPr = el("w:tblPr", undefined, styleRef + tblWEl + jcEl + tblLayoutEl + look);
+  // Table-level defaults (issue #48): w:tblBorders / w:shd / w:tblCellMar. Per
+  // CT_TblPrBase ordering these sit tblBorders → shd → tblLayout → tblCellMar, so
+  // borders/shd precede w:tblLayout and the cell-margin default follows it. Emitting
+  // them at tblPr level round-trips the table-wide defaults (cells keep their own
+  // overrides) instead of losing them to the resolved per-cell copies.
+  const bordersEl = table.defaultBorders ? bordersXml("w:tblBorders", table.defaultBorders) : "";
+  const shdEl = table.defaultShading
+    ? el("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": hex(table.defaultShading) })
+    : "";
+  const cellMarEl = table.defaultCellMargin ? tblCellMarXml(table.defaultCellMargin) : "";
+  const tblPr = el("w:tblPr", undefined, styleRef + tblWEl + jcEl + bordersEl + shdEl + tblLayoutEl + cellMarEl + look);
   return el("w:tbl", undefined, tblPr + el("w:tblGrid", undefined, grid) + rowsXml.join(""));
+}
+
+/** w:tblCellMar — the table-wide default cell padding (all four sides), mirroring
+ *  the per-cell w:tcMar shape. Each cell's own w:tcMar still overrides per side. */
+function tblCellMarXml(m: { top: number; right: number; bottom: number; left: number }): string {
+  return el("w:tblCellMar", undefined,
+    el("w:top", { "w:w": pxToTwips(m.top), "w:type": "dxa" }) +
+    el("w:left", { "w:w": pxToTwips(m.left), "w:type": "dxa" }) +
+    el("w:bottom", { "w:w": pxToTwips(m.bottom), "w:type": "dxa" }) +
+    el("w:right", { "w:w": pxToTwips(m.right), "w:type": "dxa" }),
+  );
 }
 
 function tblLookXml(o: TableCondOverrides): string {

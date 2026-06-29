@@ -80,6 +80,56 @@ describe("DOCX export — round trip", () => {
     expect(mb.left).toBeCloseTo(7.2, 1);
   });
 
+  it("re-emits table-level borders / shading / cell-margins at tblPr level (issue #48)", () => {
+    // w:tblBorders (incl. the interior insideH/insideV edges), w:tblPr/w:shd and
+    // w:tblCellMar are parsed as table-WIDE defaults. They must survive a
+    // Word→edit→Word cycle at the table level, not only as the resolved per-cell
+    // copies — otherwise the table-level defaults are lost and every cell is bloated.
+    const tblBorders =
+      `<w:tblBorders>` +
+      `<w:top w:val="single" w:sz="12" w:color="1A73E8"/>` +
+      `<w:left w:val="single" w:sz="12" w:color="1A73E8"/>` +
+      `<w:bottom w:val="single" w:sz="12" w:color="1A73E8"/>` +
+      `<w:right w:val="single" w:sz="12" w:color="1A73E8"/>` +
+      `<w:insideH w:val="dashed" w:sz="6" w:color="34A853"/>` +
+      `<w:insideV w:val="dashed" w:sz="6" w:color="34A853"/></w:tblBorders>`;
+    const cellMar =
+      `<w:tblCellMar><w:top w:w="120" w:type="dxa"/><w:left w:w="150" w:type="dxa"/>` +
+      `<w:bottom w:w="120" w:type="dxa"/><w:right w:w="150" w:type="dxa"/></w:tblCellMar>`;
+    const body =
+      `<w:tbl><w:tblPr>${tblBorders}<w:shd w:val="clear" w:color="auto" w:fill="EEF5FF"/>${cellMar}</w:tblPr>` +
+      `<w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>c</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>d</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
+    const a = runImport(simpleDocx(body)).doc;
+    const ta = tables(a)[0]!;
+    // Import captures the table-level defaults on the model.
+    expect(ta.defaultBorders?.top?.color).toBe("#1a73e8");
+    expect(ta.defaultBorders?.insideH?.style).toBe("dashed");
+    expect(ta.defaultBorders?.insideV?.color).toBe("#34a853");
+    expect(ta.defaultShading).toBe("#eef5ff");
+    expect(ta.defaultCellMargin?.left).toBeCloseTo(10, 1); // 150 twips = 10px
+    expect(ta.defaultCellMargin?.top).toBeCloseTo(8, 1); // 120 twips = 8px
+
+    // The exported tblPr carries the three table-level elements (not only per-cell).
+    const xml = exportedDocumentXml(a);
+    const tblPr = xml.slice(xml.indexOf("<w:tblPr>"), xml.indexOf("</w:tblPr>"));
+    expect(tblPr).toContain("<w:tblBorders>");
+    expect(tblPr).toContain("w:insideH");
+    expect(tblPr).toContain("w:insideV");
+    expect(tblPr).toContain(`w:fill="eef5ff"`);
+    expect(tblPr).toContain("<w:tblCellMar>");
+
+    // …and they survive the full round-trip on the model.
+    const tb = tables(roundTrip(a))[0]!;
+    expect(tb.defaultBorders?.top?.color).toBe("#1a73e8");
+    expect(tb.defaultBorders?.insideV?.color).toBe("#34a853");
+    expect(tb.defaultBorders?.insideH?.style).toBe("dashed");
+    expect(tb.defaultShading).toBe("#eef5ff");
+    expect(tb.defaultCellMargin?.top).toBeCloseTo(8, 1);
+    expect(tb.defaultCellMargin?.left).toBeCloseTo(10, 1);
+  });
+
   it("preserves a table with gridSpan, vMerge, borders and shading", () => {
     const border = `<w:tcBorders><w:top w:val="single" w:sz="12" w:color="0000FF"/><w:bottom w:val="single" w:sz="12" w:color="0000FF"/><w:left w:val="single" w:sz="12" w:color="0000FF"/><w:right w:val="single" w:sz="12" w:color="0000FF"/></w:tcBorders>`;
     const body =
@@ -116,11 +166,15 @@ describe("DOCX export — round trip", () => {
     const a = runImport(simpleDocx(body)).doc;
     const cellA = tables(a)[0]!.rows[0]!.cells[0]!;
     expect(cellA.borders).toBeDefined(); // imported as "borders specified, none drawn"
+    // The explicit (empty) w:tblBorders container is kept at table level too, so the
+    // "no borders" declaration round-trips at tblPr — not just per-cell (issue #48).
+    expect(tables(a)[0]!.defaultBorders).toEqual({});
     const b = roundTrip(a);
     const cellB = tables(b)[0]!.rows[0]!.cells[0]!;
     // Must stay defined (empty) — undefined would draw the gray default grid.
     expect(cellB.borders).toBeDefined();
     expect(cellB.borders!.top).toBeUndefined();
+    expect(tables(b)[0]!.defaultBorders).toEqual({});
   });
 
   it("mirrors a vertical merge's borders onto its continue cells (Word draws the merged box)", () => {

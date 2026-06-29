@@ -79,7 +79,7 @@ const bridged = new Set<string>(
 const JS_INTERNAL = new Set([
   "push", "flushPendingPageBreak", "band", "compileSectionPatch",
   "pushRun", "applyChar", "clearChar", "markRunCharKeys", "emitField", "emitSdt",
-  "toBlock", "applyTableStyleRef", "end",
+  "toBlock", "applyTableStyleRef", "applyTableDefaults", "cascadeBordersOntoCells", "end",
 ]);
 // Generic JS escape hatches the C# surface exposes through TYPED variants instead
 // of one stringly-typed method (a documented divergence, not drift):

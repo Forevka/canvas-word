@@ -4,7 +4,7 @@
 // Cells hold full block stories; a cell callback gets a StoryBuilder, so
 // paragraphs/images/lists inside cells reuse the normal scope surface.
 
-import type { Block, CellBorders, CellMargin, CharStyle, ParaStyle, TableBlock, TableCell, TableCondOverrides, TableRow } from "@cw/shared";
+import type { Block, CellBorders, CellMargin, CharStyle, ParaStyle, TableBlock, TableBorders, TableCell, TableCondOverrides, TableRow } from "@cw/shared";
 import { bakeTableStyleRows, DEFAULT_TBL_LOOK } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import { StoryBuilder } from "./storyBuilder";
@@ -57,6 +57,16 @@ export interface TableOptions {
   /** Column sizing strategy (w:tblLayout): "fixed" (default), "autofitContents",
    *  or "autofitWindow". */
   widthMode?: "fixed" | "autofitContents" | "autofitWindow";
+  /** Table-level default borders (OOXML w:tblPr/w:tblBorders), including the two
+   *  interior edges (insideH/insideV). Re-emitted at tblPr level on export and
+   *  cascaded onto cells that don't set their own (issue #48). */
+  borders?: TableBorders;
+  /** Table-level default shading fill (w:tblPr/w:shd) — a CSS color applied to every
+   *  cell unless the cell overrides it. */
+  shading?: string;
+  /** Table-level default cell margins (w:tblPr/w:tblCellMar), the base each cell's
+   *  own margin overrides per side. */
+  cellMargin?: CellMargin;
 }
 
 /** Cell paragraphs are compact (no after-spacing, tighter leading) — matching
@@ -141,7 +151,67 @@ export class TableBuilder {
     // onto the cells (the layout engine reads concrete props) and keep the
     // styleId + active bands for docx round-trip. Shares the editor's bake path.
     if (this.opts.styleId !== undefined) this.applyTableStyleRef(table, this.opts.styleId, this.opts.condOverrides);
+    this.applyTableDefaults(table);
     return table;
+  }
+
+  /** Record the table-level defaults (w:tblBorders/w:shd/w:tblCellMar) on the model
+   *  so export re-emits them at tblPr level (issue #48), and cascade borders +
+   *  shading + cell-margin onto cells that didn't set their own — the layout engine
+   *  reads concrete per-cell props, so this makes the table-wide defaults render
+   *  headlessly while explicit per-cell values still win. */
+  private applyTableDefaults(table: TableBlock): void {
+    const { borders, shading, cellMargin } = this.opts;
+    if (borders) table.defaultBorders = borders;
+    if (shading !== undefined) table.defaultShading = shading;
+    if (cellMargin) table.defaultCellMargin = cellMargin;
+    if (!borders && shading === undefined && !cellMargin) return;
+    for (const row of table.rows) {
+      for (const cell of row.cells) {
+        if (shading !== undefined && cell.shading === undefined) cell.shading = shading;
+        if (cellMargin && cell.margin === undefined) cell.margin = { ...cellMargin };
+      }
+    }
+    if (borders) this.cascadeBordersOntoCells(table, borders);
+  }
+
+  /** Resolve the table-level border box onto each cell that set no borders of its
+   *  own, mirroring Word's cascade: a cell edge on the table boundary takes the
+   *  matching OUTER edge (top/left/bottom/right); an edge between cells takes the
+   *  INTERIOR edge (insideH/insideV). Cells are placed on an occupancy grid so
+   *  colSpan/rowSpan land on the right boundaries. */
+  private cascadeBordersOntoCells(table: TableBlock, b: TableBorders): void {
+    const rows = table.rows;
+    const width = Math.max(1, ...rows.map((r) => r.cells.reduce((s, c) => s + (c.colSpan ?? 1), 0)));
+    const lastRow = rows.length - 1;
+    const occupied: boolean[][] = rows.map(() => new Array<boolean>(width).fill(false));
+    const ensureRow = (ri: number): void => { while (occupied.length <= ri) occupied.push(new Array<boolean>(width).fill(false)); };
+    rows.forEach((row, ri) => {
+      let col = 0;
+      for (const cell of row.cells) {
+        while (col < width && occupied[ri]![col]) col++;
+        if (col >= width) break;
+        const cs = Math.max(1, cell.colSpan ?? 1);
+        const rs = Math.max(1, cell.rowSpan ?? 1);
+        const startCol = col;
+        const endCol = Math.min(width - 1, col + cs - 1);
+        const endRow = ri + rs - 1;
+        for (let r = ri; r <= endRow; r++) { ensureRow(r); for (let c = startCol; c <= endCol; c++) occupied[r]![c] = true; }
+        if (cell.borders === undefined) {
+          const resolved: CellBorders = {};
+          const top = ri === 0 ? b.top : b.insideH;
+          const bottom = endRow >= lastRow ? b.bottom : b.insideH;
+          const left = startCol === 0 ? b.left : b.insideV;
+          const right = endCol === width - 1 ? b.right : b.insideV;
+          if (top) resolved.top = top;
+          if (bottom) resolved.bottom = bottom;
+          if (left) resolved.left = left;
+          if (right) resolved.right = right;
+          if (Object.keys(resolved).length > 0) cell.borders = resolved;
+        }
+        col = endCol + 1;
+      }
+    });
   }
 
   private applyTableStyleRef(table: TableBlock, styleId: string, overrides?: TableCondOverrides): void {

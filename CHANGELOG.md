@@ -31,6 +31,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bindings (`Underline(on, style, color)` / `CharStyle.UnderlineStyle`/`UnderlineColor`),
   demonstrated in the default showcase. Runs without a style/color serialize and paint
   exactly as before — no drift.
+- **Table-level default borders / shading / cell-margins round-trip (`TableBlock.defaultBorders`
+  / `defaultShading` / `defaultCellMargin`).** A table's `w:tblPr/w:tblBorders` (including the
+  interior `insideH`/`insideV` edges), `w:tblPr/w:shd` default fill and `w:tblPr/w:tblCellMar`
+  default cell padding were parsed on import and cascaded onto cells, but **never re-emitted at
+  the `tblPr` level** — only the resolved per-cell `w:tcBorders`/`w:shd`/`w:tcMar`. A
+  Word→edit→Word cycle therefore dropped the table-wide defaults. The model now retains them and
+  export hoists them back into `w:tblPr` (respecting `CT_TblPrBase` child ordering:
+  `tblBorders → shd → tblLayout → tblCellMar`), so they survive the round-trip while per-cell
+  overrides still win. Authorable via the builder (`.table(rows, { borders, shading, cellMargin })`,
+  mirrored in the C# `TableOptions` + `TableBorders`), shown in the default showcase document, and
+  covered by an import→export→re-import test. Tables without these fields serialize byte-identically.
 - **Table width & alignment (`TableBlock.preferredWidth` + `TableBlock.align`).** Fixed
   tables can now be narrower than the page and positioned within it, instead of always
   spanning the full content width (the only previous escape was AutoFit to Contents).

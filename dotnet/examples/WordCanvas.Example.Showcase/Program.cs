@@ -135,6 +135,20 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
                 .Cell("supported", new CellOptions { Style = new CharStyle { Color = "#188038" } }));
         }
     })
+    .Paragraph("Table-level defaults — borders, a shading fill and cell padding set once on the table (w:tblBorders / w:shd / w:tblCellMar) and round-tripped at that level instead of baked onto every cell:")
+    .Table(new CellContent[][]
+    {
+        new CellContent[] { "Table-level default", "OOXML carrier (tblPr)" },
+        new CellContent[] { "Borders (outer + interior)", "w:tblBorders" },
+        new CellContent[] { "Shading fill", "w:shd" },
+        new CellContent[] { "Cell margins / padding", "w:tblCellMar" },
+    }, new TableOptions
+    {
+        HeaderRow = true,
+        Borders = TableBorders.All(new CellBorder { Color = "#1a73e8", WidthPx = 1 }),
+        Shading = "#eef5ff",
+        CellMargin = new CellMargin(6, 10, 6, 10),
+    })
 
     // ---- Rich text, lists & images ----
     .Paragraph("Rich text, lists & images", p => p.WithStyle("Heading1"))
