@@ -45,6 +45,8 @@ import {
   mergeCellsCmd,
   unmergeCellCmd,
   setTableWidthModeAtSelectionCmd,
+  setTablePreferredWidthAtSelectionCmd,
+  setTableAlignAtSelectionCmd,
   tableAtSelection,
   setImageProps,
   applyNamedStyle,
@@ -1666,10 +1668,25 @@ if (toolbar) {
   const autofitBtn = txtBtn("AutoFit", "AutoFit columns to contents or window, or use fixed widths", () => {}, "", true);
   autofitBtn.addEventListener("click", () => {
     // Tick the active mode (resolved against the table the caret is in right now).
-    const cur = tableAtSelection({ doc: editor.getDocument(), selection: editor.getSelection() })?.widthMode ?? "fixed";
+    const tbl = tableAtSelection({ doc: editor.getDocument(), selection: editor.getSelection() });
+    const cur = tbl?.widthMode ?? "fixed";
+    const pref = tbl?.preferredWidth;
+    const curAlign = tbl?.align ?? "left";
     const fit = (text: string, mode: "fixed" | "autofitContents" | "autofitWindow") => ({
       label: cur === mode ? `${text}  ✓` : text,
       onClick: () => { editor.dispatch(setTableWidthModeAtSelectionCmd(mode)); editor.focus(); },
+    });
+    const widthItem = (text: string, value: number | null) => ({
+      label:
+        (value === null ? !pref : pref?.type === "pct" && Math.round(pref.value) === value) ? `${text}  ✓` : text,
+      onClick: () => {
+        editor.dispatch(setTablePreferredWidthAtSelectionCmd(value === null ? null : { type: "pct", value }));
+        editor.focus();
+      },
+    });
+    const alignItem = (text: string, a: "left" | "center" | "right") => ({
+      label: curAlign === a ? `${text}  ✓` : text,
+      onClick: () => { editor.dispatch(setTableAlignAtSelectionCmd(a)); editor.focus(); },
     });
     openPop(
       autofitBtn,
@@ -1677,6 +1694,13 @@ if (toolbar) {
         fit("AutoFit to Contents", "autofitContents"),
         fit("AutoFit to Window", "autofitWindow"),
         fit("Fixed Column Width", "fixed"),
+        widthItem("Width: 25%", 25),
+        widthItem("Width: 50%", 50),
+        widthItem("Width: 75%", 75),
+        widthItem("Width: Full page", null),
+        alignItem("Align Left", "left"),
+        alignItem("Align Center", "center"),
+        alignItem("Align Right", "right"),
       ]),
     );
   });

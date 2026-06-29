@@ -811,6 +811,9 @@ export function createMapper(
     // can't infer the column count from cells.length anymore.
     table.colFractions = columnFractions(ir.colWidthsTwips, width);
     if (ir.widthMode && ir.widthMode !== "fixed") table.widthMode = ir.widthMode;
+    if (ir.preferredWidthTwips) table.preferredWidth = { type: "px", value: round2(twipsToPx(ir.preferredWidthTwips)) };
+    else if (ir.preferredWidthPct) table.preferredWidth = { type: "pct", value: ir.preferredWidthPct };
+    if (ir.align && ir.align !== "left") table.align = ir.align;
     return table;
   }
 

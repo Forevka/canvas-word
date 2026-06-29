@@ -111,6 +111,8 @@ import {
   toggleSdtCheckbox,
   unmergeCellCmd,
   setTableWidthModeAtSelectionCmd,
+  setTablePreferredWidthAtSelectionCmd,
+  setTableAlignAtSelectionCmd,
 } from "./editor/commands";
 import type { SdtType } from "@cw/shared";
 import { ICONS } from "./ui/icons";
@@ -2344,6 +2346,8 @@ export function createEditor(
         shading: topLeft?.shading ?? null,
         rangeLabel: multiCell ? "Selected cells" : "1 cell",
         multiCell,
+        tableWidth: found.table.preferredWidth ?? null,
+        tableAlign: found.table.align ?? "left",
       },
       {
         applyBorders: (spec, edges) => {
@@ -2352,6 +2356,14 @@ export function createEditor(
         },
         applyShading: (fill) => {
           dispatch(setCellsShadingCmd(fill, captured));
+          keepCellSelection(captured);
+        },
+        applyTableWidth: (width) => {
+          dispatch(setTablePreferredWidthAtSelectionCmd(width));
+          keepCellSelection(captured);
+        },
+        applyTableAlign: (align) => {
+          dispatch(setTableAlignAtSelectionCmd(align));
           keepCellSelection(captured);
         },
       },
@@ -2728,20 +2740,48 @@ export function createEditor(
         item("Unmerge Cell", () => dispatch(unmergeCellCmd()), { icon: ICONS.unmergeCells }),
         (() => {
           const captured = cellSelection ?? singleCellAtCaret();
-          const curMode = (captured ? findTableById(doc, captured.tableId)?.table.widthMode : undefined) ?? "fixed";
+          const tbl = captured ? findTableById(doc, captured.tableId)?.table : undefined;
+          const curMode = tbl?.widthMode ?? "fixed";
+          const pref = tbl?.preferredWidth;
+          const curAlign = tbl?.align ?? "left";
+          const check = (label: string, active: boolean): string => (active ? `${label} ✓` : label);
           const fit = (label: string, mode: "fixed" | "autofitContents" | "autofitWindow"): MenuEntry => ({
             kind: "item",
-            label: curMode === mode ? `${label} ✓` : label,
+            label: check(label, curMode === mode),
             onClick: () => dispatch(setTableWidthModeAtSelectionCmd(mode)),
+          });
+          // Quick width presets (percent of the page); the dialog offers free-form values.
+          const widthItem = (label: string, value: number | null): MenuEntry => ({
+            kind: "item",
+            label: check(
+              label,
+              value === null ? !pref : pref?.type === "pct" && Math.round(pref.value) === value,
+            ),
+            onClick: () =>
+              dispatch(setTablePreferredWidthAtSelectionCmd(value === null ? null : { type: "pct", value })),
+          });
+          const alignItem = (label: string, a: "left" | "center" | "right"): MenuEntry => ({
+            kind: "item",
+            label: check(label, curAlign === a),
+            onClick: () => dispatch(setTableAlignAtSelectionCmd(a)),
           });
           return {
             kind: "submenu",
-            label: "AutoFit",
+            label: "AutoFit & Size",
             icon: ICONS.table,
             items: [
               fit("AutoFit to Contents", "autofitContents"),
               fit("AutoFit to Window", "autofitWindow"),
               fit("Fixed Column Width", "fixed"),
+              sep,
+              widthItem("Width: 25%", 25),
+              widthItem("Width: 50%", 50),
+              widthItem("Width: 75%", 75),
+              widthItem("Width: Full page", null),
+              sep,
+              alignItem("Align Left", "left"),
+              alignItem("Align Center", "center"),
+              alignItem("Align Right", "right"),
             ],
           } as MenuEntry;
         })(),

@@ -2381,6 +2381,32 @@ export function setTableWidthModeAtSelectionCmd(mode: TableBlock["widthMode"]): 
   };
 }
 
+/** Set the preferred total width of the table containing the caret. A preferred
+ *  width only applies in fixed layout, so this also switches the table to "fixed"
+ *  (cancelling any AutoFit) in the SAME transaction — one undo reverts both. Pass
+ *  null to clear the preference and span the full content width again. */
+export function setTablePreferredWidthAtSelectionCmd(width: TableBlock["preferredWidth"] | null): Command {
+  return (state) => {
+    const ctx = cellContext(state);
+    if (!ctx) return null;
+    const ops: Op[] = [];
+    if (width && ctx.table.widthMode && ctx.table.widthMode !== "fixed") {
+      ops.push({ type: "setTableWidthMode", blockId: ctx.table.id, mode: "fixed" });
+    }
+    ops.push({ type: "setTablePreferredWidth", blockId: ctx.table.id, width });
+    return tr(ops, state.selection, "command");
+  };
+}
+
+/** Set the horizontal alignment of the table containing the caret (left/center/right). */
+export function setTableAlignAtSelectionCmd(align: TableBlock["align"] | null): Command {
+  return (state) => {
+    const ctx = cellContext(state);
+    if (!ctx) return null;
+    return tr([{ type: "setTableAlign", blockId: ctx.table.id, align }], state.selection, "command");
+  };
+}
+
 /** The table the caret/cell-selection sits in, or null. Lets the UI reflect the
  *  current table's state (e.g. tick the active AutoFit mode). */
 export function tableAtSelection(state: EditorState): TableBlock | null {

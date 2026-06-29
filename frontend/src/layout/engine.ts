@@ -1127,7 +1127,7 @@ function layoutDocument(
     | { kind: "para"; block: Paragraph; lines: LineBox[] }
     | { kind: "image"; block: ImageBlock; height: number }
     | { kind: "equation"; block: EquationBlock; box: MathBox; height: number }
-    | { kind: "table"; block: TableBlock; rows: MeasuredRow[]; colWidths: number[]; height: number; tableWidth: number };
+    | { kind: "table"; block: TableBlock; rows: MeasuredRow[]; colWidths: number[]; height: number; tableWidth: number; xOffset: number };
 
   // Measured at each block's OWN section width (the section pointer advances
   // through the same block order the walk uses).
@@ -1729,7 +1729,7 @@ function layoutDocument(
       }
       if (pendingNotes.length > 0) commitNotes(pendingNotes, pendingNotesH);
       const chunk = m.rows.slice(ri, ri + fit);
-      page.blocks.push(placeTable(m.block, chunk, m.colWidths, colX(), y, m.tableWidth, ri, cellListCtx));
+      page.blocks.push(placeTable(m.block, chunk, m.colWidths, colX() + m.xOffset, y, m.tableWidth, ri, cellListCtx));
       y += chunk.reduce((s, r) => s + r.height, 0);
       ri += fit;
       if (ri < m.rows.length) newPage();
@@ -2197,7 +2197,7 @@ function layoutBand(
       y += box.ascent + box.descent;
     } else {
       const m = measureTable(b, width, getBandLines, EMPTY_LIST_CTX);
-      placed.push(placeTable(b, m.rows, m.colWidths, originX, y, m.tableWidth, 0, EMPTY_LIST_CTX));
+      placed.push(placeTable(b, m.rows, m.colWidths, originX + m.xOffset, y, m.tableWidth, 0, EMPTY_LIST_CTX));
       y += m.height;
     }
   }
@@ -2435,7 +2435,7 @@ type MeasuredCellItem =
   | { kind: "para"; block: Paragraph; lines: LineBox[] }
   | { kind: "image"; block: ImageBlock; width: number; height: number } // scaled to fit the cell
   | { kind: "equation"; block: EquationBlock; box: MathBox; width: number; height: number }
-  | { kind: "table"; block: TableBlock; rows: MeasuredRow[]; colWidths: number[]; height: number; tableWidth: number };
+  | { kind: "table"; block: TableBlock; rows: MeasuredRow[]; colWidths: number[]; height: number; tableWidth: number; xOffset: number };
 
 interface MeasuredCell {
   cell: TableCell;
@@ -2472,11 +2472,15 @@ function measureTable(
   contentWidth: number,
   getLines: (p: Paragraph, width: number) => LineBox[],
   listCtx: CellListCtx,
-): { rows: MeasuredRow[]; colWidths: number[]; height: number; tableWidth: number } {
+): { rows: MeasuredRow[]; colWidths: number[]; height: number; tableWidth: number; xOffset: number } {
   const mode = t.widthMode ?? "fixed";
   let colWidths: number[];
   if (mode === "fixed") {
-    colWidths = effectiveFractions(t).map((f) => f * contentWidth);
+    const fracs = effectiveFractions(t);
+    // A preferred width shrinks the whole grid (columns keep their proportions);
+    // absent, the table spans the full content width as it historically did.
+    const target = resolveTableWidth(t.preferredWidth, contentWidth, fracs.length);
+    colWidths = fracs.map((f) => f * target);
   } else {
     // Content-driven: measure each cell's min/max, solve the grid, THEN run the
     // existing height pass below at the solved widths (two passes over the cells;
@@ -2564,8 +2568,36 @@ function measureTable(
   // Fixed tables render at exactly the box width (fractions sum to 1); autofit
   // tables render at the solved column total, which may be narrower (contents) or
   // exactly the box (window).
-  const tableWidth = mode === "fixed" ? contentWidth : colWidths.reduce((s, w) => s + w, 0);
-  return { rows, colWidths, height: rowHeight.reduce((s, h) => s + h, 0), tableWidth };
+  const tableWidth =
+    mode === "fixed" && !t.preferredWidth ? contentWidth : colWidths.reduce((s, w) => s + w, 0);
+  // Alignment only has room to act when the table is narrower than its band — true
+  // for a preferred width OR AutoFit-to-Contents; a full-width table never shifts.
+  const xOffset = tableAlignOffset(t.align, contentWidth, tableWidth);
+  return { rows, colWidths, height: rowHeight.reduce((s, h) => s + h, 0), tableWidth, xOffset };
+}
+
+/** Resolve a table's preferred total width to px, clamped to a sane floor and the
+ *  available content width. Absent preference → the full content width. */
+function resolveTableWidth(
+  pref: TableBlock["preferredWidth"],
+  contentWidth: number,
+  ncols: number,
+): number {
+  if (!pref) return contentWidth;
+  const raw = pref.type === "pct" ? (pref.value / 100) * contentWidth : pref.value;
+  const floor = Math.min(contentWidth, Math.max(1, ncols) * 24); // never below ~24px/col
+  return Math.max(floor, Math.min(contentWidth, raw));
+}
+
+/** Horizontal shift of a table within its band for the given alignment. */
+function tableAlignOffset(
+  align: TableBlock["align"],
+  contentWidth: number,
+  tableWidth: number,
+): number {
+  const slack = contentWidth - tableWidth;
+  if (slack <= 0) return 0;
+  return align === "center" ? slack / 2 : align === "right" ? slack : 0;
 }
 
 function totalLinesHeight(lines: LineBox[]): number {
@@ -2699,7 +2731,7 @@ function placeTable(
           py += it.height + CELL_BLOCK_GAP;
         } else {
           // nested table — placed recursively, read-only inner cells
-          blocks.push(placeTable(it.block, it.rows, it.colWidths, cx + mgn.left, py, it.tableWidth, 0, listCtx));
+          blocks.push(placeTable(it.block, it.rows, it.colWidths, cx + mgn.left + it.xOffset, py, it.tableWidth, 0, listCtx));
           py += it.height + CELL_BLOCK_GAP;
         }
       }

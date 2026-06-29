@@ -784,6 +784,18 @@ function parseTable(tbl: XmlNode, ctx: ParseCtx): IRTable {
     const isPct = tblWType === "pct" && (tblWVal ?? 0) > 0;
     if (layoutType === "autofit") table.widthMode = isPct ? "autofitWindow" : "autofitContents";
     else if (layoutType !== "fixed" && isPct) table.widthMode = "autofitWindow";
+    // A fixed-layout table can still carry an explicit preferred TOTAL width
+    // (w:tblW). Absolute (dxa) widths were previously dropped; capture them — plus a
+    // percentage when the layout is explicitly fixed — so they round-trip.
+    if (!table.widthMode) {
+      if (tblWType === "dxa" && tblWVal !== undefined && tblWVal > 0) table.preferredWidthTwips = tblWVal;
+      else if (isPct && layoutType === "fixed") table.preferredWidthPct = (tblWVal ?? 0) / 50;
+    }
+    // Table-level alignment (w:jc on tblPr — distinct from a paragraph's w:jc).
+    const tblJc = el(tblPr, "w:jc");
+    const tblJcVal = tblJc ? attr(tblJc, "w:val") : undefined;
+    if (tblJcVal === "center") table.align = "center";
+    else if (tblJcVal === "right" || tblJcVal === "end") table.align = "right";
   }
   return table;
 }

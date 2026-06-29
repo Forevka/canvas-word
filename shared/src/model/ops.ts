@@ -64,6 +64,8 @@ export type Op =
   | { type: "setTableStyleRef"; tableId: string; styleId: string | null; condOverrides?: import("./document").TableCondOverrides | null }
   | { type: "setTableColFractions"; blockId: string; fractions: number[] }
   | { type: "setTableWidthMode"; blockId: string; mode: TableBlock["widthMode"] }
+  | { type: "setTablePreferredWidth"; blockId: string; width: TableBlock["preferredWidth"] | null }
+  | { type: "setTableAlign"; blockId: string; align: TableBlock["align"] | null }
   | { type: "insertTableRow"; tableId: string; rowIndex: number; row: TableRow }
   | { type: "removeTableRow"; tableId: string; rowIndex: number }
   | { type: "insertTableColumn"; tableId: string; colIndex: number; cells: TableCell[]; fractions?: number[] }
@@ -750,6 +752,34 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       return {
         doc: replaceTable(doc, where, bi, next),
         inverse: { type: "setTableWidthMode", blockId: op.blockId, mode: old },
+        mapPosition: identity,
+        dirtyBlockIds: [op.blockId],
+      };
+    }
+
+    case "setTablePreferredWidth": {
+      const { where, bi, block } = mustTable(doc, op.blockId);
+      const old = block.preferredWidth;
+      const next: TableBlock = { ...block };
+      if (op.width) next.preferredWidth = op.width;
+      else delete next.preferredWidth;
+      return {
+        doc: replaceTable(doc, where, bi, next),
+        inverse: { type: "setTablePreferredWidth", blockId: op.blockId, width: old ?? null },
+        mapPosition: identity,
+        dirtyBlockIds: [op.blockId],
+      };
+    }
+
+    case "setTableAlign": {
+      const { where, bi, block } = mustTable(doc, op.blockId);
+      const old = block.align;
+      const next: TableBlock = { ...block };
+      if (op.align && op.align !== "left") next.align = op.align;
+      else delete next.align;
+      return {
+        doc: replaceTable(doc, where, bi, next),
+        inverse: { type: "setTableAlign", blockId: op.blockId, align: old ?? null },
         mapPosition: identity,
         dirtyBlockIds: [op.blockId],
       };

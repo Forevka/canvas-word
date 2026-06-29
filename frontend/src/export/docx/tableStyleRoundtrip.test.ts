@@ -148,4 +148,33 @@ describe("autofit table .docx round-trip", () => {
     expect(pref?.type).toBe("abs");
     expect(pref!.px).toBeCloseTo(120, 0); // px → twips (dxa) → px, exact to the pixel
   });
+
+  it("round-trips a fixed table's absolute preferred TOTAL width (w:tblW dxa)", () => {
+    const t: TableBlock = { ...mkTable(), preferredWidth: { type: "px", value: 300 } };
+    const back = tableOf(runImport(writeDocx({ section: SECTION, blocks: [t] }).bytes).doc);
+    expect(back.widthMode).toBeUndefined(); // still fixed
+    expect(back.preferredWidth?.type).toBe("px");
+    expect(back.preferredWidth!.value).toBeCloseTo(300, 0); // px → twips → px
+  });
+
+  it("round-trips a fixed table's percent preferred TOTAL width (w:tblW pct)", () => {
+    const t: TableBlock = { ...mkTable(), preferredWidth: { type: "pct", value: 60 } };
+    const back = tableOf(runImport(writeDocx({ section: SECTION, blocks: [t] }).bytes).doc);
+    expect(back.widthMode).toBeUndefined();
+    expect(back.preferredWidth?.type).toBe("pct");
+    expect(back.preferredWidth!.value).toBeCloseTo(60, 5);
+  });
+
+  it("round-trips table alignment (w:jc on tblPr)", () => {
+    const t: TableBlock = { ...mkTable(), preferredWidth: { type: "pct", value: 50 }, align: "center" };
+    const back = tableOf(runImport(writeDocx({ section: SECTION, blocks: [t] }).bytes).doc);
+    expect(back.align).toBe("center");
+  });
+
+  it("a plain fixed table gains no width/align fields through a round-trip (no drift)", () => {
+    const back = tableOf(runImport(writeDocx({ section: SECTION, blocks: [mkTable()] }).bytes).doc);
+    expect(back.preferredWidth).toBeUndefined();
+    expect(back.align).toBeUndefined();
+    expect(back.widthMode).toBeUndefined();
+  });
 });
