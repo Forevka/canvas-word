@@ -54,6 +54,10 @@ public enum CellVAlign { Top, Center, Bottom }
 public enum RowHeightRule { AtLeast, Exact }
 /// <summary>Vertical alignment of text within a line box (OOXML w:pPr/w:textAlignment).</summary>
 public enum LineVAlign { Top, Center, Bottom, Baseline }
+/// <summary>Cell text flow direction (OOXML w:tcPr/w:textDirection).</summary>
+public enum CellTextDirection { LrTb, TbRl, BtLr, LrTbV, TbRlV, TbLrV }
+/// <summary>Floating-table overlap behavior (OOXML w:tblPr/w:tblOverlap).</summary>
+public enum TableOverlap { Never, Overlap }
 /// <summary>List number format (docx w:numFmt).</summary>
 public enum ListNumberFormat { Bullet, Decimal, LowerLetter, UpperLetter, LowerRoman, UpperRoman }
 /// <summary>Conditional-format slot of a table style (OOXML w:tblStylePr/@w:type).</summary>
@@ -133,6 +137,16 @@ internal static class EnumJs
         LineVAlign.Bottom => "bottom",
         _ => "baseline",
     };
+    public static string TextDir(CellTextDirection d) => d switch
+    {
+        CellTextDirection.TbRl => "tbRl",
+        CellTextDirection.BtLr => "btLr",
+        CellTextDirection.LrTbV => "lrTbV",
+        CellTextDirection.TbRlV => "tbRlV",
+        CellTextDirection.TbLrV => "tbLrV",
+        _ => "lrTb",
+    };
+    public static string Overlap(TableOverlap o) => o == TableOverlap.Never ? "never" : "overlap";
     public static string ListFmt(ListNumberFormat f) => f switch
     {
         ListNumberFormat.Decimal => "decimal",
@@ -417,6 +431,16 @@ public sealed record TableOptions
     public string? Shading { get; init; }
     /// <summary>Table-level default cell margins (w:tblPr/w:tblCellMar).</summary>
     public CellMargin? CellMargin { get; init; }
+    /// <summary>Table indent from the leading content edge (w:tblPr/w:tblInd), in px.</summary>
+    public double? Indent { get; init; }
+    /// <summary>Render columns right-to-left (w:tblPr/w:bidiVisual).</summary>
+    public bool? BidiVisual { get; init; }
+    /// <summary>Floating-table overlap behavior (w:tblPr/w:tblOverlap).</summary>
+    public TableOverlap? Overlap { get; init; }
+    /// <summary>Table caption / title (w:tblPr/w:tblCaption) — accessibility metadata.</summary>
+    public string? Caption { get; init; }
+    /// <summary>Table description / alt text (w:tblPr/w:tblDescription) — accessibility metadata.</summary>
+    public string? Description { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -430,6 +454,11 @@ public sealed record TableOptions
         if (Borders is { } bd) Js.Set(o, "borders", bd.ToJs(e));
         if (Shading is { } sh) Js.Set(o, "shading", sh);
         if (CellMargin is { } cm) Js.Set(o, "cellMargin", cm.ToJs(e));
+        if (Indent is { } ind) Js.Set(o, "indent", ind);
+        if (BidiVisual is { } bv) Js.Set(o, "bidiVisual", bv);
+        if (Overlap is { } ov) Js.Set(o, "overlap", EnumJs.Overlap(ov));
+        if (Caption is { } cap) Js.Set(o, "caption", cap);
+        if (Description is { } desc) Js.Set(o, "description", desc);
         return o;
     }
 }
@@ -450,6 +479,14 @@ public sealed record CellSpec
     public PreferredWidth? PreferredWidth { get; init; }
     /// <summary>Vertical content alignment (w:vAlign). Absent = top.</summary>
     public CellVAlign? VAlign { get; init; }
+    /// <summary>Text flow direction (w:textDirection). Absent = lrTb (horizontal).</summary>
+    public CellTextDirection? TextDirection { get; init; }
+    /// <summary>Suppress content wrapping (w:noWrap).</summary>
+    public bool? NoWrap { get; init; }
+    /// <summary>Fit text to the cell width (w:tcFitText).</summary>
+    public bool? FitText { get; init; }
+    /// <summary>Ignore the end-of-cell mark for row height (w:hideMark).</summary>
+    public bool? HideMark { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -464,6 +501,10 @@ public sealed record CellSpec
         if (Margin is { } mg) Js.Set(o, "margin", mg.ToJs(e));
         if (PreferredWidth is { } pw) Js.Set(o, "preferredWidth", pw.ToJs(e));
         if (VAlign is { } va) Js.Set(o, "vAlign", EnumJs.VAlign(va));
+        if (TextDirection is { } td) Js.Set(o, "textDirection", EnumJs.TextDir(td));
+        if (NoWrap is { } nw) Js.Set(o, "noWrap", nw);
+        if (FitText is { } ft) Js.Set(o, "fitText", ft);
+        if (HideMark is { } hm) Js.Set(o, "hideMark", hm);
         return o;
     }
 }
@@ -483,6 +524,14 @@ public sealed record CellOptions
     public PreferredWidth? PreferredWidth { get; init; }
     /// <summary>Vertical content alignment (w:vAlign). Absent = top.</summary>
     public CellVAlign? VAlign { get; init; }
+    /// <summary>Text flow direction (w:textDirection). Absent = lrTb (horizontal).</summary>
+    public CellTextDirection? TextDirection { get; init; }
+    /// <summary>Suppress content wrapping (w:noWrap).</summary>
+    public bool? NoWrap { get; init; }
+    /// <summary>Fit text to the cell width (w:tcFitText).</summary>
+    public bool? FitText { get; init; }
+    /// <summary>Ignore the end-of-cell mark for row height (w:hideMark).</summary>
+    public bool? HideMark { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -496,6 +545,10 @@ public sealed record CellOptions
         if (Margin is { } mg) Js.Set(o, "margin", mg.ToJs(e));
         if (PreferredWidth is { } pw) Js.Set(o, "preferredWidth", pw.ToJs(e));
         if (VAlign is { } va) Js.Set(o, "vAlign", EnumJs.VAlign(va));
+        if (TextDirection is { } td) Js.Set(o, "textDirection", EnumJs.TextDir(td));
+        if (NoWrap is { } nw) Js.Set(o, "noWrap", nw);
+        if (FitText is { } ft) Js.Set(o, "fitText", ft);
+        if (HideMark is { } hm) Js.Set(o, "hideMark", hm);
         return o;
     }
 }

@@ -405,6 +405,8 @@ function cellXml(cell: TableCell, ctx: PartCtx, vMergeRestart = false): string {
   if (vMergeRestart) pr.push(el("w:vMerge", { "w:val": "restart" }));
   if (cell.shading) pr.push(el("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": hex(cell.shading) }));
   if (cell.borders) pr.push(bordersXml("w:tcBorders", cell.borders));
+  // w:noWrap (CT_OnOff) precedes w:tcMar per CT_TcPr.
+  if (cell.noWrap) pr.push(el("w:noWrap"));
   // Cell padding (w:tcMar). The importer resolves every side onto cell.margin, so
   // omitting it would re-import as Word's default (0 top/bottom) — silently
   // shrinking every row and drifting page count. Emit all four sides to round-trip.
@@ -417,9 +419,14 @@ function cellXml(cell: TableCell, ctx: PartCtx, vMergeRestart = false): string {
       el("w:right", { "w:w": pxToTwips(m.right), "w:type": "dxa" }),
     ));
   }
+  // w:textDirection + w:tcFitText follow w:tcMar and precede w:vAlign per CT_TcPr.
+  if (cell.textDirection) pr.push(el("w:textDirection", { "w:val": cell.textDirection }));
+  if (cell.fitText) pr.push(el("w:tcFitText"));
   // w:vAlign (vertical content alignment) follows w:tcMar per CT_TcPr. "top" is the
   // default, so only center/bottom are emitted.
   if (cell.vAlign === "center" || cell.vAlign === "bottom") pr.push(el("w:vAlign", { "w:val": cell.vAlign }));
+  // w:hideMark is the LAST child of CT_TcPr.
+  if (cell.hideMark) pr.push(el("w:hideMark"));
   const tcPr = el("w:tcPr", undefined, pr.join(""));
   // A cell must contain at least one paragraph.
   const content = cell.blocks.length > 0 ? emitBlocks(cell.blocks, 0, ctx) : el("w:p");
@@ -557,7 +564,17 @@ function tableXml(table: TableBlock, ctx: PartCtx): string {
     ? el("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": hex(table.defaultShading) })
     : "";
   const cellMarEl = table.defaultCellMargin ? tblCellMarXml(table.defaultCellMargin) : "";
-  const tblPr = el("w:tblPr", undefined, styleRef + tblWEl + jcEl + bordersEl + shdEl + tblLayoutEl + cellMarEl + look);
+  // Minor & advanced props (issue #61). Per CT_TblPrBase ordering: w:tblOverlap and
+  // w:bidiVisual sit right after w:tblStyle (before w:tblW); w:tblInd follows w:jc
+  // (before w:tblBorders); w:tblCaption/w:tblDescription are the final children
+  // (after w:tblLook).
+  const overlapEl = table.overlap ? el("w:tblOverlap", { "w:val": table.overlap }) : "";
+  const bidiEl = table.bidiVisual ? el("w:bidiVisual") : "";
+  const tblIndEl = table.indentPx ? el("w:tblInd", { "w:w": pxToTwips(table.indentPx), "w:type": "dxa" }) : "";
+  const captionEl = table.caption ? el("w:tblCaption", { "w:val": table.caption }) : "";
+  const descEl = table.description ? el("w:tblDescription", { "w:val": table.description }) : "";
+  const tblPr = el("w:tblPr", undefined,
+    styleRef + overlapEl + bidiEl + tblWEl + jcEl + tblIndEl + bordersEl + shdEl + tblLayoutEl + cellMarEl + look + captionEl + descEl);
   return el("w:tbl", undefined, tblPr + el("w:tblGrid", undefined, grid) + rowsXml.join(""));
 }
 

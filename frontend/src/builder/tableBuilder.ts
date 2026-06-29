@@ -31,6 +31,15 @@ export interface CellSpec {
   /** Vertical alignment of the cell's content (w:vAlign). Absent = "top". Visible
    *  when the cell is taller than its content (a rowSpan or a tall sibling row). */
   vAlign?: "top" | "center" | "bottom";
+  /** Text flow direction inside the cell (w:textDirection). Absent = "lrTb"
+   *  (horizontal). "tbRl"/"btLr" are Word's rotated (vertical) cell text. */
+  textDirection?: "lrTb" | "tbRl" | "btLr" | "lrTbV" | "tbRlV" | "tbLrV";
+  /** Suppress content wrapping (w:noWrap). Absent = wrap. */
+  noWrap?: boolean;
+  /** Fit text to the cell width by tracking (w:tcFitText). Absent = off. */
+  fitText?: boolean;
+  /** Ignore the end-of-cell mark for row-height (w:hideMark). Absent = off. */
+  hideMark?: boolean;
 }
 
 export type CellContent = string | CellSpec;
@@ -92,6 +101,19 @@ export interface TableOptions {
   /** Table-level default cell margins (w:tblPr/w:tblCellMar), the base each cell's
    *  own margin overrides per side. */
   cellMargin?: CellMargin;
+  /** Table indent from the leading content edge (w:tblPr/w:tblInd), in px. Shifts
+   *  the whole table right like a paragraph's left indent. Absent = 0. */
+  indent?: number;
+  /** Render the table's columns right-to-left (w:tblPr/w:bidiVisual): grid column 0
+   *  paints at the right edge. Absent = left-to-right. */
+  bidiVisual?: boolean;
+  /** Floating-table overlap behavior (w:tblPr/w:tblOverlap). Absent = "overlap"
+   *  (Word's default). */
+  overlap?: "never" | "overlap";
+  /** Table caption / title (w:tblPr/w:tblCaption) — accessibility metadata. */
+  caption?: string;
+  /** Table description / alt text (w:tblPr/w:tblDescription) — accessibility metadata. */
+  description?: string;
 }
 
 /** Cell paragraphs are compact (no after-spacing, tighter leading) — matching
@@ -180,6 +202,12 @@ export class TableBuilder {
     // styleId + active bands for docx round-trip. Shares the editor's bake path.
     if (this.opts.styleId !== undefined) this.applyTableStyleRef(table, this.opts.styleId, this.opts.condOverrides);
     this.applyTableDefaults(table);
+    // Minor & advanced table props (issue #61).
+    if (this.opts.indent !== undefined && this.opts.indent !== 0) table.indentPx = this.opts.indent;
+    if (this.opts.bidiVisual) table.bidiVisual = true;
+    if (this.opts.overlap !== undefined) table.overlap = this.opts.overlap;
+    if (this.opts.caption !== undefined) table.caption = this.opts.caption;
+    if (this.opts.description !== undefined) table.description = this.opts.description;
     return table;
   }
 
@@ -306,6 +334,10 @@ export class RowBuilder {
     if (spec.margin !== undefined) cell.margin = spec.margin;
     if (spec.preferredWidth !== undefined) cell.preferredWidth = spec.preferredWidth;
     if (spec.vAlign !== undefined && spec.vAlign !== "top") cell.vAlign = spec.vAlign;
+    if (spec.textDirection !== undefined && spec.textDirection !== "lrTb") cell.textDirection = spec.textDirection;
+    if (spec.noWrap) cell.noWrap = true;
+    if (spec.fitText) cell.fitText = true;
+    if (spec.hideMark) cell.hideMark = true;
     this.cells.push(cell);
     return this;
   }

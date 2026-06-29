@@ -390,6 +390,22 @@ export interface TableCell {
    *  the block stack by the slack between content height and the cell's height — most
    *  visible in a tall (rowSpan) or fixed-height cell with short content. */
   vAlign?: "top" | "center" | "bottom";
+  /** Text flow direction inside the cell (OOXML w:tcPr/w:textDirection). Absent =
+   *  "lrTb" (normal horizontal left-to-right). "tbRl"/"btLr" are Word's rotated
+   *  (vertical) cell text, common in narrow header columns. Currently preserved
+   *  through import/export round-trips; the layout still flows the text
+   *  horizontally (vertical-text typesetting is out of scope for this pass). */
+  textDirection?: "lrTb" | "tbRl" | "btLr" | "lrTbV" | "tbRlV" | "tbLrV";
+  /** Suppress wrapping of the cell's content (OOXML w:tcPr/w:noWrap): in autofit
+   *  the cell prefers to widen rather than wrap. Round-tripped; absent = wrap. */
+  noWrap?: boolean;
+  /** Fit the cell's text to its width by inter-character spacing (OOXML
+   *  w:tcPr/w:tcFitText). Round-tripped; absent = off. */
+  fitText?: boolean;
+  /** Ignore the cell's end-of-cell mark when computing the minimum row height
+   *  (OOXML w:tcPr/w:hideMark) — lets a row shrink below one empty text line.
+   *  Round-tripped; absent = off. */
+  hideMark?: boolean;
 }
 
 /** Row-level properties (OOXML `w:trPr`). Absent = no explicit row formatting. */
@@ -451,6 +467,25 @@ export interface TableBlock {
   /** Horizontal alignment of the table within the content width (OOXML w:tblPr/w:jc),
    *  applied whenever the table is narrower than the band. Absent = "left". */
   align?: "left" | "center" | "right";
+  /** Table indent from the leading content edge (OOXML w:tblPr/w:tblInd), in px.
+   *  Shifts the whole table to the right (LTR) like a paragraph's left indent, on
+   *  top of any alignment offset. Absent = 0. */
+  indentPx?: number;
+  /** Render the table's columns in right-to-left visual order (OOXML
+   *  w:tblPr/w:bidiVisual): grid column 0 paints at the RIGHT edge and columns run
+   *  leftward. The logical row/cell order is unchanged — only the visual placement
+   *  mirrors. Absent = left-to-right. */
+  bidiVisual?: boolean;
+  /** Floating-table overlap behavior (OOXML w:tblPr/w:tblOverlap): "never" forbids
+   *  another floating table from overlapping this one. Preserved through round-trips;
+   *  absent = "overlap" (Word's default). */
+  overlap?: "never" | "overlap";
+  /** Table caption / title (OOXML w:tblPr/w:tblCaption) — accessibility metadata.
+   *  Round-tripped; absent = none. */
+  caption?: string;
+  /** Table description / alt text (OOXML w:tblPr/w:tblDescription) — accessibility
+   *  metadata. Round-tripped; absent = none. */
+  description?: string;
   /** Table-level default borders (OOXML w:tblPr/w:tblBorders), including interior
    *  edges. The importer cascades these onto each cell so layout/paint stay
    *  per-cell; kept here so export hoists the table-level defaults back to tblPr

@@ -2709,7 +2709,9 @@ function measureTable(
     mode === "fixed" && !t.preferredWidth ? contentWidth : colWidths.reduce((s, w) => s + w, 0);
   // Alignment only has room to act when the table is narrower than its band — true
   // for a preferred width OR AutoFit-to-Contents; a full-width table never shifts.
-  const xOffset = tableAlignOffset(t.align, contentWidth, tableWidth);
+  // A table indent (w:tblInd) shifts the whole table right on TOP of that, like a
+  // paragraph's left indent (issue #61).
+  const xOffset = tableAlignOffset(t.align, contentWidth, tableWidth) + (t.indentPx ?? 0);
   return { rows, colWidths, height: rowHeight.reduce((s, h) => s + h, 0), tableWidth, xOffset };
 }
 
@@ -2761,6 +2763,10 @@ function placeTable(
   for (const w of colWidths) colX.push(colX[colX.length - 1]! + w);
   const rowY = [y];
   for (const row of rows) rowY.push(rowY[rowY.length - 1]! + row.height);
+  // RTL visual column order (w:bidiVisual, issue #61): mirror each cell's left edge
+  // about the grid so grid column 0 paints at the right. The logical cell order and
+  // content are unchanged — only the x placement flips.
+  const gridWidth = colX[colX.length - 1] ?? 0;
 
   const placedRows = [];
   for (let lr = 0; lr < rows.length; lr++) {
@@ -2768,7 +2774,8 @@ function placeTable(
     const ry = rowY[lr]!;
     const cells = [];
     for (const mc of row.cells) {
-      const cx = x + (colX[mc.colStart] ?? colX[colX.length - 1]!);
+      const cxStart = colX[mc.colStart] ?? colX[colX.length - 1]!;
+      const cx = x + (t.bidiVisual ? gridWidth - cxStart - mc.width : cxStart);
       const endLr = Math.min(rows.length - 1, lr + mc.rowSpan - 1);
       const cellHeight = rowY[endLr + 1]! - ry;
       const blocks: PlacedBlock[] = [];

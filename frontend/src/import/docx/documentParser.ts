@@ -861,6 +861,28 @@ function parseTable(tbl: XmlNode, ctx: ParseCtx): IRTable {
     const tblJcVal = tblJc ? attr(tblJc, "w:val") : undefined;
     if (tblJcVal === "center") table.align = "center";
     else if (tblJcVal === "right" || tblJcVal === "end") table.align = "right";
+    // w:tblInd — table indent from the leading edge. Only dxa (twips) is meaningful
+    // for placement; a 0 or pct/auto indent round-trips as absent.
+    const tblInd = el(tblPr, "w:tblInd");
+    if (tblInd) {
+      const indType = attr(tblInd, "w:type");
+      const indVal = numAttr(tblInd, "w:w");
+      if (indVal !== undefined && indVal !== 0 && (indType === "dxa" || indType === undefined)) {
+        table.indentTwips = indVal;
+      }
+    }
+    // w:bidiVisual — RTL visual column order (a CT_OnOff toggle).
+    if (onOff(el(tblPr, "w:bidiVisual"))) table.bidiVisual = true;
+    // w:tblOverlap — floating-table overlap behavior. "overlap" is Word's default,
+    // so only "never" carries information; we still round-trip an explicit "overlap".
+    const overlapVal = val(tblPr, "w:tblOverlap");
+    if (overlapVal === "never") table.overlap = "never";
+    else if (overlapVal === "overlap") table.overlap = "overlap";
+    // w:tblCaption / w:tblDescription — accessibility title + alt text.
+    const caption = val(tblPr, "w:tblCaption");
+    if (caption) table.caption = caption;
+    const description = val(tblPr, "w:tblDescription");
+    if (description) table.description = description;
   }
   return table;
 }
@@ -904,6 +926,15 @@ function parseCell(tc: XmlNode, ctx: ParseCtx): IRTableCell {
     const vAlignEl = el(tcPr, "w:vAlign");
     const vAlign = vAlignEl && attr(vAlignEl, "w:val");
     if (vAlign === "center" || vAlign === "bottom") cell.vAlign = vAlign;
+    // w:textDirection — text flow direction. "lrTb" is the default (absent).
+    const textDir = val(tcPr, "w:textDirection");
+    if (textDir === "tbRl" || textDir === "btLr" || textDir === "lrTbV" || textDir === "tbRlV" || textDir === "tbLrV") {
+      cell.textDirection = textDir;
+    }
+    // w:noWrap / w:tcFitText / w:hideMark — CT_OnOff cell toggles.
+    if (onOff(el(tcPr, "w:noWrap"))) cell.noWrap = true;
+    if (onOff(el(tcPr, "w:tcFitText"))) cell.fitText = true;
+    if (onOff(el(tcPr, "w:hideMark"))) cell.hideMark = true;
   }
   return cell;
 }
