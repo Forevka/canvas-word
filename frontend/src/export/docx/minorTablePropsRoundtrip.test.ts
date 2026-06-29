@@ -106,5 +106,10 @@ describe("minor & advanced table properties — issue #61", () => {
     expect(t.rows[0]!.cells[0]!.noWrap).toBe(true);
     expect(t.rows[0]!.cells[1]!.fitText).toBe(true);
     expect(t.rows[0]!.cells[1]!.hideMark).toBe(true);
+    // Per-cell isolation: a flag set on one cell must not bleed onto its sibling.
+    expect(t.rows[0]!.cells[0]!.fitText).toBeUndefined();
+    expect(t.rows[0]!.cells[0]!.hideMark).toBeUndefined();
+    expect(t.rows[0]!.cells[1]!.textDirection).toBeUndefined();
+    expect(t.rows[0]!.cells[1]!.noWrap).toBeUndefined();
   });
 });
