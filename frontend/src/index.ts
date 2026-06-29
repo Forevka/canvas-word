@@ -25,6 +25,7 @@ import {
   objectRect,
   selectionRects,
   type ColumnBoundaryHit,
+  type RowBoundaryHit,
   type GeoScope,
   type Rect,
 } from "./layout/geometry";
@@ -103,6 +104,7 @@ import {
   setLinkCmd,
   setParaProps,
   setSdtContent,
+  setRowHeightCmd,
   setTableColFractionsCmd,
   setTableWidthModeCmd,
   splitParagraph,
@@ -1169,6 +1171,57 @@ export function createEditor(
     window.addEventListener("mouseup", onUp);
   };
 
+  // ---- table row-boundary drag ---------------------------------------------
+
+  const startRowDrag = (hit: RowBoundaryHit, ev: MouseEvent): void => {
+    const table = doc.blocks.find((b) => b.id === hit.tableId);
+    if (table?.kind !== "table") return;
+    const row = table.rows[hit.rowIndex];
+    if (!row) return;
+    // Preserve an existing rule ("exact" stays exact); a fresh drag defaults to
+    // "atLeast" (#76), where layout still floors the row at its content height.
+    const oldHeight = row.props?.height ?? null;
+    const rule: "atLeast" | "exact" = oldHeight?.rule ?? "atLeast";
+    const baseHeight = hit.y - hit.rowTop; // currently rendered row height (doc px)
+    const startY = ev.clientY;
+    const zoom = paint.getZoom() || 1; // client px → doc px (zoom-correct, unlike a raw delta)
+    const MIN_ROW_PX = 4;
+
+    const heightFor = (e: MouseEvent): NonNullable<typeof oldHeight> => ({
+      value: Math.max(MIN_ROW_PX, Math.round(baseHeight + (e.clientY - startY) / zoom)),
+      rule,
+    });
+
+    // Coalesce preview relayouts to one per frame (a tall table re-measures slower
+    // than mousemove fires) — mirrors the column drag's RAF throttle.
+    let pendingHeight: NonNullable<typeof oldHeight> | null = null;
+    let moveRaf = 0;
+    let lastHeight = heightFor(ev);
+    const flushMove = (): void => {
+      moveRaf = 0;
+      if (pendingHeight) dispatch(setRowHeightCmd(hit.tableId, hit.rowIndex, pendingHeight, "transient"));
+      pendingHeight = null;
+    };
+    const onMove = (e: MouseEvent): void => {
+      lastHeight = heightFor(e);
+      pendingHeight = lastHeight;
+      if (!moveRaf) moveRaf = requestAnimationFrame(flushMove);
+    };
+    const onUp = (e: MouseEvent): void => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      if (moveRaf) cancelAnimationFrame(moveRaf); // drop any queued preview
+      moveRaf = 0;
+      pendingHeight = null;
+      lastHeight = heightFor(e);
+      // Revert preview to the prior height, then commit one undoable op.
+      dispatch(setRowHeightCmd(hit.tableId, hit.rowIndex, oldHeight, "transient"));
+      dispatch(setRowHeightCmd(hit.tableId, hit.rowIndex, lastHeight));
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
   // ---- Tab navigation between table cells ----------------------------------
 
   const tabInTable = (backward: boolean): boolean => {
@@ -1927,6 +1980,8 @@ export function createEditor(
     deleteSelectedObject: deleteSelectedObjectInternal,
     startColumnDrag,
     setColumnGuide: (guide) => paint.setColumnGuide(guide),
+    startRowDrag,
+    setRowGuide: (guide) => paint.setRowGuide(guide),
     applyObjectMove: (blockId, x, y, transient) =>
       dispatch(moveAnchoredImage(blockId, x, y, transient ? "transient" : "command")),
     onTab: tabInTable,
