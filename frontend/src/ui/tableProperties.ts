@@ -21,11 +21,19 @@ export interface TablePropertiesInit {
   rangeLabel: string;
   /** Interior presets (Inside / Inside H / Inside V) only apply to a multi-cell range. */
   multiCell: boolean;
+  /** Current preferred TOTAL table width, or null for "full page width". */
+  tableWidth: { type: "pct" | "px"; value: number } | null;
+  /** Current table alignment within the content width. */
+  tableAlign: "left" | "center" | "right";
 }
 
 export interface TablePropertiesCallbacks {
   applyBorders(spec: CellBorder | null, edges: BorderEdgeFlags): void;
   applyShading(fill: string | null): void;
+  /** Set the preferred total table width (null = span the full content width). */
+  applyTableWidth(width: { type: "pct" | "px"; value: number } | null): void;
+  /** Set the table's horizontal alignment. */
+  applyTableAlign(align: "left" | "center" | "right"): void;
 }
 
 export interface TablePropertiesHandle {
@@ -61,6 +69,7 @@ const TBL_CSS = `
   font-size:13px;color:#3c4043;display:inline-flex;align-items:center;gap:6px;}
 .cw-tbl-btn:hover{background:#f1f3f4;}
 .cw-tbl-btn:disabled{opacity:.45;cursor:default;}
+.cw-tbl-btn.active{background:#e8f0fe;border-color:#1a73e8;color:#0b57d0;}
 .cw-tbl-preview{width:108px;height:72px;border:1px dashed #c8c6c4;border-radius:6px;align-self:center;
   display:grid;place-items:center;background:#fff;}
 .cw-tbl-preview .box{width:64px;height:40px;}
@@ -239,7 +248,77 @@ export function showTableProperties(init: TablePropertiesInit, cb: TableProperti
   sRow.append(fillLabel, applyFill, noFill);
   sSection.append(sTitle, sRow);
 
-  body.append(bSection, sSection);
+  // ---- Table size section -------------------------------------------------
+  // Width + alignment apply LIVE (like borders/shading): each change is its own
+  // undo step. Width is offered as % of page or inches; "Full width" clears it.
+  const zSection = el("div");
+  const zTitle = el("div", "cw-tbl-section-title");
+  zTitle.textContent = "Table size";
+
+  const zRow = el("div", "cw-tbl-spec");
+  const unitSelect = el("select");
+  for (const [val, lbl] of [["full", "Full width"], ["pct", "% of page"], ["in", "Inches"]] as const) {
+    const o = el("option");
+    o.value = val;
+    o.textContent = lbl;
+    unitSelect.appendChild(o);
+  }
+  const widthValInput = el("input");
+  widthValInput.type = "number";
+  widthValInput.min = "1";
+  widthValInput.step = "1";
+
+  unitSelect.value = init.tableWidth ? (init.tableWidth.type === "pct" ? "pct" : "in") : "full";
+  if (!init.tableWidth) widthValInput.value = "";
+  else if (init.tableWidth.type === "pct") widthValInput.value = String(Math.round(init.tableWidth.value));
+  else widthValInput.value = (init.tableWidth.value / 96).toFixed(2); // px → inches
+  const syncWidthDisabled = (): void => {
+    widthValInput.disabled = unitSelect.value === "full";
+  };
+  syncWidthDisabled();
+
+  const applyWidth = (): void => {
+    const u = unitSelect.value;
+    if (u === "full") {
+      cb.applyTableWidth(null);
+      return;
+    }
+    const v = Number(widthValInput.value);
+    if (!Number.isFinite(v) || v <= 0) return;
+    if (u === "pct") cb.applyTableWidth({ type: "pct", value: Math.min(100, v) });
+    else cb.applyTableWidth({ type: "px", value: v * 96 }); // inches → px
+  };
+  unitSelect.addEventListener("change", () => {
+    syncWidthDisabled();
+    applyWidth();
+  });
+  widthValInput.addEventListener("change", applyWidth);
+  const zWidthLabel = el("label");
+  zWidthLabel.append("Width", widthValInput, unitSelect);
+  zRow.append(zWidthLabel);
+
+  const alignCap = el("div", "cw-tbl-caption");
+  alignCap.textContent = "Alignment";
+  const alignRow = el("div", "cw-tbl-row");
+  let curAlign: "left" | "center" | "right" = init.tableAlign;
+  const alignBtns: Partial<Record<"left" | "center" | "right", HTMLButtonElement>> = {};
+  const refreshAlign = (): void => {
+    for (const k of ["left", "center", "right"] as const) alignBtns[k]!.classList.toggle("active", k === curAlign);
+  };
+  const alignBtn = (label: string, a: "left" | "center" | "right"): HTMLButtonElement => {
+    const b = presetBtn(label, () => {
+      curAlign = a;
+      refreshAlign();
+      cb.applyTableAlign(a);
+    });
+    alignBtns[a] = b;
+    return b;
+  };
+  alignRow.append(alignBtn("Left", "left"), alignBtn("Center", "center"), alignBtn("Right", "right"));
+  refreshAlign();
+  zSection.append(zTitle, zRow, alignCap, alignRow);
+
+  body.append(bSection, sSection, zSection);
 
   // Footer
   const foot = el("div", "cw-tbl-foot");

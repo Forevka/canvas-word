@@ -327,6 +327,12 @@ export interface IRTable {
   colWidthsTwips?: number[];
   /** w:tblPr/w:tblLayout + w:tblW → column-sizing strategy. Absent = fixed. */
   widthMode?: "fixed" | "autofitContents" | "autofitWindow";
+  /** w:tblPr/w:tblW preferred TOTAL width on a fixed-layout table (→ TableBlock.preferredWidth).
+   *  `preferredWidthTwips` = absolute dxa; `preferredWidthPct` = 0..100 percent. */
+  preferredWidthTwips?: number;
+  preferredWidthPct?: number;
+  /** w:tblPr/w:jc → table alignment within the content width (→ TableBlock.align). */
+  align?: "left" | "center" | "right";
   /** w:tblPr/w:tblStyle — table style id (its borders/shd are the cascade base). */
   styleId?: string;
   /** w:tblPr/w:tblLook — which conditional bands of the table style are active. */

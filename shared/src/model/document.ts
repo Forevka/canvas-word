@@ -319,6 +319,14 @@ export interface TableBlock {
    *  "autofitContents" lets the table shrink below the content width to fit its
    *  content; "autofitWindow" always fills the available width. */
   widthMode?: "fixed" | "autofitContents" | "autofitWindow";
+  /** Preferred TOTAL table width (OOXML w:tblPr/w:tblW), honored in "fixed" mode
+   *  only. Absent = span the full content width (the historical behavior). `pct` is
+   *  0..100 of the content width; `px` is absolute CSS px. Resolved and clamped to
+   *  [floor, contentWidth] at layout time; the autofit modes ignore it. */
+  preferredWidth?: { type: "pct" | "px"; value: number };
+  /** Horizontal alignment of the table within the content width (OOXML w:tblPr/w:jc),
+   *  applied whenever the table is narrower than the band. Absent = "left". */
+  align?: "left" | "center" | "right";
   /** Table-style reference (OOXML w:tblStyle → Document.tableStyles). The effective
    *  per-cell formatting is baked onto the cells; this is kept for re-editing and
    *  round-trip. Absent = no table style (direct cell formatting only). */

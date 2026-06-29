@@ -1059,6 +1059,55 @@ describe("engine — autofit tables", () => {
     expect(sum(placed.colWidths)).toBeCloseTo(624, 0);
   });
 
+  it("fixed table with a px preferred width sizes the whole grid to that width", () => {
+    const t: TableBlock = { ...table([[cell("a"), cell("b")]]), preferredWidth: { type: "px", value: 300 } };
+    const placed = placedOf(layout(doc([t])), t.id)!.pb.table!;
+    expect(placed.width).toBeCloseTo(300, 0);
+    expect(sum(placed.colWidths)).toBeCloseTo(300, 0);
+    for (const w of placed.colWidths) expect(w).toBeCloseTo(150, 0); // proportions preserved
+  });
+
+  it("fixed table with a percent preferred width sizes to that fraction of the content box", () => {
+    const t: TableBlock = { ...table([[cell("a"), cell("b")]]), preferredWidth: { type: "pct", value: 50 } };
+    const placed = placedOf(layout(doc([t])), t.id)!.pb.table!;
+    expect(placed.width).toBeCloseTo(312, 0); // 624 * 0.5
+  });
+
+  it("clamps a preferred width wider than the content box back to the content box", () => {
+    const t: TableBlock = { ...table([[cell("a"), cell("b")]]), preferredWidth: { type: "px", value: 5000 } };
+    const placed = placedOf(layout(doc([t])), t.id)!.pb.table!;
+    expect(placed.width).toBeCloseTo(624, 0);
+  });
+
+  it("center-aligns a narrow table by offsetting its x within the content band", () => {
+    const t: TableBlock = {
+      ...table([[cell("a"), cell("b")]]),
+      preferredWidth: { type: "px", value: 300 },
+      align: "center",
+    };
+    const pb = placedOf(layout(doc([t])), t.id)!.pb;
+    expect(pb.table!.x).toBeCloseTo(96 + (624 - 300) / 2, 0); // left margin + half the slack
+    expect(pb.x).toBeCloseTo(96 + (624 - 300) / 2, 0);
+  });
+
+  it("right-aligns a narrow table flush to the content band's right edge", () => {
+    const t: TableBlock = {
+      ...table([[cell("a"), cell("b")]]),
+      preferredWidth: { type: "px", value: 300 },
+      align: "right",
+    };
+    const placed = placedOf(layout(doc([t])), t.id)!.pb.table!;
+    expect(placed.x).toBeCloseTo(96 + (624 - 300), 0);
+    expect(placed.x + placed.width).toBeCloseTo(96 + 624, 0);
+  });
+
+  it("aligns an AutoFit-to-Contents table too (alignment is independent of width mode)", () => {
+    const t: TableBlock = { ...autofit([[cell("ID"), cell("x")]], "autofitContents"), align: "right" };
+    const placed = placedOf(layout(doc([t])), t.id)!.pb.table!;
+    expect(placed.x).toBeGreaterThan(96); // shifted right of the left margin
+    expect(placed.x + placed.width).toBeCloseTo(96 + 624, 0); // flush right edge
+  });
+
   it("distributes a colSpan cell's demand across the columns it covers without breaking the grid", () => {
     const t = autofit(
       [

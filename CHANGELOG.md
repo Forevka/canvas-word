@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Table width & alignment (`TableBlock.preferredWidth` + `TableBlock.align`).** Fixed
+  tables can now be narrower than the page and positioned within it, instead of always
+  spanning the full content width (the only previous escape was AutoFit to Contents).
+  `preferredWidth` sizes the whole grid — `{type:"pct"}` as a percentage of the content
+  width or `{type:"px"}` as an absolute width, clamped to `[ncols × 24px, contentWidth]`
+  and applied in fixed layout only; the columns keep their proportions. `align`
+  (`left`/`center`/`right`) shifts the table within its band **whenever it is narrower
+  than the page**, so it also aligns AutoFit-to-Contents tables. Both round-trip through
+  `.docx` (`w:tblPr/w:tblW` as `dxa`/`pct` + `w:tblPr/w:jc`) and render pixel-exact in
+  PDF export (shared layout engine). Reachable from three surfaces: the right-click
+  **AutoFit & Size** submenu (quick 25/50/75/Full presets + alignment), the standalone
+  ribbon's AutoFit dropdown, and the **Table Properties → Table size** section (free-form
+  value in % or inches + alignment). New ops `setTablePreferredWidth` / `setTableAlign`;
+  commands `setTablePreferredWidthAtSelectionCmd` (also pins the table to fixed layout)
+  and `setTableAlignAtSelectionCmd`. Tables without these fields serialize and lay out
+  byte-identically — no export drift.
 - **CJK (Chinese) text in export.** A subset of **Noto Sans SC** (OFL; ~3,755 common
   GB2312 Level-1 hanzi + ASCII + CJK punctuation, ~1.4 MB) now ships as a built-in
   fallback face (`NotoSansSC`). CJK runs are script-split onto it automatically, so

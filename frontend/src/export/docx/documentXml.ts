@@ -480,12 +480,21 @@ function tableXml(table: TableBlock, ctx: PartCtx): string {
   // w:tcW) so non-Word consumers that don't re-autofit match our layout — see
   // "Known limitations" in README.md.
   const mode = table.widthMode ?? "fixed";
+  // A preferred TOTAL width is honored only in fixed layout; emit it as the real
+  // w:tblW (absolute dxa or percentage) so it round-trips instead of the auto width.
+  const pref = mode === "fixed" ? table.preferredWidth : undefined;
   const tblWEl =
     mode === "autofitWindow"
       ? el("w:tblW", { "w:w": 5000, "w:type": "pct" })
-      : el("w:tblW", { "w:w": 0, "w:type": "auto" });
+      : pref?.type === "px"
+        ? el("w:tblW", { "w:w": pxToTwips(pref.value), "w:type": "dxa" })
+        : pref?.type === "pct"
+          ? el("w:tblW", { "w:w": Math.round(pref.value * 50), "w:type": "pct" })
+          : el("w:tblW", { "w:w": 0, "w:type": "auto" });
   const tblLayoutEl = el("w:tblLayout", { "w:type": mode === "fixed" ? "fixed" : "autofit" });
-  const tblPr = el("w:tblPr", undefined, styleRef + tblWEl + tblLayoutEl + look);
+  // w:jc sits between w:tblW and w:tblLayout in CT_TblPrBase's element order.
+  const jcEl = table.align && table.align !== "left" ? el("w:jc", { "w:val": table.align }) : "";
+  const tblPr = el("w:tblPr", undefined, styleRef + tblWEl + jcEl + tblLayoutEl + look);
   return el("w:tbl", undefined, tblPr + el("w:tblGrid", undefined, grid) + rowsXml.join(""));
 }
 
