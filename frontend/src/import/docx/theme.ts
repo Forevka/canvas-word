@@ -5,10 +5,18 @@
 import { attr, children, el, parseXml, rootEl, type XmlNode } from "./xml";
 
 export interface Theme {
-  /** a:majorFont latin typeface — headings ("majorHAnsi" etc.). */
+  /** a:majorFont a:latin typeface — headings ("majorHAnsi" etc.). */
   majorLatin?: string;
-  /** a:minorFont latin typeface — body text ("minorHAnsi" etc.). */
+  /** a:minorFont a:latin typeface — body text ("minorHAnsi" etc.). */
   minorLatin?: string;
+  /** a:majorFont a:ea typeface — East-Asian headings ("majorEastAsia"). */
+  majorEastAsia?: string;
+  /** a:minorFont a:ea typeface — East-Asian body ("minorEastAsia"). */
+  minorEastAsia?: string;
+  /** a:majorFont a:cs typeface — complex-script headings ("majorBidi"). */
+  majorComplexScript?: string;
+  /** a:minorFont a:cs typeface — complex-script body ("minorBidi"). */
+  minorComplexScript?: string;
   /** Scheme color slot → hex (no '#'), e.g. "accent1" → "4472C4". */
   colors: Map<string, string>;
 }
@@ -35,9 +43,12 @@ export function themeColor(theme: Theme, name: string): string | undefined {
 }
 
 export function themeFont(theme: Theme, slot: string): string | undefined {
-  if (slot.startsWith("major")) return theme.majorLatin;
-  if (slot.startsWith("minor")) return theme.minorLatin;
-  return undefined;
+  // Slots: major/minor × {HAnsi|Ascii → latin, EastAsia → a:ea, Bidi → a:cs}.
+  const major = slot.startsWith("major");
+  if (!major && !slot.startsWith("minor")) return undefined;
+  if (slot.endsWith("EastAsia")) return major ? theme.majorEastAsia : theme.minorEastAsia;
+  if (slot.endsWith("Bidi")) return major ? theme.majorComplexScript : theme.minorComplexScript;
+  return major ? theme.majorLatin : theme.minorLatin;
 }
 
 /** Apply OOXML w:themeTint / w:themeShade to a base sRGB hex (no '#'). themeTint
@@ -82,10 +93,20 @@ export function parseThemeXml(xmlText: string): Theme {
 
   const fontScheme = el(elements, "a:fontScheme");
   if (fontScheme) {
-    const major = latinTypeface(el(fontScheme, "a:majorFont"));
-    if (major) theme.majorLatin = major;
-    const minor = latinTypeface(el(fontScheme, "a:minorFont"));
-    if (minor) theme.minorLatin = minor;
+    const major = el(fontScheme, "a:majorFont");
+    const minor = el(fontScheme, "a:minorFont");
+    const assign = (font: XmlNode | undefined, latin: keyof Theme, ea: keyof Theme, cs: keyof Theme): void => {
+      if (!font) return;
+      const set = (tag: string, key: keyof Theme): void => {
+        const face = typeface(el(font, tag));
+        if (face) (theme as Record<keyof Theme, unknown>)[key] = face;
+      };
+      set("a:latin", latin);
+      set("a:ea", ea);
+      set("a:cs", cs);
+    };
+    assign(major, "majorLatin", "majorEastAsia", "majorComplexScript");
+    assign(minor, "minorLatin", "minorEastAsia", "minorComplexScript");
   }
 
   const clrScheme = el(elements, "a:clrScheme");
@@ -101,8 +122,8 @@ export function parseThemeXml(xmlText: string): Theme {
   return theme;
 }
 
-function latinTypeface(font: XmlNode | undefined): string | undefined {
-  const latin = font && el(font, "a:latin");
-  const typeface = latin && attr(latin, "typeface");
-  return typeface || undefined; // empty typeface="" → undefined
+/** A font-scheme face element's typeface attribute (empty typeface="" → undefined). */
+function typeface(face: XmlNode | undefined): string | undefined {
+  const t = face && attr(face, "typeface");
+  return t || undefined;
 }

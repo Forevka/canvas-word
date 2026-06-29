@@ -511,13 +511,13 @@ export function sampleDoc(): Document {
 
     para([run("Theme tint & shade", { bold: true, color: "#1a1a2e" })], { spaceBeforePx: 8, spaceAfterPx: 2 }),
     para([
-      run("A theme color keeps its tint/shade (w:themeTint / w:themeShade) instead of resolving to a flat base hue — the Office accent blue "),
+      run("On import, a theme color with a tint or shade (w:themeTint / w:themeShade) resolves to its actual lighter/darker shade rather than flattening to the flat base hue. These are the resolved shades of the Office accent blue "),
       run("#4472C4", { color: "#4472c4", bold: true }),
-      run(" at full strength, a lighter "),
+      run(" — a lighter "),
       run("60% tint", { color: "#8faadc", bold: true }),
       run(" and a darker "),
       run("50% shade", { color: "#223962", bold: true }),
-      run("."),
+      run(". (The model stores concrete colors, so the import resolution itself is covered by the round-trip tests.)"),
     ]),
 
     para([run("Complex-script & East-Asian font slots", { bold: true, color: "#1a1a2e" })], { spaceBeforePx: 8, spaceAfterPx: 2 }),
