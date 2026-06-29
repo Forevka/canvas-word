@@ -16,7 +16,7 @@
 
 import { decodeBorders, decodeShdFill, mergeBorders } from "./borders";
 import { decodeParaProps, decodeRunProps } from "./props";
-import { themeColor, themeFont, type Theme } from "./theme";
+import { applyTintShade, themeColor, themeFont, type Theme } from "./theme";
 import type { IRBorders, IRParaProps, IRRunProps } from "./types";
 import { WarningSink } from "./types";
 import { attr, el, els, parseXml, rootEl, val } from "./xml";
@@ -270,9 +270,23 @@ export function createStyleResolver(data: StylesData, theme: Theme): StyleResolv
       const font = themeFont(theme, out.fontThemeAscii);
       if (font) out.fontAscii = font;
     }
+    if (!out.fontHAnsi && out.fontThemeHAnsi) {
+      const font = themeFont(theme, out.fontThemeHAnsi);
+      if (font) out.fontHAnsi = font;
+    }
+    if (!out.fontCs && out.fontThemeCs) {
+      const font = themeFont(theme, out.fontThemeCs);
+      if (font) out.fontCs = font;
+    }
+    if (!out.fontEastAsia && out.fontThemeEastAsia) {
+      const font = themeFont(theme, out.fontThemeEastAsia);
+      if (font) out.fontEastAsia = font;
+    }
     if ((out.color === undefined || out.color === "auto") && out.colorTheme) {
-      const color = themeColor(theme, out.colorTheme);
-      if (color) out.color = color;
+      const base = themeColor(theme, out.colorTheme);
+      // Apply w:themeTint / w:themeShade so a tinted/shaded theme color resolves to
+      // its actual shade, not the flat base hex.
+      if (base) out.color = applyTintShade(base, out.colorThemeTint, out.colorThemeShade);
     }
     if ((out.underlineColor === undefined || out.underlineColor === "auto") && out.underlineColorTheme) {
       const color = themeColor(theme, out.underlineColorTheme);
@@ -290,13 +304,29 @@ export function createStyleResolver(data: StylesData, theme: Theme): StyleResolv
  *  child's concrete font would lose to a grandparent's lingering theme ref. */
 function mergeRun(base: IRRunProps, add: IRRunProps): IRRunProps {
   const out: IRRunProps = { ...base };
+  // Each w:rFonts slot (ascii / hAnsi / cs / eastAsia) cascades independently; a
+  // layer that respecifies a slot (concrete or theme ref) replaces just that slot.
   if (add.fontAscii !== undefined || add.fontThemeAscii !== undefined) {
     delete out.fontAscii;
     delete out.fontThemeAscii;
   }
+  if (add.fontHAnsi !== undefined || add.fontThemeHAnsi !== undefined) {
+    delete out.fontHAnsi;
+    delete out.fontThemeHAnsi;
+  }
+  if (add.fontCs !== undefined || add.fontThemeCs !== undefined) {
+    delete out.fontCs;
+    delete out.fontThemeCs;
+  }
+  if (add.fontEastAsia !== undefined || add.fontThemeEastAsia !== undefined) {
+    delete out.fontEastAsia;
+    delete out.fontThemeEastAsia;
+  }
   if (add.color !== undefined || add.colorTheme !== undefined) {
     delete out.color;
     delete out.colorTheme;
+    delete out.colorThemeTint; // tint/shade belong to the color slot — drop with it
+    delete out.colorThemeShade;
   }
   // A w:u in `add` re-declares the WHOLE underline (style + color), so a child's
   // bare underline mustn't inherit a grandparent's lingering underline color.

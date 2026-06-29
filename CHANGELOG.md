@@ -139,6 +139,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the builder (`SpacingOptions.lineRule` / `.lineHeightPx`) and the mirrored C# bindings
   (`LineRule` enum on `SpacingOptions`); demonstrated in the default sample document and
   the C# showcase.
+- **Run-level round-trip fidelity — character tracking, theme tint/shade, and CS/EA
+  font slots.** Three details Word stores on a run now survive a full `.docx`
+  round-trip. (1) **Character tracking** (`w:spacing`): the importer reads run-level
+  `w:spacing` into `CharStyle.letterSpacingPx` — export already emitted it, so authored
+  tracking was lost inbound until now. (2) **Theme tint/shade** (`w:themeTint` /
+  `w:themeShade`): a theme color with a tint/shade now resolves to its actual lighter
+  /darker shade instead of flattening to the flat base hue (applied per RGB channel in
+  `theme.ts`). (3) **Complex-script & East-Asian font slots** (`w:rFonts/@w:cs` and
+  `@w:eastAsia`, plus their themed variants): captured into the new
+  `CharStyle.fontFamilyComplexScript` / `fontFamilyEastAsia` (only when they name a face
+  distinct from the Latin slot, since Word writes `w:cs = w:ascii` for plain Latin runs),
+  emitted back from `documentXml`. Authorable via the builder (`fontComplexScript()` /
+  `fontEastAsia()`, plus the existing `letterSpacing()`) and the mirrored C# bindings
+  (`ParagraphBuilder.FontComplexScript` / `FontEastAsia`, `CharStyle.FontFamilyComplexScript`
+  / `FontFamilyEastAsia`); demonstrated in the default sample document and the C# showcase.
 - **Table cell vertical alignment (`TableCell.vAlign`).** Cells can now align their
   content to the `top` (default), `center`, or `bottom` of the cell box via OOXML
   `w:tcPr/w:vAlign` — previously content always hugged the top regardless of the

@@ -280,6 +280,30 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
     .Paragraph("East-Asian scripts lay out the way Word does — measured on canvas, with Unicode line-breaking and kinsoku, not the browser's contenteditable.")
     .Paragraph("日本語 — CJK line-breaking & kinsoku", p => p.Bold().Color(Ink))
     .Paragraph("日本語の文章は単語の間にスペースを入れません。それでもエンジンは文字単位で行を折り返し、句読点が行頭に来ないように禁則処理（kinsoku）を行います。「角括弧」のような約物も正しく扱われ、長い段落でもページをまたいで自然に流れます。")
+
+    // ---- Run-level typography (tracking, theme tints, CS/EA font slots) ----
+    // These all survive the .docx round-trip. The complex-script (w:cs) slot is set
+    // on Latin text so it stays legible in the headless PDF (it only changes glyph
+    // selection for complex scripts), while the East-Asian (w:eastAsia) slot rides
+    // along with CJK text Word renders directly.
+    .Paragraph("Run-level typography", p => p.WithStyle("Heading1"))
+    .Paragraph(p => p
+        .Text("Character tracking (OOXML w:spacing) widens ")
+        .Text("w i d e", new CharStyle { LetterSpacingPx = 3 })
+        .Text(" or tightens ")
+        .Text("tight", new CharStyle { LetterSpacingPx = -0.5 })
+        .Text(" inter-letter spacing; on import a theme color's tint/shade resolves to its actual shade — here the resolved ")
+        .Text("60% tint", new CharStyle { Color = "#8faadc", Bold = true })
+        .Text(" and ")
+        .Text("50% shade", new CharStyle { Color = "#223962", Bold = true })
+        .Text(" of the Office accent blue #4472C4."))
+    .Paragraph(p => p
+        .Text("Runs preserve their East-Asian (w:eastAsia) and ")
+        .Text("complex-script", new CharStyle { FontFamilyComplexScript = "Scheherazade New, serif" })
+        .Text(" (w:cs) font slots independently of the Latin face — ")
+        .Text("日本語", new CharStyle { FontFamilyEastAsia = "Yu Mincho, serif" })
+        .Text(" carries its CJK typeface through the round-trip."))
+
     // ---- Equations (LaTeX + MathML, typeset on canvas, round-tripped to OMML) ----
     .Paragraph("Equations", p => p.WithStyle("Heading1"))
     .Paragraph(p => p

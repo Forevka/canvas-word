@@ -214,6 +214,10 @@ public sealed record CharStyle
     public string? Color { get; init; }
     public string? HighlightColor { get; init; }
     public string? FontFamily { get; init; }
+    /// <summary>Complex-script (bidi) font (OOXML w:rFonts/@w:cs); preserved through round-trip.</summary>
+    public string? FontFamilyComplexScript { get; init; }
+    /// <summary>East-Asian (CJK) font (OOXML w:rFonts/@w:eastAsia); preserved through round-trip.</summary>
+    public string? FontFamilyEastAsia { get; init; }
     public double? FontSizePx { get; init; }
     public string? Link { get; init; }
     public double? LetterSpacingPx { get; init; }
@@ -242,6 +246,8 @@ public sealed record CharStyle
         if (Color is { } c) Js.Set(o, "color", c);
         if (HighlightColor is { } h) Js.Set(o, "highlightColor", h);
         if (FontFamily is { } f) Js.Set(o, "fontFamily", f);
+        if (FontFamilyComplexScript is { } fcs) Js.Set(o, "fontFamilyComplexScript", fcs);
+        if (FontFamilyEastAsia is { } fea) Js.Set(o, "fontFamilyEastAsia", fea);
         if (FontSizePx is { } fs) Js.Set(o, "fontSizePx", fs);
         if (Link is { } lk) Js.Set(o, "link", lk);
         if (LetterSpacingPx is { } ls) Js.Set(o, "letterSpacingPx", ls);

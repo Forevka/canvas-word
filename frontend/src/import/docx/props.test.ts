@@ -65,6 +65,29 @@ describe("decodeRunProps", () => {
     expect(p.fontThemeAscii).toBe("minorHAnsi");
   });
 
+  it("captures the complex-script and East-Asian rFonts slots (+ themes)", () => {
+    const p = decodeRunProps(
+      rPr(`<w:rFonts w:hAnsi="Calibri" w:cs="Arial" w:eastAsia="SimSun" w:eastAsiaTheme="minorEastAsia"/>`),
+    );
+    expect(p.fontHAnsi).toBe("Calibri");
+    expect(p.fontCs).toBe("Arial");
+    expect(p.fontEastAsia).toBe("SimSun");
+    expect(p.fontThemeEastAsia).toBe("minorEastAsia");
+  });
+
+  it("captures run-level character tracking (w:spacing)", () => {
+    expect(decodeRunProps(rPr(`<w:spacing w:val="40"/>`)).letterSpacingTwips).toBe(40);
+    expect(decodeRunProps(rPr(`<w:spacing w:val="-20"/>`)).letterSpacingTwips).toBe(-20);
+  });
+
+  it("captures theme tint/shade alongside the theme color", () => {
+    const tinted = decodeRunProps(rPr(`<w:color w:themeColor="accent1" w:themeTint="99"/>`));
+    expect(tinted.colorTheme).toBe("accent1");
+    expect(tinted.colorThemeTint).toBe("99");
+    const shaded = decodeRunProps(rPr(`<w:color w:themeColor="accent1" w:themeShade="80"/>`));
+    expect(shaded.colorThemeShade).toBe("80");
+  });
+
   it("ignores highlight='none' but keeps a real highlight", () => {
     expect(decodeRunProps(rPr(`<w:highlight w:val="none"/>`)).highlight).toBeUndefined();
     expect(decodeRunProps(rPr(`<w:highlight w:val="yellow"/>`)).highlight).toBe("yellow");

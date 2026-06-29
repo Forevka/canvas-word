@@ -36,15 +36,35 @@ export function decodeRunProps(rPr: XmlNode): IRRunProps {
     if (hex) props.color = hex;
     const themeColor = attr(color, "w:themeColor");
     if (themeColor) props.colorTheme = themeColor;
+    const themeTint = attr(color, "w:themeTint");
+    if (themeTint) props.colorThemeTint = themeTint;
+    const themeShade = attr(color, "w:themeShade");
+    if (themeShade) props.colorThemeShade = themeShade;
   }
   const sz = numAttr(el(rPr, "w:sz"), "w:val");
   if (sz !== undefined) props.sizeHalfPoints = sz;
+  // w:spacing on a run is character tracking (twips); on a paragraph it is line
+  // spacing — decodeParaProps reads the paragraph form separately.
+  const spacing = numAttr(el(rPr, "w:spacing"), "w:val");
+  if (spacing !== undefined) props.letterSpacingTwips = spacing;
   const rFonts = el(rPr, "w:rFonts");
   if (rFonts) {
     const font = attr(rFonts, "w:ascii");
     if (font) props.fontAscii = font;
     const themeFont = attr(rFonts, "w:asciiTheme");
     if (themeFont) props.fontThemeAscii = themeFont;
+    const hAnsi = attr(rFonts, "w:hAnsi");
+    if (hAnsi) props.fontHAnsi = hAnsi;
+    const hAnsiTheme = attr(rFonts, "w:hAnsiTheme");
+    if (hAnsiTheme) props.fontThemeHAnsi = hAnsiTheme;
+    const cs = attr(rFonts, "w:cs");
+    if (cs) props.fontCs = cs;
+    const csTheme = attr(rFonts, "w:cstheme");
+    if (csTheme) props.fontThemeCs = csTheme;
+    const eastAsia = attr(rFonts, "w:eastAsia");
+    if (eastAsia) props.fontEastAsia = eastAsia;
+    const eastAsiaTheme = attr(rFonts, "w:eastAsiaTheme");
+    if (eastAsiaTheme) props.fontThemeEastAsia = eastAsiaTheme;
   }
   const highlight = val(rPr, "w:highlight");
   if (highlight && highlight !== "none") props.highlight = highlight;
