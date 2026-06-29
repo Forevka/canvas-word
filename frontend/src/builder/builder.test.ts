@@ -119,9 +119,14 @@ describe("tables", () => {
     expect(t.defaultBorders?.insideH?.color).toBe("#1a73e8");
     expect(t.defaultShading).toBe("#eef5ff");
     expect(t.defaultCellMargin).toEqual({ top: 6, right: 10, bottom: 6, left: 10 });
-    // Shading + margin cascade onto cells that didn't set their own…
+    // Shading + margin + borders cascade onto cells that didn't set their own…
     expect(t.rows[0]!.cells[0]!.shading).toBe("#eef5ff");
     expect(t.rows[0]!.cells[0]!.margin).toEqual({ top: 6, right: 10, bottom: 6, left: 10 });
+    const corner = t.rows[0]!.cells[0]!.borders!;
+    expect(corner.top).toEqual(rule);
+    expect(corner.left).toEqual(rule);
+    expect(corner.right).toEqual(rule); // interior insideV (same rule here)
+    expect(corner.bottom).toEqual(rule); // interior insideH
     // …but an explicit per-cell value still wins.
     expect(t.rows[1]!.cells[1]!.shading).toBe("#ffffff");
   });

@@ -166,11 +166,15 @@ describe("DOCX export — round trip", () => {
     const a = runImport(simpleDocx(body)).doc;
     const cellA = tables(a)[0]!.rows[0]!.cells[0]!;
     expect(cellA.borders).toBeDefined(); // imported as "borders specified, none drawn"
+    // The explicit (empty) w:tblBorders container is kept at table level too, so the
+    // "no borders" declaration round-trips at tblPr — not just per-cell (issue #48).
+    expect(tables(a)[0]!.defaultBorders).toEqual({});
     const b = roundTrip(a);
     const cellB = tables(b)[0]!.rows[0]!.cells[0]!;
     // Must stay defined (empty) — undefined would draw the gray default grid.
     expect(cellB.borders).toBeDefined();
     expect(cellB.borders!.top).toBeUndefined();
+    expect(tables(b)[0]!.defaultBorders).toEqual({});
   });
 
   it("mirrors a vertical merge's borders onto its continue cells (Word draws the merged box)", () => {

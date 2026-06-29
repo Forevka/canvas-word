@@ -821,6 +821,10 @@ export function createMapper(
     // at tblPr level (issue #48) rather than only as the baked per-cell copies.
     const defBorders = tableBordersFromIR(ir.borders);
     if (defBorders) table.defaultBorders = defBorders;
+    // An explicitly-declared but empty/all-none w:tblBorders ("no borders") still
+    // round-trips its container: keep an empty CellBorders so export re-emits the
+    // <w:tblBorders/> intent rather than dropping the table-level declaration.
+    else if (ir.bordersSpecified) table.defaultBorders = {};
     if (ir.shd) table.defaultShading = ir.shd;
     if (ir.cellMarginTwips) {
       const m = ir.cellMarginTwips;

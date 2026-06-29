@@ -181,8 +181,10 @@ const tableDefaultsTable = (): TableBlock => {
   const rule: CellBorder = { color: "#1a73e8", widthPx: 1 };
   const fill = "#eef5ff";
   const pad: CellMargin = { top: 6, right: 10, bottom: 6, left: 10 };
+  // Uniform border box (same rule on every edge) — the cascade of the table-level
+  // default onto each cell, so the canvas renderer draws the blue grid.
   const c = (text: string, patch: Partial<CharStyle> = {}): TableCell =>
-    cell(text, patch, { shading: fill, margin: { ...pad } });
+    cell(text, patch, { shading: fill, margin: { ...pad }, borders: { top: rule, right: rule, bottom: rule, left: rule } });
   return {
     kind: "table", id: id(), revision: 0,
     defaultBorders: { top: rule, right: rule, bottom: rule, left: rule, insideH: rule, insideV: rule },
