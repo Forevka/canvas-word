@@ -93,13 +93,18 @@ describe("engine — table row properties (w:trPr)", () => {
     expect(dataOnPage2!.rows[0]!.cells[0]!.originRow).toBeGreaterThan(0);
   });
 
-  it("moves a cant-split row whole to the next page when it does not fit (w:cantSplit)", () => {
+  it("keeps a cant-split row whole — it relocates to the next page rather than splitting (w:cantSplit)", () => {
+    // The paginator is row-atomic, so a cant-split row is kept whole BY CONSTRUCTION:
+    // this guards that invariant (a tall row marked cantSplit lands on one page at its
+    // full height, never broken across the page boundary), which is the behavior issue
+    // #53's acceptance asks for. The flag itself round-trips for .docx fidelity.
     const t = table([
       row([cell("A")], { height: { value: 760, rule: "exact" } }),
       row([cell("B")], { height: { value: 200, rule: "exact" }, cantSplit: true }),
     ]);
     const chunks = placedChunks(doc(t), t.id);
-    // Row B (originRow 1) is placed exactly once, on a later page, at its full height.
+    // Row B (originRow 1) is placed exactly once, on a later page, at its full height —
+    // i.e. it moved whole instead of being split where row A left off.
     const bPlacements = chunks.flatMap((c) =>
       c.rows.filter((r) => r.cells[0]!.originRow === 1).map((r) => ({ page: c.page, height: r.height })),
     );

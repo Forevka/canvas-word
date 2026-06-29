@@ -1735,6 +1735,13 @@ function layoutDocument(
     const repeatHeader = headerCount > 0 && headerCount < m.rows.length && !hasRowSpan;
     const headerRows = repeatHeader ? m.rows.slice(0, headerCount) : [];
     const headerHeight = headerRows.reduce((s, r) => s + r.height, 0);
+    // w:cantSplit needs no dedicated branch here: this paginator is ROW-ATOMIC — the
+    // chunk loop below only ever slices at row boundaries (m.rows.slice(ri, ri+fit))
+    // and places whole measured rows, so a row's cells are never broken across a page.
+    // Every row is therefore kept-whole already; `props.cantSplit` round-trips for
+    // fidelity and stays the marker to exclude a row should true intra-row splitting
+    // ever be added. (A row taller than a full empty column still overflows — there is
+    // nowhere to move it — matching the no-cantSplit case.)
     let ri = 0;
     while (ri < m.rows.length) {
       // Once we are past the original header band, every continuation chunk reserves

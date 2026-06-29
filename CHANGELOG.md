@@ -37,8 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OOXML row properties, previously dropped entirely (`TableRow` was just `{ cells }`):
   `height` (`w:trHeight`) pins a fixed/minimum row height — `rule: "atLeast"` grows the
   row with its content, `rule: "exact"` forces the height (taller content clips);
-  `cantSplit` (`w:cantSplit`) keeps a row whole across a page break (the engine already
-  paginates at row boundaries, so a `cantSplit` row always moves whole); and
+  `cantSplit` (`w:cantSplit`) keeps a row whole across a page break — the paginator is
+  row-atomic (it only ever breaks a table between rows, never inside one), so this
+  invariant already holds for every row and the flag round-trips for `.docx` fidelity; and
   `repeatHeader` (`w:tblHeader`) re-draws the leading contiguous header rows at the top
   of every page a table continues onto. All three round-trip through `.docx` (parsed in
   `documentParser`, emitted from `documentXml` as `w:trPr`) and drive the layout engine
