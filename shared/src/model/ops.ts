@@ -130,6 +130,8 @@ function symbolEq(a: CharStyle["symbol"], b: CharStyle["symbol"]): boolean {
 export function styleEq(a: CharStyle, b: CharStyle): boolean {
   return (
     a.fontFamily === b.fontFamily &&
+    a.fontFamilyComplexScript === b.fontFamilyComplexScript &&
+    a.fontFamilyEastAsia === b.fontFamilyEastAsia &&
     a.fontSizePx === b.fontSizePx &&
     a.bold === b.bold &&
     a.italic === b.italic &&

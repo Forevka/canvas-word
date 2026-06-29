@@ -143,6 +143,18 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     return this.applyChar({ fontFamily: family });
   }
 
+  /** Set the complex-script (bidi) font — OOXML w:rFonts/@w:cs. Preserved through
+   *  the .docx round-trip; layout/paint still use the main font(). */
+  fontComplexScript(family: string): this {
+    return this.applyChar({ fontFamilyComplexScript: family });
+  }
+
+  /** Set the East-Asian (CJK) font — OOXML w:rFonts/@w:eastAsia. Preserved through
+   *  the .docx round-trip; layout/paint still use the main font(). */
+  fontEastAsia(family: string): this {
+    return this.applyChar({ fontFamilyEastAsia: family });
+  }
+
   /** Make the paragraph's text a hyperlink (painted blue+underlined, Ctrl+click). */
   link(url: string): this {
     return this.applyChar({ link: url });

@@ -496,6 +496,38 @@ export function sampleDoc(): Document {
     para([
       run("Tab stops honor the document's default interval (w:defaultTabStop): columns\tline up\tat\teach default tab."),
     ], { spaceBeforePx: 8 }),
+    // --- Run-level typography: tracking, theme tints & script fonts ------------
+    heading("Run-level typography — tracking, theme tints & script fonts", 1),
+    para([run("These run-level details survive a full .docx round-trip (import → edit → export), matching what Word stores on every run.")], { spaceAfterPx: 8 }),
+
+    para([run("Character tracking", { bold: true, color: "#1a1a2e" })], { spaceBeforePx: 6, spaceAfterPx: 2 }),
+    para([
+      run("Tracking (OOXML w:spacing) widens or tightens inter-letter spacing: "),
+      run("w i d e   t r a c k i n g", { letterSpacingPx: 3 }),
+      run(", normal tracking, and "),
+      run("tightened", { letterSpacingPx: -0.5 }),
+      run(" — each value re-imports exactly."),
+    ]),
+
+    para([run("Theme tint & shade", { bold: true, color: "#1a1a2e" })], { spaceBeforePx: 8, spaceAfterPx: 2 }),
+    para([
+      run("A theme color keeps its tint/shade (w:themeTint / w:themeShade) instead of resolving to a flat base hue — the Office accent blue "),
+      run("#4472C4", { color: "#4472c4", bold: true }),
+      run(" at full strength, a lighter "),
+      run("60% tint", { color: "#8faadc", bold: true }),
+      run(" and a darker "),
+      run("50% shade", { color: "#223962", bold: true }),
+      run("."),
+    ]),
+
+    para([run("Complex-script & East-Asian font slots", { bold: true, color: "#1a1a2e" })], { spaceBeforePx: 8, spaceAfterPx: 2 }),
+    para([
+      run("Runs preserve their complex-script (w:cs) and East-Asian (w:eastAsia) typefaces: the Arabic phrase "),
+      run("مرحبا", { fontFamilyComplexScript: "Scheherazade New, serif" }),
+      run(" carries a complex-script face and the Japanese phrase "),
+      run("日本語", { fontFamilyEastAsia: "Yu Mincho, serif" }),
+      run(" an East-Asian one — both round-trip independently of the Latin font."),
+    ]),
 
     // --- International text: CJK + bidirectional (RTL) -------------------------
     heading("International text — CJK & bidirectional", 1),

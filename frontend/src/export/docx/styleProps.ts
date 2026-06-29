@@ -20,13 +20,34 @@ function underlineAttrs(c: Pick<CharStyle, "underline" | "underlineStyle" | "und
 // direct formatting fully overrides any inherited paragraph/named style on
 // re-import. Shared by the main exporter (documentXml) and the headless TOC
 // generator (recalc/generateTocDocx) so they can't drift.
+// First family of a CSS font stack ("Georgia, serif" → "Georgia"); "" if absent.
+const firstFamily = (stack: string | undefined): string => (stack ? (stack.split(",")[0] ?? "").trim() : "");
+
+/** A w:rFonts element covering the Latin (ascii/hAnsi), complex-script (cs) and
+ *  East-Asian (eastAsia) slots, or "" when no slot is set. cs defaults to the
+ *  Latin family (Word's convention) so a plain run keeps round-tripping its w:cs. */
+function rFontsXml(fontFamily: string | undefined, complexScript?: string, eastAsia?: string): string {
+  const latin = firstFamily(fontFamily);
+  const cs = firstFamily(complexScript) || latin;
+  const ea = firstFamily(eastAsia);
+  if (!latin && !cs && !ea) return "";
+  const attrs: Record<string, string> = {};
+  if (latin) {
+    attrs["w:ascii"] = latin;
+    attrs["w:hAnsi"] = latin;
+  }
+  if (cs) attrs["w:cs"] = cs;
+  if (ea) attrs["w:eastAsia"] = ea;
+  return el("w:rFonts", attrs);
+}
+
 export function runPropsXml(s: CharStyle): string {
-  const family = (s.fontFamily.split(",")[0] ?? "").trim();
   const children: string[] = [];
   // w:rStyle (character-style reference) must be the first child of w:rPr; the
   // concrete props below still override it on re-import (Word semantics).
   if (s.charStyleId) children.push(el("w:rStyle", { "w:val": s.charStyleId }));
-  if (family) children.push(el("w:rFonts", { "w:ascii": family, "w:hAnsi": family, "w:cs": family }));
+  const rFonts = rFontsXml(s.fontFamily, s.fontFamilyComplexScript, s.fontFamilyEastAsia);
+  if (rFonts) children.push(rFonts);
   children.push(el("w:b", { "w:val": s.bold ? "1" : "0" }));
   children.push(el("w:i", { "w:val": s.italic ? "1" : "0" }));
   // w:caps / w:smallCaps precede w:strike in the CT_RPr schema sequence. Emit an
@@ -103,9 +124,9 @@ export function paraCoreXml(style: ParaStyle): string {
 
 export function partialRPrXml(c: Partial<CharStyle>): string {
   const out: string[] = [];
-  if (c.fontFamily) {
-    const fam = (c.fontFamily.split(",")[0] ?? "").trim();
-    if (fam) out.push(el("w:rFonts", { "w:ascii": fam, "w:hAnsi": fam, "w:cs": fam }));
+  if (c.fontFamily || c.fontFamilyComplexScript || c.fontFamilyEastAsia) {
+    const rFonts = rFontsXml(c.fontFamily, c.fontFamilyComplexScript, c.fontFamilyEastAsia);
+    if (rFonts) out.push(rFonts);
   }
   if (c.bold !== undefined) out.push(el("w:b", { "w:val": c.bold ? "1" : "0" }));
   if (c.italic !== undefined) out.push(el("w:i", { "w:val": c.italic ? "1" : "0" }));

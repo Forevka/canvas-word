@@ -130,6 +130,31 @@ describe("StyleResolver — style chains", () => {
   });
 });
 
+describe("StyleResolver — theme tint/shade", () => {
+  // accent1 = 4472C4 (68,114,196). Tint 0x99 (0.6): c·0.6 + 255·0.4. Shade 0x80
+  // (≈0.502): c·0.502. Both applied per channel (the linear w:color interpretation).
+  it("lightens a theme color by w:themeTint instead of flattening to the base hue", () => {
+    const r = importStyled(
+      `<w:p><w:r><w:rPr><w:color w:themeColor="accent1" w:themeTint="99"/></w:rPr><w:t>tint</w:t></w:r></w:p>`,
+    );
+    expect(para(r.doc.blocks[0]).runs[0]!.style.color).toBe("#8faadc");
+  });
+
+  it("darkens a theme color by w:themeShade", () => {
+    const r = importStyled(
+      `<w:p><w:r><w:rPr><w:color w:themeColor="accent1" w:themeShade="80"/></w:rPr><w:t>shade</w:t></w:r></w:p>`,
+    );
+    expect(para(r.doc.blocks[0]).runs[0]!.style.color).toBe("#223962");
+  });
+
+  it("keeps the concrete w:val when present (Word pre-bakes the tinted hex there)", () => {
+    const r = importStyled(
+      `<w:p><w:r><w:rPr><w:color w:val="9CC3E5" w:themeColor="accent1" w:themeTint="99"/></w:rPr><w:t>x</w:t></w:r></w:p>`,
+    );
+    expect(para(r.doc.blocks[0]).runs[0]!.style.color).toBe("#9cc3e5");
+  });
+});
+
 describe("StyleResolver — toggle XOR (§17.7.3)", () => {
   it("paragraph-style bold XOR character-style bold cancels", () => {
     const r = importStyled(

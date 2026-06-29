@@ -40,6 +40,40 @@ export function themeFont(theme: Theme, slot: string): string | undefined {
   return undefined;
 }
 
+/** Apply OOXML w:themeTint / w:themeShade to a base sRGB hex (no '#'). themeTint
+ *  lightens the color toward white, themeShade darkens it toward black; each is a
+ *  hex byte ("00".."FF") read as a fraction = value/255 and applied per RGB
+ *  channel — the linear interpretation Word uses for w:color tints/shades. At most
+ *  one applies (Word never emits both). Returns hex without '#'; unparseable input
+ *  is returned unchanged. */
+export function applyTintShade(hex: string, tint?: string, shade?: string): string {
+  const rgb = parseHex(hex);
+  if (!rgb) return hex;
+  let [r, g, b] = rgb;
+  const tintF = parseByteFraction(tint);
+  const shadeF = parseByteFraction(shade);
+  if (tintF !== undefined) {
+    const lift = (c: number): number => Math.round(c * tintF + 255 * (1 - tintF));
+    [r, g, b] = [lift(r), lift(g), lift(b)];
+  } else if (shadeF !== undefined) {
+    [r, g, b] = [Math.round(r * shadeF), Math.round(g * shadeF), Math.round(b * shadeF)];
+  }
+  return toHexByte(r) + toHexByte(g) + toHexByte(b);
+}
+
+function parseHex(hex: string): [number, number, number] | undefined {
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return undefined;
+  return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
+}
+
+/** A hex byte ("00".."FF") as a 0..1 fraction, or undefined if absent/invalid. */
+function parseByteFraction(v: string | undefined): number | undefined {
+  if (!v || !/^[0-9a-fA-F]{1,2}$/.test(v)) return undefined;
+  return parseInt(v, 16) / 255;
+}
+
+const toHexByte = (c: number): string => Math.max(0, Math.min(255, c)).toString(16).padStart(2, "0");
+
 export function parseThemeXml(xmlText: string): Theme {
   const theme: Theme = { colors: new Map() };
   const root = rootEl(parseXml(xmlText, "theme"), "a:theme");

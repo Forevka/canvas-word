@@ -109,12 +109,29 @@ export interface IRRunProps {
   color?: string;
   /** w:sz — half-points. */
   sizeHalfPoints?: number;
+  /** w:spacing w:val — character tracking (inter-glyph spacing) in twips
+   *  (twentieths of a point); negative = condensed. Maps to letterSpacingPx. */
+  letterSpacingTwips?: number;
   /** w:rFonts w:ascii. */
   fontAscii?: string;
   /** w:rFonts w:asciiTheme — theme font slot ("minorHAnsi", "majorHAnsi", …). */
   fontThemeAscii?: string;
+  /** w:rFonts w:hAnsi / w:hAnsiTheme — high-ANSI (Latin) slot. Falls back to the
+   *  ascii slot for the model's single Latin `fontFamily`. */
+  fontHAnsi?: string;
+  fontThemeHAnsi?: string;
+  /** w:rFonts w:cs / w:cstheme — complex-script slot (→ fontFamilyComplexScript). */
+  fontCs?: string;
+  fontThemeCs?: string;
+  /** w:rFonts w:eastAsia / w:eastAsiaTheme — East-Asian (CJK) slot (→ fontFamilyEastAsia). */
+  fontEastAsia?: string;
+  fontThemeEastAsia?: string;
   /** w:color w:themeColor — theme color slot ("accent1", "text1", …). */
   colorTheme?: string;
+  /** w:color w:themeTint — hex byte ("00".."FF"); lightens the theme color toward white. */
+  colorThemeTint?: string;
+  /** w:color w:themeShade — hex byte ("00".."FF"); darkens the theme color toward black. */
+  colorThemeShade?: string;
   /** w:highlight w:val — named highlight color ("yellow", "green", …). */
   highlight?: string;
   /** w:vertAlign w:val — "superscript" | "subscript" | "baseline". */

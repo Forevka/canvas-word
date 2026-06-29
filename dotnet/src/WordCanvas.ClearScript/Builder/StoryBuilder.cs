@@ -203,6 +203,10 @@ public sealed class ParagraphBuilder
     public ParagraphBuilder Highlight(string cssColor) { _js.InvokeMethod("highlight", cssColor); return this; }
     public ParagraphBuilder FontSize(double px) { _js.InvokeMethod("fontSize", px); return this; }
     public ParagraphBuilder Font(string family) { _js.InvokeMethod("font", family); return this; }
+    /// <summary>Complex-script (bidi) font — OOXML w:rFonts/@w:cs; preserved through the .docx round-trip.</summary>
+    public ParagraphBuilder FontComplexScript(string family) { _js.InvokeMethod("fontComplexScript", family); return this; }
+    /// <summary>East-Asian (CJK) font — OOXML w:rFonts/@w:eastAsia; preserved through the .docx round-trip.</summary>
+    public ParagraphBuilder FontEastAsia(string family) { _js.InvokeMethod("fontEastAsia", family); return this; }
     public ParagraphBuilder Link(string url) { _js.InvokeMethod("link", url); return this; }
     public ParagraphBuilder Superscript(bool on = true) { _js.InvokeMethod("superscript", on); return this; }
     public ParagraphBuilder Subscript(bool on = true) { _js.InvokeMethod("subscript", on); return this; }

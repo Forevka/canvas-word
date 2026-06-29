@@ -11,6 +11,15 @@ export type UnderlineStyle = "single" | "double" | "thick" | "dotted" | "dash" |
 
 export interface CharStyle {
   fontFamily: string;
+  /** OOXML `w:rFonts/@w:cs` — complex-script (bidi) typeface, used by Word for
+   *  runs in complex scripts (Arabic, Hebrew, …). Preserved through the `.docx`
+   *  round-trip; layout/paint use `fontFamily` (the ascii/hAnsi slot). A CSS font
+   *  stack like `fontFamily`. `| undefined` so a patch can strip it. */
+  fontFamilyComplexScript?: string | undefined;
+  /** OOXML `w:rFonts/@w:eastAsia` — East-Asian (CJK) typeface. Preserved through
+   *  the `.docx` round-trip; layout/paint use `fontFamily`. A CSS font stack like
+   *  `fontFamily`. `| undefined` so a patch can strip it. */
+  fontFamilyEastAsia?: string | undefined;
   fontSizePx: number;
   bold: boolean;
   italic: boolean;

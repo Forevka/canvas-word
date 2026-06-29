@@ -1092,7 +1092,16 @@ function mapUnderlineStyle(raw: string): UnderlineStyle | undefined {
 
 /** Shared run-property mapping for full CharStyle and partial style-gallery patches. */
 function applyRunProps(style: Partial<CharStyle>, props: IRRunProps): void {
+  // ascii is the Latin slot the model lays out; hAnsi is its high-ANSI twin (used
+  // when ascii is absent). cs/eastAsia are preserved for round-trip only, and only
+  // when they name a DISTINCT face: Word writes w:cs (and often w:eastAsia) equal to
+  // w:ascii for plain Latin runs, which carries no extra information.
+  const latinFont = props.fontAscii ?? props.fontHAnsi;
   if (props.fontAscii) style.fontFamily = `${props.fontAscii}, serif`;
+  else if (props.fontHAnsi) style.fontFamily = `${props.fontHAnsi}, serif`;
+  if (props.fontCs && props.fontCs !== latinFont) style.fontFamilyComplexScript = `${props.fontCs}, serif`;
+  if (props.fontEastAsia && props.fontEastAsia !== latinFont) style.fontFamilyEastAsia = `${props.fontEastAsia}, serif`;
+  if (props.letterSpacingTwips !== undefined) style.letterSpacingPx = round2(twipsToPx(props.letterSpacingTwips));
   if (props.sizeHalfPoints !== undefined) style.fontSizePx = round2(halfPointsToPx(props.sizeHalfPoints));
   if (props.bold !== undefined) style.bold = props.bold;
   if (props.italic !== undefined) style.italic = props.italic;
