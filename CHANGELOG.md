@@ -76,6 +76,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   canvas and PDF, and notes collect on continuation pages as needed. Authorable via the builder
   (`paragraph(...).endnote("…")` / callback form) and the C# bindings (`ParagraphBuilder.Endnote(…)`),
   and demonstrated in the default showcase document.
+- **Section break parity (`evenPage`/`oddPage`) + line numbering (`w:lnNumType`).** Section
+  breaks now carry an OOXML `w:sectPr/w:type` of `nextPage` (the default), `evenPage`, or
+  `oddPage` (`Paragraph.style.sectionBreak.type`): an even/odd break forces the new section's
+  first page onto an even/odd page number, with the layout inserting a blank filler page when
+  the running page count has the wrong parity (Word's behavior). Sections can also enable line
+  numbering (`SectionProps.lineNumbering` / `SectionPatch.lineNumbering`, OOXML `w:lnNumType` —
+  `countBy`/`start`/`restart` `continuous`/`newPage`/`newSection`/`distance`), printing a number
+  in the margin beside each body line; previously the break type was silently flattened to
+  `nextPage` and `w:lnNumType` was dropped on import. Both parse, round-trip through `.docx`,
+  and render in the canvas renderer and PDF export. Authorable via the builder
+  (`sectionBreak({ breakType, lineNumbering })`, `pageSetup({ lineNumbering })`) and the C#
+  bindings (`SectionBreakOptions.BreakType`/`LineNumbering`, `PageSetup.LineNumbering`), and
+  demonstrated in the default showcase document.
 - **Paragraph borders & shading (`ParaStyle.borders` + `ParaStyle.shading`).** A whole
   paragraph can now carry a border box (OOXML `w:pBdr` — `top`/`right`/`bottom`/`left`,
   plus a round-tripped inter-paragraph `between` edge) and a background fill (paragraph-level

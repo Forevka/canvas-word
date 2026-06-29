@@ -15,6 +15,10 @@ public sealed record SectionBreakOptions
     public ColumnsSpec? Columns { get; init; }
     public bool ClearColumns { get; init; }
     public int? PageNumberStart { get; init; }
+    /// <summary>How the new section begins (next page / even / odd page parity).</summary>
+    public SectionBreakType? BreakType { get; init; }
+    /// <summary>Line numbering in the margin (w:lnNumType) for the new section.</summary>
+    public LineNumbering? LineNumbering { get; init; }
     public Action<StoryBuilder>? Header { get; init; }
     public Action<StoryBuilder>? Footer { get; init; }
     public Action<StoryBuilder>? HeaderFirst { get; init; }
@@ -31,6 +35,8 @@ public sealed record SectionBreakOptions
         if (ClearColumns) o.SetProperty("columns", null!);
         else if (Columns is { } col) Js.Set(o, "columns", SpecJs.Columns(e, col));
         if (PageNumberStart is { } pns) Js.Set(o, "pageNumberStart", pns);
+        if (BreakType is { } bt) Js.Set(o, "breakType", EnumJs.BreakType(bt));
+        if (LineNumbering is { } ln) Js.Set(o, "lineNumbering", ln.ToJs(e));
         Band(e, o, "header", Header);
         Band(e, o, "footer", Footer);
         Band(e, o, "headerFirst", HeaderFirst);

@@ -8,7 +8,7 @@
 // stays usable afterwards (rebuild-on-data-change just calls the author's
 // function again with fresh data).
 
-import type { BandContainer, Block, Document, ListLevel, ListNumberFormat, NamedStyle, SectionPatch, SectionProps, Stylesheet, TableStyle, TocOptions, TocSwitches } from "@cw/shared";
+import type { BandContainer, Block, Document, LineNumbering, ListLevel, ListNumberFormat, NamedStyle, SectionBreakType, SectionPatch, SectionProps, Stylesheet, TableStyle, TocOptions, TocSwitches } from "@cw/shared";
 import { buildTocInstruction, bulletListDefinition, defaultStylesheet, generateTocIntoDoc, multilevelListDefinition, numberListDefinition, styleById } from "@cw/shared";
 import { BuilderContext, type BuilderWarning } from "./blockFactory";
 import { StoryBuilder } from "./storyBuilder";
@@ -27,6 +27,8 @@ export interface PageSetup {
   headerDistancePx?: number;
   footerDistancePx?: number;
   pageNumberStart?: number;
+  /** Line numbering in the margin (w:lnNumType) for the document section. */
+  lineNumbering?: LineNumbering;
 }
 
 export interface CreateOptions {
@@ -59,6 +61,12 @@ export interface SectionBreakOptions {
   /** Newspaper columns for the new section; null = single column. */
   columns?: { count: number; gapPx?: number } | null;
   pageNumberStart?: number;
+  /** How the new section begins: "nextPage" (default) or force its first page
+   *  onto an even/odd page number ("evenPage"/"oddPage", a blank filler page is
+   *  inserted when the running parity is wrong). */
+  breakType?: SectionBreakType;
+  /** Line numbering in the margin (w:lnNumType) for the new section. */
+  lineNumbering?: LineNumbering;
   header?: (s: StoryBuilder) => void;
   footer?: (s: StoryBuilder) => void;
   headerFirst?: (s: StoryBuilder) => void;
@@ -163,6 +171,7 @@ export class DocumentBuilder extends StoryBuilder {
     if (setup.headerDistancePx !== undefined) section.headerDistancePx = setup.headerDistancePx;
     if (setup.footerDistancePx !== undefined) section.footerDistancePx = setup.footerDistancePx;
     if (setup.pageNumberStart !== undefined) section.pageNumberStart = setup.pageNumberStart;
+    if (setup.lineNumbering !== undefined) section.lineNumbering = setup.lineNumbering;
     return this;
   }
 
@@ -254,10 +263,11 @@ export class DocumentBuilder extends StoryBuilder {
    *  columns, page-number restart, and its own header/footer bands). */
   sectionBreak(opts: SectionBreakOptions = {}): this {
     const patch = this.compileSectionPatch(opts);
+    const type: SectionBreakType = opts.breakType ?? "nextPage";
     const blocks = this.ctx.doc.blocks;
     const last = blocks[blocks.length - 1];
-    if (last && last.kind === "paragraph") last.style.sectionBreak = { type: "nextPage", props: patch };
-    else blocks.push(this.ctx.paragraph([], { sectionBreak: { type: "nextPage", props: patch } }));
+    if (last && last.kind === "paragraph") last.style.sectionBreak = { type, props: patch };
+    else blocks.push(this.ctx.paragraph([], { sectionBreak: { type, props: patch } }));
     return this;
   }
 
@@ -279,6 +289,7 @@ export class DocumentBuilder extends StoryBuilder {
     if (opts.margins !== undefined) patch.marginPx = { ...section.marginPx, ...opts.margins };
     if (opts.columns !== undefined) patch.columns = opts.columns === null ? null : { count: opts.columns.count, gapPx: opts.columns.gapPx ?? 48 };
     if (opts.pageNumberStart !== undefined) patch.pageNumberStart = opts.pageNumberStart;
+    if (opts.lineNumbering !== undefined) patch.lineNumbering = opts.lineNumbering;
     const band = (cb?: (s: StoryBuilder) => void): Block[] | undefined => {
       if (!cb) return undefined;
       const blocks: Block[] = [];

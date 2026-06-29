@@ -109,6 +109,33 @@ describe("DOCX export — round trip", () => {
     expect(xml).toContain(`w:lineRule="atLeast"`);
   });
 
+  it("round-trips an oddPage section break + line numbering (w:type, w:lnNumType) — issue #59", () => {
+    const body =
+      `<w:p><w:pPr><w:sectPr>` +
+      `<w:type w:val="oddPage"/>` +
+      `<w:lnNumType w:countBy="2" w:start="3" w:restart="newPage" w:distance="240"/>` +
+      `<w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:pPr></w:p>` +
+      `<w:p><w:r><w:t>next</w:t></w:r></w:p>`;
+    const a = runImport(simpleDocx(body)).doc;
+    const sba = paras(a)[0]!.style.sectionBreak;
+    expect(sba?.type).toBe("oddPage");
+    expect(sba?.props.lineNumbering).toEqual({ countBy: 2, start: 3, restart: "newPage", distancePx: 16 });
+
+    // The exported sectPr re-emits the parity type and the lnNumType.
+    const xml = exportedDocumentXml(a);
+    expect(xml).toContain(`<w:type w:val="oddPage"/>`);
+    expect(xml).toContain(`w:countBy="2"`);
+    expect(xml).toContain(`w:restart="newPage"`);
+
+    // …and both survive the full round-trip on the model.
+    const sbb = paras(roundTrip(a))[0]!.style.sectionBreak;
+    expect(sbb?.type).toBe("oddPage");
+    expect(sbb?.props.lineNumbering?.countBy).toBe(2);
+    expect(sbb?.props.lineNumbering?.start).toBe(3);
+    expect(sbb?.props.lineNumbering?.restart).toBe("newPage");
+    expect(sbb?.props.lineNumbering?.distancePx).toBeCloseTo(16, 1);
+  });
+
   it("round-trips table cell margins (w:tcMar) — top/bottom must survive", () => {
     // Regression: the writer used to drop cell margins, so top/bottom re-imported as
     // Word's default 0 — shrinking every row and drifting page count by ~5%.

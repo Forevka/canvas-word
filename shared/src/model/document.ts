@@ -188,9 +188,13 @@ export interface ParaStyle {
   outlineLevel?: number;
   /** This paragraph ENDS a section (OOXML puts sectPr ON a paragraph). `props`
    *  describes the section being terminated; blocks after it belong to the next
-   *  break's section, or to `Document.section` (the final/body sectPr).
+   *  break's section, or to `Document.section` (the final/body sectPr). `type`
+   *  is the OOXML w:sectPr/w:type of the FOLLOWING section: "nextPage" starts it
+   *  on the next page (the default); "evenPage"/"oddPage" additionally force its
+   *  first page onto an even/odd page number, inserting a blank filler page when
+   *  the running page count has the wrong parity.
    *  `| undefined` so a setParaStyle patch can remove the break. */
-  sectionBreak?: { type: "nextPage"; props: SectionPatch } | undefined;
+  sectionBreak?: { type: SectionBreakType; props: SectionPatch } | undefined;
   /** Ctrl+Shift+Enter: this paragraph starts the next newspaper column
    *  (no-op in single-column sections, like Word). */
   columnBreakBefore?: boolean;
@@ -633,6 +637,29 @@ export interface PageBorders {
   offsetFrom?: "page" | "text";
 }
 
+/** OOXML w:sectPr/w:type for a section START. "nextPage" begins the section on
+ *  the next page; "evenPage"/"oddPage" force its first page onto an even/odd page
+ *  number (a blank filler page is inserted when the running parity is wrong).
+ *  "continuous" is never modeled as a break here — geometry-preserving continuous
+ *  sections flow inline (see the importer). */
+export type SectionBreakType = "nextPage" | "evenPage" | "oddPage";
+
+/** w:sectPr/w:lnNumType — line numbering printed in the page margin. Counts body
+ *  text lines per section; `countBy` controls which line numbers are shown. */
+export interface LineNumbering {
+  /** w:lnNumType/@w:countBy — print every Nth line number (default 1 = every line). */
+  countBy?: number;
+  /** w:lnNumType/@w:start — the first line's number (default 1). */
+  start?: number;
+  /** w:lnNumType/@w:restart — when the counter resets. "newPage" (Word's default)
+   *  restarts each page; "newSection" restarts at the section's first page;
+   *  "continuous" never restarts (counts straight through). */
+  restart?: "continuous" | "newPage" | "newSection";
+  /** w:lnNumType/@w:distance — gap (px) between the numbers and the text edge.
+   *  Absent = a small default. */
+  distancePx?: number;
+}
+
 /** Per-section overrides carried on a section-break paragraph. Absent fields
  *  inherit from `Document.section` — Word's "link to previous" for bands, and
  *  shared page geometry unless the user changes it for one section. */
@@ -655,6 +682,8 @@ export interface SectionPatch {
   /** w:pgMar/@w:footer — distance (px) from the page BOTTOM to the footer's bottom
    *  edge (ECMA-376). The footer grows upward from there. */
   footerDistancePx?: number;
+  /** w:sectPr/w:lnNumType — line numbering for this section's body text. */
+  lineNumbering?: LineNumbering;
   header?: Block[];
   footer?: Block[];
   headerFirst?: Block[];
@@ -688,6 +717,9 @@ export interface SectionProps {
   /** w:pgMar/@w:footer — distance (px) from the page BOTTOM to the footer's bottom
    *  edge (footer grows up). Absent = center the band in the bottom margin. */
   footerDistancePx?: number;
+  /** w:sectPr/w:lnNumType — line numbering printed in this section's margin.
+   *  Absent = no line numbers (the historical default). */
+  lineNumbering?: LineNumbering;
   /** Header/footer are full block stories (paragraphs, images, tables) laid out
    *  by the same engine into the margin bands. {page}/{pages} tokens in run text
    *  are substituted per page ({page:roman|Roman|alpha|Alpha} formats). The

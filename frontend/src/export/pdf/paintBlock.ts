@@ -6,7 +6,7 @@
 
 import type { CellBorder } from "@cw/shared";
 import { DEFAULT_CHAR_STYLE } from "@cw/shared";
-import type { LineBox, PlacedBlock, PlacedTableCell } from "../../layout/layoutTree";
+import type { LineBox, Page, PlacedBlock, PlacedTableCell } from "../../layout/layoutTree";
 import type { MathBox } from "../../layout/math/mathBox";
 import { MATH_FONT_FAMILY } from "../../fonts/clones";
 import {
@@ -86,6 +86,23 @@ export interface PaintCtx {
 }
 
 const firstFamily = (stack: string): string => (stack.split(",")[0] ?? "sans-serif").trim();
+
+/** Paint a page's margin line numbers (w:lnNumType). Each label is already
+ *  pre-measured and right-aligned (`x` is its left edge, `baseline` the text
+ *  baseline), so this just selects the font and draws — the PDF counterpart of
+ *  the canvas renderer's line-number pass. */
+export function paintLineNumbers(ctx: PaintCtx, lineNumbers: NonNullable<Page["lineNumbers"]>): void {
+  const { doc } = ctx;
+  for (const ln of lineNumbers) {
+    const s = ln.style;
+    const name = ctx.font(firstFamily(s.fontFamily), !!s.bold, !!s.italic);
+    doc
+      .font(name)
+      .fontSize(s.fontSizePx)
+      .fillColor(s.color as string)
+      .text(ln.text, ln.x, ln.baseline, { lineBreak: false, baseline: "alphabetic" });
+  }
+}
 
 export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
   const { doc } = ctx;

@@ -293,7 +293,7 @@ function pPrXml(style: ParaStyle, ctx: PartCtx, markRun?: CharStyle): string {
   if (markRun) c.push(rPrXml(markRun));
 
   // A mid-document section break rides the paragraph that ENDS the section.
-  if (style.sectionBreak) c.push(sectPrXml(style.sectionBreak.props, ctx, () => "", false));
+  if (style.sectionBreak) c.push(sectPrXml(style.sectionBreak.props, ctx, () => "", false, style.sectionBreak.type));
 
   return el("w:pPr", undefined, c.join(""));
 }
@@ -880,11 +880,23 @@ function pgBordersXml(b: import("@cw/shared").PageBorders): string {
   return el("w:pgBorders", { "w:offsetFrom": b.offsetFrom ?? "page" }, inner);
 }
 
+/** w:lnNumType — line numbering. countBy/start are plain counts; distance is in
+ *  twips (px→twips); only set attributes are emitted. */
+function lnNumTypeXml(ln: import("@cw/shared").LineNumbering): string {
+  const attrs: Record<string, string | number> = {};
+  if (ln.countBy !== undefined) attrs["w:countBy"] = ln.countBy;
+  if (ln.start !== undefined) attrs["w:start"] = ln.start;
+  if (ln.distancePx !== undefined) attrs["w:distance"] = pxToTwips(ln.distancePx);
+  if (ln.restart !== undefined) attrs["w:restart"] = ln.restart;
+  return el("w:lnNumType", attrs);
+}
+
 export function sectPrXml(
   s: SectionProps | SectionPatch,
   ctx: PartCtx,
   addBand: AddBandPart,
   isBody: boolean,
+  breakType: import("@cw/shared").SectionBreakType = "nextPage",
 ): string {
   const c: string[] = [];
   // Header/footer references (default/first/even).
@@ -939,8 +951,10 @@ export function sectPrXml(
   }
   if (s.pageBorders) c.push(pgBordersXml(s.pageBorders));
   if (s.pageNumberStart !== undefined) c.push(el("w:pgNumType", { "w:start": s.pageNumberStart }));
-  // A non-body sectPr (on a paragraph) implies a Next Page break.
-  if (!isBody) c.push(el("w:type", { "w:val": "nextPage" }));
+  if (s.lineNumbering) c.push(lnNumTypeXml(s.lineNumbering));
+  // A non-body sectPr (on a paragraph) implies a section break; emit its parity
+  // type (nextPage / evenPage / oddPage). The body sectPr never carries w:type.
+  if (!isBody) c.push(el("w:type", { "w:val": breakType }));
   return el("w:sectPr", undefined, c.join(""));
 }
 

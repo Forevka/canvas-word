@@ -632,6 +632,72 @@ describe("engine — sections", () => {
     expect(tree.pages[0]!.number).toBe(1);
     expect(tree.pages[1]!.number).toBe(2);
   });
+
+  it("resolveSections carries the section-break type", () => {
+    const a = para("sec one", { sectionBreak: { type: "oddPage", props: {} } });
+    const sections = resolveSections(doc([a, para("sec two")]));
+    expect(sections[0]!.breakType).toBe("oddPage");
+    expect(sections.at(-1)!.breakType).toBe("nextPage"); // the body section
+  });
+});
+
+// --- even/odd section-start parity (issue #59) -----------------------------
+
+describe("engine — section parity (evenPage/oddPage)", () => {
+  it("inserts a blank filler page so an oddPage section starts on an odd page", () => {
+    // sec0 ends at block 0 (nextPage), sec1 ends at block 1 (oddPage) and is the
+    // section crossed into; the body section follows. block0 → page 1; crossing
+    // into sec1 needs a new page (would be 2, even) so a blank filler is inserted
+    // and the content lands on page 3 (odd).
+    const blocks: Block[] = [
+      para("first", { sectionBreak: { type: "nextPage", props: {} } }),
+      para("numbered", { sectionBreak: { type: "oddPage", props: {} } }),
+      para("tail"),
+    ];
+    const tree = layout(doc(blocks));
+    const numbered = placedOf(tree, blocks[1]!.id)!;
+    expect(numbered.page).toBe(2); // page index 2 = page number 3
+    expect(tree.pages[2]!.number % 2).toBe(1); // odd
+    expect(tree.pages[1]!.blocks).toHaveLength(0); // the filler is blank
+  });
+
+  it("does NOT insert a filler when the parity already matches", () => {
+    // Crossing into the second section lands on page 2 naturally; an evenPage
+    // break wants even, so no filler is needed.
+    const blocks: Block[] = [
+      para("first", { sectionBreak: { type: "nextPage", props: {} } }),
+      para("even", { sectionBreak: { type: "evenPage", props: {} } }),
+      para("tail"),
+    ];
+    const tree = layout(doc(blocks));
+    const even = placedOf(tree, blocks[1]!.id)!;
+    expect(even.page).toBe(1); // page number 2 — already even, no filler
+    expect(tree.pages[1]!.blocks.length).toBeGreaterThan(0);
+  });
+});
+
+// --- margin line numbers (w:lnNumType) -------------------------------------
+
+describe("engine — line numbering", () => {
+  it("numbers every body line in the margin when countBy is 1", () => {
+    const blocks = [para("one"), para("two"), para("three")];
+    const tree = layout(doc(blocks, { lineNumbering: { countBy: 1 } }));
+    const lns = tree.pages[0]!.lineNumbers!;
+    expect(lns.map((l) => l.text)).toEqual(["1", "2", "3"]);
+    // numbers sit in the left margin (left of the content start)
+    for (const l of lns) expect(l.x).toBeLessThan(SECTION.marginPx.left);
+  });
+
+  it("honors countBy and start (shows only multiples)", () => {
+    const blocks = Array.from({ length: 6 }, (_, i) => para(`l${i}`));
+    const tree = layout(doc(blocks, { lineNumbering: { countBy: 2, start: 1 } }));
+    expect(tree.pages[0]!.lineNumbers!.map((l) => l.text)).toEqual(["2", "4", "6"]);
+  });
+
+  it("leaves pages unnumbered when no section enables line numbering", () => {
+    const tree = layout(doc([para("plain")]));
+    expect(tree.pages[0]!.lineNumbers).toBeUndefined();
+  });
 });
 
 // --- newspaper columns -----------------------------------------------------

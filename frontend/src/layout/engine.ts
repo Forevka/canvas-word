@@ -9,7 +9,7 @@ import {
   materializeRichInlineLineRange,
   type RichInlineCursor,
 } from "@chenglou/pretext/rich-inline";
-import type { Block, CharStyle, Document, EquationBlock, ImageBlock, Paragraph, ParaStyle, Run, SectionPatch, SectionProps, TableBlock, TableCell, TabStop } from "@cw/shared";
+import type { Block, CharStyle, Document, EquationBlock, ImageBlock, LineNumbering, Paragraph, ParaStyle, Run, SectionBreakType, SectionPatch, SectionProps, TableBlock, TableCell, TabStop } from "@cw/shared";
 import { effectiveFractions, isHiddenParagraph } from "@cw/shared";
 import { formatListNumber, markerText, type ListDefinition, type ListLevel } from "@cw/shared";
 import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock, PlacedImage } from "./layoutTree";
@@ -483,6 +483,11 @@ function decimalPrefixWidth(runs: Run[]): number {
 }
 const DEFAULT_DECIMAL_STYLE = { fontFamily: "Georgia, serif", fontSizePx: 16 } as CharStyle;
 
+/** Paint style for margin line numbers (w:lnNumType) — small, muted, like Word. */
+const LINE_NUMBER_STYLE = { fontFamily: "Georgia, serif", fontSizePx: 12, color: "#9aa0a6" } as CharStyle;
+/** Default gap (px) between the line numbers and the text edge when w:distance is absent. */
+const LINE_NUMBER_DISTANCE = 18;
+
 /** Lay out a `\t`-containing segment. Each tab-delimited piece is positioned at
  *  the next tab stop (left/center/right/decimal, with optional leaders); the
  *  piece's text then WRAPS normally — its first line continues from the stop and
@@ -942,6 +947,9 @@ export function effectiveSection(base: SectionProps, patch: SectionPatch): Secti
   if (pageColorHex !== undefined) out.pageColorHex = pageColorHex;
   const pageBorders = patch.pageBorders ?? base.pageBorders;
   if (pageBorders !== undefined) out.pageBorders = pageBorders;
+  // Line numbering is a section's OWN property (like page-number restart): a
+  // section either declares its own w:lnNumType or has none — it never inherits.
+  if (patch.lineNumbering !== undefined) out.lineNumbering = patch.lineNumbering;
   for (const key of BAND_KEYS) {
     const blocks = patch[key] ?? base[key];
     if (blocks) out[key] = blocks;
@@ -968,6 +976,9 @@ interface ResolvedSection {
   props: SectionProps;
   /** Index (inclusive) of this section's last top-level block. */
   endBlock: number;
+  /** The OOXML w:type that governs how THIS section's first page begins
+   *  ("nextPage"/"evenPage"/"oddPage"). Read when the engine starts the section. */
+  breakType: SectionBreakType;
 }
 
 export function resolveSections(doc: Document): ResolvedSection[] {
@@ -975,10 +986,14 @@ export function resolveSections(doc: Document): ResolvedSection[] {
   for (let i = 0; i < doc.blocks.length; i++) {
     const b = doc.blocks[i]!;
     if (b.kind === "paragraph" && b.style.sectionBreak) {
-      out.push({ props: effectiveSection(doc.section, b.style.sectionBreak.props), endBlock: i });
+      out.push({
+        props: effectiveSection(doc.section, b.style.sectionBreak.props),
+        endBlock: i,
+        breakType: b.style.sectionBreak.type,
+      });
     }
   }
-  out.push({ props: doc.section, endBlock: doc.blocks.length - 1 });
+  out.push({ props: doc.section, endBlock: doc.blocks.length - 1, breakType: "nextPage" });
   return out;
 }
 
@@ -1321,28 +1336,43 @@ function layoutDocument(
     }
   };
 
+  /** Re-stamp the current (empty) page with the active section's geometry instead
+   *  of leaving a blank page when a section starts at a fresh page boundary. */
+  const restampEmptyPage = (): void => {
+    page.widthPx = sec.pageWidthPx;
+    page.heightPx = sec.pageHeightPx;
+    page.marginPx = sec.marginPx;
+    page.contentTopPx = contentTop;
+    page.contentBottomPx = contentBottom;
+    if (sec.pageColorHex !== undefined) page.pageColorHex = sec.pageColorHex;
+    else delete page.pageColorHex;
+    if (sec.pageBorders !== undefined) page.pageBorders = sec.pageBorders;
+    else delete page.pageBorders;
+    if (colSeparatorsX.length) page.columnSeparatorsX = colSeparatorsX.slice();
+    else delete page.columnSeparatorsX;
+    pageSections[page.index] = sec;
+    colIdx = 0;
+    colStartCount = 0;
+    y = contentTop;
+    floats = [];
+  };
+
   /** Section boundary: start the next section's first page. An EMPTY current
-   *  page is re-stamped with the new geometry instead of leaving a blank page. */
-  const startSectionPage = (): void => {
-    if (page.blocks.length === 0) {
-      page.widthPx = sec.pageWidthPx;
-      page.heightPx = sec.pageHeightPx;
-      page.marginPx = sec.marginPx;
-      page.contentTopPx = contentTop;
-      page.contentBottomPx = contentBottom;
-      if (sec.pageColorHex !== undefined) page.pageColorHex = sec.pageColorHex;
-      else delete page.pageColorHex;
-      if (sec.pageBorders !== undefined) page.pageBorders = sec.pageBorders;
-      else delete page.pageBorders;
-      if (colSeparatorsX.length) page.columnSeparatorsX = colSeparatorsX.slice();
-      else delete page.columnSeparatorsX;
-      pageSections[page.index] = sec;
-      colIdx = 0;
-      colStartCount = 0;
-      y = contentTop;
-      floats = [];
-    } else {
-      hardPage();
+   *  page is re-stamped with the new geometry instead of leaving a blank page.
+   *  For an evenPage/oddPage break the section's first content page must land on
+   *  an even/odd page number — a blank filler page is inserted when the running
+   *  parity is wrong (Word's behavior). Parity is read off the provisional 1-based
+   *  page number, which equals the printed number absent a pageNumberStart restart. */
+  const startSectionPage = (breakType: SectionBreakType): void => {
+    if (page.blocks.length === 0) restampEmptyPage();
+    else hardPage();
+    if (breakType === "evenPage" || breakType === "oddPage") {
+      const wantEven = breakType === "evenPage";
+      if ((page.number % 2 === 0) !== wantEven) {
+        // Current page is the wrong parity: leave it blank (the filler) and push a
+        // fresh page (hardPage stamps it from the active section) for the content.
+        hardPage();
+      }
     }
   };
 
@@ -1857,7 +1887,7 @@ function layoutDocument(
     // Crossing into a new section: swap geometry, force its first page.
     if (bi > sections[secIdx]!.endBlock) {
       while (bi > sections[secIdx]!.endBlock) applySection(sections[++secIdx]!.props);
-      startSectionPage();
+      startSectionPage(sections[secIdx]!.breakType);
     }
     const m = measured[bi]!;
 
@@ -1988,6 +2018,56 @@ function layoutDocument(
     placeParagraph(block, lines);
     if (bd?.bottom) y += bd.bottom.widthPx;
     if (!suppressAfter) y += block.style.spaceAfterPx;
+  }
+
+  // Margin line numbers (w:lnNumType): walk pages in order and number each body
+  // text line of every line-numbered section. Runs BEFORE footnote paragraphs are
+  // appended below, so notes are never numbered, and reads page.blocks in flow
+  // order (which is vertical order within a column). `countBy` selects which
+  // numbers show; `restart` controls when the counter resets — "newPage" (Word's
+  // default), "newSection", or "continuous" (straight through). Numbers are
+  // paint-only, pre-measured and right-aligned into the left margin so both the
+  // canvas renderer and PDF painter just fillText at (x, baseline).
+  if (pageSections.some((s) => s.lineNumbering)) {
+    const font = charStyleToFont(LINE_NUMBER_STYLE);
+    let counter = 1;
+    let started = false; // "continuous": initialise the counter only once
+    let prevSection: SectionProps | null = null;
+    for (const pg of pages) {
+      const s = pageSections[pg.index]!;
+      const ln: LineNumbering | undefined = s.lineNumbering;
+      if (!ln) {
+        prevSection = s;
+        continue;
+      }
+      const start = ln.start ?? 1;
+      const countBy = Math.max(1, Math.round(ln.countBy ?? 1));
+      const restart = ln.restart ?? "newPage";
+      if (restart === "newPage") counter = start;
+      else if (restart === "newSection") {
+        if (s !== prevSection) counter = start;
+      } else if (!started) counter = start; // continuous
+      started = true;
+      const rightEdge = pg.marginPx.left - (ln.distancePx ?? LINE_NUMBER_DISTANCE);
+      const labels: NonNullable<Page["lineNumbers"]> = [];
+      for (const b of pg.blocks) {
+        if (b.lines.length === 0 || b.image || b.table || b.equation) continue; // body paragraphs only
+        for (const line of b.lines) {
+          if (counter % countBy === 0) {
+            const text = String(counter);
+            labels.push({
+              x: rightEdge - measureTextWidth(text, font),
+              baseline: b.y + line.y + line.ascent,
+              text,
+              style: LINE_NUMBER_STYLE,
+            });
+          }
+          counter++;
+        }
+      }
+      if (labels.length > 0) pg.lineNumbers = labels;
+      prevSection = s;
+    }
   }
 
   // Footnote areas: each page's notes stack at the bottom under a separator

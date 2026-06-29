@@ -254,6 +254,12 @@ export interface IRParaProps {
   /** w:pPr/w:sectPr — this paragraph ENDS a section. "page" (nextPage/odd/even)
    *  implies the following content starts a new page; "continuous" doesn't. */
   sectionBreak?: "page" | "continuous";
+  /** The exact w:sectPr/w:type of the ending section's FOLLOWING section start —
+   *  "evenPage"/"oddPage" force its first page onto an even/odd page number.
+   *  Absent (or "nextPage") = a plain next-page break. */
+  sectionBreakType?: "nextPage" | "evenPage" | "oddPage";
+  /** The ending section's w:sectPr/w:lnNumType (line numbering), raw OOXML units. */
+  sectionLineNumbering?: IRLineNumbering;
   /** The ending section's page size (twips), when its w:sectPr declares pgSz.
    *  A "page" break only forces a new page when this differs from the document's
    *  page size — geometry-preserving breaks (footer/header switches, which these
@@ -516,6 +522,17 @@ export interface IRSection {
   pageNumberStart?: number;
   /** w:pgBorders — page border box (raw twips/eighth-points, mapped downstream). */
   pageBorders?: IRPageBorders;
+  /** w:lnNumType — line numbering (raw OOXML units, mapped downstream). */
+  lineNumbering?: IRLineNumbering;
+}
+
+/** w:lnNumType attributes as parsed — countBy/start are plain counts; distance is
+ *  twips; restart is the raw OOXML enum. Mapped to the model's LineNumbering. */
+export interface IRLineNumbering {
+  countBy?: number;
+  start?: number;
+  restart?: "continuous" | "newPage" | "newSection";
+  distanceTwips?: number;
 }
 
 /** w:pgBorders edge as parsed (w:sz eighth-points, w:space points). */

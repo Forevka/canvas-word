@@ -178,6 +178,10 @@ export interface Page {
   footnoteRuleY?: number;
   /** Endnote separator rule (present only on the page where endnotes begin). */
   endnoteRuleY?: number;
+  /** Margin line numbers (w:lnNumType) — paint-only labels already positioned in
+   *  page coords (`x` is the pre-measured left edge; `baseline` the text baseline).
+   *  Present only on pages whose section enables line numbering. */
+  lineNumbers?: { x: number; baseline: number; text: string; style: CharStyle }[];
   /** Margin-band stories, already positioned in page coords. Read-only: the
    *  geometry index deliberately skips them (no caret/selection in bands yet). */
   header?: PlacedBlock[];

@@ -735,6 +735,16 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       ctx.stroke();
     }
 
+    // 3c. margin line numbers (w:lnNumType) — pre-measured, right-aligned labels.
+    if (page.lineNumbers) {
+      ctx.textBaseline = "alphabetic";
+      for (const ln of page.lineNumbers) {
+        ctx.font = charStyleToFont(ln.style);
+        ctx.fillStyle = ln.style.color;
+        ctx.fillText(ln.text, ln.x, ln.baseline);
+      }
+    }
+
     // 4. margin-band stories (headers/footers) — pre-laid-out rich blocks,
     //    painted through the same block painter, outside the selectable tree.
     if (page.header) for (const b of page.header) paintBlock(ctx, b, page.index);

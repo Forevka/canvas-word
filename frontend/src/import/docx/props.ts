@@ -3,7 +3,7 @@
 // inside w:style and w:docDefaults). Decode only; no resolution here.
 
 import { decodeShdFill } from "./borders";
-import type { IRParaBorders, IRParaProps, IRRawBorder, IRRunProps } from "./types";
+import type { IRLineNumbering, IRParaBorders, IRParaProps, IRRawBorder, IRRunProps } from "./types";
 import { WarningSink } from "./types";
 import { lineAutoToMultiplier } from "./units";
 import { attr, el, els, numAttr, onOff, val, type XmlNode } from "./xml";
@@ -237,7 +237,11 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
     // Page geometry of non-last sections is still lossy (last wins), but the
     // page boundary the break implies IS respected via pageBreakBefore — when
     // the geometry actually changes (mapToModel compares sectionPgSize).
-    props.sectionBreak = val(sectPr, "w:type") === "continuous" ? "continuous" : "page";
+    const sectType = val(sectPr, "w:type");
+    props.sectionBreak = sectType === "continuous" ? "continuous" : "page";
+    if (sectType === "evenPage" || sectType === "oddPage") props.sectionBreakType = sectType;
+    const lnNum = decodeLineNumbering(el(sectPr, "w:lnNumType"));
+    if (lnNum) props.sectionLineNumbering = lnNum;
     const pgSz = el(sectPr, "w:pgSz");
     const w = numAttr(pgSz, "w:w");
     const h = numAttr(pgSz, "w:h");
@@ -304,4 +308,20 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
     }
   }
   return props;
+}
+
+/** Decode w:lnNumType (line numbering) into raw OOXML units. Returns undefined
+ *  when the element is absent so callers can leave the section unnumbered. */
+export function decodeLineNumbering(lnNumType: XmlNode | undefined): IRLineNumbering | undefined {
+  if (!lnNumType) return undefined;
+  const out: IRLineNumbering = {};
+  const countBy = numAttr(lnNumType, "w:countBy");
+  if (countBy !== undefined) out.countBy = countBy;
+  const start = numAttr(lnNumType, "w:start");
+  if (start !== undefined) out.start = start;
+  const distance = numAttr(lnNumType, "w:distance");
+  if (distance !== undefined) out.distanceTwips = distance;
+  const restart = attr(lnNumType, "w:restart");
+  if (restart === "continuous" || restart === "newPage" || restart === "newSection") out.restart = restart;
+  return out;
 }
