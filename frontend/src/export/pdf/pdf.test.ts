@@ -101,6 +101,21 @@ describe("PDF export — happy path", () => {
     expect(isPdf(bytes)).toBe(true);
   });
 
+  it("renders every underline style (incl. coloured + wave) without throwing", async () => {
+    // Exercises the PDF painter's stroke/dash/double/wave underline paths.
+    const styled = docOf(
+      para("double", { underline: true, underlineStyle: "double" }),
+      para("dotted", { underline: true, underlineStyle: "dotted" }),
+      para("dashed", { underline: true, underlineStyle: "dash" }),
+      para("dotDash", { underline: true, underlineStyle: "dotDash" }),
+      para("thick", { underline: true, underlineStyle: "thick" }),
+      para("red wave", { underline: true, underlineStyle: "wave", underlineColor: "#d93025" }),
+      para("blue double", { underline: true, underlineStyle: "double", underlineColor: "#1a73e8" }),
+    );
+    const { bytes } = await renderPdf(styled);
+    expect(isPdf(bytes)).toBe(true);
+  });
+
   it("renders a numbered list INSIDE a table cell (cell marker paint path)", async () => {
     // A cell paragraph carrying a list ref — the engine hangs its marker in the
     // cell and the PDF painter draws it via the same recursive paintBlock as a

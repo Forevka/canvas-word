@@ -3,12 +3,25 @@
 import type { DocPosition } from "./position";
 import type { MathEquation } from "./math";
 
+/** Underline line styles the model can paint + round-trip (OOXML w:u/@w:val).
+ *  Word defines more (and "heavy" weights); the importer folds those onto the
+ *  nearest of these, so paint/export stay closed over a small set. Absent
+ *  `underlineStyle` ⇒ "single" (a plain solid line — the historical behavior). */
+export type UnderlineStyle = "single" | "double" | "thick" | "dotted" | "dash" | "dotDash" | "dotDotDash" | "wave";
+
 export interface CharStyle {
   fontFamily: string;
   fontSizePx: number;
   bold: boolean;
   italic: boolean;
   underline: boolean;
+  /** Underline line style (OOXML w:u/@w:val) — only meaningful when `underline`
+   *  is true; absent ⇒ "single". A run with `underline:false` ignores it. */
+  underlineStyle?: UnderlineStyle | undefined;
+  /** Explicit underline color (CSS hex, e.g. "#ff0000"), incl. theme colors
+   *  resolved at import. Absent ⇒ the underline paints in the run's text color
+   *  (Word's "auto"). Only meaningful when `underline` is true. */
+  underlineColor?: string | undefined;
   strikethrough: boolean;
   color: string;
   /** Hidden text (OOXML w:vanish). Preserved through round-trips but NEVER laid

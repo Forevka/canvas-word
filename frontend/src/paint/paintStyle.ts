@@ -5,7 +5,7 @@
 // drifting; the actual draw calls stay separate (canvas vs pdfkit are different
 // APIs). Pure data + math — no DOM, no rendering backend.
 
-import type { CharStyle, PageBorderEdge, PageBorders, TabLeader } from "@cw/shared";
+import type { CharStyle, PageBorderEdge, PageBorders, TabLeader, UnderlineStyle } from "@cw/shared";
 
 // --- colours ---------------------------------------------------------------
 /** Unstyled/native table grid (when a cell carries no explicit borders). */
@@ -59,6 +59,11 @@ export const strikeOffset = (fontSizePx: number): number => -0.28 * fontSizePx;
 export interface RunPaint {
   color: string;
   underline: boolean;
+  /** Underline line style — "single" (and link underlines) paint as a plain rule. */
+  underlineStyle: UnderlineStyle;
+  /** Colour of the underline rule: the run's explicit underlineColor when set,
+   *  else the (possibly link-normalised) text colour. */
+  underlineColor: string;
   strike: boolean;
   /** External (non-anchor) link — paints blue+underlined; the PDF also annotates it. */
   externalLink: boolean;
@@ -69,12 +74,62 @@ export function runPaint(style: CharStyle, linkColor: string = EXTERNAL_LINK_COL
   let color = style.color;
   if (externalLink) color = linkColor;
   else if (anchor && HYPERLINK_BLUES.has(style.color.toLowerCase())) color = ANCHOR_TEXT_COLOR;
+  // A link affordance always draws a plain solid rule in the link colour; an
+  // explicit underline keeps its style and (optional) colour.
+  const underline = externalLink || (!!style.underline && !anchor);
   return {
     color,
-    underline: externalLink || (!!style.underline && !anchor),
+    underline,
+    underlineStyle: externalLink ? "single" : (style.underline ? (style.underlineStyle ?? "single") : "single"),
+    underlineColor: !externalLink && style.underline && style.underlineColor ? style.underlineColor : color,
     strike: !!style.strikethrough,
     externalLink,
   };
+}
+
+/** How an underline of a given style is stroked, shared by the canvas + PDF
+ *  painters so both reproduce double/dotted/dashed/wave identically. */
+export interface UnderlinePlan {
+  /** Line-dash pattern (canvas setLineDash / pdfkit .dash); [] = solid. */
+  dash: number[];
+  /** Stroke two parallel lines (the "double" style). */
+  double: boolean;
+  /** Stroke a sine wave instead of a straight line (the "wave" style). */
+  wave: boolean;
+  /** Stroke thickness (px). */
+  thickness: number;
+}
+
+/** Resolve an underline style + font size to its concrete stroke plan. */
+export function underlinePlan(style: UnderlineStyle, fontSizePx: number): UnderlinePlan {
+  const w = decorationThickness(fontSizePx);
+  switch (style) {
+    case "double": return { dash: [], double: true, wave: false, thickness: w };
+    case "thick": return { dash: [], double: false, wave: false, thickness: Math.max(2, w * 2) };
+    case "dotted": return { dash: [w, w * 1.5], double: false, wave: false, thickness: w };
+    case "dash": return { dash: [w * 3, w * 2], double: false, wave: false, thickness: w };
+    case "dotDash": return { dash: [w * 3, w * 2, w, w * 2], double: false, wave: false, thickness: w };
+    case "dotDotDash": return { dash: [w * 3, w * 2, w, w * 2, w, w * 2], double: false, wave: false, thickness: w };
+    case "wave": return { dash: [], double: false, wave: true, thickness: w };
+    default: return { dash: [], double: false, wave: false, thickness: w }; // single
+  }
+}
+
+/** Gap (px) between the two rules of a "double" underline. */
+export const doubleUnderlineGap = (thickness: number): number => thickness + 1;
+
+/** Polyline samples of a wavy underline over [x, x+width], centred on `yCenter`.
+ *  Both painters stroke through these points so the wave matches pixel-for-pixel. */
+export function underlineWavePoints(x: number, yCenter: number, width: number, fontSizePx: number): { x: number; y: number }[] {
+  const amp = Math.max(0.75, fontSizePx / 18);
+  const period = Math.max(4, fontSizePx / 3);
+  const steps = Math.max(2, Math.ceil((width / period) * 4));
+  const pts: { x: number; y: number }[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const px = x + (width * i) / steps;
+    pts.push({ x: px, y: yCenter + amp * Math.sin((2 * Math.PI * (px - x)) / period) });
+  }
+  return pts;
 }
 
 // --- leaders (tab + TOC) ---------------------------------------------------

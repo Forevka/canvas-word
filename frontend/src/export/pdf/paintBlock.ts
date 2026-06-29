@@ -26,8 +26,48 @@ import {
   TOC_LEADER_DASH,
   TOC_LEADER_GAP_PX,
   UNDERLINE_OFFSET_PX,
+  underlinePlan,
+  doubleUnderlineGap,
+  underlineWavePoints,
   verticalShift,
 } from "../../paint/paintStyle";
+import type { RunPaint } from "../../paint/paintStyle";
+
+/** Stroke a run's underline into the PDF. "single" keeps the historical filled
+ *  rect; richer styles stroke per the shared plan (dashed/dotted approximated with
+ *  pdfkit's single dash pattern, double = two lines, wave = a sampled polyline). */
+function paintUnderlinePdf(
+  doc: PDFKit.PDFDocument,
+  x: number,
+  yTop: number,
+  width: number,
+  fontSizePx: number,
+  rp: RunPaint,
+): void {
+  if (rp.underlineStyle === "single") {
+    doc.rect(x, yTop, width, decorationThickness(fontSizePx)).fill(rp.underlineColor);
+    return;
+  }
+  const plan = underlinePlan(rp.underlineStyle, fontSizePx);
+  const yCenter = yTop + plan.thickness / 2;
+  doc.save();
+  doc.lineWidth(plan.thickness).strokeColor(rp.underlineColor);
+  if (plan.dash.length >= 2) doc.dash(plan.dash[0]!, { space: plan.dash[1]! });
+  if (plan.wave) {
+    const pts = underlineWavePoints(x, yCenter, width, fontSizePx);
+    doc.moveTo(pts[0]!.x, pts[0]!.y);
+    for (let i = 1; i < pts.length; i++) doc.lineTo(pts[i]!.x, pts[i]!.y);
+    doc.stroke();
+  } else {
+    doc.moveTo(x, yCenter).lineTo(x + width, yCenter).stroke();
+    if (plan.double) {
+      const dy = doubleUnderlineGap(plan.thickness);
+      doc.moveTo(x, yCenter + dy).lineTo(x + width, yCenter + dy).stroke();
+    }
+  }
+  doc.undash();
+  doc.restore();
+}
 
 export interface PaintCtx {
   doc: PDFKit.PDFDocument;
@@ -191,7 +231,7 @@ function paintLine(ctx: PaintCtx, block: PlacedBlock, line: LineBox, baselineY: 
       const rp = runPaint(s);
       drawMathBoxPdf(ctx, frag.equation, x, baselineY, rp.color);
       const th = decorationThickness(s.fontSizePx);
-      if (rp.underline) doc.rect(x, baselineY + UNDERLINE_OFFSET_PX, frag.width, th).fill(rp.color);
+      if (rp.underline) paintUnderlinePdf(doc, x, baselineY + UNDERLINE_OFFSET_PX, frag.width, s.fontSizePx, rp);
       if (rp.strike) doc.rect(x, baselineY + strikeOffset(s.fontSizePx), frag.width, th).fill(rp.color);
       if (rp.externalLink && s.link) {
         doc.link(x, block.y + line.y, frag.width, line.height, s.link);
@@ -226,7 +266,7 @@ function paintLine(ctx: PaintCtx, block: PlacedBlock, line: LineBox, baselineY: 
 
     const th = decorationThickness(s.fontSizePx);
     if (rp.underline) {
-      doc.rect(x, baselineY + vShift + UNDERLINE_OFFSET_PX, frag.width, th).fill(rp.color);
+      paintUnderlinePdf(doc, x, baselineY + vShift + UNDERLINE_OFFSET_PX, frag.width, s.fontSizePx, rp);
     }
     if (rp.strike) {
       doc.rect(x, baselineY + vShift + strikeOffset(s.fontSizePx), frag.width, th).fill(rp.color);

@@ -274,6 +274,10 @@ export function createStyleResolver(data: StylesData, theme: Theme): StyleResolv
       const color = themeColor(theme, out.colorTheme);
       if (color) out.color = color;
     }
+    if ((out.underlineColor === undefined || out.underlineColor === "auto") && out.underlineColorTheme) {
+      const color = themeColor(theme, out.underlineColorTheme);
+      if (color) out.underlineColor = color;
+    }
     return out;
   }
 }
@@ -293,6 +297,13 @@ function mergeRun(base: IRRunProps, add: IRRunProps): IRRunProps {
   if (add.color !== undefined || add.colorTheme !== undefined) {
     delete out.color;
     delete out.colorTheme;
+  }
+  // A w:u in `add` re-declares the WHOLE underline (style + color), so a child's
+  // bare underline mustn't inherit a grandparent's lingering underline color.
+  if (add.underline !== undefined || add.underlineStyle !== undefined || add.underlineColor !== undefined || add.underlineColorTheme !== undefined) {
+    delete out.underlineStyle;
+    delete out.underlineColor;
+    delete out.underlineColorTheme;
   }
   return mergeProps(out, add);
 }

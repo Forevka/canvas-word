@@ -187,6 +187,17 @@ public sealed class ParagraphBuilder
     public ParagraphBuilder Bold(bool on = true) { _js.InvokeMethod("bold", on); return this; }
     public ParagraphBuilder Italic(bool on = true) { _js.InvokeMethod("italic", on); return this; }
     public ParagraphBuilder Underline(bool on = true) { _js.InvokeMethod("underline", on); return this; }
+    /// <summary>Underline with an explicit line style (e.g. "double", "dotted", "dash",
+    /// "dotDash", "dotDotDash", "wave", "thick") and/or color (CSS hex). A null style
+    /// paints a plain single line; a null color follows the run's text color.</summary>
+    public ParagraphBuilder Underline(bool on, string? style, string? color = null)
+    {
+        var opts = Js.Obj(_engine);
+        if (style is { } st) Js.Set(opts, "style", st);
+        if (color is { } c) Js.Set(opts, "color", c);
+        _js.InvokeMethod("underline", on, opts);
+        return this;
+    }
     public ParagraphBuilder Strikethrough(bool on = true) { _js.InvokeMethod("strikethrough", on); return this; }
     public ParagraphBuilder Color(string cssColor) { _js.InvokeMethod("color", cssColor); return this; }
     public ParagraphBuilder Highlight(string cssColor) { _js.InvokeMethod("highlight", cssColor); return this; }

@@ -7,6 +7,15 @@ import { multiplierToLine, pxToEighthPoints, pxToHalfPoints, pxToTwips } from ".
 import { HIGHLIGHT_NAME, hexColor as hex, JC, TAB_LEADER, TAB_VAL } from "./mappings";
 import { el } from "./xmlWrite";
 
+/** w:u attributes for a run: the line style (w:val) + optional color. underline
+ *  off ⇒ w:val="none". Mirrors the importer (props.ts) and painter (paintStyle). */
+function underlineAttrs(c: Pick<CharStyle, "underline" | "underlineStyle" | "underlineColor">): Record<string, string> {
+  if (!c.underline) return { "w:val": "none" };
+  const attrs: Record<string, string> = { "w:val": c.underlineStyle ?? "single" };
+  if (c.underlineColor) attrs["w:color"] = hex(c.underlineColor);
+  return attrs;
+}
+
 // Full rPr serializer: every toggle written explicitly (on/off) so a run's
 // direct formatting fully overrides any inherited paragraph/named style on
 // re-import. Shared by the main exporter (documentXml) and the headless TOC
@@ -25,7 +34,7 @@ export function runPropsXml(s: CharStyle): string {
   children.push(el("w:color", { "w:val": hex(s.color) }));
   children.push(el("w:sz", { "w:val": pxToHalfPoints(s.fontSizePx) }));
   children.push(el("w:szCs", { "w:val": pxToHalfPoints(s.fontSizePx) }));
-  children.push(el("w:u", { "w:val": s.underline ? "single" : "none" }));
+  children.push(el("w:u", underlineAttrs(s)));
   if (s.letterSpacingPx !== undefined) children.push(el("w:spacing", { "w:val": pxToTwips(s.letterSpacingPx) }));
   if (s.highlightColor) {
     const name = HIGHLIGHT_NAME[s.highlightColor.toLowerCase()];
@@ -93,7 +102,7 @@ export function partialRPrXml(c: Partial<CharStyle>): string {
     out.push(el("w:sz", { "w:val": sz }));
     out.push(el("w:szCs", { "w:val": sz }));
   }
-  if (c.underline !== undefined) out.push(el("w:u", { "w:val": c.underline ? "single" : "none" }));
+  if (c.underline !== undefined) out.push(el("w:u", underlineAttrs(c as Pick<CharStyle, "underline" | "underlineStyle" | "underlineColor">)));
   if (c.highlightColor) {
     const name = HIGHLIGHT_NAME[c.highlightColor.toLowerCase()];
     if (name) out.push(el("w:highlight", { "w:val": name }));

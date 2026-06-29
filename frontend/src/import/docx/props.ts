@@ -18,7 +18,17 @@ export function decodeRunProps(rPr: XmlNode): IRRunProps {
   const strike = onOff(el(rPr, "w:strike"));
   if (strike !== undefined) props.strikethrough = strike;
   const u = el(rPr, "w:u");
-  if (u) props.underline = attr(u, "w:val") !== "none";
+  if (u) {
+    const uVal = attr(u, "w:val");
+    props.underline = uVal !== "none";
+    // Carry the line style (anything other than a plain "single") + color so the
+    // exporter/painter can reproduce double/dotted/wave/etc. and colored rules.
+    if (props.underline && uVal && uVal !== "single") props.underlineStyle = uVal;
+    const uColor = attr(u, "w:color");
+    if (uColor) props.underlineColor = uColor;
+    const uThemeColor = attr(u, "w:themeColor");
+    if (uThemeColor) props.underlineColorTheme = uThemeColor;
+  }
   const color = el(rPr, "w:color");
   if (color) {
     const hex = attr(color, "w:val");

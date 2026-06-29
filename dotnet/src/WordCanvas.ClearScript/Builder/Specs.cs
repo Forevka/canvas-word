@@ -177,6 +177,11 @@ public sealed record CharStyle
     public bool? Bold { get; init; }
     public bool? Italic { get; init; }
     public bool? Underline { get; init; }
+    /// <summary>Underline line style (OOXML w:u/@w:val): "double", "dotted", "dash",
+    /// "dotDash", "dotDotDash", "wave", "thick"; null/"single" = a plain line.</summary>
+    public string? UnderlineStyle { get; init; }
+    /// <summary>Explicit underline color (CSS hex). Null = follow the text color.</summary>
+    public string? UnderlineColor { get; init; }
     public bool? Strikethrough { get; init; }
     public string? Color { get; init; }
     public string? HighlightColor { get; init; }
@@ -199,6 +204,8 @@ public sealed record CharStyle
         if (Bold is { } b) Js.Set(o, "bold", b);
         if (Italic is { } i) Js.Set(o, "italic", i);
         if (Underline is { } u) Js.Set(o, "underline", u);
+        if (UnderlineStyle is { } us) Js.Set(o, "underlineStyle", us);
+        if (UnderlineColor is { } uc) Js.Set(o, "underlineColor", uc);
         if (Strikethrough is { } s) Js.Set(o, "strikethrough", s);
         if (Color is { } c) Js.Set(o, "color", c);
         if (HighlightColor is { } h) Js.Set(o, "highlightColor", h);

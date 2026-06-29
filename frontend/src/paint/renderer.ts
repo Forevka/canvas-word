@@ -34,10 +34,56 @@ import {
   TOC_LEADER_DASH,
   TOC_LEADER_GAP_PX,
   UNDERLINE_OFFSET_PX,
+  underlinePlan,
+  doubleUnderlineGap,
+  underlineWavePoints,
   verticalShift,
 } from "./paintStyle";
+import type { RunPaint } from "./paintStyle";
+import type { UnderlineStyle } from "@cw/shared";
 import { DEFAULT_THEME, type ResolvedTheme } from "../config";
 import { ZOOM_MAX, ZOOM_MIN } from "../uiConstants";
+
+/** Paint a run's underline. The plain "single" style keeps the historical
+ *  baseline-aligned filled rect (so existing renders don't shift); the richer
+ *  styles (double/dotted/dashed/dotDash/wave/thick) stroke per their plan. */
+function paintUnderline(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  yTop: number,
+  width: number,
+  fontSizePx: number,
+  rp: RunPaint,
+): void {
+  const style: UnderlineStyle = rp.underlineStyle;
+  const th = decorationThickness(fontSizePx);
+  if (style === "single") {
+    ctx.fillStyle = rp.underlineColor;
+    ctx.fillRect(x, yTop, width, th);
+    return;
+  }
+  const plan = underlinePlan(style, fontSizePx);
+  const yCenter = yTop + plan.thickness / 2;
+  ctx.save();
+  ctx.strokeStyle = rp.underlineColor;
+  ctx.lineWidth = plan.thickness;
+  ctx.setLineDash(plan.dash);
+  ctx.beginPath();
+  if (plan.wave) {
+    const pts = underlineWavePoints(x, yCenter, width, fontSizePx);
+    pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+  } else {
+    ctx.moveTo(x, yCenter);
+    ctx.lineTo(x + width, yCenter);
+    if (plan.double) {
+      const dy = doubleUnderlineGap(plan.thickness);
+      ctx.moveTo(x, yCenter + dy);
+      ctx.lineTo(x + width, yCenter + dy);
+    }
+  }
+  ctx.stroke();
+  ctx.restore();
+}
 
 export interface PagePoint {
   pageIndex: number;
@@ -980,8 +1026,8 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
           const rp = runPaint(s, theme.externalLink);
           paintMathBoxCanvasRaw(ctx, frag.equation, x, baselineY, MATH_FONT_FAMILY, rp.color);
           const th = decorationThickness(s.fontSizePx);
+          if (rp.underline) paintUnderline(ctx, x, baselineY + UNDERLINE_OFFSET_PX, frag.width, s.fontSizePx, rp);
           ctx.fillStyle = rp.color;
-          if (rp.underline) ctx.fillRect(x, baselineY + UNDERLINE_OFFSET_PX, frag.width, th);
           if (rp.strike) ctx.fillRect(x, baselineY + strikeOffset(s.fontSizePx), frag.width, th);
           continue;
         }
@@ -1003,9 +1049,10 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
 
         const th = decorationThickness(s.fontSizePx);
         if (rp.underline) {
-          ctx.fillRect(x, baselineY + vShift + UNDERLINE_OFFSET_PX, frag.width, th);
+          paintUnderline(ctx, x, baselineY + vShift + UNDERLINE_OFFSET_PX, frag.width, s.fontSizePx, rp);
         }
         if (rp.strike) {
+          ctx.fillStyle = rp.color;
           ctx.fillRect(x, baselineY + vShift + strikeOffset(s.fontSizePx), frag.width, th);
         }
       }
