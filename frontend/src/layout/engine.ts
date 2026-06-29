@@ -2057,12 +2057,14 @@ function layoutDocument(
       let epage = pages[pages.length - 1]!;
       const newEndnotePage = (): void => {
         epage = mkPage();
+        delete epage.columnSeparatorsX; // endnotes are a full-width single-column story
         pages.push(epage);
         pageNotes.push([]);
         pageReserved.push(0);
       };
       // Start on a fresh page if the last body page already has content.
       if (epage.blocks.length > 0) newEndnotePage();
+      else delete epage.columnSeparatorsX; // reused last page → drop its column rules too
       let ey = epage.contentTopPx;
       epage.endnoteRuleY = ey + 4;
       ey += FN_SEP;
@@ -2071,7 +2073,10 @@ function layoutDocument(
         for (const p of ens[id]!) {
           const lines = getLines(p, enWidth);
           // Page-break before a note paragraph that won't fit (notes aren't split).
-          if (ey + p.style.spaceBeforePx + totalHeight(lines) > epage.contentBottomPx && ey > epage.contentTopPx) {
+          // Gate on the page already holding content — never bump the first note
+          // off a fresh page (whose `ey` is past the top only because of the rule),
+          // which would strand a blank separator-only page.
+          if (ey + p.style.spaceBeforePx + totalHeight(lines) > epage.contentBottomPx && epage.blocks.length > 0) {
             newEndnotePage();
             ey = epage.contentTopPx;
           }

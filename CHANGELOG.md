@@ -8,7 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-<<<<<<< HEAD
 - **Minor paragraph properties (`ParaStyle.widowControl` / `suppressLineNumbers` /
   `textAlignment` / `mirrorIndents` / `adjustRightInd`).** Five lower-frequency `w:pPr`
   children now parse, export, and round-trip through `.docx` where before they were
@@ -68,7 +67,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`TableOptions` + `CellOptions`/`CellSpec`, new `CellTextDirection`/`TableOverlap` enums),
   and demonstrated in the default showcase document. (Floating positioned tables `w:tblpPr`
   and conditional-band cell margins `w:tblStylePr/w:tcMar` remain out of scope for this pass.)
-=======
 - **Endnotes (`Document.endnotes` + `CharStyle.endnoteRef`).** Endnotes now round-trip
   alongside footnotes: `endnotes.xml` and `w:endnoteReference` markers import into a
   per-document note store (previously dropped on import), export back out with their own
@@ -78,7 +76,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   canvas and PDF, and notes collect on continuation pages as needed. Authorable via the builder
   (`paragraph(...).endnote("…")` / callback form) and the C# bindings (`ParagraphBuilder.Endnote(…)`),
   and demonstrated in the default showcase document.
->>>>>>> 31df024 (feat(docx): endnotes (w:endnoteReference / endnotes.xml))
 - **Paragraph borders & shading (`ParaStyle.borders` + `ParaStyle.shading`).** A whole
   paragraph can now carry a border box (OOXML `w:pBdr` — `top`/`right`/`bottom`/`left`,
   plus a round-tripped inter-paragraph `between` edge) and a background fill (paragraph-level
