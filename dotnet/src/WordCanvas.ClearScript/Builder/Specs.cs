@@ -345,6 +345,8 @@ public sealed record PageSetup
     public int? PageNumberStart { get; init; }
     /// <summary>Line numbering in the margin (w:lnNumType) for the document section.</summary>
     public LineNumbering? LineNumbering { get; init; }
+    /// <summary>How the final (body) section starts: next page (default) or even/odd parity.</summary>
+    public SectionBreakType? BreakType { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -357,6 +359,7 @@ public sealed record PageSetup
         if (FooterDistancePx is { } fd) Js.Set(o, "footerDistancePx", fd);
         if (PageNumberStart is { } pns) Js.Set(o, "pageNumberStart", pns);
         if (LineNumbering is { } ln) Js.Set(o, "lineNumbering", ln.ToJs(e));
+        if (BreakType is { } bt) Js.Set(o, "breakType", EnumJs.BreakType(bt));
         return o;
     }
 }

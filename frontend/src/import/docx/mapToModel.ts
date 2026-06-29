@@ -933,6 +933,7 @@ export function createMapper(
     if (ir.footerDistTwips !== undefined) section.footerDistancePx = round2(twipsToPx(ir.footerDistTwips));
     if (ir.pageBorders) section.pageBorders = irPageBordersToModel(ir.pageBorders);
     if (ir.lineNumbering) section.lineNumbering = irLineNumberingToModel(ir.lineNumbering);
+    if (ir.breakType) section.breakType = ir.breakType;
     return section;
   }
 

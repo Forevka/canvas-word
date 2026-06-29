@@ -136,6 +136,17 @@ describe("DOCX export — round trip", () => {
     expect(sbb?.props.lineNumbering?.distancePx).toBeCloseTo(16, 1);
   });
 
+  it("round-trips an evenPage start on the final (body) section — issue #59", () => {
+    const body =
+      `<w:p><w:r><w:t>only section</w:t></w:r></w:p>` +
+      `<w:sectPr><w:type w:val="evenPage"/><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>`;
+    const a = runImport(simpleDocx(body)).doc;
+    expect(a.section.breakType).toBe("evenPage");
+    // The body sectPr re-emits the parity type (default nextPage stays implicit).
+    expect(exportedDocumentXml(a)).toContain(`<w:type w:val="evenPage"/>`);
+    expect(roundTrip(a).section.breakType).toBe("evenPage");
+  });
+
   it("round-trips table cell margins (w:tcMar) — top/bottom must survive", () => {
     // Regression: the writer used to drop cell margins, so top/bottom re-imported as
     // Word's default 0 — shrinking every row and drifting page count by ~5%.

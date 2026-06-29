@@ -993,7 +993,9 @@ export function resolveSections(doc: Document): ResolvedSection[] {
       });
     }
   }
-  out.push({ props: doc.section, endBlock: doc.blocks.length - 1, breakType: "nextPage" });
+  // The trailing body section keeps its own start type (even/odd parity), so a
+  // document whose final section begins on a parity page is honored, not flattened.
+  out.push({ props: doc.section, endBlock: doc.blocks.length - 1, breakType: doc.section.breakType ?? "nextPage" });
   return out;
 }
 

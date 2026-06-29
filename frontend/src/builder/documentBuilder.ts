@@ -29,6 +29,8 @@ export interface PageSetup {
   pageNumberStart?: number;
   /** Line numbering in the margin (w:lnNumType) for the document section. */
   lineNumbering?: LineNumbering;
+  /** How the final (body) section starts: "nextPage" (default) or even/odd parity. */
+  breakType?: SectionBreakType;
 }
 
 export interface CreateOptions {
@@ -172,6 +174,7 @@ export class DocumentBuilder extends StoryBuilder {
     if (setup.footerDistancePx !== undefined) section.footerDistancePx = setup.footerDistancePx;
     if (setup.pageNumberStart !== undefined) section.pageNumberStart = setup.pageNumberStart;
     if (setup.lineNumbering !== undefined) section.lineNumbering = setup.lineNumbering;
+    if (setup.breakType !== undefined) section.breakType = setup.breakType;
     return this;
   }
 
@@ -289,7 +292,11 @@ export class DocumentBuilder extends StoryBuilder {
     if (opts.margins !== undefined) patch.marginPx = { ...section.marginPx, ...opts.margins };
     if (opts.columns !== undefined) patch.columns = opts.columns === null ? null : { count: opts.columns.count, gapPx: opts.columns.gapPx ?? 48 };
     if (opts.pageNumberStart !== undefined) patch.pageNumberStart = opts.pageNumberStart;
-    if (opts.lineNumbering !== undefined) patch.lineNumbering = opts.lineNumbering;
+    // Line numbering is non-inheriting in the engine, so a new section without its
+    // own w:lnNumType would silently lose numbering the current section has. Carry
+    // the document section's setting forward by default; an explicit option wins.
+    if (opts.lineNumbering !== undefined) patch.lineNumbering = { ...opts.lineNumbering };
+    else if (section.lineNumbering !== undefined) patch.lineNumbering = { ...section.lineNumbering };
     const band = (cb?: (s: StoryBuilder) => void): Block[] | undefined => {
       if (!cb) return undefined;
       const blocks: Block[] = [];

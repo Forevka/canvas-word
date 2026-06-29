@@ -524,6 +524,9 @@ export interface IRSection {
   pageBorders?: IRPageBorders;
   /** w:lnNumType — line numbering (raw OOXML units, mapped downstream). */
   lineNumbering?: IRLineNumbering;
+  /** w:sectPr/w:type on the BODY section — an even/odd page-parity start for the
+   *  final section. Absent (or "nextPage") = a plain next-page start. */
+  breakType?: "nextPage" | "evenPage" | "oddPage";
 }
 
 /** w:lnNumType attributes as parsed — countBy/start are plain counts; distance is

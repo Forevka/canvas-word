@@ -1073,6 +1073,8 @@ function parseSection(sectPr: XmlNode, warnings: WarningSink): IRSection {
   if (pgNumStart !== undefined) section.pageNumberStart = pgNumStart;
   const lnNum = decodeLineNumbering(el(sectPr, "w:lnNumType"));
   if (lnNum) section.lineNumbering = lnNum;
+  const bodyType = val(sectPr, "w:type");
+  if (bodyType === "evenPage" || bodyType === "oddPage") section.breakType = bodyType;
   return section;
 }
 

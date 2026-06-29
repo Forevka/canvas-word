@@ -952,9 +952,10 @@ export function sectPrXml(
   if (s.pageBorders) c.push(pgBordersXml(s.pageBorders));
   if (s.pageNumberStart !== undefined) c.push(el("w:pgNumType", { "w:start": s.pageNumberStart }));
   if (s.lineNumbering) c.push(lnNumTypeXml(s.lineNumbering));
-  // A non-body sectPr (on a paragraph) implies a section break; emit its parity
-  // type (nextPage / evenPage / oddPage). The body sectPr never carries w:type.
-  if (!isBody) c.push(el("w:type", { "w:val": breakType }));
+  // A non-body sectPr (on a paragraph) always carries its break type. The body
+  // sectPr omits w:type for the default (nextPage) but emits an even/odd parity
+  // start when the final section requests one.
+  if (!isBody || breakType !== "nextPage") c.push(el("w:type", { "w:val": breakType }));
   return el("w:sectPr", undefined, c.join(""));
 }
 
@@ -968,7 +969,7 @@ export function buildDocumentXml(
   ctx: PartCtx,
   addBand: AddBandPart,
 ): string {
-  const body = emitBlocks(blocks, 0, ctx) + sectPrXml(section, ctx, addBand, true);
+  const body = emitBlocks(blocks, 0, ctx) + sectPrXml(section, ctx, addBand, true, section.breakType ?? "nextPage");
   // w:background is document-global (one element, first child of w:document);
   // read the page color only from the body section. Word needs
   // <w:displayBackgroundShape/> in settings.xml to actually paint it.

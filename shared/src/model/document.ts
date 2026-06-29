@@ -720,6 +720,10 @@ export interface SectionProps {
   /** w:sectPr/w:lnNumType — line numbering printed in this section's margin.
    *  Absent = no line numbers (the historical default). */
   lineNumbering?: LineNumbering;
+  /** OOXML w:sectPr/w:type for the FINAL (body) section's start. "evenPage"/"oddPage"
+   *  force its first page onto an even/odd page number (mid-document sections carry
+   *  this on their `sectionBreak` paragraph instead). Absent ⇒ "nextPage". */
+  breakType?: SectionBreakType;
   /** Header/footer are full block stories (paragraphs, images, tables) laid out
    *  by the same engine into the margin bands. {page}/{pages} tokens in run text
    *  are substituted per page ({page:roman|Roman|alpha|Alpha} formats). The
