@@ -170,6 +170,12 @@ function toItems(runs: Run[]): RichInlineItem[] {
 
 const r2 = (n: number): number => Math.round(n * 100) / 100;
 
+// Small caps splits a run by reduced/full size; segment by GRAPHEME CLUSTER (not
+// code point) so a combining mark stays attached to its base letter — otherwise a
+// decomposed "ä" would split into a reduced "A" plus a full-size mark and the
+// accent would mis-shape. Matches geometry.ts's cluster granularity.
+const capsSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
 /** Length-preserving uppercase of ONE code point: the uppercased form only when it
  *  occupies the same number of UTF-16 units (keeps offsets 1:1); else the original
  *  (rare expanding cases like ß→SS, ﬀ ligatures stay as authored). */
@@ -219,11 +225,13 @@ export function applyCaseTransforms(runs: Run[]): Run[] {
       out.push({ text: buf, style: bufReduced ? reducedStyle : baseStyle });
       buf = "";
     };
-    for (const cp of run.text) {
-      const reduced = isSmallCapped(cp);
+    for (const { segment } of capsSegmenter.segment(run.text)) {
+      // The cluster's BASE code point decides reduction (combining marks ride along).
+      const base = String.fromCodePoint(segment.codePointAt(0)!);
+      const reduced = isSmallCapped(base);
       if (bufReduced !== null && reduced !== bufReduced) flush();
       bufReduced = reduced;
-      buf += reduced ? upperCp(cp) : cp;
+      buf += reduced ? [...segment].map(upperCp).join("") : segment;
     }
     flush();
   }

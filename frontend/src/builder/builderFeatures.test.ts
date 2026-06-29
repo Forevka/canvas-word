@@ -96,7 +96,7 @@ describe("rich-text run gaps", () => {
     expect(para(doc.blocks[0]).runs[0]!.style.verticalAlign).toBeUndefined();
   });
 
-  it("caps/smallCaps patch the run style and toggle off cleanly", () => {
+  it("caps/smallCaps patch the run style; off writes an explicit false override", () => {
     const doc = DocumentBuilder.create()
       .paragraph().text("a").caps()
       .paragraph().text("b").smallCaps()
@@ -104,7 +104,8 @@ describe("rich-text run gaps", () => {
       .build();
     expect(para(doc.blocks[0]).runs[0]!.style.caps).toBe(true);
     expect(para(doc.blocks[1]).runs[0]!.style.smallCaps).toBe(true);
-    expect(para(doc.blocks[2]).runs[0]!.style.caps).toBeUndefined();
+    // Explicit OFF (not deletion) so it can clear inherited casing — w:caps="0".
+    expect(para(doc.blocks[2]).runs[0]!.style.caps).toBe(false);
   });
 });
 

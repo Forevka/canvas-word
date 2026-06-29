@@ -29,9 +29,11 @@ export function runPropsXml(s: CharStyle): string {
   if (family) children.push(el("w:rFonts", { "w:ascii": family, "w:hAnsi": family, "w:cs": family }));
   children.push(el("w:b", { "w:val": s.bold ? "1" : "0" }));
   children.push(el("w:i", { "w:val": s.italic ? "1" : "0" }));
-  // w:caps / w:smallCaps precede w:strike in the CT_RPr schema sequence.
-  if (s.caps) children.push(el("w:caps", { "w:val": "1" }));
-  if (s.smallCaps) children.push(el("w:smallCaps", { "w:val": "1" }));
+  // w:caps / w:smallCaps precede w:strike in the CT_RPr schema sequence. Emit an
+  // explicit OFF (w:val="0") for a false value so it clears an inherited (rStyle/
+  // style-cascade) all-caps/small-caps on re-import; undefined stays absent.
+  if (s.caps !== undefined) children.push(el("w:caps", { "w:val": s.caps ? "1" : "0" }));
+  if (s.smallCaps !== undefined) children.push(el("w:smallCaps", { "w:val": s.smallCaps ? "1" : "0" }));
   if (s.strikethrough) children.push(el("w:strike", { "w:val": "1" }));
   if (s.hidden) children.push(el("w:vanish", { "w:val": "1" })); // preserved hidden text
   children.push(el("w:color", { "w:val": hex(s.color) }));

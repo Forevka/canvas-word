@@ -2,7 +2,7 @@
 // measures and paints: letters render UPPERCASED (caps) and the originally-
 // lowercase letters render smaller (smallCaps), while the model offsets stay 1:1
 // so the caret/measurement land on the transformed glyphs. The deterministic
-// canvas stub measures width = len × ½ size, so a reduced-size fragment is both
+// canvas stub measures width = len x 1/2 size, so a reduced-size fragment is both
 // narrower and carries a smaller fontSizePx.
 import "./test-canvas-setup";
 
@@ -60,14 +60,30 @@ describe("caps / smallCaps layout transforms", () => {
     expect(small).toBeTruthy();
     expect(full.style.fontSizePx).toBe(16);
     expect(small.style.fontSizePx).toBeCloseTo(16 * SMALL_CAPS_SCALE, 2);
-    // Narrower because measured at the reduced size (stub: width = len × ½ size).
+    // Narrower because measured at the reduced size (stub: width = len x 1/2 size).
     expect(small.width).toBeLessThan(full.width);
-    // Offsets remain 1:1 with the model "Ab": "A" → 0..1, "B" → 1..2.
+    // Offsets remain 1:1 with the model "Ab": "A" -> 0..1, "B" -> 1..2.
     expect(full.startOffset).toBe(0);
     expect(full.endOffset).toBe(1);
     expect(small.startOffset).toBe(1);
     expect(small.endOffset).toBe(2);
     expect(small.style.smallCaps).toBeUndefined();
+  });
+
+  it("keeps a combining mark attached to its reduced small-caps base glyph", () => {
+    // Decomposed base+mark built from char codes (source stays ASCII): "a" + the
+    // combining diaeresis U+0308, then "b". All reduce into ONE fragment; the mark
+    // must ride with its uppercased base ("A" + U+0308 + "B"), never split off into
+    // a separate full-size fragment (which would mis-shape the accent).
+    const mark = String.fromCharCode(0x0308);
+    const input = "a" + mark + "b";
+    const expected = input.toUpperCase(); // "A" + U+0308 + "B"
+    const frags = fragsOf(para([{ text: input, style: { smallCaps: true } }]));
+    const reduced = frags.find((fr) => fr.text === expected);
+    expect(reduced).toBeTruthy();
+    expect(reduced!.style.fontSizePx).toBeCloseTo(16 * SMALL_CAPS_SCALE, 2);
+    expect(reduced!.startOffset).toBe(0);
+    expect(reduced!.endOffset).toBe(3); // a, U+0308, b -> 3 UTF-16 units preserved
   });
 
   it("leaves runs without case flags untouched", () => {
