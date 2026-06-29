@@ -127,6 +127,9 @@ export interface IRRunProps {
   smallCaps?: boolean;
   /** w:rtl — explicit right-to-left run direction. */
   rtl?: boolean;
+  /** w:sym — a symbol-font glyph: the font name + the hex code point Word stores.
+   *  mapToModel sets CharStyle.symbol (+ fontFamily) and the run text to the glyph. */
+  symbol?: { font: string; char: string };
   /** Hyperlink membership (set on runs inside a w:hyperlink). Resolved to a URL
    *  in mapToModel: relId via the part's rels (external target), or anchor for
    *  an in-document bookmark (kept as "#name"). */
@@ -169,6 +172,9 @@ export type IRInline =
       relId: string;
       widthEmu?: number;
       heightEmu?: number;
+      /** a:srcRect crop insets, each a 0..1 fraction of the source trimmed off that
+       *  edge (OOXML stores 1/1000 of a percent; the parser normalizes to a fraction). */
+      crop?: { left: number; top: number; right: number; bottom: number };
       anchored: boolean;
       /** For wp:anchor: square = text wraps around (maps to ImageBlock.wrap);
        *  block = wrap mode the model can't express (none/topAndBottom). */

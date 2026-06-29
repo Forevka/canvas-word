@@ -166,6 +166,14 @@ export class DocumentBuilder extends StoryBuilder {
     return this;
   }
 
+  /** Set the document's default tab interval in px (OOXML settings.xml
+   *  w:defaultTabStop). A `\t` running past the last explicit tab stop advances to
+   *  the next multiple of this. Non-positive values are ignored. */
+  defaultTabStop(px: number): this {
+    if (px > 0) this.ctx.doc.defaultTabStopPx = px;
+    return this;
+  }
+
   /** Register (or override) a named style. Register BEFORE applying it —
    *  withStyle() resolves at call time, not at build(). */
   style(def: NamedStyle): this {

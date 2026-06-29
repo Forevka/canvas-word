@@ -92,14 +92,27 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
 
   if (block.image) {
     const bytes = ctx.image(block.image.src);
-    const { width, height, clip } = block.image;
+    const { width, height, clip, crop } = block.image;
     if (clip) {
       doc.save();
       doc.rect(clip.x, clip.y, clip.width, clip.height).clip();
     }
     if (bytes) {
       try {
-        drawImage(doc, toBuffer(bytes), block.x, block.y, width, height);
+        if (crop) {
+          // pdfkit can't source-crop, so clip to the box and draw the full image
+          // scaled up so its visible [left,1-right]×[top,1-bottom] window fills it.
+          const fracW = Math.max(0.0001, 1 - crop.left - crop.right);
+          const fracH = Math.max(0.0001, 1 - crop.top - crop.bottom);
+          const fullW = width / fracW;
+          const fullH = height / fracH;
+          doc.save();
+          doc.rect(block.x, block.y, width, height).clip();
+          drawImage(doc, toBuffer(bytes), block.x - crop.left * fullW, block.y - crop.top * fullH, fullW, fullH);
+          doc.restore();
+        } else {
+          drawImage(doc, toBuffer(bytes), block.x, block.y, width, height);
+        }
       } catch {
         ctx.warn("image-format-unsupported", block.image.src);
         placeholderBox(ctx, block.x, block.y, width, height);

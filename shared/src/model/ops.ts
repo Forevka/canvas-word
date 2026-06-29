@@ -119,6 +119,12 @@ export interface ApplyResult {
 // ---------------------------------------------------------------------------
 // Run-list surgery (pure helpers)
 
+/** Compare two w:sym markers by value (font + code point). */
+function symbolEq(a: CharStyle["symbol"], b: CharStyle["symbol"]): boolean {
+  if (!a || !b) return !a === !b;
+  return a.font === b.font && a.char === b.char;
+}
+
 export function styleEq(a: CharStyle, b: CharStyle): boolean {
   return (
     a.fontFamily === b.fontFamily &&
@@ -140,7 +146,8 @@ export function styleEq(a: CharStyle, b: CharStyle): boolean {
     a.footnoteRef === b.footnoteRef && // adjacent refs must never merge into one run
     sdtPathEq(a.sdtPath, b.sdtPath) && // content-control boundaries (incl. nesting) survive normalization
     a.fieldId === b.fieldId && // inline-field boundaries survive normalization
-    a.equation === b.equation // inline equations are atomic — never merge (reference identity)
+    a.equation === b.equation && // inline equations are atomic — never merge (reference identity)
+    symbolEq(a.symbol, b.symbol) // symbol glyphs (w:sym) carry font+codepoint — never merge with text
   );
 }
 

@@ -333,6 +333,9 @@ public sealed record ImageOptions
     public required double HeightPx { get; init; }
     public TextAlign? Align { get; init; }
     public ImageWrap? Wrap { get; init; }
+    /// <summary>Crop insets (OOXML a:srcRect), each a 0..1 fraction trimmed off that
+    /// edge — so WidthPx/HeightPx describe the cropped box. Null = no crop.</summary>
+    public ImageCrop? Crop { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -346,6 +349,21 @@ public sealed record ImageOptions
             Js.Set(o, "align", EnumJs.Align(a));
         }
         if (Wrap is { } w) Js.Set(o, "wrap", EnumJs.Wrap(w));
+        if (Crop is { } cr) Js.Set(o, "crop", cr.ToJs(e));
+        return o;
+    }
+}
+
+/// <summary>Image crop insets (OOXML a:srcRect): 0..1 fractions trimmed off each edge.</summary>
+public sealed record ImageCrop(double Left, double Top, double Right, double Bottom)
+{
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        Js.Set(o, "left", Left);
+        Js.Set(o, "top", Top);
+        Js.Set(o, "right", Right);
+        Js.Set(o, "bottom", Bottom);
         return o;
     }
 }

@@ -145,9 +145,15 @@ export function writeDocx(
     bodyRels.add(REL.footnotes, "footnotes.xml");
   }
 
-  // settings.xml (always — carries the even/odd flag + background-display flag).
+  // settings.xml (always — carries the even/odd flag, background-display flag, a
+  // non-default tab interval, and any round-tripped compat settings).
   const evenAndOdd = sectionsHaveEvenBands(doc);
-  parts["word/settings.xml"] = settingsXml(evenAndOdd, doc.section.pageColorHex !== undefined);
+  parts["word/settings.xml"] = settingsXml({
+    evenAndOdd,
+    displayBackgroundShape: doc.section.pageColorHex !== undefined,
+    ...(doc.defaultTabStopPx !== undefined ? { defaultTabStopPx: doc.defaultTabStopPx } : {}),
+    ...(doc.compatSettings ? { compatSettings: doc.compatSettings } : {}),
+  });
   overrides.push(["/word/settings.xml", CT.settings]);
   bodyRels.add(REL.settings, "settings.xml");
 

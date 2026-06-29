@@ -68,6 +68,18 @@ const SVG = (label: string, w: number, h: number): string =>
   );
 const image = (label: string, w: number, h: number, align: ImageBlock["align"], wrap?: "block" | "square"): ImageBlock => ({
   kind: "image", id: id(), revision: 0, src: SVG(label, w, h), widthPx: w, heightPx: h, align, ...(wrap ? { wrap } : {}) });
+/** A cropped image (OOXML a:srcRect): the same SVG, with crop insets so only the
+ *  inner window shows — demonstrating the #63 image-crop round-trip. */
+const croppedImage = (label: string, w: number, h: number, crop: NonNullable<ImageBlock["crop"]>): ImageBlock => ({
+  kind: "image", id: id(), revision: 0, src: SVG(label, w, h), widthPx: w, heightPx: h, align: "left", crop });
+
+// --- symbols (w:sym) -----------------------------------------------------------
+/** A symbol-font glyph run (OOXML w:sym): font + hex code point, decoded to the
+ *  glyph and painted in that font (e.g. Wingdings). Round-trips as a real w:sym. */
+const symRun = (font: string, charHex: string): Run => {
+  const cp = parseInt(charHex, 16);
+  return { text: Number.isFinite(cp) && cp > 0 ? String.fromCodePoint(cp) : "�", style: { ...BODY, fontFamily: `${font}, sans-serif`, fontSizePx: 18, symbol: { font, char: charHex.toUpperCase() } } };
+};
 
 // --- equations (MathML) --------------------------------------------------------
 /** A display equation block from a MathML string. Stored as the MathML AST (the
@@ -434,6 +446,23 @@ export function sampleDoc(): Document {
       textAlignment: "bottom",
     }),
 
+    // --- Miscellaneous OOXML round-trip (#63): symbols, image crop, tab stop ----
+    heading("Miscellaneous OOXML — symbols, image crop & tab stops", 1),
+    para([
+      run("Symbol-font glyphs (Word's "),
+      run("w:sym", { fontFamily: "Consolas, monospace", fontSizePx: 13 }),
+      run(") carry their font and code point, so they survive a round-trip instead of becoming stray characters: "),
+      symRun("Wingdings", "F04A"), run("  "), symRun("Wingdings", "F0FC"), run("  "), symRun("Wingdings", "F0E0"),
+      run("  "), symRun("Webdings", "F069"),
+      run(" — each is a glyph from a symbol font, not text."),
+    ], { spaceAfterPx: 8 }),
+    para([run("Image cropping (a:srcRect) trims the source to a window — here the same tile is shown whole, then center-cropped:")], { spaceAfterPx: 6 }),
+    image("full", 150, 110, "left", "block"),
+    croppedImage("crop", 150, 110, { left: 0.25, top: 0.2, right: 0.25, bottom: 0.2 }),
+    para([
+      run("Tab stops honor the document's default interval (w:defaultTabStop): columns\tline up\tat\teach default tab."),
+    ], { spaceBeforePx: 8 }),
+
     // --- International text: CJK + bidirectional (RTL) -------------------------
     heading("International text — CJK & bidirectional", 1),
     para([run("East-Asian and right-to-left scripts lay out the way Word does — measured on canvas, with Unicode line-breaking and the bidirectional algorithm (UAX #9), not the browser's contenteditable.")], { spaceAfterPx: 8 }),
@@ -553,6 +582,9 @@ export function sampleDoc(): Document {
     footnotes,
     bookmarks,
     tocInstruction: ' TOC \\o "1-3" \\h \\z ',
+    // Document-level default tab interval (w:defaultTabStop) — 0.75in instead of the
+    // engine's 0.5in fallback, so the tab-stop demo above visibly honors it (#63).
+    defaultTabStopPx: 72,
   };
   return doc;
 }

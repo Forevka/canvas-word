@@ -61,6 +61,9 @@ export interface PlacedImage {
   /** Clip rect (block-absolute) for object-fit:cover — a sole image filling a
    *  tall cell is scaled to cover and clipped to the cell box. Absent = no clip. */
   clip?: { x: number; y: number; width: number; height: number };
+  /** Source crop insets (ImageBlock.crop, OOXML a:srcRect) as 0..1 fractions —
+   *  paint shows only [left,1-right]×[top,1-bottom] of the source. Absent = none. */
+  crop?: { left: number; top: number; right: number; bottom: number };
   /** Behind-text anchored image (ImageBlock.anchor.behind): painted under the
    *  text and ignored by hit-testing so the text beneath stays selectable. */
   behind?: boolean;

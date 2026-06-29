@@ -41,6 +41,10 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
         },
     })
 
+    // Document-level default tab interval (w:defaultTabStop) — 0.75in instead of the
+    // engine's 0.5in fallback (#63); the tab-stop demo below visibly honors it.
+    .DefaultTabStop(72)
+
     // Title + subtitle + Table of Contents.
     .Paragraph("canvas-word", p => p.Align(TextAlign.Center).Font("Arial, sans-serif").FontSize(32).Bold().Color(Ink))
     .Paragraph("a canvas-rendered, page-accurate Word editor — rebuilt by the C# builder", p => p.Align(TextAlign.Center).Italic().Color("#5f6368"))
@@ -230,6 +234,18 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
     .Paragraph("With extra line spacing, bottom vertical line alignment (w:textAlignment) drops the text onto the lower edge of each tall line box.",
         p => p.Spacing(new SpacingOptions { Before = 6, LineHeight = 2 })
               .TextAlignment(LineVAlign.Bottom))
+
+    // ---- Miscellaneous OOXML round-trip (#63): symbols, image crop, tab stops ----
+    .Paragraph("Miscellaneous OOXML — symbols, image crop & tab stops", p => p.WithStyle("Heading1"))
+    .Paragraph(p => p
+        .Text("Symbol-font glyphs (Word's w:sym) carry their font and code point, so they survive a round-trip: ")
+        .Symbol("Wingdings", "F04A").Text("  ").Symbol("Wingdings", "F0FC").Text("  ").Symbol("Wingdings", "F0E0")
+        .Text("  ").Symbol("Webdings", "F069")
+        .Text(" — each is a glyph from a symbol font, not text."))
+    .Paragraph("Image cropping (a:srcRect) trims the source to a window — here the same tile is shown whole, then center-cropped:")
+    .Image(purple, "image/png", new ImageOptions { WidthPx = 150, HeightPx = 110, Align = TextAlign.Left, Wrap = ImageWrap.Block })
+    .Image(purple, "image/png", new ImageOptions { WidthPx = 150, HeightPx = 110, Align = TextAlign.Left, Wrap = ImageWrap.Block, Crop = new ImageCrop(0.25, 0.2, 0.25, 0.2) })
+    .Paragraph("Tab stops honor the document's default interval (w:defaultTabStop): columns\tline up\tat\teach default tab.")
 
     // ---- International text (CJK) ----
     .Paragraph("International text — CJK", p => p.WithStyle("Heading1"))
