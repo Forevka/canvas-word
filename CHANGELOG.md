@@ -76,7 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under a separator rule (Word's "end of document" placement — the counterpart to the
   page-bottom footnote area). Reference markers auto-number in document order, render in the
   canvas and PDF, and notes collect on continuation pages as needed. Authorable via the builder
-  (`paragraph(...).endnote("…")` / callback form) and the C# bindings (`StoryBuilder.Endnote(…)`),
+  (`paragraph(...).endnote("…")` / callback form) and the C# bindings (`ParagraphBuilder.Endnote(…)`),
   and demonstrated in the default showcase document.
 >>>>>>> 31df024 (feat(docx): endnotes (w:endnoteReference / endnotes.xml))
 - **Paragraph borders & shading (`ParaStyle.borders` + `ParaStyle.shading`).** A whole

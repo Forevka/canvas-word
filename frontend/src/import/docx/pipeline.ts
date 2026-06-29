@@ -139,24 +139,28 @@ export function runImport(
   const endnotePart = partNameByRelType(rels, "endnotes") ?? "word/endnotes.xml";
   const endnoteXml = archive.text(endnotePart);
   const endnoteIR = endnoteXml !== undefined ? parseEndnotesXml(endnoteXml, endnotePart, warnings, ir.sdts) : new Map();
+  // Walk the refs unconditionally so a document with w:endnoteReference markers
+  // but no real note bodies (missing part, only pseudo-notes) still surfaces an
+  // endnote-missing warning rather than silently dropping doc.endnotes. The note
+  // part's rels/media are resolved lazily, only once a body is actually found.
   const endnotes: Record<string, Paragraph[]> = {};
-  if (endnoteIR.size > 0) {
-    const endRels = relsOf(archive, endnotePart);
-    const endMedia = mediaFor(endRels);
-    const endLink = linkResolverFor(endRels);
-    for (const { docxId, noteId } of mapper.endnoteRefs()) {
-      const bodyIR = endnoteIR.get(docxId);
-      if (!bodyIR) {
-        warnings.add("endnote-missing", "An endnote reference had no matching note body.");
-        continue;
-      }
-      const noteBlocks = mapper.mapBlocks(bodyIR, endMedia, endLink);
-      const paras = noteBlocks.filter((b): b is Paragraph => b.kind === "paragraph");
-      if (paras.length < noteBlocks.length) {
-        warnings.add("endnote-tables", "Tables inside endnotes were dropped (endnotes hold paragraphs only).");
-      }
-      if (paras.length > 0) endnotes[noteId] = paras;
+  let endCtx: { media: MediaStore; link: LinkResolver } | undefined;
+  for (const { docxId, noteId } of mapper.endnoteRefs()) {
+    const bodyIR = endnoteIR.get(docxId);
+    if (!bodyIR) {
+      warnings.add("endnote-missing", "An endnote reference had no matching note body.");
+      continue;
     }
+    if (!endCtx) {
+      const endRels = relsOf(archive, endnotePart);
+      endCtx = { media: mediaFor(endRels), link: linkResolverFor(endRels) };
+    }
+    const noteBlocks = mapper.mapBlocks(bodyIR, endCtx.media, endCtx.link);
+    const paras = noteBlocks.filter((b): b is Paragraph => b.kind === "paragraph");
+    if (paras.length < noteBlocks.length) {
+      warnings.add("endnote-tables", "Tables inside endnotes were dropped (endnotes hold paragraphs only).");
+    }
+    if (paras.length > 0) endnotes[noteId] = paras;
   }
   progress("map", 1);
 
