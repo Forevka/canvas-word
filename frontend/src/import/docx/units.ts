@@ -20,6 +20,10 @@ export const lineAutoToMultiplier = (line: number): number => line / 240;
 /** Round to 2 decimals — keeps layout math in floats but model JSON readable. */
 export const round2 = (v: number): number => Math.round(v * 100) / 100;
 
+/** Round to 4 decimals — for 0..1 fractions (e.g. image crop insets) that need
+ *  finer precision than round2 to survive a round-trip. */
+export const round4 = (v: number): number => Math.round(v * 10000) / 10000;
+
 /** A four-sided box in twips. */
 export interface TwipsBox { top: number; right: number; bottom: number; left: number }
 

@@ -197,6 +197,16 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     return on ? this.applyChar({ rtl: true }) : this.clearChar("rtl");
   }
 
+  /** Append a symbol-font glyph (OOXML w:sym). `font` is the symbol font (e.g.
+   *  "Wingdings"); `charHex` is the hex code point Word stores (e.g. "F0E0", usually
+   *  a Private-Use value). The run renders the decoded glyph in `font` and re-emits
+   *  w:sym on export. */
+  symbol(font: string, charHex: string): this {
+    const cp = parseInt(charHex, 16);
+    const text = Number.isFinite(cp) && cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : "�";
+    return this.pushRun(this.ctx.run(text, { ...this.charPatch, fontFamily: `${font}, sans-serif`, symbol: { font, char: charHex.toUpperCase() } }));
+  }
+
   /** Apply a registered character style (a type:"character" NamedStyle): bakes its
    *  formatting onto the runs AND sets the w:rStyle reference (kept for round-trip).
    *  Ids that are unknown OR refer to a paragraph style are ignored with a warning

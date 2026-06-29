@@ -935,7 +935,18 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
         ctx.clip();
       }
       if (img.complete && img.naturalWidth > 0) {
-        ctx.drawImage(img, block.x, block.y, block.image.width, block.image.height);
+        const crop = block.image.crop;
+        if (crop) {
+          // a:srcRect crop: draw only the [left,1-right]×[top,1-bottom] source
+          // window into the (already cropped-size) destination box.
+          const sx = crop.left * img.naturalWidth;
+          const sy = crop.top * img.naturalHeight;
+          const sw = Math.max(1, (1 - crop.left - crop.right) * img.naturalWidth);
+          const sh = Math.max(1, (1 - crop.top - crop.bottom) * img.naturalHeight);
+          ctx.drawImage(img, sx, sy, sw, sh, block.x, block.y, block.image.width, block.image.height);
+        } else {
+          ctx.drawImage(img, block.x, block.y, block.image.width, block.image.height);
+        }
       } else {
         ctx.fillStyle = theme.imagePlaceholder;
         ctx.fillRect(block.x, block.y, block.image.width, block.image.height);

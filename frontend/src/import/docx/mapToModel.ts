@@ -6,7 +6,7 @@
 //   w:tab            → fixed spaces
 //   gridSpan/vMerge  → padded uniform cell grid
 //   inline images    → block-level ImageBlock (paragraph splits around it)
-//   images in cells  → skipped (TableCell holds paragraphs only)
+//   images in cells  → ImageBlock inside the cell's block list (incl. anchored/floating)
 
 import type {
   Block,
@@ -55,7 +55,7 @@ import type {
   IRTableCell,
 } from "./types";
 import { WarningSink } from "./types";
-import { emuToPx, halfPointsToPx, marginTwipsToPx, round2, twipsToPx } from "./units";
+import { emuToPx, halfPointsToPx, marginTwipsToPx, round2, round4, twipsToPx } from "./units";
 
 const PAGE_BORDER_STYLES = new Set(["single", "double", "dashed", "dotted", "thick", "none"]);
 
@@ -627,6 +627,13 @@ export function createMapper(
       heightPx: round2(emuToPx(inline.heightEmu)),
       align: inline.anchorAlign ?? (paraAlign === "justify" ? "left" : paraAlign),
     };
+    // a:srcRect crop insets (fractions), rounded for a stable round-trip.
+    if (inline.crop) {
+      image.crop = {
+        left: round4(inline.crop.left), top: round4(inline.crop.top),
+        right: round4(inline.crop.right), bottom: round4(inline.crop.bottom),
+      };
+    }
     // Anchored with square/tight wrap → an honest float; the model flows
     // following text around it.
     if (inline.anchored && inline.anchorWrap === "square") image.wrap = "square";
@@ -1071,6 +1078,12 @@ function applyRunProps(style: Partial<CharStyle>, props: IRRunProps): void {
   if (props.caps !== undefined) style.caps = props.caps; // w:caps — all-caps display
   if (props.smallCaps !== undefined) style.smallCaps = props.smallCaps; // w:smallCaps — small capitals
   if (props.rtl !== undefined) style.rtl = props.rtl; // explicit w:rtl="0" clears inherited RTL
+  if (props.symbol) {
+    // Symbol glyph (w:sym): keep the marker for round-trip AND set the font so the
+    // decoded code point paints in the symbol face (e.g. Wingdings), not body text.
+    style.symbol = { font: props.symbol.font, char: props.symbol.char };
+    style.fontFamily = `${props.symbol.font}, sans-serif`;
+  }
 }
 
 /** IR content controls → model SdtProps (shapes match; copy defined fields). */

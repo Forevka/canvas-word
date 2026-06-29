@@ -118,6 +118,15 @@ public sealed class DocumentBuilder : StoryBuilderBase<DocumentBuilder>
         return this;
     }
 
+    /// <summary>Set the document's default tab interval in px (OOXML settings.xml
+    /// w:defaultTabStop). A <c>\t</c> past the last explicit tab stop advances to the next
+    /// multiple of this. Non-positive values are ignored.</summary>
+    public DocumentBuilder DefaultTabStop(double px)
+    {
+        JsScope.InvokeMethod("defaultTabStop", px);
+        return this;
+    }
+
     /// <summary>Register (or override) a REAL table style (OOXML w:style[type=table]) with
     /// conditional bands. Reference it from <c>.Table(rows, new TableOptions { StyleId = def.Id })</c>.</summary>
     public DocumentBuilder TableStyle(TableStyleDef def)

@@ -12,7 +12,8 @@ import { parseNumberingXml, EMPTY_NUMBERING } from "./numbering";
 import { findByType, parseRelationships, relsPartFor, type Relationships } from "./relationships";
 import { createStyleResolver, parseStylesXml, resolveTableStyle, EMPTY_STYLES } from "./styles";
 import { parseThemeXml, EMPTY_THEME } from "./theme";
-import { el, parseXml, rootEl } from "./xml";
+import { attr, el, els, numAttr, parseXml, rootEl } from "./xml";
+import { round2, twipsToPx } from "./units";
 import { openArchive, type Archive } from "./zip";
 import { ImportError, WarningSink, type BandRefs, type ImportMedia, type ImportPhase, type ImportResult, type IRSdtProps, type MediaCollector, type RunImportOpts } from "./types";
 
@@ -103,7 +104,8 @@ export function runImport(
   // Their content controls join the document's sdt registry. The first/even
   // variants only apply when Word would use them (w:titlePg / settings evenAndOdd).
   const settingsXml = partByRelType(archive, rels, "settings") ?? archive.text("word/settings.xml");
-  const evenAndOdd = settingsXml !== undefined && hasEvenAndOdd(settingsXml);
+  const settings = settingsXml !== undefined ? parseSettings(settingsXml) : { evenAndOdd: false };
+  const evenAndOdd = settings.evenAndOdd;
   mapBands(section, "header", ir.section?.headerRefs, ir.section?.titlePg ?? false, evenAndOdd, archive, rels, mapper, mediaFor, warnings, ir.sdts);
   mapBands(section, "footer", ir.section?.footerRefs, ir.section?.titlePg ?? false, evenAndOdd, archive, rels, mapper, mediaFor, warnings, ir.sdts);
 
@@ -165,6 +167,11 @@ export function runImport(
   // blocks already carry the matching fieldId (see mapToModel).
   if (ir.fields) doc.fields = ir.fields;
 
+  // Document-level settings.xml bits: a non-default tab interval honored at layout,
+  // and compat triples round-tripped verbatim.
+  if (settings.defaultTabStopPx !== undefined) doc.defaultTabStopPx = settings.defaultTabStopPx;
+  if (settings.compatSettings) doc.compatSettings = settings.compatSettings;
+
   return {
     doc,
     warnings: warnings.list,
@@ -222,10 +229,32 @@ function mapBands(
   if (evenAndOdd) set(slot("Even"), refs.even);
 }
 
-/** settings.xml w:evenAndOddHeadersAndFooters — even-page bands only apply when on. */
-function hasEvenAndOdd(settingsXml: string): boolean {
+interface ParsedSettings {
+  /** w:evenAndOddHeadersAndFooters — even-page bands only apply when on. */
+  evenAndOdd: boolean;
+  /** w:defaultTabStop (twips) → px — the layout's tab interval past the last stop. */
+  defaultTabStopPx?: number;
+  /** w:compat/w:compatSetting triples, round-tripped verbatim. */
+  compatSettings?: { name: string; uri: string; val: string }[];
+}
+
+/** Decode the document-level settings.xml bits the model cares about. */
+function parseSettings(settingsXml: string): ParsedSettings {
   const root = rootEl(parseXml(settingsXml, "settings.xml"), "w:settings");
-  return !!root && !!el(root, "w:evenAndOddHeadersAndFooters");
+  if (!root) return { evenAndOdd: false };
+  const out: ParsedSettings = { evenAndOdd: !!el(root, "w:evenAndOddHeadersAndFooters") };
+  const twips = numAttr(el(root, "w:defaultTabStop"), "w:val");
+  // Word's own default is 720 twips; only carry an explicit, non-default value so a
+  // plain document keeps the engine's fallback constant (no needless model field).
+  if (twips !== undefined && twips > 0 && twips !== 720) out.defaultTabStopPx = round2(twipsToPx(twips));
+  const compat = el(root, "w:compat");
+  if (compat) {
+    const settings = els(compat, "w:compatSetting")
+      .map((c) => ({ name: attr(c, "w:name") ?? "", uri: attr(c, "w:uri") ?? "", val: attr(c, "w:val") ?? "" }))
+      .filter((c) => c.name !== "");
+    if (settings.length > 0) out.compatSettings = settings;
+  }
+  return out;
 }
 
 function relsOf(archive: Archive, partName: string): Relationships {

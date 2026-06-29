@@ -21,6 +21,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   .mirrorIndents().adjustRightInd()`) and the C# bindings (`ParagraphBuilder.WidowControl`,
   `.SuppressLineNumbers`, `.TextAlignment(LineVAlign)`, `.MirrorIndents`, `.AdjustRightInd`),
   and demonstrated in the default showcase document.
+- **Miscellaneous OOXML round-trip — symbols, image crop, in-cell floating images & default
+  tab stops (#63).** A grouped backlog of previously-dropped Word features now round-trips:
+  - **Symbol characters (`CharStyle.symbol`, OOXML `w:sym`).** Inline symbol-font runs carry
+    their font + hex code point (e.g. Wingdings `F0E0`) instead of being dropped or flattened
+    to a stray Private-Use character. The run's text is the decoded glyph (painted in the symbol
+    font); export re-emits `w:sym`. Authorable via `paragraph(...).symbol(font, charHex)` and the
+    C# `ParagraphBuilder.Symbol(font, charHex)`.
+  - **Image cropping (`ImageBlock.crop`, OOXML `a:srcRect`).** DrawingML crop insets (1/1000 of a
+    percent) are parsed into 0..1 fractions, painted (canvas source-rect crop; PDF clip + scaled
+    draw), and re-emitted as `a:srcRect`. Authorable via the `image()` `crop` option and the C#
+    `ImageOptions.Crop` / `ImageCrop` record.
+  - **Floating images inside table cells.** Anchored (`wp:anchor`/`wrapNone`) images inside a
+    `w:tc` are preserved as cell `ImageBlock`s instead of being dropped (cells previously kept
+    only paragraphs/tables).
+  - **`settings.xml` (`Document.defaultTabStopPx` + `Document.compatSettings`).** `w:defaultTabStop`
+    is honored at layout — a `\t` past the last explicit tab stop now advances by the document's
+    interval instead of a fixed 0.5in constant — and `w:compat/w:compatSetting` triples round-trip
+    verbatim. Authorable via `DocumentBuilder.defaultTabStop(px)` / C# `DefaultTabStop(px)`.
+  All four are demonstrated in the default showcase document and the C# showcase, with docx
+  round-trip + layout tests.
 - **Paragraph borders & shading (`ParaStyle.borders` + `ParaStyle.shading`).** A whole
   paragraph can now carry a border box (OOXML `w:pBdr` — `top`/`right`/`bottom`/`left`,
   plus a round-tripped inter-paragraph `between` edge) and a background fill (paragraph-level

@@ -91,6 +91,14 @@ export interface CharStyle {
    *  offset-transparent. Takes precedence over `caps` when both are set. `| undefined`
    *  so a patch can clear it. */
   smallCaps?: boolean | undefined;
+  /** Symbol-font glyph (OOXML w:sym): `font` is the symbol font (e.g. "Wingdings")
+   *  and `char` is the UPPER-CASE hex code point Word stores (usually a Private-Use
+   *  value like "F0E0"). The run's `text` is the decoded character (so layout/paint
+   *  measure and draw it in `font`); on export the run re-emits w:sym instead of
+   *  w:t. `fontFamily` is set to `font` on import so the glyph paints correctly even
+   *  without consulting this marker — which exists for a faithful docx round-trip.
+   *  `| undefined` so a patch can strip it. */
+  symbol?: { font: string; char: string } | undefined;
 }
 
 /** Structured document tag (Word content control) properties — a direct
@@ -272,6 +280,12 @@ export interface ImageBlock {
   mediaId?: string;
   widthPx: number;
   heightPx: number;
+  /** Crop insets (OOXML DrawingML a:srcRect), each a 0..1 fraction of the source
+   *  image trimmed off that edge — so `widthPx`/`heightPx` describe the displayed
+   *  (cropped) box and the visible source window is
+   *  [left, 1-right] × [top, 1-bottom] of the original bytes. Absent = no crop.
+   *  Paint scales+clips to show only the window; export re-emits a:srcRect. */
+  crop?: { left: number; top: number; right: number; bottom: number };
   align: "left" | "center" | "right";
   /** 'block' (default): occupies vertical space like a paragraph.
    *  'square': floats at the left/right margin (per align) and following text
@@ -667,6 +681,14 @@ export interface Document {
    *  region as a real complex field; the editor refreshes it via `resolveField`.
    *  Absent when the document has no custom fields. */
   fields?: Record<string, FieldDef>;
+  /** Default tab interval in px (OOXML settings.xml w:defaultTabStop, twips→px).
+   *  A `\t` running past the last explicit tab stop advances to the next multiple
+   *  of this. Absent = the engine's Word-matching default (0.5in = 48px). */
+  defaultTabStopPx?: number;
+  /** Compatibility settings round-tripped from settings.xml w:compat/w:compatSetting
+   *  (the modern `name`/`uri`/`val` triples Word emits, e.g. compatibilityMode).
+   *  Preserved verbatim so a Word→edit→Word cycle keeps them. Absent = none. */
+  compatSettings?: { name: string; uri: string; val: string }[];
 }
 
 export interface BookmarkRange {

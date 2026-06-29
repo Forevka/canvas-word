@@ -143,6 +143,11 @@ function singleRun(run: Run, ctx: PartCtx): string {
     return oMath;
   }
   const rPr = rPrXml(s);
+  if (s.symbol) {
+    // Symbol-font glyph: re-emit w:sym (font + hex code point) instead of w:t, so
+    // it round-trips as a real Word symbol rather than a stray Private-Use char.
+    return el("w:r", undefined, rPr + el("w:sym", { "w:font": s.symbol.font, "w:char": s.symbol.char }));
+  }
   if (s.footnoteRef) {
     // model footnoteRef "fn<docxId>" -> w:footnoteReference w:id="<docxId>".
     const docxId = s.footnoteRef.replace(/^fn/, "");
@@ -766,6 +771,11 @@ function imageParagraphXml(img: Extract<Block, { kind: "image" }>, ctx: PartCtx)
   const relId = ctx.rels.add(REL.image, target);
   const cx = pxToEmu(img.widthPx);
   const cy = pxToEmu(img.heightPx);
+  // a:srcRect crop (insets as 1/1000 of a percent); omitted when there's no crop.
+  const pct = (frac: number): number => Math.round(frac * 100000);
+  const srcRect = img.crop
+    ? el("a:srcRect", { l: pct(img.crop.left), t: pct(img.crop.top), r: pct(img.crop.right), b: pct(img.crop.bottom) })
+    : "";
   const graphic = el(
     "a:graphic",
     undefined,
@@ -780,7 +790,7 @@ function imageParagraphXml(img: Extract<Block, { kind: "image" }>, ctx: PartCtx)
           undefined,
           el("pic:cNvPr", { id: 0, name: "image" }) + el("pic:cNvPicPr"),
         ) +
-          el("pic:blipFill", undefined, el("a:blip", { "r:embed": relId }) + el("a:stretch", undefined, el("a:fillRect"))) +
+          el("pic:blipFill", undefined, el("a:blip", { "r:embed": relId }) + srcRect + el("a:stretch", undefined, el("a:fillRect"))) +
           el(
             "pic:spPr",
             undefined,

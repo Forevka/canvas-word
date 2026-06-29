@@ -215,6 +215,11 @@ public sealed class ParagraphBuilder
     /// <summary>Force this run's text to a right-to-left embedding (OOXML w:rtl).</summary>
     public ParagraphBuilder Rtl(bool on = true) { _js.InvokeMethod("rtl", on); return this; }
 
+    /// <summary>Append a symbol-font glyph (OOXML w:sym). <paramref name="font"/> is the
+    /// symbol font (e.g. "Wingdings"); <paramref name="charHex"/> is the hex code point Word
+    /// stores (e.g. "F0E0"). The run renders the decoded glyph and re-emits w:sym on export.</summary>
+    public ParagraphBuilder Symbol(string font, string charHex) { _js.InvokeMethod("symbol", font, charHex); return this; }
+
     /// <summary>Apply a registered character style (a character NamedStyle): bakes its
     /// formatting onto the runs AND sets the w:rStyle reference.</summary>
     public ParagraphBuilder CharStyle(string id) { _js.InvokeMethod("charStyle", id); return this; }

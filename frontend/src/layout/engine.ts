@@ -28,6 +28,12 @@ const eqBox = (b: EquationBlock): MathBox => equationBox(b.equation, MATH_FONT_F
  *  (0.5 inch at 96 dpi). */
 const DEFAULT_TAB_STOP_PX = 48;
 
+/** Active default tab interval for the current layout pass — set from the
+ *  document's w:defaultTabStop (settings.xml) at the top of layout(), mirroring
+ *  the await-free module-level config the CJK fallback/font registry use. Falls
+ *  back to DEFAULT_TAB_STOP_PX for documents that don't override it. */
+let activeDefaultTabStopPx = DEFAULT_TAB_STOP_PX;
+
 /** Paint-only paragraph decoration (w:shd fill + w:pBdr border box) for a placed
  *  paragraph chunk. `boxWidth` is the content width between the paragraph's
  *  indents at this placement site; `height` is the chunk's rendered height.
@@ -182,6 +188,9 @@ export function createLayoutEngine(fontRegistry?: CustomFontRegistry, opts?: Lay
       // scriptSplitRuns reads the active fallback during this synchronous pass.
       setActiveCjkFallback(cjkFallback);
       applyCjkLocale(cjkLocale);
+      // Honor the document's w:defaultTabStop (settings.xml) for this pass; a `\t`
+      // past the last explicit stop advances by this interval (Word's behavior).
+      activeDefaultTabStopPx = doc.defaultTabStopPx && doc.defaultTabStopPx > 0 ? doc.defaultTabStopPx : DEFAULT_TAB_STOP_PX;
       const rawBand = options?.rawBand ?? null;
       touched = rawBand === null ? new Set<string>() : null;
       touchedBands = rawBand === null ? new Set<string>() : null;
@@ -444,8 +453,9 @@ interface RawLine {
  *  default-interval multiple. */
 function resolveTabStop(curX: number, stops: TabStop[], contentWidth: number): TabStop {
   for (const s of stops) if (s.posPx > curX + 0.5) return s;
-  let pos = (Math.floor(curX / DEFAULT_TAB_STOP_PX) + 1) * DEFAULT_TAB_STOP_PX;
-  if (pos <= curX) pos = curX + DEFAULT_TAB_STOP_PX;
+  const interval = activeDefaultTabStopPx;
+  let pos = (Math.floor(curX / interval) + 1) * interval;
+  if (pos <= curX) pos = curX + interval;
   return { posPx: Math.min(pos, Math.max(curX + 1, contentWidth)), align: "left", leader: "none" };
 }
 
@@ -1555,7 +1565,7 @@ function layoutDocument(
       case "line": oy = y; break; // current flow position
       default: oy = sec.marginPx.top; break; // margin
     }
-    const placedImage: PlacedImage = { src: img.src, width: img.widthPx, height: img.heightPx, z: a.z ?? 0 };
+    const placedImage: PlacedImage = { src: img.src, width: img.widthPx, height: img.heightPx, z: a.z ?? 0, ...(img.crop ? { crop: img.crop } : {}) };
     if (a.behind) placedImage.behind = true;
     else placedImage.front = true;
     page.blocks.push({
@@ -1581,7 +1591,7 @@ function layoutDocument(
       y,
       firstLineIndex: 0,
       lines: [],
-      image: { src: img.src, width: img.widthPx, height: img.heightPx },
+      image: { src: img.src, width: img.widthPx, height: img.heightPx, ...(img.crop ? { crop: img.crop } : {}) },
     });
     if (floating) {
       // Text flows beside the image: register the float, do NOT advance y.
@@ -2304,7 +2314,7 @@ function layoutBand(
         y,
         firstLineIndex: 0,
         lines: [],
-        image: { src: b.src, width: b.widthPx, height: b.heightPx },
+        image: { src: b.src, width: b.widthPx, height: b.heightPx, ...(b.crop ? { crop: b.crop } : {}) },
       });
       y += b.heightPx;
     } else if (b.kind === "equation") {

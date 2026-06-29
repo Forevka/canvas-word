@@ -461,6 +461,23 @@ function parseRun(r: XmlNode, out: IRInline[], ctx: ParseCtx, field: FieldState)
         case "w:noBreakHyphen":
           text += "‑";
           break;
+        case "w:sym": {
+          // A symbol-font glyph (font + hex code point). Flush pending text, then
+          // emit a standalone run carrying the symbol marker; its text is the
+          // decoded glyph so layout/paint render it in the symbol font.
+          const font = attr(node, "w:font");
+          const charHex = attr(node, "w:char");
+          if (font && charHex) {
+            flush();
+            out.push({
+              kind: "run",
+              text: symbolGlyph(charHex),
+              props: { ...props, symbol: { font, char: charHex.toUpperCase() } },
+              ...(field.resultFieldId ? { fieldId: field.resultFieldId } : {}),
+            });
+          }
+          break;
+        }
         case "w:drawing": {
           flush();
           const image = parseDrawing(node, ctx);
@@ -615,6 +632,16 @@ function handleFldChar(
 // ---------------------------------------------------------------------------
 // Images
 
+/** Decode a w:sym/@w:char hex code point to its glyph. Word stores symbol-font
+ *  glyphs in the Private-Use range (e.g. "F0E0"); we render that code point in the
+ *  symbol font. Falls back to a replacement char for an unparseable code. */
+function symbolGlyph(charHex: string): string {
+  const cp = parseInt(charHex, 16);
+  // Guard the full valid range — String.fromCodePoint throws RangeError above
+  // 0x10FFFF, so a malformed w:char must fall back instead of aborting the import.
+  return Number.isFinite(cp) && cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : "�";
+}
+
 /** DrawingML: w:drawing → wp:inline|wp:anchor → … → a:blip r:embed. The exact
  *  nesting varies by producer, so the blip is found by deep search. */
 function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
@@ -633,6 +660,19 @@ function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
   if (cx !== undefined) image.widthEmu = cx;
   const cy = numAttr(extent, "cy");
   if (cy !== undefined) image.heightEmu = cy;
+  // a:srcRect — crop insets in 1/1000 of a percent (so 10% = 10000). Normalize to
+  // a 0..1 fraction per edge; skip a degenerate rect (would crop the whole image).
+  const srcRect = findDeep(container, "a:srcRect");
+  if (srcRect) {
+    const inset = (name: string): number => {
+      const v = numAttr(srcRect, name);
+      return v !== undefined && Number.isFinite(v) ? v / 100000 : 0;
+    };
+    const crop = { left: inset("l"), top: inset("t"), right: inset("r"), bottom: inset("b") };
+    if ((crop.left || crop.top || crop.right || crop.bottom) && crop.left + crop.right < 1 && crop.top + crop.bottom < 1) {
+      image.crop = crop;
+    }
+  }
   if (anchor) {
     // Square/tight/through wrap maps onto the model's "square" float; wrapNone
     // (behind/in-front of text) becomes an absolutely-positioned anchor; only
