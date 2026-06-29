@@ -160,11 +160,13 @@ export function partialPPrXml(p: Partial<ParaStyle>): string {
   else if (p.contextualSpacing === false) out.push(el("w:contextualSpacing", { "w:val": "0" }));
   if (p.keepWithNext) out.push(el("w:keepNext"));
   if (p.keepLinesTogether) out.push(el("w:keepLines"));
-  // Minor paragraph props (issue #62) — see documentXml.pPrXml for the on/off rules.
+  // Minor paragraph props (issue #62) — see documentXml.pPrXml. In a style patch
+  // `false` is a real override, so emit each on/off element whenever it is DEFINED
+  // (false → w:val="0") to keep the style contract lossless.
   if (p.widowControl !== undefined) out.push(el("w:widowControl", p.widowControl ? undefined : { "w:val": "0" }));
-  if (p.suppressLineNumbers) out.push(el("w:suppressLineNumbers"));
-  if (p.mirrorIndents) out.push(el("w:mirrorIndents"));
-  if (p.adjustRightInd) out.push(el("w:adjustRightInd"));
+  if (p.suppressLineNumbers !== undefined) out.push(el("w:suppressLineNumbers", p.suppressLineNumbers ? undefined : { "w:val": "0" }));
+  if (p.mirrorIndents !== undefined) out.push(el("w:mirrorIndents", p.mirrorIndents ? undefined : { "w:val": "0" }));
+  if (p.adjustRightInd !== undefined) out.push(el("w:adjustRightInd", p.adjustRightInd ? undefined : { "w:val": "0" }));
   if (p.textAlignment) out.push(el("w:textAlignment", { "w:val": p.textAlignment }));
   if (p.borders) out.push(paraBordersXml(p.borders));
   if (p.shading) out.push(shdFillXml(p.shading));

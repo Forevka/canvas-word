@@ -259,14 +259,14 @@ function pPrXml(style: ParaStyle, ctx: PartCtx, markRun?: CharStyle): string {
   if (style.pageBreakBefore) c.push(el("w:pageBreakBefore"));
   if (style.keepWithNext) c.push(el("w:keepNext"));
   if (style.keepLinesTogether) c.push(el("w:keepLines"));
-  // Minor paragraph props (issue #62). widowControl defaults ON in Word, so emit
-  // it whenever set (an explicit "0" preserves an OFF); the rest default OFF and
-  // emit only when enabled (matching keepNext/keepLines). w:textAlignment is the
+  // Minor paragraph props (issue #62). Each on/off element is emitted whenever the
+  // field is DEFINED (an explicit "0" preserves an OFF that overrides a true value
+  // inherited from style.namedStyle); absent stays absent. w:textAlignment is the
   // sole valued element. Our importer is order-independent, so grouping here is fine.
   if (style.widowControl !== undefined) c.push(el("w:widowControl", style.widowControl ? undefined : { "w:val": "0" }));
-  if (style.suppressLineNumbers) c.push(el("w:suppressLineNumbers"));
-  if (style.mirrorIndents) c.push(el("w:mirrorIndents"));
-  if (style.adjustRightInd) c.push(el("w:adjustRightInd"));
+  if (style.suppressLineNumbers !== undefined) c.push(el("w:suppressLineNumbers", style.suppressLineNumbers ? undefined : { "w:val": "0" }));
+  if (style.mirrorIndents !== undefined) c.push(el("w:mirrorIndents", style.mirrorIndents ? undefined : { "w:val": "0" }));
+  if (style.adjustRightInd !== undefined) c.push(el("w:adjustRightInd", style.adjustRightInd ? undefined : { "w:val": "0" }));
   if (style.textAlignment) c.push(el("w:textAlignment", { "w:val": style.textAlignment }));
   // w:pBdr / w:shd precede spacing/ind/jc in the CT_PPr schema sequence.
   if (style.borders) c.push(paraBordersXml(style.borders));

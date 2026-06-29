@@ -66,6 +66,19 @@ describe("minor paragraph properties — w:widowControl / w:suppressLineNumbers 
     expect(c!.style.adjustRightInd).toBeUndefined();
   });
 
+  it("preserves an explicit OFF (false) so it can override an inherited true", () => {
+    // false is a real override, not the same as absent — it must serialize as
+    // w:val="0" and survive the round-trip (so a paragraph can clear a style's true).
+    const xml = exportedXml({ section: SECTION, blocks: [para("off", { suppressLineNumbers: false, mirrorIndents: false, adjustRightInd: false })] });
+    expect(xml).toContain('<w:suppressLineNumbers w:val="0"/>');
+    expect(xml).toContain('<w:mirrorIndents w:val="0"/>');
+    expect(xml).toContain('<w:adjustRightInd w:val="0"/>');
+    const p = paras(roundTrip({ section: SECTION, blocks: [para("off", { suppressLineNumbers: false, mirrorIndents: false, adjustRightInd: false })] }))[0]!;
+    expect(p.style.suppressLineNumbers).toBe(false);
+    expect(p.style.mirrorIndents).toBe(false);
+    expect(p.style.adjustRightInd).toBe(false);
+  });
+
   it("parses the props from a hand-written w:pPr", () => {
     const body =
       `<w:p><w:pPr>` +

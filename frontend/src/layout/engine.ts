@@ -1948,7 +1948,9 @@ function layoutDocument(
           fit++;
         }
         let take = fit;
-        if (fit < m2.lines.length) {
+        // Apply the orphan/widow take only when the terminator has widow control on
+        // (default); widowControl:false lets a lone line stand, so don't force a page.
+        if (fit < m2.lines.length && m2.block.style.widowControl !== false) {
           if (m2.lines.length - take === 1) take -= WIDOW_MIN - 1; // widow
           if (take < ORPHAN_MIN) take = 0; // orphan
         }
