@@ -637,7 +637,9 @@ function handleFldChar(
  *  symbol font. Falls back to a replacement char for an unparseable code. */
 function symbolGlyph(charHex: string): string {
   const cp = parseInt(charHex, 16);
-  return Number.isFinite(cp) && cp > 0 ? String.fromCodePoint(cp) : "�";
+  // Guard the full valid range — String.fromCodePoint throws RangeError above
+  // 0x10FFFF, so a malformed w:char must fall back instead of aborting the import.
+  return Number.isFinite(cp) && cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : "�";
 }
 
 /** DrawingML: w:drawing → wp:inline|wp:anchor → … → a:blip r:embed. The exact

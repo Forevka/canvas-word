@@ -43,6 +43,14 @@ describe("symbols — w:sym", () => {
     expect(exportedDocXml(doc)).toContain('<w:sym w:font="Wingdings" w:char="F04A"/>');
   });
 
+  it("falls back to the replacement glyph for a code point above the Unicode max (no throw)", () => {
+    // 0x110000 > 0x10FFFF would make String.fromCodePoint throw — import must survive.
+    const r = runImport(simpleDocx(`<w:p><w:r><w:sym w:font="Wingdings" w:char="110000"/></w:r></w:p>`)).doc;
+    const run0 = firstPara(r).runs.find((x) => x.style.symbol)!;
+    expect(run0.text).toBe("�");
+    expect(run0.style.symbol).toEqual({ font: "Wingdings", char: "110000" });
+  });
+
   it("survives a model → export → re-import round-trip", () => {
     const glyph = String.fromCodePoint(0xf04a);
     const doc: Document = { section: SECTION, blocks: [para([run("before "), run(glyph, { fontFamily: "Wingdings, sans-serif", symbol: { font: "Wingdings", char: "F04A" } }), run(" after")])] };
@@ -142,6 +150,18 @@ describe("settings.xml — w:defaultTabStop + w:compat", () => {
   it("treats Word's 720-twip default as 'no override' (keeps the model field absent)", () => {
     const r = runImport(docxWithSettings(`<w:defaultTabStop w:val="720"/>`)).doc;
     expect(r.defaultTabStopPx).toBeUndefined();
+  });
+
+  it("does NOT emit settings a re-import would discard (empty-name compat / non-positive tab stop)", () => {
+    const doc: Document = {
+      section: SECTION,
+      blocks: [para([run("hi")])],
+      defaultTabStopPx: 0, // non-positive → must be skipped (matches parseSettings)
+      compatSettings: [{ name: "", uri: "u", val: "1" }], // empty name → must be filtered
+    };
+    const xml = exportedSettingsXml(doc);
+    expect(xml).not.toContain("w:defaultTabStop");
+    expect(xml).not.toContain("w:compatSetting");
   });
 
   it("emits w:defaultTabStop + w:compatSetting on export and round-trips them", () => {

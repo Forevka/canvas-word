@@ -203,7 +203,7 @@ export class ParagraphBuilder<P extends StoryBuilder> {
    *  w:sym on export. */
   symbol(font: string, charHex: string): this {
     const cp = parseInt(charHex, 16);
-    const text = Number.isFinite(cp) && cp > 0 ? String.fromCodePoint(cp) : "�";
+    const text = Number.isFinite(cp) && cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : "�";
     return this.pushRun(this.ctx.run(text, { ...this.charPatch, fontFamily: `${font}, sans-serif`, symbol: { font, char: charHex.toUpperCase() } }));
   }
 

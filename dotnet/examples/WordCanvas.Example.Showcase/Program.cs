@@ -19,6 +19,8 @@ const string Lorem = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, s
 
 var blue = SolidPng(360, 110, 0x1a, 0x73, 0xe8);
 var purple = SolidPng(150, 110, 0x9c, 0x27, 0xb0);
+// A non-uniform tile so the image-crop (a:srcRect) demo shows a visible difference.
+var quad = QuadrantPng(150, 110);
 
 using var engine = new WordCanvasEngine();
 
@@ -243,8 +245,8 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
         .Text("  ").Symbol("Webdings", "F069")
         .Text(" — each is a glyph from a symbol font, not text."))
     .Paragraph("Image cropping (a:srcRect) trims the source to a window — here the same tile is shown whole, then center-cropped:")
-    .Image(purple, "image/png", new ImageOptions { WidthPx = 150, HeightPx = 110, Align = TextAlign.Left, Wrap = ImageWrap.Block })
-    .Image(purple, "image/png", new ImageOptions { WidthPx = 150, HeightPx = 110, Align = TextAlign.Left, Wrap = ImageWrap.Block, Crop = new ImageCrop(0.25, 0.2, 0.25, 0.2) })
+    .Image(quad, "image/png", new ImageOptions { WidthPx = 150, HeightPx = 110, Align = TextAlign.Left, Wrap = ImageWrap.Block })
+    .Image(quad, "image/png", new ImageOptions { WidthPx = 150, HeightPx = 110, Align = TextAlign.Left, Wrap = ImageWrap.Block, Crop = new ImageCrop(0.25, 0.2, 0.25, 0.2) })
     .Paragraph("Tab stops honor the document's default interval (w:defaultTabStop): columns\tline up\tat\teach default tab.")
 
     // ---- International text (CJK) ----
@@ -319,6 +321,31 @@ static string Repeat(string s, int n) => string.Concat(Enumerable.Repeat(s, n));
 
 // Minimal solid-color PNG encoder (RGB, no deps) so the builder has real image bytes
 // to embed — pdfkit can't embed the SVG data URLs the in-browser sample uses.
+// A non-uniform tile: four colored quadrants over a contrasting center square, so a
+// center crop (a:srcRect) is visibly different from the full image in the showcase.
+static byte[] QuadrantPng(int w, int h)
+{
+    var raw = new byte[h * (1 + w * 3)];
+    var p = 0;
+    for (var y = 0; y < h; y++)
+    {
+        raw[p++] = 0; // filter: none
+        for (var x = 0; x < w; x++)
+        {
+            // center band (the part the demo crop keeps) is white; quadrants differ.
+            bool cx = x > w / 4 && x < 3 * w / 4, cy = y > h / 4 && y < 3 * h / 4;
+            byte r, g, b;
+            if (cx && cy) { r = 0xff; g = 0xff; b = 0xff; }
+            else if (x < w / 2 && y < h / 2) { r = 0x1a; g = 0x73; b = 0xe8; }
+            else if (x >= w / 2 && y < h / 2) { r = 0x9c; g = 0x27; b = 0xb0; }
+            else if (x < w / 2) { r = 0x18; g = 0x80; b = 0x38; }
+            else { r = 0xe8; g = 0x71; b = 0x0a; }
+            raw[p++] = r; raw[p++] = g; raw[p++] = b;
+        }
+    }
+    return EncodePng(w, h, raw);
+}
+
 static byte[] SolidPng(int w, int h, byte r, byte g, byte b)
 {
     var raw = new byte[h * (1 + w * 3)];
@@ -328,6 +355,11 @@ static byte[] SolidPng(int w, int h, byte r, byte g, byte b)
         raw[p++] = 0; // filter: none
         for (var x = 0; x < w; x++) { raw[p++] = r; raw[p++] = g; raw[p++] = b; }
     }
+    return EncodePng(w, h, raw);
+}
+
+static byte[] EncodePng(int w, int h, byte[] raw)
+{
 
     byte[] idat;
     using (var z = new MemoryStream())

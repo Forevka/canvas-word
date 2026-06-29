@@ -15,13 +15,21 @@ export interface SettingsXmlOptions {
 }
 
 export function settingsXml(opts: SettingsXmlOptions): string {
+  // Mirror parseSettings' acceptance rules so export never writes settings that a
+  // re-import would immediately discard (a builder/hand-built doc could set either):
+  // compat entries need a non-empty name, and the tab stop must be a positive number.
+  const compatSettings = (opts.compatSettings ?? []).filter((c) => c.name.length > 0);
+  const defaultTabStopPx =
+    opts.defaultTabStopPx !== undefined && Number.isFinite(opts.defaultTabStopPx) && opts.defaultTabStopPx > 0
+      ? opts.defaultTabStopPx
+      : undefined;
   // w:displayBackgroundShape makes Word actually paint w:background (the page color).
   const compat =
-    opts.compatSettings && opts.compatSettings.length > 0
+    compatSettings.length > 0
       ? el(
           "w:compat",
           undefined,
-          opts.compatSettings
+          compatSettings
             .map((c) => el("w:compatSetting", { "w:name": c.name, "w:uri": c.uri, "w:val": c.val }))
             .join(""),
         )
@@ -29,7 +37,7 @@ export function settingsXml(opts: SettingsXmlOptions): string {
   const body =
     (opts.displayBackgroundShape ? el("w:displayBackgroundShape") : "") +
     (opts.evenAndOdd ? el("w:evenAndOddHeadersAndFooters") : "") +
-    (opts.defaultTabStopPx !== undefined ? el("w:defaultTabStop", { "w:val": Math.round(pxToTwips(opts.defaultTabStopPx)) }) : "") +
+    (defaultTabStopPx !== undefined ? el("w:defaultTabStop", { "w:val": Math.round(pxToTwips(defaultTabStopPx)) }) : "") +
     compat;
   return XML_DECL + el("w:settings", WML_NS, body);
 }

@@ -78,7 +78,7 @@ const croppedImage = (label: string, w: number, h: number, crop: NonNullable<Ima
  *  glyph and painted in that font (e.g. Wingdings). Round-trips as a real w:sym. */
 const symRun = (font: string, charHex: string): Run => {
   const cp = parseInt(charHex, 16);
-  return { text: Number.isFinite(cp) && cp > 0 ? String.fromCodePoint(cp) : "�", style: { ...BODY, fontFamily: `${font}, sans-serif`, fontSizePx: 18, symbol: { font, char: charHex.toUpperCase() } } };
+  return { text: Number.isFinite(cp) && cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : "�", style: { ...BODY, fontFamily: `${font}, sans-serif`, fontSizePx: 18, symbol: { font, char: charHex.toUpperCase() } } };
 };
 
 // --- equations (MathML) --------------------------------------------------------
