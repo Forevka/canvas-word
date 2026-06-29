@@ -360,6 +360,15 @@ export interface IRTableCell {
   /** w:tcPr/w:vAlign — vertical alignment of cell content (→ TableCell.vAlign).
    *  Absent (or "top") = top-aligned, the default. */
   vAlign?: "top" | "center" | "bottom";
+  /** w:tcPr/w:textDirection — text flow direction (→ TableCell.textDirection).
+   *  Absent (or "lrTb") = normal horizontal text. */
+  textDirection?: "lrTb" | "tbRl" | "btLr" | "lrTbV" | "tbRlV" | "tbLrV";
+  /** w:tcPr/w:noWrap — suppress content wrapping (→ TableCell.noWrap). */
+  noWrap?: boolean;
+  /** w:tcPr/w:tcFitText — fit text to width (→ TableCell.fitText). */
+  fitText?: boolean;
+  /** w:tcPr/w:hideMark — ignore the end-of-cell mark for row height (→ TableCell.hideMark). */
+  hideMark?: boolean;
 }
 
 export interface IRTableRow {
@@ -387,6 +396,16 @@ export interface IRTable {
   preferredWidthPct?: number;
   /** w:tblPr/w:jc → table alignment within the content width (→ TableBlock.align). */
   align?: "left" | "center" | "right";
+  /** w:tblPr/w:tblInd preferred indent in twips (dxa) (→ TableBlock.indentPx). */
+  indentTwips?: number;
+  /** w:tblPr/w:bidiVisual → render columns right-to-left (→ TableBlock.bidiVisual). */
+  bidiVisual?: boolean;
+  /** w:tblPr/w:tblOverlap → floating-table overlap behavior (→ TableBlock.overlap). */
+  overlap?: "never" | "overlap";
+  /** w:tblPr/w:tblCaption → table title/caption (→ TableBlock.caption). */
+  caption?: string;
+  /** w:tblPr/w:tblDescription → table alt text (→ TableBlock.description). */
+  description?: string;
   /** w:tblPr/w:tblStyle — table style id (its borders/shd are the cascade base). */
   styleId?: string;
   /** w:tblPr/w:tblLook — which conditional bands of the table style are active. */

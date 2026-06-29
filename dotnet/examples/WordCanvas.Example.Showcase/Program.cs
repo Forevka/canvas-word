@@ -131,6 +131,27 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
             .Cell("top", new CellOptions { VAlign = CellVAlign.Top, Style = new CharStyle { Color = "#188038" } })
             .Cell("center", new CellOptions { VAlign = CellVAlign.Center, Style = new CharStyle { Color = "#188038" } })
             .Cell("bottom", new CellOptions { VAlign = CellVAlign.Bottom, Style = new CharStyle { Color = "#188038" } })))
+    .Paragraph("Minor & advanced table props (w:tblInd indent, w:bidiVisual right-to-left columns, w:textDirection / w:noWrap cells, plus caption/description alt text):")
+    .Table(t => t
+        .Row(r => r
+            .Cell("Standings", new CellOptions { Shading = "#9c27b0", TextDirection = CellTextDirection.TbRl, Style = new CharStyle { Bold = true, Color = "#ffffff" } })
+            .Cell("Rank 1", new CellOptions { Shading = "#9c27b0", NoWrap = true, Style = new CharStyle { Bold = true, Color = "#ffffff" } })
+            .Cell("Rank 2", new CellOptions { Shading = "#9c27b0", NoWrap = true, Style = new CharStyle { Bold = true, Color = "#ffffff" } })
+            .Cell("Rank 3", new CellOptions { Shading = "#9c27b0", NoWrap = true, Style = new CharStyle { Bold = true, Color = "#ffffff" } }))
+        .Row(r => r
+            .Cell("Points", new CellOptions { Style = new CharStyle { Bold = true } })
+            .Cell("980", new CellOptions { HideMark = true, Style = new CharStyle { Color = "#188038" } })
+            .Cell("845", new CellOptions { HideMark = true, Style = new CharStyle { Color = "#188038" } })
+            .Cell("712", new CellOptions { HideMark = true, Style = new CharStyle { Color = "#188038" } })),
+        new TableOptions
+        {
+            ColFractions = new[] { 0.4, 0.2, 0.2, 0.2 },
+            Indent = 36,
+            BidiVisual = true,
+            Overlap = TableOverlap.Never,
+            Caption = "Leaderboard",
+            Description = "A right-to-left, indented table demonstrating issue #61 table properties.",
+        })
     .Paragraph("Fields work inside table cells too:")
     .Table(t => t
         .Row(r => r.Cell("Metric", Bold()).Cell("Value", Bold()))

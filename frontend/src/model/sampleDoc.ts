@@ -129,6 +129,35 @@ const vAlignTable = (): TableBlock => ({
   ],
 });
 
+/** Minor & advanced table props (issue #61): the table is indented from the left
+ *  margin (w:tblInd) and lays its columns out in RIGHT-TO-LEFT visual order
+ *  (w:bidiVisual) — so the "Rank 1" column paints at the right edge — while carrying
+ *  accessibility caption/description metadata. The first cell rotates its text
+ *  (w:textDirection) and the rank cells keep their content on one line (w:noWrap). */
+const advancedPropsTable = (): TableBlock => ({
+  kind: "table", id: id(), revision: 0,
+  colFractions: [0.4, 0.2, 0.2, 0.2],
+  indentPx: 36,
+  bidiVisual: true,
+  overlap: "never",
+  caption: "Leaderboard",
+  description: "A right-to-left, indented table demonstrating issue #61 table properties.",
+  rows: [
+    { cells: [
+      cell("Standings", { bold: true, color: "#fff" }, { shading: "#9c27b0", textDirection: "tbRl" }),
+      cell("Rank 1", { bold: true, color: "#fff" }, { shading: "#9c27b0", noWrap: true }),
+      cell("Rank 2", { bold: true, color: "#fff" }, { shading: "#9c27b0", noWrap: true }),
+      cell("Rank 3", { bold: true, color: "#fff" }, { shading: "#9c27b0", noWrap: true }),
+    ] },
+    { cells: [
+      cell("Points", { bold: true }),
+      cell("980", { color: "#188038" }, { hideMark: true }),
+      cell("845", { color: "#188038" }, { hideMark: true }),
+      cell("712", { color: "#188038" }, { hideMark: true }),
+    ] },
+  ],
+});
+
 /** A cell paragraph carrying an explicit base direction (RTL) — for the bidi
  *  table demo, so the cell's text right-aligns and reorders inside its column. */
 const dirCellPara = (runs: Run[], direction?: "rtl"): Paragraph => ({
@@ -377,6 +406,8 @@ export function sampleDoc(): Document {
     mergedTable(),
     para([run("Cell vertical alignment (w:vAlign) — short labels sit top, centered and bottom within a tall row:")], { spaceBeforePx: 10, spaceAfterPx: 6 }),
     vAlignTable(),
+    para([run("Minor & advanced table props (w:tblInd indent, w:bidiVisual right-to-left columns, w:textDirection / w:noWrap cells, plus caption/description alt text):")], { spaceBeforePx: 10, spaceAfterPx: 6 }),
+    advancedPropsTable(),
     para([run("Fields work inside table cells too:")], { spaceBeforePx: 10, spaceAfterPx: 6 }),
     fieldInCellTable,
     para([run("And a table tall enough to paginate across pages — rows break cleanly:")], { spaceBeforePx: 10, spaceAfterPx: 6 }),

@@ -52,6 +52,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   corner, so the two interactions never collide. Editor-UX only — it reuses the
   `TableRow.height` model (and thus the `.docx` round-trip) added previously; built
   on a new `setRowHeight` op with an undo inverse.
+- **Minor & advanced table properties (issue #61).** Tables and cells now carry a set of
+  previously-dropped OOXML properties. Table-level: `TableBlock.indentPx` (`w:tblPr/w:tblInd`)
+  indents the whole table from the leading margin, and `TableBlock.bidiVisual`
+  (`w:tblPr/w:bidiVisual`) lays the columns out in **right-to-left** visual order (grid column
+  0 paints at the right edge) — both honored by the layout engine; `TableBlock.overlap`
+  (`w:tblOverlap`) plus `caption`/`description` (`w:tblCaption`/`w:tblDescription` alt text)
+  round-trip as metadata. Cell-level: `TableCell.textDirection` (`w:textDirection` — vertical
+  text), `noWrap` (`w:noWrap`), `fitText` (`w:tcFitText`), and `hideMark` (`w:hideMark`) all
+  round-trip through `.docx` (parsed in `documentParser`, emitted from `documentXml` in
+  `CT_TblPrBase`/`CT_TcPr` child order). Authorable via the builder
+  (`.table(rows, { indent, bidiVisual, overlap, caption, description })` and cell
+  `{ textDirection, noWrap, fitText, hideMark }`) and the mirrored C# bindings
+  (`TableOptions` + `CellOptions`/`CellSpec`, new `CellTextDirection`/`TableOverlap` enums),
+  and demonstrated in the default showcase document. (Floating positioned tables `w:tblpPr`
+  and conditional-band cell margins `w:tblStylePr/w:tcMar` remain out of scope for this pass.)
 - **Paragraph borders & shading (`ParaStyle.borders` + `ParaStyle.shading`).** A whole
   paragraph can now carry a border box (OOXML `w:pBdr` — `top`/`right`/`bottom`/`left`,
   plus a round-tripped inter-paragraph `between` edge) and a background fill (paragraph-level

@@ -759,6 +759,10 @@ export function createMapper(
             : { type: "abs", px: round2(twipsToPx(irCell.preferredWidth.twips)) };
       }
       if (irCell.vAlign) cell.vAlign = irCell.vAlign;
+      if (irCell.textDirection) cell.textDirection = irCell.textDirection;
+      if (irCell.noWrap) cell.noWrap = true;
+      if (irCell.fitText) cell.fitText = true;
+      if (irCell.hideMark) cell.hideMark = true;
       return cell;
     };
 
@@ -838,6 +842,13 @@ export function createMapper(
     if (ir.preferredWidthTwips) table.preferredWidth = { type: "px", value: round2(twipsToPx(ir.preferredWidthTwips)) };
     else if (ir.preferredWidthPct) table.preferredWidth = { type: "pct", value: ir.preferredWidthPct };
     if (ir.align && ir.align !== "left") table.align = ir.align;
+    // Minor & advanced table props (issue #61): indent + RTL column order drive
+    // layout; overlap/caption/description round-trip as metadata.
+    if (ir.indentTwips) table.indentPx = round2(twipsToPx(ir.indentTwips));
+    if (ir.bidiVisual) table.bidiVisual = true;
+    if (ir.overlap) table.overlap = ir.overlap;
+    if (ir.caption) table.caption = ir.caption;
+    if (ir.description) table.description = ir.description;
     // Table-level defaults (w:tblBorders/w:shd/w:tblCellMar). These are cascaded
     // onto the cells above for layout/paint; retained here so export re-emits them
     // at tblPr level (issue #48) rather than only as the baked per-cell copies.
