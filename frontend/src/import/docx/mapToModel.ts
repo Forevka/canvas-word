@@ -34,7 +34,7 @@ import type { NamedStyle, Stylesheet } from "@cw/shared";
 import type { ListDefinition, ListLevel, ListNumberFormat } from "@cw/shared";
 import type { TableCond, TableCondProps, TableStyle } from "@cw/shared";
 import { normalizeRuns } from "@cw/shared";
-import { cellBordersFromIR, resolveCellBorders, type BorderSources, type CellPosition } from "./borders";
+import { cellBordersFromIR, resolveCellBorders, tableBordersFromIR, type BorderSources, type CellPosition } from "./borders";
 import type { MediaStore } from "./media";
 import type { NumberingData } from "./numbering";
 import type { ResolvedTableStyle, StyleResolver, StylesData } from "./styles";
@@ -816,6 +816,21 @@ export function createMapper(
     if (ir.preferredWidthTwips) table.preferredWidth = { type: "px", value: round2(twipsToPx(ir.preferredWidthTwips)) };
     else if (ir.preferredWidthPct) table.preferredWidth = { type: "pct", value: ir.preferredWidthPct };
     if (ir.align && ir.align !== "left") table.align = ir.align;
+    // Table-level defaults (w:tblBorders/w:shd/w:tblCellMar). These are cascaded
+    // onto the cells above for layout/paint; retained here so export re-emits them
+    // at tblPr level (issue #48) rather than only as the baked per-cell copies.
+    const defBorders = tableBordersFromIR(ir.borders);
+    if (defBorders) table.defaultBorders = defBorders;
+    if (ir.shd) table.defaultShading = ir.shd;
+    if (ir.cellMarginTwips) {
+      const m = ir.cellMarginTwips;
+      table.defaultCellMargin = marginTwipsToPx({
+        top: m.top ?? WORD_CELL_MARGIN_TWIPS.top,
+        right: m.right ?? WORD_CELL_MARGIN_TWIPS.right,
+        bottom: m.bottom ?? WORD_CELL_MARGIN_TWIPS.bottom,
+        left: m.left ?? WORD_CELL_MARGIN_TWIPS.left,
+      });
+    }
     return table;
   }
 

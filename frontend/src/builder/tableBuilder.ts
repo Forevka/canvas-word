@@ -4,7 +4,7 @@
 // Cells hold full block stories; a cell callback gets a StoryBuilder, so
 // paragraphs/images/lists inside cells reuse the normal scope surface.
 
-import type { Block, CellBorders, CellMargin, CharStyle, ParaStyle, TableBlock, TableCell, TableCondOverrides, TableRow } from "@cw/shared";
+import type { Block, CellBorders, CellMargin, CharStyle, ParaStyle, TableBlock, TableBorders, TableCell, TableCondOverrides, TableRow } from "@cw/shared";
 import { bakeTableStyleRows, DEFAULT_TBL_LOOK } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import { StoryBuilder } from "./storyBuilder";
@@ -57,6 +57,16 @@ export interface TableOptions {
   /** Column sizing strategy (w:tblLayout): "fixed" (default), "autofitContents",
    *  or "autofitWindow". */
   widthMode?: "fixed" | "autofitContents" | "autofitWindow";
+  /** Table-level default borders (OOXML w:tblPr/w:tblBorders), including the two
+   *  interior edges (insideH/insideV). Re-emitted at tblPr level on export and
+   *  cascaded onto cells that don't set their own (issue #48). */
+  borders?: TableBorders;
+  /** Table-level default shading fill (w:tblPr/w:shd) — a CSS color applied to every
+   *  cell unless the cell overrides it. */
+  shading?: string;
+  /** Table-level default cell margins (w:tblPr/w:tblCellMar), the base each cell's
+   *  own margin overrides per side. */
+  cellMargin?: CellMargin;
 }
 
 /** Cell paragraphs are compact (no after-spacing, tighter leading) — matching
@@ -141,7 +151,28 @@ export class TableBuilder {
     // onto the cells (the layout engine reads concrete props) and keep the
     // styleId + active bands for docx round-trip. Shares the editor's bake path.
     if (this.opts.styleId !== undefined) this.applyTableStyleRef(table, this.opts.styleId, this.opts.condOverrides);
+    this.applyTableDefaults(table);
     return table;
+  }
+
+  /** Record the table-level defaults (w:tblBorders/w:shd/w:tblCellMar) on the model
+   *  so export re-emits them at tblPr level (issue #48), and cascade shading +
+   *  cell-margin onto cells that didn't set their own — the layout engine reads
+   *  concrete per-cell props, so this makes the table-wide defaults render headlessly
+   *  while explicit per-cell values still win. Borders stay table-level only: an
+   *  unbordered cell falls through to the renderer's default grid, and the real
+   *  w:tblBorders still round-trips. */
+  private applyTableDefaults(table: TableBlock): void {
+    if (this.opts.borders) table.defaultBorders = this.opts.borders;
+    if (this.opts.shading !== undefined) table.defaultShading = this.opts.shading;
+    if (this.opts.cellMargin) table.defaultCellMargin = this.opts.cellMargin;
+    if (this.opts.shading === undefined && !this.opts.cellMargin) return;
+    for (const row of table.rows) {
+      for (const cell of row.cells) {
+        if (this.opts.shading !== undefined && cell.shading === undefined) cell.shading = this.opts.shading;
+        if (this.opts.cellMargin && cell.margin === undefined) cell.margin = { ...this.opts.cellMargin };
+      }
+    }
   }
 
   private applyTableStyleRef(table: TableBlock, styleId: string, overrides?: TableCondOverrides): void {

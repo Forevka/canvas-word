@@ -5,7 +5,7 @@
 // Built as plain model data (the same Document the editor/exporter/collab consume).
 
 import type {
-  BookmarkRange, CharStyle, Document, EquationBlock, FieldDef, FieldSpec, ImageBlock, ParaStyle, Paragraph, Run, SdtProps, TableBlock, TableCell,
+  BookmarkRange, CellBorder, CellMargin, CharStyle, Document, EquationBlock, FieldDef, FieldSpec, ImageBlock, ParaStyle, Paragraph, Run, SdtProps, TableBlock, TableCell,
 } from "@cw/shared";
 import { buildInstruction, buildTocParagraphs, DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE, defaultStylesheet, evaluateIf, formatFieldDate } from "@cw/shared";
 import { defaultListDefinition, DEFAULT_BULLET_LIST_ID, DEFAULT_NUMBER_LIST_ID } from "@cw/shared";
@@ -172,6 +172,31 @@ const autofitTable = (): TableBlock => ({
   ],
 });
 
+/** Table-level defaults (issue #48): w:tblBorders / w:shd / w:tblCellMar are stored
+ *  at tblPr level and round-trip as table-WIDE defaults — a Word→edit→Word cycle no
+ *  longer drops them. The blue grid, light fill and roomy padding here all come from
+ *  the table-level defaults (cascaded onto the cells for the canvas renderer, which
+ *  reads concrete per-cell props), not from per-cell formatting. */
+const tableDefaultsTable = (): TableBlock => {
+  const rule: CellBorder = { color: "#1a73e8", widthPx: 1 };
+  const fill = "#eef5ff";
+  const pad: CellMargin = { top: 6, right: 10, bottom: 6, left: 10 };
+  const c = (text: string, patch: Partial<CharStyle> = {}): TableCell =>
+    cell(text, patch, { shading: fill, margin: { ...pad } });
+  return {
+    kind: "table", id: id(), revision: 0,
+    defaultBorders: { top: rule, right: rule, bottom: rule, left: rule, insideH: rule, insideV: rule },
+    defaultShading: fill,
+    defaultCellMargin: { ...pad },
+    rows: [
+      { cells: [c("Table-level default", { bold: true }), c("OOXML carrier (tblPr)", { bold: true })] },
+      { cells: [c("Borders (outer + interior)"), c("w:tblBorders")] },
+      { cells: [c("Shading fill"), c("w:shd")] },
+      { cells: [c("Cell margins / padding"), c("w:tblCellMar")] },
+    ],
+  };
+};
+
 // MathML sources for the equations demo (Presentation MathML, the W3C standard).
 const MATH_QUADRATIC =
   "<math><mi>x</mi><mo>=</mo><mfrac><mrow><mo>-</mo><mi>b</mi><mo>±</mo>" +
@@ -314,6 +339,8 @@ export function sampleDoc(): Document {
     tallTable(),
     para([run("AutoFit to Contents — columns are solved from cell content so the table shrinks to fit (Table → AutoFit, or drag a border to pin it back to fixed widths):")], { spaceBeforePx: 10, spaceAfterPx: 6 }),
     autofitTable(),
+    para([run("Table-level defaults — borders, a shading fill and cell padding set once on the table (w:tblBorders / w:shd / w:tblCellMar) and round-tripped at that level instead of being baked onto every cell:")], { spaceBeforePx: 10, spaceAfterPx: 6 }),
+    tableDefaultsTable(),
 
     richHeading,
     para([run("An inline block image:")], { spaceAfterPx: 6 }),

@@ -9,7 +9,7 @@
 // "First definition wins" (incl. an explicit w:val="nil" → no line), so the
 // cascade picks the most-specific source that DEFINES the edge, even to suppress.
 
-import type { CellBorder, CellBorders } from "@cw/shared";
+import type { CellBorder, CellBorders, TableBorders } from "@cw/shared";
 import type { IRBorders, IRRawBorder } from "./types";
 import { round2 } from "./units";
 import { attr, el, numAttr, type XmlNode } from "./xml";
@@ -104,6 +104,21 @@ export function cellBordersFromIR(b: IRBorders | undefined): CellBorders | undef
   const r = toCellBorder(b.right); if (r) out.right = r;
   const bot = toCellBorder(b.bottom); if (bot) out.bottom = bot;
   const l = toCellBorder(b.left); if (l) out.left = l;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** Map a table-level IRBorders to model TableBorders, PRESERVING the two interior
+ *  edges (insideH/insideV) so w:tblBorders round-trips intact (unlike
+ *  cellBordersFromIR, which targets the four per-cell edges only). */
+export function tableBordersFromIR(b: IRBorders | undefined): TableBorders | undefined {
+  if (!b) return undefined;
+  const out: TableBorders = {};
+  const t = toCellBorder(b.top); if (t) out.top = t;
+  const r = toCellBorder(b.right); if (r) out.right = r;
+  const bot = toCellBorder(b.bottom); if (bot) out.bottom = bot;
+  const l = toCellBorder(b.left); if (l) out.left = l;
+  const ih = toCellBorder(b.insideH); if (ih) out.insideH = ih;
+  const iv = toCellBorder(b.insideV); if (iv) out.insideV = iv;
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
