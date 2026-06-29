@@ -345,8 +345,28 @@ export interface TableCell {
   vAlign?: "top" | "center" | "bottom";
 }
 
+/** Row-level properties (OOXML `w:trPr`). Absent = no explicit row formatting. */
+export interface RowProps {
+  /** Fixed/minimum row height (OOXML `w:trHeight`). `value` is CSS px. `rule`:
+   *  "atLeast" — the row is AT LEAST this tall and grows with its content (the
+   *  common case); "exact" — the row is forced to exactly this height (taller
+   *  content is clipped). The "auto" rule (height as a pure hint) round-trips as
+   *  absent. */
+  height?: { value: number; rule: "atLeast" | "exact" };
+  /** Keep the whole row on one page — never split its cells across a page/column
+   *  break (OOXML `w:cantSplit`). */
+  cantSplit?: boolean;
+  /** Repeat this row as a header at the top of every page the table continues onto
+   *  (OOXML `w:tblHeader`). Honored for the LEADING contiguous header rows; a header
+   *  flag on a later row is preserved for round-trip but not repeated. */
+  repeatHeader?: boolean;
+}
+
 export interface TableRow {
   cells: TableCell[];
+  /** Row-level properties (`w:trPr`): fixed/min height, cant-split, repeat-header.
+   *  Absent = none. */
+  props?: RowProps;
 }
 
 /** Which conditional bands of a table style this table activates (OOXML w:tblLook).

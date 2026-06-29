@@ -50,6 +50,8 @@ public enum BorderStyle { Single, Double, Dashed, Dotted }
 public enum WidthType { Abs, Pct }
 /// <summary>Cell vertical content alignment (OOXML w:tcPr/w:vAlign).</summary>
 public enum CellVAlign { Top, Center, Bottom }
+/// <summary>How a row's fixed height is enforced (OOXML w:trHeight/@w:hRule).</summary>
+public enum RowHeightRule { AtLeast, Exact }
 /// <summary>List number format (docx w:numFmt).</summary>
 public enum ListNumberFormat { Bullet, Decimal, LowerLetter, UpperLetter, LowerRoman, UpperRoman }
 /// <summary>Conditional-format slot of a table style (OOXML w:tblStylePr/@w:type).</summary>
@@ -490,6 +492,31 @@ public sealed record SdtListItem(string Display, string Value)
         var o = Js.Obj(e);
         Js.Set(o, "display", Display);
         Js.Set(o, "value", Value);
+        return o;
+    }
+}
+
+/// <summary>Row-level properties (w:trPr) for a single <c>Row()</c> — fixed/min
+/// height, cant-split, and repeat-header. Mirrors the JS <c>RowOptions</c>.</summary>
+public sealed record RowOptions
+{
+    /// <summary>Fixed/minimum row height in px (w:trHeight). Pair with <see cref="HeightRule"/>.</summary>
+    public double? Height { get; init; }
+    /// <summary>How <see cref="Height"/> is enforced: AtLeast (min, grows with content — the
+    /// default) or Exact (pinned; taller content is clipped).</summary>
+    public RowHeightRule? HeightRule { get; init; }
+    /// <summary>Keep the whole row on one page — never split across a page/column break (w:cantSplit).</summary>
+    public bool? CantSplit { get; init; }
+    /// <summary>Repeat this row as a header at the top of each page the table continues onto (w:tblHeader).</summary>
+    public bool? Header { get; init; }
+
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        if (Height is { } h) Js.Set(o, "height", h);
+        if (HeightRule is { } r) Js.Set(o, "heightRule", r == RowHeightRule.Exact ? "exact" : "atLeast");
+        if (CantSplit is { } cs) Js.Set(o, "cantSplit", cs);
+        if (Header is { } hd) Js.Set(o, "header", hd);
         return o;
     }
 }

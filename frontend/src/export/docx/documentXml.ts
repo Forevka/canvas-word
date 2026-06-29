@@ -14,6 +14,7 @@ import type {
   FieldDef,
   Paragraph,
   ParaStyle,
+  RowProps,
   Run,
   SdtProps,
   SectionPatch,
@@ -439,6 +440,18 @@ function continueCellXml(m: PendingMerge): string {
   return el("w:tc", undefined, el("w:tcPr", undefined, pr.join("")) + el("w:p"));
 }
 
+/** w:trPr — row properties. w:cantSplit/w:tblHeader are on/off toggles; w:trHeight
+ *  carries the height in twips + the hRule. Returns "" when there are no props, so
+ *  a plain row emits no w:trPr. */
+function rowPrXml(props: RowProps | undefined): string {
+  if (!props) return "";
+  const pr: string[] = [];
+  if (props.cantSplit) pr.push(el("w:cantSplit"));
+  if (props.height) pr.push(el("w:trHeight", { "w:val": pxToTwips(props.height.value), "w:hRule": props.height.rule }));
+  if (props.repeatHeader) pr.push(el("w:tblHeader"));
+  return pr.length > 0 ? el("w:trPr", undefined, pr.join("")) : "";
+}
+
 /** Build per-row cells, re-synthesizing the w:vMerge "continue" cells the
  *  importer dropped: a rowSpan=N owner needs N-1 continue cells stacked below it
  *  in the following rows. A continue cell carries the owner's gridSpan (so a
@@ -491,7 +504,7 @@ function tableXml(table: TableBlock, ctx: PartCtx): string {
     }
     // Trailing columns still under a span.
     col = emitContinues(col, out);
-    rowsXml.push(el("w:tr", undefined, out.join("")));
+    rowsXml.push(el("w:tr", undefined, rowPrXml(row.props) + out.join("")));
   }
 
   // w:tblStyle (style reference) must precede the rest of tblPr; w:tblLook records

@@ -5,7 +5,7 @@
 // Built as plain model data (the same Document the editor/exporter/collab consume).
 
 import type {
-  BookmarkRange, CellBorder, CellMargin, CharStyle, Document, EquationBlock, FieldDef, FieldSpec, ImageBlock, ParaStyle, Paragraph, Run, SdtProps, TableBlock, TableCell,
+  BookmarkRange, CellBorder, CellMargin, CharStyle, Document, EquationBlock, FieldDef, FieldSpec, ImageBlock, ParaStyle, Paragraph, RowProps, Run, SdtProps, TableBlock, TableCell,
 } from "@cw/shared";
 import { buildInstruction, buildTocParagraphs, DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE, defaultStylesheet, evaluateIf, formatFieldDate } from "@cw/shared";
 import { defaultListDefinition, DEFAULT_BULLET_LIST_ID, DEFAULT_NUMBER_LIST_ID } from "@cw/shared";
@@ -159,6 +159,28 @@ const tallTable = (): TableBlock => ({
     })),
   ],
 });
+
+/** Row properties (w:trPr): the first row is marked `repeatHeader` so it re-draws
+ *  at the top of every page the table crosses; one row is pinned to an EXACT
+ *  height; the data rows are `cantSplit` (kept whole). Tall enough to paginate so
+ *  the repeating header is visible on the continuation page. */
+const rowPropsTable = (): TableBlock => {
+  const head = (text: string): TableCell => cell(text, { bold: true, color: "#fff" }, { shading: "#1a73e8" });
+  const headerProps: RowProps = { repeatHeader: true };
+  return {
+    kind: "table", id: id(), revision: 0,
+    colFractions: [0.1, 0.6, 0.3],
+    rows: [
+      { cells: [head("#"), head("Row property"), head("Effect")], props: headerProps },
+      { cells: [cell("0"), cell("trHeight — exact 44px"), cell("forced to exactly 44px tall", { color: "#188038" })],
+        props: { height: { value: 44, rule: "exact" } } },
+      ...Array.from({ length: 20 }, (_v, i) => ({
+        cells: [cell(String(i + 1)), cell(`cantSplit data row ${i + 1} — kept whole across a page break`), cell("✓", { color: "#188038" })],
+        props: { cantSplit: true } as RowProps,
+      })),
+    ],
+  };
+};
 
 /** AutoFit to Contents: columns are solved from cell content, so the table
  *  shrinks below the page width to fit (narrow ID, wider Notes). */
@@ -339,6 +361,8 @@ export function sampleDoc(): Document {
     fieldInCellTable,
     para([run("And a table tall enough to paginate across pages — rows break cleanly:")], { spaceBeforePx: 10, spaceAfterPx: 6 }),
     tallTable(),
+    para([run("Row properties (w:trPr) — a repeating header row (re-drawn atop each page), an exact-height row, and cant-split data rows kept whole:")], { spaceBeforePx: 10, spaceAfterPx: 6 }),
+    rowPropsTable(),
     para([run("AutoFit to Contents — columns are solved from cell content so the table shrinks to fit (Table → AutoFit, or drag a border to pin it back to fixed widths):")], { spaceBeforePx: 10, spaceAfterPx: 6 }),
     autofitTable(),
     para([run("Table-level defaults — borders, a shading fill and cell padding set once on the table (w:tblBorders / w:shd / w:tblCellMar) and round-tripped at that level instead of being baked onto every cell:")], { spaceBeforePx: 10, spaceAfterPx: 6 }),

@@ -4,7 +4,7 @@
 // Cells hold full block stories; a cell callback gets a StoryBuilder, so
 // paragraphs/images/lists inside cells reuse the normal scope surface.
 
-import type { Block, CellBorders, CellMargin, CharStyle, ParaStyle, TableBlock, TableBorders, TableCell, TableCondOverrides, TableRow } from "@cw/shared";
+import type { Block, CellBorders, CellMargin, CharStyle, ParaStyle, RowProps, TableBlock, TableBorders, TableCell, TableCondOverrides, TableRow } from "@cw/shared";
 import { bakeTableStyleRows, DEFAULT_TBL_LOOK } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import { StoryBuilder } from "./storyBuilder";
@@ -36,6 +36,31 @@ export interface CellSpec {
 export type CellContent = string | CellSpec;
 
 export type CellOptions = Omit<CellSpec, "text">;
+
+/** Row-level properties (w:trPr) for a single .row(). */
+export interface RowOptions {
+  /** Fixed/minimum row height in px (w:trHeight). Pair with `heightRule`. */
+  height?: number;
+  /** How `height` is enforced: "atLeast" (min, grows with content — default) or
+   *  "exact" (pinned; taller content is clipped). */
+  heightRule?: "atLeast" | "exact";
+  /** Keep the whole row on one page — never split across a page/column break
+   *  (w:cantSplit). */
+  cantSplit?: boolean;
+  /** Repeat this row as a header at the top of each page the table continues onto
+   *  (w:tblHeader). Honored for the leading contiguous header rows. */
+  header?: boolean;
+}
+
+/** Build the model RowProps a RowOptions describes (undefined when nothing set). */
+function rowPropsFrom(o: RowOptions | undefined): RowProps | undefined {
+  if (!o) return undefined;
+  const props: RowProps = {};
+  if (o.height !== undefined && o.height > 0) props.height = { value: o.height, rule: o.heightRule ?? "atLeast" };
+  if (o.cantSplit) props.cantSplit = true;
+  if (o.header) props.repeatHeader = true;
+  return Object.keys(props).length > 0 ? props : undefined;
+}
 
 export interface TableOptions {
   /** Column widths as fractions of the content width (normalized to sum 1). */
@@ -84,13 +109,16 @@ export class TableBuilder {
     this.fractions = opts.colFractions;
   }
 
-  row(cells: CellContent[]): this;
-  row(build: (r: RowBuilder) => void): this;
-  row(arg: CellContent[] | ((r: RowBuilder) => void)): this {
+  row(cells: CellContent[], rowOpts?: RowOptions): this;
+  row(build: (r: RowBuilder) => void, rowOpts?: RowOptions): this;
+  row(arg: CellContent[] | ((r: RowBuilder) => void), rowOpts?: RowOptions): this {
     const r = new RowBuilder(this.ctx);
     if (typeof arg === "function") arg(r);
     else for (const c of arg) r.cell(c);
-    this.tableRows.push({ cells: r.cells });
+    const row: TableRow = { cells: r.cells };
+    const props = rowPropsFrom(rowOpts);
+    if (props) row.props = props;
+    this.tableRows.push(row);
     return this;
   }
 

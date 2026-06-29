@@ -33,6 +33,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`ParagraphBuilder.contextualSpacing()`) and the mirrored C# bindings
   (`ParagraphBuilder.ContextualSpacing` / `ParaStylePatch.ContextualSpacing`);
   demonstrated in the default sample document and the C# showcase.
+- **Table row properties (`TableRow.props` — `w:trPr`).** Rows now carry their own
+  OOXML row properties, previously dropped entirely (`TableRow` was just `{ cells }`):
+  `height` (`w:trHeight`) pins a fixed/minimum row height — `rule: "atLeast"` grows the
+  row with its content, `rule: "exact"` forces the height (taller content clips);
+  `cantSplit` (`w:cantSplit`) keeps a row whole across a page break (the engine already
+  paginates at row boundaries, so a `cantSplit` row always moves whole); and
+  `repeatHeader` (`w:tblHeader`) re-draws the leading contiguous header rows at the top
+  of every page a table continues onto. All three round-trip through `.docx` (parsed in
+  `documentParser`, emitted from `documentXml` as `w:trPr`) and drive the layout engine
+  (`measureTable` honors the height; `placeTableChunked` repeats the header band as its
+  own contiguous placed block per continuation page). Authorable via the builder
+  (`TableBuilder.row(cells, { height, heightRule, cantSplit, header })`) and the mirrored
+  C# bindings (`RowOptions` + `RowHeightRule`); demonstrated in the default sample
+  document and the C# showcase.
 - **Table cell vertical alignment (`TableCell.vAlign`).** Cells can now align their
   content to the `top` (default), `center`, or `bottom` of the cell box via OOXML
   `w:tcPr/w:vAlign` — previously content always hugged the top regardless of the

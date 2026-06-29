@@ -344,6 +344,14 @@ export interface IRTableCell {
 
 export interface IRTableRow {
   cells: IRTableCell[];
+  /** w:trPr row properties (→ TableRow.props). `heightTwips`/`heightRule` from
+   *  w:trHeight; `cantSplit` from w:cantSplit; `tblHeader` from w:tblHeader. */
+  props?: {
+    heightTwips?: number;
+    heightRule?: "atLeast" | "exact";
+    cantSplit?: boolean;
+    tblHeader?: boolean;
+  };
 }
 
 export interface IRTable {

@@ -21,11 +21,13 @@ import type {
   Paragraph,
   Run,
   SdtProps,
+  RowProps,
   SectionPatch,
   SectionProps,
   TabAlign,
   TableBlock,
   TableCell,
+  TableRow,
   TabLeader,
   TabStop,
   UnderlineStyle,
@@ -802,7 +804,20 @@ export function createMapper(
       ir.rows.some((r) => r.cells.some((c) => c.borders || c.bordersSpecified));
     for (const row of placedRows) for (const p of row) styleCell(p, ir, styled, hasBorderInfo, width, ir.rows.length);
 
-    const rows = placedRows.map((row) => ({ cells: row.map((p) => p.cell) }));
+    const rows: TableRow[] = placedRows.map((row, ri) => {
+      const out: TableRow = { cells: row.map((p) => p.cell) };
+      const irProps = ir.rows[ri]?.props;
+      if (irProps) {
+        const props: RowProps = {};
+        if (irProps.heightTwips !== undefined && irProps.heightRule) {
+          props.height = { value: round2(twipsToPx(irProps.heightTwips)), rule: irProps.heightRule };
+        }
+        if (irProps.cantSplit) props.cantSplit = true;
+        if (irProps.tblHeader) props.repeatHeader = true;
+        if (Object.keys(props).length > 0) out.props = props;
+      }
+      return out;
+    });
     const table: TableBlock = { kind: "table", id: id(), revision: 0, rows };
     // Table-style reference + active bands (the style itself goes to
     // Document.tableStyles via buildTableStyles; cells are baked above).

@@ -21,7 +21,7 @@ export type { IndentOptions, SpacingOptions } from "./paragraphBuilder";
 export { StoryBuilder } from "./storyBuilder";
 export type { ImageOptions, ListItem, ListOptions } from "./storyBuilder";
 export { RowBuilder, TableBuilder } from "./tableBuilder";
-export type { CellContent, CellOptions, CellSpec, TableOptions } from "./tableBuilder";
+export type { CellContent, CellOptions, CellSpec, RowOptions, TableOptions } from "./tableBuilder";
 export type { TableStylePreset } from "./tableStyles";
 export type { BuilderWarning } from "./blockFactory";
 export { bytesToDataUrl } from "./media";
