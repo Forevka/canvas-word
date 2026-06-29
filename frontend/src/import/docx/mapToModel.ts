@@ -1096,7 +1096,9 @@ function mapParaPatch(props: IRParaProps): Partial<ParaStyle> {
     out.indentFirstLinePx = round2(twipsToPx(props.indentFirstLineTwips));
   if (props.keepWithNext) out.keepWithNext = true;
   if (props.keepLinesTogether) out.keepLinesTogether = true;
-  if (props.contextualSpacing) out.contextualSpacing = true;
+  // Keep explicit false (w:contextualSpacing w:val="0") so a style can clear an
+  // inherited `true` through the cascade.
+  if (props.contextualSpacing !== undefined) out.contextualSpacing = props.contextualSpacing;
   if (props.tabStops) out.tabStops = mapTabStops(props.tabStops);
   const pb = paraBordersFromIR(props.borders);
   if (pb) out.borders = pb;
@@ -1193,7 +1195,8 @@ function mapParaStyle(props: IRParaProps): ParaStyle {
     style.indentFirstLinePx = round2(twipsToPx(props.indentFirstLineTwips));
   if (props.keepWithNext) style.keepWithNext = true;
   if (props.keepLinesTogether) style.keepLinesTogether = true;
-  if (props.contextualSpacing) style.contextualSpacing = true;
+  // Keep explicit false so a paragraph can override an inherited style's suppression.
+  if (props.contextualSpacing !== undefined) style.contextualSpacing = props.contextualSpacing;
   if (props.tabStops) style.tabStops = mapTabStops(props.tabStops);
   if (props.pageBreakBefore) style.pageBreakBefore = true;
   if (props.outlineLevel !== undefined) style.outlineLevel = props.outlineLevel;

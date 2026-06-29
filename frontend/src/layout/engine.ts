@@ -1770,6 +1770,17 @@ function layoutDocument(
     }
   };
 
+  // Contextual spacing (docx w:contextualSpacing): a paragraph flagged with it
+  // drops its before/after spacing against an adjacent SAME-STYLE paragraph
+  // (Word's list-style default), so a run of same-style paragraphs sits tight
+  // while the run's outer edges keep their spacing. True when `cur` is such a
+  // paragraph sitting flush against same-named-style paragraph `adj`.
+  const csSuppresses = (cur: Measured | undefined, adj: Measured | undefined): boolean =>
+    cur?.kind === "para" &&
+    adj?.kind === "para" &&
+    cur.block.style.contextualSpacing === true &&
+    cur.block.style.namedStyle === adj.block.style.namedStyle;
+
   for (let bi = 0; bi < measured.length; bi++) {
     // Crossing into a new section: swap geometry, force its first page.
     if (bi > sections[secIdx]!.endBlock) {
@@ -1817,15 +1828,10 @@ function layoutDocument(
     // Page break = fresh PAGE (even from column 2); column break = next column.
     if (block.style.pageBreakBefore === true && (page.blocks.length > 0 || colIdx > 0)) hardPage();
     else if (block.style.columnBreakBefore === true && colHasContent()) newPage();
-    // Contextual spacing (docx w:contextualSpacing): a flagged paragraph drops its
-    // before/after spacing against an adjacent SAME-STYLE paragraph (Word's
-    // list-style default), so a run of same-style paragraphs sits tight while the
-    // run's outer edges keep their spacing.
-    const cs = block.style.contextualSpacing === true;
-    const prevM = measured[bi - 1];
-    const nextM = measured[bi + 1];
-    const suppressBefore = cs && prevM?.kind === "para" && prevM.block.style.namedStyle === block.style.namedStyle;
-    const suppressAfter = cs && nextM?.kind === "para" && nextM.block.style.namedStyle === block.style.namedStyle;
+    // Contextual spacing: suppress this paragraph's outer spacing against an
+    // adjacent same-style paragraph (see csSuppresses).
+    const suppressBefore = csSuppresses(m, measured[bi - 1]);
+    const suppressAfter = csSuppresses(m, measured[bi + 1]);
     if (!suppressBefore) y += block.style.spaceBeforePx;
     if (y >= bottomY() && colHasContent()) newPage();
 
@@ -1842,7 +1848,9 @@ function layoutDocument(
     // the first non-keep successor must keep ≥ its orphan/widow take —
     // mirroring placeParagraph's rules), break before this block instead.
     if (block.style.keepWithNext === true && measured[bi + 1] !== undefined && colHasContent()) {
-      let yy = y + totalHeight(lines) + block.style.spaceAfterPx;
+      // Mirror the contextual-spacing suppression the real placement applies, so
+      // a same-style contextual run isn't over-measured and broken when it fits.
+      let yy = y + totalHeight(lines) + (suppressAfter ? 0 : block.style.spaceAfterPx);
       let ok = yy <= bottomY();
       for (let k = bi + 1; ok; k++) {
         const m2 = measured[k];
@@ -1854,7 +1862,8 @@ function layoutDocument(
           if (yy + ATOMIC_GAP + firstUnit > bottomY()) ok = false;
           break;
         }
-        yy += m2.block.style.spaceBeforePx;
+        if (!csSuppresses(m2, measured[k - 1])) yy += m2.block.style.spaceBeforePx;
+        const afterGap = csSuppresses(m2, measured[k + 1]) ? 0 : m2.block.style.spaceAfterPx;
         const inChain = m2.block.style.keepWithNext === true && measured[k + 1] !== undefined;
         if (inChain || m2.block.style.keepLinesTogether === true) {
           // Chain member (or keep-lines paragraph): must fit WHOLE.
@@ -1863,7 +1872,7 @@ function layoutDocument(
             ok = false;
             break;
           }
-          yy += h + m2.block.style.spaceAfterPx;
+          yy += h + afterGap;
           if (!inChain) break;
           continue;
         }
@@ -1877,7 +1886,7 @@ function layoutDocument(
             ok = false;
             break;
           }
-          yy += h + m2.block.style.spaceAfterPx;
+          yy += h + afterGap;
           continue;
         }
         // Chain terminator: needs its orphan/widow-legal first take.

@@ -71,8 +71,11 @@ export function paraCoreXml(style: ParaStyle): string {
   if (style.indentFirstLinePx > 0) ind["w:firstLine"] = pxToTwips(style.indentFirstLinePx);
   else if (style.indentFirstLinePx < 0) ind["w:hanging"] = pxToTwips(-style.indentFirstLinePx);
   if (Object.keys(ind).length > 0) c.push(el("w:ind", ind));
-  // w:contextualSpacing follows w:ind in the CT_PPr schema sequence.
-  if (style.contextualSpacing) c.push(el("w:contextualSpacing"));
+  // w:contextualSpacing follows w:ind in the CT_PPr schema sequence. Emit an
+  // explicit OFF (w:val="0") for `false` so it can clear an inherited style's
+  // suppression on re-import; undefined stays absent.
+  if (style.contextualSpacing === true) c.push(el("w:contextualSpacing"));
+  else if (style.contextualSpacing === false) c.push(el("w:contextualSpacing", { "w:val": "0" }));
   c.push(el("w:jc", { "w:val": JC[style.align] }));
   if (style.tabStops && style.tabStops.length > 0) {
     const tabs = style.tabStops
@@ -146,7 +149,8 @@ export function partialPPrXml(p: Partial<ParaStyle>): string {
     else ind["w:hanging"] = pxToTwips(-p.indentFirstLinePx);
   }
   if (Object.keys(ind).length > 0) out.push(el("w:ind", ind));
-  if (p.contextualSpacing) out.push(el("w:contextualSpacing"));
+  if (p.contextualSpacing === true) out.push(el("w:contextualSpacing"));
+  else if (p.contextualSpacing === false) out.push(el("w:contextualSpacing", { "w:val": "0" }));
   if (p.keepWithNext) out.push(el("w:keepNext"));
   if (p.keepLinesTogether) out.push(el("w:keepLines"));
   if (p.borders) out.push(paraBordersXml(p.borders));

@@ -16,7 +16,7 @@ const SECTION: SectionProps = { pageWidthPx: 816, pageHeightPx: 1056, marginPx: 
 let n = 0;
 const para = (text: string, contextualSpacing?: boolean): Paragraph => ({
   kind: "paragraph", id: `p${n++}`, revision: 0, runs: [{ text, style: { ...CHAR } }],
-  style: { ...PARA, ...(contextualSpacing ? { contextualSpacing: true } : {}) },
+  style: { ...PARA, ...(contextualSpacing !== undefined ? { contextualSpacing } : {}) },
 });
 
 const roundTrip = (doc: Document): Document => runImport(writeDocx(doc).bytes).doc;
@@ -44,6 +44,14 @@ describe("paragraph contextual spacing — w:contextualSpacing", () => {
     expect(paraOf(out, 0).style.contextualSpacing).toBe(true);
     expect(paraOf(out, 1).style.contextualSpacing).toBe(true);
     expect(paraOf(out, 2).style.contextualSpacing).toBeUndefined();
+  });
+
+  it("preserves an explicit false override (w:val=\"0\") so it can clear inherited suppression", () => {
+    const xml = exportedXml({ section: SECTION, blocks: [para("off", false)] });
+    expect(xml).toContain('<w:contextualSpacing w:val="0"/>');
+    const out = roundTrip({ section: SECTION, blocks: [para("off", false), para("on", true)] });
+    expect(paraOf(out, 0).style.contextualSpacing).toBe(false);
+    expect(paraOf(out, 1).style.contextualSpacing).toBe(true);
   });
 
   it("round-trips contextualSpacing carried on a paragraph STYLE delta", () => {
