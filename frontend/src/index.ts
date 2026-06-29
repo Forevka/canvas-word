@@ -1191,6 +1191,7 @@ export function createEditor(
       value: Math.max(MIN_ROW_PX, Math.round(baseHeight + (e.clientY - startY) / zoom)),
       rule,
     });
+    const baseValue = heightFor(ev).value; // committed value at zero drag (rounded)
 
     // Coalesce preview relayouts to one per frame (a tall table re-measures slower
     // than mousemove fires) — mirrors the column drag's RAF throttle.
@@ -1217,6 +1218,12 @@ export function createEditor(
       pendingHeight = null;
       if (!moved) return; // click without a drag — leave the row height untouched
       lastHeight = heightFor(e);
+      // A tiny drag that rounds back to the starting height is a no-op: don't
+      // materialize a new height (when there was none) or add an empty undo step.
+      const unchanged =
+        (oldHeight?.rule ?? "atLeast") === lastHeight.rule &&
+        (oldHeight?.value ?? baseValue) === lastHeight.value;
+      if (unchanged) return;
       // Revert preview to the prior height, then commit one undoable op.
       dispatch(setRowHeightCmd(hit.tableId, hit.rowIndex, oldHeight, "transient"));
       dispatch(setRowHeightCmd(hit.tableId, hit.rowIndex, lastHeight));

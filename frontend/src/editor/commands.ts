@@ -2361,7 +2361,7 @@ export function setTableColFractionsCmd(
 export function setRowHeightCmd(
   tableId: string,
   rowIndex: number,
-  height: NonNullable<TableRow["props"]>["height"] | null,
+  height: NonNullable<NonNullable<TableRow["props"]>["height"]> | null,
   origin: TransactionOrigin = "command",
 ): Command {
   return (state) =>

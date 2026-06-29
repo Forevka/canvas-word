@@ -69,7 +69,7 @@ export type Op =
   | { type: "setTableAlign"; blockId: string; align: TableBlock["align"] | null }
   | { type: "insertTableRow"; tableId: string; rowIndex: number; row: TableRow }
   | { type: "removeTableRow"; tableId: string; rowIndex: number }
-  | { type: "setRowHeight"; tableId: string; rowIndex: number; height: RowProps["height"] | null }
+  | { type: "setRowHeight"; tableId: string; rowIndex: number; height: NonNullable<RowProps["height"]> | null }
   | { type: "insertTableColumn"; tableId: string; colIndex: number; cells: TableCell[]; fractions?: number[] }
   | { type: "removeTableColumn"; tableId: string; colIndex: number }
   | { type: "setStylesheet"; stylesheet: import("./stylesheet").Stylesheet }
