@@ -1196,6 +1196,7 @@ export function createEditor(
     // than mousemove fires) — mirrors the column drag's RAF throttle.
     let pendingHeight: NonNullable<typeof oldHeight> | null = null;
     let moveRaf = 0;
+    let moved = false; // a plain click on the grip must not write a no-op height
     let lastHeight = heightFor(ev);
     const flushMove = (): void => {
       moveRaf = 0;
@@ -1203,6 +1204,7 @@ export function createEditor(
       pendingHeight = null;
     };
     const onMove = (e: MouseEvent): void => {
+      moved = true;
       lastHeight = heightFor(e);
       pendingHeight = lastHeight;
       if (!moveRaf) moveRaf = requestAnimationFrame(flushMove);
@@ -1213,6 +1215,7 @@ export function createEditor(
       if (moveRaf) cancelAnimationFrame(moveRaf); // drop any queued preview
       moveRaf = 0;
       pendingHeight = null;
+      if (!moved) return; // click without a drag — leave the row height untouched
       lastHeight = heightFor(e);
       // Revert preview to the prior height, then commit one undoable op.
       dispatch(setRowHeightCmd(hit.tableId, hit.rowIndex, oldHeight, "transient"));
