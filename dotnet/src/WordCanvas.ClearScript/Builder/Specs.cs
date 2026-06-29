@@ -549,6 +549,8 @@ public sealed record ParaStylePatch
     public bool? KeepWithNext { get; init; }
     /// <summary>Never split this paragraph across pages/columns (docx w:keepLines).</summary>
     public bool? KeepLinesTogether { get; init; }
+    /// <summary>Suppress before/after spacing between adjacent same-style paragraphs (docx w:contextualSpacing).</summary>
+    public bool? ContextualSpacing { get; init; }
     /// <summary>Base writing direction (OOXML w:bidi).</summary>
     public Direction? Direction { get; init; }
     /// <summary>Outline level 0..8 (TOC levels 1..9; docx w:outlineLvl) — heading styles carry this.</summary>
@@ -570,6 +572,7 @@ public sealed record ParaStylePatch
         if (IndentFirstLinePx is { } ifl) Js.Set(o, "indentFirstLinePx", ifl);
         if (KeepWithNext is { } kwn) Js.Set(o, "keepWithNext", kwn);
         if (KeepLinesTogether is { } klt) Js.Set(o, "keepLinesTogether", klt);
+        if (ContextualSpacing is { } cs) Js.Set(o, "contextualSpacing", cs);
         if (Direction is { } dir) Js.Set(o, "direction", EnumJs.Dir(dir));
         if (OutlineLevel is { } ol) Js.Set(o, "outlineLevel", Math.Clamp(ol, 0, 8));
         if (PageBreakBefore is { } pbb) Js.Set(o, "pageBreakBefore", pbb);

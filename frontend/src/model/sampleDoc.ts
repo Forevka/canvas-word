@@ -380,6 +380,12 @@ export function sampleDoc(): Document {
       shading: "#fff3e0",
       borders: { left: { color: "#e8710a", widthPx: 3, style: "double" } },
     }),
+    // --- Contextual spacing: same-style runs sit tight (w:contextualSpacing) ---
+    para([run("Contextual spacing — each verse line below carries 12px after-spacing, yet w:contextualSpacing collapses the gaps between adjacent same-style paragraphs (Word's list-style default); only the run's outer edges keep their space:")], { spaceBeforePx: 10, spaceAfterPx: 4 }),
+    para([run("Roses are red,")], { contextualSpacing: true, spaceAfterPx: 12 }),
+    para([run("violets are blue,")], { contextualSpacing: true, spaceAfterPx: 12 }),
+    para([run("contextual spacing keeps these lines tight,")], { contextualSpacing: true, spaceAfterPx: 12 }),
+    para([run("the way Word's list paragraphs do.")], { contextualSpacing: true, spaceAfterPx: 12 }),
 
     // --- International text: CJK + bidirectional (RTL) -------------------------
     heading("International text — CJK & bidirectional", 1),

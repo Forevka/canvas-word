@@ -108,6 +108,9 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
   const keepLines = onOff(el(pPr, "w:keepLines"));
   if (keepLines !== undefined) props.keepLinesTogether = keepLines;
 
+  const contextualSpacing = onOff(el(pPr, "w:contextualSpacing"));
+  if (contextualSpacing !== undefined) props.contextualSpacing = contextualSpacing;
+
   const bidi = onOff(el(pPr, "w:bidi"));
   if (bidi !== undefined) props.direction = bidi ? "rtl" : "ltr"; // keep explicit w:bidi="0"
 

@@ -237,6 +237,9 @@ public sealed class ParagraphBuilder
     public ParagraphBuilder KeepWithNext(bool on = true) { _js.InvokeMethod("keepWithNext", on); return this; }
     /// <summary>Never split this paragraph across pages/columns (docx w:keepLines).</summary>
     public ParagraphBuilder KeepTogether(bool on = true) { _js.InvokeMethod("keepTogether", on); return this; }
+    /// <summary>Suppress before/after spacing between this paragraph and an adjacent same-style
+    /// paragraph (docx w:contextualSpacing) — Word's list-style default.</summary>
+    public ParagraphBuilder ContextualSpacing(bool on = true) { _js.InvokeMethod("contextualSpacing", on); return this; }
     /// <summary>Base writing direction (OOXML w:bidi); "rtl" lays the paragraph out right-to-left.</summary>
     public ParagraphBuilder Direction(Direction dir) { _js.InvokeMethod("direction", EnumJs.Dir(dir)); return this; }
     /// <summary>Outline level 0..8 (TOC levels 1..9) — a TOC entry without a heading style.</summary>
