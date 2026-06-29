@@ -52,7 +52,10 @@ function paintUnderlinePdf(
   const yCenter = yTop + plan.thickness / 2;
   doc.save();
   doc.lineWidth(plan.thickness).strokeColor(rp.underlineColor);
-  if (plan.dash.length >= 2) doc.dash(plan.dash[0]!, { space: plan.dash[1]! });
+  // pdfkit's .dash() only models a single on/off pair, so multi-segment patterns
+  // (dotDash/dotDotDash) go through the raw PDF dash array to keep canvas parity.
+  if (plan.dash.length === 2) doc.dash(plan.dash[0]!, { space: plan.dash[1]! });
+  else if (plan.dash.length > 2) doc.addContent(`[${plan.dash.map((d) => Number(d.toFixed(2))).join(" ")}] 0 d`);
   if (plan.wave) {
     const pts = underlineWavePoints(x, yCenter, width, fontSizePx);
     doc.moveTo(pts[0]!.x, pts[0]!.y);

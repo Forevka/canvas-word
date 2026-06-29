@@ -108,6 +108,7 @@ describe("PDF export — happy path", () => {
       para("dotted", { underline: true, underlineStyle: "dotted" }),
       para("dashed", { underline: true, underlineStyle: "dash" }),
       para("dotDash", { underline: true, underlineStyle: "dotDash" }),
+      para("dotDotDash", { underline: true, underlineStyle: "dotDotDash" }),
       para("thick", { underline: true, underlineStyle: "thick" }),
       para("red wave", { underline: true, underlineStyle: "wave", underlineColor: "#d93025" }),
       para("blue double", { underline: true, underlineStyle: "double", underlineColor: "#1a73e8" }),

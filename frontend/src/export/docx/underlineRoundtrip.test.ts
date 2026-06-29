@@ -66,18 +66,16 @@ describe("underline style + color .docx round-trip", () => {
   });
 
   it("folds Word's heavy/long underline variants onto the model's base styles", () => {
-    const doc: Document = {
-      section: SECTION,
-      blocks: [{
-        kind: "paragraph", id: "p1", revision: 0, style: { ...PARA },
-        // dottedHeavy/dashedHeavy aren't model styles; the importer folds them.
-        runs: [styledRun("heavy", { underline: true, underlineStyle: "dottedHeavy" as UnderlineStyle })],
-      }],
-    };
-    const back = runImport(writeDocx(doc).bytes).doc;
-    const r = (back.blocks[0] as Paragraph).runs[0]!;
-    expect(r.style.underline).toBe(true);
-    expect(r.style.underlineStyle).toBe("dotted");
+    // dottedHeavy/dashedHeavy/wavyDouble aren't model styles — they only arrive on
+    // import, so exercise the real DOCX path rather than an impossible model value.
+    const cases: [string, UnderlineStyle][] = [["dottedHeavy", "dotted"], ["dashLongHeavy", "dash"], ["wavyDouble", "wave"]];
+    for (const [val, base] of cases) {
+      const body = `<w:p><w:r><w:rPr><w:u w:val="${val}"/></w:rPr><w:t>heavy</w:t></w:r></w:p>`;
+      const back = runImport(styledDocx(body)).doc;
+      const r = (back.blocks[0] as Paragraph).runs[0]!;
+      expect(r.style.underline, val).toBe(true);
+      expect(r.style.underlineStyle, val).toBe(base);
+    }
   });
 
   it("resolves a themed underline color (w:u/@w:themeColor) through theme1.xml", () => {
