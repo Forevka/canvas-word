@@ -142,6 +142,11 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
     return;
   }
 
+  // Paragraph shading (w:shd) — a fill behind the text box, beneath the runs.
+  if (block.paraDecor?.shading) {
+    doc.rect(block.x, block.y, block.paraDecor.width, block.paraDecor.height).fill(block.paraDecor.shading);
+  }
+
   // List marker — paint-only, first line's baseline in the hanging indent.
   const firstLine = block.lines[0];
   if (block.marker && firstLine) {
@@ -204,6 +209,21 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
       }
     }
     paintLine(ctx, block, line, baselineY);
+  }
+
+  // Paragraph border box (w:pBdr) — over the shading and text, like cell edges.
+  // `between` is not drawn for a standalone paragraph (matches the canvas renderer).
+  if (block.paraDecor?.borders) {
+    const d = block.paraDecor;
+    const b = d.borders!;
+    const x = block.x;
+    const yT = block.y;
+    const xR = block.x + d.width;
+    const yB = block.y + d.height;
+    strokeCellEdge(ctx, b.top, x, yT, xR, yT, 0, 1);
+    strokeCellEdge(ctx, b.bottom, x, yB, xR, yB, 0, -1);
+    strokeCellEdge(ctx, b.left, x, yT, x, yB, 1, 0);
+    strokeCellEdge(ctx, b.right, xR, yT, xR, yB, -1, 0);
   }
 }
 

@@ -1325,10 +1325,20 @@ function layoutDocument(
       tocPlacements.set(block.id, { chunk: placed, rightEdge: colX() + colWidth, para: block });
     }
     page.blocks.push(placed);
+    let chunkHeight = 0;
     for (let k = from; k < from + count; k++) {
       const line = lines[k]!;
       placed.lines.push({ ...line, y: y - placed.y });
       y += line.height;
+      chunkHeight += line.height;
+    }
+    // Paragraph shading / border box (w:shd / w:pBdr): the box spans this column's
+    // content edges between the paragraph's indents, and this chunk's lines tall.
+    // Painted behind the text in renderer.ts / pdf paintBlock.ts.
+    const { borders, shading } = block.style;
+    if (borders || shading) {
+      const width = Math.max(0, colWidth - indentOf(block) - rightIndentOf(block));
+      placed.paraDecor = { width, height: chunkHeight, ...(shading ? { shading } : {}), ...(borders ? { borders } : {}) };
     }
   };
 
@@ -1855,7 +1865,12 @@ function layoutDocument(
       if (!ok) newPage();
     }
 
+    // Reserve the paragraph border line widths in the surrounding gaps so a boxed
+    // paragraph's top/bottom rules don't paint over the adjacent block (w:pBdr).
+    const bd = block.style.borders;
+    if (bd?.top) y += bd.top.widthPx;
     placeParagraph(block, lines);
+    if (bd?.bottom) y += bd.bottom.widthPx;
     y += block.style.spaceAfterPx;
   }
 

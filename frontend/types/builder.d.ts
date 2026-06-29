@@ -9,7 +9,7 @@
 // Works in the browser (live preview via WordCanvas.setDocument) and in Node
 // (server-side DOCX/PDF generation via the export subpath).
 
-import type { CellBorders, CellMargin, CharStyle, Document, NamedStyle, ParaStyle, Stylesheet, TableCondOverrides, TableStyle, TabStop } from "./model";
+import type { CellBorders, CellMargin, CharStyle, Document, NamedStyle, ParaBorders, ParaStyle, Stylesheet, TableCondOverrides, TableStyle, TabStop } from "./model";
 
 export type { Block, CharStyle, Document, NamedStyle, ParaStyle, Stylesheet, TableCondOverrides, TableStyle, TabStop } from "./model";
 
@@ -212,6 +212,11 @@ export declare class ParagraphBuilder<P extends StoryBuilder> {
   outlineLevel(level: number): this;
   /** Explicit tab stops (docx w:tabs); stored sorted by position. */
   tabStops(stops: TabStop[]): this;
+  /** Paragraph borders (OOXML w:pBdr) — a box around the paragraph; each edge
+   *  reuses the table CellBorder value type. */
+  borders(borders: ParaBorders): this;
+  /** Paragraph shading — a CSS fill painted behind the paragraph (OOXML w:shd). */
+  shading(cssColor: string): this;
   /** Escape the paragraph scope explicitly (block-starting calls do it implicitly). */
   end(): P;
 

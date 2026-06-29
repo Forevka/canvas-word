@@ -724,6 +724,46 @@ describe("engine — right indent", () => {
   });
 });
 
+// --- paragraph borders & shading (w:pBdr / w:shd) -------------------------
+
+describe("engine — paragraph borders & shading", () => {
+  const blue = { color: "#1a73e8", widthPx: 1 };
+
+  it("attaches a paraDecor box spanning the content width minus indents", () => {
+    const p = para("boxed paragraph", { borders: { top: blue, bottom: blue, left: blue, right: blue }, shading: "#eef4ff" });
+    const pb = placedOf(layout(doc([p])), p.id)!.pb;
+    expect(pb.paraDecor).toBeDefined();
+    expect(pb.paraDecor!.shading).toBe("#eef4ff");
+    expect(pb.paraDecor!.borders!.top!.color).toBe("#1a73e8");
+    // content box is 816 - 96 - 96 = 624 wide, no indents.
+    expect(pb.paraDecor!.width).toBeCloseTo(624, 0);
+    // height equals the single line's height (lineHeight 1 → 16px char → 16px line).
+    expect(pb.paraDecor!.height).toBeCloseTo(pb.lines[0]!.height, 5);
+  });
+
+  it("narrows the box by left + right indents", () => {
+    const p = para("boxed", { borders: { left: blue }, indentLeftPx: 40, indentRightPx: 24 });
+    const pb = placedOf(layout(doc([p])), p.id)!.pb;
+    expect(pb.paraDecor!.width).toBeCloseTo(624 - 40 - 24, 0);
+  });
+
+  it("leaves paraDecor absent on a plain paragraph", () => {
+    const p = para("plain");
+    expect(placedOf(layout(doc([p])), p.id)!.pb.paraDecor).toBeUndefined();
+  });
+
+  it("reserves the top/bottom border widths in the block gap so the next block clears the box", () => {
+    const top = para("first");
+    const boxed = para("boxed", { borders: { top: { color: "#000", widthPx: 4 }, bottom: { color: "#000", widthPx: 4 } } });
+    const after = para("after");
+    const tree = layout(doc([top, boxed, after]));
+    const boxedPb = placedOf(tree, boxed.id)!.pb;
+    const afterPb = placedOf(tree, after.id)!.pb;
+    // The follower starts at or below the box bottom plus the reserved bottom rule.
+    expect(afterPb.y).toBeGreaterThanOrEqual(boxedPb.y + boxedPb.paraDecor!.height + 4 - 0.01);
+  });
+});
+
 // --- floats (square-wrap images) ------------------------------------------
 
 describe("engine — floats", () => {
