@@ -1723,10 +1723,33 @@ function layoutDocument(
     if (hasRowSpan && colHasContent() && y + m.height > bottomY() && m.height <= contentBottom - contentTop) {
       newPage();
     }
+    // Repeat-header rows (w:tblHeader): the LEADING contiguous header rows are
+    // re-drawn at the top of every continuation chunk. They appear normally inside
+    // the first chunk (rows 0..); on later pages we place them as a SEPARATE table
+    // block above the data chunk, which keeps each placed block's rows contiguous
+    // (the invariant geometry/cellRangeRects rely on). Disabled when a vertical
+    // merge is present (a rowSpan can't survive being detached from its band) or
+    // when every row is a header (nothing left to continue).
+    let headerCount = 0;
+    while (headerCount < m.rows.length && m.block.rows[headerCount]?.props?.repeatHeader) headerCount++;
+    const repeatHeader = headerCount > 0 && headerCount < m.rows.length && !hasRowSpan;
+    const headerRows = repeatHeader ? m.rows.slice(0, headerCount) : [];
+    const headerHeight = headerRows.reduce((s, r) => s + r.height, 0);
+    // w:cantSplit needs no dedicated branch here: this paginator is ROW-ATOMIC — the
+    // chunk loop below only ever slices at row boundaries (m.rows.slice(ri, ri+fit))
+    // and places whole measured rows, so a row's cells are never broken across a page.
+    // Every row is therefore kept-whole already; `props.cantSplit` round-trips for
+    // fidelity and stays the marker to exclude a row should true intra-row splitting
+    // ever be added. (A row taller than a full empty column still overflows — there is
+    // nowhere to move it — matching the no-cantSplit case.)
     let ri = 0;
     while (ri < m.rows.length) {
+      // Once we are past the original header band, every continuation chunk reserves
+      // space for the repeated header at the top.
+      const repeat = repeatHeader && ri >= headerCount;
+      const topUsed = repeat ? headerHeight : 0;
       let fit = 0;
-      let yy = y;
+      let yy = y + topUsed;
       while (ri + fit < m.rows.length && yy + m.rows[ri + fit]!.height <= bottomY()) {
         yy += m.rows[ri + fit]!.height;
         fit++;
@@ -1747,7 +1770,7 @@ function layoutDocument(
         if (refs.length === 0) break;
         const { H, measures } = measureNotes(refs);
         if (measures.length === 0) break;
-        let chunkH = 0;
+        let chunkH = topUsed;
         for (let k = ri; k < ri + fit; k++) chunkH += m.rows[k]!.height;
         if (y + chunkH + H <= bottomY() || (fit === 1 && !colHasContent())) {
           pendingNotes = measures;
@@ -1762,6 +1785,11 @@ function layoutDocument(
         continue;
       }
       if (pendingNotes.length > 0) commitNotes(pendingNotes, pendingNotesH);
+      if (repeat) {
+        // Repeated header band — its own contiguous placed block at logical rows 0..
+        page.blocks.push(placeTable(m.block, headerRows, m.colWidths, colX() + m.xOffset, y, m.tableWidth, 0, cellListCtx));
+        y += headerHeight;
+      }
       const chunk = m.rows.slice(ri, ri + fit);
       page.blocks.push(placeTable(m.block, chunk, m.colWidths, colX() + m.xOffset, y, m.tableWidth, ri, cellListCtx));
       y += chunk.reduce((s, r) => s + r.height, 0);
@@ -2620,6 +2648,14 @@ function measureTable(
   // Row heights: single-row cells fix their row; a rowspan cell only forces extra
   // height (added to its last row) when its content exceeds the rows it covers.
   const rowHeight = rows.map((r) => Math.max(0, ...r.cells.filter((c) => c.rowSpan === 1).map((c) => c.height)));
+  // Fixed/min row height (w:trHeight): "atLeast" grows the row to the height floor;
+  // "exact" pins it (content taller than the box is clipped at paint). Applied
+  // before the rowspan-overflow pass so a forced-tall row counts toward a span.
+  t.rows.forEach((row, ri) => {
+    const h = row.props?.height;
+    if (!h) return;
+    rowHeight[ri] = h.rule === "exact" ? h.value : Math.max(rowHeight[ri]!, h.value);
+  });
   rows.forEach((r, ri) => {
     for (const mc of r.cells) {
       if (mc.rowSpan <= 1) continue;

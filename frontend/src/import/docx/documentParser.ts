@@ -25,7 +25,7 @@ import type {
 } from "./types";
 import { decodeBorders, decodeShdFill } from "./borders";
 import { decodeParaProps, decodeRunProps } from "./props";
-import { attr, children, el, els, findDeep, numAttr, parseXml, rootEl, textOf, val, type XmlNode } from "./xml";
+import { attr, children, el, els, findDeep, numAttr, onOff, parseXml, rootEl, textOf, val, type XmlNode } from "./xml";
 import { ommlToMathml } from "../../mathml/fromOmml";
 
 interface ParseCtx {
@@ -732,6 +732,28 @@ function decodeCellMargin(node: XmlNode | undefined): IRCellMargin | undefined {
   return Object.keys(m).length > 0 ? m : undefined;
 }
 
+/** w:trPr → row properties. w:trHeight carries a height (twips) + an hRule
+ *  ("auto"/"atLeast"/"exact"); an "auto" rule (or absent) is a pure hint we drop,
+ *  keeping only enforceable atLeast/exact heights. w:cantSplit and w:tblHeader are
+ *  on/off toggles. Returns undefined when no enforceable property is present. */
+function parseRowProps(trPr: XmlNode | undefined): IRTableRow["props"] | undefined {
+  if (!trPr) return undefined;
+  const props: NonNullable<IRTableRow["props"]> = {};
+  const trH = el(trPr, "w:trHeight");
+  if (trH) {
+    const h = numAttr(trH, "w:val");
+    const rule = attr(trH, "w:hRule");
+    // Only "atLeast"/"exact" pin the height; "auto" (the default) leaves it to content.
+    if (h !== undefined && h > 0 && (rule === "atLeast" || rule === "exact")) {
+      props.heightTwips = h;
+      props.heightRule = rule;
+    }
+  }
+  if (onOff(el(trPr, "w:cantSplit"))) props.cantSplit = true;
+  if (onOff(el(trPr, "w:tblHeader"))) props.tblHeader = true;
+  return Object.keys(props).length > 0 ? props : undefined;
+}
+
 function parseTable(tbl: XmlNode, ctx: ParseCtx): IRTable {
   const rows: IRTableRow[] = [];
   for (const tr of els(tbl, "w:tr")) {
@@ -739,7 +761,10 @@ function parseTable(tbl: XmlNode, ctx: ParseCtx): IRTable {
     for (const tc of els(tr, "w:tc")) {
       cells.push(parseCell(tc, ctx));
     }
-    rows.push({ cells });
+    const row: IRTableRow = { cells };
+    const props = parseRowProps(el(tr, "w:trPr"));
+    if (props) row.props = props;
+    rows.push(row);
   }
   const table: IRTable = { kind: "table", rows };
   const tblGrid = el(tbl, "w:tblGrid");

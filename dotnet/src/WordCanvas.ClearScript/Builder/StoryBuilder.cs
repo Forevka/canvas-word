@@ -370,18 +370,20 @@ public sealed class TableBuilder
         _js = js;
     }
 
-    public TableBuilder Row(IEnumerable<CellContent> cells)
+    public TableBuilder Row(IEnumerable<CellContent> cells, RowOptions? opts = null)
     {
         var arr = Js.Arr(_engine);
         foreach (var c in cells) Js.Push(arr, c.ToJs(_engine));
-        _js.InvokeMethod("row", arr);
+        if (opts is not null) _js.InvokeMethod("row", arr, opts.ToJs(_engine));
+        else _js.InvokeMethod("row", arr);
         return this;
     }
 
-    public TableBuilder Row(Action<RowBuilder> build)
+    public TableBuilder Row(Action<RowBuilder> build, RowOptions? opts = null)
     {
         Action<object> cb = r => build(new RowBuilder(_engine, (ScriptObject)r));
-        _js.InvokeMethod("row", cb);
+        if (opts is not null) _js.InvokeMethod("row", cb, opts.ToJs(_engine));
+        else _js.InvokeMethod("row", cb);
         return this;
     }
 

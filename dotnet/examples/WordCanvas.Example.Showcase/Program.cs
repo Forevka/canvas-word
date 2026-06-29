@@ -149,6 +149,26 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
         Shading = "#eef5ff",
         CellMargin = new CellMargin(6, 10, 6, 10),
     })
+    .Paragraph("Row properties (w:trPr) — a repeating header row (re-drawn atop each page), an exact-height row, and cant-split data rows kept whole:")
+    .Table(t =>
+    {
+        t.Row(
+            r => r.Cell("#", HeadCell()).Cell("Row property", HeadCell()).Cell("Effect", HeadCell()),
+            new RowOptions { Header = true });
+        t.Row(
+            r => r.Cell("0").Cell("trHeight — exact 44px")
+                .Cell("forced to exactly 44px tall", new CellOptions { Style = new CharStyle { Color = "#188038" } }),
+            new RowOptions { Height = 44, HeightRule = RowHeightRule.Exact });
+        for (var i = 1; i <= 20; i++)
+        {
+            var n = i;
+            t.Row(
+                r => r.Cell(n.ToString())
+                    .Cell($"cantSplit data row {n} — kept whole across a page break")
+                    .Cell("supported", new CellOptions { Style = new CharStyle { Color = "#188038" } }),
+                new RowOptions { CantSplit = true });
+        }
+    }, new TableOptions { ColFractions = new double[] { 0.1, 0.6, 0.3 } })
 
     // ---- Rich text, lists & images ----
     .Paragraph("Rich text, lists & images", p => p.WithStyle("Heading1"))
@@ -256,6 +276,9 @@ Console.WriteLine($"Output written to: {outDir}");
 return;
 
 static CellOptions Bold() => new() { Style = new CharStyle { Bold = true } };
+
+// A header-band cell: bold white text on the showcase blue (matches the sample doc).
+static CellOptions HeadCell() => new() { Shading = "#1a73e8", Style = new CharStyle { Bold = true, Color = "#ffffff" } };
 
 static string Repeat(string s, int n) => string.Concat(Enumerable.Repeat(s, n));
 
