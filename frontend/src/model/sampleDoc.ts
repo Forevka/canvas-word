@@ -323,6 +323,21 @@ export function sampleDoc(): Document {
       run("a blue double", { underline: true, underlineStyle: "double", underlineColor: "#1a73e8" }),
       run(" — each round-trips through Word's w:u (style + color)."),
     ]),
+    // Minor run typography & effects (w:rPr extras): dstrike, position, w:w scaling,
+    // kern, emphasis, outline/shadow/emboss/imprint, run border (w:bdr), fitText.
+    para([
+      run("Minor run effects: "),
+      run("double strike", { doubleStrikethrough: true }), run(", "),
+      run("raised", { positionPx: 4 }), run(" and "), run("lowered", { positionPx: -4 }), run(" text, "),
+      run("w i d e", { widthScalePct: 180 }), run(" and "), run("narrow", { widthScalePct: 66 }), run(" scaling, "),
+      run("kerned", { kerningMinPx: 12 }), run(", "),
+      run("emphasis", { emphasisMark: "dot" }), run(", "),
+      run("outline", { outline: true }), run(", "), run("shadow", { shadow: true }), run(", "),
+      run("emboss", { emboss: true }), run(", "), run("imprint", { imprint: true }), run(", a "),
+      run("bordered", { runBorder: { color: "#1a73e8", widthPx: 1 } }), run(" run, and "),
+      run("fitText", { fitTextPx: 60 }),
+      run(" — all round-trip through Word's w:rPr."),
+    ]),
 
     ccHeading,
     ccPara,

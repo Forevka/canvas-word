@@ -46,6 +46,9 @@ public enum TabLeader { None, Dot, Dash, Underscore }
 public enum TableWidthMode { Fixed, AutofitContents, AutofitWindow }
 /// <summary>Cell border line style.</summary>
 public enum BorderStyle { Single, Double, Dashed, Dotted }
+
+/// <summary>Emphasis-mark style drawn over each character (OOXML w:em).</summary>
+public enum EmphasisMark { Dot, Comma, Circle, UnderDot }
 /// <summary>Preferred-width unit: absolute px or percent of table width.</summary>
 public enum WidthType { Abs, Pct }
 /// <summary>Cell vertical content alignment (OOXML w:tcPr/w:vAlign).</summary>
@@ -116,6 +119,13 @@ internal static class EnumJs
         _ => "single",
     };
     public static string Width(WidthType t) => t == WidthType.Pct ? "pct" : "abs";
+    public static string Emphasis(EmphasisMark m) => m switch
+    {
+        EmphasisMark.Comma => "comma",
+        EmphasisMark.Circle => "circle",
+        EmphasisMark.UnderDot => "underDot",
+        _ => "dot",
+    };
     public static string VAlign(CellVAlign v) => v switch
     {
         CellVAlign.Center => "center",
@@ -216,6 +226,54 @@ public sealed record CharStyle
         if (Hidden is { } hd) Js.Set(o, "hidden", hd);
         if (Rtl is { } rtl) Js.Set(o, "rtl", rtl);
         if (CharStyleId is { } csi) Js.Set(o, "charStyleId", csi);
+        return o;
+    }
+}
+
+/// <summary>Minor run typography &amp; effects (OOXML w:rPr extras) for
+/// ParagraphBuilder.Effects(): double strikethrough, baseline raise/lower,
+/// character width scaling, kerning threshold, emphasis marks, the
+/// outline/shadow/emboss/imprint text effects, a run border, and fitText.
+/// Only the set fields are applied (additive).</summary>
+public sealed record RunEffectsOptions
+{
+    /// <summary>Double strikethrough (w:dstrike).</summary>
+    public bool? DoubleStrikethrough { get; init; }
+    /// <summary>Baseline raise (+) / lower (−) in px (w:position).</summary>
+    public double? PositionPx { get; init; }
+    /// <summary>Character width scaling as a percentage (w:w; 100 = normal).</summary>
+    public double? WidthScalePct { get; init; }
+    /// <summary>Kerning threshold in px — the min font size kerning applies at (w:kern).</summary>
+    public double? KerningMinPx { get; init; }
+    /// <summary>Emphasis marks over each character (w:em).</summary>
+    public EmphasisMark? EmphasisMark { get; init; }
+    /// <summary>Outlined text effect (w:outline).</summary>
+    public bool? Outline { get; init; }
+    /// <summary>Drop-shadow text effect (w:shadow).</summary>
+    public bool? Shadow { get; init; }
+    /// <summary>Embossed text effect (w:emboss).</summary>
+    public bool? Emboss { get; init; }
+    /// <summary>Imprinted/engraved text effect (w:imprint).</summary>
+    public bool? Imprint { get; init; }
+    /// <summary>A box drawn around the run (w:bdr).</summary>
+    public CellBorder? Border { get; init; }
+    /// <summary>Fit-text target width in px (w:fitText).</summary>
+    public double? FitTextPx { get; init; }
+
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        if (DoubleStrikethrough is { } ds) Js.Set(o, "doubleStrikethrough", ds);
+        if (PositionPx is { } pos) Js.Set(o, "positionPx", pos);
+        if (WidthScalePct is { } ws) Js.Set(o, "widthScalePct", ws);
+        if (KerningMinPx is { } km) Js.Set(o, "kerningMinPx", km);
+        if (EmphasisMark is { } em) Js.Set(o, "emphasisMark", EnumJs.Emphasis(em));
+        if (Outline is { } ol) Js.Set(o, "outline", ol);
+        if (Shadow is { } sh) Js.Set(o, "shadow", sh);
+        if (Emboss is { } eb) Js.Set(o, "emboss", eb);
+        if (Imprint is { } im) Js.Set(o, "imprint", im);
+        if (Border is { } bd) Js.Set(o, "border", bd.ToJs(e));
+        if (FitTextPx is { } ft) Js.Set(o, "fitTextPx", ft);
         return o;
     }
 }

@@ -72,6 +72,37 @@ describe("decodeRunProps", () => {
     expect(p.styleId).toBe("Emphasis");
     expect(p.vertAlign).toBe("superscript");
   });
+
+  it("decodes double strikethrough (w:dstrike) and the text-effect toggles", () => {
+    const p = decodeRunProps(rPr(`<w:dstrike/><w:outline/><w:shadow/><w:emboss/><w:imprint/>`));
+    expect(p.doubleStrikethrough).toBe(true);
+    expect(p.outline).toBe(true);
+    expect(p.shadow).toBe(true);
+    expect(p.emboss).toBe(true);
+    expect(p.imprint).toBe(true);
+  });
+
+  it("decodes signed baseline position and kerning in half-points", () => {
+    expect(decodeRunProps(rPr(`<w:position w:val="6"/>`)).positionHalfPoints).toBe(6);
+    expect(decodeRunProps(rPr(`<w:position w:val="-6"/>`)).positionHalfPoints).toBe(-6);
+    expect(decodeRunProps(rPr(`<w:kern w:val="18"/>`)).kerningHalfPoints).toBe(18);
+  });
+
+  it("decodes character width scaling (w:w), tolerating a trailing '%'", () => {
+    expect(decodeRunProps(rPr(`<w:w w:val="150"/>`)).widthScalePct).toBe(150);
+    expect(decodeRunProps(rPr(`<w:w w:val="66%"/>`)).widthScalePct).toBe(66);
+  });
+
+  it("decodes emphasis marks (w:em), dropping 'none'", () => {
+    expect(decodeRunProps(rPr(`<w:em w:val="dot"/>`)).emphasisMark).toBe("dot");
+    expect(decodeRunProps(rPr(`<w:em w:val="none"/>`)).emphasisMark).toBeUndefined();
+  });
+
+  it("decodes a run border (w:bdr) and fitText width (w:fitText)", () => {
+    const p = decodeRunProps(rPr(`<w:bdr w:val="dashed" w:sz="12" w:color="1A73E8"/><w:fitText w:val="900"/>`));
+    expect(p.runBorder).toEqual({ val: "dashed", sizeEighthPt: 12, color: "1A73E8" });
+    expect(p.fitTextTwips).toBe(900);
+  });
 });
 
 describe("decodeParaProps", () => {

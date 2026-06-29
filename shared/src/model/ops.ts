@@ -138,8 +138,29 @@ export function styleEq(a: CharStyle, b: CharStyle): boolean {
     a.footnoteRef === b.footnoteRef && // adjacent refs must never merge into one run
     sdtPathEq(a.sdtPath, b.sdtPath) && // content-control boundaries (incl. nesting) survive normalization
     a.fieldId === b.fieldId && // inline-field boundaries survive normalization
-    a.equation === b.equation // inline equations are atomic — never merge (reference identity)
+    a.equation === b.equation && // inline equations are atomic — never merge (reference identity)
+    // Minor run typography & effects (w:rPr extras) — compared so styled runs never
+    // merge with plain ones (and a struck-through pair keeps its boundary).
+    !!a.doubleStrikethrough === !!b.doubleStrikethrough &&
+    (a.positionPx ?? 0) === (b.positionPx ?? 0) &&
+    (a.kerningMinPx ?? 0) === (b.kerningMinPx ?? 0) &&
+    (a.widthScalePct ?? 100) === (b.widthScalePct ?? 100) &&
+    a.emphasisMark === b.emphasisMark &&
+    !!a.outline === !!b.outline &&
+    !!a.shadow === !!b.shadow &&
+    !!a.emboss === !!b.emboss &&
+    !!a.imprint === !!b.imprint &&
+    (a.fitTextPx ?? 0) === (b.fitTextPx ?? 0) &&
+    runBorderEq(a.runBorder, b.runBorder)
   );
+}
+
+/** Structural equality for a run border (w:bdr) — runs with differently-styled
+ *  borders must not merge, but two imported runs with identical borders may. */
+function runBorderEq(a: CharStyle["runBorder"], b: CharStyle["runBorder"]): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.color === b.color && a.widthPx === b.widthPx && a.style === b.style;
 }
 
 /** Merge equal-styled neighbors, drop empties. An all-empty paragraph keeps ONE

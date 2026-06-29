@@ -123,6 +123,28 @@ export interface IRRunProps {
   vanish?: boolean;
   /** w:rtl — explicit right-to-left run direction. */
   rtl?: boolean;
+  /** w:dstrike — double strikethrough. */
+  doubleStrikethrough?: boolean;
+  /** w:position/@w:val — signed baseline raise/lower in half-points (+ raises). */
+  positionHalfPoints?: number;
+  /** w:kern/@w:val — kerning min font size in half-points. */
+  kerningHalfPoints?: number;
+  /** w:w/@w:val — character width scaling as a percentage (1..600). */
+  widthScalePct?: number;
+  /** w:em/@w:val — emphasis-mark style ("dot", "comma", "circle", "underDot", "none"). */
+  emphasisMark?: string;
+  /** w:outline — outlined text effect. */
+  outline?: boolean;
+  /** w:shadow — drop-shadow text effect. */
+  shadow?: boolean;
+  /** w:emboss — embossed text effect. */
+  emboss?: boolean;
+  /** w:imprint — imprinted/engraved text effect. */
+  imprint?: boolean;
+  /** w:bdr — raw run border (mapped to a CellBorder in mapToModel). */
+  runBorder?: IRRawBorder;
+  /** w:fitText/@w:val — fit-text target width in twips. */
+  fitTextTwips?: number;
   /** Hyperlink membership (set on runs inside a w:hyperlink). Resolved to a URL
    *  in mapToModel: relId via the part's rels (external target), or anchor for
    *  an in-document bookmark (kept as "#name"). */

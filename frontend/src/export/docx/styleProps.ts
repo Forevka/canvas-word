@@ -16,6 +16,33 @@ function underlineAttrs(c: Pick<CharStyle, "underline" | "underlineStyle" | "und
   return attrs;
 }
 
+/** w:bdr element for a run border (mirrors the cell/paragraph edge emitters). */
+function runBorderXml(b: NonNullable<CharStyle["runBorder"]>): string {
+  const val = b.style === "double" ? "double" : b.style === "dashed" ? "dashed" : b.style === "dotted" ? "dotted" : "single";
+  return el("w:bdr", { "w:val": val, "w:sz": pxToEighthPoints(b.widthPx), "w:space": 0, "w:color": hex(b.color) });
+}
+
+/** Minor run typography & effects (OOXML w:rPr extras) common to the full and
+ *  partial rPr serializers: double strike, the boolean text effects, character
+ *  width scaling, kerning, baseline position, run border, fitText, and emphasis
+ *  marks. Only DEFINED/truthy fields are emitted, so a run without them serializes
+ *  exactly as before (no drift). */
+function runEffectsXml(s: Partial<CharStyle>): string {
+  const out: string[] = [];
+  if (s.doubleStrikethrough) out.push(el("w:dstrike", { "w:val": "1" }));
+  if (s.outline) out.push(el("w:outline", { "w:val": "1" }));
+  if (s.shadow) out.push(el("w:shadow", { "w:val": "1" }));
+  if (s.emboss) out.push(el("w:emboss", { "w:val": "1" }));
+  if (s.imprint) out.push(el("w:imprint", { "w:val": "1" }));
+  if (s.widthScalePct !== undefined) out.push(el("w:w", { "w:val": s.widthScalePct }));
+  if (s.kerningMinPx !== undefined) out.push(el("w:kern", { "w:val": pxToHalfPoints(s.kerningMinPx) }));
+  if (s.positionPx !== undefined) out.push(el("w:position", { "w:val": pxToHalfPoints(s.positionPx) }));
+  if (s.runBorder) out.push(runBorderXml(s.runBorder));
+  if (s.fitTextPx !== undefined) out.push(el("w:fitText", { "w:val": pxToTwips(s.fitTextPx) }));
+  if (s.emphasisMark) out.push(el("w:em", { "w:val": s.emphasisMark }));
+  return out.join("");
+}
+
 // Full rPr serializer: every toggle written explicitly (on/off) so a run's
 // direct formatting fully overrides any inherited paragraph/named style on
 // re-import. Shared by the main exporter (documentXml) and the headless TOC
@@ -41,6 +68,8 @@ export function runPropsXml(s: CharStyle): string {
     if (name) children.push(el("w:highlight", { "w:val": name }));
   }
   if (s.verticalAlign) children.push(el("w:vertAlign", { "w:val": s.verticalAlign === "super" ? "superscript" : "subscript" }));
+  const effects = runEffectsXml(s);
+  if (effects) children.push(effects);
   // Emit an explicit OFF (w:val="0") so an imported w:rtl="0" round-trips and can
   // still clear an inherited RTL run style; undefined stays absent.
   if (s.rtl === true) children.push(el("w:rtl"));
@@ -108,6 +137,8 @@ export function partialRPrXml(c: Partial<CharStyle>): string {
     if (name) out.push(el("w:highlight", { "w:val": name }));
   }
   if (c.verticalAlign) out.push(el("w:vertAlign", { "w:val": c.verticalAlign === "super" ? "superscript" : "subscript" }));
+  const effects = runEffectsXml(c);
+  if (effects) out.push(effects);
   return out.length > 0 ? el("w:rPr", undefined, out.join("")) : "";
 }
 

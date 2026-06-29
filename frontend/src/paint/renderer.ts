@@ -37,7 +37,9 @@ import {
   underlinePlan,
   doubleUnderlineGap,
   underlineWavePoints,
-  verticalShift,
+  runVerticalShift,
+  widthScale,
+  doubleStrikeOffsets,
 } from "./paintStyle";
 import type { RunPaint } from "./paintStyle";
 import type { UnderlineStyle } from "@cw/shared";
@@ -1033,8 +1035,9 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       for (const frag of line.fragments) {
         const s = frag.style;
         const x = block.x + frag.x;
-        // sub/superscript: scaled font (already measured that way) + baseline shift
-        const vShift = verticalShift(s.verticalAlign, s.fontSizePx);
+        // sub/superscript: scaled font (already measured that way) + baseline shift,
+        // plus any explicit w:position raise/lower (runVerticalShift folds both in).
+        const vShift = runVerticalShift(s);
         if (s.highlightColor) {
           ctx.fillStyle = s.highlightColor;
           ctx.fillRect(x, block.y + line.y, frag.width, line.height);
@@ -1067,7 +1070,20 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
         const rtl = ((frag.level ?? 0) & 1) === 1;
         ctx.direction = rtl ? "rtl" : "ltr";
         ctx.textAlign = rtl ? "right" : "left";
-        ctx.fillText(frag.text, rtl ? x + frag.width : x, baselineY + vShift);
+        // Character width scaling (w:w): the fragment box is already the scaled
+        // advance, so stretch the glyphs horizontally about the fragment's left
+        // edge to fill it. RTL anchors at the NATURAL right edge so the post-scale
+        // right edge lands at x + frag.width.
+        const wScale = widthScale(s);
+        const anchorX = rtl ? x + frag.width / wScale : x;
+        if (wScale !== 1) {
+          ctx.save();
+          ctx.translate(x, 0);
+          ctx.scale(wScale, 1);
+          ctx.translate(-x, 0);
+        }
+        ctx.fillText(frag.text, anchorX, baselineY + vShift);
+        if (wScale !== 1) ctx.restore();
 
         const th = decorationThickness(s.fontSizePx);
         if (rp.underline) {
@@ -1076,6 +1092,13 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
         if (rp.strike) {
           ctx.fillStyle = rp.color;
           ctx.fillRect(x, baselineY + vShift + strikeOffset(s.fontSizePx), frag.width, th);
+        }
+        // Double strikethrough (w:dstrike): two rules straddling the single-strike line.
+        if (s.doubleStrikethrough) {
+          ctx.fillStyle = rp.color;
+          for (const off of doubleStrikeOffsets(s.fontSizePx)) {
+            ctx.fillRect(x, baselineY + vShift + off, frag.width, th);
+          }
         }
       }
       // Reset the text-direction state RTL fragments may have left, so markers,

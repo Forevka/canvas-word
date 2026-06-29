@@ -47,6 +47,29 @@ export function verticalShift(vertical: CharStyle["verticalAlign"], fontSizePx: 
   return 0;
 }
 
+/** Total baseline shift (px, DOWN = positive) a run paints with: the sub/superscript
+ *  shift PLUS the explicit w:position raise/lower (positionPx>0 raises ⇒ shifts up,
+ *  i.e. subtracts). Both painters add this to the baseline. */
+export function runVerticalShift(style: CharStyle): number {
+  return verticalShift(style.verticalAlign, style.fontSizePx) - (style.positionPx ?? 0);
+}
+
+/** Horizontal glyph scale factor for a run (OOXML w:w). 1 = no scaling. The
+ *  layout reserves the scaled advance; the painters stretch the glyphs to match. */
+export function widthScale(style: CharStyle): number {
+  const pct = style.widthScalePct;
+  return pct !== undefined && pct > 0 ? pct / 100 : 1;
+}
+
+/** The two rule offsets (px, relative to the baseline) of a double strikethrough
+ *  (OOXML w:dstrike) — straddling the single-strike line so both rules stay on the
+ *  glyph body. Shared by the canvas + PDF painters. */
+export function doubleStrikeOffsets(fontSizePx: number): [number, number] {
+  const base = strikeOffset(fontSizePx);
+  const gap = Math.max(1.5, fontSizePx / 11);
+  return [base - gap / 2, base + gap / 2];
+}
+
 // --- text decorations ------------------------------------------------------
 /** Underline / strikethrough thickness (px). */
 export const decorationThickness = (fontSizePx: number): number => Math.max(1, fontSizePx / 14);
