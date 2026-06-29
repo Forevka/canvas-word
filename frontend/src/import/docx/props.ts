@@ -90,7 +90,14 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
     const rule = attr(spacing, "w:lineRule") ?? "auto";
     if (line !== undefined) {
       if (rule === "auto") props.lineHeight = lineAutoToMultiplier(line);
-      else warnings.add("line-rule-exact", "Exact/atLeast line spacing was ignored (model is multiplier-only).");
+      else if (rule === "exact" || rule === "atLeast") {
+        // Fixed point spacing: w:line is twips here, not 240ths. atLeast=0 is a
+        // no-op floor (every line is at least its natural height) — drop it.
+        if (rule === "exact" || line > 0) {
+          props.lineRule = rule;
+          props.lineExactTwips = line;
+        }
+      }
     }
   }
 

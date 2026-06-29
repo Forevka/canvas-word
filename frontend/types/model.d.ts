@@ -57,8 +57,14 @@ export interface ParaStyle {
    *  right-to-left: align "left"/"right" read as START/END (mirrored), and
    *  left/right indents swap to start/end. Absent = "ltr". */
   direction?: "ltr" | "rtl";
-  /** Line height multiplier. */
+  /** Line height multiplier (used when `lineRule` is absent/"auto"). */
   lineHeight: number;
+  /** Fixed line-spacing rule (docx w:lineRule). Absent = `lineHeight` is a
+   *  multiplier. "exact" = the line is exactly `lineHeightPx` tall (taller content
+   *  clips); "atLeast" = at least `lineHeightPx`, growing for a taller line. */
+  lineRule?: "exact" | "atLeast";
+  /** Fixed line height in px — meaningful only alongside `lineRule`. */
+  lineHeightPx?: number;
   spaceBeforePx: number;
   spaceAfterPx: number;
   indentFirstLinePx: number;

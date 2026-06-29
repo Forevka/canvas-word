@@ -207,6 +207,11 @@ export interface IRParaProps {
   spaceAfterTwips?: number;
   /** Multiplier — only set when lineRule is "auto" (or absent). */
   lineHeight?: number;
+  /** w:lineRule="exact"|"atLeast" — fixed line spacing. With these, w:line is a
+   *  twips height (not 240ths), carried in `lineExactTwips`. */
+  lineRule?: "exact" | "atLeast";
+  /** Fixed line spacing in twips (w:line under lineRule exact/atLeast). */
+  lineExactTwips?: number;
   indentLeftTwips?: number;
   /** w:ind/@w:right|@w:end — right-edge indent. */
   indentRightTwips?: number;

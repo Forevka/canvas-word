@@ -2,7 +2,7 @@
 // return an IR props bag, with the WarningSink capturing lossy decisions. We focus
 // on edge cases the roundtrip integration tests don't pin: on/off toggles,
 // underline none, justification aliases, hanging vs firstLine indent, outline-level
-// bounds, numId=0 sentinel, and the exact-line-spacing warning.
+// bounds, numId=0 sentinel, and fixed (exact/atLeast) line spacing.
 
 import { describe, expect, it } from "vitest";
 import { decodeParaProps, decodeRunProps } from "./props";
@@ -108,12 +108,24 @@ describe("decodeParaProps", () => {
     expect(decode(`<w:spacing w:line="240"/>`).props.lineHeight).toBe(1);
   });
 
-  it("warns (and drops) exact/atLeast line spacing", () => {
-    const { props, warnings } = decode(`<w:spacing w:line="360" w:lineRule="exact"/>`);
+  it("decodes exact line spacing as fixed twips (no warning, no multiplier)", () => {
+    const { props, warnings } = decode(`<w:spacing w:line="420" w:lineRule="exact"/>`);
     expect(props.lineHeight).toBeUndefined();
-    expect(warnings.list).toEqual([
-      { code: "line-rule-exact", message: expect.stringContaining("line spacing") },
-    ]);
+    expect(props.lineRule).toBe("exact");
+    expect(props.lineExactTwips).toBe(420);
+    expect(warnings.list).toEqual([]);
+  });
+
+  it("decodes atLeast line spacing as fixed twips", () => {
+    const { props } = decode(`<w:spacing w:line="360" w:lineRule="atLeast"/>`);
+    expect(props.lineRule).toBe("atLeast");
+    expect(props.lineExactTwips).toBe(360);
+  });
+
+  it("ignores a zero atLeast floor (no-op)", () => {
+    const { props } = decode(`<w:spacing w:line="0" w:lineRule="atLeast"/>`);
+    expect(props.lineRule).toBeUndefined();
+    expect(props.lineExactTwips).toBeUndefined();
   });
 
   it("captures before/after spacing in twips", () => {

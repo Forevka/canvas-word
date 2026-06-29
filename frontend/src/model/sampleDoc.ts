@@ -589,6 +589,25 @@ export function sampleDoc(): Document {
       run("1", { endnoteRef: "en1", verticalAlign: "super", fontSizePx: 11 }),
       run(" — like footnotes, but parked at the document end."),
     ], { spaceBeforePx: 6 }),
+    // --- Fixed line spacing (w:lineRule exact/atLeast) -------------------------
+    heading("Fixed line spacing", 1),
+    para([
+      run("Line spacing is usually a "),
+      run("multiplier", { bold: true }),
+      run(" of the font size (single, 1.5×, double). Word also supports "),
+      run("fixed", { bold: true }),
+      run(" point spacing via "),
+      run("w:lineRule", { fontFamily: "Consolas, monospace", fontSizePx: 14 }),
+      run(": "),
+      run("exact", { fontFamily: "Consolas, monospace", fontSizePx: 14 }),
+      run(" pins each line to a height in points (taller glyphs are clipped), while "),
+      run("atLeast", { fontFamily: "Consolas, monospace", fontSizePx: 14 }),
+      run(" sets a floor that grows for a taller line. Both round-trip through .docx and drive pagination."),
+    ], { spaceAfterPx: 8 }),
+    para([run("This paragraph uses EXACT 28px line spacing — every line box is exactly 28px tall regardless of the text. Word stores it as w:spacing w:line=\"420\" w:lineRule=\"exact\". Notice the lines sit tight at a constant pitch even though this run is long enough to wrap across several lines on the page.".repeat(1))],
+      { lineRule: "exact", lineHeightPx: 28, spaceAfterPx: 8 }),
+    para([run("This paragraph uses AT-LEAST 24px line spacing — lines are at least 24px tall but a line with a larger glyph, ", { }), run("like this 30px word", { fontSizePx: 30 }), run(", grows to fit it. Word stores it as w:spacing w:line=\"360\" w:lineRule=\"atLeast\".")],
+      { lineRule: "atLeast", lineHeightPx: 24, spaceAfterPx: 10 }),
 
     para([run("— a tour of canvas-word —", { italic: true, color: "#5f6368" })], { align: "center", spaceBeforePx: 20 }),
   ];

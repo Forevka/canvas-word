@@ -38,6 +38,8 @@ public enum PageSizeName { Letter, Legal, A4, A3, Tabloid }
 public enum EquationAlign { Left, Center, Right }
 /// <summary>Paragraph base writing direction (OOXML w:bidi).</summary>
 public enum Direction { Ltr, Rtl }
+/// <summary>Fixed line-spacing rule (docx w:spacing/@w:lineRule).</summary>
+public enum LineRule { Exact, AtLeast }
 /// <summary>Tab-stop alignment (docx w:tab/@w:val).</summary>
 public enum TabAlign { Left, Center, Right, Decimal }
 /// <summary>Tab-stop leader fill (docx w:tab/@w:leader).</summary>
@@ -96,6 +98,7 @@ internal static class EnumJs
         _ => "center",
     };
     public static string Dir(Direction d) => d == Direction.Rtl ? "rtl" : "ltr";
+    public static string LineRule(LineRule r) => r == Builder.LineRule.Exact ? "exact" : "atLeast";
     public static string TabAlign(TabAlign a) => a switch
     {
         Builder.TabAlign.Center => "center",
@@ -313,7 +316,12 @@ public sealed record SpacingOptions
 {
     public double? Before { get; init; }
     public double? After { get; init; }
+    /// <summary>Line height multiplier (1.0 = single). Used when <see cref="LineRule"/> is omitted.</summary>
     public double? LineHeight { get; init; }
+    /// <summary>Fixed line-spacing rule (docx w:lineRule="exact"|"atLeast"). Set <see cref="LineHeightPx"/> alongside it.</summary>
+    public LineRule? LineRule { get; init; }
+    /// <summary>Fixed line height in px — used with <see cref="LineRule"/>.</summary>
+    public double? LineHeightPx { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -321,6 +329,8 @@ public sealed record SpacingOptions
         if (Before is { } b) Js.Set(o, "before", b);
         if (After is { } a) Js.Set(o, "after", a);
         if (LineHeight is { } lh) Js.Set(o, "lineHeight", lh);
+        if (LineRule is { } lr) Js.Set(o, "lineRule", EnumJs.LineRule(lr));
+        if (LineHeightPx is { } lhp) Js.Set(o, "lineHeightPx", lhp);
         return o;
     }
 }

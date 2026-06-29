@@ -67,8 +67,9 @@ export function paraCoreXml(style: ParaStyle): string {
   c.push(el("w:spacing", {
     "w:before": pxToTwips(style.spaceBeforePx),
     "w:after": pxToTwips(style.spaceAfterPx),
-    "w:line": multiplierToLine(style.lineHeight),
-    "w:lineRule": "auto",
+    // Fixed (exact/atLeast) spacing emits w:line in twips; auto emits 240ths.
+    "w:line": style.lineRule ? pxToTwips(style.lineHeightPx ?? 0) : multiplierToLine(style.lineHeight),
+    "w:lineRule": style.lineRule ?? "auto",
   }));
   const ind: Record<string, number> = {};
   if (style.indentLeftPx) ind["w:left"] = pxToTwips(style.indentLeftPx);
@@ -143,7 +144,10 @@ export function partialPPrXml(p: Partial<ParaStyle>): string {
   const sp: Record<string, number | string> = {};
   if (p.spaceBeforePx !== undefined) sp["w:before"] = pxToTwips(p.spaceBeforePx);
   if (p.spaceAfterPx !== undefined) sp["w:after"] = pxToTwips(p.spaceAfterPx);
-  if (p.lineHeight !== undefined) {
+  if (p.lineRule !== undefined) {
+    sp["w:line"] = pxToTwips(p.lineHeightPx ?? 0);
+    sp["w:lineRule"] = p.lineRule;
+  } else if (p.lineHeight !== undefined) {
     sp["w:line"] = multiplierToLine(p.lineHeight);
     sp["w:lineRule"] = "auto";
   }

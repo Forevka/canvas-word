@@ -313,6 +313,17 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
         new CellContent[] { "Paint", "one fillText per fragment" },
     }, new TableOptions { StyleId = "ShowcaseGrid" })
 
+    // ---- Fixed line spacing (w:lineRule exact/atLeast) ----
+    .Paragraph("Fixed line spacing", p => p.WithStyle("Heading1"))
+    .Paragraph("Beyond a line-height multiplier, Word supports fixed point spacing via w:lineRule: \"exact\" pins every line to a height (taller glyphs clip), \"atLeast\" floors it but grows for a taller line. Both round-trip through .docx and drive pagination.")
+    .Paragraph("This paragraph uses EXACT 28px line spacing — every line box is exactly 28px tall, so the lines sit at a constant pitch no matter how the text wraps across the page.",
+        p => p.Spacing(new SpacingOptions { LineRule = LineRule.Exact, LineHeightPx = 28 }))
+    .Paragraph(p => p
+        .Text("This paragraph uses AT-LEAST 24px line spacing — lines are at least 24px tall, but a line with a larger glyph, ")
+        .Text("like this 30px word", new CharStyle { FontSizePx = 30 })
+        .Text(", grows to fit it.")
+        .Spacing(new SpacingOptions { LineRule = LineRule.AtLeast, LineHeightPx = 24 }))
+
     // ---- Header + footer with page fields ----
     .Header(h => h.Paragraph(p => p.Font("Arial, sans-serif").FontSize(11)
         .Text("canvas-word", new CharStyle { Bold = true, Color = "#5f6368" })

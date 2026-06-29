@@ -375,6 +375,40 @@ describe("engine — cell shading and borders", () => {
   });
 });
 
+describe("engine — fixed line spacing (w:lineRule)", () => {
+  const lineHeightsOf = (p: Paragraph): number[] =>
+    placedOf(layout(doc([p])), p.id)!.pb.lines.map((l) => l.height);
+
+  // The natural single-line glyph height of a 16px run under the test metrics:
+  // an "auto" paragraph at multiplier 1 floors to exactly the glyph height.
+  const NATURAL = lineHeightsOf(para("short line", { lineHeight: 1 }))[0]!;
+
+  it("'exact' pins every line to lineHeightPx, ignoring the multiplier", () => {
+    const tall = para("short line", { lineRule: "exact", lineHeightPx: NATURAL + 12, lineHeight: 1 });
+    expect(lineHeightsOf(tall)).toEqual([NATURAL + 12]);
+  });
+
+  it("'exact' clamps BELOW the natural glyph height (content clips)", () => {
+    const tight = para("short line", { lineRule: "exact", lineHeightPx: NATURAL - 6 });
+    expect(lineHeightsOf(tight)).toEqual([NATURAL - 6]); // exact wins even under natural
+  });
+
+  it("'atLeast' floors the line height but grows for a taller line", () => {
+    const floored = para("short line", { lineRule: "atLeast", lineHeightPx: NATURAL + 10 });
+    expect(lineHeightsOf(floored)).toEqual([NATURAL + 10]); // floor above natural applies
+
+    const grown = para("short line", { lineRule: "atLeast", lineHeightPx: NATURAL - 6 });
+    expect(lineHeightsOf(grown)).toEqual([NATURAL]); // floor below natural → natural wins
+  });
+
+  it("a multi-line 'exact' paragraph keeps a constant line pitch", () => {
+    const p = para("x".repeat(400), { lineRule: "exact", lineHeightPx: NATURAL + 8 });
+    const heights = lineHeightsOf(p);
+    expect(heights.length).toBeGreaterThan(1);
+    expect(heights.every((h) => h === NATURAL + 8)).toBe(true);
+  });
+});
+
 describe("engine — hidden paragraphs", () => {
   it("a fully-hidden (w:vanish) paragraph takes zero space and isn't placed", () => {
     const a = para("first");

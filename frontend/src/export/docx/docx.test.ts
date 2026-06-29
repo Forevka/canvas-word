@@ -89,6 +89,26 @@ describe("DOCX export — round trip", () => {
     expect(sb.borders?.left?.color).toBe("#1a73e8");
   });
 
+  it("round-trips fixed line spacing (w:lineRule exact and atLeast)", () => {
+    const a = runImport(
+      simpleDocx(
+        `<w:p><w:pPr><w:spacing w:line="420" w:lineRule="exact"/></w:pPr><w:r><w:t>exact</w:t></w:r></w:p>` +
+          `<w:p><w:pPr><w:spacing w:line="360" w:lineRule="atLeast"/></w:pPr><w:r><w:t>atLeast</w:t></w:r></w:p>`,
+      ),
+    ).doc;
+    const b = roundTrip(a);
+    const [exact, atLeast] = paras(b);
+    expect(exact!.style.lineRule).toBe("exact");
+    expect(exact!.style.lineHeightPx).toBeCloseTo(28, 1); // 420 twips = 28px
+    expect(atLeast!.style.lineRule).toBe("atLeast");
+    expect(atLeast!.style.lineHeightPx).toBeCloseTo(24, 1); // 360 twips = 24px
+    // And it survives in the serialized XML as the right rule, not "auto".
+    const xml = exportedDocumentXml(b);
+    expect(xml).toContain(`w:line="420"`);
+    expect(xml).toContain(`w:lineRule="exact"`);
+    expect(xml).toContain(`w:lineRule="atLeast"`);
+  });
+
   it("round-trips table cell margins (w:tcMar) — top/bottom must survive", () => {
     // Regression: the writer used to drop cell margins, so top/bottom re-imported as
     // Word's default 0 — shrinking every row and drifting page count by ~5%.

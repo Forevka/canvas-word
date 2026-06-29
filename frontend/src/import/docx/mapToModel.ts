@@ -1154,6 +1154,8 @@ function mapParaPatch(props: IRParaProps): Partial<ParaStyle> {
   if (props.align) out.align = props.align;
   if (props.direction) out.direction = props.direction;
   if (props.lineHeight !== undefined) out.lineHeight = round2(props.lineHeight);
+  if (props.lineRule !== undefined) out.lineRule = props.lineRule;
+  if (props.lineExactTwips !== undefined) out.lineHeightPx = round2(twipsToPx(props.lineExactTwips));
   if (props.spaceBeforeTwips !== undefined) out.spaceBeforePx = round2(twipsToPx(props.spaceBeforeTwips));
   if (props.spaceAfterTwips !== undefined) out.spaceAfterPx = round2(twipsToPx(props.spaceAfterTwips));
   if (props.indentLeftTwips !== undefined) out.indentLeftPx = round2(twipsToPx(props.indentLeftTwips));
@@ -1264,6 +1266,8 @@ function mapParaStyle(props: IRParaProps): ParaStyle {
   if (props.align) style.align = props.align;
   if (props.direction) style.direction = props.direction;
   if (props.lineHeight !== undefined) style.lineHeight = round2(props.lineHeight);
+  if (props.lineRule !== undefined) style.lineRule = props.lineRule;
+  if (props.lineExactTwips !== undefined) style.lineHeightPx = round2(twipsToPx(props.lineExactTwips));
   if (props.spaceBeforeTwips !== undefined) style.spaceBeforePx = round2(twipsToPx(props.spaceBeforeTwips));
   if (props.spaceAfterTwips !== undefined) style.spaceAfterPx = round2(twipsToPx(props.spaceAfterTwips));
   if (props.indentLeftTwips !== undefined) style.indentLeftPx = round2(twipsToPx(props.indentLeftTwips));

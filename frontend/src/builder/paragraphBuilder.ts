@@ -24,8 +24,14 @@ export interface SpacingOptions {
   before?: number;
   /** Space after the paragraph, px. */
   after?: number;
-  /** Line height multiplier (1.0 = single). */
+  /** Line height multiplier (1.0 = single). Used when `lineRule` is omitted. */
   lineHeight?: number;
+  /** Fixed line-spacing rule (docx w:lineRule). "exact" = the line is exactly
+   *  `lineHeightPx` tall (taller content clips); "atLeast" = at least that,
+   *  growing for a taller line. Set `lineHeightPx` alongside it. */
+  lineRule?: "exact" | "atLeast";
+  /** Fixed line height in px — used with `lineRule`. */
+  lineHeightPx?: number;
 }
 
 export interface IndentOptions {
@@ -405,6 +411,10 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     if (opts.before !== undefined) this.para.style.spaceBeforePx = opts.before;
     if (opts.after !== undefined) this.para.style.spaceAfterPx = opts.after;
     if (opts.lineHeight !== undefined) this.para.style.lineHeight = opts.lineHeight;
+    if (opts.lineRule !== undefined) {
+      this.para.style.lineRule = opts.lineRule;
+      if (opts.lineHeightPx !== undefined) this.para.style.lineHeightPx = opts.lineHeightPx;
+    }
     return this;
   }
 
