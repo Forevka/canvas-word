@@ -44,6 +44,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The default showcase document gains a **"Mathematics — MathML equations"** section.
 
 ### Fixed
+- **PAGE / NUMPAGES field inside a table now updates when the table moves pages.**
+  Moving a table to a new page (e.g. a `Ctrl+Enter` page break before it) left a
+  body PAGE field in one of its cells showing the old page number until an unrelated
+  edit — typically a column resize — happened to bust the table's measurement cache.
+  The per-page token-resolution pass rewrote the `{page}` fragment's text **in place**
+  on `LineBox` objects that the line/table caches alias, baking the resolved number
+  into the cache; a later layout that reused the cache verbatim (table revision + width
+  unchanged) then re-painted the stale number, since the cached fragment already read
+  `"1"` and no longer matched the `{page}` token. Resolution is now **clone-on-write**:
+  any line carrying a page field is copied before substitution, so the cached `{page}`
+  token stays pristine and the field re-resolves correctly on every pass. The same
+  latent staleness affected body paragraphs whose PAGE field reflowed across a page.
 - **Nested display equations (table cells / header-footer bands) are now editable.**
   The `setEquation` / `setEquationAlign` ops and the editor lookups (`setEquationAlignCmd`,
   the right-click menu, object-selection delete) only scanned top-level `doc.blocks`, so

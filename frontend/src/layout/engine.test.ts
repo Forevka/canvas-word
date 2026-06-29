@@ -9,6 +9,7 @@ import type {
   Block,
   CharStyle,
   Document,
+  FieldDef,
   ImageBlock,
   Paragraph,
   ParaStyle,
@@ -1129,6 +1130,40 @@ describe("engine — table measure cache", () => {
     const reminted: TableBlock = { ...t, rows: [{ cells: [{ ...t.rows[0]!.cells[0]!, blocks: [para("hi")] }] }] };
     const short = placedOf(eng.layout(doc([p, reminted])), t.id)!.pb.table!.height;
     expect(short).toBeLessThan(tall);
+  });
+
+  it("re-resolves a cached table's PAGE field when the table moves to a new page (#48)", () => {
+    const eng = createLayoutEngine();
+    const fieldDefs: Record<string, FieldDef> = {
+      pg: { id: "pg", instruction: " PAGE ", name: "PAGE", kind: "builtin", spec: { type: "PAGE" } },
+    };
+    // A table whose only cell holds a live PAGE field — the run text is the {page}
+    // token, tagged with the builtin PAGE field def the engine resolves per page.
+    const fieldPara: Paragraph = {
+      kind: "paragraph", id: fresh(), revision: 0,
+      runs: [{ text: "{page}", style: { ...CHAR, fieldId: "pg" } }], style: PARA,
+    };
+    const t = table([[{ id: fresh(), blocks: [fieldPara] }]], [1]);
+    const fieldText = (tree: ReturnType<typeof layout>): string =>
+      placedOf(tree, t.id)!.pb.table!.rows[0]!.cells[0]!.blocks[0]!.lines
+        .flatMap((l) => l.fragments.map((f) => f.text)).join("");
+
+    // Pass 1: the table sits on page 1 → field resolves to "1".
+    const t1 = eng.layout({ ...doc([t]), fields: fieldDefs });
+    expect(placedOf(t1, t.id)!.page).toBe(0);
+    expect(fieldText(t1)).toBe("1");
+
+    // Pass 2: a page break before the SAME (unchanged) table pushes it to page 2.
+    // Its revision+width are unchanged → tableCache hit. Clone-on-write keeps the
+    // cached {page} token pristine, so the field re-resolves to "2" instead of
+    // serving the baked "1" the in-place mutation used to leave behind.
+    const t2 = eng.layout({ ...doc([para("intro"), para("brk", { pageBreakBefore: true }), t]), fields: fieldDefs });
+    expect(placedOf(t2, t.id)!.page).toBe(1);
+    expect(fieldText(t2)).toBe("2");
+
+    // Pass 3: back to page 1 — the cache must not have been corrupted either way.
+    const t3 = eng.layout({ ...doc([t]), fields: fieldDefs });
+    expect(fieldText(t3)).toBe("1");
   });
 });
 

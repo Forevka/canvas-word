@@ -1950,8 +1950,11 @@ function layoutDocument(
   // fieldId so it's its own fragment — rewrite that fragment's text, re-measure
   // its (always shorter) width, map the shorter text back onto the model range via
   // offsetMap so caret/hit-testing stay exact, and slide the rest of the line left
-  // to close the gap the wider token left. Never stale, no relayout, no painter
-  // change. Untagged literal "{page}" body text is left alone (fieldId-gated).
+  // to close the gap the wider token left. Resolution is clone-on-write per line
+  // (resolveBlockTokens) so it never mutates the shared line/table caches — the
+  // cached {page} token survives, so the number re-resolves every pass even when
+  // the cache is reused (no relayout, no painter change). Untagged literal "{page}"
+  // body text is left alone (fieldId-gated).
   const fieldDefs = doc.fields;
   if (fieldDefs) {
     const isPageNumField = (fid: string | undefined): boolean => {
@@ -1978,8 +1981,29 @@ function layoutDocument(
         dx += frag.width - oldWidth;
       }
     };
+    const lineHasPageField = (line: LineBox): boolean =>
+      line.fragments.some((f) => isPageNumField(f.style.fieldId));
     const resolveBlockTokens = (b: PlacedBlock, pageNum: number): void => {
-      for (const line of b.lines) resolveLineTokens(line, pageNum);
+      // resolveLineTokens MUTATES fragment text/width/x/offsetMap. A placed block's
+      // `lines` ALIAS cached LineBoxes (linesCache for body paragraphs, tableCache's
+      // measured cells for table content), so resolving in place would bake the
+      // resolved number INTO the cache. A later layout that reuses that cache
+      // verbatim — e.g. a table pushed to a new page by a page break, its
+      // revision+width unchanged — then keeps the stale number, because the cached
+      // fragment text is already "1" (not "{page}") and substituteTokens no-ops.
+      // (A column resize changes the width, busting the cache, which is why it
+      // "fixed" the number — #48.) Clone-on-write: copy any line that carries a page
+      // field, and its fragments, before resolving — the cached {page} token stays
+      // pristine for the next pass. Lines with no page field are a no-op, so skip.
+      let out: LineBox[] | null = null;
+      for (let i = 0; i < b.lines.length; i++) {
+        const line = b.lines[i]!;
+        if (!lineHasPageField(line)) continue;
+        const copy: LineBox = { ...line, fragments: line.fragments.map((f) => ({ ...f })) };
+        resolveLineTokens(copy, pageNum);
+        (out ??= b.lines.slice())[i] = copy;
+      }
+      if (out) b.lines = out;
       if (b.table) for (const row of b.table.rows) for (const cell of row.cells) for (const cb of cell.blocks) resolveBlockTokens(cb, pageNum);
     };
     for (const pg of pages) for (const b of pg.blocks) resolveBlockTokens(b, pageNumbers[pg.index]!);
