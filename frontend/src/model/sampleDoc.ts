@@ -373,7 +373,7 @@ export function sampleDoc(): Document {
       },
       shading: "#eef4ff",
     }),
-    para([run("Borders and shading are independent: this paragraph is shaded with no border, and a double-ruled box can sit on a plain background.")], {
+    para([run("Borders and shading are independent: this indented paragraph combines a warm shading fill with a single thick double-ruled accent on its left edge only — each edge of the box is configured on its own.")], {
       spaceBeforePx: 6,
       indentLeftPx: 24,
       indentRightPx: 24,

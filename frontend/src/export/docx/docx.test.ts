@@ -83,7 +83,10 @@ describe("DOCX export — round trip", () => {
     expect(sb.borders?.top?.widthPx).toBeCloseTo(sa.borders!.top!.widthPx, 5);
     expect(sb.borders?.bottom?.style).toBe("double");
     expect(sb.borders?.right?.style).toBe("dashed");
-    expect(sb.borders?.left?.style ?? "single").toBe("single");
+    // The left edge survives as a plain single border (no `style` key on a single edge).
+    expect(sb.borders?.left).toBeDefined();
+    expect(sb.borders?.left?.style).toBeUndefined();
+    expect(sb.borders?.left?.color).toBe("#1a73e8");
   });
 
   it("round-trips table cell margins (w:tcMar) — top/bottom must survive", () => {

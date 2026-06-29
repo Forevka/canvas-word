@@ -762,6 +762,30 @@ describe("engine — paragraph borders & shading", () => {
     // The follower starts at or below the box bottom plus the reserved bottom rule.
     expect(afterPb.y).toBeGreaterThanOrEqual(boxedPb.y + boxedPb.paraDecor!.height + 4 - 0.01);
   });
+
+  it("decorates a bordered/shaded paragraph inside a table cell", () => {
+    const boxed = para("cell box", { borders: { left: blue }, shading: "#eef4ff" });
+    const t: TableBlock = {
+      kind: "table", id: fresh(), revision: 0,
+      rows: [{ cells: [{ id: fresh(), blocks: [boxed] }] }],
+    };
+    const tree = layout(doc([t]));
+    const tablePb = placedOf(tree, t.id)!.pb;
+    const cellPara = tablePb.table!.rows[0]!.cells[0]!.blocks.find((b) => b.blockId === boxed.id)!;
+    expect(cellPara.paraDecor).toBeDefined();
+    expect(cellPara.paraDecor!.shading).toBe("#eef4ff");
+    expect(cellPara.paraDecor!.borders!.left!.color).toBe("#1a73e8");
+    expect(cellPara.paraDecor!.width).toBeGreaterThan(0);
+  });
+
+  it("decorates a bordered/shaded paragraph in a header band", () => {
+    const boxed = para("header box", { borders: { bottom: blue }, shading: "#eef4ff" });
+    const tree = layout(doc([para("body")], { header: [boxed] }));
+    const headerPb = tree.pages[0]!.header!.find((b) => b.blockId === boxed.id)!;
+    expect(headerPb.paraDecor).toBeDefined();
+    expect(headerPb.paraDecor!.shading).toBe("#eef4ff");
+    expect(headerPb.paraDecor!.borders!.bottom!.color).toBe("#1a73e8");
+  });
 });
 
 // --- floats (square-wrap images) ------------------------------------------

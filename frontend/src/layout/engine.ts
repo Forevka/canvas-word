@@ -9,7 +9,7 @@ import {
   materializeRichInlineLineRange,
   type RichInlineCursor,
 } from "@chenglou/pretext/rich-inline";
-import type { Block, CharStyle, Document, EquationBlock, ImageBlock, Paragraph, Run, SectionPatch, SectionProps, TableBlock, TableCell, TabStop } from "@cw/shared";
+import type { Block, CharStyle, Document, EquationBlock, ImageBlock, Paragraph, ParaStyle, Run, SectionPatch, SectionProps, TableBlock, TableCell, TabStop } from "@cw/shared";
 import { effectiveFractions, isHiddenParagraph } from "@cw/shared";
 import { formatListNumber, markerText, type ListDefinition, type ListLevel } from "@cw/shared";
 import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock, PlacedImage } from "./layoutTree";
@@ -27,6 +27,20 @@ const eqBox = (b: EquationBlock): MathBox => equationBox(b.equation, MATH_FONT_F
 /** Word's default tab interval when a `\t` runs past the last explicit stop
  *  (0.5 inch at 96 dpi). */
 const DEFAULT_TAB_STOP_PX = 48;
+
+/** Paint-only paragraph decoration (w:shd fill + w:pBdr border box) for a placed
+ *  paragraph chunk. `boxWidth` is the content width between the paragraph's
+ *  indents at this placement site; `height` is the chunk's rendered height.
+ *  Returns undefined for an undecorated paragraph (no field set). Shared by every
+ *  paragraph-placement path (body flow, floats, table cells, bands, footnotes) so
+ *  borders/shading render consistently everywhere a paragraph lands. */
+function paraDecorFor(style: ParaStyle, boxWidth: number, height: number): NonNullable<PlacedBlock["paraDecor"]> | undefined {
+  const { borders, shading } = style;
+  if (!borders && !shading) return undefined;
+  return { width: Math.max(0, boxWidth), height, ...(shading ? { shading } : {}), ...(borders ? { borders } : {}) };
+}
+
+const sumLineHeights = (lines: LineBox[]): number => lines.reduce((h, l) => h + l.height, 0);
 
 export interface LayoutOptions {
   /** Band being story-edited: rendered RAW ({page} tokens literal, real block
@@ -1335,11 +1349,8 @@ function layoutDocument(
     // Paragraph shading / border box (w:shd / w:pBdr): the box spans this column's
     // content edges between the paragraph's indents, and this chunk's lines tall.
     // Painted behind the text in renderer.ts / pdf paintBlock.ts.
-    const { borders, shading } = block.style;
-    if (borders || shading) {
-      const width = Math.max(0, colWidth - indentOf(block) - rightIndentOf(block));
-      placed.paraDecor = { width, height: chunkHeight, ...(shading ? { shading } : {}), ...(borders ? { borders } : {}) };
-    }
+    const decor = paraDecorFor(block.style, colWidth - indentOf(block) - rightIndentOf(block), chunkHeight);
+    if (decor) placed.paraDecor = decor;
   };
 
   /** How many lines starting at `from` fit above the effective bottom at the current y. */
@@ -1588,6 +1599,16 @@ function layoutDocument(
     let lineIdx = 0;
     let placed: PlacedBlock | null = null;
 
+    // Attach the paragraph's shading/border box to the chunk currently being
+    // built — once before each page-break reset and once at the end — so a boxed
+    // paragraph beside a float still renders its decoration (per chunk).
+    const decorateFloat = (): void => {
+      if (placed && placed.lines.length) {
+        const d = paraDecorFor(p.style, colWidth - indentOf(p) - rightIndentOf(p), sumLineHeights(placed.lines));
+        if (d) placed.paraDecor = d;
+      }
+    };
+
     const pushLine = (
       frags: RawFrag[],
       height: number,
@@ -1647,6 +1668,7 @@ function layoutDocument(
         if (bl === null) break;
         if (y + bl.height > bottomY() && colHasContent()) {
           for (let k = 0; k < runCursors.length; k++) runCursors[k] = snapshot[k]!;
+          decorateFloat();
           newPage(); // floats cleared; the line re-breaks at full width
           placed = null;
           continue;
@@ -1677,6 +1699,7 @@ function layoutDocument(
       if (!produced) {
         const m = emptyLineMetrics(p);
         if (y + m.height > bottomY() && colHasContent()) {
+          decorateFloat();
           newPage();
           placed = null;
         }
@@ -1684,6 +1707,7 @@ function layoutDocument(
         first = false;
       }
     }
+    decorateFloat();
   };
 
   /** Tables split at ROW boundaries across pages (Word behavior). At least one
@@ -1905,6 +1929,12 @@ function layoutDocument(
           placed.marker = { text: `${noteNumbers.get(id) ?? "•"}.`, style: np.p.runs[0].style, x: nx };
           first = false;
         }
+        const noteDecor = paraDecorFor(
+          np.p.style,
+          contentWidth - FN_INDENT - np.p.style.indentLeftPx - (np.p.style.indentRightPx ?? 0),
+          totalHeight(np.lines),
+        );
+        if (noteDecor) placed.paraDecor = noteDecor;
         pg.blocks.push(placed);
         ny += totalHeight(np.lines) + np.p.style.spaceAfterPx;
       }
@@ -2189,7 +2219,10 @@ function layoutBand(
     if (b.kind === "paragraph") {
       y += b.style.spaceBeforePx;
       const lines = getBandLines(b, width);
-      placed.push({ blockId: b.id, x: originX + b.style.indentLeftPx, y, firstLineIndex: 0, lines });
+      const bandPara: PlacedBlock = { blockId: b.id, x: originX + b.style.indentLeftPx, y, firstLineIndex: 0, lines };
+      const bandDecor = paraDecorFor(b.style, width - b.style.indentLeftPx - (b.style.indentRightPx ?? 0), totalLinesHeight(lines));
+      if (bandDecor) bandPara.paraDecor = bandDecor;
+      placed.push(bandPara);
       y += totalLinesHeight(lines) + b.style.spaceAfterPx;
     } else if (b.kind === "image") {
       const slack = width - b.widthPx;
@@ -2677,6 +2710,14 @@ function placeTable(
           if (marker) {
             placedPara.marker = { text: marker.text, style: marker.style, x: Math.max(cx + 1, lx - marker.hangingPx) };
           }
+          // Paragraph border/shading box, sized to the cell's content width minus
+          // this paragraph's indents (same as body flow, scoped to the cell).
+          const cellDecor = paraDecorFor(
+            it.block.style,
+            innerWidth - it.block.style.indentLeftPx - listCtx.indentOf(it.block) - (it.block.style.indentRightPx ?? 0),
+            totalLinesHeight(it.lines),
+          );
+          if (cellDecor) placedPara.paraDecor = cellDecor;
           blocks.push(placedPara);
           py += totalLinesHeight(it.lines) + it.block.style.spaceAfterPx;
         } else if (it.kind === "image") {
