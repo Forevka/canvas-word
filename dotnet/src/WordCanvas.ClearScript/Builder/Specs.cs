@@ -698,6 +698,33 @@ public sealed record TableBorders
     }
 }
 
+/// <summary>Per-edge paragraph borders (OOXML w:pBdr); absent edges draw no line.
+/// Reuses the table <see cref="CellBorder"/> value type. <c>Between</c> is the
+/// inter-paragraph rule — it round-trips but is not drawn for a standalone paragraph.</summary>
+public sealed record ParaBorders
+{
+    public CellBorder? Top { get; init; }
+    public CellBorder? Right { get; init; }
+    public CellBorder? Bottom { get; init; }
+    public CellBorder? Left { get; init; }
+    public CellBorder? Between { get; init; }
+
+    /// <summary>The same border on all four outer edges.</summary>
+    public static ParaBorders All(CellBorder border) =>
+        new() { Top = border, Right = border, Bottom = border, Left = border };
+
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        if (Top is { } t) Js.Set(o, "top", t.ToJs(e));
+        if (Right is { } r) Js.Set(o, "right", r.ToJs(e));
+        if (Bottom is { } b) Js.Set(o, "bottom", b.ToJs(e));
+        if (Left is { } l) Js.Set(o, "left", l.ToJs(e));
+        if (Between is { } bw) Js.Set(o, "between", bw.ToJs(e));
+        return o;
+    }
+}
+
 /// <summary>Inner cell padding, px per side (docx w:tcMar).</summary>
 public sealed record CellMargin(double Top, double Right, double Bottom, double Left)
 {

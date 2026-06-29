@@ -2,7 +2,8 @@
 // (direct formatting on runs/paragraphs) and styles.ts (the same bags appear
 // inside w:style and w:docDefaults). Decode only; no resolution here.
 
-import type { IRParaProps, IRRunProps } from "./types";
+import { decodeShdFill } from "./borders";
+import type { IRParaBorders, IRParaProps, IRRawBorder, IRRunProps } from "./types";
 import { WarningSink } from "./types";
 import { lineAutoToMultiplier } from "./units";
 import { attr, el, els, numAttr, onOff, val, type XmlNode } from "./xml";
@@ -146,6 +147,35 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
       props.list = numId === "0" ? null : { numId, level: numAttr(el(numPr, "w:ilvl"), "w:val") ?? 0 };
     }
   }
+
+  // w:pBdr — paragraph borders (top/left/bottom/right/between/bar). Decoded raw
+  // here; mapToModel collapses each edge to px (reusing the table border path).
+  const pBdr = el(pPr, "w:pBdr");
+  if (pBdr) {
+    const borders: IRParaBorders = {};
+    const edge = (key: keyof IRParaBorders, tag: string): void => {
+      const e = el(pBdr, tag);
+      if (!e) return;
+      const raw: IRRawBorder = { val: attr(e, "w:val") ?? "single" };
+      const sz = numAttr(e, "w:sz");
+      if (sz !== undefined) raw.sizeEighthPt = sz;
+      const color = attr(e, "w:color");
+      if (color) raw.color = color;
+      borders[key] = raw;
+    };
+    edge("top", "w:top");
+    edge("left", "w:left");
+    edge("bottom", "w:bottom");
+    edge("right", "w:right");
+    edge("between", "w:between");
+    if (borders.top || borders.left || borders.bottom || borders.right || borders.between) {
+      props.borders = borders;
+    }
+  }
+
+  // Paragraph-level w:shd (distinct from a run's or cell's shading).
+  const shd = decodeShdFill(el(pPr, "w:shd"));
+  if (shd !== undefined) props.shd = shd;
 
   const rPr = el(pPr, "w:rPr");
   if (rPr) props.markRunProps = decodeRunProps(rPr);

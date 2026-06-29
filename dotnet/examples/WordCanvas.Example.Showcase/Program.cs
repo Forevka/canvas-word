@@ -173,6 +173,18 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
     .Paragraph("A fully justified, multi-page paragraph exercises line-level pagination. " + Repeat(Lorem, 12),
         p => p.Align(TextAlign.Justify))
 
+    // ---- Paragraph borders & shading (w:pBdr / paragraph w:shd) ----
+    .Paragraph("Paragraph borders & shading", p => p.WithStyle("Heading1"))
+    .Paragraph("A whole paragraph can carry a border box and a background fill — Word's w:pBdr and paragraph-level w:shd. The box hugs the paragraph between its indents and round-trips to .docx and PDF.",
+        p => p.Spacing(new SpacingOptions { Before = 6 })
+              .Borders(ParaBorders.All(new CellBorder { Color = "#1a73e8", WidthPx = 1 }))
+              .Shading("#eef4ff"))
+    .Paragraph("Borders and shading are independent: this paragraph is shaded with no border, and a double-ruled box can sit on a plain background.",
+        p => p.Spacing(new SpacingOptions { Before = 6 })
+              .Indent(new IndentOptions { Left = 24, Right = 24 })
+              .Shading("#fff3e0")
+              .Borders(new ParaBorders { Left = new CellBorder { Color = "#e8710a", WidthPx = 3, Style = BorderStyle.Double } }))
+
     // ---- International text (CJK) ----
     .Paragraph("International text — CJK", p => p.WithStyle("Heading1"))
     .Paragraph("East-Asian scripts lay out the way Word does — measured on canvas, with Unicode line-breaking and kinsoku, not the browser's contenteditable.")

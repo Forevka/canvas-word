@@ -249,6 +249,17 @@ public sealed class ParagraphBuilder
         return this;
     }
 
+    /// <summary>Paragraph borders (OOXML w:pBdr) — a box drawn around the paragraph.
+    /// Each edge reuses the table <see cref="CellBorder"/> value type.</summary>
+    public ParagraphBuilder Borders(ParaBorders borders)
+    {
+        _js.InvokeMethod("borders", borders.ToJs(_engine));
+        return this;
+    }
+
+    /// <summary>Paragraph shading — a CSS fill painted behind the paragraph (OOXML w:shd).</summary>
+    public ParagraphBuilder Shading(string cssColor) { _js.InvokeMethod("shading", cssColor); return this; }
+
     // ---- inline fields ----
     public ParagraphBuilder PageField() { _js.InvokeMethod("pageField"); return this; }
     public ParagraphBuilder NumPagesField() { _js.InvokeMethod("numPagesField"); return this; }

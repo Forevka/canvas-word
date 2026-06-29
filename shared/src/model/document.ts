@@ -154,6 +154,27 @@ export interface ParaStyle {
    *  advances to the next stop past the current x; past the last explicit stop
    *  (or with none) the layout falls back to a fixed default interval. */
   tabStops?: TabStop[];
+  /** Paragraph borders (OOXML w:pBdr) — a box drawn around the paragraph. Each
+   *  edge reuses the table `CellBorder` value type (color + width + line style);
+   *  `between` is the rule Word draws between two consecutive paragraphs that
+   *  share identical borders. Absent edges draw no line. `| undefined` so a
+   *  setParaStyle patch can remove the borders. */
+  borders?: ParaBorders | undefined;
+  /** Paragraph shading fill (OOXML paragraph-level w:shd), a CSS color painted
+   *  behind the paragraph's box. Mirrors the table cell `shading` value type.
+   *  Absent = no fill. `| undefined` so a patch can remove it. */
+  shading?: string | undefined;
+}
+
+/** Resolved per-edge paragraph borders (OOXML w:pBdr). Reuses the table
+ *  `CellBorder` value type per edge. An omitted edge draws no line. `between`
+ *  is the inter-paragraph rule (drawn like an inner bottom edge). */
+export interface ParaBorders {
+  top?: CellBorder;
+  right?: CellBorder;
+  bottom?: CellBorder;
+  left?: CellBorder;
+  between?: CellBorder;
 }
 
 export type TabAlign = "left" | "center" | "right" | "decimal";

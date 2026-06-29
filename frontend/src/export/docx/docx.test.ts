@@ -60,6 +60,35 @@ describe("DOCX export — round trip", () => {
     expect(s.indentFirstLinePx).toBeCloseTo(24, 1);
   });
 
+  it("round-trips paragraph borders (w:pBdr) and paragraph shading (w:shd)", () => {
+    const pBdr =
+      `<w:pBdr>` +
+      `<w:top w:val="single" w:sz="8" w:color="1A73E8"/>` +
+      `<w:left w:val="single" w:sz="8" w:color="1A73E8"/>` +
+      `<w:bottom w:val="double" w:sz="12" w:color="1A73E8"/>` +
+      `<w:right w:val="dashed" w:sz="8" w:color="1A73E8"/>` +
+      `</w:pBdr>`;
+    const a = runImport(
+      simpleDocx(`<w:p><w:pPr>${pBdr}<w:shd w:val="clear" w:color="auto" w:fill="EEF4FF"/></w:pPr><w:r><w:t>boxed</w:t></w:r></w:p>`),
+    ).doc;
+    const sa = paras(a)[0]!.style;
+    expect(sa.shading).toBe("#eef4ff");
+    expect(sa.borders?.top?.color).toBe("#1a73e8");
+    expect(sa.borders?.bottom?.style).toBe("double");
+    expect(sa.borders?.right?.style).toBe("dashed");
+
+    const sb = paras(roundTrip(a))[0]!.style;
+    expect(sb.shading).toBe("#eef4ff");
+    expect(sb.borders?.top?.color).toBe("#1a73e8");
+    expect(sb.borders?.top?.widthPx).toBeCloseTo(sa.borders!.top!.widthPx, 5);
+    expect(sb.borders?.bottom?.style).toBe("double");
+    expect(sb.borders?.right?.style).toBe("dashed");
+    // The left edge survives as a plain single border (no `style` key on a single edge).
+    expect(sb.borders?.left).toBeDefined();
+    expect(sb.borders?.left?.style).toBeUndefined();
+    expect(sb.borders?.left?.color).toBe("#1a73e8");
+  });
+
   it("round-trips table cell margins (w:tcMar) — top/bottom must survive", () => {
     // Regression: the writer used to drop cell margins, so top/bottom re-imported as
     // Word's default 0 — shrinking every row and drifting page count by ~5%.

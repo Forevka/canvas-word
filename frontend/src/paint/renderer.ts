@@ -573,6 +573,10 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     for (const block of page.blocks) paintCellFills(ctx, block, page.index);
     if (page.header) for (const b of page.header) paintCellFills(ctx, b, page.index);
     if (page.footer) for (const b of page.footer) paintCellFills(ctx, b, page.index);
+    // Paragraph shading (w:shd) — same bottom layer as cell fills.
+    for (const block of page.blocks) paintParaFills(ctx, block, page.index);
+    if (page.header) for (const b of page.header) paintParaFills(ctx, b, page.index);
+    if (page.footer) for (const b of page.footer) paintParaFills(ctx, b, page.index);
 
     // 2a. search-match highlights (over fills, under text)
     ctx.fillStyle = theme.searchHighlight;
@@ -902,6 +906,24 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     }
   }
 
+  // Paint paragraph background fills (w:shd) for a block tree, recursing into
+  // table cells. Like paintCellFills, hoisted ahead of the highlight layers so an
+  // opaque paragraph fill sits beneath the selection/search bands, not over them.
+  function paintParaFills(ctx: CanvasRenderingContext2D, block: PlacedBlock, pageIndex: number): void {
+    const d = block.paraDecor;
+    if (d?.shading) {
+      ctx.fillStyle = d.shading;
+      ctx.fillRect(block.x, block.y, d.width, d.height);
+    }
+    if (block.table) {
+      for (const row of block.table.rows) {
+        for (const cell of row.cells) {
+          for (const cb of cell.blocks) paintParaFills(ctx, cb, pageIndex);
+        }
+      }
+    }
+  }
+
   function paintBlock(ctx: CanvasRenderingContext2D, block: PlacedBlock, pageIndex: number): void {
     if (block.image) {
       const img = getImage(block.image.src);
@@ -1061,6 +1083,21 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       ctx.direction = "ltr";
       ctx.textAlign = "left";
       if (showFormattingMarks) paintFormattingMarks(ctx, block, line, baselineY);
+    }
+    // Paragraph border box (w:pBdr) — drawn over the (already-filled) shading and
+    // text, like a cell's edges. `between` is not drawn for a standalone paragraph.
+    if (block.paraDecor?.borders) {
+      const d = block.paraDecor;
+      const b = d.borders!;
+      const x = block.x;
+      const yT = block.y;
+      const xR = block.x + d.width;
+      const yB = block.y + d.height;
+      strokeCellEdge(ctx, b.top, x, yT, xR, yT, 0, 1);
+      strokeCellEdge(ctx, b.bottom, x, yB, xR, yB, 0, -1);
+      strokeCellEdge(ctx, b.left, x, yT, x, yB, 1, 0);
+      strokeCellEdge(ctx, b.right, xR, yT, xR, yB, -1, 0);
+      ctx.setLineDash([]);
     }
   }
 

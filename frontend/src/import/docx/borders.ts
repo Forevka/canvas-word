@@ -9,8 +9,8 @@
 // "First definition wins" (incl. an explicit w:val="nil" → no line), so the
 // cascade picks the most-specific source that DEFINES the edge, even to suppress.
 
-import type { CellBorder, CellBorders, TableBorders } from "@cw/shared";
-import type { IRBorders, IRRawBorder } from "./types";
+import type { CellBorder, CellBorders, ParaBorders, TableBorders } from "@cw/shared";
+import type { IRBorders, IRParaBorders, IRRawBorder } from "./types";
 import { round2 } from "./units";
 import { attr, el, numAttr, type XmlNode } from "./xml";
 
@@ -119,6 +119,20 @@ export function tableBordersFromIR(b: IRBorders | undefined): TableBorders | und
   const l = toCellBorder(b.left); if (l) out.left = l;
   const ih = toCellBorder(b.insideH); if (ih) out.insideH = ih;
   const iv = toCellBorder(b.insideV); if (iv) out.insideV = iv;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** Map raw w:pBdr edges to model ParaBorders (each edge collapses through the
+ *  same px/style conversion as table cell borders). Returns undefined when no
+ *  edge survives (all nil/none). */
+export function paraBordersFromIR(b: IRParaBorders | undefined): ParaBorders | undefined {
+  if (!b) return undefined;
+  const out: ParaBorders = {};
+  const t = toCellBorder(b.top); if (t) out.top = t;
+  const r = toCellBorder(b.right); if (r) out.right = r;
+  const bot = toCellBorder(b.bottom); if (bot) out.bottom = bot;
+  const l = toCellBorder(b.left); if (l) out.left = l;
+  const bw = toCellBorder(b.between); if (bw) out.between = bw;
   return Object.keys(out).length > 0 ? out : undefined;
 }
 

@@ -361,6 +361,26 @@ export function sampleDoc(): Document {
     para([run("so caches survive renumbering")], { list: { listId: DEFAULT_BULLET_LIST_ID, level: 1 }, spaceAfterPx: 2 }),
     para([run("A fully justified, multi-page paragraph exercises line-level pagination. " + LOREM.repeat(12))], { align: "justify" }),
 
+    // --- Paragraph borders & shading (w:pBdr / paragraph w:shd) -----------------
+    heading("Paragraph borders & shading", 1),
+    para([run("A whole paragraph can carry a border box and a background fill — Word's w:pBdr and paragraph-level w:shd. The box hugs the paragraph between its indents and round-trips to .docx and PDF.")], {
+      spaceBeforePx: 6,
+      borders: {
+        top: { color: "#1a73e8", widthPx: 1 },
+        bottom: { color: "#1a73e8", widthPx: 1 },
+        left: { color: "#1a73e8", widthPx: 1 },
+        right: { color: "#1a73e8", widthPx: 1 },
+      },
+      shading: "#eef4ff",
+    }),
+    para([run("Borders and shading are independent: this indented paragraph combines a warm shading fill with a single thick double-ruled accent on its left edge only — each edge of the box is configured on its own.")], {
+      spaceBeforePx: 6,
+      indentLeftPx: 24,
+      indentRightPx: 24,
+      shading: "#fff3e0",
+      borders: { left: { color: "#e8710a", widthPx: 3, style: "double" } },
+    }),
+
     // --- International text: CJK + bidirectional (RTL) -------------------------
     heading("International text — CJK & bidirectional", 1),
     para([run("East-Asian and right-to-left scripts lay out the way Word does — measured on canvas, with Unicode line-breaking and the bidirectional algorithm (UAX #9), not the browser's contenteditable.")], { spaceAfterPx: 8 }),

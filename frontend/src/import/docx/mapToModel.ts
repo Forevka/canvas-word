@@ -34,7 +34,7 @@ import type { NamedStyle, Stylesheet } from "@cw/shared";
 import type { ListDefinition, ListLevel, ListNumberFormat } from "@cw/shared";
 import type { TableCond, TableCondProps, TableStyle } from "@cw/shared";
 import { normalizeRuns } from "@cw/shared";
-import { cellBordersFromIR, resolveCellBorders, tableBordersFromIR, type BorderSources, type CellPosition } from "./borders";
+import { cellBordersFromIR, paraBordersFromIR, resolveCellBorders, tableBordersFromIR, type BorderSources, type CellPosition } from "./borders";
 import type { MediaStore } from "./media";
 import type { NumberingData } from "./numbering";
 import type { ResolvedTableStyle, StyleResolver, StylesData } from "./styles";
@@ -1097,6 +1097,9 @@ function mapParaPatch(props: IRParaProps): Partial<ParaStyle> {
   if (props.keepWithNext) out.keepWithNext = true;
   if (props.keepLinesTogether) out.keepLinesTogether = true;
   if (props.tabStops) out.tabStops = mapTabStops(props.tabStops);
+  const pb = paraBordersFromIR(props.borders);
+  if (pb) out.borders = pb;
+  if (props.shd !== undefined) out.shading = props.shd;
   return out;
 }
 
@@ -1192,6 +1195,9 @@ function mapParaStyle(props: IRParaProps): ParaStyle {
   if (props.tabStops) style.tabStops = mapTabStops(props.tabStops);
   if (props.pageBreakBefore) style.pageBreakBefore = true;
   if (props.outlineLevel !== undefined) style.outlineLevel = props.outlineLevel;
+  const pb = paraBordersFromIR(props.borders);
+  if (pb) style.borders = pb;
+  if (props.shd !== undefined) style.shading = props.shd;
   if (props.styleId) style.namedStyle = props.styleId;
   return style;
 }

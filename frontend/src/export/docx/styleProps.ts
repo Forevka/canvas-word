@@ -111,6 +111,18 @@ export function partialRPrXml(c: Partial<CharStyle>): string {
   return out.length > 0 ? el("w:rPr", undefined, out.join("")) : "";
 }
 
+// w:pBdr for a paragraph-style patch (mirrors documentXml.paraBordersXml).
+function paraBordersXml(b: NonNullable<ParaStyle["borders"]>): string {
+  const edge = (name: string, spec: CellBorders["top"]): string => {
+    if (!spec) return "";
+    const val = spec.style === "double" ? "double" : spec.style === "dashed" ? "dashed" : spec.style === "dotted" ? "dotted" : "single";
+    return el("w:" + name, { "w:val": val, "w:sz": pxToEighthPoints(spec.widthPx), "w:space": 0, "w:color": hex(spec.color) });
+  };
+  const inner =
+    edge("top", b.top) + edge("left", b.left) + edge("bottom", b.bottom) + edge("right", b.right) + edge("between", b.between);
+  return inner ? el("w:pBdr", undefined, inner) : "";
+}
+
 export function partialPPrXml(p: Partial<ParaStyle>): string {
   const out: string[] = [];
   if (p.direction === "rtl") out.push(el("w:bidi"));
@@ -134,6 +146,8 @@ export function partialPPrXml(p: Partial<ParaStyle>): string {
   if (Object.keys(ind).length > 0) out.push(el("w:ind", ind));
   if (p.keepWithNext) out.push(el("w:keepNext"));
   if (p.keepLinesTogether) out.push(el("w:keepLines"));
+  if (p.borders) out.push(paraBordersXml(p.borders));
+  if (p.shading) out.push(shdFillXml(p.shading));
   if (p.tabStops && p.tabStops.length > 0) {
     const tabs = p.tabStops
       .map((t) =>

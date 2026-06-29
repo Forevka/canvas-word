@@ -240,6 +240,20 @@ export interface IRParaProps {
   markRunProps?: IRRunProps;
   /** w:bidi — paragraph base direction is RTL. */
   direction?: "ltr" | "rtl";
+  /** w:pPr/w:pBdr — paragraph border edges (raw, mapped downstream). */
+  borders?: IRParaBorders;
+  /** w:pPr/w:shd → CSS fill (paragraph-level shading). */
+  shd?: string;
+}
+
+/** Raw paragraph border edges (w:pBdr children). Mirrors IRBorders but carries
+ *  the inter-paragraph `between` edge instead of the table inside edges. */
+export interface IRParaBorders {
+  top?: IRRawBorder;
+  left?: IRRawBorder;
+  bottom?: IRRawBorder;
+  right?: IRRawBorder;
+  between?: IRRawBorder;
 }
 
 /** A w:bookmarkStart / w:bookmarkEnd seen while walking a paragraph: its w:id

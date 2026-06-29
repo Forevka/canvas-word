@@ -71,6 +71,21 @@ export interface ParaStyle {
   outlineLevel?: number;
   columnBreakBefore?: boolean;
   tabStops?: TabStop[];
+  /** Paragraph borders (OOXML w:pBdr) — a box around the paragraph; each edge
+   *  reuses the table CellBorder value type. */
+  borders?: ParaBorders | undefined;
+  /** Paragraph shading fill (OOXML paragraph-level w:shd), a CSS color. */
+  shading?: string | undefined;
+}
+
+/** Resolved per-edge paragraph borders (OOXML w:pBdr). An omitted edge draws no
+ *  line. `between` is the inter-paragraph rule. */
+export interface ParaBorders {
+  top?: CellBorder;
+  right?: CellBorder;
+  bottom?: CellBorder;
+  left?: CellBorder;
+  between?: CellBorder;
 }
 
 /** Style-homogeneous span of text. */

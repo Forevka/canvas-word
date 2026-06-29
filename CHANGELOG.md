@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Paragraph borders & shading (`ParaStyle.borders` + `ParaStyle.shading`).** A whole
+  paragraph can now carry a border box (OOXML `w:pBdr` — `top`/`right`/`bottom`/`left`,
+  plus a round-tripped inter-paragraph `between` edge) and a background fill (paragraph-level
+  `w:shd`), where previously only table **cell** shading/borders were supported. Each border
+  edge reuses the table `CellBorder` value type (color + width + `single`/`double`/`dashed`/
+  `dotted`). Both round-trip through `.docx` (`w:pPr/w:pBdr` + `w:pPr/w:shd`) and render
+  pixel-exact in the canvas renderer and PDF export — the fill paints beneath the text (under
+  selection/search highlights, like cell fills) and the box hugs the paragraph between its
+  indents; the border line widths are reserved in the surrounding block gaps. It renders in
+  every paragraph context (body, floats, table cells, headers/footers, footnotes). Authorable
+  via the builder (`paragraph(...).borders({...}).shading("#rrggbb")`) and the C# bindings
+  (`ParagraphBuilder.Borders(ParaBorders.All(...))` / `.Shading(...)`), and demonstrated in
+  the default showcase document.
 - **Table cell vertical alignment (`TableCell.vAlign`).** Cells can now align their
   content to the `top` (default), `center`, or `bottom` of the cell box via OOXML
   `w:tcPr/w:vAlign` — previously content always hugged the top regardless of the

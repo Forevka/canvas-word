@@ -258,6 +258,9 @@ function pPrXml(style: ParaStyle, ctx: PartCtx, markRun?: CharStyle): string {
   if (style.pageBreakBefore) c.push(el("w:pageBreakBefore"));
   if (style.keepWithNext) c.push(el("w:keepNext"));
   if (style.keepLinesTogether) c.push(el("w:keepLines"));
+  // w:pBdr / w:shd precede spacing/ind/jc in the CT_PPr schema sequence.
+  if (style.borders) c.push(paraBordersXml(style.borders));
+  if (style.shading) c.push(el("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": hex(style.shading) }));
   // Explicit "ltr" emits w:bidi="0" (round-trips an imported w:bidi="0", clearing
   // an inherited RTL style); undefined stays absent.
   if (style.direction === "rtl") c.push(el("w:bidi"));
@@ -353,6 +356,20 @@ function bordersXml(tag: string, b: CellBorders | TableBorders): string {
   // importer keys on (bordersSpecified) to suppress the renderer's gray default
   // grid. Dropping it reverts a borderless table to that grid on reopen.
   return el(tag, undefined, inner);
+}
+
+// w:pBdr — paragraph borders. Same per-edge encoding as table borders, but the
+// element holds an inter-paragraph `between` edge and only edges that are set are
+// written (no "explicit empty" semantics — a paragraph with no borders omits w:pBdr).
+function paraBordersXml(b: NonNullable<ParaStyle["borders"]>): string {
+  const edge = (name: string, spec: { color: string; widthPx: number; style?: string } | undefined): string => {
+    if (!spec) return "";
+    const val = spec.style === "double" ? "double" : spec.style === "dashed" ? "dashed" : spec.style === "dotted" ? "dotted" : "single";
+    return el("w:" + name, { "w:val": val, "w:sz": pxToEighthPoints(spec.widthPx), "w:space": 0, "w:color": hex(spec.color) });
+  };
+  const inner =
+    edge("top", b.top) + edge("left", b.left) + edge("bottom", b.bottom) + edge("right", b.right) + edge("between", b.between);
+  return inner ? el("w:pBdr", undefined, inner) : "";
 }
 
 function cellXml(cell: TableCell, ctx: PartCtx, vMergeRestart = false): string {

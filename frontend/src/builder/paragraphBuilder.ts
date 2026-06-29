@@ -8,7 +8,7 @@
 // text() in this scope — "make this paragraph bold" is the dominant authoring
 // intent. Mixed formatting within a paragraph uses text(t, { …patch }).
 
-import type { Block, CharStyle, Document, FieldSpec, IfOp, NamedStyle, PageNumFmt, ParaStyle, Paragraph, Run, SdtProps, TableStyle, TabStop, UnderlineStyle } from "@cw/shared";
+import type { Block, CharStyle, Document, FieldSpec, IfOp, NamedStyle, PageNumFmt, ParaBorders, ParaStyle, Paragraph, Run, SdtProps, TableStyle, TabStop, UnderlineStyle } from "@cw/shared";
 import { buildInstruction, evaluateField, styleById, textOfRuns } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import type { BandOptions, DocumentBuilder, ListDefinitionSpec, PageSetup, SectionBreakOptions } from "./documentBuilder";
@@ -398,6 +398,21 @@ export class ParagraphBuilder<P extends StoryBuilder> {
    *  Stored sorted by position, matching the layout engine's expectation. */
   tabStops(stops: TabStop[]): this {
     this.para.style.tabStops = [...stops].sort((a, b) => a.posPx - b.posPx);
+    return this;
+  }
+
+  /** Paragraph borders (OOXML w:pBdr) — a box around the paragraph. Each edge
+   *  reuses the table border value type (color + widthPx + optional line style);
+   *  omit an edge to leave that side open. `between` round-trips but is not drawn
+   *  for a standalone paragraph. */
+  borders(borders: ParaBorders): this {
+    this.para.style.borders = borders;
+    return this;
+  }
+
+  /** Paragraph shading — a CSS fill painted behind the paragraph (OOXML w:shd). */
+  shading(cssColor: string): this {
+    this.para.style.shading = cssColor;
     return this;
   }
 

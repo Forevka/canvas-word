@@ -1,7 +1,7 @@
 // Layer 2 output: the LayoutTree — absolutely-positioned geometry the paint and
 // input layers consume. Coordinates are CSS px, page-relative.
 
-import type { BandContainer, CellBorders, CharStyle, PageBorders, TabLeader } from "@cw/shared";
+import type { BandContainer, CellBorders, CharStyle, PageBorders, ParaBorders, TabLeader } from "@cw/shared";
 import type { MathBox } from "./math/mathBox";
 
 /** A same-styled slice of text placed on a line. One ctx.fillText call each.
@@ -142,6 +142,11 @@ export interface PlacedBlock {
   image?: PlacedImage;
   table?: PlacedTable;
   equation?: PlacedEquation;
+  /** Paragraph shading fill + border box (OOXML w:shd / w:pBdr), painted behind
+   *  the text. `width`/`height` are the box extent for THIS placed chunk (a
+   *  paragraph split across pages decorates each chunk); `x`/`y` come from the
+   *  block. Absent = no paragraph background or border. */
+  paraDecor?: { shading?: string; borders?: ParaBorders; width: number; height: number };
 }
 
 export interface Page {
