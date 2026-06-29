@@ -142,6 +142,10 @@ export interface SpacingOptions {
   before?: number;
   after?: number;
   lineHeight?: number;
+  /** Fixed line-spacing rule (docx w:lineRule). Set `lineHeightPx` alongside it. */
+  lineRule?: "exact" | "atLeast";
+  /** Fixed line height in px — used with `lineRule`. */
+  lineHeightPx?: number;
 }
 
 export interface IndentOptions {

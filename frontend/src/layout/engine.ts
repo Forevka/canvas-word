@@ -314,13 +314,24 @@ function isHiddenLayoutSkip(p: Paragraph): boolean {
   return isHiddenParagraph(p) && !p.style.sectionBreak && !p.style.pageBreakBefore;
 }
 
+/** Line-box height for ONE line, honoring fixed line spacing (docx w:lineRule).
+ *  "exact" pins the box to `lineHeightPx` (taller glyphs clip); "atLeast" floors
+ *  it there but lets a taller line grow; "auto" (the default) scales the dominant
+ *  font size by the multiplier. `natural` is the line's glyph height (ascent +
+ *  descent of its tallest run). */
+function lineBoxHeight(style: ParaStyle, fontSizePx: number, natural: number): number {
+  if (style.lineRule === "exact") return style.lineHeightPx ?? natural;
+  if (style.lineRule === "atLeast") return Math.max(natural, style.lineHeightPx ?? 0);
+  return Math.max(natural, style.lineHeight * fontSizePx);
+}
+
 /** Default line metrics for a fragment-less line (empty paragraph / segment). */
 function emptyLineMetrics(p: Paragraph): { height: number; ascent: number } {
   const style = p.runs[0]?.style;
   const fontSize = style?.fontSizePx ?? 16;
   const m = style ? fontMetrics(charStyleToFont(style)) : { ascent: fontSize * 0.8, descent: fontSize * 0.2 };
   const natural = m.ascent + m.descent;
-  const height = Math.max(natural, p.style.lineHeight * fontSize);
+  const height = lineBoxHeight(p.style, fontSize, natural);
   return { height, ascent: (height - natural) / 2 + m.ascent };
 }
 
@@ -407,7 +418,7 @@ function breakNextLine(
   }
 
   const natural = maxAscent + maxDescent;
-  const height = Math.max(natural, p.style.lineHeight * maxFontSize);
+  const height = lineBoxHeight(p.style, maxFontSize, natural);
   return { frags, width: line.width, height, ascent: lineBaseline(p.style.textAlignment, height, maxAscent, maxDescent), end: line.end };
 }
 
@@ -527,7 +538,7 @@ function layoutTabbedSegment(
   const flush = (isLast: boolean): void => {
     if (maxH === 0 && baseStyle) {
       const fm = fontMetrics(charStyleToFont(baseStyle));
-      maxH = Math.max(fm.ascent + fm.descent, p.style.lineHeight * baseStyle.fontSizePx);
+      maxH = lineBoxHeight(p.style, baseStyle.fontSizePx, fm.ascent + fm.descent);
       maxA = (maxH - (fm.ascent + fm.descent)) / 2 + fm.ascent;
     }
     out.push({

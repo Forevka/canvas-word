@@ -67,6 +67,34 @@ describe("paragraphs and runs", () => {
     expect(p.runs[0]!.style.link).toBe("https://example.com");
   });
 
+  it("spacing() sets fixed line spacing (lineRule + lineHeightPx)", () => {
+    const doc = DocumentBuilder.create()
+      .paragraph("exact").spacing({ lineRule: "exact", lineHeightPx: 28 })
+      .paragraph("atLeast").spacing({ lineRule: "atLeast", lineHeightPx: 24 })
+      .build();
+    expect(para(doc.blocks[0]).style).toMatchObject({ lineRule: "exact", lineHeightPx: 28 });
+    expect(para(doc.blocks[1]).style).toMatchObject({ lineRule: "atLeast", lineHeightPx: 24 });
+  });
+
+  it("spacing({ lineRule }) without lineHeightPx warns and is a no-op", () => {
+    const b = DocumentBuilder.create();
+    b.paragraph("x").spacing({ lineRule: "exact" });
+    const p = para(b.build().blocks[0]);
+    expect(p.style.lineRule).toBeUndefined();
+    expect(p.style.lineHeightPx).toBeUndefined();
+    expect(b.warnings.some((w) => w.code === "spacing-line-height-missing")).toBe(true);
+  });
+
+  it("reverting to multiplier spacing clears a previously-set fixed rule", () => {
+    const doc = DocumentBuilder.create()
+      .paragraph("x").spacing({ lineRule: "exact", lineHeightPx: 28 }).spacing({ lineHeight: 1.5 })
+      .build();
+    const p = para(doc.blocks[0]);
+    expect(p.style.lineRule).toBeUndefined();
+    expect(p.style.lineHeightPx).toBeUndefined();
+    expect(p.style.lineHeight).toBe(1.5);
+  });
+
   it("mints unique ids; idSeed makes them deterministic", () => {
     const build = (): string[] =>
       DocumentBuilder.create({ idSeed: "seed" }).paragraph("a").paragraph("b").table([["c"]]).build().blocks.map((b) => b.id);

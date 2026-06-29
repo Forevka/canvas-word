@@ -138,7 +138,16 @@ export interface ParaStyle {
    *  existing document is unaffected). Resolved through the Stylesheet cascade like
    *  `align`. */
   direction?: "ltr" | "rtl";
-  lineHeight: number; // multiplier
+  lineHeight: number; // multiplier (used when lineRule is absent/"auto")
+  /** Fixed line-spacing rule (docx w:spacing/@w:lineRule). Absent = `lineHeight`
+   *  is a multiplier of the single-line height ("auto" — the default every
+   *  existing document keeps). "exact" = the line is EXACTLY `lineHeightPx` tall,
+   *  clipping taller content; "atLeast" = at least `lineHeightPx`, growing for a
+   *  taller line. When set, `lineHeightPx` carries the fixed height and
+   *  `lineHeight` is ignored. */
+  lineRule?: "exact" | "atLeast";
+  /** Fixed line height in px — meaningful only alongside `lineRule`. */
+  lineHeightPx?: number;
   spaceBeforePx: number;
   spaceAfterPx: number;
   indentFirstLinePx: number;

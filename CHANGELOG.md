@@ -128,6 +128,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   style-cascade XOR), emitted in `styleProps.ts`, transformed in the layout prepare
   cache. Authorable via the builder (`.caps()` / `.smallCaps()`) and the mirrored C#
   bindings (`Caps` / `SmallCaps`); demonstrated in the default sample document and
+- **Fixed line spacing (`ParaStyle.lineRule` + `lineHeightPx`).** Line spacing can now
+  be a fixed point height, not just a multiplier of the font size. OOXML
+  `w:spacing/@w:lineRule="exact"` pins every line box to `lineHeightPx` (taller glyphs
+  clip); `"atLeast"` floors the height there but lets a taller line grow. Previously
+  both were dropped on import (with a `line-rule-exact` warning) and re-exported as
+  `auto`. Now parsed in `import/docx/props.ts` (the `w:line` value read as twips, not
+  240ths), honored in the layout engine's line-metrics (so it drives pagination), and
+  re-emitted with the correct `w:lineRule` on export — a full round-trip. Authorable via
+  the builder (`SpacingOptions.lineRule` / `.lineHeightPx`) and the mirrored C# bindings
+  (`LineRule` enum on `SpacingOptions`); demonstrated in the default sample document and
   the C# showcase.
 - **Table cell vertical alignment (`TableCell.vAlign`).** Cells can now align their
   content to the `top` (default), `center`, or `bottom` of the cell box via OOXML
