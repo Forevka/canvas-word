@@ -361,6 +361,27 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     return this.pushRun(this.ctx.run(String(n), { footnoteRef: id, verticalAlign: "super", fontSizePx: 11 }));
   }
 
+  /** Append an auto-numbered endnote reference; the note body is a string (one
+   *  paragraph) or a StoryBuilder callback (rich, multi-paragraph). Endnotes
+   *  collect at the END of the document instead of the page bottom. */
+  endnote(content: string | ((s: StoryBuilder) => void)): this {
+    const endnotes = (this.ctx.doc.endnotes ??= {});
+    const n = this.ctx.nextEndnoteNumber();
+    const id = this.ctx.ids.next();
+    let paras: Paragraph[];
+    if (typeof content === "string") {
+      paras = [this.ctx.paragraph([this.ctx.run(content, { fontSizePx: 12 })], { spaceAfterPx: 0 })];
+    } else {
+      const blocks: Block[] = [];
+      content(new StoryBuilder(this.ctx, blocks));
+      paras = blocks.filter((b): b is Paragraph => b.kind === "paragraph");
+      if (paras.length < blocks.length) this.ctx.warn("endnote-non-paragraph", "Endnote bodies hold paragraphs only — non-paragraph blocks were dropped.");
+      if (paras.length === 0) paras = [this.ctx.paragraph([])];
+    }
+    endnotes[id] = paras;
+    return this.pushRun(this.ctx.run(String(n), { endnoteRef: id, verticalAlign: "super", fontSizePx: 11 }));
+  }
+
   /** Append `text` and bookmark exactly that run's range in this paragraph. */
   bookmark(name: string, text: string, style?: Partial<CharStyle>): this {
     const bookmarks = (this.ctx.doc.bookmarks ??= {});

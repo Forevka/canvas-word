@@ -43,6 +43,8 @@ export class BuilderContext {
   paraDefault: ParaStyle;
   /** Footnote marker counter — monotonic in insertion order (.footnote()). */
   private footnoteCounter = 0;
+  /** Endnote marker counter — monotonic in insertion order (.endnote()). */
+  private endnoteCounter = 0;
   /** Builder-only table-style presets (seeded with built-ins; .tableStylePreset adds). */
   readonly tableStyles = builtinTableStyles();
   /** Per-object provenance of author-supplied style keys: a run → the CharStyle
@@ -64,6 +66,11 @@ export class BuilderContext {
   /** Next footnote marker number (1-based, insertion order). */
   nextFootnoteNumber(): number {
     return ++this.footnoteCounter;
+  }
+
+  /** Next endnote marker number (1-based, insertion order). */
+  nextEndnoteNumber(): number {
+    return ++this.endnoteCounter;
   }
 
   /** Recompute the run/paragraph defaults from the current stylesheet's default

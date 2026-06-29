@@ -176,6 +176,8 @@ export interface Page {
   columnSeparatorsX?: number[];
   /** Footnote separator rule (present only on pages carrying notes). */
   footnoteRuleY?: number;
+  /** Endnote separator rule (present only on the page where endnotes begin). */
+  endnoteRuleY?: number;
   /** Margin-band stories, already positioned in page coords. Read-only: the
    *  geometry index deliberately skips them (no caret/selection in bands yet). */
   header?: PlacedBlock[];

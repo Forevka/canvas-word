@@ -692,6 +692,64 @@ describe("engine — footnotes", () => {
   });
 });
 
+// --- endnotes -------------------------------------------------------------
+
+describe("engine — endnotes", () => {
+  it("collects the referenced note at the document end, under a separator rule", () => {
+    const note = para("the endnote body");
+    const refPara: Paragraph = {
+      kind: "paragraph",
+      id: fresh(),
+      revision: 0,
+      runs: [
+        { text: "body text", style: { ...CHAR } },
+        { text: "1", style: { ...CHAR, endnoteRef: "en1", verticalAlign: "super" } },
+      ],
+      style: { ...PARA },
+    };
+    const d: Document = { ...doc([refPara]), endnotes: { en1: [note] } };
+    const tree = layout(d);
+    // The note body is placed somewhere…
+    const placedNote = placedOf(tree, note.id)!;
+    expect(placedNote).not.toBeNull();
+    // …on a page carrying the endnote separator rule, below that rule…
+    const enRuleY = tree.pages[placedNote.page]!.endnoteRuleY;
+    expect(enRuleY).toBeGreaterThan(0);
+    expect(placedNote.pb.y).toBeGreaterThan(enRuleY!);
+    // …and at or after the page the reference landed on (document-end placement).
+    const refPage = placedOf(tree, refPara.id)!.page;
+    expect(placedNote.page).toBeGreaterThanOrEqual(refPage);
+    // The note carries its number marker (paint-only), hung in the indent.
+    expect(placedNote.pb.marker?.text).toBe("1.");
+  });
+
+  it("collects an endnote referenced from inside a table cell", () => {
+    const note = para("the endnote body");
+    const refCell: TableCell = {
+      id: fresh(),
+      blocks: [
+        {
+          kind: "paragraph",
+          id: fresh(),
+          revision: 0,
+          runs: [
+            { text: "cell text", style: { ...CHAR } },
+            { text: "1", style: { ...CHAR, endnoteRef: "en1", verticalAlign: "super" } },
+          ],
+          style: { ...PARA },
+        },
+      ],
+    };
+    const t = table([[refCell, cell("other")]]);
+    const d: Document = { ...doc([t]), endnotes: { en1: [note] } };
+    const tree = layout(d);
+    const placedNote = placedOf(tree, note.id)!;
+    expect(placedNote).not.toBeNull();
+    expect(tree.pages[placedNote.page]!.endnoteRuleY).toBeGreaterThan(0);
+    expect(placedNote.pb.y).toBeGreaterThan(tree.pages[placedNote.page]!.endnoteRuleY!);
+  });
+});
+
 // --- table of contents ----------------------------------------------------
 
 describe("engine — TOC page numbers", () => {

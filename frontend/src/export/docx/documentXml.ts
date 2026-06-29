@@ -153,6 +153,11 @@ function singleRun(run: Run, ctx: PartCtx): string {
     const docxId = s.footnoteRef.replace(/^fn/, "");
     return el("w:r", undefined, rPr + el("w:footnoteReference", { "w:id": docxId }));
   }
+  if (s.endnoteRef) {
+    // model endnoteRef "en<docxId>" -> w:endnoteReference w:id="<docxId>".
+    const docxId = s.endnoteRef.replace(/^en/, "");
+    return el("w:r", undefined, rPr + el("w:endnoteReference", { "w:id": docxId }));
+  }
   // Page-number tokens -> live PAGE/NUMPAGES fields (header/footer only). Skipped
   // inside hyperlinks (page tokens never live in a link) so the wrapper logic
   // below stays simple.

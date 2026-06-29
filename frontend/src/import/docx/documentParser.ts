@@ -530,10 +530,20 @@ function parseRun(r: XmlNode, out: IRInline[], ctx: ParseCtx, field: FieldState)
           }
           break;
         }
+        case "w:endnoteReference": {
+          // The marker run: text becomes the note number in mapToModel.
+          const enId = attr(node, "w:id");
+          if (enId !== undefined) {
+            flush();
+            out.push({ kind: "run", text: "", props: { ...props, endnoteId: enId } });
+          }
+          break;
+        }
         case "w:footnoteRef":
-          break; // the auto-number placeholder inside a footnote BODY — engine paints it
+        case "w:endnoteRef":
+          break; // the auto-number placeholder inside a note BODY — engine paints it
         default:
-          break; // w:rPr, w:lastRenderedPageBreak, w:endnoteReference, …
+          break; // w:rPr, w:lastRenderedPageBreak, …
       }
     }
   };
@@ -1117,6 +1127,49 @@ export function parseFootnotesXml(
     const blocks: IRBlock[] = [];
     walkBlocks(children(note), blocks, ctx);
     out.set(fnId, blocks);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Endnotes (endnotes.xml) — mirror of parseFootnotesXml. Endnotes lay out at
+// the END of the document rather than each page bottom; the IR is identical.
+
+/** endnotes.xml → IR block stories keyed by endnote id. The standard
+ *  separator/continuation pseudo-notes (type attrs) are skipped; only real
+ *  notes are returned. Each note's leading w:endnoteRef placeholder is dropped
+ *  (parseRun ignores it) — the engine paints the number. */
+export function parseEndnotesXml(
+  xmlText: string,
+  partName: string,
+  warnings: WarningSink,
+  sdts: Record<string, IRSdtProps> = {},
+): Map<string, IRBlock[]> {
+  const out = new Map<string, IRBlock[]>();
+  const root = rootEl(parseXml(xmlText, partName), "w:endnotes");
+  if (!root) return out;
+  const ctx: ParseCtx = {
+    warnings,
+    fieldTokens: false,
+    sdts,
+    nextSdt: { n: Object.keys(sdts).length },
+    blockSdtStack: [],
+    inlineSdtStack: [],
+    pendingBookmarks: [],
+    currentBookmarks: null,
+    pendingMarkers: [],
+    currentMarkers: null,
+    trackFields: false,
+    fieldTrack: newFieldTrack(),
+  };
+  for (const note of els(root, "w:endnote")) {
+    const enId = attr(note, "w:id");
+    if (enId === undefined) continue;
+    const type = attr(note, "w:type"); // "separator" | "continuationSeparator" | …
+    if (type) continue; // pseudo-notes, not real endnotes
+    const blocks: IRBlock[] = [];
+    walkBlocks(children(note), blocks, ctx);
+    out.set(enId, blocks);
   }
   return out;
 }

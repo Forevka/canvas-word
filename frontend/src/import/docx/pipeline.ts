@@ -5,7 +5,7 @@
 import type { Block, BandContainer, Paragraph, SectionProps } from "@cw/shared";
 import { markImportedTocEntries } from "@cw/shared";
 import { findMainDocumentPart } from "./contentTypes";
-import { parseDocumentXml, parseFootnotesXml, parseHeaderFooterXml } from "./documentParser";
+import { parseDocumentXml, parseEndnotesXml, parseFootnotesXml, parseHeaderFooterXml } from "./documentParser";
 import { buildStylesheet, buildTableStyles, createMapper, mapSdts, type LinkResolver, type Mapper } from "./mapToModel";
 import { createMediaStore, type MediaStore } from "./media";
 import { parseNumberingXml, EMPTY_NUMBERING } from "./numbering";
@@ -133,10 +133,40 @@ export function runImport(
       if (paras.length > 0) footnotes[noteId] = paras;
     }
   }
+
+  // Endnotes: same shape as footnotes, but laid out at the document end. Map the
+  // bodies of the notes actually referenced (document order, so numbering matches).
+  const endnotePart = partNameByRelType(rels, "endnotes") ?? "word/endnotes.xml";
+  const endnoteXml = archive.text(endnotePart);
+  const endnoteIR = endnoteXml !== undefined ? parseEndnotesXml(endnoteXml, endnotePart, warnings, ir.sdts) : new Map();
+  // Walk the refs unconditionally so a document with w:endnoteReference markers
+  // but no real note bodies (missing part, only pseudo-notes) still surfaces an
+  // endnote-missing warning rather than silently dropping doc.endnotes. The note
+  // part's rels/media are resolved lazily, only once a body is actually found.
+  const endnotes: Record<string, Paragraph[]> = {};
+  let endCtx: { media: MediaStore; link: LinkResolver } | undefined;
+  for (const { docxId, noteId } of mapper.endnoteRefs()) {
+    const bodyIR = endnoteIR.get(docxId);
+    if (!bodyIR) {
+      warnings.add("endnote-missing", "An endnote reference had no matching note body.");
+      continue;
+    }
+    if (!endCtx) {
+      const endRels = relsOf(archive, endnotePart);
+      endCtx = { media: mediaFor(endRels), link: linkResolverFor(endRels) };
+    }
+    const noteBlocks = mapper.mapBlocks(bodyIR, endCtx.media, endCtx.link);
+    const paras = noteBlocks.filter((b): b is Paragraph => b.kind === "paragraph");
+    if (paras.length < noteBlocks.length) {
+      warnings.add("endnote-tables", "Tables inside endnotes were dropped (endnotes hold paragraphs only).");
+    }
+    if (paras.length > 0) endnotes[noteId] = paras;
+  }
   progress("map", 1);
 
   const doc: ImportResult["doc"] = { section, blocks };
   if (Object.keys(footnotes).length > 0) doc.footnotes = footnotes;
+  if (Object.keys(endnotes).length > 0) doc.endnotes = endnotes;
   const sdts = mapSdts(ir.sdts);
   if (Object.keys(sdts).length > 0) doc.sdts = sdts;
   const lists = mapper.lists();

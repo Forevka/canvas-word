@@ -401,6 +401,24 @@ describe("DOCX export — round trip", () => {
     expect(b.footnotes?.[noteId]?.[0] && text(b.footnotes[noteId][0] as Paragraph)).toBe("the note");
   });
 
+  it("preserves endnotes", () => {
+    const endnotes =
+      `<?xml version="1.0"?><w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:endnote w:id="2"><w:p><w:r><w:t>the endnote</w:t></w:r></w:p></w:endnote></w:endnotes>`;
+    const docx = makeDocx({
+      "[Content_Types].xml": CONTENT_TYPES_XML,
+      "word/document.xml": documentXml(`<w:p><w:r><w:t>body</w:t></w:r><w:r><w:endnoteReference w:id="2"/></w:r></w:p>`),
+      "word/_rels/document.xml.rels": relsXml([{ id: "rId1", type: REL_TYPES.endnotes, target: "endnotes.xml" }]),
+      "word/endnotes.xml": endnotes,
+    });
+    const a = runImport(docx).doc;
+    const b = roundTrip(a);
+    const refRun = paras(b)[0]!.runs.find((r) => r.style.endnoteRef);
+    expect(refRun).toBeDefined();
+    const noteId = refRun!.style.endnoteRef!;
+    expect(b.endnotes?.[noteId]?.[0] && text(b.endnotes[noteId][0] as Paragraph)).toBe("the endnote");
+  });
+
   it("preserves an embedded image through a supplied bytes map", () => {
     // 1x1 PNG.
     const png = Uint8Array.from(

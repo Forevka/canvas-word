@@ -138,6 +138,9 @@ export interface IRRunProps {
   /** w:footnoteReference w:id — this run is a footnote marker. mapToModel sets
    *  the run text to the sequential note number and CharStyle.footnoteRef. */
   footnoteId?: string;
+  /** w:endnoteReference w:id — this run is an endnote marker. mapToModel sets
+   *  the run text to the sequential note number and CharStyle.endnoteRef. */
+  endnoteId?: string;
 }
 
 /** w:sdtPr — content-control properties, decoded faithfully (mapToModel turns

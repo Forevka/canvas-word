@@ -160,6 +160,9 @@ export interface Mapper {
   /** Footnotes referenced (in document order) — the pipeline maps their bodies
    *  into Document.footnotes. `noteId` is the model key, `docxId` the source id. */
   footnoteRefs(): { docxId: string; noteId: string }[];
+  /** Endnotes referenced (in document order) — the pipeline maps their bodies
+   *  into Document.endnotes. `noteId` is the model key, `docxId` the source id. */
+  endnoteRefs(): { docxId: string; noteId: string }[];
   /** The first `TOC` field's block id + verbatim instruction, or undefined. */
   tocField(): { blockId: string; instruction: string } | undefined;
 }
@@ -194,6 +197,21 @@ export function createMapper(
       num = String(footnoteNum.size + 1);
       footnoteNum.set(docxId, num);
       footnoteOrder.push(docxId);
+    }
+    return num;
+  };
+
+  // Endnote markers numbered sequentially in document order (docx id → number),
+  // mirroring footnotes. The pipeline maps the referenced bodies into
+  // Document.endnotes keyed by `en<docxId>`.
+  const endnoteNum = new Map<string, string>();
+  const endnoteOrder: string[] = [];
+  const endnoteNumber = (docxId: string): string => {
+    let num = endnoteNum.get(docxId);
+    if (num === undefined) {
+      num = String(endnoteNum.size + 1);
+      endnoteNum.set(docxId, num);
+      endnoteOrder.push(docxId);
     }
     return num;
   };
@@ -673,6 +691,12 @@ export function createMapper(
       style.footnoteRef = `fn${effective.footnoteId}`;
       style.verticalAlign = "super";
     }
+    if (effective.endnoteId !== undefined) {
+      // Same as footnotes, but the engine paints these at the document end.
+      text = endnoteNumber(effective.endnoteId);
+      style.endnoteRef = `en${effective.endnoteId}`;
+      style.verticalAlign = "super";
+    }
     if (sdtPath && sdtPath.length > 0) {
       style.sdtPath = sdtPath;
       // Checkbox glyphs arrive in symbol fonts (MS Gothic / Wingdings private
@@ -909,6 +933,7 @@ export function createMapper(
       return out;
     },
     footnoteRefs: () => footnoteOrder.map((docxId) => ({ docxId, noteId: `fn${docxId}` })),
+    endnoteRefs: () => endnoteOrder.map((docxId) => ({ docxId, noteId: `en${docxId}` })),
     tocField: () => tocAnchor,
   };
 }

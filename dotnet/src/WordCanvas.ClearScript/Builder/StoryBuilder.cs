@@ -377,6 +377,17 @@ public sealed class ParagraphBuilder
         _js.InvokeMethod("footnote", cb);
         return this;
     }
+
+    /// <summary>Append an auto-numbered endnote whose body is a single paragraph (collected at the document end).</summary>
+    public ParagraphBuilder Endnote(string text) { _js.InvokeMethod("endnote", text); return this; }
+
+    /// <summary>Append an auto-numbered endnote whose body is built via the callback.</summary>
+    public ParagraphBuilder Endnote(Action<StoryBuilder> build)
+    {
+        Action<object> cb = s => build(new StoryBuilder(_engine, (ScriptObject)s));
+        _js.InvokeMethod("endnote", cb);
+        return this;
+    }
 }
 
 /// <summary>Structural table scope (rows, spans, column fractions).</summary>

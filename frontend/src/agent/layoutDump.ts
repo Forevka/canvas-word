@@ -148,6 +148,7 @@ function dumpPage(p: Page, opts: { includeText: boolean; maxFragmentsPerLine: nu
     contentTopPx: r2(p.contentTopPx),
     contentBottomPx: r2(p.contentBottomPx),
     ...(p.footnoteRuleY !== undefined ? { footnoteRuleY: r2(p.footnoteRuleY) } : {}),
+    ...(p.endnoteRuleY !== undefined ? { endnoteRuleY: r2(p.endnoteRuleY) } : {}),
     blockCount: p.blocks.length,
     headerBlocks: p.header?.length ?? 0,
     footerBlocks: p.footer?.length ?? 0,
