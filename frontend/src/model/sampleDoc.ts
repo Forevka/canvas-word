@@ -23,6 +23,7 @@ const para = (runs: Run[], patch: Partial<ParaStyle> = {}): Paragraph => ({ kind
 const fields: Record<string, FieldDef> = {};
 const sdts: Record<string, SdtProps> = {};
 const footnotes: Record<string, Paragraph[]> = {};
+const endnotes: Record<string, Paragraph[]> = {};
 const bookmarks: Record<string, BookmarkRange> = {};
 const tocItems: { id: string; text: string; level: number }[] = [];
 
@@ -287,6 +288,8 @@ const LOREM = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do e
 export function sampleDoc(): Document {
   // Footnote body referenced by a marker run below.
   footnotes["fn1"] = [para([run("Footnotes lay out at the bottom of their page, with a separator rule — just like Word.", { fontSizePx: 12 })], { spaceAfterPx: 0 })];
+  // Endnote body referenced by a marker run below — collected at the document end.
+  endnotes["en1"] = [para([run("Endnotes collect at the very end of the document, under their own separator rule — Word's “end of document” placement.", { fontSizePx: 12 })], { spaceAfterPx: 0 })];
 
   // --- body content (headings register themselves for the TOC) -----------------
   const fieldsHeading = heading("Fields", 1);
@@ -579,6 +582,14 @@ export function sampleDoc(): Document {
     para([run("A delimited matrix, laid out as a grid (the 2×2 identity):", { color: "#3c4043" })], { spaceBeforePx: 10, spaceAfterPx: 6 }),
     eq(MATH_MATRIX),
 
+    // Endnotes (w:endnoteReference) — the marker run points into Document.endnotes;
+    // the body lays out at the very end of the document under a separator rule.
+    para([
+      run("Endnotes", { bold: true }), run(" round-trip too"),
+      run("1", { endnoteRef: "en1", verticalAlign: "super", fontSizePx: 11 }),
+      run(" — like footnotes, but parked at the document end."),
+    ], { spaceBeforePx: 6 }),
+
     para([run("— a tour of canvas-word —", { italic: true, color: "#5f6368" })], { align: "center", spaceBeforePx: 20 }),
   ];
 
@@ -611,6 +622,7 @@ export function sampleDoc(): Document {
     fields,
     sdts,
     footnotes,
+    endnotes,
     bookmarks,
     tocInstruction: ' TOC \\o "1-3" \\h \\z ',
     // Document-level default tab interval (w:defaultTabStop) — 0.75in instead of the

@@ -2022,6 +2022,84 @@ function layoutDocument(
     }
   }
 
+  // Endnotes: collected at the END of the document, under a separator rule, in
+  // reference order (Word's "end of document" placement — the counterpart to the
+  // page-bottom footnote area above). Like footnotes, note paragraphs are REAL
+  // model paragraphs pushed as page blocks so caret/selection work; the number
+  // marker (the ref run's text) is paint-only, hung in the indent. Notes flow
+  // onto continuation pages but aren't split across them (matching footnotes).
+  const ens = doc.endnotes ?? {};
+  if (Object.keys(ens).length > 0) {
+    // References in document order → [noteId, markerText], deduped.
+    const enRefs: [string, string][] = [];
+    const seenEn = new Set<string>();
+    const collectEn = (blocks: Block[]): void => {
+      for (const b of blocks) {
+        if (b.kind === "paragraph") {
+          for (const r of b.runs) {
+            const id = r.style.endnoteRef;
+            if (id && ens[id] && !seenEn.has(id)) {
+              seenEn.add(id);
+              enRefs.push([id, r.text]);
+            }
+          }
+        } else if (b.kind === "table") {
+          for (const row of b.rows) for (const cell of row.cells) collectEn(cell.blocks);
+        }
+      }
+    };
+    collectEn(doc.blocks);
+    if (enRefs.length > 0) {
+      // Endnotes use the document-end (last) section geometry, single column.
+      applySection(sections[sections.length - 1]!.props);
+      const enWidth = Math.max(40, contentWidth - FN_INDENT);
+      const enx = sec.marginPx.left;
+      let epage = pages[pages.length - 1]!;
+      const newEndnotePage = (): void => {
+        epage = mkPage();
+        pages.push(epage);
+        pageNotes.push([]);
+        pageReserved.push(0);
+      };
+      // Start on a fresh page if the last body page already has content.
+      if (epage.blocks.length > 0) newEndnotePage();
+      let ey = epage.contentTopPx;
+      epage.endnoteRuleY = ey + 4;
+      ey += FN_SEP;
+      for (const [id, numText] of enRefs) {
+        let first = true;
+        for (const p of ens[id]!) {
+          const lines = getLines(p, enWidth);
+          // Page-break before a note paragraph that won't fit (notes aren't split).
+          if (ey + p.style.spaceBeforePx + totalHeight(lines) > epage.contentBottomPx && ey > epage.contentTopPx) {
+            newEndnotePage();
+            ey = epage.contentTopPx;
+          }
+          ey += p.style.spaceBeforePx;
+          const placed: PlacedBlock = {
+            blockId: p.id,
+            x: enx + FN_INDENT,
+            y: ey,
+            firstLineIndex: 0,
+            lines,
+          };
+          if (first && p.runs[0]) {
+            placed.marker = { text: `${numText}.`, style: p.runs[0].style, x: enx };
+            first = false;
+          }
+          const noteDecor = paraDecorFor(
+            p.style,
+            contentWidth - FN_INDENT - p.style.indentLeftPx - (p.style.indentRightPx ?? 0),
+            totalHeight(lines),
+          );
+          if (noteDecor) placed.paraDecor = noteDecor;
+          epage.blocks.push(placed);
+          ey += totalHeight(lines) + p.style.spaceAfterPx;
+        }
+      }
+    }
+  }
+
   // Z-order: anchored images are lifted out of the flow into a behind-text or
   // in-front-of-text layer. Both the canvas renderer and the PDF painter draw
   // blocks in array order, so the FINAL paint order IS this array order —

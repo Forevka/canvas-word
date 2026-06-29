@@ -9,6 +9,7 @@ import { WarningSink } from "../warnings";
 import { buildDocumentXml, type AddBandPart, type ExportBookmarkMark, type PartCtx } from "./documentXml";
 import { contentTypesXml, CT } from "./contentTypes";
 import { footnotesXml } from "./footnotesXml";
+import { endnotesXml } from "./endnotesXml";
 import { headerFooterXml } from "./headerFooterXml";
 import { MediaManager } from "./mediaPack";
 import { numberingXml } from "./numberingXml";
@@ -143,6 +144,13 @@ export function writeDocx(
     parts["word/footnotes.xml"] = footnotesXml(doc.footnotes, bodyCtx);
     overrides.push(["/word/footnotes.xml", CT.footnotes]);
     bodyRels.add(REL.footnotes, "footnotes.xml");
+  }
+
+  // endnotes.xml
+  if (doc.endnotes && Object.keys(doc.endnotes).length > 0) {
+    parts["word/endnotes.xml"] = endnotesXml(doc.endnotes, bodyCtx);
+    overrides.push(["/word/endnotes.xml", CT.endnotes]);
+    bodyRels.add(REL.endnotes, "endnotes.xml");
   }
 
   // settings.xml (always — carries the even/odd flag, background-display flag, a

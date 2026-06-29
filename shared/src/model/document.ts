@@ -40,6 +40,10 @@ export interface CharStyle {
    *  kept in sync by the insert command's renumber pass; typically also
    *  verticalAlign 'super'). Points into Document.footnotes. */
   footnoteRef?: string | undefined;
+  /** Endnote reference: like `footnoteRef`, but the note body lives in
+   *  Document.endnotes and lays out at the END of the document (not the page
+   *  bottom). The run's text is the note number; typically verticalAlign 'super'. */
+  endnoteRef?: string | undefined;
   /** Content-control membership (OOXML w:sdt) as an ORDERED ANCESTRY PATH,
    *  outermost→innermost. Contiguous runs sharing the same path form one inline
    *  control; runs sharing a path PREFIX are nested inside the same outer
@@ -692,6 +696,10 @@ export interface Document {
    *  a paragraph story laid out in the page-bottom footnote area; notes render
    *  on whatever page their reference run lands on. */
   footnotes?: Record<string, Paragraph[]>;
+  /** Endnote bodies keyed by ref id (docx endnotes.xml space). Each note is a
+   *  paragraph story collected at the END of the document, under a separator
+   *  rule, in reference order — Word's "end of document" endnote placement. */
+  endnotes?: Record<string, Paragraph[]>;
   /** Content-control properties keyed by sdt id. Runs carry inline membership via
    *  `CharStyle.sdtPath`; blocks carry block-level membership via `Block.sdtPath`.
    *  Every id appearing on any path has an entry here. */

@@ -51,6 +51,7 @@ export const paragraphsOf = (doc: Document): Paragraph[] => [
   ...paragraphsInBlocks(doc.blocks, true),
   ...BAND_CONTAINERS.flatMap((band) => bandParagraphs(doc, band)),
   ...Object.values(doc.footnotes ?? {}).flat(),
+  ...Object.values(doc.endnotes ?? {}).flat(),
 ];
 
 export const blockById = (doc: Document, blockId: string): Paragraph | undefined =>
@@ -79,6 +80,7 @@ export const blockExists = (doc: Document, blockId: string): boolean => {
   collectBlockIds(doc.blocks, ids);
   for (const band of BAND_CONTAINERS) collectBlockIds(doc.section[band] ?? [], ids);
   for (const paras of Object.values(doc.footnotes ?? {})) for (const p of paras) ids.add(p.id);
+  for (const paras of Object.values(doc.endnotes ?? {})) for (const p of paras) ids.add(p.id);
   return ids.has(blockId);
 };
 

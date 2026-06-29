@@ -7,6 +7,7 @@ const CT = {
   styles: "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml",
   numbering: "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml",
   footnotes: "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml",
+  endnotes: "application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml",
   settings: "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml",
   header: "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml",
   footer: "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml",

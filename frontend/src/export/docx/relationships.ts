@@ -12,6 +12,7 @@ export const REL = {
   styles: `${BASE}/styles`,
   numbering: `${BASE}/numbering`,
   footnotes: `${BASE}/footnotes`,
+  endnotes: `${BASE}/endnotes`,
   settings: `${BASE}/settings`,
   theme: `${BASE}/theme`,
   officeDocument: `${BASE}/officeDocument`,

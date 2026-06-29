@@ -723,14 +723,15 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       }
     }
 
-    // 3b. footnote separator rule (1/3 content width, Word style)
-    if (page.footnoteRuleY !== undefined) {
+    // 3b. footnote / endnote separator rule (1/3 content width, Word style)
+    for (const ruleY of [page.footnoteRuleY, page.endnoteRuleY]) {
+      if (ruleY === undefined) continue;
       const cw = page.widthPx - page.marginPx.left - page.marginPx.right;
       ctx.strokeStyle = theme.footnoteRule;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(page.marginPx.left, page.footnoteRuleY + 0.5);
-      ctx.lineTo(page.marginPx.left + cw * FOOTNOTE_RULE_WIDTH_FRACTION, page.footnoteRuleY + 0.5);
+      ctx.moveTo(page.marginPx.left, ruleY + 0.5);
+      ctx.lineTo(page.marginPx.left + cw * FOOTNOTE_RULE_WIDTH_FRACTION, ruleY + 0.5);
       ctx.stroke();
     }
 

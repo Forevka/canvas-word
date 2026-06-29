@@ -89,6 +89,7 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
         .Text("a red wavy", new CharStyle { Underline = true, UnderlineStyle = "wave", UnderlineColor = "#d93025" }).Text(", and ")
         .Text("a blue double", new CharStyle { Underline = true, UnderlineStyle = "double", UnderlineColor = "#1a73e8" })
         .Text(" — each round-trips through Word's w:u (style + color)."))
+<<<<<<< HEAD
     // Case transforms (w:caps / w:smallCaps): the model text stays as typed; only the
     // rendered glyphs are uppercased (small caps additionally shrinks the lowercase ones).
     .Paragraph(p => p
@@ -96,6 +97,13 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
         .Text("all caps", new CharStyle { Caps = true }).Text(" (w:caps) and ")
         .Text("Small Caps", new CharStyle { SmallCaps = true }).Text(" (w:smallCaps) — both render UPPERCASED, ")
         .Text("while the underlying text stays exactly as authored."))
+=======
+    // Endnotes (w:endnoteReference) — like footnotes, but collected at the document end.
+    .Paragraph(p => p
+        .Text("Endnotes", new CharStyle { Bold = true }).Text(" round-trip too")
+        .Endnote("Endnotes collect at the very end of the document, under their own separator rule — Word's “end of document” placement.")
+        .Text(" — like footnotes, but parked at the document end."))
+>>>>>>> 31df024 (feat(docx): endnotes (w:endnoteReference / endnotes.xml))
 
     // ---- Content controls ----
     .Paragraph("Content controls", p => p.WithStyle("Heading1"))
