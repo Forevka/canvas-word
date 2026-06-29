@@ -834,6 +834,11 @@ function parseCell(tc: XmlNode, ctx: ParseCtx): IRTableCell {
       if (tcWType === "pct") cell.preferredWidth = { type: "pct", frac: tcWVal / 5000 };
       else if (tcWType === "dxa" || tcWType === undefined) cell.preferredWidth = { type: "abs", twips: tcWVal };
     }
+    // w:vAlign — vertical content alignment. "top" is the default, so we only
+    // carry center/bottom (an explicit "top" round-trips as absent).
+    const vAlignEl = el(tcPr, "w:vAlign");
+    const vAlign = vAlignEl && attr(vAlignEl, "w:val");
+    if (vAlign === "center" || vAlign === "bottom") cell.vAlign = vAlign;
   }
   return cell;
 }

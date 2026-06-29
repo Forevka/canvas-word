@@ -286,6 +286,11 @@ export interface TableCell {
    *  this preference (Word semantics). `abs` = px (from dxa); `pct` = px resolved
    *  per layout from a percentage of the table width. Absent = content-only. */
   preferredWidth?: { px: number; type: "abs" | "pct" };
+  /** Vertical alignment of the cell's content within its box (OOXML w:tcPr/w:vAlign).
+   *  Absent = "top" (the historical default). For "center"/"bottom" the layout offsets
+   *  the block stack by the slack between content height and the cell's height — most
+   *  visible in a tall (rowSpan) or fixed-height cell with short content. */
+  vAlign?: "top" | "center" | "bottom";
 }
 
 export interface TableRow {

@@ -379,6 +379,9 @@ function cellXml(cell: TableCell, ctx: PartCtx, vMergeRestart = false): string {
       el("w:right", { "w:w": pxToTwips(m.right), "w:type": "dxa" }),
     ));
   }
+  // w:vAlign (vertical content alignment) follows w:tcMar per CT_TcPr. "top" is the
+  // default, so only center/bottom are emitted.
+  if (cell.vAlign === "center" || cell.vAlign === "bottom") pr.push(el("w:vAlign", { "w:val": cell.vAlign }));
   const tcPr = el("w:tcPr", undefined, pr.join(""));
   // A cell must contain at least one paragraph.
   const content = cell.blocks.length > 0 ? emitBlocks(cell.blocks, 0, ctx) : el("w:p");

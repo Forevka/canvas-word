@@ -48,6 +48,8 @@ public enum TableWidthMode { Fixed, AutofitContents, AutofitWindow }
 public enum BorderStyle { Single, Double, Dashed, Dotted }
 /// <summary>Preferred-width unit: absolute px or percent of table width.</summary>
 public enum WidthType { Abs, Pct }
+/// <summary>Cell vertical content alignment (OOXML w:tcPr/w:vAlign).</summary>
+public enum CellVAlign { Top, Center, Bottom }
 /// <summary>List number format (docx w:numFmt).</summary>
 public enum ListNumberFormat { Bullet, Decimal, LowerLetter, UpperLetter, LowerRoman, UpperRoman }
 /// <summary>Conditional-format slot of a table style (OOXML w:tblStylePr/@w:type).</summary>
@@ -114,6 +116,12 @@ internal static class EnumJs
         _ => "single",
     };
     public static string Width(WidthType t) => t == WidthType.Pct ? "pct" : "abs";
+    public static string VAlign(CellVAlign v) => v switch
+    {
+        CellVAlign.Center => "center",
+        CellVAlign.Bottom => "bottom",
+        _ => "top",
+    };
     public static string ListFmt(ListNumberFormat f) => f switch
     {
         ListNumberFormat.Decimal => "decimal",
@@ -388,6 +396,8 @@ public sealed record CellSpec
     public CellMargin? Margin { get; init; }
     /// <summary>Preferred cell width (w:tcW).</summary>
     public PreferredWidth? PreferredWidth { get; init; }
+    /// <summary>Vertical content alignment (w:vAlign). Absent = top.</summary>
+    public CellVAlign? VAlign { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -401,6 +411,7 @@ public sealed record CellSpec
         if (Borders is { } bd) Js.Set(o, "borders", bd.ToJs(e));
         if (Margin is { } mg) Js.Set(o, "margin", mg.ToJs(e));
         if (PreferredWidth is { } pw) Js.Set(o, "preferredWidth", pw.ToJs(e));
+        if (VAlign is { } va) Js.Set(o, "vAlign", EnumJs.VAlign(va));
         return o;
     }
 }
@@ -418,6 +429,8 @@ public sealed record CellOptions
     public CellBorders? Borders { get; init; }
     public CellMargin? Margin { get; init; }
     public PreferredWidth? PreferredWidth { get; init; }
+    /// <summary>Vertical content alignment (w:vAlign). Absent = top.</summary>
+    public CellVAlign? VAlign { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -430,6 +443,7 @@ public sealed record CellOptions
         if (Borders is { } bd) Js.Set(o, "borders", bd.ToJs(e));
         if (Margin is { } mg) Js.Set(o, "margin", mg.ToJs(e));
         if (PreferredWidth is { } pw) Js.Set(o, "preferredWidth", pw.ToJs(e));
+        if (VAlign is { } va) Js.Set(o, "vAlign", EnumJs.VAlign(va));
         return o;
     }
 }

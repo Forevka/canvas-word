@@ -28,6 +28,9 @@ export interface CellSpec {
   align?: ParaStyle["align"];
   /** Preferred cell width (w:tcW): absolute px or a percent of table width. */
   preferredWidth?: { px: number; type: "abs" | "pct" };
+  /** Vertical alignment of the cell's content (w:vAlign). Absent = "top". Visible
+   *  when the cell is taller than its content (a rowSpan or a tall sibling row). */
+  vAlign?: "top" | "center" | "bottom";
 }
 
 export type CellContent = string | CellSpec;
@@ -204,6 +207,7 @@ export class RowBuilder {
     if (spec.borders !== undefined) cell.borders = spec.borders;
     if (spec.margin !== undefined) cell.margin = spec.margin;
     if (spec.preferredWidth !== undefined) cell.preferredWidth = spec.preferredWidth;
+    if (spec.vAlign !== undefined && spec.vAlign !== "top") cell.vAlign = spec.vAlign;
     this.cells.push(cell);
     return this;
   }

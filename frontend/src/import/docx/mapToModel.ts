@@ -748,6 +748,7 @@ export function createMapper(
             ? { type: "pct", px: irCell.preferredWidth.frac }
             : { type: "abs", px: round2(twipsToPx(irCell.preferredWidth.twips)) };
       }
+      if (irCell.vAlign) cell.vAlign = irCell.vAlign;
       return cell;
     };
 

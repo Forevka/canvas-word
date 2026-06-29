@@ -93,6 +93,19 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
             .Cell("Spans 2 rows", new CellOptions { RowSpan = 2, Shading = "#e8f0fe", Style = new CharStyle { Bold = true } })
             .Cell("B1").Cell("C1"))
         .Row(r => r.Cell("B2").Cell("C2", new CellOptions { Style = new CharStyle { Color = "#188038" } })))
+    .Paragraph("Cell vertical alignment (w:vAlign) — short labels sit top, centered and bottom within a tall row:")
+    .Table(t => t
+        .ColFractions(0.4, 0.2, 0.2, 0.2)
+        .Row(r => r
+            .Cell("vAlign", new CellOptions { Shading = "#1a73e8", Style = new CharStyle { Bold = true, Color = "#ffffff" } })
+            .Cell("top", new CellOptions { Shading = "#1a73e8", Style = new CharStyle { Bold = true, Color = "#ffffff" } })
+            .Cell("center", new CellOptions { Shading = "#1a73e8", Style = new CharStyle { Bold = true, Color = "#ffffff" } })
+            .Cell("bottom", new CellOptions { Shading = "#1a73e8", Style = new CharStyle { Bold = true, Color = "#ffffff" } }))
+        .Row(r => r
+            .Cell("This tall cell holds several lines of text so the row grows well past the height of a single line — making the vertical position of its short neighbours visible.\nLine two.\nLine three.\nLine four.")
+            .Cell("top", new CellOptions { VAlign = CellVAlign.Top, Style = new CharStyle { Color = "#188038" } })
+            .Cell("center", new CellOptions { VAlign = CellVAlign.Center, Style = new CharStyle { Color = "#188038" } })
+            .Cell("bottom", new CellOptions { VAlign = CellVAlign.Bottom, Style = new CharStyle { Color = "#188038" } })))
     .Paragraph("Fields work inside table cells too:")
     .Table(t => t
         .Row(r => r.Cell("Metric", Bold()).Cell("Value", Bold()))
