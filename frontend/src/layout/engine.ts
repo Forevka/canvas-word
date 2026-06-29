@@ -399,8 +399,28 @@ function breakNextLine(
 
   const natural = maxAscent + maxDescent;
   const height = Math.max(natural, p.style.lineHeight * maxFontSize);
-  const leading = (height - natural) / 2; // half-leading above and below
-  return { frags, width: line.width, height, ascent: leading + maxAscent, end: line.end };
+  return { frags, width: line.width, height, ascent: lineBaseline(p.style.textAlignment, height, maxAscent, maxDescent), end: line.end };
+}
+
+/** Baseline offset from the line-box top for the line's shared baseline, per the
+ *  paragraph's w:textAlignment. "baseline"/absent and "center" both center the
+ *  natural text block via half-leading (Word's default); "top"/"bottom" hug the
+ *  respective edge of a tall line box. Mixed-size runs still share one baseline —
+ *  this shifts that baseline within the box rather than aligning each run's edge. */
+function lineBaseline(
+  textAlignment: ParaStyle["textAlignment"],
+  height: number,
+  maxAscent: number,
+  maxDescent: number,
+): number {
+  switch (textAlignment) {
+    case "top":
+      return maxAscent;
+    case "bottom":
+      return height - maxDescent;
+    default:
+      return (height - (maxAscent + maxDescent)) / 2 + maxAscent; // center / baseline
+  }
 }
 
 interface RawLine {
@@ -1454,10 +1474,13 @@ function layoutDocument(
         take = remaining;
       } else {
         take = fit;
+        // Widow/orphan control is Word's default (ON); w:widowControl="0" disables it,
+        // letting a lone first/last line break across the page boundary.
+        const widow = block.style.widowControl !== false;
         // Widow: never push a single last line to the next page — give it company.
-        if (remaining - take === 1) take -= WIDOW_MIN - 1;
+        if (widow && remaining - take === 1) take -= WIDOW_MIN - 1;
         // Orphan: at the paragraph's start, keep ≥2 lines here or move it whole.
-        if (i === 0 && take > 0 && take < ORPHAN_MIN) take = 0;
+        if (widow && i === 0 && take > 0 && take < ORPHAN_MIN) take = 0;
         // Forced progress: in an empty column the rules yield (a line taller than
         // the page, or a 3-line paragraph that can't satisfy 2+2) — place what fits.
         if (take <= 0) take = !colHasContent() ? Math.max(1, fit) : 0;
@@ -1925,7 +1948,9 @@ function layoutDocument(
           fit++;
         }
         let take = fit;
-        if (fit < m2.lines.length) {
+        // Apply the orphan/widow take only when the terminator has widow control on
+        // (default); widowControl:false lets a lone line stand, so don't force a page.
+        if (fit < m2.lines.length && m2.block.style.widowControl !== false) {
           if (m2.lines.length - take === 1) take -= WIDOW_MIN - 1; // widow
           if (take < ORPHAN_MIN) take = 0; // orphan
         }

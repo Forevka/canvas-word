@@ -182,6 +182,27 @@ export interface ParaStyle {
    *  behind the paragraph's box. Mirrors the table cell `shading` value type.
    *  Absent = no fill. `| undefined` so a patch can remove it. */
   shading?: string | undefined;
+  /** Widow/orphan control (OOXML w:widowControl). Word's default is ON — keep
+   *  ≥2 lines together at a page boundary rather than stranding a lone first/last
+   *  line. Explicit `false` (w:widowControl w:val="0") lets a single line break
+   *  away. Absent = default (ON). Honored by the pagination engine. */
+  widowControl?: boolean;
+  /** Exclude this paragraph from line numbering (OOXML w:suppressLineNumbers).
+   *  Round-trips; no layout effect here (line numbers aren't rendered). Absent = off. */
+  suppressLineNumbers?: boolean;
+  /** Vertical alignment of the glyphs on each line within its line box (OOXML
+   *  w:textAlignment): "top"/"center"/"bottom" hug the respective edge of a tall
+   *  line, "baseline" (Word's default, == absent) rides the shared baseline. Most
+   *  visible with extra line spacing or mixed font sizes. Honored by the engine. */
+  textAlignment?: "top" | "center" | "bottom" | "baseline";
+  /** Symmetric (mirrored) indents for facing-page layouts (OOXML w:mirrorIndents):
+   *  start/end indents swap on verso pages. Round-trips; visible only under mirrored
+   *  section margins. Absent = off. */
+  mirrorIndents?: boolean;
+  /** Automatically adjust the right indent to the document grid (OOXML
+   *  w:adjustRightInd). Round-trips; no layout effect in our grid-less model.
+   *  Absent = off. */
+  adjustRightInd?: boolean;
 }
 
 /** Resolved per-edge paragraph borders (OOXML w:pBdr). Reuses the table

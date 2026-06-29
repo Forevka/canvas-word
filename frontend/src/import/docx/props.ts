@@ -184,6 +184,21 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
   const shd = decodeShdFill(el(pPr, "w:shd"));
   if (shd !== undefined) props.shd = shd;
 
+  // Minor paragraph props (issue #62): widow/orphan control, line-number
+  // suppression, vertical line alignment, mirrored indents, right-indent adjust.
+  const widow = onOff(el(pPr, "w:widowControl"));
+  if (widow !== undefined) props.widowControl = widow;
+  const suppressLn = onOff(el(pPr, "w:suppressLineNumbers"));
+  if (suppressLn !== undefined) props.suppressLineNumbers = suppressLn;
+  const textAlign = val(pPr, "w:textAlignment");
+  if (textAlign === "top" || textAlign === "center" || textAlign === "bottom" || textAlign === "baseline") {
+    props.textAlignment = textAlign;
+  }
+  const mirror = onOff(el(pPr, "w:mirrorIndents"));
+  if (mirror !== undefined) props.mirrorIndents = mirror;
+  const adjustRight = onOff(el(pPr, "w:adjustRightInd"));
+  if (adjustRight !== undefined) props.adjustRightInd = adjustRight;
+
   const rPr = el(pPr, "w:rPr");
   if (rPr) props.markRunProps = decodeRunProps(rPr);
 

@@ -419,6 +419,21 @@ export function sampleDoc(): Document {
     para([run("contextual spacing keeps these lines tight,")], { contextualSpacing: true, spaceAfterPx: 12 }),
     para([run("the way Word's list paragraphs do.")], { contextualSpacing: true, spaceAfterPx: 12 }),
 
+    // --- Minor paragraph properties (issue #62) -------------------------------
+    heading("Minor paragraph properties", 1),
+    para([run("Lower-frequency w:pPr settings round-trip too. This paragraph turns OFF widow/orphan control (w:widowControl), is excluded from line numbering (w:suppressLineNumbers), and carries mirrored indents (w:mirrorIndents) plus right-indent adjustment (w:adjustRightInd) — each preserved through a .docx save and reopen.")], {
+      spaceBeforePx: 6,
+      widowControl: false,
+      suppressLineNumbers: true,
+      mirrorIndents: true,
+      adjustRightInd: true,
+    }),
+    para([run("And with extra line spacing, "), run("bottom", { bold: true }), run(" vertical line alignment (w:textAlignment) drops the text onto the lower edge of each tall line box — set it to top, center or baseline to move where the glyphs ride.")], {
+      spaceBeforePx: 6,
+      lineHeight: 2,
+      textAlignment: "bottom",
+    }),
+
     // --- International text: CJK + bidirectional (RTL) -------------------------
     heading("International text — CJK & bidirectional", 1),
     para([run("East-Asian and right-to-left scripts lay out the way Word does — measured on canvas, with Unicode line-breaking and the bidirectional algorithm (UAX #9), not the browser's contenteditable.")], { spaceAfterPx: 8 }),
