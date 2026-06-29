@@ -1181,7 +1181,7 @@ describe("engine — table measure cache", () => {
     expect(short).toBeLessThan(tall);
   });
 
-  it("re-resolves a cached table's PAGE field when the table moves to a new page (#48)", () => {
+  it("re-resolves a cached table's PAGE field when the table moves to a new page (#52)", () => {
     const eng = createLayoutEngine();
     const fieldDefs: Record<string, FieldDef> = {
       pg: { id: "pg", instruction: " PAGE ", name: "PAGE", kind: "builtin", spec: { type: "PAGE" } },

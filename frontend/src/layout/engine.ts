@@ -1992,7 +1992,7 @@ function layoutDocument(
       // revision+width unchanged — then keeps the stale number, because the cached
       // fragment text is already "1" (not "{page}") and substituteTokens no-ops.
       // (A column resize changes the width, busting the cache, which is why it
-      // "fixed" the number — #48.) Clone-on-write: copy any line that carries a page
+      // "fixed" the number — #52.) Clone-on-write: copy any line that carries a page
       // field, and its fragments, before resolving — the cached {page} token stays
       // pristine for the next pass. Lines with no page field are a no-op, so skip.
       let out: LineBox[] | null = null;
