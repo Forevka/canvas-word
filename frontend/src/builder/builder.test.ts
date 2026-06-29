@@ -67,6 +67,15 @@ describe("paragraphs and runs", () => {
     expect(p.runs[0]!.style.link).toBe("https://example.com");
   });
 
+  it("spacing() sets fixed line spacing (lineRule + lineHeightPx)", () => {
+    const doc = DocumentBuilder.create()
+      .paragraph("exact").spacing({ lineRule: "exact", lineHeightPx: 28 })
+      .paragraph("atLeast").spacing({ lineRule: "atLeast", lineHeightPx: 24 })
+      .build();
+    expect(para(doc.blocks[0]).style).toMatchObject({ lineRule: "exact", lineHeightPx: 28 });
+    expect(para(doc.blocks[1]).style).toMatchObject({ lineRule: "atLeast", lineHeightPx: 24 });
+  });
+
   it("mints unique ids; idSeed makes them deterministic", () => {
     const build = (): string[] =>
       DocumentBuilder.create({ idSeed: "seed" }).paragraph("a").paragraph("b").table([["c"]]).build().blocks.map((b) => b.id);
