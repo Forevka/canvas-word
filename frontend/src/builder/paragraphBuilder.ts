@@ -410,11 +410,22 @@ export class ParagraphBuilder<P extends StoryBuilder> {
   spacing(opts: SpacingOptions): this {
     if (opts.before !== undefined) this.para.style.spaceBeforePx = opts.before;
     if (opts.after !== undefined) this.para.style.spaceAfterPx = opts.after;
-    if (opts.lineHeight !== undefined) this.para.style.lineHeight = opts.lineHeight;
     if (opts.lineRule !== undefined) {
-      this.para.style.lineRule = opts.lineRule;
-      if (opts.lineHeightPx !== undefined) this.para.style.lineHeightPx = opts.lineHeightPx;
+      // A fixed rule is meaningless without its height; never store a half-set rule
+      // (it would export as w:line="0" and disagree with layout).
+      if (opts.lineHeightPx === undefined) {
+        this.ctx.warn("spacing-line-height-missing", ".spacing({ lineRule }) requires lineHeightPx; ignored.");
+      } else {
+        this.para.style.lineRule = opts.lineRule;
+        this.para.style.lineHeightPx = opts.lineHeightPx;
+      }
+    } else if (opts.lineHeight !== undefined) {
+      // Switching back to multiplier spacing — drop any previously-set fixed rule so
+      // call-order precedence holds (a later .spacing({ lineHeight }) wins).
+      delete (this.para.style as Partial<ParaStyle>).lineRule;
+      delete (this.para.style as Partial<ParaStyle>).lineHeightPx;
     }
+    if (opts.lineHeight !== undefined) this.para.style.lineHeight = opts.lineHeight;
     return this;
   }
 

@@ -240,4 +240,33 @@ describe("StyleResolver — heading-led section breaks", () => {
   });
 });
 
+describe("StyleResolver — fixed line spacing cascade (w:lineRule)", () => {
+  // A paragraph style with EXACT 24pt (480 twips) line spacing, plus a child
+  // based on it — so we can check both inheritance and explicit override-to-auto.
+  const FIXED_STYLES = stylesPartXml(
+    `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
+     <w:style w:type="paragraph" w:styleId="Tight">
+       <w:basedOn w:val="Normal"/>
+       <w:pPr><w:spacing w:line="480" w:lineRule="exact"/></w:pPr>
+     </w:style>`,
+  );
+  const importFixed = (body: string): Paragraph =>
+    para(runImport(styledDocx(body, FIXED_STYLES)).doc.blocks[0]);
+
+  it("inherits a paragraph style's exact spacing", () => {
+    const p = importFixed(`<w:p><w:pPr><w:pStyle w:val="Tight"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>`);
+    expect(p.style.lineRule).toBe("exact");
+    expect(p.style.lineHeightPx).toBeCloseTo(32, 1); // 480 twips = 32px
+  });
+
+  it("an explicit direct w:lineRule=\"auto\" clears the inherited fixed rule", () => {
+    const p = importFixed(
+      `<w:p><w:pPr><w:pStyle w:val="Tight"/><w:spacing w:line="360" w:lineRule="auto"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>`,
+    );
+    expect(p.style.lineRule).toBeUndefined(); // reverted to multiplier
+    expect(p.style.lineHeightPx).toBeUndefined();
+    expect(p.style.lineHeight).toBeCloseTo(1.5, 2); // 360/240
+  });
+});
+
 const round = (v: number): number => Math.round(v * 100) / 100;

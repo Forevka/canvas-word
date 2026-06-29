@@ -64,12 +64,15 @@ export function paraCoreXml(style: ParaStyle): string {
   // RTL); undefined stays absent.
   if (style.direction === "rtl") c.push(el("w:bidi"));
   else if (style.direction === "ltr") c.push(el("w:bidi", { "w:val": "0" }));
+  // Fixed (exact/atLeast) spacing emits w:line in twips, but only with a height —
+  // a rule without lineHeightPx would serialize w:line="0"; fall back to the
+  // multiplier (240ths, lineRule="auto") instead.
+  const fixed = style.lineRule !== undefined && style.lineHeightPx !== undefined;
   c.push(el("w:spacing", {
     "w:before": pxToTwips(style.spaceBeforePx),
     "w:after": pxToTwips(style.spaceAfterPx),
-    // Fixed (exact/atLeast) spacing emits w:line in twips; auto emits 240ths.
-    "w:line": style.lineRule ? pxToTwips(style.lineHeightPx ?? 0) : multiplierToLine(style.lineHeight),
-    "w:lineRule": style.lineRule ?? "auto",
+    "w:line": fixed ? pxToTwips(style.lineHeightPx!) : multiplierToLine(style.lineHeight),
+    "w:lineRule": fixed ? style.lineRule! : "auto",
   }));
   const ind: Record<string, number> = {};
   if (style.indentLeftPx) ind["w:left"] = pxToTwips(style.indentLeftPx);
@@ -144,8 +147,8 @@ export function partialPPrXml(p: Partial<ParaStyle>): string {
   const sp: Record<string, number | string> = {};
   if (p.spaceBeforePx !== undefined) sp["w:before"] = pxToTwips(p.spaceBeforePx);
   if (p.spaceAfterPx !== undefined) sp["w:after"] = pxToTwips(p.spaceAfterPx);
-  if (p.lineRule !== undefined) {
-    sp["w:line"] = pxToTwips(p.lineHeightPx ?? 0);
+  if (p.lineRule !== undefined && p.lineHeightPx !== undefined) {
+    sp["w:line"] = pxToTwips(p.lineHeightPx);
     sp["w:lineRule"] = p.lineRule;
   } else if (p.lineHeight !== undefined) {
     sp["w:line"] = multiplierToLine(p.lineHeight);

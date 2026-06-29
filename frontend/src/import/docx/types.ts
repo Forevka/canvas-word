@@ -207,9 +207,11 @@ export interface IRParaProps {
   spaceAfterTwips?: number;
   /** Multiplier — only set when lineRule is "auto" (or absent). */
   lineHeight?: number;
-  /** w:lineRule="exact"|"atLeast" — fixed line spacing. With these, w:line is a
-   *  twips height (not 240ths), carried in `lineExactTwips`. */
-  lineRule?: "exact" | "atLeast";
+  /** w:lineRule. "auto" pairs with `lineHeight` (a 240ths multiplier);
+   *  "exact"/"atLeast" pair with `lineExactTwips` (w:line as a twips height). An
+   *  explicit "auto" is kept (not just left absent) so it OVERRIDES an inherited
+   *  fixed rule through the strip-undefined style cascade (mergeProps). */
+  lineRule?: "auto" | "exact" | "atLeast";
   /** Fixed line spacing in twips (w:line under lineRule exact/atLeast). */
   lineExactTwips?: number;
   indentLeftTwips?: number;
