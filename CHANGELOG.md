@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Table cell vertical alignment (`TableCell.vAlign`).** Cells can now align their
+  content to the `top` (default), `center`, or `bottom` of the cell box via OOXML
+  `w:tcPr/w:vAlign` — previously content always hugged the top regardless of the
+  source `w:vAlign`. The layout engine offsets the cell's block stack by the slack
+  between the content height and the (often taller) painted cell box, so it is most
+  visible in a tall `rowSpan` cell or beside a tall sibling row. Round-trips through
+  `.docx` (parsed in `documentParser`, emitted from `documentXml` after `w:tcMar` per
+  `CT_TcPr`; an explicit `top` normalizes to absent). Authorable via the builder
+  (`CellSpec.vAlign` / `CellOptions.vAlign`) and the mirrored C# bindings
+  (`CellVAlign` enum); demonstrated in the default sample document and the C# showcase.
 - **Table width & alignment (`TableBlock.preferredWidth` + `TableBlock.align`).** Fixed
   tables can now be narrower than the page and positioned within it, instead of always
   spanning the full content width (the only previous escape was AutoFit to Contents).

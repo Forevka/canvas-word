@@ -314,6 +314,9 @@ export interface IRTableCell {
    *  a 0..1 fraction of the table width (w:w is fiftieths of a percent). Consulted
    *  only in autofit modes (→ TableCell.preferredWidth). */
   preferredWidth?: { type: "abs"; twips: number } | { type: "pct"; frac: number };
+  /** w:tcPr/w:vAlign — vertical alignment of cell content (→ TableCell.vAlign).
+   *  Absent (or "top") = top-aligned, the default. */
+  vAlign?: "top" | "center" | "bottom";
 }
 
 export interface IRTableRow {

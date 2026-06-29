@@ -96,6 +96,27 @@ const mergedTable = (): TableBlock => ({
   ],
 });
 
+/** Cell vertical alignment (w:vAlign): a tall first cell forces a tall row, and the
+ *  short label cells beside it sit top / centered / bottom within that height. */
+const vAlignTable = (): TableBlock => ({
+  kind: "table", id: id(), revision: 0,
+  colFractions: [0.4, 0.2, 0.2, 0.2],
+  rows: [
+    { cells: [
+      cell("vAlign", { bold: true, color: "#fff" }, { shading: "#1a73e8" }),
+      cell("top", { bold: true, color: "#fff" }, { shading: "#1a73e8" }),
+      cell("center", { bold: true, color: "#fff" }, { shading: "#1a73e8" }),
+      cell("bottom", { bold: true, color: "#fff" }, { shading: "#1a73e8" }),
+    ] },
+    { cells: [
+      cell("This tall cell holds several lines of text so the row grows well past the height of a single line — making the vertical position of its short neighbours visible.\nLine two.\nLine three.\nLine four."),
+      cell("top", { color: "#188038" }, { vAlign: "top" }),
+      cell("center", { color: "#188038" }, { vAlign: "center" }),
+      cell("bottom", { color: "#188038" }, { vAlign: "bottom" }),
+    ] },
+  ],
+});
+
 /** A cell paragraph carrying an explicit base direction (RTL) — for the bidi
  *  table demo, so the cell's text right-aligns and reorders inside its column. */
 const dirCellPara = (runs: Run[], direction?: "rtl"): Paragraph => ({
@@ -273,6 +294,8 @@ export function sampleDoc(): Document {
     tablesHeading,
     para([run("Merged cells (column- and row-spanning), shading and borders:")], { spaceAfterPx: 6 }),
     mergedTable(),
+    para([run("Cell vertical alignment (w:vAlign) — short labels sit top, centered and bottom within a tall row:")], { spaceBeforePx: 10, spaceAfterPx: 6 }),
+    vAlignTable(),
     para([run("Fields work inside table cells too:")], { spaceBeforePx: 10, spaceAfterPx: 6 }),
     fieldInCellTable,
     para([run("And a table tall enough to paginate across pages — rows break cleanly:")], { spaceBeforePx: 10, spaceAfterPx: 6 }),

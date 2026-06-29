@@ -2637,7 +2637,14 @@ function placeTable(
       const blocks: PlacedBlock[] = [];
       const mgn = cellMargin(mc.cell);
       const innerWidth = mc.width - mgn.left - mgn.right;
-      let py = ry + mgn.top;
+      // Vertical alignment: by default content hugs the top. For center/bottom,
+      // offset the whole block stack by the slack between the content height
+      // (mc.height already folds in the cell margins) and the cell's painted box,
+      // which is taller when the row is forced up by a sibling or a rowSpan.
+      const vAlign = mc.cell.vAlign;
+      const vSlack = vAlign === "center" || vAlign === "bottom" ? Math.max(0, cellHeight - mc.height) : 0;
+      const vOffset = vAlign === "center" ? vSlack / 2 : vAlign === "bottom" ? vSlack : 0;
+      let py = ry + mgn.top + vOffset;
       for (const it of mc.items) {
         if (it.kind === "para") {
           py += it.block.style.spaceBeforePx;
