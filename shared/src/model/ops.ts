@@ -15,6 +15,7 @@ import type {
   ParaStyle,
   Paragraph,
   Run,
+  RowProps,
   SdtProps,
   TableBlock,
   TableCell,
@@ -68,6 +69,7 @@ export type Op =
   | { type: "setTableAlign"; blockId: string; align: TableBlock["align"] | null }
   | { type: "insertTableRow"; tableId: string; rowIndex: number; row: TableRow }
   | { type: "removeTableRow"; tableId: string; rowIndex: number }
+  | { type: "setRowHeight"; tableId: string; rowIndex: number; height: NonNullable<RowProps["height"]> | null }
   | { type: "insertTableColumn"; tableId: string; colIndex: number; cells: TableCell[]; fractions?: number[] }
   | { type: "removeTableColumn"; tableId: string; colIndex: number }
   | { type: "setStylesheet"; stylesheet: import("./stylesheet").Stylesheet }
@@ -843,6 +845,30 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
         inverse: { type: "insertTableRow", tableId: op.tableId, rowIndex: op.rowIndex, row: removed },
         mapPosition: (p) =>
           removedIds.has(p.blockId) && fallback ? { blockId: fallback.id, offset: 0 } : p,
+        dirtyBlockIds: [op.tableId],
+      };
+    }
+
+    case "setRowHeight": {
+      // Interactive row-drag height (w:trHeight). Mirrors the column op: replace a
+      // single row's `props.height`, leaving the rest of its props untouched, and
+      // invert to the prior height (null = none) for a free undo.
+      const { where, bi, block } = mustTable(doc, op.tableId);
+      const row = block.rows[op.rowIndex];
+      if (!row) throw new Error("setRowHeight: no such row");
+      const old = row.props?.height ?? null;
+      const nextRow: TableRow = { ...row };
+      const props: RowProps = { ...(row.props ?? {}) };
+      if (op.height) props.height = op.height;
+      else delete props.height;
+      if (Object.keys(props).length) nextRow.props = props;
+      else delete nextRow.props;
+      const rows = block.rows.slice();
+      rows[op.rowIndex] = nextRow;
+      return {
+        doc: replaceTable(doc, where, bi, { ...block, rows }),
+        inverse: { type: "setRowHeight", tableId: op.tableId, rowIndex: op.rowIndex, height: old },
+        mapPosition: identity,
         dirtyBlockIds: [op.tableId],
       };
     }

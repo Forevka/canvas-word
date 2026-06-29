@@ -838,6 +838,60 @@ export function hitTestColumnBoundary(
   return null;
 }
 
+export interface RowBoundaryHit {
+  tableId: string;
+  /** MODEL index of the row whose bottom edge is being dragged. */
+  rowIndex: number;
+  /** Boundary y (page-local doc coords) and the row's top edge — drag delta is
+   *  measured against the rendered height (y − rowTop). */
+  y: number;
+  rowTop: number;
+  /** This table chunk's horizontal extent on the hit page — drives the hover guide. */
+  pageIndex: number;
+  tableX: number;
+  tableWidth: number;
+}
+
+const ROW_GRIP_PX = 6;
+
+/** Horizontal boundary (a row's bottom edge) of a body table within grip distance
+ *  of a point. Mirrors {@link hitTestColumnBoundary}; the caller checks columns
+ *  FIRST so a cell-corner pixel prefers the column grip. Every row's bottom edge is
+ *  grabbable (including the last — unlike columns, a row drag sets that one row's
+ *  height rather than redistributing). The returned rowIndex is the MODEL index
+ *  (chunk offset + placed row), so a continuation page / repeated header maps back
+ *  to the right model row. */
+export function hitTestRowBoundary(
+  tree: LayoutTree,
+  pageIndex: number,
+  x: number,
+  y: number,
+): RowBoundaryHit | null {
+  const page = tree.pages[pageIndex];
+  if (!page) return null;
+  for (const block of page.blocks) {
+    const t = block.table;
+    if (!t) continue;
+    if (x < t.x || x > t.x + t.width) continue;
+    for (let ri = 0; ri < t.rows.length; ri++) {
+      const row = t.rows[ri]!;
+      const edge = row.y + row.height;
+      if (Math.abs(y - edge) <= ROW_GRIP_PX) {
+        return {
+          tableId: block.blockId,
+          rowIndex: block.firstLineIndex + ri,
+          y: edge,
+          rowTop: row.y,
+          pageIndex,
+          tableX: t.x,
+          tableWidth: t.width,
+        };
+      }
+    }
+  }
+  return null;
+}
+
 /** A point's table cell, in GRID coordinates (body tables only). Returns the
  *  ORIGIN (top-left grid slot) of the merged cell the point lands in, so a point
  *  anywhere inside a colSpan/rowSpan cell maps to one stable coordinate — a drag

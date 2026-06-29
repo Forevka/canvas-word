@@ -41,6 +41,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     verbatim. Authorable via `DocumentBuilder.defaultTabStop(px)` / C# `DefaultTabStop(px)`.
   All four are demonstrated in the default showcase document and the C# showcase, with docx
   round-trip + layout tests.
+- **Drag-to-resize table row height.** A horizontal grip on each table row's bottom
+  edge can now be dragged to set that row's height, mirroring the existing
+  column-width resize interaction. The pointer shows a `row-resize` cursor and an
+  accent guide over a grabbable boundary; the drag previews live (each frame
+  relayouts the table) and commits one undoable step on drop, writing the dragged
+  pixel height into `TableRow.height` as `{ value, rule: "atLeast" }` by default (an
+  existing `exact` rule is preserved). Layout still floors an `atLeast` row at its
+  content height, so a row never drags below its content. Column grips win at a cell
+  corner, so the two interactions never collide. Editor-UX only — it reuses the
+  `TableRow.height` model (and thus the `.docx` round-trip) added previously; built
+  on a new `setRowHeight` op with an undo inverse.
 - **Paragraph borders & shading (`ParaStyle.borders` + `ParaStyle.shading`).** A whole
   paragraph can now carry a border box (OOXML `w:pBdr` — `top`/`right`/`bottom`/`left`,
   plus a round-tripped inter-paragraph `between` edge) and a background fill (paragraph-level

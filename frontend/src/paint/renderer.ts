@@ -156,6 +156,9 @@ export interface PaintScheduler {
   /** Highlight the column boundary the pointer is poised to drag (a vertical
    *  accent line + soft grab-zone band over the table chunk). Null clears. */
   setColumnGuide(guide: ColumnGuide | null): void;
+  /** Highlight the row boundary the pointer is poised to drag (a horizontal accent
+   *  line + soft grab-zone band over the table chunk). Null clears. */
+  setRowGuide(guide: RowGuide | null): void;
   setCaret(caret: CaretRect | null): void;
   /** Remote collaborators' carets (DOM overlays with name flags). Replaces the
    *  whole set each call; pass [] to clear. */
@@ -254,6 +257,15 @@ export interface ColumnGuide {
   height: number;
 }
 
+/** A row-resize hover guide: the boundary y and the table chunk's horizontal span
+ *  on `pageIndex`, all in page-local document coords. */
+export interface RowGuide {
+  pageIndex: number;
+  y: number;
+  x: number;
+  width: number;
+}
+
 let caretCssInjected = false;
 function injectCaretCss(): void {
   if (caretCssInjected) return;
@@ -348,6 +360,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
   let showFormattingMarks = false;
   let lastCaret: CaretRect | null = null;
   let colGuide: ColumnGuide | null = null;
+  let rowGuide: RowGuide | null = null;
   // Remote collaborators' presence: per siteId a caret overlay (colored bar +
   // name flag) plus selection-highlight rect overlays, repositioned on zoom.
   const remoteCaretEls = new Map<string, { caret: HTMLDivElement; sels: HTMLDivElement[] }>();
@@ -782,6 +795,19 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       ctx.fillRect(gx - 3, colGuide.y, 6, colGuide.height); // grab zone (matches the 6px grip)
       ctx.globalAlpha = 1;
       ctx.fillRect(gx - 0.75, colGuide.y, 1.5, colGuide.height); // the line itself
+      ctx.restore();
+    }
+
+    // 6b. row-resize hover guide: the horizontal boundary the pointer will drag,
+    //     drawn as a crisp accent line with a soft grab-zone band behind it.
+    if (rowGuide && rowGuide.pageIndex === page.index) {
+      const gy = rowGuide.y;
+      ctx.save();
+      ctx.fillStyle = theme.accent;
+      ctx.globalAlpha = 0.16;
+      ctx.fillRect(rowGuide.x, gy - 3, rowGuide.width, 6); // grab zone (matches the 6px grip)
+      ctx.globalAlpha = 1;
+      ctx.fillRect(rowGuide.x, gy - 0.75, rowGuide.width, 1.5); // the line itself
       ctx.restore();
     }
 
@@ -1273,6 +1299,22 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       if (colGuide) affected.add(colGuide.pageIndex);
       if (guide) affected.add(guide.pageIndex);
       colGuide = guide;
+      for (const i of affected) if (liveCanvases.has(i)) dirty.add(i);
+      schedule();
+    },
+
+    setRowGuide(guide: RowGuide | null): void {
+      // Value-dedupe: hover fires every mousemove; only repaint when it moves.
+      const same =
+        rowGuide === guide ||
+        (!!rowGuide && !!guide &&
+          rowGuide.pageIndex === guide.pageIndex && rowGuide.y === guide.y &&
+          rowGuide.x === guide.x && rowGuide.width === guide.width);
+      if (same) return;
+      const affected = new Set<number>();
+      if (rowGuide) affected.add(rowGuide.pageIndex);
+      if (guide) affected.add(guide.pageIndex);
+      rowGuide = guide;
       for (const i of affected) if (liveCanvases.has(i)) dirty.add(i);
       schedule();
     },

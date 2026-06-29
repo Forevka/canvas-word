@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CharStyle, Document, FieldDef, Paragraph, SectionProps } from "./document";
+import type { CharStyle, Document, FieldDef, Paragraph, SectionProps, TableBlock, TableCell, TableRow } from "./document";
 import { applyOp, styleEq } from "./ops";
 
 const section = (): SectionProps => ({ pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } });
@@ -85,6 +85,41 @@ describe("applyOp splitParagraph — block-level content control", () => {
     // Undo: the re-split must put the control back on the restored tail.
     const undo = applyOp(merge.doc, merge.inverse);
     expect((undo.doc.blocks[1] as Paragraph).sdtPath).toEqual(["sec"]);
+  });
+});
+
+describe("applyOp setRowHeight — interactive row-drag height (w:trHeight)", () => {
+  const cell = (id: string, text: string): TableCell => ({ id, blocks: [para(id, text)] });
+  const tableDoc = (...rows: TableRow[]): Document => ({
+    section: section(),
+    blocks: [{ kind: "table", id: "t0", revision: 0, rows }],
+  });
+  const firstRow = (d: Document): TableRow => (d.blocks[0] as TableBlock).rows[0]!;
+
+  it("writes a row's height as { value, rule:'atLeast' }; inverse clears it (was none)", () => {
+    const d = tableDoc({ cells: [cell("a", "x")] }, { cells: [cell("b", "y")] });
+    const r = applyOp(d, { type: "setRowHeight", tableId: "t0", rowIndex: 0, height: { value: 80, rule: "atLeast" } });
+    expect(firstRow(r.doc).props?.height).toEqual({ value: 80, rule: "atLeast" });
+    // the second row is untouched
+    expect((r.doc.blocks[0] as TableBlock).rows[1]!.props).toBeUndefined();
+    const undo = applyOp(r.doc, r.inverse);
+    expect(firstRow(undo.doc).props?.height).toBeUndefined();
+  });
+
+  it("replacing an existing height round-trips via inverse, preserving sibling props", () => {
+    const d = tableDoc({ cells: [cell("a", "x")], props: { height: { value: 50, rule: "exact" }, cantSplit: true } });
+    const r = applyOp(d, { type: "setRowHeight", tableId: "t0", rowIndex: 0, height: { value: 120, rule: "atLeast" } });
+    expect(firstRow(r.doc).props).toEqual({ height: { value: 120, rule: "atLeast" }, cantSplit: true });
+    const undo = applyOp(r.doc, r.inverse);
+    expect(firstRow(undo.doc).props).toEqual({ height: { value: 50, rule: "exact" }, cantSplit: true });
+  });
+
+  it("clearing height (null) drops the props object when nothing else remains", () => {
+    const d = tableDoc({ cells: [cell("a", "x")], props: { height: { value: 60, rule: "atLeast" } } });
+    const r = applyOp(d, { type: "setRowHeight", tableId: "t0", rowIndex: 0, height: null });
+    expect(firstRow(r.doc).props).toBeUndefined();
+    // inverse restores the prior height
+    expect(firstRow(applyOp(r.doc, r.inverse).doc).props?.height).toEqual({ value: 60, rule: "atLeast" });
   });
 });
 
