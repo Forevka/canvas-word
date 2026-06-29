@@ -179,7 +179,7 @@ export interface StyleResolver {
 
 /** Toggle properties per §17.7.3 — XOR across hierarchy levels.
  *  (underline is NOT a toggle: it's an enumerated value, plain override.) */
-const RUN_TOGGLES = ["bold", "italic", "strikethrough", "vanish"] as const;
+const RUN_TOGGLES = ["bold", "italic", "strikethrough", "vanish", "caps", "smallCaps"] as const;
 
 export function createStyleResolver(data: StylesData, theme: Theme): StyleResolver {
   // basedOn chains resolved root→leaf with override semantics, memoized per style.

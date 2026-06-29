@@ -36,6 +36,12 @@ export interface CharStyle {
   /** Explicit right-to-left run (OOXML w:rPr/w:rtl). Forces a bidi-RTL embedding
    *  regardless of the run's characters. Absent = resolve from Unicode bidi classes. */
   rtl?: boolean | undefined;
+  /** All-caps display (OOXML w:caps) — letters render uppercased; the model text is
+   *  unchanged and the transform is offset-transparent (caret/measurement included). */
+  caps?: boolean | undefined;
+  /** Small-capitals display (OOXML w:smallCaps) — letters render uppercased, with the
+   *  originally-lowercase ones drawn smaller. Takes precedence over `caps`. */
+  smallCaps?: boolean | undefined;
 }
 
 export interface TabStop {

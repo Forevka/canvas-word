@@ -194,6 +194,10 @@ public sealed record CharStyle
     public bool? Hidden { get; init; }
     /// <summary>Sub/superscript: "sub" or "super" (measured at 0.65× size, baseline-shifted).</summary>
     public string? VerticalAlign { get; init; }
+    /// <summary>All-caps display (OOXML w:caps): every letter renders uppercased.</summary>
+    public bool? Caps { get; init; }
+    /// <summary>Small-capitals display (OOXML w:smallCaps): uppercased, originally-lowercase letters drawn smaller.</summary>
+    public bool? SmallCaps { get; init; }
     /// <summary>Explicit right-to-left run (OOXML w:rtl).</summary>
     public bool? Rtl { get; init; }
     /// <summary>Character-style reference (OOXML w:rStyle → a character NamedStyle).</summary>
@@ -216,6 +220,8 @@ public sealed record CharStyle
         if (Link is { } lk) Js.Set(o, "link", lk);
         if (LetterSpacingPx is { } ls) Js.Set(o, "letterSpacingPx", ls);
         if (Hidden is { } hd) Js.Set(o, "hidden", hd);
+        if (Caps is { } cp) Js.Set(o, "caps", cp);
+        if (SmallCaps is { } sc) Js.Set(o, "smallCaps", sc);
         if (Rtl is { } rtl) Js.Set(o, "rtl", rtl);
         if (CharStyleId is { } csi) Js.Set(o, "charStyleId", csi);
         return o;

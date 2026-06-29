@@ -134,6 +134,8 @@ export function styleEq(a: CharStyle, b: CharStyle): boolean {
     (a.letterSpacingPx ?? 0) === (b.letterSpacingPx ?? 0) &&
     a.highlightColor === b.highlightColor &&
     a.verticalAlign === b.verticalAlign &&
+    !!a.caps === !!b.caps && // case transforms change the rendered glyphs — never merge across
+    !!a.smallCaps === !!b.smallCaps &&
     a.link === b.link &&
     a.footnoteRef === b.footnoteRef && // adjacent refs must never merge into one run
     sdtPathEq(a.sdtPath, b.sdtPath) && // content-control boundaries (incl. nesting) survive normalization

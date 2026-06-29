@@ -121,6 +121,10 @@ export interface IRRunProps {
   vertAlign?: string;
   /** w:vanish — hidden text (Word shows it only with ¶ marks on). */
   vanish?: boolean;
+  /** w:caps — all-caps display toggle. */
+  caps?: boolean;
+  /** w:smallCaps — small-capitals display toggle. */
+  smallCaps?: boolean;
   /** w:rtl — explicit right-to-left run direction. */
   rtl?: boolean;
   /** Hyperlink membership (set on runs inside a w:hyperlink). Resolved to a URL

@@ -52,6 +52,10 @@ export function decodeRunProps(rPr: XmlNode): IRRunProps {
   if (vertAlign) props.vertAlign = vertAlign;
   const vanish = onOff(el(rPr, "w:vanish"));
   if (vanish !== undefined) props.vanish = vanish;
+  const caps = onOff(el(rPr, "w:caps"));
+  if (caps !== undefined) props.caps = caps;
+  const smallCaps = onOff(el(rPr, "w:smallCaps"));
+  if (smallCaps !== undefined) props.smallCaps = smallCaps;
   const rtl = onOff(el(rPr, "w:rtl"));
   if (rtl !== undefined) props.rtl = rtl; // keep an explicit w:rtl="0" (clears inherited RTL)
   return props;

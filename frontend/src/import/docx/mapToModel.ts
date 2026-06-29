@@ -1068,6 +1068,8 @@ function applyRunProps(style: Partial<CharStyle>, props: IRRunProps): void {
   if (props.vertAlign === "superscript") style.verticalAlign = "super";
   else if (props.vertAlign === "subscript") style.verticalAlign = "sub";
   if (props.vanish) style.hidden = true; // preserved, never displayed (see CharStyle.hidden)
+  if (props.caps !== undefined) style.caps = props.caps; // w:caps — all-caps display
+  if (props.smallCaps !== undefined) style.smallCaps = props.smallCaps; // w:smallCaps — small capitals
   if (props.rtl !== undefined) style.rtl = props.rtl; // explicit w:rtl="0" clears inherited RTL
 }
 
