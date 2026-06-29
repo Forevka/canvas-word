@@ -52,6 +52,8 @@ public enum WidthType { Abs, Pct }
 public enum CellVAlign { Top, Center, Bottom }
 /// <summary>How a row's fixed height is enforced (OOXML w:trHeight/@w:hRule).</summary>
 public enum RowHeightRule { AtLeast, Exact }
+/// <summary>Vertical alignment of text within a line box (OOXML w:pPr/w:textAlignment).</summary>
+public enum LineVAlign { Top, Center, Bottom, Baseline }
 /// <summary>List number format (docx w:numFmt).</summary>
 public enum ListNumberFormat { Bullet, Decimal, LowerLetter, UpperLetter, LowerRoman, UpperRoman }
 /// <summary>Conditional-format slot of a table style (OOXML w:tblStylePr/@w:type).</summary>
@@ -123,6 +125,13 @@ internal static class EnumJs
         CellVAlign.Center => "center",
         CellVAlign.Bottom => "bottom",
         _ => "top",
+    };
+    public static string TextVAlign(LineVAlign v) => v switch
+    {
+        LineVAlign.Top => "top",
+        LineVAlign.Center => "center",
+        LineVAlign.Bottom => "bottom",
+        _ => "baseline",
     };
     public static string ListFmt(ListNumberFormat f) => f switch
     {

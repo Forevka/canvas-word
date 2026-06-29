@@ -250,6 +250,16 @@ export interface IRParaProps {
   borders?: IRParaBorders;
   /** w:pPr/w:shd → CSS fill (paragraph-level shading). */
   shd?: string;
+  /** w:widowControl — widow/orphan control (Word default ON; explicit "0" = off). */
+  widowControl?: boolean;
+  /** w:suppressLineNumbers — exclude this paragraph from line numbering. */
+  suppressLineNumbers?: boolean;
+  /** w:textAlignment — vertical line alignment (top/center/bottom/baseline). */
+  textAlignment?: "top" | "center" | "bottom" | "baseline";
+  /** w:mirrorIndents — symmetric indents under mirrored section margins. */
+  mirrorIndents?: boolean;
+  /** w:adjustRightInd — auto-adjust the right indent to the document grid. */
+  adjustRightInd?: boolean;
 }
 
 /** Raw paragraph border edges (w:pBdr children). Mirrors IRBorders but carries

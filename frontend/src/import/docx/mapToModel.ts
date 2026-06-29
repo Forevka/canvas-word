@@ -1120,7 +1120,18 @@ function mapParaPatch(props: IRParaProps): Partial<ParaStyle> {
   const pb = paraBordersFromIR(props.borders);
   if (pb) out.borders = pb;
   if (props.shd !== undefined) out.shading = props.shd;
+  mapMinorParaProps(props, out);
   return out;
+}
+
+/** Minor w:pPr props (issue #62) shared by the full-paragraph and style-patch
+ *  mappers. Each is a direct passthrough (no unit conversion). */
+function mapMinorParaProps(props: IRParaProps, out: Partial<ParaStyle>): void {
+  if (props.widowControl !== undefined) out.widowControl = props.widowControl;
+  if (props.suppressLineNumbers !== undefined) out.suppressLineNumbers = props.suppressLineNumbers;
+  if (props.textAlignment !== undefined) out.textAlignment = props.textAlignment;
+  if (props.mirrorIndents !== undefined) out.mirrorIndents = props.mirrorIndents;
+  if (props.adjustRightInd !== undefined) out.adjustRightInd = props.adjustRightInd;
 }
 
 /** styles.xml → editor Stylesheet. ALL defined paragraph and character styles
@@ -1220,6 +1231,7 @@ function mapParaStyle(props: IRParaProps): ParaStyle {
   const pb = paraBordersFromIR(props.borders);
   if (pb) style.borders = pb;
   if (props.shd !== undefined) style.shading = props.shd;
+  mapMinorParaProps(props, style);
   if (props.styleId) style.namedStyle = props.styleId;
   return style;
 }

@@ -219,6 +219,18 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
     .Paragraph("contextual spacing keeps these lines tight,", p => p.Spacing(new SpacingOptions { After = 12 }).ContextualSpacing())
     .Paragraph("the way Word's list paragraphs do.", p => p.Spacing(new SpacingOptions { After = 12 }).ContextualSpacing())
 
+    // ---- Minor paragraph properties (w:widowControl / w:suppressLineNumbers / w:mirrorIndents / w:adjustRightInd / w:textAlignment) ----
+    .Paragraph("Minor paragraph properties", p => p.WithStyle("Heading1"))
+    .Paragraph("Lower-frequency w:pPr settings round-trip too: this paragraph disables widow/orphan control (w:widowControl), is excluded from line numbering (w:suppressLineNumbers), and carries mirrored indents (w:mirrorIndents) with right-indent adjustment (w:adjustRightInd) — each preserved through .docx.",
+        p => p.Spacing(new SpacingOptions { Before = 6 })
+              .WidowControl(false)
+              .SuppressLineNumbers()
+              .MirrorIndents()
+              .AdjustRightInd())
+    .Paragraph("With extra line spacing, bottom vertical line alignment (w:textAlignment) drops the text onto the lower edge of each tall line box.",
+        p => p.Spacing(new SpacingOptions { Before = 6, LineHeight = 2 })
+              .TextAlignment(LineVAlign.Bottom))
+
     // ---- International text (CJK) ----
     .Paragraph("International text — CJK", p => p.WithStyle("Heading1"))
     .Paragraph("East-Asian scripts lay out the way Word does — measured on canvas, with Unicode line-breaking and kinsoku, not the browser's contenteditable.")

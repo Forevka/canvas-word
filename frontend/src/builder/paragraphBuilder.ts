@@ -438,6 +438,38 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     return this;
   }
 
+  /** Widow/orphan control (OOXML w:widowControl). Word's default is ON; pass
+   *  `false` to let a lone first/last line break across a page boundary. */
+  widowControl(on = true): this {
+    this.para.style.widowControl = on;
+    return this;
+  }
+
+  /** Exclude this paragraph from line numbering (OOXML w:suppressLineNumbers). */
+  suppressLineNumbers(on = true): this {
+    this.para.style.suppressLineNumbers = on;
+    return this;
+  }
+
+  /** Vertical alignment of text within each line box (OOXML w:textAlignment):
+   *  "top"/"center"/"bottom" hug the edge, "baseline" (default) rides the baseline. */
+  textAlignment(v: "top" | "center" | "bottom" | "baseline"): this {
+    this.para.style.textAlignment = v;
+    return this;
+  }
+
+  /** Symmetric (mirrored) indents for facing-page layouts (OOXML w:mirrorIndents). */
+  mirrorIndents(on = true): this {
+    this.para.style.mirrorIndents = on;
+    return this;
+  }
+
+  /** Auto-adjust the right indent to the document grid (OOXML w:adjustRightInd). */
+  adjustRightInd(on = true): this {
+    this.para.style.adjustRightInd = on;
+    return this;
+  }
+
   /** Escape the paragraph scope explicitly (rarely needed — any block-starting
    *  call below does it implicitly). */
   end(): P {

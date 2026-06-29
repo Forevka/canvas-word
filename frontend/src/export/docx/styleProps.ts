@@ -160,6 +160,12 @@ export function partialPPrXml(p: Partial<ParaStyle>): string {
   else if (p.contextualSpacing === false) out.push(el("w:contextualSpacing", { "w:val": "0" }));
   if (p.keepWithNext) out.push(el("w:keepNext"));
   if (p.keepLinesTogether) out.push(el("w:keepLines"));
+  // Minor paragraph props (issue #62) — see documentXml.pPrXml for the on/off rules.
+  if (p.widowControl !== undefined) out.push(el("w:widowControl", p.widowControl ? undefined : { "w:val": "0" }));
+  if (p.suppressLineNumbers) out.push(el("w:suppressLineNumbers"));
+  if (p.mirrorIndents) out.push(el("w:mirrorIndents"));
+  if (p.adjustRightInd) out.push(el("w:adjustRightInd"));
+  if (p.textAlignment) out.push(el("w:textAlignment", { "w:val": p.textAlignment }));
   if (p.borders) out.push(paraBordersXml(p.borders));
   if (p.shading) out.push(shdFillXml(p.shading));
   if (p.tabStops && p.tabStops.length > 0) {

@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Minor paragraph properties (`ParaStyle.widowControl` / `suppressLineNumbers` /
+  `textAlignment` / `mirrorIndents` / `adjustRightInd`).** Five lower-frequency `w:pPr`
+  children now parse, export, and round-trip through `.docx` where before they were
+  silently dropped: `w:widowControl` (widow/orphan control — Word's default ON, honored
+  by the pagination engine so an explicit `w:val="0"` lets a lone first/last line break
+  across a page boundary), `w:suppressLineNumbers`, `w:textAlignment` (vertical alignment
+  of the glyphs within each line box — `top`/`center`/`bottom` hug the respective edge of
+  a tall line while `baseline` rides the shared baseline, honored by the layout engine),
+  `w:mirrorIndents`, and `w:adjustRightInd`. Authorable via the builder
+  (`paragraph(...).widowControl(false).textAlignment("bottom").suppressLineNumbers()
+  .mirrorIndents().adjustRightInd()`) and the C# bindings (`ParagraphBuilder.WidowControl`,
+  `.SuppressLineNumbers`, `.TextAlignment(LineVAlign)`, `.MirrorIndents`, `.AdjustRightInd`),
+  and demonstrated in the default showcase document.
 - **Paragraph borders & shading (`ParaStyle.borders` + `ParaStyle.shading`).** A whole
   paragraph can now carry a border box (OOXML `w:pBdr` — `top`/`right`/`bottom`/`left`,
   plus a round-tripped inter-paragraph `between` edge) and a background fill (paragraph-level

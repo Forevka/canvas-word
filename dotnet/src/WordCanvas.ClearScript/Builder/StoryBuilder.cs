@@ -267,6 +267,18 @@ public sealed class ParagraphBuilder
     /// <summary>Paragraph shading — a CSS fill painted behind the paragraph (OOXML w:shd).</summary>
     public ParagraphBuilder Shading(string cssColor) { _js.InvokeMethod("shading", cssColor); return this; }
 
+    /// <summary>Widow/orphan control (OOXML w:widowControl). Word's default is ON;
+    /// pass false to let a lone first/last line break across a page boundary.</summary>
+    public ParagraphBuilder WidowControl(bool on = true) { _js.InvokeMethod("widowControl", on); return this; }
+    /// <summary>Exclude this paragraph from line numbering (OOXML w:suppressLineNumbers).</summary>
+    public ParagraphBuilder SuppressLineNumbers(bool on = true) { _js.InvokeMethod("suppressLineNumbers", on); return this; }
+    /// <summary>Vertical alignment of text within each line box (OOXML w:textAlignment).</summary>
+    public ParagraphBuilder TextAlignment(LineVAlign v) { _js.InvokeMethod("textAlignment", EnumJs.TextVAlign(v)); return this; }
+    /// <summary>Symmetric (mirrored) indents for facing-page layouts (OOXML w:mirrorIndents).</summary>
+    public ParagraphBuilder MirrorIndents(bool on = true) { _js.InvokeMethod("mirrorIndents", on); return this; }
+    /// <summary>Auto-adjust the right indent to the document grid (OOXML w:adjustRightInd).</summary>
+    public ParagraphBuilder AdjustRightInd(bool on = true) { _js.InvokeMethod("adjustRightInd", on); return this; }
+
     // ---- inline fields ----
     public ParagraphBuilder PageField() { _js.InvokeMethod("pageField"); return this; }
     public ParagraphBuilder NumPagesField() { _js.InvokeMethod("numPagesField"); return this; }
