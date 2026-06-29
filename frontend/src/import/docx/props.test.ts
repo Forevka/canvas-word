@@ -19,6 +19,13 @@ describe("decodeRunProps", () => {
     expect(decodeRunProps(rPr(`<w:strike/>`)).strikethrough).toBe(true);
   });
 
+  it("decodes w:caps and w:smallCaps toggles", () => {
+    expect(decodeRunProps(rPr(`<w:caps/>`)).caps).toBe(true);
+    expect(decodeRunProps(rPr(`<w:smallCaps/>`)).smallCaps).toBe(true);
+    expect(decodeRunProps(rPr(`<w:caps w:val="0"/>`)).caps).toBe(false);
+    expect(decodeRunProps(rPr(`<w:smallCaps w:val="false"/>`)).smallCaps).toBe(false);
+  });
+
   it("decodes a toggle turned off via w:val='0'/'false'", () => {
     expect(decodeRunProps(rPr(`<w:b w:val="0"/>`)).bold).toBe(false);
     expect(decodeRunProps(rPr(`<w:i w:val="false"/>`)).italic).toBe(false);

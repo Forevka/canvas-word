@@ -95,6 +95,17 @@ describe("rich-text run gaps", () => {
     const doc = DocumentBuilder.create().paragraph().text("x").superscript().superscript(false).build();
     expect(para(doc.blocks[0]).runs[0]!.style.verticalAlign).toBeUndefined();
   });
+
+  it("caps/smallCaps patch the run style and toggle off cleanly", () => {
+    const doc = DocumentBuilder.create()
+      .paragraph().text("a").caps()
+      .paragraph().text("b").smallCaps()
+      .paragraph().text("c").caps().caps(false)
+      .build();
+    expect(para(doc.blocks[0]).runs[0]!.style.caps).toBe(true);
+    expect(para(doc.blocks[1]).runs[0]!.style.smallCaps).toBe(true);
+    expect(para(doc.blocks[2]).runs[0]!.style.caps).toBeUndefined();
+  });
 });
 
 describe("footnotes", () => {

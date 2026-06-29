@@ -48,6 +48,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`TableBuilder.row(cells, { height, heightRule, cantSplit, header })`) and the mirrored
   C# bindings (`RowOptions` + `RowHeightRule`); demonstrated in the default sample
   document and the C# showcase.
+- **Run case transforms (`CharStyle.caps` + `CharStyle.smallCaps`).** All-caps
+  (OOXML `w:caps`) and small-capitals (`w:smallCaps`) now parse, model, render and
+  round-trip — common on headings and styles. The model text is untouched; the
+  layout bakes the transform into throwaway display runs (uppercasing every letter,
+  and for small caps splitting the originally-lowercase letters into reduced-size
+  sub-runs), so the canvas renderer and the PDF painter draw the transformed glyphs
+  with no painter-specific code. The transform is offset-transparent — it preserves
+  the UTF-16 length per code point — so the caret, hit-testing and measurement land
+  on the uppercased glyphs. Parsed in `props.ts` (a `w:rPr` toggle, including the
+  style-cascade XOR), emitted in `styleProps.ts`, transformed in the layout prepare
+  cache. Authorable via the builder (`.caps()` / `.smallCaps()`) and the mirrored C#
+  bindings (`Caps` / `SmallCaps`); demonstrated in the default sample document and
+  the C# showcase.
 - **Table cell vertical alignment (`TableCell.vAlign`).** Cells can now align their
   content to the `top` (default), `center`, or `bottom` of the cell box via OOXML
   `w:tcPr/w:vAlign` — previously content always hugged the top regardless of the

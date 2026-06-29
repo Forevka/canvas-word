@@ -47,6 +47,14 @@ export function verticalShift(vertical: CharStyle["verticalAlign"], fontSizePx: 
   return 0;
 }
 
+// --- small caps ------------------------------------------------------------
+/** Small-caps (w:smallCaps): originally-lowercase letters are uppercased and drawn
+ *  at this fraction of the run size. The layout BAKES this scale into a reduced
+ *  fontSizePx on the affected sub-runs, so the painters need no small-caps logic —
+ *  they just draw the (already uppercased) glyphs at the (already reduced) size.
+ *  ~0.78 approximates Word's small-cap height across common fonts. */
+export const SMALL_CAPS_SCALE = 0.78;
+
 // --- text decorations ------------------------------------------------------
 /** Underline / strikethrough thickness (px). */
 export const decorationThickness = (fontSizePx: number): number => Math.max(1, fontSizePx / 14);

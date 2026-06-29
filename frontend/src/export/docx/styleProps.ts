@@ -29,6 +29,9 @@ export function runPropsXml(s: CharStyle): string {
   if (family) children.push(el("w:rFonts", { "w:ascii": family, "w:hAnsi": family, "w:cs": family }));
   children.push(el("w:b", { "w:val": s.bold ? "1" : "0" }));
   children.push(el("w:i", { "w:val": s.italic ? "1" : "0" }));
+  // w:caps / w:smallCaps precede w:strike in the CT_RPr schema sequence.
+  if (s.caps) children.push(el("w:caps", { "w:val": "1" }));
+  if (s.smallCaps) children.push(el("w:smallCaps", { "w:val": "1" }));
   if (s.strikethrough) children.push(el("w:strike", { "w:val": "1" }));
   if (s.hidden) children.push(el("w:vanish", { "w:val": "1" })); // preserved hidden text
   children.push(el("w:color", { "w:val": hex(s.color) }));
@@ -100,6 +103,8 @@ export function partialRPrXml(c: Partial<CharStyle>): string {
   }
   if (c.bold !== undefined) out.push(el("w:b", { "w:val": c.bold ? "1" : "0" }));
   if (c.italic !== undefined) out.push(el("w:i", { "w:val": c.italic ? "1" : "0" }));
+  if (c.caps !== undefined) out.push(el("w:caps", { "w:val": c.caps ? "1" : "0" }));
+  if (c.smallCaps !== undefined) out.push(el("w:smallCaps", { "w:val": c.smallCaps ? "1" : "0" }));
   if (c.strikethrough !== undefined) out.push(el("w:strike", { "w:val": c.strikethrough ? "1" : "0" }));
   if (c.color) out.push(el("w:color", { "w:val": hex(c.color) }));
   if (c.fontSizePx !== undefined) {

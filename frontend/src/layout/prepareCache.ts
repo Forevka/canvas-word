@@ -15,10 +15,11 @@ import {
   type RichInlineItem,
 } from "@chenglou/pretext/rich-inline";
 import { clearAnalysisCaches, isCJK, setAnalysisLocale } from "@chenglou/pretext/analysis";
-import type { Paragraph, Run } from "@cw/shared";
+import type { CharStyle, Paragraph, Run } from "@cw/shared";
 import { charStyleToFont, measureTextWidth } from "./metrics";
 import { firstFamilyToken, MATH_FONT_FAMILY } from "../fonts/clones";
 import { equationBox } from "./math/equationLayout";
+import { SMALL_CAPS_SCALE } from "../paint/paintStyle";
 
 // ---------------------------------------------------------------------------
 // CJK tuning. The fallback family + analyzer locale are RE-ASSERTED by the engine
@@ -158,11 +159,82 @@ function toItems(runs: Run[]): RichInlineItem[] {
   });
 }
 
-/** Prepare an arbitrary run list AND return the (CJK-split) run list it was
+// ---------------------------------------------------------------------------
+// Case transforms (w:caps / w:smallCaps). Both render letters UPPERCASED; the
+// transform is applied to throwaway DISPLAY runs the layout measures and paints,
+// never to the model. It is offset-transparent: the per-code-point uppercase only
+// substitutes forms whose UTF-16 length is unchanged, so the concatenated text
+// length — and therefore every downstream offset/itemIndex/cluster mapping — is
+// preserved (mirrors scriptSplitRuns). The baked runs drop the caps/smallCaps
+// flags so a second pass (e.g. tab pieces) is a clean no-op.
+
+const r2 = (n: number): number => Math.round(n * 100) / 100;
+
+/** Length-preserving uppercase of ONE code point: the uppercased form only when it
+ *  occupies the same number of UTF-16 units (keeps offsets 1:1); else the original
+ *  (rare expanding cases like ß→SS, ﬀ ligatures stay as authored). */
+function upperCp(cp: string): string {
+  const up = cp.toUpperCase();
+  return up.length === cp.length ? up : cp;
+}
+
+/** A lowercase letter small-caps should shrink — uppercasing changes it without
+ *  changing its UTF-16 length. */
+function isSmallCapped(cp: string): boolean {
+  const up = cp.toUpperCase();
+  return up.length === cp.length && up !== cp;
+}
+
+/** Bake w:caps / w:smallCaps into display runs. caps: uppercase every letter at full
+ *  size. smallCaps (takes precedence): uppercase every letter, but split the
+ *  originally-lowercase letters into reduced-size sub-runs so the painters draw them
+ *  smaller with no small-caps-specific code. No-op when no run carries either flag. */
+export function applyCaseTransforms(runs: Run[]): Run[] {
+  let any = false;
+  for (const r of runs) {
+    if ((r.style.caps || r.style.smallCaps) && !r.style.equation) {
+      any = true;
+      break;
+    }
+  }
+  if (!any) return runs;
+
+  const out: Run[] = [];
+  for (const run of runs) {
+    const { caps, smallCaps } = run.style;
+    if ((!caps && !smallCaps) || run.style.equation || run.text.length === 0) {
+      out.push(run);
+      continue;
+    }
+    const baseStyle: CharStyle = { ...run.style, caps: undefined, smallCaps: undefined };
+    if (!smallCaps) {
+      out.push({ text: [...run.text].map(upperCp).join(""), style: baseStyle });
+      continue;
+    }
+    const reducedStyle: CharStyle = { ...baseStyle, fontSizePx: r2(run.style.fontSizePx * SMALL_CAPS_SCALE) };
+    let buf = "";
+    let bufReduced: boolean | null = null;
+    const flush = (): void => {
+      if (buf.length === 0) return;
+      out.push({ text: buf, style: bufReduced ? reducedStyle : baseStyle });
+      buf = "";
+    };
+    for (const cp of run.text) {
+      const reduced = isSmallCapped(cp);
+      if (bufReduced !== null && reduced !== bufReduced) flush();
+      bufReduced = reduced;
+      buf += reduced ? upperCp(cp) : cp;
+    }
+    flush();
+  }
+  return out;
+}
+
+/** Prepare an arbitrary run list AND return the (case- + CJK-split) run list it was
  *  prepared from. Callers that map pretext itemIndex/offsets back to runs MUST use
  *  the returned `runs` (not the originals) — splitting changes the item count. */
 export function prepareRunSegment(runs: Run[]): { prepared: PreparedRichInline; runs: Run[] } {
-  const split = scriptSplitRuns(runs);
+  const split = scriptSplitRuns(applyCaseTransforms(runs));
   return { prepared: prepareRichInline(toItems(split)), runs: split };
 }
 

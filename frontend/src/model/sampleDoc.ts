@@ -345,6 +345,14 @@ export function sampleDoc(): Document {
       run("a blue double", { underline: true, underlineStyle: "double", underlineColor: "#1a73e8" }),
       run(" — each round-trips through Word's w:u (style + color)."),
     ]),
+    // Case transforms (w:caps / w:smallCaps): the model text stays as typed; only the
+    // rendered glyphs are uppercased (small caps additionally shrinks the lowercase ones).
+    para([
+      run("Case transforms: "),
+      run("all caps", { caps: true }), run(" (w:caps) and "),
+      run("Small Caps", { smallCaps: true }), run(" (w:smallCaps) — both render UPPERCASED, "),
+      run("while the underlying text stays exactly as authored."),
+    ], { spaceBeforePx: 4 }),
 
     ccHeading,
     ccPara,

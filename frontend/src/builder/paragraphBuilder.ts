@@ -176,6 +176,18 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     return on ? this.applyChar({ hidden: true }) : this.clearChar("hidden");
   }
 
+  /** All-caps display (OOXML w:caps): every letter renders UPPERCASED while the
+   *  model text stays as authored (offset-transparent). Common on headings. */
+  caps(on = true): this {
+    return on ? this.applyChar({ caps: true }) : this.clearChar("caps");
+  }
+
+  /** Small-capitals display (OOXML w:smallCaps): letters render uppercased, with the
+   *  originally-lowercase ones drawn smaller. Takes precedence over caps(). */
+  smallCaps(on = true): this {
+    return on ? this.applyChar({ smallCaps: true }) : this.clearChar("smallCaps");
+  }
+
   /** Force this run's text to a right-to-left embedding (OOXML w:rtl), regardless
    *  of its characters. For the paragraph's base direction use .direction("rtl"). */
   rtl(on = true): this {

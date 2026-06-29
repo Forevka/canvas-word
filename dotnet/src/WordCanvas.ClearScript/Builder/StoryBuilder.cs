@@ -208,6 +208,10 @@ public sealed class ParagraphBuilder
     public ParagraphBuilder Subscript(bool on = true) { _js.InvokeMethod("subscript", on); return this; }
     public ParagraphBuilder LetterSpacing(double px) { _js.InvokeMethod("letterSpacing", px); return this; }
     public ParagraphBuilder Hidden(bool on = true) { _js.InvokeMethod("hidden", on); return this; }
+    /// <summary>All-caps display (OOXML w:caps): every letter renders uppercased; model text is unchanged.</summary>
+    public ParagraphBuilder Caps(bool on = true) { _js.InvokeMethod("caps", on); return this; }
+    /// <summary>Small-capitals display (OOXML w:smallCaps): uppercased letters with the originally-lowercase ones drawn smaller. Takes precedence over Caps.</summary>
+    public ParagraphBuilder SmallCaps(bool on = true) { _js.InvokeMethod("smallCaps", on); return this; }
     /// <summary>Force this run's text to a right-to-left embedding (OOXML w:rtl).</summary>
     public ParagraphBuilder Rtl(bool on = true) { _js.InvokeMethod("rtl", on); return this; }
 

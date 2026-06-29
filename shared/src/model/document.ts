@@ -79,6 +79,18 @@ export interface CharStyle {
    *  text reorders correctly without this flag). `| undefined` so a patch can
    *  remove it. */
   rtl?: boolean | undefined;
+  /** All-caps display (OOXML w:caps). The model text stays as authored; the layout
+   *  and painters render every letter UPPERCASED (offset-transparent — caret and
+   *  measurement see the transformed glyphs). Common on headings/styles. `| undefined`
+   *  so a patch can clear it. Mutually reinforced by `smallCaps` (which also
+   *  uppercases, but shrinks the originally-lowercase letters). */
+  caps?: boolean | undefined;
+  /** Small-capitals display (OOXML w:smallCaps). Letters render UPPERCASED, but the
+   *  ones that were lowercase in the source are drawn at a reduced size (Word's small
+   *  caps). Like `caps`, the model text is untouched and the transform is
+   *  offset-transparent. Takes precedence over `caps` when both are set. `| undefined`
+   *  so a patch can clear it. */
+  smallCaps?: boolean | undefined;
 }
 
 /** Structured document tag (Word content control) properties — a direct
