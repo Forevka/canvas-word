@@ -28,6 +28,7 @@ import type {
   TableCell,
   TabLeader,
   TabStop,
+  UnderlineStyle,
 } from "@cw/shared";
 import type { NamedStyle, Stylesheet } from "@cw/shared";
 import type { ListDefinition, ListLevel, ListNumberFormat } from "@cw/shared";
@@ -988,6 +989,30 @@ function mapCharStyle(props: IRRunProps): CharStyle {
   return style;
 }
 
+/** Fold the full OOXML w:u/@w:val vocabulary onto the small set the model paints.
+ *  Heavy/long variants collapse onto their base; "single"/"words"/unknown ⇒
+ *  undefined (a plain solid underline — the model's default). */
+const UNDERLINE_STYLE_MAP: Record<string, UnderlineStyle> = {
+  double: "double",
+  thick: "thick",
+  dotted: "dotted",
+  dottedHeavy: "dotted",
+  dash: "dash",
+  dashedHeavy: "dash",
+  dashLong: "dash",
+  dashLongHeavy: "dash",
+  dotDash: "dotDash",
+  dashDotHeavy: "dotDash",
+  dotDotDash: "dotDotDash",
+  dashDotDotHeavy: "dotDotDash",
+  wave: "wave",
+  wavyHeavy: "wave",
+  wavyDouble: "wave",
+};
+function mapUnderlineStyle(raw: string): UnderlineStyle | undefined {
+  return UNDERLINE_STYLE_MAP[raw];
+}
+
 /** Shared run-property mapping for full CharStyle and partial style-gallery patches. */
 function applyRunProps(style: Partial<CharStyle>, props: IRRunProps): void {
   if (props.fontAscii) style.fontFamily = `${props.fontAscii}, serif`;
@@ -995,6 +1020,11 @@ function applyRunProps(style: Partial<CharStyle>, props: IRRunProps): void {
   if (props.bold !== undefined) style.bold = props.bold;
   if (props.italic !== undefined) style.italic = props.italic;
   if (props.underline !== undefined) style.underline = props.underline;
+  if (props.underline) {
+    const us = props.underlineStyle ? mapUnderlineStyle(props.underlineStyle) : undefined;
+    if (us) style.underlineStyle = us;
+    if (props.underlineColor && props.underlineColor !== "auto") style.underlineColor = `#${props.underlineColor.toLowerCase()}`;
+  }
   if (props.strikethrough !== undefined) style.strikethrough = props.strikethrough;
   if (props.color && props.color !== "auto") style.color = `#${props.color.toLowerCase()}`;
   if (props.highlight) {

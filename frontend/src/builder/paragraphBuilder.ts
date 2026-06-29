@@ -8,7 +8,7 @@
 // text() in this scope — "make this paragraph bold" is the dominant authoring
 // intent. Mixed formatting within a paragraph uses text(t, { …patch }).
 
-import type { Block, CharStyle, Document, FieldSpec, IfOp, NamedStyle, PageNumFmt, ParaStyle, Paragraph, Run, SdtProps, TableStyle, TabStop } from "@cw/shared";
+import type { Block, CharStyle, Document, FieldSpec, IfOp, NamedStyle, PageNumFmt, ParaStyle, Paragraph, Run, SdtProps, TableStyle, TabStop, UnderlineStyle } from "@cw/shared";
 import { buildInstruction, evaluateField, styleById, textOfRuns } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import type { BandOptions, DocumentBuilder, ListDefinitionSpec, PageSetup, SectionBreakOptions } from "./documentBuilder";
@@ -107,8 +107,14 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     return this.applyChar({ italic: on });
   }
 
-  underline(on = true): this {
-    return this.applyChar({ underline: on });
+  /** Underline the paragraph's runs. `opts.style` selects the line style
+   *  (double/dotted/dash/dotDash/dotDotDash/wave/thick; default a plain single
+   *  line); `opts.color` paints a colored rule (CSS hex), else it follows the text. */
+  underline(on = true, opts?: { style?: UnderlineStyle; color?: string }): this {
+    const patch: Partial<CharStyle> = { underline: on };
+    if (on && opts?.style) patch.underlineStyle = opts.style;
+    if (on && opts?.color) patch.underlineColor = opts.color;
+    return this.applyChar(patch);
   }
 
   strikethrough(on = true): this {

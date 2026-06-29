@@ -29,6 +29,19 @@ describe("decodeRunProps", () => {
     expect(decodeRunProps(rPr(`<w:u w:val="single"/>`)).underline).toBe(true);
   });
 
+  it("captures the underline line style (but not a plain 'single')", () => {
+    expect(decodeRunProps(rPr(`<w:u w:val="double"/>`)).underlineStyle).toBe("double");
+    expect(decodeRunProps(rPr(`<w:u w:val="wavyHeavy"/>`)).underlineStyle).toBe("wavyHeavy");
+    expect(decodeRunProps(rPr(`<w:u w:val="single"/>`)).underlineStyle).toBeUndefined();
+    expect(decodeRunProps(rPr(`<w:u w:val="none"/>`)).underlineStyle).toBeUndefined();
+  });
+
+  it("captures underline color and theme color", () => {
+    const p = decodeRunProps(rPr(`<w:u w:val="dash" w:color="FF0000" w:themeColor="accent1"/>`));
+    expect(p.underlineColor).toBe("FF0000");
+    expect(p.underlineColorTheme).toBe("accent1");
+  });
+
   it("captures color hex and theme color", () => {
     const p = decodeRunProps(rPr(`<w:color w:val="FF0000" w:themeColor="accent1"/>`));
     expect(p.color).toBe("FF0000");

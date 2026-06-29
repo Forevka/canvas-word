@@ -126,6 +126,8 @@ export function styleEq(a: CharStyle, b: CharStyle): boolean {
     a.bold === b.bold &&
     a.italic === b.italic &&
     a.underline === b.underline &&
+    a.underlineStyle === b.underlineStyle &&
+    a.underlineColor === b.underlineColor &&
     a.strikethrough === b.strikethrough &&
     a.color === b.color &&
     !!a.hidden === !!b.hidden && // hidden runs must never merge with visible ones

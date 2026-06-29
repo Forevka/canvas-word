@@ -18,6 +18,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CT_TcPr`; an explicit `top` normalizes to absent). Authorable via the builder
   (`CellSpec.vAlign` / `CellOptions.vAlign`) and the mirrored C# bindings
   (`CellVAlign` enum); demonstrated in the default sample document and the C# showcase.
+- **Underline style & color (`CharStyle.underlineStyle` + `CharStyle.underlineColor`).**
+  Underlines now carry their OOXML line style (`w:u/@w:val` — `double`, `thick`, `dotted`,
+  `dash`, `dotDash`, `dotDotDash`, `wave`) and an optional color (`w:u/@w:color`, incl.
+  theme colors resolved at import). Previously `w:u` round-tripped as a boolean and always
+  re-exported as `w:val="single"`, painting only a solid line. Import parses the real
+  `w:val` (folding Word's heavy/long variants onto the nearest base style) and resolves a
+  themed underline color through `theme1.xml`; export emits the true `w:val` + color; both
+  the canvas renderer and PDF painter draw double/dotted/dashed/dot-dash/thick/wave rules
+  and honor the underline color (hyperlink affordances still paint a plain rule in the link
+  color). Authorable from the builder (`.underline(true, { style, color })`) and the C#
+  bindings (`Underline(on, style, color)` / `CharStyle.UnderlineStyle`/`UnderlineColor`),
+  demonstrated in the default showcase. Runs without a style/color serialize and paint
+  exactly as before — no drift.
 - **Table width & alignment (`TableBlock.preferredWidth` + `TableBlock.align`).** Fixed
   tables can now be narrower than the page and positioned within it, instead of always
   spanning the full content width (the only previous escape was AutoFit to Contents).

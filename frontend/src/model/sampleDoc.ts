@@ -284,6 +284,18 @@ export function sampleDoc(): Document {
       run("highlight", { highlightColor: "#fff3a3" }), run(", "), run("x", {}), run("2", { verticalAlign: "super", fontSizePx: 11 }),
       run(", and a "), run("hyperlink", { link: "https://forevka.dev", color: "#0b57d0", underline: true }), run("."),
     ]),
+    // Underline styles + colors (w:u val + color) — double/dotted/dashed/wave/thick.
+    para([
+      run("Underlines carry a "), run("style", { italic: true }), run(" and an optional "), run("color", { italic: true }), run(": "),
+      run("double", { underline: true, underlineStyle: "double" }), run(", "),
+      run("dotted", { underline: true, underlineStyle: "dotted" }), run(", "),
+      run("dashed", { underline: true, underlineStyle: "dash" }), run(", "),
+      run("dot-dash", { underline: true, underlineStyle: "dotDash" }), run(", "),
+      run("thick", { underline: true, underlineStyle: "thick" }), run(", "),
+      run("a red wavy", { underline: true, underlineStyle: "wave", underlineColor: "#d93025" }), run(", and "),
+      run("a blue double", { underline: true, underlineStyle: "double", underlineColor: "#1a73e8" }),
+      run(" — each round-trips through Word's w:u (style + color)."),
+    ]),
 
     ccHeading,
     ccPara,

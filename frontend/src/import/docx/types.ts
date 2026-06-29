@@ -97,6 +97,13 @@ export interface IRRunProps {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  /** Raw w:u/@w:val ("single", "double", "dotted", "dash", "wave", …) when the
+   *  underline is on and not a plain single line. */
+  underlineStyle?: string;
+  /** Raw w:u/@w:color: hex without '#' ("FF0000") or "auto". */
+  underlineColor?: string;
+  /** w:u/@w:themeColor — theme color slot for the underline ("accent1", …). */
+  underlineColorTheme?: string;
   strikethrough?: boolean;
   /** Raw w:color value: hex without '#' ("FF0000") or "auto". */
   color?: string;

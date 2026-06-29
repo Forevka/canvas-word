@@ -71,6 +71,18 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
         .Text(", and a ")
         .Text("hyperlink", new CharStyle { Link = "https://forevka.dev", Color = "#0b57d0", Underline = true })
         .Text("."))
+    // Underline styles + colors (w:u val + color) — double/dotted/dashed/wave/thick.
+    .Paragraph(p => p
+        .Text("Underlines carry a ").Text("style", new CharStyle { Italic = true })
+        .Text(" and an optional ").Text("color", new CharStyle { Italic = true }).Text(": ")
+        .Text("double", new CharStyle { Underline = true, UnderlineStyle = "double" }).Text(", ")
+        .Text("dotted", new CharStyle { Underline = true, UnderlineStyle = "dotted" }).Text(", ")
+        .Text("dashed", new CharStyle { Underline = true, UnderlineStyle = "dash" }).Text(", ")
+        .Text("dot-dash", new CharStyle { Underline = true, UnderlineStyle = "dotDash" }).Text(", ")
+        .Text("thick", new CharStyle { Underline = true, UnderlineStyle = "thick" }).Text(", ")
+        .Text("a red wavy", new CharStyle { Underline = true, UnderlineStyle = "wave", UnderlineColor = "#d93025" }).Text(", and ")
+        .Text("a blue double", new CharStyle { Underline = true, UnderlineStyle = "double", UnderlineColor = "#1a73e8" })
+        .Text(" — each round-trips through Word's w:u (style + color)."))
 
     // ---- Content controls ----
     .Paragraph("Content controls", p => p.WithStyle("Heading1"))
