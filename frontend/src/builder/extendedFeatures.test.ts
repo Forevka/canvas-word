@@ -60,6 +60,13 @@ describe("writing direction + paragraph flags", () => {
     expect(para(doc.blocks[0]).style.outlineLevel).toBe(8);
   });
 
+  it("contextualSpacing() sets the ParaStyle flag (and clears with false)", () => {
+    const on = DocumentBuilder.create().paragraph("v").contextualSpacing().build();
+    expect(para(on.blocks[0]).style.contextualSpacing).toBe(true);
+    const off = DocumentBuilder.create().paragraph("v").contextualSpacing(false).build();
+    expect(para(off.blocks[0]).style.contextualSpacing).toBe(false);
+  });
+
   it("tabStops are stored sorted by position", () => {
     const doc = DocumentBuilder.create()
       .paragraph("x")

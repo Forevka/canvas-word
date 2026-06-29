@@ -21,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   via the builder (`paragraph(...).borders({...}).shading("#rrggbb")`) and the C# bindings
   (`ParagraphBuilder.Borders(ParaBorders.All(...))` / `.Shading(...)`), and demonstrated in
   the default showcase document.
+- **Paragraph contextual spacing (`ParaStyle.contextualSpacing`).** Paragraphs flagged
+  with OOXML `w:contextualSpacing` now drop their before/after spacing against an
+  adjacent paragraph of the **same style** — Word's default for list styles, so
+  same-style runs (list items, verse stanzas) sit tight while the run's outer edges
+  keep their spacing. Previously the flag was ignored, so imported lists over-spaced.
+  Parsed in `props.ts`, baked through the style cascade onto the concrete paragraph,
+  re-emitted on export both as direct paragraph formatting (`paraCoreXml`) and as a
+  paragraph-style delta (`partialPPrXml`); the layout engine suppresses the spacing
+  between adjacent same-`namedStyle` paragraphs. Authorable via the builder
+  (`ParagraphBuilder.contextualSpacing()`) and the mirrored C# bindings
+  (`ParagraphBuilder.ContextualSpacing` / `ParaStylePatch.ContextualSpacing`);
+  demonstrated in the default sample document and the C# showcase.
 - **Table cell vertical alignment (`TableCell.vAlign`).** Cells can now align their
   content to the `top` (default), `center`, or `bottom` of the cell box via OOXML
   `w:tcPr/w:vAlign` — previously content always hugged the top regardless of the

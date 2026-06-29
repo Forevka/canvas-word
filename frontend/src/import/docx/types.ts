@@ -203,6 +203,8 @@ export interface IRParaProps {
   keepWithNext?: boolean;
   /** w:keepLines — maps onto ParaStyle.keepLinesTogether. */
   keepLinesTogether?: boolean;
+  /** w:contextualSpacing — maps onto ParaStyle.contextualSpacing. */
+  contextualSpacing?: boolean;
   /** w:pPr/w:tabs — raw tab stops (pos in twips; val/leader raw OOXML names). */
   tabStops?: { posTwips: number; val?: string; leader?: string }[];
   /** w:pageBreakBefore — this paragraph starts a new page. */

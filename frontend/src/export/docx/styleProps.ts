@@ -71,6 +71,8 @@ export function paraCoreXml(style: ParaStyle): string {
   if (style.indentFirstLinePx > 0) ind["w:firstLine"] = pxToTwips(style.indentFirstLinePx);
   else if (style.indentFirstLinePx < 0) ind["w:hanging"] = pxToTwips(-style.indentFirstLinePx);
   if (Object.keys(ind).length > 0) c.push(el("w:ind", ind));
+  // w:contextualSpacing follows w:ind in the CT_PPr schema sequence.
+  if (style.contextualSpacing) c.push(el("w:contextualSpacing"));
   c.push(el("w:jc", { "w:val": JC[style.align] }));
   if (style.tabStops && style.tabStops.length > 0) {
     const tabs = style.tabStops
@@ -144,6 +146,7 @@ export function partialPPrXml(p: Partial<ParaStyle>): string {
     else ind["w:hanging"] = pxToTwips(-p.indentFirstLinePx);
   }
   if (Object.keys(ind).length > 0) out.push(el("w:ind", ind));
+  if (p.contextualSpacing) out.push(el("w:contextualSpacing"));
   if (p.keepWithNext) out.push(el("w:keepNext"));
   if (p.keepLinesTogether) out.push(el("w:keepLines"));
   if (p.borders) out.push(paraBordersXml(p.borders));

@@ -1096,6 +1096,7 @@ function mapParaPatch(props: IRParaProps): Partial<ParaStyle> {
     out.indentFirstLinePx = round2(twipsToPx(props.indentFirstLineTwips));
   if (props.keepWithNext) out.keepWithNext = true;
   if (props.keepLinesTogether) out.keepLinesTogether = true;
+  if (props.contextualSpacing) out.contextualSpacing = true;
   if (props.tabStops) out.tabStops = mapTabStops(props.tabStops);
   const pb = paraBordersFromIR(props.borders);
   if (pb) out.borders = pb;
@@ -1192,6 +1193,7 @@ function mapParaStyle(props: IRParaProps): ParaStyle {
     style.indentFirstLinePx = round2(twipsToPx(props.indentFirstLineTwips));
   if (props.keepWithNext) style.keepWithNext = true;
   if (props.keepLinesTogether) style.keepLinesTogether = true;
+  if (props.contextualSpacing) style.contextualSpacing = true;
   if (props.tabStops) style.tabStops = mapTabStops(props.tabStops);
   if (props.pageBreakBefore) style.pageBreakBefore = true;
   if (props.outlineLevel !== undefined) style.outlineLevel = props.outlineLevel;

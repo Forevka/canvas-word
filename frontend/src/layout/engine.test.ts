@@ -196,6 +196,49 @@ describe("engine — pagination", () => {
   });
 });
 
+// --- contextual spacing (w:contextualSpacing) -----------------------------
+
+describe("engine — contextual spacing", () => {
+  // Pure line advance (no before/after spacing) — the reference each case compares to.
+  const lineAdvance = (): number => {
+    const plain = [para("a"), para("b")];
+    const t = layout(doc(plain));
+    return placedOf(t, plain[1]!.id)!.pb.y - placedOf(t, plain[0]!.id)!.pb.y;
+  };
+
+  it("collapses inter-paragraph spacing across a same-style run", () => {
+    const adv = lineAdvance();
+    const opts = { spaceBeforePx: 20, spaceAfterPx: 20, contextualSpacing: true };
+    const a = para("a", opts), b = para("b", opts), c = para("c", opts);
+    const tree = layout(doc([a, b, c]));
+    const ya = placedOf(tree, a.id)!.pb.y;
+    const yb = placedOf(tree, b.id)!.pb.y;
+    const yc = placedOf(tree, c.id)!.pb.y;
+    // Same style + contextualSpacing → all inter-paragraph spacing collapses, so
+    // each paragraph advances by exactly one line height — as if unspaced.
+    expect(yb - ya).toBe(adv);
+    expect(yc - yb).toBe(adv);
+  });
+
+  it("keeps inter-paragraph spacing without the flag (control)", () => {
+    const opts = { spaceBeforePx: 20, spaceAfterPx: 20 };
+    const a = para("a", opts), b = para("b", opts);
+    const tree = layout(doc([a, b]));
+    const gap = placedOf(tree, b.id)!.pb.y - placedOf(tree, a.id)!.pb.y;
+    // No flag: a.after (20) + b.before (20) on top of the line advance.
+    expect(gap).toBe(lineAdvance() + 40);
+  });
+
+  it("does not collapse against a paragraph of a different style", () => {
+    const a = para("a", { spaceAfterPx: 20, contextualSpacing: true, namedStyle: "Verse" });
+    const b = para("b", { spaceBeforePx: 20, contextualSpacing: true, namedStyle: "Body" });
+    const tree = layout(doc([a, b]));
+    const gap = placedOf(tree, b.id)!.pb.y - placedOf(tree, a.id)!.pb.y;
+    // Different namedStyle → suppression doesn't apply; both spacings remain.
+    expect(gap).toBe(lineAdvance() + 40);
+  });
+});
+
 // --- table grid sizing (pure) ---------------------------------------------
 
 describe("engine — grid column count", () => {

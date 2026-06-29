@@ -127,6 +127,12 @@ export interface ParaStyle {
   /** Never split this paragraph across pages/columns (docx w:keepLines) — it
    *  moves whole instead; only a paragraph taller than a page still splits. */
   keepLinesTogether?: boolean;
+  /** Suppress before/after spacing between this paragraph and an adjacent
+   *  paragraph of the SAME style (docx w:contextualSpacing) — Word's default for
+   *  list styles, so same-style runs (list items, verse) sit tight while the
+   *  run's outer edges keep their spacing. Resolved through the Stylesheet
+   *  cascade like `align`. Absent = normal spacing on every edge. */
+  contextualSpacing?: boolean;
   /** This paragraph starts a new page (Ctrl+Enter; docx w:pageBreakBefore). */
   pageBreakBefore?: boolean;
   /** List membership (docx w:numPr): definition ref + level 0..8.

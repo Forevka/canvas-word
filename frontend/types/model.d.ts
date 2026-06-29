@@ -60,6 +60,9 @@ export interface ParaStyle {
   indentRightPx?: number;
   keepWithNext?: boolean;
   keepLinesTogether?: boolean;
+  /** Suppress before/after spacing between adjacent same-style paragraphs (docx
+   *  w:contextualSpacing) — Word's default for list styles. */
+  contextualSpacing?: boolean;
   /** This paragraph starts a new page. */
   pageBreakBefore?: boolean;
   /** List membership: definition id + level 0..8. */

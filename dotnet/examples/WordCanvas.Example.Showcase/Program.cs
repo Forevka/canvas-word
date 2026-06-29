@@ -184,6 +184,13 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
               .Indent(new IndentOptions { Left = 24, Right = 24 })
               .Shading("#fff3e0")
               .Borders(new ParaBorders { Left = new CellBorder { Color = "#e8710a", WidthPx = 3, Style = BorderStyle.Double } }))
+    // ---- Contextual spacing: same-style runs sit tight (w:contextualSpacing) ----
+    .Paragraph("Contextual spacing — each verse line below carries 12px after-spacing, yet w:contextualSpacing collapses the gaps between adjacent same-style paragraphs (Word's list-style default); only the run's outer edges keep their space:",
+        p => p.Spacing(new SpacingOptions { Before = 10, After = 4 }))
+    .Paragraph("Roses are red,", p => p.Spacing(new SpacingOptions { After = 12 }).ContextualSpacing())
+    .Paragraph("violets are blue,", p => p.Spacing(new SpacingOptions { After = 12 }).ContextualSpacing())
+    .Paragraph("contextual spacing keeps these lines tight,", p => p.Spacing(new SpacingOptions { After = 12 }).ContextualSpacing())
+    .Paragraph("the way Word's list paragraphs do.", p => p.Spacing(new SpacingOptions { After = 12 }).ContextualSpacing())
 
     // ---- International text (CJK) ----
     .Paragraph("International text — CJK", p => p.WithStyle("Heading1"))

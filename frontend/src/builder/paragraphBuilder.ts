@@ -380,6 +380,13 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     return this;
   }
 
+  /** Suppress before/after spacing between this paragraph and an adjacent
+   *  same-style paragraph (docx w:contextualSpacing) — Word's list-style default. */
+  contextualSpacing(on = true): this {
+    this.para.style.contextualSpacing = on;
+    return this;
+  }
+
   /** Base writing direction (OOXML w:bidi). "rtl" lays the paragraph out
    *  right-to-left and mirrors start/end alignment + indents. */
   direction(dir: "ltr" | "rtl"): this {

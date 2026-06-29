@@ -159,6 +159,12 @@ describe("decodeParaProps", () => {
     expect(p.pageBreakBefore).toBe(true);
   });
 
+  it("decodes w:contextualSpacing (and its explicit off)", () => {
+    expect(decode(`<w:contextualSpacing/>`).props.contextualSpacing).toBe(true);
+    expect(decode(`<w:contextualSpacing w:val="0"/>`).props.contextualSpacing).toBe(false);
+    expect(decode(``).props.contextualSpacing).toBeUndefined();
+  });
+
   it("collects tab stops, dropping 'clear' and 'bar' entries", () => {
     const p = decode(
       `<w:tabs>` +

@@ -1817,14 +1817,23 @@ function layoutDocument(
     // Page break = fresh PAGE (even from column 2); column break = next column.
     if (block.style.pageBreakBefore === true && (page.blocks.length > 0 || colIdx > 0)) hardPage();
     else if (block.style.columnBreakBefore === true && colHasContent()) newPage();
-    y += block.style.spaceBeforePx;
+    // Contextual spacing (docx w:contextualSpacing): a flagged paragraph drops its
+    // before/after spacing against an adjacent SAME-STYLE paragraph (Word's
+    // list-style default), so a run of same-style paragraphs sits tight while the
+    // run's outer edges keep their spacing.
+    const cs = block.style.contextualSpacing === true;
+    const prevM = measured[bi - 1];
+    const nextM = measured[bi + 1];
+    const suppressBefore = cs && prevM?.kind === "para" && prevM.block.style.namedStyle === block.style.namedStyle;
+    const suppressAfter = cs && nextM?.kind === "para" && nextM.block.style.namedStyle === block.style.namedStyle;
+    if (!suppressBefore) y += block.style.spaceBeforePx;
     if (y >= bottomY() && colHasContent()) newPage();
 
     // Float-affected paragraphs re-break per line with float-shrunk widths —
     // bypassing the precomputed full-width lines (and widow/orphan rules).
     if (floatsActiveAt(y)) {
       placeParagraphFloating(block);
-      y += block.style.spaceAfterPx;
+      if (!suppressAfter) y += block.style.spaceAfterPx;
       continue;
     }
 
@@ -1895,7 +1904,7 @@ function layoutDocument(
     if (bd?.top) y += bd.top.widthPx;
     placeParagraph(block, lines);
     if (bd?.bottom) y += bd.bottom.widthPx;
-    y += block.style.spaceAfterPx;
+    if (!suppressAfter) y += block.style.spaceAfterPx;
   }
 
   // Footnote areas: each page's notes stack at the bottom under a separator
