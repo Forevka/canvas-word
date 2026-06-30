@@ -70,14 +70,16 @@ const hasCjk = (text: string): boolean => {
 
 /** True when the code point is in any Arabic Unicode block.
  *  Covers Basic Arabic (0600–06FF), Arabic Supplement (0750–077F),
- *  Arabic Extended-A (08A0–08FF), Arabic Presentation Forms-A (FB50–FDFF),
- *  and Arabic Presentation Forms-B (FE70–FEFF). */
+ *  Arabic Extended-B (0870–089F), Arabic Extended-A (08A0–08FF),
+ *  Arabic Presentation Forms-A (FB50–FDFF), and
+ *  Arabic Presentation Forms-B (FE70–FEFF). */
 function isArabic(ch: string): boolean {
   const cp = ch.codePointAt(0);
   if (cp === undefined) return false;
   return (
     (cp >= 0x0600 && cp <= 0x06ff) ||
     (cp >= 0x0750 && cp <= 0x077f) ||
+    (cp >= 0x0870 && cp <= 0x089f) ||
     (cp >= 0x08a0 && cp <= 0x08ff) ||
     (cp >= 0xfb50 && cp <= 0xfdff) ||
     (cp >= 0xfe70 && cp <= 0xfeff)

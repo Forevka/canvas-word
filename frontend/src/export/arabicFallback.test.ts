@@ -63,7 +63,7 @@ describe("bundled Arabic fallback face", () => {
     }
   });
 
-  it("Arabic face applies contextual shaping: glyph count matches input code points", () => {
+  it("Arabic face shapes the run to non-zero advance with at least one glyph", () => {
     const { font } = resolveFont(ARABIC_FONT_FAMILY, false, false);
     // fontkit.layout() applies GSUB (joining forms); the advance width must be > 0
     // for the test string (i.e. the shaped run doesn't collapse to zero-width tofu).
