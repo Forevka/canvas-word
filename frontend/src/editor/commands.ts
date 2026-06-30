@@ -1680,6 +1680,33 @@ export function editInlineEquationCmd(blockId: string, offset: number, equation:
   };
 }
 
+/** Decode a symbol-font hex code point (OOXML w:sym/@w:char, usually a Private-Use
+ *  value like "F0E0") to its glyph, so the inserted run paints in the symbol face.
+ *  Falls back to the replacement char for an unparseable code so insertion never
+ *  throws — mirrors the importer's symbolGlyph. */
+function decodeSymbolGlyph(charHex: string): string {
+  const cp = parseInt(charHex, 16);
+  return Number.isFinite(cp) && cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : "�";
+}
+
+/** Insert a symbol-font glyph at the caret (OOXML w:sym): a run whose `text` is the
+ *  decoded glyph, `fontFamily` is the symbol font (so it paints correctly without
+ *  consulting the marker), and `symbol` carries the font + upper-case hex code point
+ *  for a faithful docx round-trip. Mirrors insertInlineEquation / insertFieldCmd. */
+export function insertSymbolCmd(font: string, charHex: string): Command {
+  return (state) => {
+    const base = withSelectionDeleted(state);
+    if (!base) return null;
+    const baseStyle = fieldBaseStyle(state.doc, base.at.blockId, base.at.offset);
+    if (!baseStyle) return null;
+    const char = charHex.toUpperCase();
+    const glyph = decodeSymbolGlyph(char);
+    const runs: Run[] = [{ text: glyph, style: { ...baseStyle, fontFamily: `${font}, sans-serif`, symbol: { font, char } } }];
+    base.ops.push({ type: "insertRuns", at: base.at, runs });
+    return tr(base.ops, caret(base.at.blockId, base.at.offset + glyph.length), "command");
+  };
+}
+
 /** Delete an inline equation (the single U+FFFC run at char index `offset`). */
 export function removeInlineEquationCmd(blockId: string, offset: number): Command {
   return (state) => {

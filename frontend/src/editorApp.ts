@@ -23,6 +23,7 @@ import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
 import { showDevPanel, type DevPanelHandle } from "./ui/devPanel";
 import { showPageLayout, type PageLayoutHandle } from "./ui/pageLayout";
 import { showEquationEditor } from "./ui/equationEditor";
+import { showSymbolPicker } from "./ui/symbolPicker";
 import { loadCollabDocument, loadCollabReview, publishDocument } from "./sync/collab";
 import { attachMentionAutocomplete } from "./review/mentions";
 import { showBusy } from "./app/busyOverlay";
@@ -36,6 +37,7 @@ import {
   insertImageInCell,
   insertEquation,
   insertInlineEquation,
+  insertSymbolCmd,
   insertTable,
   insertTableRowCmd,
   insertTableColumnCmd,
@@ -1575,6 +1577,16 @@ if (toolbar) {
       },
     });
   }, "font-family:Georgia,serif;font-style:italic;");
+
+  group(insert, "Symbols");
+  btn(ICONS.symbol, "Insert symbol or special character", () => {
+    showSymbolPicker({
+      onPick: (font, char) => {
+        editor.dispatch(insertSymbolCmd(font, char));
+        editor.focus();
+      },
+    });
+  });
 
   group(insert, "Links");
   const insLinkBtn = btn(ICONS.link, "Insert/remove hyperlink", () => {});
