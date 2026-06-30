@@ -397,7 +397,8 @@ export function showPageLayout(opts: PageLayoutOptions): PageLayoutHandle {
     const ln: LineNumbering = {};
     const countBy = Math.max(1, Math.floor(Number(lnCountBy.value) || 1));
     if (countBy !== 1) ln.countBy = countBy;
-    const start = Math.max(0, Math.floor(Number(lnStart.value) || 1));
+    const rawStart = Number(lnStart.value);
+    const start = Number.isFinite(rawStart) ? Math.max(0, Math.floor(rawStart)) : 1;
     if (start !== 1) ln.start = start;
     const restart = lnRestartSel.value as NonNullable<LineNumbering["restart"]>;
     if (restart !== "newPage") ln.restart = restart;
@@ -407,7 +408,7 @@ export function showPageLayout(opts: PageLayoutOptions): PageLayoutHandle {
   };
   lnDetail.style.display = lineNumCheck.input.checked ? "" : "none";
   lineNumCheck.input.addEventListener("change", syncLineNumbering);
-  for (const c of [lnCountBy, lnStart, lnRestartSel]) c.addEventListener("input", syncLineNumbering);
+  for (const c of [lnCountBy, lnStart]) c.addEventListener("input", syncLineNumbering);
   lnRestartSel.addEventListener("change", syncLineNumbering);
 
   layoutPane.append(

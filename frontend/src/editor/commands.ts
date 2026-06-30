@@ -582,6 +582,7 @@ export function insertSectionBreak(): Command {
     if (geo.footerDistancePx !== null) props.footerDistancePx = geo.footerDistancePx;
     if (geo.pageColorHex !== null) props.pageColorHex = geo.pageColorHex;
     if (geo.pageBorders !== null) props.pageBorders = geo.pageBorders;
+    if (geo.lineNumbering !== null) props.lineNumbering = { ...geo.lineNumbering };
     const newBlockId = freshBlockId();
     // The tail must NOT clone an existing sectionBreak (splitting the break
     // paragraph itself would otherwise duplicate the section).

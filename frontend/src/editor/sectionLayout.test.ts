@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Document, Paragraph, SectionProps } from "@cw/shared";
 import { applyOp } from "@cw/shared";
-import { applyPageSetup, pageSetupAt } from "./commands";
+import { applyPageSetup, insertSectionBreak, pageSetupAt } from "./commands";
 import type { Command, EditorState } from "./state";
 
 const SECTION: SectionProps = { pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } };
@@ -87,5 +87,15 @@ describe("applyPageSetup — section start + line numbering on a mid-document br
     const brk0 = (back.blocks[0] as Paragraph).style.sectionBreak!;
     expect(brk0.type).toBe("nextPage");
     expect(brk0.props.lineNumbering).toBeUndefined();
+  });
+
+  it("insertSectionBreak carries the section's line numbering onto the new break", () => {
+    const a = para("body");
+    const lined: SectionProps = { ...SECTION, lineNumbering: { countBy: 2 } };
+    const state: EditorState = { doc: { section: lined, blocks: [a] }, selection: { anchor: { blockId: a.id, offset: 1 }, focus: { blockId: a.id, offset: 1 } } };
+    const res = run(state, insertSectionBreak());
+    const brk = (res.doc.blocks[0] as Paragraph).style.sectionBreak!;
+    expect(brk.type).toBe("nextPage");
+    expect(brk.props.lineNumbering).toEqual({ countBy: 2 });
   });
 });
