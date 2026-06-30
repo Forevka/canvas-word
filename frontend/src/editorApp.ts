@@ -1,4 +1,4 @@
-import { bakeReview, colorForId, configureIds, deserializeDocument, freshId, reconstruct, serializeDocument, DEFAULT_CHAR_STYLE, DOCX_MIME, PDF_MIME, PX_PER_INCH, ptToPx as sharedPtToPx, pxToPt as sharedPxToPt, type Change, type DocSelection, type Document, type Fragment, type ReviewLayer } from "@cw/shared";
+import { bakeReview, colorForId, configureIds, deserializeDocument, freshId, reconstruct, serializeDocument, DEFAULT_CHAR_STYLE, DOCX_MIME, PDF_MIME, PX_PER_INCH, ptToPx as sharedPtToPx, pxToPt as sharedPxToPt, type Change, type DocSelection, type Document, type Fragment, type ParaStyle, type ReviewLayer } from "@cw/shared";
 import { resolveConfig } from "./config";
 import { emptyParagraphFor } from "./builder/blockFactory";
 import { mediaStore, mediaUrl, registerMediaBytes, rehydrateDocMedia } from "./media/store";
@@ -22,6 +22,7 @@ import { showContextMenu, type MenuEntry } from "./ui/contextMenu";
 import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
 import { showDevPanel, type DevPanelHandle } from "./ui/devPanel";
 import { showPageLayout, type PageLayoutHandle } from "./ui/pageLayout";
+import { showParagraphDialog, type ParagraphDialogHandle } from "./ui/paragraphDialog";
 import { showEquationEditor } from "./ui/equationEditor";
 import { showSymbolPicker, type SymbolPickerHandle } from "./ui/symbolPicker";
 import { showFontDialog } from "./ui/fontDialog";
@@ -266,6 +267,10 @@ let inspectorProbeSink: (probe: InspectorProbe | null) => void = () => {};
 // Close the inspector (it captures the live editor) when the editor is rebuilt on
 // document replacement. Assigned when the panel opens; no-op otherwise.
 let closeDevPanel: () => void = () => {};
+// Close the Paragraph dialog when the editor is rebuilt on document replacement —
+// an orphaned dialog holds stale paragraph state and would dispatch its OK patch
+// into the newly created editor. Assigned when the dialog opens; no-op otherwise.
+let closeParaDialog: () => void = () => {};
 // Ships a locally-authored review op on the collab review channel (assigned by
 // the sync wiring; no-op offline). Forward-declared so editorOpts can reference it.
 let onLocalReviewOp: (env: ReviewOpEnvelope) => void = () => {};
@@ -482,6 +487,7 @@ const goOnlineWithCurrentDoc = async (): Promise<string> => {
 // caches MUST be dropped first — see engine.reset() below.
 const replaceDocument = (next: typeof doc): void => {
   closeDevPanel(); // the inspector captures the outgoing editor — drop it first
+  closeParaDialog(); // ditto for the Paragraph dialog (stale editor reference)
   editor.destroy();
   // Drop the outgoing document's layout caches. The shared engine keys cached
   // lines by (block id, revision, width); the docx importer re-mints ids from i0
@@ -1415,24 +1421,63 @@ if (toolbar) {
     { v: 3, l: "3.0" },
   ];
   let curLineHeight: number | null = null;
+  // Opens the full Paragraph dialog (borders, shading, line-spacing rule, widow
+  // control, vertical alignment, …) seeded from the caret paragraph's style. One OK
+  // = one undo step (the dialog commits a single setParaProps patch).
+  let paraDlg: ParagraphDialogHandle | null = null;
+  teardown.signal.addEventListener("abort", () => paraDlg?.close(), { once: true });
+  const openParagraphDialog = (): void => {
+    const ps = editor.currentParaStyle();
+    if (!ps) return;
+    paraDlg?.close();
+    paraDlg = showParagraphDialog(
+      {
+        borders: ps.borders,
+        shading: ps.shading ?? null,
+        contextualSpacing: ps.contextualSpacing ?? false,
+        lineRule: ps.lineRule ?? "auto",
+        lineHeight: ps.lineHeight ?? 1,
+        lineHeightPx: ps.lineHeightPx ?? 16,
+        widowControl: ps.widowControl ?? true, // Word default is ON
+        textAlignment: ps.textAlignment ?? "baseline",
+        mirrorIndents: ps.mirrorIndents ?? false,
+        suppressLineNumbers: ps.suppressLineNumbers ?? false,
+        adjustRightInd: ps.adjustRightInd ?? false,
+      },
+      {
+        apply: (patch) => {
+          editor.dispatch(setParaProps(patch));
+          editor.focus();
+        },
+      },
+    );
+    // Let replaceDocument() tear this dialog down if the editor is rebuilt while it's open.
+    closeParaDialog = () => { paraDlg?.close(); paraDlg = null; closeParaDialog = () => {}; };
+  };
   const spacingBtn = btn(ICONS.lineSpacing, "Line spacing", () => {}, true);
   spacingBtn.addEventListener("click", () =>
     openPop(
       spacingBtn,
-      menu(
-        SPACINGS.map((s) => ({
+      menu([
+        ...SPACINGS.map((s) => ({
           label: s.l,
           current: curLineHeight !== null && Math.abs(curLineHeight - s.v) < 1e-6,
           onClick: () => {
-            editor.dispatch(setParaProps({ lineHeight: s.v }));
+            // Picking a multiplier clears any fixed rule (lineRule/lineHeightPx aren't
+            // `| undefined` under exactOptionalPropertyTypes; Object.assign sets the
+            // explicit-undefined keys setParaStyle uses to remove them).
+            const patch: Partial<ParaStyle> = { lineHeight: s.v };
+            Object.assign(patch, { lineRule: undefined, lineHeightPx: undefined });
+            editor.dispatch(setParaProps(patch));
             editor.focus();
           },
         })),
-      ),
+        { label: "Line Spacing Options…", onClick: openParagraphDialog },
+      ]),
     ),
   );
-  stub(ICONS.shading + CARET, "Paragraph shading");
-  stub(ICONS.borders + CARET, "Paragraph borders");
+  btn(ICONS.shading, "Paragraph shading", openParagraphDialog, true);
+  btn(ICONS.borders, "Paragraph borders", openParagraphDialog, true);
 
   // ---- Styles (visual gallery) ----
   group(home, "Styles");

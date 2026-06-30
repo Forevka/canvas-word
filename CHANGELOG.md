@@ -62,6 +62,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `setTablePropsAtSelectionCmd`) that reuse the `setTableStructure` / `setRowHeight` ops
   and one new table-level `setTableProps` op. Editor-only — the model, import/export, and
   C# bindings already shipped, so `.docx` round-trips are unchanged.
+- **Paragraph dialog (editor UI) — borders & shading, line-spacing rule, contextual
+  spacing & paragraph flags.** The previously-disabled **Paragraph shading** and
+  **Paragraph borders** ribbon buttons (Home ▸ Paragraph) and a new **Line Spacing
+  Options…** entry in the line-spacing menu now open a draggable Paragraph dialog
+  (`ui/paragraphDialog.ts`) wired to the existing `ParaStyle` fields over the selection
+  (one OK = one undo step, via `setParaProps`). It covers paragraph **borders**
+  (per-edge top/right/bottom/left/between with a color/width/style spec, reusing the
+  table border-picker pattern) + **shading** fill, the line-spacing **rule** (multiple
+  / at-least / exactly → `lineRule` + `lineHeightPx`), **contextual spacing**,
+  **widow/orphan control**, **vertical text alignment** (`textAlignment`
+  top/center/bottom/baseline), **mirror indents**, **suppress line numbers**, and
+  **adjust right indent**. Controls are seeded from the caret paragraph via the new
+  `editor.currentParaStyle()`. Editor-UI only — the model fields and `.docx`
+  round-trip already shipped; no model/import/export or C# change.
 - **Minor run typography & effects (`CharStyle` w:rPr extras).** A grouped set of
   lower-frequency run properties now round-trip and (where visual) paint: double
   strikethrough (`w:dstrike` → `doubleStrikethrough`, two rules), baseline

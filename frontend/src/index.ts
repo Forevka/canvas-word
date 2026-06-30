@@ -9,7 +9,7 @@ import { isCollapsed, colorForId, userDisplayName, freshId, DEFAULT_CHAR_STYLE }
 import type { ResolvedBehavior, ResolvedTheme } from "./config";
 import { ZOOM_STEP } from "./uiConstants";
 import { applyOp, containerBlocks, containerOf, effectiveFractions, locateImage, locateEquation, sliceRuns, type Op } from "@cw/shared";
-import { bandParagraphs, blockById, buildTableGrid, containerListOf, gridOriginOfCell, locateParagraph, normalizeRect, paragraphsOf, styleAtRuns, styleOfCharAt, textOfRuns } from "@cw/shared";
+import { bandParagraphs, blockById, buildTableGrid, containerListOf, gridOriginOfCell, locateParagraph, normalizeRect, paragraphAt, paragraphsOf, styleAtRuns, styleOfCharAt, textOfRuns } from "@cw/shared";
 import type { CellBorders, CellMargin, TableBorders } from "@cw/shared";
 import { createLayoutEngine, type LayoutEngine } from "./layout/engine";
 import {
@@ -256,6 +256,10 @@ export interface Editor {
   align(align: ParaStyle["align"]): void;
   /** Formatting at the caret — drives toolbar control state. */
   currentFormat(): CurrentFormat;
+  /** The caret paragraph's DIRECT style (what setParaProps patches), or null when
+   *  there's no caret. Seeds the Paragraph dialog's controls with the current
+   *  borders/shading/spacing/flags. */
+  currentParaStyle(): ParaStyle | null;
   /** Open the content-control inspector for the active control — the one at the
    *  caret, or the one wrapping the selected image. Returns false when neither is
    *  in a content control. */
@@ -3318,6 +3322,12 @@ export function createEditor(
             ? sdtAtPosition(doc, focus) !== null
             : false,
       };
+    },
+    currentParaStyle(): ParaStyle | null {
+      const focus = selection?.focus;
+      if (!focus) return null;
+      const loc = locateParagraph(doc, focus.blockId);
+      return loc ? paragraphAt(doc, loc).style : null;
     },
     align(align: ParaStyle["align"]): void {
       if (selectedObject) {
