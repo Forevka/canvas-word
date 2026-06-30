@@ -347,6 +347,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The default showcase document gains a **"Mathematics — MathML equations"** section.
 
 ### Fixed
+- **Nested bullet glyphs no longer render as tofu in PDF export.** The default
+  bullet levels are `•`/`◦`/`▪` (`shared/src/model/lists.ts`), but `◦` (U+25E6
+  WHITE BULLET) and `▪` (U+25AA BLACK SMALL SQUARE) are absent from the bundled
+  PDF Latin font subset, so the PDF painter drew `.notdef`/tofu for the nested
+  levels (the on-screen canvas was fine because the browser's system font has the
+  glyphs). The three standard bullets now paint as **vector shapes** (filled disc /
+  hollow ring / filled square) in BOTH the canvas renderer and the PDF painter via a
+  shared `bulletShapeFor` geometry, so they no longer depend on font glyph coverage
+  and look identical on screen and in the export. Numbered and custom-glyph markers
+  still paint as text. (#99)
 - **PAGE / NUMPAGES field inside a table now updates when the table moves pages.**
   Moving a table to a new page (e.g. a `Ctrl+Enter` page break before it) left a
   body PAGE field in one of its cells showing the old page number until an unrelated

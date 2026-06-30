@@ -32,8 +32,9 @@ import {
   runVerticalShift,
   widthScale,
   doubleStrikeOffsets,
+  bulletShapeFor,
 } from "../../paint/paintStyle";
-import type { RunPaint } from "../../paint/paintStyle";
+import type { RunPaint, BulletShape } from "../../paint/paintStyle";
 
 /** Stroke a run's underline into the PDF. "single" keeps the historical filled
  *  rect; richer styles stroke per the shared plan (dashed/dotted approximated with
@@ -183,15 +184,24 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
   const firstLine = block.lines[0];
   if (block.marker && firstLine) {
     const s = block.marker.style;
-    const name = ctx.font(firstFamily(s.fontFamily), !!s.bold, !!s.italic);
-    doc
-      .font(name)
-      .fontSize(s.fontSizePx)
-      .fillColor(s.color as string)
-      .text(block.marker.text, block.marker.x, block.y + firstLine.y + firstLine.ascent, {
-        lineBreak: false,
-        baseline: "alphabetic",
-      });
+    const markerBaseline = block.y + firstLine.y + firstLine.ascent;
+    // The three default bullets render as vector shapes so ◦/▪ (absent from the
+    // bundled Latin font subset) never draw as .notdef/tofu; everything else
+    // (numbers, custom glyphs) paints as text. Mirrors the canvas renderer.
+    const shape = bulletShapeFor(block.marker.text, s.fontSizePx, block.marker.x, markerBaseline);
+    if (shape) {
+      drawBulletShape(doc, shape, s.color as string);
+    } else {
+      const name = ctx.font(firstFamily(s.fontFamily), !!s.bold, !!s.italic);
+      doc
+        .font(name)
+        .fontSize(s.fontSizePx)
+        .fillColor(s.color as string)
+        .text(block.marker.text, block.marker.x, markerBaseline, {
+          lineBreak: false,
+          baseline: "alphabetic",
+        });
+    }
   }
 
   // TOC decoration — page number + dot leader on its line.
@@ -352,6 +362,19 @@ function paintLine(ctx: PaintCtx, block: PlacedBlock, line: LineBox, baselineY: 
 
 function placeholderBox(ctx: PaintCtx, x: number, y: number, w: number, h: number): void {
   ctx.doc.rect(x, y, w, h).fill(IMAGE_PLACEHOLDER_COLOR);
+}
+
+/** Draw a default-bullet marker as a vector shape (disc / ring / square), the PDF
+ *  counterpart of the canvas renderer's paintBulletShape — both consume the same
+ *  {@link BulletShape} so a bullet looks identical on screen and in the export. */
+function drawBulletShape(doc: PDFKit.PDFDocument, shape: BulletShape, color: string): void {
+  if (shape.kind === "square") {
+    doc.rect(shape.x, shape.y, shape.size, shape.size).fill(color);
+  } else if (shape.kind === "ring") {
+    doc.save().lineWidth(shape.lineWidth).circle(shape.cx, shape.cy, shape.r).stroke(color).restore();
+  } else {
+    doc.circle(shape.cx, shape.cy, shape.r).fill(color);
+  }
 }
 
 interface OpenableImageDoc {
