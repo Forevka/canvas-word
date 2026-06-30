@@ -22,12 +22,12 @@ import { equationBox } from "./math/equationLayout";
 import { SMALL_CAPS_SCALE } from "../paint/paintStyle";
 
 // ---------------------------------------------------------------------------
-// CJK tuning. The fallback family + analyzer locale are RE-ASSERTED by the engine
-// at the top of each layout() pass (a synchronous, await-free span) from its
-// per-instance config — exactly like setActiveFontRegistry. So concurrent editors /
-// export jobs each see their own CJK config with no shared-mutable-state race and no
-// lock: the values are set and read within the same atomic layout span, never across
-// an `await`.
+// Script-fallback tuning (CJK + Arabic). The fallback families are RE-ASSERTED by
+// the engine at the top of each layout() pass (a synchronous, await-free span) from
+// its per-instance config — exactly like setActiveFontRegistry. So concurrent
+// editors / export jobs each see their own config with no shared-mutable-state race
+// and no lock: the values are set and read within the same atomic layout span, never
+// across an `await`.
 
 // The CJK fallback family active for the CURRENT layout pass (null = leave CJK runs
 // untouched, so the browser's system fallback renders them on screen).
@@ -37,6 +37,16 @@ let activeCjkFallback: string | null = null;
  *  synchronously at layout() top; `""`/whitespace is treated as "no fallback". */
 export function setActiveCjkFallback(family: string | null | undefined): void {
   activeCjkFallback = family && family.trim().length > 0 ? family.trim() : null;
+}
+
+// The Arabic fallback family active for the CURRENT layout pass (null = leave Arabic
+// runs untouched, so the browser's system fallback renders them on screen).
+let activeArabicFallback: string | null = null;
+
+/** Set the Arabic fallback family for the upcoming layout pass. The engine calls
+ *  this synchronously at layout() top; `""`/whitespace is treated as "no fallback". */
+export function setActiveArabicFallback(family: string | null | undefined): void {
+  activeArabicFallback = family && family.trim().length > 0 ? family.trim() : null;
 }
 
 // pretext's analyzer locale is PROCESS-GLOBAL inside the library (it can't be made
@@ -58,32 +68,73 @@ const hasCjk = (text: string): boolean => {
   return false;
 };
 
-/** Split runs at CJK ↔ non-CJK boundaries, retargeting the CJK pieces to the
- *  configured fallback family. Offset-transparent: the concatenated text and its
- *  length are unchanged, so every downstream offset/itemIndex mapping still holds.
- *  No-op when no fallback font is configured or a run carries no CJK. */
+/** True when the code point is in any Arabic Unicode block.
+ *  Covers Basic Arabic (0600–06FF), Arabic Supplement (0750–077F),
+ *  Arabic Extended-B (0870–089F), Arabic Extended-A (08A0–08FF),
+ *  Arabic Presentation Forms-A (FB50–FDFF), and
+ *  Arabic Presentation Forms-B (FE70–FEFF). */
+function isArabic(ch: string): boolean {
+  const cp = ch.codePointAt(0);
+  if (cp === undefined) return false;
+  return (
+    (cp >= 0x0600 && cp <= 0x06ff) ||
+    (cp >= 0x0750 && cp <= 0x077f) ||
+    (cp >= 0x0870 && cp <= 0x089f) ||
+    (cp >= 0x08a0 && cp <= 0x08ff) ||
+    (cp >= 0xfb50 && cp <= 0xfdff) ||
+    (cp >= 0xfe70 && cp <= 0xfeff)
+  );
+}
+
+const hasArabic = (text: string): boolean => {
+  for (const ch of text) if (isArabic(ch)) return true;
+  return false;
+};
+
+/** Script tag for a character: "arabic" | "cjk" | "other". Used to split runs at
+ *  script boundaries when both a CJK and an Arabic fallback are configured. */
+type ScriptTag = "arabic" | "cjk" | "other";
+
+function scriptOf(ch: string, cjkFam: string | null, arabicFam: string | null): ScriptTag {
+  if (arabicFam && isArabic(ch)) return "arabic";
+  if (cjkFam && isCJK(ch)) return "cjk";
+  return "other";
+}
+
+/** Split runs at CJK ↔ Arabic ↔ other script boundaries, retargeting each script
+ *  piece to its configured fallback family. Offset-transparent: the concatenated text
+ *  and its length are unchanged, so every downstream offset/itemIndex mapping still
+ *  holds. No-op when no fallback fonts are configured or a run carries no CJK/Arabic. */
 export function scriptSplitRuns(runs: Run[]): Run[] {
-  const fam = activeCjkFallback;
-  if (!fam) return runs;
+  const cjkFam = activeCjkFallback;
+  const arabicFam = activeArabicFallback;
+  if (!cjkFam && !arabicFam) return runs;
+
   const out: Run[] = [];
   let changed = false;
   for (const run of runs) {
-    if (run.text.length === 0 || firstFamilyToken(run.style.fontFamily) === fam || !hasCjk(run.text)) {
+    const runFamily = firstFamilyToken(run.style.fontFamily);
+    const needsCjk = cjkFam && runFamily !== cjkFam && hasCjk(run.text);
+    const needsArabic = arabicFam && runFamily !== arabicFam && hasArabic(run.text);
+    if (run.text.length === 0 || (!needsCjk && !needsArabic)) {
       out.push(run);
       continue;
     }
     changed = true;
     let buf = "";
-    let bufCjk: boolean | null = null;
+    let bufScript: ScriptTag | null = null;
     const flush = (): void => {
       if (buf.length === 0) return;
-      out.push(bufCjk ? { text: buf, style: { ...run.style, fontFamily: fam } } : { text: buf, style: run.style });
+      let fontFamily = run.style.fontFamily;
+      if (bufScript === "arabic" && arabicFam) fontFamily = arabicFam;
+      else if (bufScript === "cjk" && cjkFam) fontFamily = cjkFam;
+      out.push({ text: buf, style: fontFamily === run.style.fontFamily ? run.style : { ...run.style, fontFamily } });
       buf = "";
     };
     for (const ch of run.text) {
-      const cjk = isCJK(ch);
-      if (bufCjk !== null && cjk !== bufCjk) flush();
-      bufCjk = cjk;
+      const s = scriptOf(ch, cjkFam, arabicFam);
+      if (bufScript !== null && s !== bufScript) flush();
+      bufScript = s;
       buf += ch;
     }
     flush();

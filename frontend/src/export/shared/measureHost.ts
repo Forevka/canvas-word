@@ -14,7 +14,7 @@
 import { setMeasureContext } from "../../layout/metrics";
 import { FontkitMeasureContext } from "./fontkitContext";
 import { builtinsRegistered, registerFont } from "./fontRegistry";
-import { CJK_FONT_FILE, FONT_FILES, MATH_FONT_FILE } from "../../fonts/clones";
+import { ARABIC_FONT_FILE, CJK_FONT_FILE, FONT_FILES, MATH_FONT_FILE } from "../../fonts/clones";
 
 async function readFontBytes(file: string): Promise<Uint8Array> {
   const url = new URL(`./fonts/${file}`, import.meta.url);
@@ -57,6 +57,14 @@ export function installMeasureHost(): Promise<void> {
         // CJK font missing — CJK text falls back to a Latin clone (tofu), but the
         // rest of the document is unaffected. Surfaced so a broken bundle is visible.
         console.warn(`[wordcanvas] CJK font ${CJK_FONT_FILE} failed to load; Chinese text will not render correctly`, e);
+      }
+      // The bundled Arabic fallback (Noto Sans Arabic) — registered so script-split
+      // Arabic runs measure + embed identically, with correct joining-form shaping
+      // via fontkit's GSUB, instead of rendering as .notdef/tofu.
+      try {
+        registerFont(ARABIC_FONT_FILE, await readFontBytes(ARABIC_FONT_FILE));
+      } catch (e) {
+        console.warn(`[wordcanvas] Arabic font ${ARABIC_FONT_FILE} failed to load; Arabic text will not render correctly`, e);
       }
     }
     // Route pretext + metrics through the fontkit shim over the bundled clones.

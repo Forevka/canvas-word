@@ -10,7 +10,7 @@
 import type { EditorTypography, Stylesheet } from "@cw/shared";
 import { makeDefaultStylesheet } from "@cw/shared";
 import type { FontsConfig, ResolvedFontsConfig } from "./fonts/customRegistry";
-import { CJK_FONT_FAMILY } from "./fonts/clones";
+import { ARABIC_FONT_FAMILY, CJK_FONT_FAMILY } from "./fonts/clones";
 import {
   ACCENT_BLUE,
   COLUMN_SEPARATOR_COLOR,
@@ -82,9 +82,9 @@ export interface EditorTheme {
   ruler?: RulerTheme;
 }
 
-/** East-Asian / CJK tuning. Line-breaking between CJK characters and the kinsoku
- *  rules work out of the box (pretext); these only tune the edge cases and the
- *  font used for CJK glyphs. */
+/** East-Asian / CJK + Arabic tuning. Line-breaking between CJK characters and the
+ *  kinsoku rules work out of the box (pretext); these only tune the edge cases and
+ *  the fonts used for non-Latin scripts. */
 export interface CjkConfig {
   /** BCP-47 locale passed to pretext's analyzer (e.g. "ja", "ko", "zh"). Tunes
    *  locale-specific breaking such as Korean word-keep. Absent = language-neutral.
@@ -98,6 +98,11 @@ export interface CjkConfig {
    *  to `""` to opt out and keep the browser's on-screen system fallback (CJK then
    *  renders as tofu in PDF export). */
   fallbackFont?: string;
+  /** Family name of the font to use for Arabic runs. Defaults to the bundled Arabic
+   *  fallback (`NotoSansArabic`), so Arabic text measures, renders (with correct
+   *  contextual joining forms via GSUB), and embeds with a known face out of the box.
+   *  Set to a registered custom font's family to override, or `""` to opt out. */
+  arabicFallbackFont?: string;
 }
 
 /** Editor behavior tuning — every field optional. Pass to `WordCanvas({ behavior })`. */
@@ -254,12 +259,16 @@ export function resolveConfig(input: EditorConfigInput = {}): ResolvedConfig {
   };
 }
 
-/** Resolve the public partial `cjk` option, defaulting the fallback font to the
- *  bundled CJK face so Chinese text renders out of the box. An explicit `""`
- *  fallbackFont is preserved (the opt-out: keeps system fallback on screen). */
+/** Resolve the public partial `cjk` option, defaulting the CJK and Arabic fallback
+ *  fonts to their bundled faces so non-Latin text renders out of the box. An explicit
+ *  `""` is preserved (the opt-out: keeps the browser's system fallback on screen). */
 export function resolveCjk(c?: CjkConfig): CjkConfig {
   const base = c ? stripUndefined(c) : {};
-  return { ...base, fallbackFont: base.fallbackFont ?? CJK_FONT_FAMILY };
+  return {
+    ...base,
+    fallbackFont: base.fallbackFont ?? CJK_FONT_FAMILY,
+    arabicFallbackFont: base.arabicFallbackFont ?? ARABIC_FONT_FAMILY,
+  };
 }
 
 /** Drop keys whose value is `undefined` so they don't clobber a default during

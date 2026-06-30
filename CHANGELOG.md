@@ -24,6 +24,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Latin-only output is byte-identical (the ASCII fast path is unchanged). Closes #104.
 
 ### Added
+- **Arabic text in PDF export (issue #105).** Arabic text now renders with correct
+  contextual joining forms (initial/medial/final/isolated letter shapes) and
+  right-to-left visual order in PDF export instead of `.notdef`/tofu. A **Noto Sans
+  Arabic** Regular face (~240 KB, SIL OFL 1.1) is bundled alongside the existing
+  CJK (Noto Sans SC) fallback; `scriptSplitRuns` in `layout/prepareCache.ts` now
+  splits runs at Arabic ↔ non-Arabic script boundaries (Unicode ranges U+0600–06FF,
+  0750–077F, 08A0–08FF, FB50–FDFF, FE70–FEFF) and retargets those sub-runs to the
+  Arabic face. fontkit's `layout()` applies GSUB contextual substitution (joining)
+  when measuring and when pdfkit embeds the glyphs, so the export is both shaped and
+  metrically consistent with the on-screen canvas render. The fallback is on by
+  default (mirrors the CJK default-on approach); pass `cjk: { arabicFallbackFont: "" }`
+  to opt out. The sampleDoc already exercises Arabic RTL paragraphs. Deferred:
+  Hebrew and other RTL scripts (Syriac, Thaana) do not yet have a bundled fallback
+  face; they will render correctly on systems that have a matching font registered
+  with the browser, but will be tofu in PDF export until a corresponding subset is
+  added.
+
+
 - **Vertical cell text (`w:textDirection` `tbRl`/`btLr`) — real 90° rotation.** Cells
   whose text direction is `tbRl` (top→bottom, columns right→left) or `btLr` (bottom→top,
   columns left→right) now render rotated instead of flowing horizontally. The layout
