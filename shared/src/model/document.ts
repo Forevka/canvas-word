@@ -9,6 +9,10 @@ import type { MathEquation } from "./math";
  *  `underlineStyle` ⇒ "single" (a plain solid line — the historical behavior). */
 export type UnderlineStyle = "single" | "double" | "thick" | "dotted" | "dash" | "dotDash" | "dotDotDash" | "wave";
 
+/** Emphasis-mark style drawn above (or below, for `underDot`) each character
+ *  (OOXML w:em). Round-tripped; painting is optional (degrades to no mark). */
+export type EmphasisMark = "dot" | "comma" | "circle" | "underDot";
+
 export interface CharStyle {
   fontFamily: string;
   /** OOXML `w:rFonts/@w:cs` — complex-script (bidi) typeface, used by Word for
@@ -92,6 +96,44 @@ export interface CharStyle {
    *  text reorders correctly without this flag). `| undefined` so a patch can
    *  remove it. */
   rtl?: boolean | undefined;
+  /** Double strikethrough (OOXML w:dstrike) — two parallel lines through the run,
+   *  independent of the single `strikethrough`. Painted (canvas + PDF). `| undefined`
+   *  so a patch can remove it. */
+  doubleStrikethrough?: boolean | undefined;
+  /** Baseline raise/lower in px (OOXML w:position, signed): POSITIVE raises the run
+   *  above the baseline, negative lowers it. Distinct from `verticalAlign` (sub/super
+   *  also shrinks the font) — `positionPx` only shifts, keeping the font size. Paint
+   *  adds it on top of any sub/super shift. Absent = on the baseline. */
+  positionPx?: number | undefined;
+  /** Kerning threshold in px (OOXML w:kern/@w:val, a min font size): kerning applies
+   *  at/above this size. Preserved for round-trip; no separate paint (the platform
+   *  text shaper already kerns). Absent = no explicit threshold. */
+  kerningMinPx?: number | undefined;
+  /** Character width scaling as a percentage (OOXML w:w/@w:val, 1..600; 100 = normal):
+   *  horizontally stretches (>100) or condenses (<100) each glyph WITHOUT changing its
+   *  height. Affects measurement and paint. Absent = 100 (no scaling). */
+  widthScalePct?: number | undefined;
+  /** Emphasis marks over each character (OOXML w:em). Round-tripped; paint is optional
+   *  (degrades to no mark). Absent = none. */
+  emphasisMark?: EmphasisMark | undefined;
+  /** Outlined text effect (OOXML w:outline) — glyphs drawn as outlines. Round-tripped;
+   *  degrades to normal text in paint. `| undefined` so a patch can remove it. */
+  outline?: boolean | undefined;
+  /** Drop-shadow text effect (OOXML w:shadow). Round-tripped; degrades to normal text. */
+  shadow?: boolean | undefined;
+  /** Embossed text effect (OOXML w:emboss). Round-tripped; degrades to normal text. */
+  emboss?: boolean | undefined;
+  /** Imprinted/engraved text effect (OOXML w:imprint). Round-tripped; degrades to
+   *  normal text. */
+  imprint?: boolean | undefined;
+  /** Run border — a box drawn around the run (OOXML w:bdr). Reuses the table
+   *  `CellBorder` value type (color + width + line style). Round-tripped; paint is
+   *  optional (degrades to no box). `| undefined` so a patch can remove it. */
+  runBorder?: CellBorder | undefined;
+  /** Fit-text target width in px (OOXML w:fitText/@w:val): Word compresses/expands the
+   *  run to occupy exactly this width. Round-tripped; degrades to natural width in
+   *  layout/paint. Absent = natural width. */
+  fitTextPx?: number | undefined;
   /** All-caps display (OOXML w:caps). The model text stays as authored; the layout
    *  and painters render every letter UPPERCASED (offset-transparent — caret and
    *  measurement see the transformed glyphs). Common on headings/styles. `| undefined`

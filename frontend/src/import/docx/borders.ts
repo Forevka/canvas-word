@@ -136,6 +136,12 @@ export function paraBordersFromIR(b: IRParaBorders | undefined): ParaBorders | u
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+/** Map a raw run border (w:bdr) to a model CellBorder, reusing the same px/style
+ *  collapse as table/paragraph edges. Returns undefined for nil/none. */
+export function runBorderFromIR(raw: IRRawBorder | undefined): CellBorder | undefined {
+  return toCellBorder(raw);
+}
+
 function toCellBorder(raw: IRRawBorder | undefined): CellBorder | undefined {
   if (!raw || raw.val === "nil" || raw.val === "none") return undefined;
   // w:sz is eighths of a point: px = sz/8 pt × 96/72 = sz/6. Hairlines clamp up

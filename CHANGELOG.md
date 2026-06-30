@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Minor run typography & effects (`CharStyle` w:rPr extras).** A grouped set of
+  lower-frequency run properties now round-trip and (where visual) paint: double
+  strikethrough (`w:dstrike` → `doubleStrikethrough`, two rules), baseline
+  raise/lower (`w:position` → `positionPx`, distinct from sub/superscript — it shifts
+  without shrinking the font), character width scaling (`w:w` → `widthScalePct`, which
+  horizontally stretches/condenses glyphs and is reserved in layout so neighbours don't
+  overlap), a kerning threshold (`w:kern` → `kerningMinPx`), emphasis marks (`w:em` →
+  `emphasisMark`), the `outline`/`shadow`/`emboss`/`imprint` text effects, a run border
+  (`w:bdr` → `runBorder`, reusing the `CellBorder` value type), and a fitText width
+  (`w:fitText` → `fitTextPx`). Import parses each, export re-emits them, and `styleEq`
+  compares them so styled runs never merge with plain ones. Double strike, position, and
+  width scaling paint in both the canvas renderer and PDF export; the remaining effects
+  degrade gracefully (preserved, painted as normal text) per the OOXML grouping.
+  Authorable from the builder (`paragraph(...).effects({ … })`) and the C# bindings
+  (`ParagraphBuilder.Effects(RunEffectsOptions)` + the `EmphasisMark` enum), and
+  demonstrated in the default sample document and the C# showcase. Runs without any of
+  these fields serialize and paint exactly as before — no drift.
 - **Minor paragraph properties (`ParaStyle.widowControl` / `suppressLineNumbers` /
   `textAlignment` / `mirrorIndents` / `adjustRightInd`).** Five lower-frequency `w:pPr`
   children now parse, export, and round-trip through `.docx` where before they were

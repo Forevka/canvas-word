@@ -8,7 +8,7 @@
 // text() in this scope — "make this paragraph bold" is the dominant authoring
 // intent. Mixed formatting within a paragraph uses text(t, { …patch }).
 
-import type { Block, CharStyle, Document, FieldSpec, IfOp, NamedStyle, PageNumFmt, ParaBorders, ParaStyle, Paragraph, Run, SdtProps, TableStyle, TabStop, UnderlineStyle } from "@cw/shared";
+import type { Block, CellBorder, CharStyle, Document, EmphasisMark, FieldSpec, IfOp, NamedStyle, PageNumFmt, ParaBorders, ParaStyle, Paragraph, Run, SdtProps, TableStyle, TabStop, UnderlineStyle } from "@cw/shared";
 import { buildInstruction, evaluateField, styleById, textOfRuns } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import type { BandOptions, DocumentBuilder, ListDefinitionSpec, PageSetup, SectionBreakOptions } from "./documentBuilder";
@@ -125,6 +125,52 @@ export class ParagraphBuilder<P extends StoryBuilder> {
 
   strikethrough(on = true): this {
     return this.applyChar({ strikethrough: on });
+  }
+
+  /** Minor run typography & effects (OOXML w:rPr extras): double strikethrough
+   *  (w:dstrike), baseline raise/lower in px (w:position; +up/−down), character
+   *  width scaling as a percentage (w:w; 100 = normal), a kerning threshold in px
+   *  (w:kern), emphasis marks (w:em), the outline/shadow/emboss/imprint text
+   *  effects, a run border (w:bdr), and a fitText target width in px (w:fitText).
+   *  Additive — only the provided fields are applied. */
+  effects(opts: {
+    doubleStrikethrough?: boolean;
+    positionPx?: number;
+    widthScalePct?: number;
+    kerningMinPx?: number;
+    emphasisMark?: EmphasisMark;
+    outline?: boolean;
+    shadow?: boolean;
+    emboss?: boolean;
+    imprint?: boolean;
+    border?: CellBorder;
+    fitTextPx?: number;
+  }): this {
+    const patch: Partial<CharStyle> = {};
+    if (opts.doubleStrikethrough !== undefined) patch.doubleStrikethrough = opts.doubleStrikethrough;
+    if (opts.positionPx !== undefined) patch.positionPx = opts.positionPx;
+    if (opts.widthScalePct !== undefined) {
+      // OOXML w:w (and the import/export round-trip) only preserve a positive
+      // percentage in 1..600; reject out-of-range values rather than author state
+      // the .docx pipeline would silently drop.
+      if (opts.widthScalePct <= 0 || opts.widthScalePct > 600) {
+        throw new RangeError("effects: widthScalePct must be in the range 1..600");
+      }
+      patch.widthScalePct = opts.widthScalePct;
+    }
+    if (opts.kerningMinPx !== undefined) patch.kerningMinPx = opts.kerningMinPx;
+    if (opts.emphasisMark !== undefined) patch.emphasisMark = opts.emphasisMark;
+    if (opts.outline !== undefined) patch.outline = opts.outline;
+    if (opts.shadow !== undefined) patch.shadow = opts.shadow;
+    if (opts.emboss !== undefined) patch.emboss = opts.emboss;
+    if (opts.imprint !== undefined) patch.imprint = opts.imprint;
+    if (opts.border !== undefined) patch.runBorder = opts.border;
+    if (opts.fitTextPx !== undefined) {
+      // w:fitText is a positive width; a non-positive value would not round-trip.
+      if (opts.fitTextPx <= 0) throw new RangeError("effects: fitTextPx must be greater than 0");
+      patch.fitTextPx = opts.fitTextPx;
+    }
+    return this.applyChar(patch);
   }
 
   color(cssColor: string): this {

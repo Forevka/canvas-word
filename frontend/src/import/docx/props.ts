@@ -78,6 +78,45 @@ export function decodeRunProps(rPr: XmlNode): IRRunProps {
   if (smallCaps !== undefined) props.smallCaps = smallCaps;
   const rtl = onOff(el(rPr, "w:rtl"));
   if (rtl !== undefined) props.rtl = rtl; // keep an explicit w:rtl="0" (clears inherited RTL)
+  // Minor run typography & effects (w:rPr extras): double strike, baseline position,
+  // kerning, character-width scaling, emphasis marks, the boolean text effects, a run
+  // border, and fitText. Decode-only; mapToModel converts units / collapses borders.
+  const dstrike = onOff(el(rPr, "w:dstrike"));
+  if (dstrike !== undefined) props.doubleStrikethrough = dstrike;
+  const position = numAttr(el(rPr, "w:position"), "w:val");
+  if (position !== undefined) props.positionHalfPoints = position;
+  const kern = numAttr(el(rPr, "w:kern"), "w:val");
+  if (kern !== undefined) props.kerningHalfPoints = kern;
+  const w = el(rPr, "w:w");
+  if (w) {
+    // w:w/@w:val is a percentage; older producers append "%". Parse the number out.
+    const raw = attr(w, "w:val");
+    if (raw !== undefined) {
+      const pct = Number(raw.replace("%", ""));
+      if (Number.isFinite(pct) && pct > 0) props.widthScalePct = pct;
+    }
+  }
+  const em = val(rPr, "w:em");
+  if (em && em !== "none") props.emphasisMark = em;
+  const outline = onOff(el(rPr, "w:outline"));
+  if (outline !== undefined) props.outline = outline;
+  const shadow = onOff(el(rPr, "w:shadow"));
+  if (shadow !== undefined) props.shadow = shadow;
+  const emboss = onOff(el(rPr, "w:emboss"));
+  if (emboss !== undefined) props.emboss = emboss;
+  const imprint = onOff(el(rPr, "w:imprint"));
+  if (imprint !== undefined) props.imprint = imprint;
+  const bdr = el(rPr, "w:bdr");
+  if (bdr) {
+    const raw: IRRawBorder = { val: attr(bdr, "w:val") ?? "single" };
+    const sz = numAttr(bdr, "w:sz");
+    if (sz !== undefined) raw.sizeEighthPt = sz;
+    const color = attr(bdr, "w:color");
+    if (color) raw.color = color;
+    props.runBorder = raw;
+  }
+  const fitText = numAttr(el(rPr, "w:fitText"), "w:val");
+  if (fitText !== undefined) props.fitTextTwips = fitText;
   return props;
 }
 

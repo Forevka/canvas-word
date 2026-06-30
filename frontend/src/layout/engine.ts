@@ -15,6 +15,7 @@ import { formatListNumber, markerText, type ListDefinition, type ListLevel } fro
 import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock, PlacedImage } from "./layoutTree";
 import { PrepareCache, prepareRunSegment, setActiveCjkFallback, applyCjkLocale, type PreparedSegment } from "./prepareCache";
 import { charStyleToFont, fontMetrics, measureTextWidth } from "./metrics";
+import { widthScale } from "../paint/paintStyle";
 import { baseLevelFor, effectiveAlign, hasRtlChars, levelsFor, visualOrder } from "./bidi";
 import { setActiveFontRegistry, type CustomFontRegistry } from "../fonts/customRegistry";
 import { equationBox, EQUATION_DISPLAY_PX } from "./math/equationLayout";
@@ -389,6 +390,10 @@ function breakNextLine(
     maxAscent = Math.max(maxAscent, fm.ascent);
     maxDescent = Math.max(maxDescent, fm.descent);
     maxFontSize = Math.max(maxFontSize, run.style.fontSizePx);
+    // Character width scaling (w:w): pretext measures the natural advance; the run
+    // occupies that × the scale, so reserve the scaled width here and advance by it.
+    // scale === 1 (the common case) leaves occupiedWidth byte-identical.
+    const occupied = f.occupiedWidth * widthScale(run.style);
     if (f.text.length > 0) {
       const m = mapFragmentToRun(run.text, runCursors[f.itemIndex]!, f.text);
       runCursors[f.itemIndex] = m.end;
@@ -399,12 +404,12 @@ function breakNextLine(
         text: f.text,
         style: run.style,
         x,
-        width: f.occupiedWidth,
+        width: occupied,
       };
       if (m.map) frag.offsetMap = m.map;
       frags.push({ frag, hadGap: f.gapBefore > 0, gap: f.gapBefore, spaces: countSpaces(f.text) });
     }
-    x += f.occupiedWidth;
+    x += occupied;
   }
 
   if (maxFontSize === 0) {

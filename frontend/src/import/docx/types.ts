@@ -144,6 +144,28 @@ export interface IRRunProps {
   smallCaps?: boolean;
   /** w:rtl — explicit right-to-left run direction. */
   rtl?: boolean;
+  /** w:dstrike — double strikethrough. */
+  doubleStrikethrough?: boolean;
+  /** w:position/@w:val — signed baseline raise/lower in half-points (+ raises). */
+  positionHalfPoints?: number;
+  /** w:kern/@w:val — kerning min font size in half-points. */
+  kerningHalfPoints?: number;
+  /** w:w/@w:val — character width scaling as a percentage (1..600). */
+  widthScalePct?: number;
+  /** w:em/@w:val — emphasis-mark style ("dot", "comma", "circle", "underDot", "none"). */
+  emphasisMark?: string;
+  /** w:outline — outlined text effect. */
+  outline?: boolean;
+  /** w:shadow — drop-shadow text effect. */
+  shadow?: boolean;
+  /** w:emboss — embossed text effect. */
+  emboss?: boolean;
+  /** w:imprint — imprinted/engraved text effect. */
+  imprint?: boolean;
+  /** w:bdr — raw run border (mapped to a CellBorder in mapToModel). */
+  runBorder?: IRRawBorder;
+  /** w:fitText/@w:val — fit-text target width in twips. */
+  fitTextTwips?: number;
   /** w:sym — a symbol-font glyph: the font name + the hex code point Word stores.
    *  mapToModel sets CharStyle.symbol (+ fontFamily) and the run text to the glyph. */
   symbol?: { font: string; char: string };

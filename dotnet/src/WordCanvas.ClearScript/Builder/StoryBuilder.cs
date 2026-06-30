@@ -199,6 +199,11 @@ public sealed class ParagraphBuilder
         return this;
     }
     public ParagraphBuilder Strikethrough(bool on = true) { _js.InvokeMethod("strikethrough", on); return this; }
+    /// <summary>Minor run typography &amp; effects (OOXML w:rPr extras): double
+    /// strikethrough, baseline raise/lower, character width scaling, kerning
+    /// threshold, emphasis marks, the outline/shadow/emboss/imprint effects, a run
+    /// border, and fitText. Only the set fields are applied.</summary>
+    public ParagraphBuilder Effects(RunEffectsOptions opts) { _js.InvokeMethod("effects", opts.ToJs(_engine)); return this; }
     public ParagraphBuilder Color(string cssColor) { _js.InvokeMethod("color", cssColor); return this; }
     public ParagraphBuilder Highlight(string cssColor) { _js.InvokeMethod("highlight", cssColor); return this; }
     public ParagraphBuilder FontSize(double px) { _js.InvokeMethod("fontSize", px); return this; }

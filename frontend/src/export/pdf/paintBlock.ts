@@ -29,7 +29,9 @@ import {
   underlinePlan,
   doubleUnderlineGap,
   underlineWavePoints,
-  verticalShift,
+  runVerticalShift,
+  widthScale,
+  doubleStrikeOffsets,
 } from "../../paint/paintStyle";
 import type { RunPaint } from "../../paint/paintStyle";
 
@@ -297,7 +299,8 @@ function paintLine(ctx: PaintCtx, block: PlacedBlock, line: LineBox, baselineY: 
     if (frag.text.length === 0) continue;
     const s = frag.style;
     const x = block.x + frag.x;
-    const vShift = verticalShift(s.verticalAlign, s.fontSizePx);
+    // sub/super shift + explicit w:position raise/lower, folded together.
+    const vShift = runVerticalShift(s);
     // Sub/super are measured (and so must paint) at the scaled size.
     const sizePx = s.verticalAlign ? Math.round(s.fontSizePx * SUB_SUPER_SCALE) : s.fontSizePx;
 
@@ -307,6 +310,10 @@ function paintLine(ctx: PaintCtx, block: PlacedBlock, line: LineBox, baselineY: 
 
     const rp = runPaint(s);
     const name = ctx.font(firstFamily(s.fontFamily), !!s.bold, !!s.italic);
+    // Character width scaling (w:w): the fragment box already reserves the scaled
+    // advance, so stretch the glyphs horizontally about the fragment's left edge.
+    const wScale = widthScale(s);
+    if (wScale !== 1) doc.save().scale(wScale, 1, { origin: [x, baselineY + vShift] });
     doc
       .font(name)
       .fontSize(sizePx)
@@ -316,6 +323,7 @@ function paintLine(ctx: PaintCtx, block: PlacedBlock, line: LineBox, baselineY: 
         baseline: "alphabetic",
         wordSpacing: frag.wordSpacingPx ?? 0,
       });
+    if (wScale !== 1) doc.restore();
 
     const th = decorationThickness(s.fontSizePx);
     if (rp.underline) {
@@ -323,6 +331,12 @@ function paintLine(ctx: PaintCtx, block: PlacedBlock, line: LineBox, baselineY: 
     }
     if (rp.strike) {
       doc.rect(x, baselineY + vShift + strikeOffset(s.fontSizePx), frag.width, th).fill(rp.color);
+    }
+    // Double strikethrough (w:dstrike): two rules straddling the single-strike line.
+    if (s.doubleStrikethrough) {
+      for (const off of doubleStrikeOffsets(s.fontSizePx)) {
+        doc.rect(x, baselineY + vShift + off, frag.width, th).fill(rp.color);
+      }
     }
     if (rp.externalLink && s.link) {
       // Clickable annotation over the run's line box.

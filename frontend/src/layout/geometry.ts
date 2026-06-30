@@ -8,6 +8,7 @@
 import type { DocPosition, DocSelection } from "@cw/shared";
 import type { InlineFragment, LayoutTree, LineBox, PlacedBlock, PlacedTableCell } from "./layoutTree";
 import { charStyleToFont } from "./metrics";
+import { widthScale } from "../paint/paintStyle";
 
 export interface CaretRect {
   pageIndex: number;
@@ -191,12 +192,15 @@ function clustersOf(frag: InlineFragment): ClusterInfo {
   ctx2.wordSpacing = `${frag.wordSpacingPx ?? 0}px`;
   const boundaries: number[] = [0];
   const advances: number[] = [0];
+  // Character width scaling (w:w): the painted glyphs are stretched horizontally,
+  // so scale the cluster advances too, keeping caret hit-testing aligned with paint.
+  const scale = widthScale(frag.style);
   for (const seg of graphemeSegmenter.segment(frag.text)) {
     const end = seg.index + seg.segment.length;
     boundaries.push(end);
     // Prefix measurement keeps kerning/ligature effects consistent with the
     // single fillText the paint layer issues for the whole fragment.
-    advances.push(advCtx.measureText(frag.text.slice(0, end)).width);
+    advances.push(advCtx.measureText(frag.text.slice(0, end)).width * scale);
   }
   info = { boundaries, advances };
   clusterCache.set(frag, info);

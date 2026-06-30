@@ -14,6 +14,7 @@ import type {
   CharStyle,
   ColumnEntry,
   DocPosition,
+  EmphasisMark,
   ImageBlock,
   PageBorderEdge,
   PageBorders,
@@ -38,7 +39,7 @@ import type { NamedStyle, Stylesheet } from "@cw/shared";
 import type { ListDefinition, ListLevel, ListNumberFormat } from "@cw/shared";
 import type { TableCond, TableCondProps, TableStyle } from "@cw/shared";
 import { normalizeRuns } from "@cw/shared";
-import { cellBordersFromIR, paraBordersFromIR, resolveCellBorders, tableBordersFromIR, type BorderSources, type CellPosition } from "./borders";
+import { cellBordersFromIR, paraBordersFromIR, resolveCellBorders, runBorderFromIR, tableBordersFromIR, type BorderSources, type CellPosition } from "./borders";
 import type { MediaStore } from "./media";
 import type { NumberingData } from "./numbering";
 import type { ResolvedTableStyle, StyleResolver, StylesData } from "./styles";
@@ -1145,12 +1146,42 @@ function applyRunProps(style: Partial<CharStyle>, props: IRRunProps): void {
   if (props.caps !== undefined) style.caps = props.caps; // w:caps — all-caps display
   if (props.smallCaps !== undefined) style.smallCaps = props.smallCaps; // w:smallCaps — small capitals
   if (props.rtl !== undefined) style.rtl = props.rtl; // explicit w:rtl="0" clears inherited RTL
+  // Minor run typography & effects (w:rPr extras): unit-convert and collapse onto
+  // the model's CharStyle fields. Each is additive — only set when present.
+  if (props.doubleStrikethrough !== undefined) style.doubleStrikethrough = props.doubleStrikethrough;
+  if (props.positionHalfPoints !== undefined) style.positionPx = round2(halfPointsToPx(props.positionHalfPoints));
+  if (props.kerningHalfPoints !== undefined) style.kerningMinPx = round2(halfPointsToPx(props.kerningHalfPoints));
+  if (props.widthScalePct !== undefined) style.widthScalePct = props.widthScalePct;
+  if (props.emphasisMark) {
+    const em = mapEmphasisMark(props.emphasisMark);
+    if (em) style.emphasisMark = em;
+  }
+  if (props.outline !== undefined) style.outline = props.outline;
+  if (props.shadow !== undefined) style.shadow = props.shadow;
+  if (props.emboss !== undefined) style.emboss = props.emboss;
+  if (props.imprint !== undefined) style.imprint = props.imprint;
+  if (props.runBorder) {
+    const b = runBorderFromIR(props.runBorder);
+    if (b) style.runBorder = b;
+  }
+  if (props.fitTextTwips !== undefined && props.fitTextTwips > 0) style.fitTextPx = round2(twipsToPx(props.fitTextTwips));
   if (props.symbol) {
     // Symbol glyph (w:sym): keep the marker for round-trip AND set the font so the
     // decoded code point paints in the symbol face (e.g. Wingdings), not body text.
     style.symbol = { font: props.symbol.font, char: props.symbol.char };
     style.fontFamily = `${props.symbol.font}, sans-serif`;
   }
+}
+
+/** Fold the OOXML w:em vocabulary onto the model's set; unknown values drop. */
+const EMPHASIS_MARK_MAP: Record<string, EmphasisMark> = {
+  dot: "dot",
+  comma: "comma",
+  circle: "circle",
+  underDot: "underDot",
+};
+function mapEmphasisMark(raw: string): EmphasisMark | undefined {
+  return EMPHASIS_MARK_MAP[raw];
 }
 
 /** IR content controls → model SdtProps (shapes match; copy defined fields). */

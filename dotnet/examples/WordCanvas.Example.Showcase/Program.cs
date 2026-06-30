@@ -102,6 +102,26 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
         .Endnote("Endnotes collect at the very end of the document, under their own separator rule — Word's “end of document” placement.")
         .Text(" — like footnotes, but parked at the document end."))
 
+    // Minor run typography & effects (w:rPr extras) — via the Effects() binding.
+    .Paragraph(p => p
+        .Text("Double-struck text (w:dstrike) round-trips and paints two rules.")
+        .Effects(new RunEffectsOptions { DoubleStrikethrough = true }))
+    .Paragraph(p => p
+        .Text("Raised baseline via w:position — distinct from superscript (same size).")
+        .Effects(new RunEffectsOptions { PositionPx = 4 }))
+    .Paragraph(p => p
+        .Text("W I D E   character width scaling (w:w) stretches each glyph horizontally.")
+        .Effects(new RunEffectsOptions { WidthScalePct = 150 }))
+    .Paragraph(p => p
+        .Text("Kerning, emphasis marks, outline & a run border (w:kern/w:em/w:outline/w:bdr).")
+        .Effects(new RunEffectsOptions
+        {
+            KerningMinPx = 12,
+            EmphasisMark = EmphasisMark.Dot,
+            Outline = true,
+            Border = new CellBorder { Color = "#1a73e8", WidthPx = 1 },
+        }))
+
     // ---- Content controls ----
     .Paragraph("Content controls", p => p.WithStyle("Heading1"))
     .Paragraph(p => p
