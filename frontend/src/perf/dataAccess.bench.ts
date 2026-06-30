@@ -1,21 +1,25 @@
-// Step-1 measurement: does a WeakMap-memoized id index actually beat the current
-// rebuild-then-scan data-access layer, and how does the win scale with document
-// size + lookups-per-doc?
+// Step-1 measurement + regression guard for the document data-access layer.
 //
-// Baseline = the REAL production helpers from @cw/shared (paragraphsOf/blockById/
-// blockIndexOf), each of which rebuilds the full paragraph traversal then linear-
-// scans. Candidate = the same traversal memoized on document identity (a
-// WeakMap<Document, …>), giving O(1) Map lookups after a one-time build per doc.
+// `blockById`/`blockIndexOf` from @cw/shared are NOW memoized (a
+// WeakMap<Document, …> id index — see shared/src/model/text.ts), so they can't
+// serve as their own "before". This file therefore inlines the PRE-memoization
+// behaviour (`*Baseline` below: rebuild the full paragraph traversal via the
+// un-memoized `bodyParagraphs`/`bandParagraphs`, then linear-scan) and benches it
+// against the SHIPPED memoized helpers. That shows the win the memoization bought
+// AND flags any regression that reintroduces per-call rebuilds (the shipped side
+// would drift back toward the baseline).
 //
 // Run:  npx vitest bench src/perf/dataAccess.bench.ts   (from frontend/)
 
 import { bench, describe } from "vitest";
 import {
+  BAND_CONTAINERS,
+  bandParagraphs,
   blockById,
   blockIndexOf,
+  bodyParagraphs,
   makeDefaultCharStyle,
   makeDefaultParaStyle,
-  paragraphsOf,
   type Block,
   type Document,
   type Paragraph,
@@ -82,30 +86,22 @@ function makeDoc(n: number): { doc: Document; ids: string[] } {
 }
 
 // ---------------------------------------------------------------------------
-// Candidate: WeakMap-memoized index keyed on Document identity. Because the model
-// is immutable (every edit returns a new Document object), a new doc simply misses
-// the cache; the old doc is GC'd. The traversal itself reuses the production
-// paragraphsOf (done once per doc), so this isolates the win of "build once, then
-// O(1)" vs "rebuild + scan every call".
+// Baseline: the PRE-memoization data-access path, inlined here so the bench has a
+// genuine "before" to compare the shipped helpers against. `bodyParagraphs` and
+// `bandParagraphs` are NOT memoized, so this rebuilds the whole paragraph
+// traversal on every call exactly as the old `paragraphsOf` did, then linear-scans
+// — the cost the WeakMap index removed.
 
-const indexCache = new WeakMap<Document, { list: Paragraph[]; byId: Map<string, number> }>();
-function docIndex(doc: Document) {
-  let e = indexCache.get(doc);
-  if (!e) {
-    const list = paragraphsOf(doc);
-    const byId = new Map<string, number>();
-    for (let i = 0; i < list.length; i++) byId.set(list[i]!.id, i);
-    e = { list, byId };
-    indexCache.set(doc, e);
-  }
-  return e;
-}
-const blockByIdNew = (doc: Document, id: string): Paragraph | undefined => {
-  const e = docIndex(doc);
-  const i = e.byId.get(id);
-  return i === undefined ? undefined : e.list[i];
-};
-const blockIndexOfNew = (doc: Document, id: string): number => docIndex(doc).byId.get(id) ?? -1;
+const rebuildParagraphsOf = (doc: Document): Paragraph[] => [
+  ...bodyParagraphs(doc),
+  ...BAND_CONTAINERS.flatMap((band) => bandParagraphs(doc, band)),
+  ...Object.values(doc.footnotes ?? {}).flat(),
+  ...Object.values(doc.endnotes ?? {}).flat(),
+];
+const blockByIdBaseline = (doc: Document, id: string): Paragraph | undefined =>
+  rebuildParagraphsOf(doc).find((b) => b.id === id);
+const blockIndexOfBaseline = (doc: Document, id: string): number =>
+  rebuildParagraphsOf(doc).findIndex((b) => b.id === id);
 
 // A scattered, deterministic sample of ids to look up (front, middle, back, …)
 // so neither impl is favoured by always hitting index 0.
@@ -136,20 +132,20 @@ for (const N of SIZES) {
     const picks = sampleIds(ids, L);
 
     // Realistic per-keystroke loop: each iteration is a NEW doc identity with L
-    // lookups on it. Baseline rebuilds L times; candidate builds once + L map hits.
+    // lookups on it. Baseline rebuilds L times; shipped builds once + L map hits.
     describe(`per-keystroke (new doc each iter) — N=${N}, lookups/doc=${L}`, () => {
-      bench("current  blockById (rebuild+scan)", () => {
+      bench("baseline blockById (rebuild+scan)", () => {
+        const doc = reidentify(base);
+        for (const id of picks) {
+          blockByIdBaseline(doc, id);
+          blockIndexOfBaseline(doc, id);
+        }
+      });
+      bench("shipped  blockById (weakmap O(1))", () => {
         const doc = reidentify(base);
         for (const id of picks) {
           blockById(doc, id);
           blockIndexOf(doc, id);
-        }
-      });
-      bench("indexed  blockById (weakmap O(1))", () => {
-        const doc = reidentify(base);
-        for (const id of picks) {
-          blockByIdNew(doc, id);
-          blockIndexOfNew(doc, id);
         }
       });
     });
@@ -160,11 +156,11 @@ for (const N of SIZES) {
   // one render). This is the cache-hit-dominated best case for the index.
   describe(`stable doc (no edits) — N=${N}, 50 scattered lookups`, () => {
     const picks = sampleIds(ids, 50);
-    bench("current  blockById (rebuild+scan)", () => {
-      for (const id of picks) blockById(base, id);
+    bench("baseline blockById (rebuild+scan)", () => {
+      for (const id of picks) blockByIdBaseline(base, id);
     });
-    bench("indexed  blockById (weakmap O(1))", () => {
-      for (const id of picks) blockByIdNew(base, id);
+    bench("shipped  blockById (weakmap O(1))", () => {
+      for (const id of picks) blockById(base, id);
     });
   });
 }

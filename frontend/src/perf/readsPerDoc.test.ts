@@ -14,7 +14,7 @@
 //
 // Run:  npx vitest run src/perf/readsPerDoc.test.ts   (from frontend/)
 
-import { existsSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
@@ -116,11 +116,22 @@ function makeSyntheticDoc(n: number): Document {
   return { section, blocks };
 }
 
-// The real appraisal reports are developer-local artifacts (NOT committed — they
-// carry real addresses/PII), so resolve them by path and skip when absent (CI).
-const reportPath = (file: string): string => fileURLToPath(new URL(`../../${file}`, import.meta.url));
-const docOfReport = (file: string): Document =>
-  runImport(new Uint8Array(readFileSync(reportPath(file)))).doc;
+// Real reports are developer-local artifacts: `.docx` files dropped into the
+// frontend/ root, which is gitignored for *.docx (they carry real addresses/PII,
+// so neither the binaries NOR their identifying filenames belong in the repo). We
+// DISCOVER whatever local `.docx` are present at runtime (no PII in source) and
+// measure them; in CI there are none, so only the synthetic case runs. Word lock
+// files (`~$…`) are skipped.
+const frontendRoot = fileURLToPath(new URL("../../", import.meta.url));
+const localReportFiles = (): string[] => {
+  try {
+    return readdirSync(frontendRoot).filter((f) => f.toLowerCase().endsWith(".docx") && !f.startsWith("~$"));
+  } catch {
+    return [];
+  }
+};
+const docOfFile = (file: string): Document =>
+  runImport(new Uint8Array(readFileSync(`${frontendRoot}${file}`))).doc;
 
 // ---------------------------------------------------------------------------
 // Workloads. Each returns the tallied counters + wall-clock.
@@ -197,7 +208,7 @@ const pad = (s: string, w: number): string => s.padEnd(w);
 const padN = (n: string, w: number): string => n.padStart(w);
 
 function report(label: string, doc: Document): { nav: Tally; steps: number } {
-  const size = paragraphsOf(doc).length;
+  const size = navigableParagraphs(doc).length;
   const KEYS = 40;
   const STEPS = 100;
   const edit = editSession(doc, KEYS);
@@ -234,20 +245,16 @@ function report(label: string, doc: Document): { nav: Tally; steps: number } {
   return { nav, steps: STEPS };
 }
 
-// Real reports: developer-local only (uncommitted). Each prints its measurement
-// when present and is skipped otherwise (e.g. CI), so the suite never depends on
-// files outside the repo.
-const REPORTS = [
-  { label: "AppraiseRequest-42103 (rendered report)", file: "RenderedReportsDocx_Report-AppraiseRequest-42103-Version-101.docx" },
-  { label: "Igou Gap Rd (signed report v3)", file: "SignedReports_SignedReport-Version-3-Keystone Appraiser-66654-7407 Igou Gap Rd, Chattanooga, Hamilton, Tennessee, 37421.docx" },
-] as const;
-
 describe("step-0: reads per document identity", () => {
-  for (const r of REPORTS) {
-    it.skipIf(!existsSync(reportPath(r.file)))(`real report: ${r.label}`, () => {
-      report(r.label, docOfReport(r.file));
+  // Measure any developer-local `.docx` reports that happen to be present, with
+  // anonymized labels (filenames come from the filesystem at runtime, never from
+  // committed source). Empty in CI — only the synthetic guard below runs there.
+  const locals = localReportFiles();
+  locals.forEach((file, i) => {
+    it(`local report #${i + 1}`, () => {
+      report(`local report #${i + 1}`, docOfFile(file));
     });
-  }
+  });
 
   // Committed regression guard: with the per-doc memoization in place, caret
   // navigation over a large stable doc must stay O(1) — after the first read
