@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Table column-resize grips now line up correctly on right-to-left (`w:bidiVisual`) tables.**
+  Under `w:bidiVisual` the grid mirrors about its width (model column 0 paints at the right),
+  but the column-boundary hit-test walked `colWidths` left-to-right from the table's left edge
+  as if LTR — so the draggable grips appeared off the visible separators ("out of order") and
+  mapped to the wrong model column, and the drag pushed the wrong way. The hit-test now mirrors
+  the boundary x about the grid (keeping `boundaryIndex` in model order) and the drag flips its
+  delta sign for bidiVisual. `w:tblInd`/alignment were never the cause (the offset is already
+  folded into the table's rendered x); rows are unaffected by column mirroring.
 - **PDF export: non-Latin symbols (✓ U+2713, ☒ U+2612, ballot boxes, dingbats) now render
   as real glyphs instead of `.notdef`/tofu.** The root cause was that the export resolved one
   bundled face per run with no per-glyph fallback; characters outside that face silently
