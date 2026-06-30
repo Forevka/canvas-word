@@ -168,6 +168,28 @@ export const navigableParagraphs = (doc: Document): Paragraph[] => {
   return list;
 };
 
+/** Story (header/footer editing) navigation order for ONE band container:
+ *  `bandParagraphs(doc, band)` minus hidden (w:vanish) paragraphs the caret skips.
+ *  The body counterpart is `navigableParagraphs`; this is the per-band analogue the
+ *  selection controller derives on every caret move while editing a margin band.
+ *  Memoized per (document identity, band) — a nested `Map<BandContainer, …>` per
+ *  doc, with the same WeakMap-on-identity invalidation. Treat the result as
+ *  IMMUTABLE (callers read-only). */
+const navBandCache = new WeakMap<Document, Map<BandContainer, Paragraph[]>>();
+export const navigableBandParagraphs = (doc: Document, band: BandContainer): Paragraph[] => {
+  let perDoc = navBandCache.get(doc);
+  if (!perDoc) {
+    perDoc = new Map();
+    navBandCache.set(doc, perDoc);
+  }
+  let list = perDoc.get(band);
+  if (!list) {
+    list = bandParagraphs(doc, band).filter((p) => !isHiddenParagraph(p));
+    perDoc.set(band, list);
+  }
+  return list;
+};
+
 /** Every block id present anywhere in the doc — top-level blocks (paragraph,
  *  image, table) in body + bands, table ids, and paragraph/image ids nested in
  *  table cells. Used by the review layer's structural-suggestion GC, which keys
