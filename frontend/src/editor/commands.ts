@@ -530,6 +530,10 @@ function sectionGeometryAt(doc: EditorState["doc"], fromIndex: number): SectionG
         footerDistancePx: p.footerDistancePx ?? doc.section.footerDistancePx ?? null,
         pageColorHex: p.pageColorHex ?? doc.section.pageColorHex ?? null,
         pageBorders: p.pageBorders ?? doc.section.pageBorders ?? null,
+        // breakType lives directly on the break paragraph (never inherited); the
+        // default "nextPage" seeds the dialog's "Next page" option.
+        breakType: b.style.sectionBreak.type,
+        lineNumbering: p.lineNumbering ? { ...p.lineNumbering } : null,
       };
     }
   }
@@ -543,6 +547,8 @@ function sectionGeometryAt(doc: EditorState["doc"], fromIndex: number): SectionG
     footerDistancePx: doc.section.footerDistancePx ?? null,
     pageColorHex: doc.section.pageColorHex ?? null,
     pageBorders: doc.section.pageBorders ?? null,
+    breakType: doc.section.breakType ?? null,
+    lineNumbering: doc.section.lineNumbering ? { ...doc.section.lineNumbering } : null,
   };
 }
 
@@ -576,6 +582,7 @@ export function insertSectionBreak(): Command {
     if (geo.footerDistancePx !== null) props.footerDistancePx = geo.footerDistancePx;
     if (geo.pageColorHex !== null) props.pageColorHex = geo.pageColorHex;
     if (geo.pageBorders !== null) props.pageBorders = geo.pageBorders;
+    if (geo.lineNumbering !== null) props.lineNumbering = { ...geo.lineNumbering };
     const newBlockId = freshBlockId();
     // The tail must NOT clone an existing sectionBreak (splitting the break
     // paragraph itself would otherwise duplicate the section).
@@ -626,8 +633,16 @@ export function applyPageSetup(geometry: SectionGeometry): Command {
         else delete props.pageColorHex;
         if (geometry.pageBorders !== null) props.pageBorders = geometry.pageBorders;
         else delete props.pageBorders;
+        if (geometry.lineNumbering !== null) props.lineNumbering = geometry.lineNumbering;
+        else delete props.lineNumbering;
         return tr(
-          [{ type: "setParaStyle", blockId: b.id, patch: { sectionBreak: { type: "nextPage", props } } }],
+          [
+            {
+              type: "setParaStyle",
+              blockId: b.id,
+              patch: { sectionBreak: { type: geometry.breakType ?? "nextPage", props } },
+            },
+          ],
           sel,
           "command",
         );

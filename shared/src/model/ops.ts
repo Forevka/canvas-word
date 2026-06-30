@@ -104,6 +104,11 @@ export interface SectionGeometry {
   pageColorHex: string | null;
   /** `null` = no page border. */
   pageBorders: import("./document").PageBorders | null;
+  /** OOXML w:sectPr/w:type for the section START. `null` = the default ("nextPage");
+   *  "evenPage"/"oddPage" force the section's first page onto an even/odd page. */
+  breakType: import("./document").SectionBreakType | null;
+  /** w:sectPr/w:lnNumType — line numbering in the margin. `null` = off. */
+  lineNumbering: import("./document").LineNumbering | null;
 }
 
 /** Top-level block containers: the body, or one of the six margin-band stories
@@ -1035,6 +1040,8 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
         footerDistancePx: s.footerDistancePx ?? null,
         pageColorHex: s.pageColorHex ?? null,
         pageBorders: s.pageBorders ?? null,
+        breakType: s.breakType ?? null,
+        lineNumbering: s.lineNumbering ? { ...s.lineNumbering } : null,
       };
       const next = {
         ...s,
@@ -1054,6 +1061,10 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       else delete next.pageColorHex;
       if (op.geometry.pageBorders !== null) next.pageBorders = op.geometry.pageBorders;
       else delete next.pageBorders;
+      if (op.geometry.breakType !== null) next.breakType = op.geometry.breakType;
+      else delete next.breakType;
+      if (op.geometry.lineNumbering !== null) next.lineNumbering = op.geometry.lineNumbering;
+      else delete next.lineNumbering;
       return {
         doc: { ...doc, section: next },
         inverse: { type: "setSectionProps", geometry: old },
