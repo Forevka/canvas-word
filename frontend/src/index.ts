@@ -1066,6 +1066,9 @@ export function createEditor(
   // ---- object selection (images): frame, resize, alignment, delete --------
 
   let selectedObject: string | null = null;
+  // Crop session baseline: the image's crop when crop mode was entered (to revert
+  // the live transient preview on exit) + whether any live preview was written.
+  const cropOrigin = { crop: null as NonNullable<ImageBlock["crop"]> | null, previewed: false };
 
   const contentWidth = (): number =>
     doc.section.pageWidthPx - doc.section.marginPx.left - doc.section.marginPx.right;
@@ -1079,6 +1082,13 @@ export function createEditor(
     onResizeCommit: (w, h) => {
       if (!selectedObject) return;
       dispatch(setImageProps(selectedObject, { widthPx: w, heightPx: h }));
+    },
+    // Live crop preview: each crop-handle release writes the crop field as a
+    // TRANSIENT op (outside undo). exitCropMode reverts it and commits once.
+    onCropPreview: (crop) => {
+      if (!selectedObject) return;
+      cropOrigin.previewed = true;
+      dispatch(setImageCropCmd(selectedObject, crop, "transient"));
     },
   });
 
@@ -1148,15 +1158,19 @@ export function createEditor(
   };
 
   // ---- image crop mode -----------------------------------------------------
-  // Enter: drag the 8 crop handles to set the visible window; the whole session
-  // previews in the DOM overlay (objectController). Exit (Esc / click-away / a new
-  // selection) commits the new insets as ONE undoable op — mirrors drag-to-resize.
+  // Enter: drag the 8 crop handles to set the visible window. Each handle release
+  // writes the crop field LIVE via a transient op (so the model tracks the crop as
+  // the user works, mirroring the drag-to-resize-row-height protocol #79); exit
+  // (Esc / click-away / a new selection) reverts the transient preview and commits
+  // the final insets as ONE undoable op. Crop is editing-only, session/UI state.
   const enterCropMode = (imgId: string): void => {
-    if (readonly) return;
+    if (mode === "view") return; // editing-only; gate on the LIVE mode, not frozen readonly
     selectObject(imgId);
     const rect = objectRect(tree, imgId);
     const img = locateImage(doc, imgId)?.image;
     if (!rect || !img) return;
+    cropOrigin.crop = img.crop ?? null; // the session baseline to revert the preview to
+    cropOrigin.previewed = false;
     objectFrame.beginCrop(rect, img.src, img.crop ?? null);
     notifyChange(); // refresh the context-menu "Crop"/"Reset Crop" state
   };
@@ -1169,10 +1183,14 @@ export function createEditor(
   const exitCropMode = (commit: boolean): void => {
     if (!objectFrame.isCropping()) return;
     const id = selectedObject;
-    const before = id ? locateImage(doc, id)?.image.crop ?? null : null;
     const next = objectFrame.endCrop(); // hides the overlay; null = clear the crop
-    if (commit && id && !cropEq(before, next)) dispatch(setImageCropCmd(id, next));
-    else refreshObjectFrame(); // no model change → repaint the resize frame ourselves
+    const previewed = cropOrigin.previewed;
+    cropOrigin.previewed = false;
+    // Roll the live transient preview back to the session baseline so the committed
+    // op below (or the cancel) is the only entry on the undo stack.
+    if (previewed && id) dispatch(setImageCropCmd(id, cropOrigin.crop, "transient"));
+    if (commit && id && !cropEq(cropOrigin.crop, next)) dispatch(setImageCropCmd(id, next));
+    else refreshObjectFrame(); // no net change → repaint the resize frame ourselves
   };
 
   // ---- table column-boundary drag ------------------------------------------
@@ -1668,6 +1686,9 @@ export function createEditor(
   const setMode = (next: EditMode): boolean => {
     if (allowedModes && !allowedModes.includes(next)) return false;
     if (next === mode) return true;
+    // End any crop session BEFORE the switch so it commits under the still-active
+    // editable mode and never outlives it (crop is editing-only, session/UI state).
+    if (objectFrame.isCropping()) exitCropMode(true);
     mode = next;
     pendingStyle = null; // clear pending preview on switch
     if (mode !== "suggest") {

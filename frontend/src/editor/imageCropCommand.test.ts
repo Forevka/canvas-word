@@ -55,4 +55,15 @@ describe("setImageCropCmd — interactive crop (a:srcRect)", () => {
     const trn = trnOf({ doc: docOf(img("a")), selection: null }, setImageCropCmd("a", CROP, "transient"));
     expect(trn.origin).toBe("transient");
   });
+
+  it("normalizes out-of-range / window-collapsing insets at the op boundary", () => {
+    // A malformed local/remote patch (negative + a collapsing left/right pair) must
+    // not persist an impossible crop: insets clamp into [0,1) with a non-empty window.
+    const base = docOf(img("a"));
+    const trn = trnOf({ doc: base, selection: null }, setImageCropCmd("a", { left: 0.8, top: -0.5, right: 0.8, bottom: 2 }));
+    const out = imageOf(applyOp(base, trn.ops[0]!).doc, "a").crop!;
+    expect(out.top).toBe(0); // negative clamped to 0
+    expect(out.bottom).toBeLessThan(1); // >1 clamped below 1
+    expect(out.left + out.right).toBeLessThan(1); // visible window stays non-empty
+  });
 });

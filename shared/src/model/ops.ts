@@ -60,6 +60,25 @@ export interface TablePropsPatch {
   defaultCellMargin?: import("./document").CellMargin | null;
 }
 
+/** Clamp crop insets to the documented invariant — each in [0,1) with a non-empty
+ *  visible window — so a malformed local/remote patch can't persist impossible
+ *  values (negative, NaN, or a fully-collapsed window) in the shared model. */
+function normalizeCrop(c: NonNullable<ImageBlock["crop"]>): NonNullable<ImageBlock["crop"]> {
+  const clamp = (v: number): number => (Number.isFinite(v) ? Math.min(0.999, Math.max(0, v)) : 0);
+  let { left, top, right, bottom } = { left: clamp(c.left), top: clamp(c.top), right: clamp(c.right), bottom: clamp(c.bottom) };
+  if (left + right >= 1) {
+    const k = 0.999 / (left + right);
+    left *= k;
+    right *= k;
+  }
+  if (top + bottom >= 1) {
+    const k = 0.999 / (top + bottom);
+    top *= k;
+    bottom *= k;
+  }
+  return { left, top, right, bottom };
+}
+
 export type Op =
   | { type: "insertText"; at: DocPosition; text: string; style?: CharStyle }
   | { type: "insertRuns"; at: DocPosition; runs: Run[] }
@@ -755,7 +774,7 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       }
       if (op.patch.crop !== undefined) {
         if (op.patch.crop === null) delete updated.crop;
-        else updated.crop = op.patch.crop;
+        else updated.crop = normalizeCrop(op.patch.crop);
       }
       let next: Document;
       if (loc.kind === "top") {

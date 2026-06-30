@@ -70,6 +70,10 @@ export interface ObjectFrameDeps {
   /** Final size on mouseup (one undoable op). The whole drag is previewed purely
    *  in the DOM overlay (no model ops, no relayout) — this is the ONLY mutation. */
   onResizeCommit(width: number, height: number): void;
+  /** Live crop preview: fired when a crop handle is released, with the new insets.
+   *  The wiring writes them as a TRANSIENT op (so the model tracks the crop live)
+   *  and reverts + commits once on exit — the drag-to-resize-row-height protocol. */
+  onCropPreview(crop: CropInsets): void;
 }
 
 export interface ObjectFrame {
@@ -483,6 +487,9 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     cropDrag = null;
     endCropDrag();
     paintCrop();
+    // Write the crop live (transient) now that the handle is released — the pointer
+    // capture is already gone, so the relayout this triggers can't kill the drag.
+    if (cropSession) deps.onCropPreview(cropSession.liveCrop);
   }
 
   const onCropHandleDown = (ev: PointerEvent): void => {
@@ -545,6 +552,14 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     },
     refreshCrop(rect: Rect): void {
       if (!cropSession) return;
+      // A relayout/remote op can move the image to another page; follow it so the
+      // crop chrome doesn't linger on the old page (mirrors the resize `show`).
+      const host = deps.getPageElement(rect.pageIndex);
+      if (host) {
+        for (const el of [cropFull, cropDim, cropWin, cropFrame]) {
+          if (el.parentElement !== host) host.appendChild(el);
+        }
+      }
       cropSession.rect = rect; // track reflow/zoom; the live window is held in fractions
       paintCrop();
     },
