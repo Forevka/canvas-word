@@ -26,6 +26,51 @@ export interface Rect {
 }
 
 // ---------------------------------------------------------------------------
+// Vertical-text cells (w:textDirection tbRl/btLr): the cell's blocks/lines carry
+// LOCAL (pre-rotation) coordinates; the cell's `rotation` (translate origin +
+// angle) maps them to the page. Hit-testing inverse-rotates the click; caret /
+// selection forward-rotate their local results back to page coordinates.
+
+type CellRotation = NonNullable<PlacedTableCell["rotation"]>;
+
+/** Page point → a rotated cell's local frame. */
+function rotPageToLocal(rot: CellRotation, px: number, py: number): { lx: number; ly: number } {
+  const cos = Math.cos(rot.angle);
+  const sin = Math.sin(rot.angle);
+  const dx = px - rot.originX;
+  const dy = py - rot.originY;
+  return { lx: dx * cos + dy * sin, ly: -dx * sin + dy * cos };
+}
+
+/** A rotated cell's local point → the page. */
+function rotLocalToPage(rot: CellRotation, lx: number, ly: number): { x: number; y: number } {
+  const cos = Math.cos(rot.angle);
+  const sin = Math.sin(rot.angle);
+  return { x: rot.originX + lx * cos - ly * sin, y: rot.originY + lx * sin + ly * cos };
+}
+
+/** Axis-aligned page bounding box of a local rect under a cell rotation. */
+function rotRectToPage(rot: CellRotation, lx: number, ly: number, w: number, h: number, pageIndex: number): Rect {
+  const cs = [
+    rotLocalToPage(rot, lx, ly),
+    rotLocalToPage(rot, lx + w, ly),
+    rotLocalToPage(rot, lx, ly + h),
+    rotLocalToPage(rot, lx + w, ly + h),
+  ];
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const c of cs) {
+    if (c.x < minX) minX = c.x;
+    if (c.y < minY) minY = c.y;
+    if (c.x > maxX) maxX = c.x;
+    if (c.y > maxY) maxY = c.y;
+  }
+  return { pageIndex, x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+// ---------------------------------------------------------------------------
 // Flattened line list (document order), cached per tree
 
 interface LineEntry {
@@ -429,13 +474,39 @@ export function hitTest(
     }
   }
 
-  const xDistance = (e: LineEntry): number => {
+  const xDistanceAt = (e: LineEntry, xp: number): number => {
     const first = e.line.fragments[0];
     const last = e.line.fragments[e.line.fragments.length - 1];
     const left = e.block.x + (first ? first.x : 0);
     const right = first && last ? e.block.x + last.x + last.width : left + 1;
-    return x < left ? left - x : x > right ? x - right : 0;
+    return xp < left ? left - xp : xp > right ? xp - right : 0;
   };
+  const xDistance = (e: LineEntry): number => xDistanceAt(e, x);
+
+  // Vertical-text cell: inverse-rotate the click into the cell's local frame, then
+  // pick the line/offset there (its lines run in local, swapped coordinates).
+  if (targetCell?.rotation) {
+    const { lx, ly } = rotPageToLocal(targetCell.rotation, x, y);
+    let contain: LineEntry | null = null;
+    let nearest: LineEntry | null = null;
+    let nearestD = Infinity;
+    for (const e of idx.entries) {
+      if (e.pageIndex !== pageIndex || e.cell !== targetCell) continue;
+      const top = e.block.y + e.line.y;
+      const bottom = top + e.line.height;
+      if (ly >= top && ly < bottom) {
+        if (contain === null || xDistanceAt(e, lx) < xDistanceAt(contain, lx)) contain = e;
+      }
+      const dy = ly < top ? top - ly : ly > bottom ? ly - bottom : 0;
+      const d = dy + xDistanceAt(e, lx) * 0.001;
+      if (d < nearestD) {
+        nearestD = d;
+        nearest = e;
+      }
+    }
+    const pick = contain ?? nearest;
+    if (pick) return { blockId: pick.block.blockId, offset: offsetAtX(pick, lx) };
+  }
 
   let containing: LineEntry | null = null; // best line whose vertical span holds y
   let before: LineEntry | null = null; // nearest line fully above y on this page
@@ -468,9 +539,18 @@ export function hitTest(
 export function caretRect(tree: LayoutTree, pos: DocPosition, scope?: GeoScope): CaretRect | null {
   const e = entryOf(getIndex(tree, scope), pos);
   if (!e) return null;
+  const off = Math.min(pos.offset, Math.max(e.endOffset, e.startOffset));
+  const rot = e.cell?.rotation;
+  if (rot) {
+    // Vertical text: the caret's local x is the text-advance position; map the
+    // line-center point to the page. The DOM caret stays a vertical bar (its
+    // placement tracks the insertion point; orientation is a known limitation).
+    const p = rotLocalToPage(rot, xAtOffset(e, off), e.block.y + e.line.y + e.line.height / 2);
+    return { pageIndex: e.pageIndex, x: p.x, y: p.y - e.line.height / 2, height: e.line.height };
+  }
   return {
     pageIndex: e.pageIndex,
-    x: xAtOffset(e, Math.min(pos.offset, Math.max(e.endOffset, e.startOffset))),
+    x: xAtOffset(e, off),
     y: e.block.y + e.line.y,
     height: e.line.height,
   };
@@ -493,6 +573,18 @@ export function selectionRects(tree: LayoutTree, sel: DocSelection, scope?: GeoS
     const y = e.block.y + e.line.y;
     const lo = i === fromIdx ? from.offset : e.startOffset;
     const hi = i === toIdx ? to.offset : e.endOffset;
+    const rot = e.cell?.rotation;
+    if (rot) {
+      // Vertical text: build the highlight in the cell's local frame, then map it to
+      // an axis-aligned page box. (Full per-grapheme selection inside rotated cells
+      // is a known limitation; this keeps the highlight contained to the cell.)
+      const x1 = i === fromIdx ? xAtOffset(e, from.offset) : xAtOffset(e, e.startOffset);
+      const x2 = i === toIdx ? xAtOffset(e, to.offset) : xAtOffset(e, e.endOffset);
+      const lx = Math.min(x1, x2);
+      const w = Math.abs(x2 - x1);
+      if (w > 0) rects.push(rotRectToPage(rot, lx, e.block.y + e.line.y, w, e.line.height, e.pageIndex));
+      continue;
+    }
     if (isBidiLine(e.line)) {
       // A logical range can be visually discontiguous: emit one rect per
       // fragment-portion it covers (each fragment is single-direction).

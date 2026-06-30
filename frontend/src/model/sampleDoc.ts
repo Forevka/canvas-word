@@ -159,6 +159,25 @@ const advancedPropsTable = (): TableBlock => ({
   ],
 });
 
+/** Vertical cell text (issue #100, w:textDirection): the first column's headers are
+ *  rotated 90° — `tbRl` (top→bottom, 90° clockwise) and `btLr` (bottom→top, 90°
+ *  counter-clockwise). In AutoFit-to-Contents the rotated column auto-sizes NARROW
+ *  (a stack of line heights) while each row grows TALL (the text length), exactly
+ *  like a Word vertical table header. */
+const verticalTextTable = (): TableBlock => ({
+  kind: "table", id: id(), revision: 0, widthMode: "autofitContents",
+  rows: [
+    { cells: [
+      cell("Top→bottom (tbRl)", { bold: true, color: "#fff" }, { shading: "#00897b", textDirection: "tbRl" }),
+      cell("North"), cell("South"), cell("East"),
+    ] },
+    { cells: [
+      cell("Bottom→top (btLr)", { bold: true, color: "#fff" }, { shading: "#00897b", textDirection: "btLr" }),
+      cell("120"), cell("96"), cell("141"),
+    ] },
+  ],
+});
+
 /** A cell paragraph carrying an explicit base direction (RTL) — for the bidi
  *  table demo, so the cell's text right-aligns and reorders inside its column. */
 const dirCellPara = (runs: Run[], direction?: "rtl"): Paragraph => ({
@@ -426,6 +445,8 @@ export function sampleDoc(): Document {
     vAlignTable(),
     para([run("Minor & advanced table props (w:tblInd indent, w:bidiVisual right-to-left columns, w:textDirection / w:noWrap cells, plus caption/description alt text):")], { spaceBeforePx: 10, spaceAfterPx: 6 }),
     advancedPropsTable(),
+    para([run("Vertical cell text (w:textDirection) — the first column's headers are rotated 90°: tbRl (top→bottom, clockwise) and btLr (bottom→top, counter-clockwise). AutoFit keeps the rotated column narrow while its row grows tall:")], { spaceBeforePx: 10, spaceAfterPx: 6 }),
+    verticalTextTable(),
     para([run("Fields work inside table cells too:")], { spaceBeforePx: 10, spaceAfterPx: 6 }),
     fieldInCellTable,
     para([run("And a table tall enough to paginate across pages — rows break cleanly:")], { spaceBeforePx: 10, spaceAfterPx: 6 }),

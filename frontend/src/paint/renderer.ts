@@ -962,10 +962,20 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     for (const row of block.table.rows) {
       for (const cell of row.cells) {
         if (cell.shading) {
+          // Cell fill uses the page-space cell box even for rotated cells.
           ctx.fillStyle = cell.shading;
           ctx.fillRect(cell.x, cell.y, cell.width, cell.height);
         }
+        // Child fills (nested-table cells) live in the cell's local frame for a
+        // rotated cell — recurse under the same transform as the content pass.
+        const rot = cell.rotation;
+        if (rot) {
+          ctx.save();
+          ctx.translate(rot.originX, rot.originY);
+          ctx.rotate(rot.angle);
+        }
         for (const cb of cell.blocks) paintCellFills(ctx, cb, pageIndex);
+        if (rot) ctx.restore();
       }
     }
   }
@@ -983,7 +993,16 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     if (block.table) {
       for (const row of block.table.rows) {
         for (const cell of row.cells) {
+          // Rotated cell: its paragraphs' shading boxes are in the local frame —
+          // recurse under the same transform so they land in the cell, not page space.
+          const rot = cell.rotation;
+          if (rot) {
+            ctx.save();
+            ctx.translate(rot.originX, rot.originY);
+            ctx.rotate(rot.angle);
+          }
           for (const cb of cell.blocks) paintParaFills(ctx, cb, pageIndex);
+          if (rot) ctx.restore();
         }
       }
     }
@@ -1044,7 +1063,17 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
             ctx.rect(clip.x, clip.y, clip.width, clip.height);
             ctx.clip();
           }
+          // Vertical text: rotate the cell's local content frame into place. The
+          // clip above is page-space (set before the transform), so it still bounds
+          // the rotated content to the cell box.
+          const rot = cell.rotation;
+          if (rot) {
+            ctx.save();
+            ctx.translate(rot.originX, rot.originY);
+            ctx.rotate(rot.angle);
+          }
           for (const cb of cell.blocks) paintBlock(ctx, cb, pageIndex);
+          if (rot) ctx.restore();
           if (clip) ctx.restore();
         }
       }

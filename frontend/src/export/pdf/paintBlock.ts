@@ -166,7 +166,18 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
           doc.save();
           doc.rect(clip.x, clip.y, clip.width, clip.height).clip();
         }
+        // Vertical text: rotate the cell's local content frame into place so the PDF
+        // matches the canvas. Mirror the canvas order exactly — translate to the
+        // origin, then rotate (pdfkit shares canvas' y-down space, so the same angle
+        // rotates the same way). pdfkit rotates in DEGREES.
+        const rot = cell.rotation;
+        if (rot) {
+          doc.save();
+          doc.translate(rot.originX, rot.originY);
+          doc.rotate((rot.angle * 180) / Math.PI);
+        }
         for (const cb of cell.blocks) paintBlock(ctx, cb);
+        if (rot) doc.restore();
         if (clip) doc.restore();
       }
     }

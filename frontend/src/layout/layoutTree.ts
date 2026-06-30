@@ -107,6 +107,11 @@ export interface PlacedTableCell {
    *  matches Word. Horizontal band only (full cell height) so descenders and
    *  rowspan-straddling content are never cut. */
   contentClip?: { x: number; y: number; width: number; height: number };
+  /** Vertical text (OOXML w:textDirection tbRl/btLr): `blocks` are placed in a
+   *  LOCAL pre-rotation frame; paint and geometry map them to the page by
+   *  translate(originX, originY) then rotate(angle). angle = +π/2 (tbRl, 90° CW) or
+   *  −π/2 (btLr, 90° CCW). Absent = horizontal text (the common case). */
+  rotation?: { angle: number; originX: number; originY: number };
 }
 
 export interface PlacedTableRow {
