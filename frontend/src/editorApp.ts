@@ -1386,8 +1386,8 @@ if (toolbar) {
     clearLabel: "Automatic",
     onClear: () => editor.setCharStyle({ color: "#202124" }),
   });
-  const fontLinkBtn = txtBtn("🔗", "Insert/remove hyperlink", () => {}, "font-size:12px;");
-  fontLinkBtn.addEventListener("click", () => linkDialog(fontLinkBtn));
+  // Hyperlink lives on Insert ▸ Links (the canonical spot, like Word) — not
+  // duplicated here in the Font group.
 
   // ---- Paragraph ----
   const paraRow = groupRows(home, "Paragraph");
@@ -1488,8 +1488,9 @@ if (toolbar) {
       ]),
     ),
   );
-  btn(ICONS.shading, "Paragraph shading", openParagraphDialog, true);
-  btn(ICONS.borders, "Paragraph borders", openParagraphDialog, true);
+  // One entry point to the Paragraph dialog, which covers both borders and
+  // shading (was two separate buttons opening the identical dialog).
+  btn(ICONS.borders, "Borders & shading", openParagraphDialog, true);
 
   // ---- Styles (visual gallery) ----
   group(home, "Styles");
