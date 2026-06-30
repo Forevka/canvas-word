@@ -239,6 +239,27 @@ export const FOOTNOTE_RULE_WIDTH_FRACTION = 1 / 3;
 /** Thin gray rule drawn between newspaper columns (w:cols/@w:sep). */
 export const COLUMN_SEPARATOR_COLOR = "#c0c4c9";
 
+// --- paragraph borders (w:pBdr) --------------------------------------------
+/** Border-to-text padding (px) for a paragraph border box (w:pBdr) when no
+ *  w:space is imported. Word's UI default is 1pt but reads cramped on screen;
+ *  ~4px keeps a wide/double rule clear of the glyphs. The decor box is expanded
+ *  OUTWARD by this on every side, so the border sits outside the text and the
+ *  shading fill reaches the border. */
+export const PARA_BORDER_PAD_PX = 4;
+
+/** The padded paragraph-decoration box (shading fill + border rectangle), in
+ *  page (px) coords. `d.pad` (0 when shading-only / undecorated-border) expands
+ *  the text box outward symmetrically. Shared so the canvas renderer and the PDF
+ *  painter draw the border and fill at exactly the same place. */
+export function paraDecorBox(
+  x: number,
+  y: number,
+  d: { width: number; height: number; pad?: number },
+): { x: number; y: number; width: number; height: number } {
+  const p = d.pad ?? 0;
+  return { x: x - p, y: y - p, width: d.width + 2 * p, height: d.height + 2 * p };
+}
+
 // --- page borders (w:pgBorders) --------------------------------------------
 /** Default offset (px) of a page border from the page edge / text when an edge
  *  omits w:space. ~24pt is Word's typical page-border offset. */

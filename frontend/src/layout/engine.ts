@@ -15,7 +15,7 @@ import { formatListNumber, markerText, type ListDefinition, type ListLevel } fro
 import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock, PlacedImage } from "./layoutTree";
 import { PrepareCache, prepareRunSegment, setActiveCjkFallback, applyCjkLocale, type PreparedSegment } from "./prepareCache";
 import { charStyleToFont, fontMetrics, measureTextWidth } from "./metrics";
-import { widthScale } from "../paint/paintStyle";
+import { widthScale, PARA_BORDER_PAD_PX } from "../paint/paintStyle";
 import { baseLevelFor, effectiveAlign, hasRtlChars, levelsFor, visualOrder } from "./bidi";
 import { setActiveFontRegistry, type CustomFontRegistry } from "../fonts/customRegistry";
 import { equationBox, EQUATION_DISPLAY_PX } from "./math/equationLayout";
@@ -44,7 +44,29 @@ let activeDefaultTabStopPx = DEFAULT_TAB_STOP_PX;
 function paraDecorFor(style: ParaStyle, boxWidth: number, height: number): NonNullable<PlacedBlock["paraDecor"]> | undefined {
   const { borders, shading } = style;
   if (!borders && !shading) return undefined;
-  return { width: Math.max(0, boxWidth), height, ...(shading ? { shading } : {}), ...(borders ? { borders } : {}) };
+  // Border-to-text padding: the painters expand the box outward by `pad` so a
+  // wide/double rule sits OUTSIDE the glyphs (and the shading fill reaches it).
+  // Only borders need the gap; a shading-only paragraph keeps its text-edge box
+  // so its fill is byte-identical to before.
+  const pad = borders ? PARA_BORDER_PAD_PX : 0;
+  return { width: Math.max(0, boxWidth), height, pad, ...(shading ? { shading } : {}), ...(borders ? { borders } : {}) };
+}
+
+/** Vertical space a bordered paragraph's box claims ABOVE its text, reserved in
+ *  the block gap so the box (and any shading fill) can't paint over the adjacent
+ *  block: the top rule width (if any) plus the border-to-text padding — the box
+ *  grows by `pad` above the text whenever the paragraph has borders, regardless
+ *  of which edges carry a rule. 0 for an unbordered paragraph. Used by both the
+ *  normal and the float-adjacent placement paths. */
+function paraBorderReserveTop(style: ParaStyle): number {
+  if (!style.borders) return 0;
+  return (style.borders.top?.widthPx ?? 0) + PARA_BORDER_PAD_PX;
+}
+
+/** Mirror of paraBorderReserveTop for the space below the text (bottom rule + pad). */
+function paraBorderReserveBottom(style: ParaStyle): number {
+  if (!style.borders) return 0;
+  return (style.borders.bottom?.widthPx ?? 0) + PARA_BORDER_PAD_PX;
 }
 
 const sumLineHeights = (lines: LineBox[]): number => lines.reduce((h, l) => h + l.height, 0);
@@ -1947,7 +1969,12 @@ function layoutDocument(
     // Float-affected paragraphs re-break per line with float-shrunk widths —
     // bypassing the precomputed full-width lines (and widow/orphan rules).
     if (floatsActiveAt(y)) {
+      // Reserve the border box (rule widths + pad) around the float-adjacent
+      // chunk too — placeParagraphFloating still attaches paraDecor with `pad`,
+      // so the box would otherwise extend into the next block (w:pBdr).
+      y += paraBorderReserveTop(block.style);
       placeParagraphFloating(block);
+      y += paraBorderReserveBottom(block.style);
       if (!suppressAfter) y += block.style.spaceAfterPx;
       continue;
     }
@@ -2018,12 +2045,13 @@ function layoutDocument(
       if (!ok) newPage();
     }
 
-    // Reserve the paragraph border line widths in the surrounding gaps so a boxed
-    // paragraph's top/bottom rules don't paint over the adjacent block (w:pBdr).
-    const bd = block.style.borders;
-    if (bd?.top) y += bd.top.widthPx;
+    // Reserve the paragraph border box (top/bottom rule widths + border-to-text
+    // padding) in the surrounding gaps so a boxed paragraph's box — expanded
+    // outward by `pad`, and any shading fill — doesn't paint over the adjacent
+    // block (w:pBdr).
+    y += paraBorderReserveTop(block.style);
     placeParagraph(block, lines);
-    if (bd?.bottom) y += bd.bottom.widthPx;
+    y += paraBorderReserveBottom(block.style);
     if (!suppressAfter) y += block.style.spaceAfterPx;
   }
 

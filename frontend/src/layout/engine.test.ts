@@ -940,6 +940,28 @@ describe("engine — paragraph borders & shading", () => {
     expect(pb.paraDecor!.width).toBeCloseTo(624, 0);
     // height equals the single line's height (lineHeight 1 → 16px char → 16px line).
     expect(pb.paraDecor!.height).toBeCloseTo(pb.lines[0]!.height, 5);
+    // A bordered paragraph carries the border-to-text padding so the rule sits
+    // outside the glyphs (issue #98).
+    expect(pb.paraDecor!.pad).toBe(4);
+  });
+
+  it("uses no padding for a shading-only paragraph (fill stays at the text edge)", () => {
+    const p = para("shaded only", { shading: "#eef4ff" });
+    const pb = placedOf(layout(doc([p])), p.id)!.pb;
+    expect(pb.paraDecor!.shading).toBe("#eef4ff");
+    expect(pb.paraDecor!.borders).toBeUndefined();
+    expect(pb.paraDecor!.pad).toBe(0);
+  });
+
+  it("reserves the border-to-text padding in the block gap so the box clears the next block", () => {
+    const top = para("first");
+    const boxed = para("boxed", { borders: { left: { color: "#000", widthPx: 1 } } });
+    const after = para("after");
+    const tree = layout(doc([top, boxed, after]));
+    const boxedPb = placedOf(tree, boxed.id)!.pb;
+    const afterPb = placedOf(tree, after.id)!.pb;
+    // The box bottom sits `pad` below the text; the follower clears that.
+    expect(afterPb.y).toBeGreaterThanOrEqual(boxedPb.y + boxedPb.paraDecor!.height + boxedPb.paraDecor!.pad! - 0.01);
   });
 
   it("narrows the box by left + right indents", () => {
@@ -962,6 +984,19 @@ describe("engine — paragraph borders & shading", () => {
     const afterPb = placedOf(tree, after.id)!.pb;
     // The follower starts at or below the box bottom plus the reserved bottom rule.
     expect(afterPb.y).toBeGreaterThanOrEqual(boxedPb.y + boxedPb.paraDecor!.height + 4 - 0.01);
+  });
+
+  it("reserves the border box around a float-adjacent bordered paragraph", () => {
+    const img: ImageBlock = { ...image(200, 100), wrap: "square", align: "left" };
+    const boxed = para("boxed beside the float", { borders: { left: { color: "#000", widthPx: 1 } } });
+    const after = para("after");
+    const tree = layout(doc([img, boxed, after]));
+    const boxedPb = placedOf(tree, boxed.id)!.pb;
+    const afterPb = placedOf(tree, after.id)!.pb;
+    expect(boxedPb.paraDecor!.pad).toBe(4);
+    // The follower clears the box (text bottom + the reserved padding), so the
+    // float-path placement reserves the box just like the normal path.
+    expect(afterPb.y).toBeGreaterThanOrEqual(boxedPb.y + boxedPb.paraDecor!.height + boxedPb.paraDecor!.pad! - 0.01);
   });
 
   it("decorates a bordered/shaded paragraph inside a table cell", () => {

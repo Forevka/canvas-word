@@ -33,6 +33,7 @@ import {
   widthScale,
   doubleStrikeOffsets,
   bulletShapeFor,
+  paraDecorBox,
 } from "../../paint/paintStyle";
 import type { RunPaint, BulletShape } from "../../paint/paintStyle";
 
@@ -177,7 +178,8 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
 
   // Paragraph shading (w:shd) — a fill behind the text box, beneath the runs.
   if (block.paraDecor?.shading) {
-    doc.rect(block.x, block.y, block.paraDecor.width, block.paraDecor.height).fill(block.paraDecor.shading);
+    const box = paraDecorBox(block.x, block.y, block.paraDecor);
+    doc.rect(box.x, box.y, box.width, box.height).fill(block.paraDecor.shading);
   }
 
   // List marker — paint-only, first line's baseline in the hanging indent.
@@ -258,10 +260,13 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
   if (block.paraDecor?.borders) {
     const d = block.paraDecor;
     const b = d.borders!;
-    const x = block.x;
-    const yT = block.y;
-    const xR = block.x + d.width;
-    const yB = block.y + d.height;
+    // Box expanded outward by the border-to-text padding (paraDecorBox), so the
+    // rules sit outside the glyphs — identical to the canvas renderer.
+    const box = paraDecorBox(block.x, block.y, d);
+    const x = box.x;
+    const yT = box.y;
+    const xR = box.x + box.width;
+    const yB = box.y + box.height;
     strokeCellEdge(ctx, b.top, x, yT, xR, yT, 0, 1);
     strokeCellEdge(ctx, b.bottom, x, yB, xR, yB, 0, -1);
     strokeCellEdge(ctx, b.left, x, yT, x, yB, 1, 0);

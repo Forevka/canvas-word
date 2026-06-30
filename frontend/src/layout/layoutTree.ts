@@ -148,8 +148,10 @@ export interface PlacedBlock {
   /** Paragraph shading fill + border box (OOXML w:shd / w:pBdr), painted behind
    *  the text. `width`/`height` are the box extent for THIS placed chunk (a
    *  paragraph split across pages decorates each chunk); `x`/`y` come from the
-   *  block. Absent = no paragraph background or border. */
-  paraDecor?: { shading?: string; borders?: ParaBorders; width: number; height: number };
+   *  block. `pad` is the border-to-text padding the painters expand the box
+   *  outward by (0/absent when there's no border). Absent = no paragraph
+   *  background or border. */
+  paraDecor?: { shading?: string; borders?: ParaBorders; width: number; height: number; pad?: number };
 }
 
 export interface Page {

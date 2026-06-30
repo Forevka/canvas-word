@@ -41,6 +41,7 @@ import {
   widthScale,
   doubleStrikeOffsets,
   bulletShapeFor,
+  paraDecorBox,
 } from "./paintStyle";
 import type { RunPaint, BulletShape } from "./paintStyle";
 import type { UnderlineStyle } from "@cw/shared";
@@ -975,8 +976,9 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
   function paintParaFills(ctx: CanvasRenderingContext2D, block: PlacedBlock, pageIndex: number): void {
     const d = block.paraDecor;
     if (d?.shading) {
+      const box = paraDecorBox(block.x, block.y, d);
       ctx.fillStyle = d.shading;
-      ctx.fillRect(block.x, block.y, d.width, d.height);
+      ctx.fillRect(box.x, box.y, box.width, box.height);
     }
     if (block.table) {
       for (const row of block.table.rows) {
@@ -1192,10 +1194,13 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     if (block.paraDecor?.borders) {
       const d = block.paraDecor;
       const b = d.borders!;
-      const x = block.x;
-      const yT = block.y;
-      const xR = block.x + d.width;
-      const yB = block.y + d.height;
+      // Box expanded outward by the border-to-text padding (paraDecorBox), so the
+      // rules sit outside the glyphs — identical to the PDF painter.
+      const box = paraDecorBox(block.x, block.y, d);
+      const x = box.x;
+      const yT = box.y;
+      const xR = box.x + box.width;
+      const yB = box.y + box.height;
       strokeCellEdge(ctx, b.top, x, yT, xR, yT, 0, 1);
       strokeCellEdge(ctx, b.bottom, x, yB, xR, yB, 0, -1);
       strokeCellEdge(ctx, b.left, x, yT, x, yB, 1, 0);
