@@ -45,6 +45,8 @@ export interface ImagePropsPatch {
   align?: ImageBlock["align"];
   wrap?: ImageBlock["wrap"] | null;
   anchor?: ImageBlock["anchor"] | null;
+  /** Crop insets (a:srcRect 0..1 fractions). `null` clears the crop. */
+  crop?: ImageBlock["crop"] | null;
 }
 
 /** setTableProps payload — table-LEVEL fields (w:tblPr): indent + the cascade
@@ -738,6 +740,7 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       if (op.patch.align !== undefined) oldPatch.align = block.align;
       if (op.patch.wrap !== undefined) oldPatch.wrap = block.wrap ?? null;
       if (op.patch.anchor !== undefined) oldPatch.anchor = block.anchor ?? null;
+      if (op.patch.crop !== undefined) oldPatch.crop = block.crop ?? null;
       const updated: ImageBlock = { ...block, revision: block.revision + 1 };
       if (op.patch.widthPx !== undefined) updated.widthPx = op.patch.widthPx;
       if (op.patch.heightPx !== undefined) updated.heightPx = op.patch.heightPx;
@@ -749,6 +752,10 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       if (op.patch.anchor !== undefined) {
         if (op.patch.anchor === null) delete updated.anchor;
         else updated.anchor = op.patch.anchor;
+      }
+      if (op.patch.crop !== undefined) {
+        if (op.patch.crop === null) delete updated.crop;
+        else updated.crop = op.patch.crop;
       }
       let next: Document;
       if (loc.kind === "top") {

@@ -9,6 +9,59 @@
 
 import type { Rect } from "../layout/geometry";
 
+/** Image crop insets — 0..1 fractions trimmed off each edge of the source (OOXML
+ *  a:srcRect). The visible source window is [left,1-right] × [top,1-bottom]. */
+export interface CropInsets {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+const NO_CROP: CropInsets = { left: 0, top: 0, right: 0, bottom: 0 };
+
+/** The full source-image footprint (document px) such that the CURRENT crop window
+ *  maps exactly onto the displayed box `rect`. The displayed box shows the
+ *  [left,1-right]×[top,1-bottom] window of this rect, so the rect is generally
+ *  larger than the box and bleeds past it on the cropped edges. */
+export function fullSourceRect(rect: Rect, crop: CropInsets): Rect {
+  const wx = Math.max(0.01, 1 - crop.left - crop.right);
+  const wy = Math.max(0.01, 1 - crop.top - crop.bottom);
+  const width = rect.width / wx;
+  const height = rect.height / wy;
+  return { x: rect.x - crop.left * width, y: rect.y - crop.top * height, width, height, pageIndex: rect.pageIndex };
+}
+
+/** The bright crop window (document px) for a set of insets within the full
+ *  source rect — inverse of {@link cropInsetsFromWindow}. */
+export function windowRectFromInsets(full: Rect, crop: CropInsets): Rect {
+  return {
+    x: full.x + crop.left * full.width,
+    y: full.y + crop.top * full.height,
+    width: Math.max(1, (1 - crop.left - crop.right) * full.width),
+    height: Math.max(1, (1 - crop.top - crop.bottom) * full.height),
+    pageIndex: full.pageIndex,
+  };
+}
+
+/** Crop insets for a window rect positioned within the full source rect — the
+ *  fraction of each edge trimmed away. Clamped to [0,1). */
+export function cropInsetsFromWindow(full: Rect, win: Rect): CropInsets {
+  const clamp = (v: number): number => Math.min(0.999, Math.max(0, v));
+  return {
+    left: clamp((win.x - full.x) / full.width),
+    top: clamp((win.y - full.y) / full.height),
+    right: clamp(1 - (win.x + win.width - full.x) / full.width),
+    bottom: clamp(1 - (win.y + win.height - full.y) / full.height),
+  };
+}
+
+/** A crop is "empty" (no trim) when every inset rounds to zero — used to clear the
+ *  field rather than write a degenerate full-frame crop. */
+export function isEmptyCrop(crop: CropInsets): boolean {
+  return crop.left < 1e-3 && crop.top < 1e-3 && crop.right < 1e-3 && crop.bottom < 1e-3;
+}
+
 export interface ObjectFrameDeps {
   getPageElement(pageIndex: number): HTMLElement | null;
   /** Current presentational zoom — the frame lives in zoomed page pixels, but
@@ -28,6 +81,18 @@ export interface ObjectFrame {
    *  committed position instead of jumping on mouseup. */
   show(rect: Rect, maxWidth: number, src?: string, anchor?: ResizeAnchor, resizable?: boolean): void;
   hide(): void;
+  /** Enter crop mode for the image at `rect` (its displayed box) with the given
+   *  current crop. Shows the faded full source behind a bright draggable window
+   *  with 8 crop handles; previews purely in the DOM (no model op). */
+  beginCrop(rect: Rect, src: string, crop?: CropInsets | null): void;
+  /** Re-pin the crop overlay after a zoom/relayout (the live window is held in
+   *  crop fractions, so it survives the rescale). No-op when not cropping. */
+  refreshCrop(rect: Rect): void;
+  /** Whether crop mode is active. */
+  isCropping(): boolean;
+  /** Leave crop mode and return the final insets the caller should commit — `null`
+   *  when the window covers the whole source (i.e. clear the crop). */
+  endCrop(): CropInsets | null;
   destroy(): void;
 }
 
@@ -270,6 +335,175 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
 
   for (const el of handleEls) el.addEventListener("pointerdown", onHandleDown);
 
+  // ---- crop mode ---------------------------------------------------------
+  // A separate overlay (independent of the resize frame above) that mirrors the
+  // resize handle protocol: the whole crop session previews purely in the DOM —
+  // the faded full source behind a bright, draggable window with 8 handles — and
+  // the model is mutated ONCE, on exit (Esc / click-away), as a single undo step.
+  // The live window is held in crop FRACTIONS so it survives a zoom/relayout.
+  const cropFull = document.createElement("div"); // whole source, dimmed underneath
+  cropFull.style.cssText =
+    "position:absolute;display:none;pointer-events:none;z-index:3;" +
+    "background-repeat:no-repeat;background-position:top left;";
+  const cropDim = document.createElement("div"); // darkening veil over the trimmed area
+  cropDim.style.cssText =
+    "position:absolute;display:none;pointer-events:none;z-index:4;background:rgba(0,0,0,0.45);";
+  const cropWin = document.createElement("div"); // the kept window, bright (undimmed)
+  cropWin.style.cssText =
+    "position:absolute;display:none;pointer-events:none;z-index:5;overflow:hidden;" +
+    "background-repeat:no-repeat;";
+  const cropFrame = document.createElement("div"); // window border + handles
+  cropFrame.style.cssText =
+    "position:absolute;display:none;border:2px solid #1a73e8;box-sizing:border-box;" +
+    "pointer-events:none;z-index:6;";
+  const cropHandleEls: HTMLDivElement[] = HANDLES.map((h) => {
+    const el = document.createElement("div");
+    el.dataset["handle"] = h.name;
+    el.className = "cw-obj-handle";
+    el.style.cssText =
+      "position:absolute;width:8px;height:8px;background:#fff;border:1.5px solid #1a73e8;" +
+      `pointer-events:auto;cursor:${h.cursor};` +
+      `left:calc(${h.dx * 100}% - 4px);top:calc(${h.dy * 100}% - 4px);`;
+    cropFrame.appendChild(el);
+    return el;
+  });
+
+  let cropSession: { rect: Rect; src: string; originalCrop: CropInsets; liveCrop: CropInsets } | null = null;
+
+  const setBox = (el: HTMLElement, r: Rect, z: number): void => {
+    el.style.left = `${r.x * z}px`;
+    el.style.top = `${r.y * z}px`;
+    el.style.width = `${r.width * z}px`;
+    el.style.height = `${r.height * z}px`;
+  };
+
+  const paintCrop = (): void => {
+    const s = cropSession;
+    if (!s) return;
+    const z = deps.getZoom();
+    const full = fullSourceRect(s.rect, s.originalCrop);
+    const win = windowRectFromInsets(full, s.liveCrop);
+    setBox(cropFull, full, z);
+    cropFull.style.backgroundSize = `${full.width * z}px ${full.height * z}px`;
+    setBox(cropDim, full, z);
+    setBox(cropWin, win, z);
+    cropWin.style.backgroundSize = `${full.width * z}px ${full.height * z}px`;
+    cropWin.style.backgroundPosition = `${-(win.x - full.x) * z}px ${-(win.y - full.y) * z}px`;
+    setBox(cropFrame, win, z);
+  };
+
+  const hideCropOverlay = (): void => {
+    for (const el of [cropFull, cropDim, cropWin, cropFrame]) el.style.display = "none";
+    cropFull.style.backgroundImage = "";
+    cropWin.style.backgroundImage = "";
+  };
+
+  const showCropOverlay = (rect: Rect, src: string, crop: CropInsets): void => {
+    const host = deps.getPageElement(rect.pageIndex);
+    if (!host) return;
+    frame.style.display = "none"; // crop mode supersedes the resize frame
+    hideGhost();
+    cropSession = { rect, src, originalCrop: crop, liveCrop: crop };
+    cropFull.style.backgroundImage = `url("${src}")`;
+    cropWin.style.backgroundImage = `url("${src}")`;
+    for (const el of [cropFull, cropDim, cropWin, cropFrame]) {
+      if (el.parentElement !== host) host.appendChild(el);
+      el.style.display = "block";
+    }
+    paintCrop();
+  };
+
+  // Crop handle drag — its own pointer-capture loop (like the resize handles), but
+  // it only moves the window in the DOM; no model op fires until endCrop().
+  let cropDragEl: HTMLElement | null = null;
+  let cropPointerId = 0;
+  let cropDrag: { spec: HandleSpec; startX: number; startY: number; full: Rect; startWin: Rect } | null = null;
+  let cropMoveRaf = 0;
+  let cropMovePending = false;
+
+  const winFromCropDrag = (ev: MouseEvent): Rect => {
+    const d = cropDrag!;
+    const z = deps.getZoom();
+    const dx = (ev.clientX - d.startX) / z;
+    const dy = (ev.clientY - d.startY) / z;
+    const F = d.full;
+    const MIN = 8; // window never shrinks below 8 document px on either axis
+    let { x, y, width, height } = d.startWin;
+    if (d.spec.dx === 0) {
+      const nx = Math.min(d.startWin.x + d.startWin.width - MIN, Math.max(F.x, d.startWin.x + dx));
+      width = d.startWin.x + d.startWin.width - nx;
+      x = nx;
+    } else if (d.spec.dx === 1) {
+      const right = Math.min(F.x + F.width, Math.max(d.startWin.x + MIN, d.startWin.x + d.startWin.width + dx));
+      width = right - d.startWin.x;
+    }
+    if (d.spec.dy === 0) {
+      const ny = Math.min(d.startWin.y + d.startWin.height - MIN, Math.max(F.y, d.startWin.y + dy));
+      height = d.startWin.y + d.startWin.height - ny;
+      y = ny;
+    } else if (d.spec.dy === 1) {
+      const bottom = Math.min(F.y + F.height, Math.max(d.startWin.y + MIN, d.startWin.y + d.startWin.height + dy));
+      height = bottom - d.startWin.y;
+    }
+    return { x, y, width, height, pageIndex: F.pageIndex };
+  };
+
+  const flushCropMove = (): void => {
+    cropMoveRaf = 0;
+    if (cropMovePending) paintCrop();
+    cropMovePending = false;
+  };
+
+  const onCropDragMove = (ev: PointerEvent): void => {
+    if (!cropDrag || !cropSession) return;
+    cropSession.liveCrop = cropInsetsFromWindow(cropDrag.full, winFromCropDrag(ev));
+    cropMovePending = true;
+    if (!cropMoveRaf) cropMoveRaf = requestAnimationFrame(flushCropMove);
+  };
+
+  const endCropDrag = (): void => {
+    if (!cropDragEl) return;
+    cropDragEl.removeEventListener("pointermove", onCropDragMove);
+    cropDragEl.removeEventListener("pointerup", onCropDragUp);
+    cropDragEl.removeEventListener("pointercancel", onCropDragUp);
+    try {
+      cropDragEl.releasePointerCapture(cropPointerId);
+    } catch {
+      /* pointer already released */
+    }
+    cropDragEl = null;
+  };
+
+  function onCropDragUp(ev: PointerEvent): void {
+    if (!cropDrag) return;
+    onCropDragMove(ev); // settle on the final window
+    if (cropMoveRaf) cancelAnimationFrame(cropMoveRaf);
+    cropMoveRaf = 0;
+    cropMovePending = false;
+    cropDrag = null;
+    endCropDrag();
+    paintCrop();
+  }
+
+  const onCropHandleDown = (ev: PointerEvent): void => {
+    if (!cropSession) return;
+    const el = ev.currentTarget as HTMLElement;
+    const spec = HANDLES.find((h) => h.name === el.dataset["handle"]);
+    if (!spec) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const full = fullSourceRect(cropSession.rect, cropSession.originalCrop);
+    cropDrag = { spec, startX: ev.clientX, startY: ev.clientY, full, startWin: windowRectFromInsets(full, cropSession.liveCrop) };
+    cropDragEl = el;
+    cropPointerId = ev.pointerId;
+    el.setPointerCapture(ev.pointerId);
+    el.addEventListener("pointermove", onCropDragMove);
+    el.addEventListener("pointerup", onCropDragUp);
+    el.addEventListener("pointercancel", onCropDragUp);
+  };
+
+  for (const el of cropHandleEls) el.addEventListener("pointerdown", onCropHandleDown);
+
   return {
     show(rect: Rect, maxWidth: number, src?: string, anchor: ResizeAnchor = "left", resizable = true): void {
       const host = deps.getPageElement(rect.pageIndex);
@@ -306,12 +540,42 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
       frame.style.display = "none";
       hideGhost();
     },
+    beginCrop(rect: Rect, src: string, crop?: CropInsets | null): void {
+      showCropOverlay(rect, src, crop ?? NO_CROP);
+    },
+    refreshCrop(rect: Rect): void {
+      if (!cropSession) return;
+      cropSession.rect = rect; // track reflow/zoom; the live window is held in fractions
+      paintCrop();
+    },
+    isCropping(): boolean {
+      return cropSession !== null;
+    },
+    endCrop(): CropInsets | null {
+      const s = cropSession;
+      if (cropDrag) {
+        cropDrag = null;
+        endCropDrag();
+      }
+      if (cropMoveRaf) cancelAnimationFrame(cropMoveRaf);
+      cropMoveRaf = 0;
+      cropMovePending = false;
+      hideCropOverlay();
+      cropSession = null;
+      if (!s) return null;
+      return isEmptyCrop(s.liveCrop) ? null : s.liveCrop;
+    },
     destroy(): void {
       cancelPendingMove(); // drop any in-flight resize frame so it can't fire post-teardown
+      if (cropMoveRaf) cancelAnimationFrame(cropMoveRaf);
       hideGhost();
       ghost.remove();
       sizeGhost.remove();
       frame.remove();
+      cropFull.remove();
+      cropDim.remove();
+      cropWin.remove();
+      cropFrame.remove();
     },
   };
 }
