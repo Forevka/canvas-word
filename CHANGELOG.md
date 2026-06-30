@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Vertical cell text (`w:textDirection` `tbRl`/`btLr`) — real 90° rotation.** Cells
+  whose text direction is `tbRl` (top→bottom, columns right→left) or `btLr` (bottom→top,
+  columns left→right) now render rotated instead of flowing horizontally. The layout
+  engine measures a rotated cell in a swapped frame — the laid-out text length drives the
+  **row height** and the stack of line heights drives the **column width** — so a vertical
+  header column auto-sizes narrow and tall (AutoFit), exactly like Word (`measureTable` /
+  `placeTable` in `layout/engine.ts`, new `PlacedTableCell.rotation`). The canvas renderer
+  (`paint/renderer.ts`) and PDF exporter (`export/pdf/paintBlock.ts`) wrap the cell's
+  content in a matching `translate`+`rotate`, so canvas and PDF agree. Caret placement and
+  click hit-testing inverse-rotate through the cell so clicking into a vertical cell lands
+  the caret correctly (`layout/geometry.ts`). Round-trip and the existing UI are unchanged
+  (the model/import/export already preserved the value). The East-Asian upright variants
+  (`tbRlV`/`tbLrV`) degrade to the same 90° clockwise rotation without per-glyph
+  uprighting; `lrTb`/`lrTbV` stay horizontal. Known limitations: the caret renders as a
+  vertical bar (placement is correct, orientation is not) and per-grapheme selection inside
+  a rotated cell is approximated by a containing box. A `tbRl`/`btLr` demo table is in the
+  showcase (`model/sampleDoc.ts`).
 - **Insert → Symbol (editor UI).** A new **Symbol** button on the Insert ribbon tab
   opens a floating symbol picker: choose a symbol font (Symbol, Wingdings, Wingdings 2,
   Wingdings 3, Webdings) and click a glyph from the Private-Use grid, with a

@@ -2657,6 +2657,34 @@ function cellMinMax(
   getLines: (p: Paragraph, w: number) => LineBox[],
   available: number,
 ): ColMinMax {
+  const mgn = cellMargin(cell);
+  const pad = mgn.left + mgn.right;
+  const rot = cellRotation(cell.textDirection);
+  if (rot) {
+    // Vertical-text cell: its column demand is the stack of line heights (the page
+    // WIDTH after rotation), independent of the column width — so min === max (the
+    // text doesn't wrap into the column). The text LENGTH lands on the row height.
+    let cross = 0;
+    for (const b of cell.blocks) {
+      if (b.kind === "paragraph") {
+        cross += b.style.spaceBeforePx + totalLinesHeight(getLines(b, AUTOFIT_NATURAL_W)) + b.style.spaceAfterPx;
+      } else if (b.kind === "image") {
+        if (!b.anchor) cross += b.heightPx + CELL_BLOCK_GAP;
+      } else if (b.kind === "equation") {
+        const box = eqBox(b);
+        cross += box.ascent + box.descent + CELL_BLOCK_GAP;
+      } else {
+        cross += measureTable(b, available, getLines, listCtx).height + CELL_BLOCK_GAP;
+      }
+    }
+    let w = cross + pad;
+    const prefR = cell.preferredWidth;
+    if (prefR) {
+      const prefPx = prefR.type === "pct" ? prefR.px * available : prefR.px;
+      if (prefPx > w) w = prefPx;
+    }
+    return { min: w, max: w };
+  }
   let min = 0;
   let max = 0;
   for (const b of cell.blocks) {
@@ -2664,8 +2692,6 @@ function cellMinMax(
     if (mm.min > min) min = mm.min;
     if (mm.max > max) max = mm.max;
   }
-  const mgn = cellMargin(cell);
-  const pad = mgn.left + mgn.right;
   min += pad;
   max += pad;
   const pref = cell.preferredWidth;
@@ -2785,6 +2811,9 @@ interface MeasuredCell {
   colStart: number;
   /** Vertical merge: rows this cell covers (1 = normal). */
   rowSpan: number;
+  /** Vertical text (w:textDirection): the cell's content was laid out UNWRAPPED in
+   *  a swapped frame and is painted rotated 90°. Absent = horizontal. */
+  rot?: CellRot;
 }
 interface MeasuredRow {
   cells: MeasuredCell[];
@@ -2792,6 +2821,28 @@ interface MeasuredRow {
 }
 
 const CELL_BLOCK_GAP = 4; // vertical gap around non-paragraph blocks in cells
+
+/** Vertical-text rotation a cell's w:textDirection requests, or null for the
+ *  default horizontal flow. `tbRl` (top→bottom, columns right→left) and the
+ *  East-Asian upright variants `tbRlV`/`tbLrV` rotate the text 90° CLOCKWISE;
+ *  `btLr` (bottom→top, columns left→right) rotates 90° COUNTER-CLOCKWISE. The
+ *  upright `*V` variants degrade to the same 90° rotation (no per-glyph
+ *  uprighting); `lrTb`/`lrTbV` stay horizontal. */
+type CellRot = "cw" | "ccw";
+function cellRotation(dir: TableCell["textDirection"]): CellRot | null {
+  switch (dir) {
+    case "tbRl":
+    case "tbRlV":
+    case "tbLrV":
+      return "cw";
+    case "btLr":
+      return "ccw";
+    default:
+      return null;
+  }
+}
+/** Canvas/pdf rotation angle (radians) for a rotated cell: +π/2 = 90° CW, −π/2 = CCW. */
+const cellRotAngle = (rot: CellRot): number => (rot === "cw" ? Math.PI / 2 : -Math.PI / 2);
 
 /** List geometry threaded into the table layout so cell paragraphs can carry a
  *  list marker, just like body paragraphs. `indentOf` is the list-level indent
@@ -2846,6 +2897,38 @@ function measureTable(
       col += span;
       const mgn = cellMargin(cell);
       const innerWidth = Math.max(8, width - mgn.left - mgn.right);
+      const rot = cellRotation(cell.textDirection);
+      if (rot) {
+        // Vertical-text cell: lay every paragraph out UNWRAPPED (vertical headers
+        // don't wrap — the text length sets the row height). After the 90° rotation
+        // the laid-out text LENGTH (longest line) becomes the cell's content HEIGHT,
+        // so `flow` drives the row; the stack of line heights becomes the cell's
+        // content WIDTH (the column demand — see cellMinMax).
+        let flow = 0;
+        const rotItems: MeasuredCellItem[] = cell.blocks.map((b) => {
+          if (b.kind === "paragraph") {
+            const lines = getLines(b, AUTOFIT_NATURAL_W);
+            let w = 0;
+            for (const l of lines) w = Math.max(w, lineContentWidth(l));
+            flow = Math.max(flow, w + b.style.indentLeftPx + listCtx.indentOf(b) + (b.style.indentRightPx ?? 0));
+            return { kind: "para", block: b, lines };
+          }
+          if (b.kind === "image") {
+            if (b.anchor) return { kind: "image", block: b, width: b.widthPx, height: b.heightPx };
+            flow = Math.max(flow, b.widthPx + CELL_BLOCK_GAP);
+            return { kind: "image", block: b, width: b.widthPx, height: b.heightPx };
+          }
+          if (b.kind === "equation") {
+            const box = eqBox(b);
+            flow = Math.max(flow, box.width + CELL_BLOCK_GAP);
+            return { kind: "equation", block: b, box, width: box.width, height: box.ascent + box.descent };
+          }
+          const m = measureTable(b, innerWidth, getLines, listCtx);
+          flow = Math.max(flow, m.tableWidth + CELL_BLOCK_GAP);
+          return { kind: "table", block: b, ...m };
+        });
+        return { cell, items: rotItems, height: flow + mgn.top + mgn.bottom, width, colStart, rowSpan, rot };
+      }
       let h = 0;
       const items: MeasuredCellItem[] = cell.blocks.map((b) => {
         if (b.kind === "paragraph") {
@@ -2990,6 +3073,49 @@ function placeTable(
       const blocks: PlacedBlock[] = [];
       const mgn = cellMargin(mc.cell);
       const innerWidth = mc.width - mgn.left - mgn.right;
+      if (mc.rot) {
+        // Vertical-text cell: place the blocks in a LOCAL (pre-rotation) frame whose
+        // local x-axis is the text-advance direction and local y-axis is the stacked
+        // lines. paint/geometry map local→page via translate(origin)+rotate(angle):
+        //   tbRl (CW)  anchors the TOP-RIGHT inner corner, stacking lines leftward;
+        //   btLr (CCW) anchors the BOTTOM-LEFT corner, stacking lines rightward.
+        const innerH = cellHeight - mgn.top - mgn.bottom;
+        const angle = cellRotAngle(mc.rot);
+        const originX = mc.rot === "cw" ? cx + mgn.left + innerWidth : cx + mgn.left;
+        const originY = mc.rot === "cw" ? ry + mgn.top : ry + mgn.top + innerH;
+        let ly = 0; // local stack axis (→ page width after rotation)
+        for (const it of mc.items) {
+          if (it.kind === "para") {
+            ly += it.block.style.spaceBeforePx;
+            const lx = it.block.style.indentLeftPx + listCtx.indentOf(it.block);
+            blocks.push({ blockId: it.block.id, x: lx, y: ly, firstLineIndex: 0, lines: it.lines });
+            ly += totalLinesHeight(it.lines) + it.block.style.spaceAfterPx;
+          } else if (it.kind === "image") {
+            blocks.push({ blockId: it.block.id, x: 0, y: ly, firstLineIndex: 0, lines: [], image: { src: it.block.src, width: it.width, height: it.height } });
+            ly += it.height + CELL_BLOCK_GAP;
+          } else if (it.kind === "equation") {
+            blocks.push({ blockId: it.block.id, x: 0, y: ly, firstLineIndex: 0, lines: [], equation: { box: it.box, width: it.width, height: it.height, baseline: it.box.ascent } });
+            ly += it.height + CELL_BLOCK_GAP;
+          } else {
+            blocks.push(placeTable(it.block, it.rows, it.colWidths, it.xOffset, ly, it.tableWidth, 0, listCtx));
+            ly += it.height + CELL_BLOCK_GAP;
+          }
+        }
+        cells.push({
+          x: cx,
+          y: ry,
+          width: mc.width,
+          height: cellHeight,
+          originRow: firstRowIndex + lr,
+          originCol: mc.colStart,
+          blocks,
+          ...(mc.cell.shading !== undefined ? { shading: mc.cell.shading } : {}),
+          ...(mc.cell.borders !== undefined ? { borders: mc.cell.borders } : {}),
+          contentClip: { x: cx + mgn.left, y: ry, width: innerWidth, height: cellHeight },
+          rotation: { angle, originX, originY },
+        });
+        continue;
+      }
       // Vertical alignment: by default content hugs the top. For center/bottom,
       // offset the whole block stack by the slack between the content height
       // (mc.height already folds in the cell margins) and the cell's painted box,

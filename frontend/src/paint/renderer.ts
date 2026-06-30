@@ -1044,7 +1044,17 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
             ctx.rect(clip.x, clip.y, clip.width, clip.height);
             ctx.clip();
           }
+          // Vertical text: rotate the cell's local content frame into place. The
+          // clip above is page-space (set before the transform), so it still bounds
+          // the rotated content to the cell box.
+          const rot = cell.rotation;
+          if (rot) {
+            ctx.save();
+            ctx.translate(rot.originX, rot.originY);
+            ctx.rotate(rot.angle);
+          }
           for (const cb of cell.blocks) paintBlock(ctx, cb, pageIndex);
+          if (rot) ctx.restore();
           if (clip) ctx.restore();
         }
       }
