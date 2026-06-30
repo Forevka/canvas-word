@@ -15,7 +15,7 @@ import { formatListNumber, markerText, type ListDefinition, type ListLevel } fro
 import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock, PlacedImage } from "./layoutTree";
 import { PrepareCache, prepareRunSegment, setActiveCjkFallback, applyCjkLocale, type PreparedSegment } from "./prepareCache";
 import { charStyleToFont, fontMetrics, measureTextWidth } from "./metrics";
-import { widthScale } from "../paint/paintStyle";
+import { widthScale, PARA_BORDER_PAD_PX } from "../paint/paintStyle";
 import { baseLevelFor, effectiveAlign, hasRtlChars, levelsFor, visualOrder } from "./bidi";
 import { setActiveFontRegistry, type CustomFontRegistry } from "../fonts/customRegistry";
 import { equationBox, EQUATION_DISPLAY_PX } from "./math/equationLayout";
@@ -44,7 +44,12 @@ let activeDefaultTabStopPx = DEFAULT_TAB_STOP_PX;
 function paraDecorFor(style: ParaStyle, boxWidth: number, height: number): NonNullable<PlacedBlock["paraDecor"]> | undefined {
   const { borders, shading } = style;
   if (!borders && !shading) return undefined;
-  return { width: Math.max(0, boxWidth), height, ...(shading ? { shading } : {}), ...(borders ? { borders } : {}) };
+  // Border-to-text padding: the painters expand the box outward by `pad` so a
+  // wide/double rule sits OUTSIDE the glyphs (and the shading fill reaches it).
+  // Only borders need the gap; a shading-only paragraph keeps its text-edge box
+  // so its fill is byte-identical to before.
+  const pad = borders ? PARA_BORDER_PAD_PX : 0;
+  return { width: Math.max(0, boxWidth), height, pad, ...(shading ? { shading } : {}), ...(borders ? { borders } : {}) };
 }
 
 const sumLineHeights = (lines: LineBox[]): number => lines.reduce((h, l) => h + l.height, 0);
@@ -2018,11 +2023,18 @@ function layoutDocument(
       if (!ok) newPage();
     }
 
-    // Reserve the paragraph border line widths in the surrounding gaps so a boxed
-    // paragraph's top/bottom rules don't paint over the adjacent block (w:pBdr).
+    // Reserve the paragraph border line widths AND the border-to-text padding in
+    // the surrounding gaps so a boxed paragraph's box (expanded outward by `pad`)
+    // doesn't paint over the adjacent block (w:pBdr). `pad` is reserved on both
+    // edges whenever the paragraph has borders, since the box — and any shading
+    // fill — grows by `pad` above and below the text regardless of which edges
+    // carry a rule.
     const bd = block.style.borders;
+    const pad = bd ? PARA_BORDER_PAD_PX : 0;
     if (bd?.top) y += bd.top.widthPx;
+    y += pad;
     placeParagraph(block, lines);
+    y += pad;
     if (bd?.bottom) y += bd.bottom.widthPx;
     if (!suppressAfter) y += block.style.spaceAfterPx;
   }

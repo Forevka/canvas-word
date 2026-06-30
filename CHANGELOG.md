@@ -357,6 +357,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shared `bulletShapeFor` geometry, so they no longer depend on font glyph coverage
   and look identical on screen and in the export. Numbered and custom-glyph markers
   still paint as text. (#99)
+- **Paragraph border (`w:pBdr`) no longer overlaps the text.** A paragraph border box
+  was stroked exactly at the text content edges with no border-to-text padding, so a
+  wide or `double` rule straddled the glyphs (visible with the showcase's left-only
+  double orange border). The decor box is now expanded **outward** by a small
+  border-to-text padding (default ~4px) on every side in **both** painters
+  (`paint/renderer.ts` canvas + `export/pdf/paintBlock.ts` PDF), derived from a single
+  shared `paraDecorBox` helper so canvas and PDF stay pixel-identical. The padding is
+  reserved in layout (`paraDecorFor` + the body-flow block-gap reservation) so adjacent
+  content can't collide with the box, and the shading fill (`w:shd`) now matches the
+  padded box so it reaches the border. Shading-only paragraphs keep their text-edge box
+  (no padding) and render byte-identically. No model/import/export change.
 - **PAGE / NUMPAGES field inside a table now updates when the table moves pages.**
   Moving a table to a new page (e.g. a `Ctrl+Enter` page break before it) left a
   body PAGE field in one of its cells showing the old page number until an unrelated
