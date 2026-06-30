@@ -606,7 +606,7 @@ export function applyPageSetup(geometry: SectionGeometry): Command {
     if (sel) {
       const loc = locateParagraph(state.doc, sel.focus.blockId);
       const outsideBody =
-        loc?.kind === "band" || loc?.kind === "footnote" || (loc?.kind === "cell" && loc.where !== "body");
+        loc?.kind === "band" || loc?.kind === "footnote" || loc?.kind === "endnote" || (loc?.kind === "cell" && loc.where !== "body");
       if (outsideBody) {
         // Band/footnote stories live on doc.section — target the final section.
         return tr([{ type: "setSectionProps", geometry }], sel, "command");
@@ -659,7 +659,7 @@ export function pageSetupAt(state: EditorState): SectionGeometry {
   if (sel) {
     const loc = locateParagraph(state.doc, sel.focus.blockId);
     const outsideBody =
-      loc?.kind === "band" || loc?.kind === "footnote" || (loc?.kind === "cell" && loc.where !== "body");
+      loc?.kind === "band" || loc?.kind === "footnote" || loc?.kind === "endnote" || (loc?.kind === "cell" && loc.where !== "body");
     if (outsideBody) fromIndex = state.doc.blocks.length; // → doc.section
     else if (loc) fromIndex = loc.bi;
   }
@@ -1533,6 +1533,88 @@ export function insertFootnoteCmd(): Command {
       style: { align: "left", lineHeight: 1.4, spaceBeforePx: 0, spaceAfterPx: 2, indentFirstLinePx: 0, indentLeftPx: 0 },
     };
     ops.push({ type: "setFootnote", noteId, paras: [notePara] });
+    // Word drops the caret into the new note for immediate typing.
+    return tr(ops, caret(notePara.id, 0), "command");
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Endnotes — identical machinery to footnotes (the ref run's TEXT is its
+// number; inserting renumbers every later ref in the same transaction), but the
+// note body lives in Document.endnotes and lays out at the document end.
+
+export function insertEndnoteCmd(): Command {
+  return (state) => {
+    const sel = state.selection;
+    if (!sel || !isCollapsed(sel)) return null;
+    const at = sel.focus;
+    const loc = locateParagraph(state.doc, at.blockId);
+    // Body paragraphs OR body table cells — not header/footer bands or notes.
+    if (loc?.kind !== "top" && !(loc?.kind === "cell" && loc.where === "body")) return null;
+
+    // Document-ordered refs with their host paragraph + run index.
+    interface RefAt {
+      para: Paragraph;
+      runIdx: number;
+      offset: number;
+    }
+    // Walk body AND table-cell paragraphs in document order, so numbering stays
+    // correct wherever a ref lives (and a ref can sit inside a table cell).
+    const body = bodyParagraphs(state.doc);
+    const refs: RefAt[] = [];
+    body.forEach((para) => {
+      let off = 0;
+      para.runs.forEach((r, runIdx) => {
+        if (r.style.endnoteRef) refs.push({ para, runIdx, offset: off });
+        off += r.text.length;
+      });
+    });
+    const orderOf = (blockId: string): number => body.findIndex((p) => p.id === blockId);
+    const caretOrder = orderOf(at.blockId);
+    let idx = 0;
+    while (idx < refs.length) {
+      const r = refs[idx]!;
+      const ro = orderOf(r.para.id);
+      if (ro < caretOrder || (ro === caretOrder && r.offset < at.offset)) idx++;
+      else break;
+    }
+    const newNumber = idx + 1;
+
+    const ops: Op[] = [];
+    // Renumber subsequent refs (one setRuns per affected paragraph).
+    const renumber = new Map<string, Map<number, string>>();
+    for (let k = idx; k < refs.length; k++) {
+      const r = refs[k]!;
+      let m = renumber.get(r.para.id);
+      if (!m) {
+        m = new Map();
+        renumber.set(r.para.id, m);
+      }
+      m.set(r.runIdx, String(k + 2));
+    }
+    for (const [paraId, m] of renumber) {
+      const p = blockById(state.doc, paraId)!; // cell-aware (refs may live in cells)
+      const runs = p.runs.map((r, i) => (m.has(i) ? { ...r, text: m.get(i)! } : r));
+      ops.push({ type: "setRuns", blockId: paraId, runs });
+    }
+
+    const noteId = `en_${freshBlockId()}`;
+    const block = blockById(state.doc, at.blockId)!;
+    const inherited = styleAtRuns(block.runs, at.offset) ?? DEFAULT_CELL_CHAR;
+    ops.push({
+      type: "insertText",
+      at,
+      text: String(newNumber),
+      style: { ...inherited, verticalAlign: "super", endnoteRef: noteId, link: undefined },
+    });
+    const notePara: Paragraph = {
+      kind: "paragraph",
+      id: freshBlockId(),
+      revision: 0,
+      runs: [{ text: "", style: { ...inherited, fontSizePx: 12, verticalAlign: undefined, endnoteRef: undefined, link: undefined } }],
+      style: { align: "left", lineHeight: 1.4, spaceBeforePx: 0, spaceAfterPx: 2, indentFirstLinePx: 0, indentLeftPx: 0 },
+    };
+    ops.push({ type: "setEndnote", noteId, paras: [notePara] });
     // Word drops the caret into the new note for immediate typing.
     return tr(ops, caret(notePara.id, 0), "command");
   };

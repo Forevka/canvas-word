@@ -74,6 +74,7 @@ import {
   insertSectionBreak,
   insertTocCmd,
   insertFootnoteCmd,
+  insertEndnoteCmd,
   insertContentControl,
   wrapImageInContentControl,
   removeContentControl,
@@ -1646,6 +1647,10 @@ if (toolbar) {
   });
   txtBtn("ab¹", "Insert footnote", () => {
     editor.dispatch(insertFootnoteCmd());
+    editor.focus();
+  }, "font-size:11px;");
+  txtBtn("abⁱ", "Insert endnote", () => {
+    editor.dispatch(insertEndnoteCmd());
     editor.focus();
   }, "font-size:11px;");
   group(insert, "Controls");

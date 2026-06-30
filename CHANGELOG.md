@@ -38,6 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   into `applyPageSetup`, which writes them onto the terminating section-break paragraph
   or `doc.section` with full undo. The model fields and `.docx` round-trip already
   shipped (#82); this wires the editor UI to them.
+- **Insert → Endnote (editor UI).** A new ribbon button under Insert → References
+  (next to Insert → Footnote) inserts an endnote at the caret: it places a
+  superscript reference run carrying the existing `endnoteRef` field and creates an
+  empty note body in `Document.endnotes`, dropping the caret into that body for
+  immediate typing — mirroring the footnote command. Later endnote references are
+  renumbered in the same transaction so the marker text stays in document order, and
+  the whole insertion is a single undo step. Endnote bodies are now editable like
+  footnote bodies (the content ops, paragraph split/merge, and the `setEndnote` op
+  locate paragraphs inside `Document.endnotes`). The endnote model and `.docx`
+  round-trip already shipped; this wires up authoring from the editor only.
 - **Minor run typography & effects (`CharStyle` w:rPr extras).** A grouped set of
   lower-frequency run properties now round-trip and (where visual) paint: double
   strikethrough (`w:dstrike` → `doubleStrikethrough`, two rules), baseline
