@@ -103,6 +103,16 @@ describe("setCharStyle — Font dialog patch (apply + undo)", () => {
     expect(b.fitTextPx).toBeUndefined();
   });
 
+  it("turns boolean effects off by patching explicit false (dialog's clear path)", () => {
+    const a = p("E");
+    a.runs = [{ text: "E", style: { ...CHAR, caps: true, smallCaps: true, outline: true } }];
+    const state: EditorState = { doc: docOf(a), selection: range(a, 0, 1) };
+    const s = firstRun(run(state, setCharStyle({ caps: false, smallCaps: false, outline: false })).doc).style;
+    expect(s.caps).toBe(false);
+    expect(s.smallCaps).toBe(false);
+    expect(s.outline).toBe(false);
+  });
+
   it("clears underline style/color by patching undefined", () => {
     const a = p("u");
     a.runs = [{ text: "u", style: { ...CHAR, underline: true, underlineStyle: "double", underlineColor: "#00ff00" } }];

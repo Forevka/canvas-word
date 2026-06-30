@@ -116,12 +116,18 @@ const numberInput = (value: number | null, step: string, min?: string, max?: str
   return i;
 };
 
-/** Parse a number input: blank ⇒ `undefined` (clears the field). */
-const numOrUndef = (raw: string): number | undefined => {
+/** Parse a number input: blank or out-of-range ⇒ `undefined` (clears the field).
+ *  `min`/`max` on the inputs are only UI hints, so the model patch re-validates
+ *  here — a junk or impossible value (e.g. `widthScalePct=0`, negative kerning)
+ *  must never reach the document. */
+const numOrUndef = (raw: string, min?: number, max?: number): number | undefined => {
   const t = raw.trim();
   if (t === "") return undefined;
   const n = Number(t);
-  return Number.isFinite(n) ? n : undefined;
+  if (!Number.isFinite(n)) return undefined;
+  if (min !== undefined && n < min) return undefined;
+  if (max !== undefined && n > max) return undefined;
+  return n;
 };
 
 export function showFontDialog(opts: FontDialogOptions): FontDialogHandle {
@@ -229,21 +235,24 @@ export function showFontDialog(opts: FontDialogOptions): FontDialogHandle {
 
   const read = (): Partial<CharStyle> => {
     const patch: Partial<CharStyle> = {
-      caps: capsChk.input.checked ? true : undefined,
-      smallCaps: smallChk.input.checked ? true : undefined,
-      doubleStrikethrough: dstrikeChk.input.checked ? true : undefined,
-      outline: outlineChk.input.checked ? true : undefined,
-      shadow: shadowChk.input.checked ? true : undefined,
-      emboss: embossChk.input.checked ? true : undefined,
-      imprint: imprintChk.input.checked ? true : undefined,
+      // Emit explicit `false` for unchecked effects (not `undefined`) so the
+      // dialog turns a flag OFF as reliably as ON — the patch asserts the full
+      // effect state over the selection, Word-style.
+      caps: capsChk.input.checked,
+      smallCaps: smallChk.input.checked,
+      doubleStrikethrough: dstrikeChk.input.checked,
+      outline: outlineChk.input.checked,
+      shadow: shadowChk.input.checked,
+      emboss: embossChk.input.checked,
+      imprint: imprintChk.input.checked,
       emphasisMark: emSel.value === "none" ? undefined : (emSel.value as EmphasisMark),
       positionPx: numOrUndef(posIn.value),
-      widthScalePct: numOrUndef(scaleIn.value),
+      widthScalePct: numOrUndef(scaleIn.value, 1, 600),
       // letterSpacingPx is `number` (no `| undefined`) — normal is 0, so a blank
       // field clears the spacing to 0 rather than removing the property.
       letterSpacingPx: numOrUndef(spacingIn.value) ?? 0,
-      kerningMinPx: numOrUndef(kernIn.value),
-      fitTextPx: numOrUndef(fitIn.value),
+      kerningMinPx: numOrUndef(kernIn.value, 0),
+      fitTextPx: numOrUndef(fitIn.value, 0),
     };
     if (uStyleSel.value === "none") {
       patch.underline = false;

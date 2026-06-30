@@ -1341,7 +1341,7 @@ if (toolbar) {
   toggle(txtBtn("x²", "Superscript", () => editor.dispatch(toggleVerticalAlign("super"))), (f) => f.superscript);
   toggle(txtBtn("x₂", "Subscript", () => editor.dispatch(toggleVerticalAlign("sub"))), (f) => f.subscript);
   toggle(txtBtn("AB", "All caps", () => editor.toggleStyle("caps"), "font-size:11px;font-weight:600;letter-spacing:.5px;"), (f) => f.caps);
-  toggle(txtBtn("Aᴮ", "Small caps", () => editor.toggleStyle("smallCaps"), "font-size:11px;font-weight:600;"), (f) => f.smallCaps);
+  toggle(txtBtn("Ab", "Small caps", () => editor.toggleStyle("smallCaps"), "font-variant:small-caps;font-size:12px;font-weight:600;"), (f) => f.smallCaps);
   toggle(txtBtn("ab", "Double strikethrough", () => editor.toggleStyle("doubleStrikethrough"), "text-decoration:line-through double;"), (f) => f.doubleStrikethrough);
   sep();
   // Home-tab dialog-launcher for the full Font dialog (caps, underline style +
