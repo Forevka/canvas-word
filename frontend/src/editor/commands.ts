@@ -1551,7 +1551,7 @@ export function insertColumnBreak(): Command {
 }
 
 export function toggleCharStyle(
-  key: "bold" | "italic" | "underline" | "strikethrough",
+  key: "bold" | "italic" | "underline" | "strikethrough" | "caps" | "smallCaps" | "doubleStrikethrough",
 ): Command {
   return (state) => {
     const sel = state.selection;
