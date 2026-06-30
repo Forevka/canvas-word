@@ -14,11 +14,12 @@
 //
 // Run:  npx vitest run src/perf/readsPerDoc.test.ts   (from frontend/)
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   applyOp,
+  BAND_CONTAINERS,
   isHiddenParagraph,
   makeDefaultCharStyle,
   makeDefaultParaStyle,
@@ -115,8 +116,11 @@ function makeSyntheticDoc(n: number): Document {
   return { section, blocks };
 }
 
+// The real appraisal reports are developer-local artifacts (NOT committed — they
+// carry real addresses/PII), so resolve them by path and skip when absent (CI).
+const reportPath = (file: string): string => fileURLToPath(new URL(`../../${file}`, import.meta.url));
 const docOfReport = (file: string): Document =>
-  runImport(new Uint8Array(readFileSync(fileURLToPath(new URL(`../../${file}`, import.meta.url))))).doc;
+  runImport(new Uint8Array(readFileSync(reportPath(file)))).doc;
 
 // ---------------------------------------------------------------------------
 // Workloads. Each returns the tallied counters + wall-clock.
@@ -192,7 +196,7 @@ const fmt = (n: number): string => n.toLocaleString("en-US");
 const pad = (s: string, w: number): string => s.padEnd(w);
 const padN = (n: string, w: number): string => n.padStart(w);
 
-function report(label: string, doc: Document) {
+function report(label: string, doc: Document): { nav: Tally; steps: number } {
   const size = paragraphsOf(doc).length;
   const KEYS = 40;
   const STEPS = 100;
@@ -227,15 +231,34 @@ function report(label: string, doc: Document) {
   );
   // eslint-disable-next-line no-console
   console.log(lines.join("\n"));
+  return { nav, steps: STEPS };
 }
 
-describe("step-0: reads per document identity (real session)", () => {
-  it("measures real reports + 5k synthetic doc", () => {
-    report("AppraiseRequest-42103 (rendered report)", docOfReport("RenderedReportsDocx_Report-AppraiseRequest-42103-Version-101.docx"));
-    report(
-      "Igou Gap Rd (signed report v3)",
-      docOfReport("SignedReports_SignedReport-Version-3-Keystone Appraiser-66654-7407 Igou Gap Rd, Chattanooga, Hamilton, Tennessee, 37421.docx"),
-    );
-    report("synthetic 5k", makeSyntheticDoc(5000));
+// Real reports: developer-local only (uncommitted). Each prints its measurement
+// when present and is skipped otherwise (e.g. CI), so the suite never depends on
+// files outside the repo.
+const REPORTS = [
+  { label: "AppraiseRequest-42103 (rendered report)", file: "RenderedReportsDocx_Report-AppraiseRequest-42103-Version-101.docx" },
+  { label: "Igou Gap Rd (signed report v3)", file: "SignedReports_SignedReport-Version-3-Keystone Appraiser-66654-7407 Igou Gap Rd, Chattanooga, Hamilton, Tennessee, 37421.docx" },
+] as const;
+
+describe("step-0: reads per document identity", () => {
+  for (const r of REPORTS) {
+    it.skipIf(!existsSync(reportPath(r.file)))(`real report: ${r.label}`, () => {
+      report(r.label, docOfReport(r.file));
+    });
+  }
+
+  // Committed regression guard: with the per-doc memoization in place, caret
+  // navigation over a large stable doc must stay O(1) — after the first read
+  // warms the index, 100 arrow keys do ZERO full-document rebuilds, walk ZERO
+  // paragraph slots, and build the band-id set at most once. Reverting the
+  // memoization would balloon these into the millions (see PR description).
+  it("synthetic 5k — caret navigation stays O(1) per keystroke", () => {
+    const { nav, steps } = report("synthetic 5k", makeSyntheticDoc(5000));
+    expect(steps).toBe(100);
+    expect(nav.fullCalls).toBe(0); // paragraphsOf never rebuilds during navigation
+    expect(nav.fullSlots).toBe(0); // …so no paragraph slots are walked
+    expect(nav.bandCalls).toBeLessThanOrEqual(BAND_CONTAINERS.length); // band set built once
   });
 });
