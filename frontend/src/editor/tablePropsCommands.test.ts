@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { Document, SectionProps, TableBlock, TableCell } from "@cw/shared";
 import { applyOp } from "@cw/shared";
 import {
+  insertTableColumnCmd,
+  insertTableRowCmd,
   setCellTextDirectionCmd,
   setCellVAlignCmd,
   setRowHeightAtSelectionCmd,
@@ -195,5 +197,69 @@ describe("setTablePropsAtSelectionCmd", () => {
     expect((cleared.blocks[0] as TableBlock).defaultShading).toBeUndefined();
     expect((cleared.blocks[0] as TableBlock).defaultBorders).toBeUndefined();
     expect((cleared.blocks[0] as TableBlock).defaultCellMargin).toBeUndefined();
+  });
+});
+
+describe("insert row/column inherits the proto cell's format", () => {
+  // Table-level defaults are baked onto every cell at import/build time, so a new
+  // cell must carry over the neighbour's borders/shading/margin/vAlign or it falls
+  // back to the engine's bare defaults (light grid, no fill, default padding).
+  const fmtCell = (text: string): TableCell => ({
+    ...cell(text),
+    shading: "#ffeeee",
+    borders: { top: { color: "#ff0000", widthPx: 1 }, bottom: { color: "#ff0000", widthPx: 1 } } as never,
+    margin: { top: 2, right: 8, bottom: 2, left: 8 } as never,
+    vAlign: "center",
+  });
+
+  it("Insert Row Below copies borders/shading/margin/vAlign into the new row", () => {
+    const table: TableBlock = { kind: "table", id: "t1", revision: 0, rows: [{ cells: [fmtCell("a"), fmtCell("b")] }] };
+    const { doc, undo } = applyWithUndo(caretInCell(table, 0, 0), insertTableRowCmd("below"));
+    const t = tableOf(doc);
+    expect(t.rows.length).toBe(2);
+    for (const c of t.rows[1]!.cells) {
+      expect(c.shading).toBe("#ffeeee");
+      expect(c.borders).toBeDefined();
+      expect(c.margin).toEqual({ top: 2, right: 8, bottom: 2, left: 8 });
+      expect(c.vAlign).toBe("center");
+    }
+    // Deep-cloned — neither the borders container NOR its nested edge objects may
+    // be shared with the proto row (a shallow `{ ...borders }` would leak edges).
+    const proto = t.rows[0]!.cells[0]!;
+    const added = t.rows[1]!.cells[0]!;
+    expect(added.borders).not.toBe(proto.borders);
+    expect(added.margin).not.toBe(proto.margin);
+    expect((added.borders as never as Record<string, object>)["top"]).not.toBe(
+      (proto.borders as never as Record<string, object>)["top"],
+    );
+    // Mutating a cloned edge must not bleed back into the proto cell.
+    (added.borders as never as Record<string, { color: string }>)["top"]!.color = "#00ff00";
+    expect((proto.borders as never as Record<string, { color: string }>)["top"]!.color).toBe("#ff0000");
+    expect(tableOf(undo()).rows.length).toBe(1);
+  });
+
+  it("Insert Column Right copies the proto column's format into every new cell", () => {
+    const table: TableBlock = {
+      kind: "table", id: "t1", revision: 0,
+      rows: [{ cells: [fmtCell("a")] }, { cells: [fmtCell("c")] }],
+    };
+    const { doc } = applyWithUndo(caretInCell(table, 0, 0), insertTableColumnCmd("right"));
+    const t = tableOf(doc);
+    expect(t.rows.every((r) => r.cells.length === 2)).toBe(true);
+    for (const r of t.rows) {
+      const added = r.cells[1]!;
+      expect(added.shading).toBe("#ffeeee");
+      expect(added.margin).toEqual({ top: 2, right: 8, bottom: 2, left: 8 });
+      expect(added.vAlign).toBe("center");
+      expect(added.borders).toBeDefined();
+    }
+  });
+
+  it("a plain cell with no format yields a plain new cell (no spurious props)", () => {
+    const { doc } = applyWithUndo(caretInCell(grid2x2(), 0, 0), insertTableRowCmd("below"));
+    const added = tableOf(doc).rows[1]!.cells[0]!;
+    expect(added.shading).toBeUndefined();
+    expect(added.borders).toBeUndefined();
+    expect(added.margin).toBeUndefined();
   });
 });
