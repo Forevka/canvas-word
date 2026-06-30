@@ -149,6 +149,7 @@ export const ICONS = {
   snap: svg(`<path d="M4 2.5v5a4 4 0 0 0 8 0v-5"/><path d="M4 2.5h2.5v5M12 2.5H9.5v5"/>`),
   trash: svg(`<path d="M3 4.5h10"/><path d="M5.5 4.5V3h5v1.5"/><path d="M4 4.5l.8 9h6.4l.8-9"/><path d="M6.5 7v4M9.5 7v4"/>`),
   filter: svg(`<path d="M2.5 3.5h11l-4.2 5v4l-2.6 1.3v-5.3z"/>`),
+  symbol: svg(`<path d="M2.5 13h4v-1.5a4.5 4.5 0 1 1 3 0V13h4"/>`),
 } as const;
 
 export type IconName = keyof typeof ICONS;

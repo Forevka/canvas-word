@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Insert → Symbol (editor UI).** A new **Symbol** button on the Insert ribbon tab
+  opens a floating symbol picker: choose a symbol font (Symbol, Wingdings, Wingdings 2,
+  Wingdings 3, Webdings) and click a glyph from the Private-Use grid, with a
+  "recently used" row persisted in `localStorage`. Picking inserts a run carrying the
+  existing `CharStyle.symbol` marker (`{ font, char }`) with its `text` set to the
+  decoded glyph and `fontFamily` set to the symbol font, via a new `insertSymbolCmd`
+  in `editor/commands.ts` (mirrors the insert-equation/insert-field path, undoable).
+  The model field and `w:sym` docx round-trip already shipped — this only adds the
+  authoring UI.
 - **Minor run typography & effects (`CharStyle` w:rPr extras).** A grouped set of
   lower-frequency run properties now round-trip and (where visual) paint: double
   strikethrough (`w:dstrike` → `doubleStrikethrough`, two rules), baseline
