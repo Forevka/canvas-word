@@ -347,6 +347,16 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
         .Text("like this 30px word", new CharStyle { FontSizePx = 30 })
         .Text(", grows to fit it.")
         .Spacing(new SpacingOptions { LineRule = LineRule.AtLeast, LineHeightPx = 24 }))
+    // ---- Section breaks (odd-page parity) + line numbering ----
+    .Paragraph("Section breaks & line numbering", p => p.WithStyle("Heading1"))
+    .Paragraph("Word sections can force their first page onto an odd or even page number (a blank filler page is inserted when the running page count has the wrong parity) and print a number beside every line in the margin (w:lnNumType). The next section demonstrates both.")
+    .SectionBreak() // plain Next Page break: ends the main flow as its own section
+    .Paragraph("A line-numbered section, starting on an odd page", p => p.WithStyle("Heading2"))
+    .Paragraph("Every line in this section carries a small margin line number; counting restarts on each page (Word's default) and round-trips to .docx and PDF. " + Repeat(Lorem, 6), p => p.Align(TextAlign.Justify))
+    // This break ENDS the line-numbered section: its w:type is oddPage and its
+    // sectPr carries the w:lnNumType that numbered every line above.
+    .SectionBreak(new SectionBreakOptions { BreakType = SectionBreakType.OddPage, LineNumbering = new LineNumbering { CountBy = 1, Restart = LineNumberRestart.NewPage } })
+    .Paragraph("Line numbering is a per-section property, so this closing line — in the final, unnumbered section — has no margin numbers.")
 
     // ---- Header + footer with page fields ----
     .Header(h => h.Paragraph(p => p.Font("Arial, sans-serif").FontSize(11)

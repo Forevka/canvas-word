@@ -640,6 +640,22 @@ export function sampleDoc(): Document {
       { lineRule: "exact", lineHeightPx: 28, spaceAfterPx: 8 }),
     para([run("This paragraph uses AT-LEAST 24px line spacing — lines are at least 24px tall but a line with a larger glyph, ", { }), run("like this 30px word", { fontSizePx: 30 }), run(", grows to fit it. Word stores it as w:spacing w:line=\"360\" w:lineRule=\"atLeast\".")],
       { lineRule: "atLeast", lineHeightPx: 24, spaceAfterPx: 10 }),
+    // --- Section breaks & line numbering (w:sectPr/w:type, w:lnNumType) ---------
+    heading("Section breaks & line numbering", 1),
+    // This paragraph ENDS the main flow as its own section; the next (line-numbered)
+    // section follows. A plain Next Page break — geometry inherited from the body.
+    para([run("Word sections can force their first page onto an odd or even page number, and print a number beside every line in the margin. The section that follows demonstrates both: it starts on an odd page (a blank filler page is inserted when the running page count is even) and numbers every line via w:lnNumType.")], {
+      spaceAfterPx: 6,
+      sectionBreak: { type: "nextPage", props: {} },
+    }),
+
+    heading("A line-numbered section, starting on an odd page", 2),
+    para([run("Every line below carries a small margin line number. Counting restarts on each new page (Word's default), and the numbers round-trip to .docx and PDF. This justified, multi-line paragraph makes the per-line numbering easy to see: " + LOREM.repeat(6))], { align: "justify", spaceAfterPx: 6 }),
+    // This paragraph ENDS the line-numbered section: its w:type is oddPage and its
+    // sectPr carries the w:lnNumType that numbers every line of this section.
+    para([run("Line numbering is a per-section property — the closing line beneath this one belongs to the final (unnumbered) section, so its lines are not numbered.")], {
+      sectionBreak: { type: "oddPage", props: { lineNumbering: { countBy: 1, restart: "newPage" } } },
+    }),
 
     para([run("— a tour of canvas-word —", { italic: true, color: "#5f6368" })], { align: "center", spaceBeforePx: 20 }),
   ];

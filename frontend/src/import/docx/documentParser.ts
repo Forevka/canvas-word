@@ -24,7 +24,7 @@ import type {
   IRTableRow,
 } from "./types";
 import { decodeBorders, decodeShdFill } from "./borders";
-import { decodeParaProps, decodeRunProps } from "./props";
+import { decodeLineNumbering, decodeParaProps, decodeRunProps } from "./props";
 import { attr, children, el, els, findDeep, numAttr, onOff, parseXml, rootEl, textOf, val, type XmlNode } from "./xml";
 import { ommlToMathml } from "../../mathml/fromOmml";
 
@@ -1071,6 +1071,10 @@ function parseSection(sectPr: XmlNode, warnings: WarningSink): IRSection {
   }
   const pgNumStart = numAttr(el(sectPr, "w:pgNumType"), "w:start");
   if (pgNumStart !== undefined) section.pageNumberStart = pgNumStart;
+  const lnNum = decodeLineNumbering(el(sectPr, "w:lnNumType"));
+  if (lnNum) section.lineNumbering = lnNum;
+  const bodyType = val(sectPr, "w:type");
+  if (bodyType === "evenPage" || bodyType === "oddPage") section.breakType = bodyType;
   return section;
 }
 

@@ -32,6 +32,10 @@ public enum BandVariant { Default, First, Even }
 public enum ListKind { Bullet, Number }
 public enum TextAlign { Left, Center, Right, Justify }
 public enum Orientation { Portrait, Landscape }
+/// <summary>How a section begins (OOXML w:sectPr/w:type).</summary>
+public enum SectionBreakType { NextPage, EvenPage, OddPage }
+/// <summary>When line numbering restarts (OOXML w:lnNumType/@w:restart).</summary>
+public enum LineNumberRestart { Continuous, NewPage, NewSection }
 public enum ImageWrap { Block, Square }
 public enum PageSizeName { Letter, Legal, A4, A3, Tabloid }
 /// <summary>Block/inline equation horizontal placement (display equations only).</summary>
@@ -83,6 +87,18 @@ internal static class EnumJs
 
     public static string Wrap(ImageWrap w) => w == ImageWrap.Square ? "square" : "block";
     public static string Orient(Orientation o) => o == Orientation.Landscape ? "landscape" : "portrait";
+    public static string BreakType(SectionBreakType t) => t switch
+    {
+        SectionBreakType.EvenPage => "evenPage",
+        SectionBreakType.OddPage => "oddPage",
+        _ => "nextPage",
+    };
+    public static string LineRestart(LineNumberRestart r) => r switch
+    {
+        LineNumberRestart.Continuous => "continuous",
+        LineNumberRestart.NewSection => "newSection",
+        _ => "newPage",
+    };
     public static string Variant(BandVariant v) => v switch
     {
         BandVariant.First => "first",
@@ -293,6 +309,30 @@ public sealed record TemplateOptions
 
 public sealed record ColumnsSpec(int Count, double? GapPx = null);
 
+/// <summary>Line numbering in the page margin (OOXML w:lnNumType). Only set fields
+/// are emitted; absent fields take Word's defaults (countBy 1, start 1, newPage).</summary>
+public sealed record LineNumbering
+{
+    /// <summary>Print every Nth line number (default 1 = every line).</summary>
+    public int? CountBy { get; init; }
+    /// <summary>The first line's number (default 1).</summary>
+    public int? Start { get; init; }
+    /// <summary>When the counter restarts.</summary>
+    public LineNumberRestart? Restart { get; init; }
+    /// <summary>Gap (px) between the numbers and the text edge.</summary>
+    public double? DistancePx { get; init; }
+
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        if (CountBy is { } cb) Js.Set(o, "countBy", cb);
+        if (Start is { } st) Js.Set(o, "start", st);
+        if (Restart is { } r) Js.Set(o, "restart", EnumJs.LineRestart(r));
+        if (DistancePx is { } d) Js.Set(o, "distancePx", d);
+        return o;
+    }
+}
+
 public sealed record PageSetup
 {
     public PageSizeName? PageSize { get; init; }
@@ -303,6 +343,10 @@ public sealed record PageSetup
     public double? HeaderDistancePx { get; init; }
     public double? FooterDistancePx { get; init; }
     public int? PageNumberStart { get; init; }
+    /// <summary>Line numbering in the margin (w:lnNumType) for the document section.</summary>
+    public LineNumbering? LineNumbering { get; init; }
+    /// <summary>How the final (body) section starts: next page (default) or even/odd parity.</summary>
+    public SectionBreakType? BreakType { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -314,6 +358,8 @@ public sealed record PageSetup
         if (HeaderDistancePx is { } hd) Js.Set(o, "headerDistancePx", hd);
         if (FooterDistancePx is { } fd) Js.Set(o, "footerDistancePx", fd);
         if (PageNumberStart is { } pns) Js.Set(o, "pageNumberStart", pns);
+        if (LineNumbering is { } ln) Js.Set(o, "lineNumbering", ln.ToJs(e));
+        if (BreakType is { } bt) Js.Set(o, "breakType", EnumJs.BreakType(bt));
         return o;
     }
 }

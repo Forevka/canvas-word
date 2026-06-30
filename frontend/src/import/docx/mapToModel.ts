@@ -18,10 +18,12 @@ import type {
   PageBorderEdge,
   PageBorders,
   ParaStyle,
+  LineNumbering,
   Paragraph,
   Run,
   SdtProps,
   RowProps,
+  SectionBreakType,
   SectionPatch,
   SectionProps,
   TabAlign,
@@ -44,6 +46,7 @@ import type {
   IRBlock,
   IRBorders,
   IRInline,
+  IRLineNumbering,
   IRListDefinition,
   IRPageBorders,
   IRParaProps,
@@ -102,6 +105,16 @@ function irPageBordersToModel(b: IRPageBorders): PageBorders {
   if (bottom) out.bottom = bottom;
   const left = edge(b.left);
   if (left) out.left = left;
+  return out;
+}
+
+/** IR line numbering → model LineNumbering (distance twips→px; counts as-is). */
+function irLineNumberingToModel(ln: IRLineNumbering): LineNumbering {
+  const out: LineNumbering = {};
+  if (ln.countBy !== undefined) out.countBy = ln.countBy;
+  if (ln.start !== undefined) out.start = ln.start;
+  if (ln.restart !== undefined) out.restart = ln.restart;
+  if (ln.distanceTwips !== undefined) out.distancePx = round2(twipsToPx(ln.distanceTwips));
   return out;
 }
 
@@ -277,7 +290,12 @@ export function createMapper(
     sectionChangesGeometry(props) ||
     !!props.sectionColumns ||
     props.sectionPageNumberStart !== undefined ||
-    !!props.sectionPgBorders;
+    !!props.sectionPgBorders ||
+    // An even/odd page-parity break or line numbering is a real, page-breaking
+    // section even when the geometry is identical to the document section.
+    props.sectionBreakType === "evenPage" ||
+    props.sectionBreakType === "oddPage" ||
+    !!props.sectionLineNumbering;
 
   /** Build a SectionPatch from a section-ending paragraph's geometry/columns. */
   const buildSectionPatch = (props: IRParaProps): SectionPatch => {
@@ -294,6 +312,7 @@ export function createMapper(
     if (props.sectionHeaderDistTwips !== undefined) patch.headerDistancePx = round2(twipsToPx(props.sectionHeaderDistTwips));
     if (props.sectionFooterDistTwips !== undefined) patch.footerDistancePx = round2(twipsToPx(props.sectionFooterDistTwips));
     if (props.sectionPgBorders) patch.pageBorders = irPageBordersToModel(props.sectionPgBorders);
+    if (props.sectionLineNumbering) patch.lineNumbering = irLineNumberingToModel(props.sectionLineNumbering);
     return patch;
   };
 
@@ -418,7 +437,8 @@ export function createMapper(
             carrier = emptyParagraph();
             mapped.push(carrier);
           }
-          carrier.style.sectionBreak = { type: "nextPage", props: buildSectionPatch(props) };
+          const breakType: SectionBreakType = props.sectionBreakType ?? "nextPage";
+          carrier.style.sectionBreak = { type: breakType, props: buildSectionPatch(props) };
           pending = false;
         } else {
           if (props.sectionHasBands) {
@@ -912,6 +932,8 @@ export function createMapper(
     if (ir.headerDistTwips !== undefined) section.headerDistancePx = round2(twipsToPx(ir.headerDistTwips));
     if (ir.footerDistTwips !== undefined) section.footerDistancePx = round2(twipsToPx(ir.footerDistTwips));
     if (ir.pageBorders) section.pageBorders = irPageBordersToModel(ir.pageBorders);
+    if (ir.lineNumbering) section.lineNumbering = irLineNumberingToModel(ir.lineNumbering);
+    if (ir.breakType) section.breakType = ir.breakType;
     return section;
   }
 
