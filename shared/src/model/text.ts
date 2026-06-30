@@ -91,7 +91,8 @@ export type ParaLocation =
   | { kind: "top"; bi: number }
   | { kind: "cell"; where: "body" | BandContainer; bi: number; ri: number; ci: number; pi: number }
   | { kind: "band"; band: BandContainer; bi: number }
-  | { kind: "footnote"; noteId: string; pi: number };
+  | { kind: "footnote"; noteId: string; pi: number }
+  | { kind: "endnote"; noteId: string; pi: number };
 
 /** Top-level block list of a container ("body" or a band story). */
 export const containerListOf = (doc: Document, where: "body" | BandContainer): Block[] =>
@@ -138,6 +139,10 @@ export function locateParagraph(doc: Document, blockId: string): ParaLocation | 
     const pi = paras.findIndex((p) => p.id === blockId);
     if (pi >= 0) return { kind: "footnote", noteId, pi };
   }
+  for (const [noteId, paras] of Object.entries(doc.endnotes ?? {})) {
+    const pi = paras.findIndex((p) => p.id === blockId);
+    if (pi >= 0) return { kind: "endnote", noteId, pi };
+  }
   return null;
 }
 
@@ -145,6 +150,7 @@ export function paragraphAt(doc: Document, loc: ParaLocation): Paragraph {
   if (loc.kind === "top") return doc.blocks[loc.bi] as Paragraph;
   if (loc.kind === "band") return doc.section[loc.band]![loc.bi] as Paragraph;
   if (loc.kind === "footnote") return doc.footnotes![loc.noteId]![loc.pi]!;
+  if (loc.kind === "endnote") return doc.endnotes![loc.noteId]![loc.pi]!;
   const table = containerListOf(doc, loc.where)[loc.bi] as Extract<Block, { kind: "table" }>;
   return table.rows[loc.ri]!.cells[loc.ci]!.blocks[loc.pi] as Paragraph;
 }
@@ -155,6 +161,11 @@ export function replaceParagraphAt(doc: Document, loc: ParaLocation, p: Paragrap
     const paras = doc.footnotes![loc.noteId]!.slice();
     paras[loc.pi] = p;
     return { ...doc, footnotes: { ...doc.footnotes, [loc.noteId]: paras } };
+  }
+  if (loc.kind === "endnote") {
+    const paras = doc.endnotes![loc.noteId]!.slice();
+    paras[loc.pi] = p;
+    return { ...doc, endnotes: { ...doc.endnotes, [loc.noteId]: paras } };
   }
   if (loc.kind === "band") {
     const blocks = (doc.section[loc.band] ?? []).slice();

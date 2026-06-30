@@ -78,6 +78,7 @@ export type Op =
   | { type: "setSectionProps"; geometry: SectionGeometry }
   | { type: "setSectionBand"; band: BandContainer; blocks: Block[] | null }
   | { type: "setFootnote"; noteId: string; paras: Paragraph[] | null }
+  | { type: "setEndnote"; noteId: string; paras: Paragraph[] | null }
   | { type: "setSdtProps"; id: string; props: SdtProps | null }
   | { type: "setField"; id: string; def: FieldDef | null }
   | { type: "setTocInstruction"; instruction: string | null }
@@ -593,6 +594,10 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
         const paras = doc.footnotes![loc.noteId]!.slice();
         paras.splice(loc.pi, 1, head, tail);
         next = { ...doc, footnotes: { ...doc.footnotes, [loc.noteId]: paras } };
+      } else if (loc.kind === "endnote") {
+        const paras = doc.endnotes![loc.noteId]!.slice();
+        paras.splice(loc.pi, 1, head, tail);
+        next = { ...doc, endnotes: { ...doc.endnotes, [loc.noteId]: paras } };
       } else {
         const where: Container = loc.kind === "band" ? loc.band : "body";
         const blocks = containerBlocks(doc, where).slice();
@@ -626,6 +631,10 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
         const candidate = doc.footnotes![loc.noteId]![loc.pi + 1];
         if (!candidate) throw new Error("mergeParagraphs: no next paragraph in footnote");
         nextPara = candidate;
+      } else if (loc.kind === "endnote") {
+        const candidate = doc.endnotes![loc.noteId]![loc.pi + 1];
+        if (!candidate) throw new Error("mergeParagraphs: no next paragraph in endnote");
+        nextPara = candidate;
       } else {
         const where: Container = loc.kind === "band" ? loc.band : "body";
         const candidate = containerBlocks(doc, where)[loc.bi + 1];
@@ -649,6 +658,10 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
         const paras = doc.footnotes![loc.noteId]!.slice();
         paras.splice(loc.pi, 2, merged);
         next = { ...doc, footnotes: { ...doc.footnotes, [loc.noteId]: paras } };
+      } else if (loc.kind === "endnote") {
+        const paras = doc.endnotes![loc.noteId]!.slice();
+        paras.splice(loc.pi, 2, merged);
+        next = { ...doc, endnotes: { ...doc.endnotes, [loc.noteId]: paras } };
       } else {
         const where: Container = loc.kind === "band" ? loc.band : "body";
         const blocks = containerBlocks(doc, where).slice();
@@ -1083,6 +1096,25 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       return {
         doc: { ...doc, footnotes },
         inverse: { type: "setFootnote", noteId: op.noteId, paras: old },
+        mapPosition: (p) => {
+          if (!removedIds.has(p.blockId)) return p;
+          const kept = (op.paras ?? []).some((b) => b.id === p.blockId);
+          return kept || !fallback ? p : { blockId: fallback.id, offset: 0 };
+        },
+        dirtyBlockIds: [],
+      };
+    }
+
+    case "setEndnote": {
+      const old = doc.endnotes?.[op.noteId] ?? null;
+      const endnotes = { ...(doc.endnotes ?? {}) };
+      if (op.paras) endnotes[op.noteId] = op.paras;
+      else delete endnotes[op.noteId];
+      const removedIds = new Set((old ?? []).map((p) => p.id));
+      const fallback = doc.blocks.find((b) => b.kind === "paragraph");
+      return {
+        doc: { ...doc, endnotes },
+        inverse: { type: "setEndnote", noteId: op.noteId, paras: old },
         mapPosition: (p) => {
           if (!removedIds.has(p.blockId)) return p;
           const kept = (op.paras ?? []).some((b) => b.id === p.blockId);
