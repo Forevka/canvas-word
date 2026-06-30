@@ -899,8 +899,12 @@ export interface ColumnBoundaryHit {
   tableY: number;
   tableHeight: number;
   /** The table's CURRENTLY RENDERED per-column widths — lets a resize that exits
-   *  autofit pin the on-screen proportions instead of a stale fractions snapshot. */
+   *  autofit pin the on-screen proportions instead of a stale fractions snapshot.
+   *  MODEL order (col 0 first) even under bidiVisual. */
   colWidths: number[];
+  /** w:bidiVisual — grid paints right-to-left. The drag must flip its delta sign
+   *  (a rightward drag shrinks the model column LEFT of boundaryIndex). */
+  bidiVisual: boolean;
 }
 
 const COLUMN_GRIP_PX = 6;
@@ -920,13 +924,20 @@ export function hitTestColumnBoundary(
     const t = block.table;
     if (!t) continue;
     if (y < t.y || y > t.y + t.height) continue;
-    let edge = t.x;
+    // Under w:bidiVisual the grid is mirrored about its width (model col 0 paints
+    // at the right), so the boundary between model columns ci and ci+1 sits at
+    // gridWidth − cumLeft from the table's left edge instead of cumLeft. colWidths
+    // stays in MODEL order, so boundaryIndex still maps to the right columns.
+    const gridWidth = t.colWidths.reduce((s, w) => s + w, 0);
+    let cumLeft = 0;
     for (let ci = 0; ci + 1 < t.colWidths.length; ci++) {
-      edge += t.colWidths[ci]!;
+      cumLeft += t.colWidths[ci]!;
+      const edge = t.x + (t.bidiVisual ? gridWidth - cumLeft : cumLeft);
       if (Math.abs(x - edge) <= COLUMN_GRIP_PX) {
         return {
           tableId: block.blockId, boundaryIndex: ci, x: edge, tableX: t.x, tableWidth: t.width,
           pageIndex, tableY: t.y, tableHeight: t.height, colWidths: t.colWidths,
+          bidiVisual: !!t.bidiVisual,
         };
       }
     }
