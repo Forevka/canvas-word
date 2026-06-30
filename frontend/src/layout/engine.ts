@@ -52,6 +52,23 @@ function paraDecorFor(style: ParaStyle, boxWidth: number, height: number): NonNu
   return { width: Math.max(0, boxWidth), height, pad, ...(shading ? { shading } : {}), ...(borders ? { borders } : {}) };
 }
 
+/** Vertical space a bordered paragraph's box claims ABOVE its text, reserved in
+ *  the block gap so the box (and any shading fill) can't paint over the adjacent
+ *  block: the top rule width (if any) plus the border-to-text padding — the box
+ *  grows by `pad` above the text whenever the paragraph has borders, regardless
+ *  of which edges carry a rule. 0 for an unbordered paragraph. Used by both the
+ *  normal and the float-adjacent placement paths. */
+function paraBorderReserveTop(style: ParaStyle): number {
+  if (!style.borders) return 0;
+  return (style.borders.top?.widthPx ?? 0) + PARA_BORDER_PAD_PX;
+}
+
+/** Mirror of paraBorderReserveTop for the space below the text (bottom rule + pad). */
+function paraBorderReserveBottom(style: ParaStyle): number {
+  if (!style.borders) return 0;
+  return (style.borders.bottom?.widthPx ?? 0) + PARA_BORDER_PAD_PX;
+}
+
 const sumLineHeights = (lines: LineBox[]): number => lines.reduce((h, l) => h + l.height, 0);
 
 export interface LayoutOptions {
@@ -1952,7 +1969,12 @@ function layoutDocument(
     // Float-affected paragraphs re-break per line with float-shrunk widths —
     // bypassing the precomputed full-width lines (and widow/orphan rules).
     if (floatsActiveAt(y)) {
+      // Reserve the border box (rule widths + pad) around the float-adjacent
+      // chunk too — placeParagraphFloating still attaches paraDecor with `pad`,
+      // so the box would otherwise extend into the next block (w:pBdr).
+      y += paraBorderReserveTop(block.style);
       placeParagraphFloating(block);
+      y += paraBorderReserveBottom(block.style);
       if (!suppressAfter) y += block.style.spaceAfterPx;
       continue;
     }
@@ -2023,19 +2045,13 @@ function layoutDocument(
       if (!ok) newPage();
     }
 
-    // Reserve the paragraph border line widths AND the border-to-text padding in
-    // the surrounding gaps so a boxed paragraph's box (expanded outward by `pad`)
-    // doesn't paint over the adjacent block (w:pBdr). `pad` is reserved on both
-    // edges whenever the paragraph has borders, since the box — and any shading
-    // fill — grows by `pad` above and below the text regardless of which edges
-    // carry a rule.
-    const bd = block.style.borders;
-    const pad = bd ? PARA_BORDER_PAD_PX : 0;
-    if (bd?.top) y += bd.top.widthPx;
-    y += pad;
+    // Reserve the paragraph border box (top/bottom rule widths + border-to-text
+    // padding) in the surrounding gaps so a boxed paragraph's box — expanded
+    // outward by `pad`, and any shading fill — doesn't paint over the adjacent
+    // block (w:pBdr).
+    y += paraBorderReserveTop(block.style);
     placeParagraph(block, lines);
-    y += pad;
-    if (bd?.bottom) y += bd.bottom.widthPx;
+    y += paraBorderReserveBottom(block.style);
     if (!suppressAfter) y += block.style.spaceAfterPx;
   }
 

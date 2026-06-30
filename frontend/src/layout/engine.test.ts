@@ -986,6 +986,19 @@ describe("engine — paragraph borders & shading", () => {
     expect(afterPb.y).toBeGreaterThanOrEqual(boxedPb.y + boxedPb.paraDecor!.height + 4 - 0.01);
   });
 
+  it("reserves the border box around a float-adjacent bordered paragraph", () => {
+    const img: ImageBlock = { ...image(200, 100), wrap: "square", align: "left" };
+    const boxed = para("boxed beside the float", { borders: { left: { color: "#000", widthPx: 1 } } });
+    const after = para("after");
+    const tree = layout(doc([img, boxed, after]));
+    const boxedPb = placedOf(tree, boxed.id)!.pb;
+    const afterPb = placedOf(tree, after.id)!.pb;
+    expect(boxedPb.paraDecor!.pad).toBe(4);
+    // The follower clears the box (text bottom + the reserved padding), so the
+    // float-path placement reserves the box just like the normal path.
+    expect(afterPb.y).toBeGreaterThanOrEqual(boxedPb.y + boxedPb.paraDecor!.height + boxedPb.paraDecor!.pad! - 0.01);
+  });
+
   it("decorates a bordered/shaded paragraph inside a table cell", () => {
     const boxed = para("cell box", { borders: { left: blue }, shading: "#eef4ff" });
     const t: TableBlock = {
