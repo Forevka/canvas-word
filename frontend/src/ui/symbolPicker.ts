@@ -12,6 +12,9 @@ export interface SymbolPickerOptions {
   /** Called with the symbol font and the UPPER-CASE hex code point (e.g. "F0E0")
    *  when the user clicks a glyph. */
   onPick: (font: string, charHex: string) => void;
+  /** Called when the panel closes (×, Escape, or a programmatic close) so the
+   *  opener can drop its retained handle. */
+  onClose?: () => void;
 }
 
 export interface SymbolPickerHandle {
@@ -175,9 +178,13 @@ export function showSymbolPicker(opts: SymbolPickerOptions): SymbolPickerHandle 
   fontSel.addEventListener("change", renderGrid);
 
   // ---- lifecycle -----------------------------------------------------------
+  let closed = false;
   const close = (): void => {
+    if (closed) return;
+    closed = true;
     ac.abort();
     backdrop.remove();
+    opts.onClose?.();
   };
   x.addEventListener("click", close);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); }, { signal: ac.signal, capture: true });

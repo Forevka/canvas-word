@@ -23,7 +23,7 @@ import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
 import { showDevPanel, type DevPanelHandle } from "./ui/devPanel";
 import { showPageLayout, type PageLayoutHandle } from "./ui/pageLayout";
 import { showEquationEditor } from "./ui/equationEditor";
-import { showSymbolPicker } from "./ui/symbolPicker";
+import { showSymbolPicker, type SymbolPickerHandle } from "./ui/symbolPicker";
 import { loadCollabDocument, loadCollabReview, publishDocument } from "./sync/collab";
 import { attachMentionAutocomplete } from "./review/mentions";
 import { showBusy } from "./app/busyOverlay";
@@ -1407,6 +1407,7 @@ if (toolbar) {
   let styleMgr: StyleManagerHandle | null = null;
   let devPanel: DevPanelHandle | null = null;
   let pageLayoutDlg: PageLayoutHandle | null = null;
+  let symbolPicker: SymbolPickerHandle | null = null;
   // "Show only styles in use" filter. Since import now keeps every defined style
   // (so authored styles round-trip), a heavy imported doc can crowd the gallery —
   // this collapses it to styles actually applied in the document.
@@ -1579,14 +1580,19 @@ if (toolbar) {
   }, "font-family:Georgia,serif;font-style:italic;");
 
   group(insert, "Symbols");
+  // Single floating picker (toggle on re-click); closed on teardown so its
+  // backdrop + document-level Escape listener never leak. Mirrors pageLayoutDlg.
   btn(ICONS.symbol, "Insert symbol or special character", () => {
-    showSymbolPicker({
+    if (symbolPicker) { symbolPicker.close(); return; }
+    symbolPicker = showSymbolPicker({
       onPick: (font, char) => {
         editor.dispatch(insertSymbolCmd(font, char));
         editor.focus();
       },
+      onClose: () => { symbolPicker = null; },
     });
   });
+  teardown.signal.addEventListener("abort", () => symbolPicker?.close(), { once: true });
 
   group(insert, "Links");
   const insLinkBtn = btn(ICONS.link, "Insert/remove hyperlink", () => {});
