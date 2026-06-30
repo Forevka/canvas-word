@@ -267,6 +267,10 @@ let inspectorProbeSink: (probe: InspectorProbe | null) => void = () => {};
 // Close the inspector (it captures the live editor) when the editor is rebuilt on
 // document replacement. Assigned when the panel opens; no-op otherwise.
 let closeDevPanel: () => void = () => {};
+// Close the Paragraph dialog when the editor is rebuilt on document replacement —
+// an orphaned dialog holds stale paragraph state and would dispatch its OK patch
+// into the newly created editor. Assigned when the dialog opens; no-op otherwise.
+let closeParaDialog: () => void = () => {};
 // Ships a locally-authored review op on the collab review channel (assigned by
 // the sync wiring; no-op offline). Forward-declared so editorOpts can reference it.
 let onLocalReviewOp: (env: ReviewOpEnvelope) => void = () => {};
@@ -483,6 +487,7 @@ const goOnlineWithCurrentDoc = async (): Promise<string> => {
 // caches MUST be dropped first — see engine.reset() below.
 const replaceDocument = (next: typeof doc): void => {
   closeDevPanel(); // the inspector captures the outgoing editor — drop it first
+  closeParaDialog(); // ditto for the Paragraph dialog (stale editor reference)
   editor.destroy();
   // Drop the outgoing document's layout caches. The shared engine keys cached
   // lines by (block id, revision, width); the docx importer re-mints ids from i0
@@ -1446,6 +1451,8 @@ if (toolbar) {
         },
       },
     );
+    // Let replaceDocument() tear this dialog down if the editor is rebuilt while it's open.
+    closeParaDialog = () => { paraDlg?.close(); paraDlg = null; closeParaDialog = () => {}; };
   };
   const spacingBtn = btn(ICONS.lineSpacing, "Line spacing", () => {}, true);
   spacingBtn.addEventListener("click", () =>

@@ -192,10 +192,16 @@ export function showParagraphDialog(init: ParagraphDialogInit, cb: ParagraphDial
   sTitle.textContent = "Shading (fill)";
   const sRow = el("div", "cw-pdlg-row");
   const { row: fillToggleRow, input: fillToggle } = checkRow("Fill", init.shading !== null);
+  // Keep the ORIGINAL shading string (which may be a named/`rgb(...)` color the native
+  // picker can't represent) and only overwrite it when the user actually edits the
+  // swatch — so opening the dialog on an `rgb(...)`-shaded paragraph and changing an
+  // unrelated control doesn't silently rewrite the fill to its hex approximation.
+  let shading = init.shading;
   const fillInput = el("input");
   fillInput.type = "color";
   fillInput.className = "cw-pdlg-swatch";
   fillInput.value = toHexColor(init.shading ?? "#ffff00");
+  fillInput.addEventListener("input", () => { shading = fillInput.value; });
   sRow.append(fillToggleRow, fillInput);
   sSection.append(sTitle, sRow);
 
@@ -311,7 +317,7 @@ export function showParagraphDialog(init: ParagraphDialogInit, cb: ParagraphDial
     // to clear; the boolean flags carry their literal value.
     const patch: Partial<ParaStyle> = {
       borders: hasBorder ? borders : undefined,
-      shading: fillToggle.checked ? fillInput.value : undefined,
+      shading: fillToggle.checked ? (shading ?? fillInput.value) : undefined,
       contextualSpacing: csInput.checked,
       widowControl: wcInput.checked,
       mirrorIndents: miInput.checked,
