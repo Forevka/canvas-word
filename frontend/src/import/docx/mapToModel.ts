@@ -190,6 +190,11 @@ export function createMapper(
   /** The document (body) section's page size in twips — section breaks that
    *  match it are geometry-preserving and flow rather than forcing a page. */
   refPgSize?: { w: number; h: number },
+  /** The document (body) section's non-inheriting OWN properties (line numbering,
+   *  page-number restart). The body sectPr describes the LAST section, so it's the
+   *  "following section" for the final in-paragraph break — used to stop those
+   *  properties bleeding backward across a dropped break (see sectionOwnBleeds). */
+  refSectionOwn?: { lineNumbering?: IRLineNumbering | undefined; pageNumberStart?: number | undefined },
 ): Mapper {
   // Import-distinct id prefix: commands.ts mints `n…`, sampleDoc `b…`.
   let nextId = 0;
@@ -363,6 +368,36 @@ export function createMapper(
       return undefined;
     };
 
+    // The non-inheriting OWN properties (line numbering, page-number restart) of
+    // the section that FOLLOWS the break ending at `afterIndex`: the next
+    // section-ending paragraph, or this body section when none follows. A
+    // geometry-preserving break is normally dropped and its section flowed into
+    // that following one — but these properties never inherit (see
+    // effectiveSection), so if the following section declares one this section
+    // lacks it would bleed BACKWARD across the merged boundary (e.g. line numbers
+    // appearing on every page before a line-numbered section).
+    const nextSectionOwn = (
+      afterIndex: number,
+    ): { lineNumbering?: IRLineNumbering | undefined; pageNumberStart?: number | undefined } => {
+      for (let i = afterIndex + 1; i < blocks.length; i++) {
+        const b = blocks[i]!;
+        if (b.kind === "paragraph" && b.props.sectionBreak !== undefined) {
+          return { lineNumbering: b.props.sectionLineNumbering, pageNumberStart: b.props.sectionPageNumberStart };
+        }
+      }
+      return { lineNumbering: refSectionOwn?.lineNumbering, pageNumberStart: refSectionOwn?.pageNumberStart };
+    };
+    /** A geometry-preserving break must still be materialized (not flowed) when the
+     *  section it closes differs from the following section in a non-inheriting OWN
+     *  property — otherwise dropping the boundary lets that property bleed backward. */
+    const sectionOwnBleeds = (props: IRParaProps, bi: number): boolean => {
+      const next = nextSectionOwn(bi);
+      return (
+        JSON.stringify(props.sectionLineNumbering ?? null) !== JSON.stringify(next.lineNumbering ?? null) ||
+        (props.sectionPageNumberStart ?? null) !== (next.pageNumberStart ?? null)
+      );
+    };
+
     // Looking PAST blank/hidden lead-in paragraphs, does the section beginning
     // after `afterIndex` open with a real section title? These generated reports
     // format titles directly (bold/centered) rather than with a Heading style, so
@@ -430,7 +465,7 @@ export function createMapper(
       // Does THIS paragraph end a (page-type) section?
       if (irBlock.kind === "paragraph" && irBlock.props.sectionBreak === "page") {
         const props = irBlock.props;
-        if (sectionIsDistinct(props)) {
+        if (sectionIsDistinct(props) || sectionOwnBleeds(props, bi)) {
           // Apply the section's geometry: sectionBreak sits on the paragraph that
           // ENDS the section (engine pages at the next block).
           let carrier = lastParagraphOf(mapped);
