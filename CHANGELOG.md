@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The caret now follows the text angle inside vertical-text (`w:textDirection` tbRl/btLr) cells.**
+  Previously the insertion caret in a rotated cell was drawn as an upright vertical bar — as if
+  the text were horizontal. `caretRect` now reports the cell's ±90° rotation and the renderer
+  rotates the caret bar about its center, so it sits horizontally across the column to match the
+  rotated text. Horizontal cells are unaffected; remote-collaborator carets keep their upright bar
+  (their name flag must stay upright).
 - **Table column-resize grips now line up correctly on right-to-left (`w:bidiVisual`) tables.**
   Under `w:bidiVisual` the grid mirrors about its width (model column 0 paints at the right),
   but the column-boundary hit-test walked `colWidths` left-to-right from the table's left edge
