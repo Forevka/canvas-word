@@ -8,7 +8,15 @@
 // AbortController for teardown, Escape-to-close, footer Cancel/Apply.
 
 import type { Command } from "../editor/state";
-import type { ColumnEntry, DocSelection, Document, PageBorders, SectionGeometry } from "@cw/shared";
+import type {
+  ColumnEntry,
+  DocSelection,
+  Document,
+  LineNumbering,
+  PageBorders,
+  SectionBreakType,
+  SectionGeometry,
+} from "@cw/shared";
 import { applyPageSetup, pageSetupAt, setBandVariantEnabled } from "../editor/commands";
 import { injectCssOnce } from "./styles";
 import { makeFloatingDialog } from "./floatingDialog";
@@ -128,6 +136,8 @@ export function showPageLayout(opts: PageLayoutOptions): PageLayoutHandle {
     footerDistancePx: geo0.footerDistancePx,
     pageColorHex: geo0.pageColorHex,
     pageBorders: geo0.pageBorders ? structuredCloneBorders(geo0.pageBorders) : null,
+    breakType: geo0.breakType,
+    lineNumbering: geo0.lineNumbering ? { ...geo0.lineNumbering } : null,
   };
 
   const numFields: NumField[] = [];
@@ -346,11 +356,68 @@ export function showPageLayout(opts: PageLayoutOptions): PageLayoutHandle {
   evenCheck.input.checked = sec.headerEven !== undefined || sec.footerEven !== undefined;
   firstCheck.input.addEventListener("change", () => editor.dispatch(setBandVariantEnabled("first", firstCheck.input.checked)));
   evenCheck.input.addEventListener("change", () => editor.dispatch(setBandVariantEnabled("even", evenCheck.input.checked)));
+
+  // Section start (w:sectPr/w:type) — forces this section's first page onto an
+  // even/odd page number. The model represents nextPage (the default), evenPage
+  // and oddPage; Word's "Continuous" is flowed inline by the importer and so has
+  // no breakType to set here.
+  const sectionStartSel = el("select");
+  sectionStartSel.append(option("nextPage", "New page"), option("evenPage", "Even page"), option("oddPage", "Odd page"));
+  sectionStartSel.value = draft.breakType ?? "nextPage";
+  sectionStartSel.addEventListener("change", () => { draft.breakType = sectionStartSel.value as SectionBreakType; });
+
+  // Line numbering (w:sectPr/w:lnNumType): an on/off toggle revealing count-by,
+  // start-at, restart and the gap from the text edge.
+  const lineNumCheck = checkbox("Line numbering");
+  lineNumCheck.input.checked = draft.lineNumbering !== null;
+  const lnCountBy = el("input");
+  lnCountBy.type = "number";
+  lnCountBy.min = "1";
+  lnCountBy.value = String(draft.lineNumbering?.countBy ?? 1);
+  const lnStart = el("input");
+  lnStart.type = "number";
+  lnStart.min = "0";
+  lnStart.value = String(draft.lineNumbering?.start ?? 1);
+  const lnRestartSel = el("select");
+  lnRestartSel.append(option("newPage", "Each page"), option("newSection", "Each section"), option("continuous", "Continuous"));
+  lnRestartSel.value = draft.lineNumbering?.restart ?? "newPage";
+  const lnDistance = makeNum(draft.lineNumbering?.distancePx ?? 0, () => syncLineNumbering(), 0);
+  const lnDetail = el("div", "cw-pl-cols");
+  lnDetail.append(
+    rowOf(labelled("Count by", lnCountBy), labelled("Start at", lnStart)),
+    rowOf(labelled("Restart", lnRestartSel), relabel(lnDistance, "Distance from text")),
+  );
+  const syncLineNumbering = (): void => {
+    if (!lineNumCheck.input.checked) {
+      draft.lineNumbering = null;
+      lnDetail.style.display = "none";
+      return;
+    }
+    lnDetail.style.display = "";
+    const ln: LineNumbering = {};
+    const countBy = Math.max(1, Math.floor(Number(lnCountBy.value) || 1));
+    if (countBy !== 1) ln.countBy = countBy;
+    const start = Math.max(0, Math.floor(Number(lnStart.value) || 1));
+    if (start !== 1) ln.start = start;
+    const restart = lnRestartSel.value as NonNullable<LineNumbering["restart"]>;
+    if (restart !== "newPage") ln.restart = restart;
+    const dist = lnDistance.getPx();
+    if (dist > 0) ln.distancePx = dist;
+    draft.lineNumbering = ln;
+  };
+  lnDetail.style.display = lineNumCheck.input.checked ? "" : "none";
+  lineNumCheck.input.addEventListener("change", syncLineNumbering);
+  for (const c of [lnCountBy, lnStart, lnRestartSel]) c.addEventListener("input", syncLineNumbering);
+  lnRestartSel.addEventListener("change", syncLineNumbering);
+
   layoutPane.append(
     rowOf(relabel(headerNum, "Header from top"), relabel(footerNum, "Footer from bottom")),
     labelled("Start page number at", startInput),
+    labelled("Section start", sectionStartSel),
     firstCheck.row,
     evenCheck.row,
+    lineNumCheck.row,
+    lnDetail,
   );
 
   // Background tab: page color + page borders.
@@ -559,6 +626,10 @@ export function showPageLayout(opts: PageLayoutOptions): PageLayoutHandle {
       footerDistancePx: draft.footerDistancePx,
       pageColorHex: draft.pageColorHex,
       pageBorders: draft.pageBorders ? structuredCloneBorders(draft.pageBorders) : null,
+      // "New page" is the default — store null so doc.section stays clean (the
+      // mid-section path falls back to "nextPage" too).
+      breakType: draft.breakType && draft.breakType !== "nextPage" ? draft.breakType : null,
+      lineNumbering: draft.lineNumbering ? { ...draft.lineNumbering } : null,
     };
   }
 

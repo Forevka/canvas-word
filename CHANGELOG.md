@@ -30,6 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `toggleCharStyle`), and `currentFormat()` now reflects all of these so the toggles light
   up and the dialog opens seeded from the caret. Editor-only — no model, import/export, or
   C# change.
+- **Page Layout dialog — section start & line numbering controls.** The Page Layout
+  dialog's Layout pane now exposes the section-start type (`w:sectPr/w:type`: New page /
+  Even page / Odd page → `SectionPatch`/`SectionProps.breakType`) and a line-numbering
+  group (on/off, count-by, start-at, restart per page/section/continuous, and distance
+  from the text edge → `lineNumbering`). Both seed from the caret's section and pack
+  into `applyPageSetup`, which writes them onto the terminating section-break paragraph
+  or `doc.section` with full undo. The model fields and `.docx` round-trip already
+  shipped (#82); this wires the editor UI to them.
 - **Minor run typography & effects (`CharStyle` w:rPr extras).** A grouped set of
   lower-frequency run properties now round-trip and (where visual) paint: double
   strikethrough (`w:dstrike` → `doubleStrikethrough`, two rules), baseline
