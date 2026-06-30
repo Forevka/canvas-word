@@ -117,6 +117,65 @@ export function runPaint(style: CharStyle, linkColor: string = EXTERNAL_LINK_COL
   };
 }
 
+// --- list bullet glyphs ----------------------------------------------------
+// The three default bullet levels (shared/src/model/lists.ts BULLETS) are drawn
+// as VECTOR SHAPES rather than text in both painters: ◦ (U+25E6 WHITE BULLET) and
+// ▪ (U+25AA BLACK SMALL SQUARE) are absent from the bundled PDF Latin font subset,
+// so painting them as glyphs yields .notdef/tofu in PDF export (issue #99). A
+// shared shape keeps the on-screen canvas and the PDF pixel-identical and removes
+// any dependence on font glyph coverage. Non-bullet markers (numbers, custom
+// chars) still paint as text via the normal marker path.
+
+/** U+2022 BULLET — a filled disc. */
+export const BULLET_DISC = "•";
+/** U+25E6 WHITE BULLET — a hollow ring. */
+export const BULLET_RING = "◦";
+/** U+25AA BLACK SMALL SQUARE — a filled square. */
+export const BULLET_SQUARE = "▪";
+
+// Geometry as a fraction of the marker font size. Tuned to sit close to where the
+// glyph's ink would land: centred a touch right of the marker's left edge and a
+// little above the baseline, at roughly a glyph-sized diameter.
+const BULLET_CENTER_X_EM = 0.22;
+const BULLET_CENTER_Y_EM = 0.31;
+const DISC_RADIUS_EM = 0.135;
+const RING_RADIUS_EM = 0.13;
+const RING_STROKE_EM = 0.05;
+const SQUARE_SIZE_EM = 0.22;
+
+/** A backend-agnostic description of a default-bullet marker shape, shared by the
+ *  canvas renderer and the PDF painter so both draw an identical bullet. */
+export type BulletShape =
+  | { kind: "disc"; cx: number; cy: number; r: number }
+  | { kind: "ring"; cx: number; cy: number; r: number; lineWidth: number }
+  | { kind: "square"; x: number; y: number; size: number };
+
+/** The vector shape for a default-bullet marker, or `undefined` for any other
+ *  marker text (numbers, custom glyphs) which the painters render as text. `x` is
+ *  the marker's left edge and `baselineY` its text baseline — the same coordinates
+ *  the glyph would have been painted at. */
+export function bulletShapeFor(
+  text: string,
+  fontSizePx: number,
+  x: number,
+  baselineY: number,
+): BulletShape | undefined {
+  const cx = x + fontSizePx * BULLET_CENTER_X_EM;
+  const cy = baselineY - fontSizePx * BULLET_CENTER_Y_EM;
+  switch (text) {
+    case BULLET_DISC:
+      return { kind: "disc", cx, cy, r: fontSizePx * DISC_RADIUS_EM };
+    case BULLET_RING:
+      return { kind: "ring", cx, cy, r: fontSizePx * RING_RADIUS_EM, lineWidth: fontSizePx * RING_STROKE_EM };
+    case BULLET_SQUARE: {
+      const size = fontSizePx * SQUARE_SIZE_EM;
+      return { kind: "square", x: cx - size / 2, y: cy - size / 2, size };
+    }
+    default:
+      return undefined;
+  }
+}
+
 /** How an underline of a given style is stroked, shared by the canvas + PDF
  *  painters so both reproduce double/dotted/dashed/wave identically. */
 export interface UnderlinePlan {

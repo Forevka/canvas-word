@@ -40,11 +40,35 @@ import {
   runVerticalShift,
   widthScale,
   doubleStrikeOffsets,
+  bulletShapeFor,
 } from "./paintStyle";
-import type { RunPaint } from "./paintStyle";
+import type { RunPaint, BulletShape } from "./paintStyle";
 import type { UnderlineStyle } from "@cw/shared";
 import { DEFAULT_THEME, type ResolvedTheme } from "../config";
 import { ZOOM_MAX, ZOOM_MIN } from "../uiConstants";
+
+/** Paint a default-bullet marker as a vector shape (disc / ring / square), the
+ *  canvas counterpart of the PDF painter's drawBulletShape — both consume the same
+ *  {@link BulletShape} so a bullet looks identical on screen and in the export. */
+function paintBulletShape(ctx: CanvasRenderingContext2D, shape: BulletShape, color: string): void {
+  ctx.save();
+  if (shape.kind === "square") {
+    ctx.fillStyle = color;
+    ctx.fillRect(shape.x, shape.y, shape.size, shape.size);
+  } else {
+    ctx.beginPath();
+    ctx.arc(shape.cx, shape.cy, shape.r, 0, Math.PI * 2);
+    if (shape.kind === "ring") {
+      ctx.lineWidth = shape.lineWidth;
+      ctx.strokeStyle = color;
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
 
 /** Paint a run's underline. The plain "single" style keeps the historical
  *  baseline-aligned filled rect (so existing renders don't shift); the richer
@@ -1031,10 +1055,18 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     // List marker — paint-only, on the first line's baseline in the hanging indent.
     const firstLine = block.lines[0];
     if (block.marker && firstLine) {
-      ctx.font = charStyleToFont(block.marker.style);
-      ctx.fillStyle = block.marker.style.color;
-      (ctx as CanvasRenderingContext2D & { wordSpacing: string }).wordSpacing = "0px";
-      ctx.fillText(block.marker.text, block.marker.x, block.y + firstLine.y + firstLine.ascent);
+      const markerBaseline = block.y + firstLine.y + firstLine.ascent;
+      // The three default bullets render as vector shapes (◦/▪ are absent from the
+      // bundled PDF font subset → tofu); everything else paints as text.
+      const shape = bulletShapeFor(block.marker.text, block.marker.style.fontSizePx, block.marker.x, markerBaseline);
+      if (shape) {
+        paintBulletShape(ctx, shape, block.marker.style.color);
+      } else {
+        ctx.font = charStyleToFont(block.marker.style);
+        ctx.fillStyle = block.marker.style.color;
+        (ctx as CanvasRenderingContext2D & { wordSpacing: string }).wordSpacing = "0px";
+        ctx.fillText(block.marker.text, block.marker.x, markerBaseline);
+      }
     }
     // TOC decoration — paint-only page number + dot leader on its line.
     if (block.toc) {
