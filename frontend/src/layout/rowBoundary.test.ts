@@ -66,3 +66,41 @@ describe("hitTestRowBoundary", () => {
     expect(hitTestRowBoundary(tree, page, corner.x, corner.y)).not.toBeNull();
   });
 });
+
+describe("hitTestColumnBoundary — bidiVisual (RTL columns)", () => {
+  // Unequal widths so the mirror is observable (equal columns hide the bug).
+  const rtlTable = (): TableBlock => ({
+    kind: "table", id: "tbl", revision: 0,
+    widthMode: "fixed", colFractions: [0.2, 0.3, 0.5], bidiVisual: true,
+    rows: [row([cell("a"), cell("b"), cell("c")])],
+  });
+
+  it("mirrors the boundary x about the grid, keeping model-order boundaryIndex", () => {
+    const tree = layout(doc([rtlTable()]));
+    const { page, pb } = placedTable(tree, "tbl");
+    const pt = pb.table!;
+    const grid = pt.colWidths.reduce((s, w) => s + w, 0);
+    const [w0, w1] = [pt.colWidths[0]!, pt.colWidths[1]!];
+    // boundary 0 (model cols 0|1) sits at gridWidth − w0 from the table's left.
+    const e0 = pt.x + grid - w0;
+    const h0 = hitTestColumnBoundary(tree, page, e0, pt.y + 5);
+    expect(h0?.boundaryIndex).toBe(0);
+    expect(h0?.x).toBeCloseTo(e0, 0);
+    expect(h0?.bidiVisual).toBe(true);
+    // boundary 1 (model cols 1|2) at gridWidth − (w0 + w1).
+    const e1 = pt.x + grid - (w0 + w1);
+    expect(hitTestColumnBoundary(tree, page, e1, pt.y + 5)?.boundaryIndex).toBe(1);
+    // The LTR position (t.x + w0) is NOT a separator under bidiVisual.
+    expect(hitTestColumnBoundary(tree, page, pt.x + w0, pt.y + 5)).toBeNull();
+  });
+
+  it("lands every grip on a real on-screen separator between mirrored cells", () => {
+    const tree = layout(doc([rtlTable()]));
+    const { page, pb } = placedTable(tree, "tbl");
+    const pt = pb.table!;
+    for (const c of pt.rows[0]!.cells) {
+      if (Math.abs(c.x - pt.x) < 1) continue; // the table's outer-left edge isn't a grip
+      expect(hitTestColumnBoundary(tree, page, c.x, pt.y + 5)).not.toBeNull();
+    }
+  });
+});

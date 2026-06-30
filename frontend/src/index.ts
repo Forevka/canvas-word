@@ -1215,7 +1215,10 @@ export function createEditor(
     let lastFractions = base;
 
     const fractionsFor = (e: MouseEvent): number[] => {
-      const df = (e.clientX - startX) / hit.tableWidth;
+      // Under bidiVisual the grid is mirrored, so model column boundaryIndex sits
+      // to the RIGHT of boundaryIndex+1 on screen: a rightward drag must shrink the
+      // left-of-boundary model column (boundaryIndex), i.e. flip the delta sign.
+      const df = ((e.clientX - startX) / hit.tableWidth) * (hit.bidiVisual ? -1 : 1);
       const f = base.slice();
       const a = hit.boundaryIndex;
       const b = a + 1;

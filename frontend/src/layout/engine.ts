@@ -3282,6 +3282,6 @@ function placeTable(
     y,
     firstLineIndex: firstRowIndex, // for tables this is the chunk's first ROW index
     lines: [],
-    table: { x, y, width, height, rows: placedRows, colWidths },
+    table: { x, y, width, height, rows: placedRows, colWidths, ...(t.bidiVisual ? { bidiVisual: true } : {}) },
   };
 }

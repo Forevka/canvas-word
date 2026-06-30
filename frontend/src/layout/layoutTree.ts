@@ -127,8 +127,13 @@ export interface PlacedTable {
   height: number;
   rows: PlacedTableRow[];
   /** Per-column widths — column boundary hit-testing reads these (merged cells
-   *  make row-cell edges unreliable as column markers). */
+   *  make row-cell edges unreliable as column markers). Always in MODEL order
+   *  (col 0 first), even when {@link bidiVisual} mirrors the on-screen layout. */
   colWidths: number[];
+  /** w:bidiVisual — the grid paints right-to-left (model col 0 at the right).
+   *  Column boundary hit-testing mirrors the boundary x about the grid so the
+   *  grips line up with the visible separators. */
+  bidiVisual?: boolean;
 }
 
 export interface PlacedBlock {
