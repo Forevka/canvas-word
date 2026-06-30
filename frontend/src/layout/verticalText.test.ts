@@ -8,7 +8,7 @@ import "./test-canvas-setup";
 import { describe, it, expect } from "vitest";
 import type { CharStyle, Document, Paragraph, ParaStyle, SectionProps, TableBlock, TableCell } from "@cw/shared";
 import { createLayoutEngine } from "./engine";
-import { caretRect, hitTest } from "./geometry";
+import { caretRect, hitTest, selectionRects } from "./geometry";
 import type { PlacedTable, PlacedTableCell } from "./layoutTree";
 
 const CHAR: CharStyle = {
@@ -138,6 +138,25 @@ describe("geometry — caret/hit-test inside a rotated cell", () => {
     const pos = hitTest(tree, 0, c.x + c.width / 2, c.y + c.height / 2);
     expect(pos).not.toBeNull();
     expect(pos!.blockId).toBe(paraId);
+  });
+
+  it("keeps a rotated selection's highlight rects within the cell box (tbRl & btLr)", () => {
+    for (const dir of ["tbRl", "btLr"] as const) {
+      const { tree, cell: c, paraId } = build(dir);
+      const rects = selectionRects(tree, {
+        anchor: { blockId: paraId, offset: 0 },
+        focus: { blockId: paraId, offset: HEADER.length },
+      });
+      expect(rects.length).toBeGreaterThan(0);
+      // Each highlight rect (mapped local→page through the rotation) stays inside
+      // the placed cell box, give or take a pixel of rounding.
+      for (const r of rects) {
+        expect(r.x).toBeGreaterThanOrEqual(c.x - 1);
+        expect(r.x + r.width).toBeLessThanOrEqual(c.x + c.width + 1);
+        expect(r.y).toBeGreaterThanOrEqual(c.y - 1);
+        expect(r.y + r.height).toBeLessThanOrEqual(c.y + c.height + 1);
+      }
+    }
   });
 
   it("maps the caret DOWN the column as the offset advances (tbRl reads top→bottom)", () => {
