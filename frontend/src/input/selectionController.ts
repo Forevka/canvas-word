@@ -9,14 +9,13 @@
 //   Ctrl+A selects all, Ctrl+C copies plain text (HTML flavor lands in milestone 5).
 
 import type { Document, ImageBlock, Paragraph } from "@cw/shared";
-import { BAND_CONTAINERS } from "@cw/shared";
 import type { DocPosition, DocSelection } from "@cw/shared";
 import { isCollapsed } from "@cw/shared";
 import {
   words,
   bandParagraphs,
   isHiddenParagraph,
-  paragraphsOf,
+  navigableParagraphs,
   prevGrapheme,
   nextGrapheme,
   prevWordStart,
@@ -127,12 +126,8 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
       return bandParagraphs(deps.getDoc(), source).filter((p) => !isHiddenParagraph(p));
     }
     // Hidden (w:vanish) paragraphs aren't laid out, so the caret must skip them.
-    return paragraphsOf(deps.getDoc()).filter((p) => !isBandParagraph(p.id) && !isHiddenParagraph(p));
-  };
-
-  const isBandParagraph = (blockId: string): boolean => {
-    const doc = deps.getDoc();
-    return BAND_CONTAINERS.some((band) => bandParagraphs(doc, band).some((p) => p.id === blockId));
+    // Memoized per document identity (rebuilt only when the doc changes).
+    return navigableParagraphs(deps.getDoc());
   };
 
   const textOf = (blockId: string): string => {
