@@ -345,6 +345,7 @@ describe("paragraph.effects — minor run typography & effects", () => {
   it("rejects an out-of-range widthScalePct and a non-positive fitTextPx", () => {
     expect(() => DocumentBuilder.create().paragraph("x").effects({ widthScalePct: 0 })).toThrow(/widthScalePct/);
     expect(() => DocumentBuilder.create().paragraph("x").effects({ widthScalePct: 700 })).toThrow(/widthScalePct/);
+    expect(() => DocumentBuilder.create().paragraph("x").effects({ fitTextPx: 0 })).toThrow(/fitTextPx/);
     expect(() => DocumentBuilder.create().paragraph("x").effects({ fitTextPx: -1 })).toThrow(/fitTextPx/);
   });
 });
