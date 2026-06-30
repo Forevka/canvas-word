@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Removed duplicated ribbon controls.** The Home ▸ Font hyperlink button was dropped (Insert ▸
+  Links is the single, Word-canonical entry point for hyperlinks), and the two adjacent Home ▸
+  Paragraph "shading" / "borders" buttons — which opened the identical Paragraph dialog covering
+  both — were collapsed into one "Borders & shading" button.
+
 ### Fixed
 - **Rows/columns added via the context menu now inherit the table's cell formatting.** Insert →
   Row Below / Column Right created cells with no borders, shading, or margin, so they fell back to
