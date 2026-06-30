@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Rows/columns added via the context menu now inherit the table's cell formatting.** Insert →
+  Row Below / Column Right created cells with no borders, shading, or margin, so they fell back to
+  the engine's bare defaults (light grid, no fill, default padding) instead of matching the table.
+  Table-level defaults (`w:tblBorders`/`w:shd`/`w:tblCellMar`) are baked onto every cell at
+  import/build time, so a new cell now copies the neighbouring cell's borders/shading/margin/vAlign/
+  textDirection/noWrap/fitText/hideMark (content, merges, and preferred width are not copied).
 - **The caret now follows the text angle inside vertical-text (`w:textDirection` tbRl/btLr) cells.**
   Previously the insertion caret in a rotated cell was drawn as an upright vertical bar — as if
   the text were horizontal. `caretRect` now reports the cell's ±90° rotation and the renderer
