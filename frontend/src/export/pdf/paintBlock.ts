@@ -80,6 +80,22 @@ export interface PaintCtx {
   doc: PDFKit.PDFDocument;
   /** Register (idempotently) the bundled face and return its pdfkit name. */
   font: (family: string, bold: boolean, italic: boolean) => string;
+  /**
+   * Split `text` into face-homogeneous segments, registering every face used
+   * (including fallbacks) with pdfkit so they are subset-embedded. Returns an
+   * array of `{ text, pdfkitName, font }` tuples; paintLine paints each tuple
+   * in sequence at the right x position.
+   *
+   * Optional so tests that only exercise non-text paint paths (markers, bullets)
+   * can supply a minimal PaintCtx. When absent, paintLine falls back to a
+   * single-segment paint using `ctx.font()`.
+   */
+  textSegments?: (
+    text: string,
+    family: string,
+    bold: boolean,
+    italic: boolean,
+  ) => Array<{ text: string; pdfkitName: string; font: import("fontkit").Font }>;
   /** Image bytes for a src, or undefined if unresolved/unsupported. */
   image: (src: string) => Uint8Array | undefined;
   warn: (code: string, detail?: string) => void;
@@ -335,21 +351,48 @@ function paintLine(ctx: PaintCtx, block: PlacedBlock, line: LineBox, baselineY: 
     }
 
     const rp = runPaint(s);
-    const name = ctx.font(firstFamily(s.fontFamily), !!s.bold, !!s.italic);
     // Character width scaling (w:w): the fragment box already reserves the scaled
     // advance, so stretch the glyphs horizontally about the fragment's left edge.
     const wScale = widthScale(s);
-    if (wScale !== 1) doc.save().scale(wScale, 1, { origin: [x, baselineY + vShift] });
-    doc
-      .font(name)
-      .fontSize(sizePx)
-      .fillColor(rp.color)
-      .text(frag.text, x, baselineY + vShift, {
-        lineBreak: false,
-        baseline: "alphabetic",
-        wordSpacing: frag.wordSpacingPx ?? 0,
-      });
-    if (wScale !== 1) doc.restore();
+
+    // Per-glyph fallback: split the fragment text into face-homogeneous segments
+    // so characters the primary face lacks are rendered from a fallback face
+    // (StixTwoMath covers ✓ U+2713, ☒ U+2612, etc.). Both measure (fontkitContext)
+    // and paint use segmentByFace so reserved widths match painted positions.
+    if (ctx.textSegments) {
+      const segs = ctx.textSegments(frag.text, firstFamily(s.fontFamily), !!s.bold, !!s.italic);
+      // Apply wScale once around all segments — the scale origin is the fragment's
+      // left edge (x) so every segment's logical advance maps to the right visual x.
+      if (wScale !== 1) doc.save().scale(wScale, 1, { origin: [x, baselineY + vShift] });
+      let curX = x;
+      for (const seg of segs) {
+        doc
+          .font(seg.pdfkitName)
+          .fontSize(sizePx)
+          .fillColor(rp.color)
+          .text(seg.text, curX, baselineY + vShift, {
+            lineBreak: false,
+            baseline: "alphabetic",
+            wordSpacing: frag.wordSpacingPx ?? 0,
+          });
+        curX += seg.font.layout(seg.text).advanceWidth * (sizePx / seg.font.unitsPerEm);
+      }
+      if (wScale !== 1) doc.restore();
+    } else {
+      // Fallback for minimal PaintCtx (tests that don't supply textSegments).
+      const name = ctx.font(firstFamily(s.fontFamily), !!s.bold, !!s.italic);
+      if (wScale !== 1) doc.save().scale(wScale, 1, { origin: [x, baselineY + vShift] });
+      doc
+        .font(name)
+        .fontSize(sizePx)
+        .fillColor(rp.color)
+        .text(frag.text, x, baselineY + vShift, {
+          lineBreak: false,
+          baseline: "alphabetic",
+          wordSpacing: frag.wordSpacingPx ?? 0,
+        });
+      if (wScale !== 1) doc.restore();
+    }
 
     const th = decorationThickness(s.fontSizePx);
     if (rp.underline) {

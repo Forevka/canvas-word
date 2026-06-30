@@ -24,6 +24,7 @@ import {
   type CustomFontRegistry,
 } from "../../fonts/customRegistry";
 import { paintBlock, paintLineNumbers, type PaintCtx } from "./paintBlock";
+import { segmentByFace } from "../shared/glyphFallback";
 import {
   COLUMN_SEPARATOR_COLOR,
   FOOTNOTE_RULE_COLOR,
@@ -142,6 +143,24 @@ async function renderPdfInner(doc: Document, opts: RenderPdfOptions, fontReg: Cu
   const ctx: PaintCtx = {
     doc: pdf,
     font: fontName,
+    textSegments: (text, family, bold, italic) => {
+      // Resolve + register the primary face (same logic as fontName).
+      const primary = resolveFont(family, bold, italic);
+      if (!registered.has(primary.file)) {
+        pdf.registerFont(primary.file, toBuffer(primary.bytes));
+        registered.add(primary.file);
+        if (primary.substituted) warnings.warn("font-substituted", family);
+      }
+      // Split by face and register any fallback faces used so they are
+      // subset-embedded in the PDF alongside the primary face.
+      return segmentByFace(text, primary).map((seg) => {
+        if (!registered.has(seg.face.file)) {
+          pdf.registerFont(seg.face.file, toBuffer(seg.face.bytes));
+          registered.add(seg.face.file);
+        }
+        return { text: seg.text, pdfkitName: seg.face.file, font: seg.face.font };
+      });
+    },
     image: (src) => images[src],
     warn: (code, detail) => warnings.warn(code, detail),
     destName: (ref) => {

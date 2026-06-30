@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **PDF export: non-Latin symbols (✓ U+2713, ☒ U+2612, ballot boxes, dingbats) now render
+  as real glyphs instead of `.notdef`/tofu.** The root cause was that the export resolved one
+  bundled face per run with no per-glyph fallback; characters outside that face silently
+  produced the missing-glyph box. The fix adds a **per-glyph fallback** in the EXPORT path
+  only (on-screen path is unchanged): `glyphFallback.ts` (`segmentByFace`) splits any text
+  string into face-homogeneous segments — ASCII stays in the fast path, non-ASCII code
+  points that the primary face lacks are routed to **StixTwoMath** (the bundled math/symbol
+  font, which covers the full dingbat and miscellaneous-symbols Unicode ranges including
+  ✓ ☐ ☑ ☒). The split is applied in BOTH `fontkitContext.ts` (measurement) and
+  `paintBlock.ts` `paintLine` (painting) so reserved widths always match painted glyph
+  positions. Fallback faces are subset-embedded in the PDF (`renderPdf.ts`). NotoSansSC
+  is intentionally excluded from the per-glyph fallback chain: CJK text is pre-routed
+  by `scriptSplitRuns` and the `cjk.fallbackFont: ""` opt-out must not be bypassed.
+  Latin-only output is byte-identical (the ASCII fast path is unchanged). Closes #104.
+
 ### Added
 - **Vertical cell text (`w:textDirection` `tbRl`/`btLr`) — real 90° rotation.** Cells
   whose text direction is `tbRl` (top→bottom, columns right→left) or `btLr` (bottom→top,
