@@ -1440,6 +1440,10 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       caretEl.style.left = `${caret.x * zoom - 1}px`;
       caretEl.style.top = `${caret.y * zoom}px`;
       caretEl.style.height = `${caret.height * zoom}px`;
+      // Vertical-text cells: rotate the bar about its center so it follows the text
+      // angle (a horizontal caret across the column) instead of staying upright.
+      caretEl.style.transformOrigin = "center center";
+      caretEl.style.transform = caret.angle ? `rotate(${caret.angle}rad)` : "";
       // restart the blink so the caret is solid right after every move (Word behavior)
       caretEl.style.animation = "none";
       void caretEl.offsetWidth;

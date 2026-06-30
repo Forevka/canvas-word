@@ -123,14 +123,25 @@ describe("geometry — caret/hit-test inside a rotated cell", () => {
       expect(r).not.toBeNull();
       // The caret's center is the insertion point — it must land inside the cell box
       // (the 2px DOM bar is centered on it, so it may straddle the edge by half a
-      // line height; orientation stays vertical — a documented limitation).
+      // line height). The caret carries the cell angle so the painter rotates the bar
+      // about its center to follow the text (a horizontal bar across the column).
       const cx = r!.x;
       const cy = r!.y + r!.height / 2;
       expect(cx).toBeGreaterThanOrEqual(c.x - 1);
       expect(cx).toBeLessThanOrEqual(c.x + c.width + 1);
       expect(cy).toBeGreaterThanOrEqual(c.y - 1);
       expect(cy).toBeLessThanOrEqual(c.y + c.height + 1);
+      // The bar inherits the cell's ±90° rotation (was forced upright before).
+      expect(r!.angle).toBeCloseTo(dir === "tbRl" ? Math.PI / 2 : -Math.PI / 2, 6);
     }
+  });
+
+  it("leaves a horizontal cell's caret unrotated (no angle)", () => {
+    const t = table([[cell("plain"), cell("alpha")]], "autofitContents");
+    const tree = createLayoutEngine().layout(doc([t]));
+    const paraId = t.rows[0]!.cells[0]!.blocks[0]!.id;
+    const r = caretRect(tree, { blockId: paraId, offset: 0 })!;
+    expect(r.angle ?? 0).toBe(0);
   });
 
   it("hit-tests a click in the rotated cell back to its own paragraph", () => {
