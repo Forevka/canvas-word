@@ -1884,6 +1884,26 @@ function cellContext(state: EditorState): CellContext | null {
 const firstCellPara = (cell: TableCell | undefined): Paragraph | undefined =>
   cell?.blocks.find((b): b is Paragraph => b.kind === "paragraph");
 
+/** Carry a proto cell's VISUAL format (not its content, merges, or width) onto a
+ *  freshly inserted cell, so a new row/column inherits the look of the row/column
+ *  it grew from. Table-level defaults (borders/shading/cell margin) are baked onto
+ *  every cell at import/build time, so without this a new cell falls back to the
+ *  engine's bare defaults (light grid, no fill, default padding) instead of the
+ *  table's. colSpan/rowSpan/preferredWidth are intentionally NOT copied. */
+function cloneCellFormat(proto: TableCell | undefined): Partial<TableCell> {
+  if (!proto) return {};
+  const out: Partial<TableCell> = {};
+  if (proto.shading !== undefined) out.shading = proto.shading;
+  if (proto.borders !== undefined) out.borders = structuredClone(proto.borders);
+  if (proto.margin !== undefined) out.margin = { ...proto.margin };
+  if (proto.vAlign !== undefined) out.vAlign = proto.vAlign;
+  if (proto.textDirection !== undefined) out.textDirection = proto.textDirection;
+  if (proto.noWrap !== undefined) out.noWrap = proto.noWrap;
+  if (proto.fitText !== undefined) out.fitText = proto.fitText;
+  if (proto.hideMark !== undefined) out.hideMark = proto.hideMark;
+  return out;
+}
+
 const DEFAULT_CELL_CHAR: CharStyle = {
   fontFamily: "Georgia, serif",
   fontSizePx: 14,
@@ -1912,7 +1932,11 @@ export function insertTableRowCmd(side: "above" | "below"): Command {
     if (!ctx) return null;
     const protoRow = ctx.table.rows[ctx.ri]!;
     const row: TableRow = {
-      cells: protoRow.cells.map((c) => ({ id: freshBlockId(), blocks: [emptyCellPara(firstCellPara(c))] })),
+      cells: protoRow.cells.map((c) => ({
+        id: freshBlockId(),
+        blocks: [emptyCellPara(firstCellPara(c))],
+        ...cloneCellFormat(c),
+      })),
     };
     const rowIndex = side === "above" ? ctx.ri : ctx.ri + 1;
     const caretCell = row.cells[Math.min(ctx.ci, row.cells.length - 1)]!;
@@ -1932,6 +1956,7 @@ export function insertTableColumnCmd(side: "left" | "right"): Command {
     const cells = ctx.table.rows.map((row) => ({
       id: freshBlockId(),
       blocks: [emptyCellPara(firstCellPara(row.cells[ctx.ci]))],
+      ...cloneCellFormat(row.cells[ctx.ci]),
     }));
     const caretCell = cells[ctx.ri]!;
     return tr(
