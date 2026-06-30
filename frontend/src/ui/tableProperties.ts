@@ -3,12 +3,19 @@
 // captures the target range and supplies the apply callbacks; edits are applied
 // live (each click is its own undo step), so there's no separate OK/commit step.
 
-import type { CellBorder } from "@cw/shared";
+import type { CellBorder, CellMargin, RowProps, TableCell } from "@cw/shared";
 import type { BorderEdgeFlags } from "../editor/commands";
 import { injectCssOnce } from "./styles";
 import { makeFloatingDialog } from "./floatingDialog";
 
 export type BorderStyleName = NonNullable<CellBorder["style"]> | "single";
+
+/** Cell vertical alignment exposed in the dialog (w:vAlign). */
+export type CellVAlign = NonNullable<TableCell["vAlign"]>;
+/** The text-flow directions the dialog offers (w:textDirection). The model also
+ *  knows the *V variants, but the editor only meaningfully exposes these three. */
+export type CellTextDir = "lrTb" | "tbRl" | "btLr";
+export type RowHeight = NonNullable<RowProps["height"]>;
 
 export interface TablePropertiesInit {
   /** Seed for the border controls (from the top-left cell of the range). */
@@ -25,6 +32,24 @@ export interface TablePropertiesInit {
   tableWidth: { type: "pct" | "px"; value: number } | null;
   /** Current table alignment within the content width. */
   tableAlign: "left" | "center" | "right";
+  /** Vertical alignment of the top-left cell of the range (default "top"). */
+  vAlign: CellVAlign;
+  /** Text direction of the top-left cell of the range (default "lrTb"). */
+  textDir: CellTextDir;
+  /** Anchor row's fixed/min height, or null for none. */
+  rowHeight: RowHeight | null;
+  /** Anchor row's "keep together" flag. */
+  cantSplit: boolean;
+  /** Anchor row's "repeat as header" flag. */
+  repeatHeader: boolean;
+  /** Table indent from the leading edge, in px (default 0). */
+  tableIndentPx: number;
+  /** Whether the table carries table-level default borders (w:tblBorders). */
+  hasTableDefaultBorders: boolean;
+  /** Table-level default shading fill (w:shd), or null for none. */
+  tableDefaultShading: string | null;
+  /** Table-level default cell margins (w:tblCellMar), or null for Word defaults. */
+  tableDefaultCellMargin: CellMargin | null;
 }
 
 export interface TablePropertiesCallbacks {
@@ -34,6 +59,22 @@ export interface TablePropertiesCallbacks {
   applyTableWidth(width: { type: "pct" | "px"; value: number } | null): void;
   /** Set the table's horizontal alignment. */
   applyTableAlign(align: "left" | "center" | "right"): void;
+  /** Set the vertical alignment of the targeted cell(s). */
+  applyVAlign(vAlign: CellVAlign): void;
+  /** Set the text-flow direction of the targeted cell(s). */
+  applyTextDir(dir: CellTextDir): void;
+  /** Set (or clear with null) the height of the targeted row(s). */
+  applyRowHeight(height: RowHeight | null): void;
+  /** Toggle a boolean row flag (cant-split / repeat-header) on the targeted row(s). */
+  applyRowFlag(flag: "cantSplit" | "repeatHeader", on: boolean): void;
+  /** Set the table indent (px) from the leading edge. */
+  applyTableIndent(px: number): void;
+  /** Apply (spec) or clear (null) the table-level default borders on all edges. */
+  applyTableDefaultBorders(spec: CellBorder | null): void;
+  /** Set (or clear with null) the table-level default shading fill. */
+  applyTableDefaultShading(fill: string | null): void;
+  /** Set (or clear with null) the table-level default cell margins. */
+  applyTableDefaultCellMargin(margin: CellMargin | null): void;
 }
 
 export interface TablePropertiesHandle {
@@ -318,7 +359,178 @@ export function showTableProperties(init: TablePropertiesInit, cb: TableProperti
   refreshAlign();
   zSection.append(zTitle, zRow, alignCap, alignRow);
 
-  body.append(bSection, sSection, zSection);
+  // ---- Cell section (vAlign + text direction) — applies live ----------------
+  const cSection = el("div");
+  const cTitle = el("div", "cw-tbl-section-title");
+  cTitle.textContent = "Cell";
+  const vCap = el("div", "cw-tbl-caption");
+  vCap.textContent = "Vertical alignment";
+  const vRow = el("div", "cw-tbl-row");
+  let curVAlign: CellVAlign = init.vAlign;
+  const vBtns: Partial<Record<CellVAlign, HTMLButtonElement>> = {};
+  const refreshVAlign = (): void => {
+    for (const k of ["top", "center", "bottom"] as const) vBtns[k]!.classList.toggle("active", k === curVAlign);
+  };
+  const vBtn = (label: string, a: CellVAlign): HTMLButtonElement => {
+    const b = presetBtn(label, () => {
+      curVAlign = a;
+      refreshVAlign();
+      cb.applyVAlign(a);
+    });
+    vBtns[a] = b;
+    return b;
+  };
+  vRow.append(vBtn("Top", "top"), vBtn("Center", "center"), vBtn("Bottom", "bottom"));
+  refreshVAlign();
+
+  const dCap = el("div", "cw-tbl-caption");
+  dCap.textContent = "Text direction";
+  const dRow = el("div", "cw-tbl-row");
+  const dirSelect = el("select");
+  for (const [val, lbl] of [["lrTb", "Horizontal"], ["tbRl", "Rotate 90°"], ["btLr", "Rotate 270°"]] as const) {
+    const o = el("option");
+    o.value = val;
+    o.textContent = lbl;
+    if (val === init.textDir) o.selected = true;
+    dirSelect.appendChild(o);
+  }
+  dirSelect.addEventListener("change", () => cb.applyTextDir(dirSelect.value as CellTextDir));
+  const dLabel = el("label");
+  dLabel.append("Direction", dirSelect);
+  dRow.append(dLabel);
+  cSection.append(cTitle, vCap, vRow, dCap, dRow);
+
+  // ---- Row section (height + cant-split + repeat-header) — applies live ------
+  const rSection = el("div");
+  const rTitle = el("div", "cw-tbl-section-title");
+  rTitle.textContent = "Row";
+  const hRow = el("div", "cw-tbl-spec");
+  const heightRule = el("select");
+  for (const [val, lbl] of [["none", "Auto"], ["atLeast", "At least"], ["exact", "Exactly"]] as const) {
+    const o = el("option");
+    o.value = val;
+    o.textContent = lbl;
+    heightRule.appendChild(o);
+  }
+  heightRule.value = init.rowHeight ? init.rowHeight.rule : "none";
+  const heightVal = el("input");
+  heightVal.type = "number";
+  heightVal.min = "1";
+  heightVal.step = "1";
+  heightVal.value = init.rowHeight ? String(Math.round(init.rowHeight.value)) : "";
+  const syncHeightDisabled = (): void => {
+    heightVal.disabled = heightRule.value === "none";
+  };
+  syncHeightDisabled();
+  const applyRowHeight = (): void => {
+    if (heightRule.value === "none") {
+      cb.applyRowHeight(null);
+      return;
+    }
+    const v = Number(heightVal.value);
+    if (!Number.isFinite(v) || v <= 0) return;
+    cb.applyRowHeight({ value: v, rule: heightRule.value as RowHeight["rule"] });
+  };
+  heightRule.addEventListener("change", () => {
+    syncHeightDisabled();
+    applyRowHeight();
+  });
+  heightVal.addEventListener("change", applyRowHeight);
+  const hLabel = el("label");
+  hLabel.append("Height (px)", heightVal, heightRule);
+  hRow.append(hLabel);
+
+  const flagRow = el("div", "cw-tbl-row");
+  const flagCheck = (labelText: string, on: boolean, flag: "cantSplit" | "repeatHeader"): HTMLLabelElement => {
+    const lab = el("label");
+    const cbx = el("input");
+    cbx.type = "checkbox";
+    cbx.checked = on;
+    cbx.addEventListener("change", () => cb.applyRowFlag(flag, cbx.checked));
+    lab.append(cbx, labelText);
+    return lab;
+  };
+  flagRow.append(
+    flagCheck("Keep row together", init.cantSplit, "cantSplit"),
+    flagCheck("Repeat as header row", init.repeatHeader, "repeatHeader"),
+  );
+  rSection.append(rTitle, hRow, flagRow);
+
+  // ---- Table defaults (indent + table-level borders/shading/margins) ---------
+  const dfSection = el("div");
+  const dfTitle = el("div", "cw-tbl-section-title");
+  dfTitle.textContent = "Table defaults";
+  const indRow = el("div", "cw-tbl-spec");
+  const indInput = el("input");
+  indInput.type = "number";
+  indInput.min = "0";
+  indInput.step = "1";
+  indInput.value = String(Math.round(init.tableIndentPx));
+  indInput.addEventListener("change", () => {
+    const v = Number(indInput.value);
+    cb.applyTableIndent(Number.isFinite(v) && v > 0 ? v : 0);
+  });
+  const indLabel = el("label");
+  indLabel.append("Indent (px)", indInput);
+  indRow.append(indLabel);
+
+  const dbCap = el("div", "cw-tbl-caption");
+  dbCap.textContent = init.hasTableDefaultBorders
+    ? "Default borders — all edges, from the Borders spec above (currently set)"
+    : "Default borders — all edges, from the Borders spec above";
+  const dbRow = el("div", "cw-tbl-row");
+  dbRow.append(
+    presetBtn("Apply", () => cb.applyTableDefaultBorders(spec())),
+    presetBtn("Clear", () => cb.applyTableDefaultBorders(null)),
+  );
+
+  const dsCap = el("div", "cw-tbl-caption");
+  dsCap.textContent = "Default shading";
+  const dsRow = el("div", "cw-tbl-row");
+  const dsInput = el("input");
+  dsInput.type = "color";
+  dsInput.className = "cw-tbl-swatch";
+  dsInput.value = toHexColor(init.tableDefaultShading ?? "#ffffff");
+  const dsLabel = el("label");
+  dsLabel.append("Fill", dsInput);
+  dsRow.append(
+    dsLabel,
+    presetBtn("Apply", () => cb.applyTableDefaultShading(dsInput.value)),
+    presetBtn("Clear", () => cb.applyTableDefaultShading(null)),
+  );
+
+  const dmCap = el("div", "cw-tbl-caption");
+  dmCap.textContent = "Default cell margins (px)";
+  const dmRow = el("div", "cw-tbl-spec");
+  const m0 = init.tableDefaultCellMargin;
+  const mkMargin = (lbl: string, v: number | undefined): HTMLInputElement => {
+    const input = el("input");
+    input.type = "number";
+    input.min = "0";
+    input.step = "1";
+    input.value = v === undefined ? "" : String(Math.round(v));
+    const label = el("label");
+    label.append(lbl, input);
+    dmRow.appendChild(label);
+    return input;
+  };
+  const mTop = mkMargin("T", m0?.top);
+  const mRight = mkMargin("R", m0?.right);
+  const mBottom = mkMargin("B", m0?.bottom);
+  const mLeft = mkMargin("L", m0?.left);
+  const applyMargins = (): void => {
+    const num = (i: HTMLInputElement): number => {
+      const v = Number(i.value);
+      return Number.isFinite(v) && v >= 0 ? v : 0;
+    };
+    cb.applyTableDefaultCellMargin({ top: num(mTop), right: num(mRight), bottom: num(mBottom), left: num(mLeft) });
+  };
+  for (const i of [mTop, mRight, mBottom, mLeft]) i.addEventListener("change", applyMargins);
+  const dmBtnRow = el("div", "cw-tbl-row");
+  dmBtnRow.append(presetBtn("Clear margins", () => cb.applyTableDefaultCellMargin(null)));
+  dfSection.append(dfTitle, indRow, dbCap, dbRow, dsCap, dsRow, dmCap, dmRow, dmBtnRow);
+
+  body.append(bSection, sSection, zSection, cSection, rSection, dfSection);
 
   // Footer
   const foot = el("div", "cw-tbl-foot");

@@ -48,6 +48,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   footnote bodies (the content ops, paragraph split/merge, and the `setEndnote` op
   locate paragraphs inside `Document.endnotes`). The endnote model and `.docx`
   round-trip already shipped; this wires up authoring from the editor only.
+- **Table Properties UI — cell/row/table-level formatting (editor).** The existing
+  Table Properties dialog (right-click a table cell → *Borders & Shading…*) now exposes
+  the table model fields that previously round-tripped but had no editor control: cell
+  **vertical alignment** (`w:vAlign` top/center/bottom) and **text direction**
+  (`w:textDirection`), **row height** (`w:trHeight` at-least/exact) plus **keep-together**
+  (`w:cantSplit`) and **repeat-as-header-row** (`w:tblHeader`) toggles, table **indent**
+  (`w:tblInd`), and the table-level **default borders / shading / cell margins**
+  (`w:tblBorders` / `w:shd` / `w:tblCellMar`). Quick **context-menu** items cover cell
+  alignment and the row toggles. Each edit applies live over the selected cells/rows with
+  its own undo step, backed by new selection commands (`setCellVAlignCmd`,
+  `setCellTextDirectionCmd`, `setRowHeightAtSelectionCmd`, `setRowPropsCmd`,
+  `setTablePropsAtSelectionCmd`) that reuse the `setTableStructure` / `setRowHeight` ops
+  and one new table-level `setTableProps` op. Editor-only — the model, import/export, and
+  C# bindings already shipped, so `.docx` round-trips are unchanged.
 - **Minor run typography & effects (`CharStyle` w:rPr extras).** A grouped set of
   lower-frequency run properties now round-trip and (where visual) paint: double
   strikethrough (`w:dstrike` → `doubleStrikethrough`, two rules), baseline

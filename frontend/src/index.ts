@@ -10,7 +10,7 @@ import type { ResolvedBehavior, ResolvedTheme } from "./config";
 import { ZOOM_STEP } from "./uiConstants";
 import { applyOp, containerBlocks, containerOf, effectiveFractions, locateImage, locateEquation, sliceRuns, type Op } from "@cw/shared";
 import { bandParagraphs, blockById, buildTableGrid, containerListOf, gridOriginOfCell, locateParagraph, normalizeRect, paragraphsOf, styleAtRuns, styleOfCharAt, textOfRuns } from "@cw/shared";
-import type { CellBorders } from "@cw/shared";
+import type { CellBorders, CellMargin, TableBorders } from "@cw/shared";
 import { createLayoutEngine, type LayoutEngine } from "./layout/engine";
 import {
   caretRect,
@@ -50,7 +50,7 @@ import { showFieldConstructor } from "./ui/fieldConstructor";
 import { showEquationEditor, equationToMathmlString } from "./ui/equationEditor";
 import { showTocProperties } from "./ui/tocProperties";
 import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
-import { showTableProperties, type BorderStyleName, type TablePropertiesHandle } from "./ui/tableProperties";
+import { showTableProperties, type BorderStyleName, type CellTextDir, type TablePropertiesHandle } from "./ui/tableProperties";
 import { createA11yMirror } from "./a11y/mirror";
 import {
   changeListLevel,
@@ -115,6 +115,11 @@ import {
   setTableWidthModeAtSelectionCmd,
   setTablePreferredWidthAtSelectionCmd,
   setTableAlignAtSelectionCmd,
+  setCellVAlignCmd,
+  setCellTextDirectionCmd,
+  setRowHeightAtSelectionCmd,
+  setRowPropsCmd,
+  setTablePropsAtSelectionCmd,
 } from "./editor/commands";
 import type { SdtType } from "@cw/shared";
 import { ICONS } from "./ui/icons";
@@ -2421,6 +2426,9 @@ export function createEditor(
     const topLeft = grid.slots[rect.r0]?.[rect.c0]?.cell;
     const multiCell = rect.r1 > rect.r0 || rect.c1 > rect.c0;
     const seed = borderSeed(topLeft?.borders);
+    const anchorRow = found.table.rows[rect.r0];
+    const dirRaw = topLeft?.textDirection;
+    const textDir: CellTextDir = dirRaw === "tbRl" || dirRaw === "btLr" ? dirRaw : "lrTb";
     tableProps?.close();
     tableProps = showTableProperties(
       {
@@ -2432,6 +2440,15 @@ export function createEditor(
         multiCell,
         tableWidth: found.table.preferredWidth ?? null,
         tableAlign: found.table.align ?? "left",
+        vAlign: topLeft?.vAlign ?? "top",
+        textDir,
+        rowHeight: anchorRow?.props?.height ?? null,
+        cantSplit: anchorRow?.props?.cantSplit ?? false,
+        repeatHeader: anchorRow?.props?.repeatHeader ?? false,
+        tableIndentPx: found.table.indentPx ?? 0,
+        hasTableDefaultBorders: !!found.table.defaultBorders,
+        tableDefaultShading: found.table.defaultShading ?? null,
+        tableDefaultCellMargin: found.table.defaultCellMargin ?? null,
       },
       {
         applyBorders: (spec, edges) => {
@@ -2448,6 +2465,41 @@ export function createEditor(
         },
         applyTableAlign: (align) => {
           dispatch(setTableAlignAtSelectionCmd(align));
+          keepCellSelection(captured);
+        },
+        applyVAlign: (vAlign) => {
+          dispatch(setCellVAlignCmd(vAlign, captured));
+          keepCellSelection(captured);
+        },
+        applyTextDir: (dir) => {
+          dispatch(setCellTextDirectionCmd(dir, captured));
+          keepCellSelection(captured);
+        },
+        applyRowHeight: (height) => {
+          dispatch(setRowHeightAtSelectionCmd(height, captured));
+          keepCellSelection(captured);
+        },
+        applyRowFlag: (flag, on) => {
+          dispatch(setRowPropsCmd({ [flag]: on }, captured));
+          keepCellSelection(captured);
+        },
+        applyTableIndent: (px) => {
+          dispatch(setTablePropsAtSelectionCmd({ indentPx: px > 0 ? px : null }));
+          keepCellSelection(captured);
+        },
+        applyTableDefaultBorders: (spec) => {
+          const borders: TableBorders | null = spec
+            ? { top: spec, right: spec, bottom: spec, left: spec, insideH: spec, insideV: spec }
+            : null;
+          dispatch(setTablePropsAtSelectionCmd({ defaultBorders: borders }));
+          keepCellSelection(captured);
+        },
+        applyTableDefaultShading: (fill) => {
+          dispatch(setTablePropsAtSelectionCmd({ defaultShading: fill }));
+          keepCellSelection(captured);
+        },
+        applyTableDefaultCellMargin: (margin: CellMargin | null) => {
+          dispatch(setTablePropsAtSelectionCmd({ defaultCellMargin: margin }));
           keepCellSelection(captured);
         },
       },
@@ -2871,6 +2923,54 @@ export function createEditor(
         })(),
         sep,
         item("Borders & Shading…", () => openTableProperties(), { icon: ICONS.borders }),
+        // Quick cell vAlign + row toggles (issue #86); the dialog has the full set.
+        (() => {
+          const captured = cellSelection ?? singleCellAtCaret();
+          const found = captured ? findTableById(doc, captured.tableId) : undefined;
+          let curVAlign: "top" | "center" | "bottom" = "top";
+          if (found && captured) {
+            const g = buildTableGrid(found.table);
+            const r = normalizeRect(g, { r0: captured.anchor.row, c0: captured.anchor.col, r1: captured.focus.row, c1: captured.focus.col });
+            curVAlign = g.slots[r.r0]?.[r.c0]?.cell.vAlign ?? "top";
+          }
+          const check = (label: string, active: boolean): string => (active ? `${label} ✓` : label);
+          const vItem = (label: string, a: "top" | "center" | "bottom"): MenuEntry => ({
+            kind: "item",
+            label: check(label, curVAlign === a),
+            onClick: () => dispatch(setCellVAlignCmd(a, captured)),
+          });
+          return {
+            kind: "submenu",
+            label: "Cell Alignment",
+            icon: ICONS.alignLeft,
+            items: [vItem("Align Top", "top"), vItem("Align Middle", "center"), vItem("Align Bottom", "bottom")],
+          } as MenuEntry;
+        })(),
+        (() => {
+          const captured = cellSelection ?? singleCellAtCaret();
+          const found = captured ? findTableById(doc, captured.tableId) : undefined;
+          let cantSplit = false;
+          let repeatHeader = false;
+          if (found && captured) {
+            const g = buildTableGrid(found.table);
+            const r = normalizeRect(g, { r0: captured.anchor.row, c0: captured.anchor.col, r1: captured.focus.row, c1: captured.focus.col });
+            const row = found.table.rows[r.r0];
+            cantSplit = row?.props?.cantSplit ?? false;
+            repeatHeader = row?.props?.repeatHeader ?? false;
+          }
+          const check = (label: string, active: boolean): string => (active ? `${label} ✓` : label);
+          return {
+            kind: "submenu",
+            label: "Row",
+            icon: ICONS.rowBelow,
+            items: [
+              { kind: "item", label: check("Keep Row Together", cantSplit), onClick: () => dispatch(setRowPropsCmd({ cantSplit: !cantSplit }, captured)) },
+              { kind: "item", label: check("Repeat as Header Row", repeatHeader), onClick: () => dispatch(setRowPropsCmd({ repeatHeader: !repeatHeader }, captured)) },
+              { kind: "sep" },
+              { kind: "item", label: "Table Properties…", onClick: () => openTableProperties() },
+            ],
+          } as MenuEntry;
+        })(),
         (() => {
           const captured = cellSelection ?? singleCellAtCaret();
           const curStyleId = captured ? findTableById(doc, captured.tableId)?.table.styleId : undefined;

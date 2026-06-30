@@ -1,12 +1,12 @@
 // Commands: pure (state) -> Transaction | null. The keymap, the IME proxy, and
 // (later) toolbar buttons all dispatch through these.
 
-import type { Block, CellBorder, CellBorders, CharStyle, EquationBlock, FieldDef, FieldSpec, ImageBlock, MathEquation, ParaStyle, Paragraph, Run, SdtProps, SdtType, TableBlock, TableCell, TableRow, TableStyle, TocOptions, TocSwitches } from "@cw/shared";
+import type { Block, CellBorder, CellBorders, CharStyle, EquationBlock, FieldDef, FieldSpec, GridSlot, ImageBlock, MathEquation, ParaStyle, Paragraph, Run, RowProps, SdtProps, SdtType, TableBlock, TableCell, TableGrid, TableRow, TableStyle, TocOptions, TocSwitches } from "@cw/shared";
 import { bakeTableStyleRows, DEFAULT_TBL_LOOK } from "@cw/shared";
 import { buildTocParagraphs, buildTocInstruction, buildInstruction, evaluateField } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, GridRect } from "@cw/shared";
 import { isCollapsed, BAND_CONTAINERS } from "@cw/shared";
-import type { ImagePropsPatch, Op, SectionGeometry } from "@cw/shared";
+import type { ImagePropsPatch, Op, SectionGeometry, TablePropsPatch } from "@cw/shared";
 import { sliceRuns, applyStylePatchToRuns, mapTextInRuns, splitRunsAt, normalizeRuns, containerOf, containerBlocks, containerListOf, locateImage, locateEquation, freshId } from "@cw/shared";
 import { inSdt, innermostSdtId, pushSdt, removeSdt, ancestryThrough } from "@cw/shared";
 import { buildTableGrid, cellsInRect, gridOriginOfCell, mergeRows, normalizeRect, rebuildRows, unmergeRows } from "@cw/shared";
@@ -2552,6 +2552,195 @@ export function setTableAlignAtSelectionCmd(align: TableBlock["align"] | null): 
  *  current table's state (e.g. tick the active AutoFit mode). */
 export function tableAtSelection(state: EditorState): TableBlock | null {
   return cellContext(state)?.table ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Table Properties — cell vAlign / text direction, row props, table-level props
+// (issue #86). All reuse the existing setTableStructure / setRowHeight / a single
+// new setTableProps op, applied over the captured selection with free undo.
+
+/** rebuildRows that carries each source row's `props` across (the shared helper
+ *  emits `{ cells }` only). Cell-property edits must NOT drop a row's height /
+ *  cant-split / repeat-header. Grid rows map 1:1 to table rows. */
+function rebuildRowsKeepProps(
+  table: TableBlock,
+  grid: TableGrid,
+  mapCell: (cell: TableCell, slot: GridSlot) => TableCell,
+): TableRow[] {
+  return rebuildRows(grid, mapCell).map((row, ri) => {
+    const props = table.rows[ri]?.props;
+    return props ? { ...row, props } : row;
+  });
+}
+
+/** The grid rectangle to act on: an explicit `override` / live cell-selection /
+ *  straddling text selection (via cellRangeFromState), else the single cell at
+ *  the caret. */
+function cellRectAtSelection(
+  state: EditorState,
+  override?: CellSelection | null,
+): { table: TableBlock; rect: GridRect } | null {
+  const range = cellRangeFromState(state, override);
+  if (range) return range;
+  const ctx = cellContext(state);
+  if (!ctx) return null;
+  const grid = buildTableGrid(ctx.table);
+  const origin = gridOriginOfCell(grid, ctx.ri, ctx.ci);
+  if (!origin) return null;
+  return { table: ctx.table, rect: { r0: origin.row, c0: origin.col, r1: origin.row, c1: origin.col } };
+}
+
+/** The inclusive table-row range covered by the selection (grid rows == table
+ *  rows), or the caret's single row. */
+function selectedRowRange(
+  state: EditorState,
+  override?: CellSelection | null,
+): { table: TableBlock; r0: number; r1: number } | null {
+  const found = cellRectAtSelection(state, override);
+  if (!found) return null;
+  const grid = buildTableGrid(found.table);
+  const rect = normalizeRect(grid, found.rect);
+  return { table: found.table, r0: rect.r0, r1: rect.r1 };
+}
+
+/** Set (or clear, with `null`/"top") the vertical alignment of every cell in the
+ *  range — w:tcPr/w:vAlign. "top" is Word's default, so it clears the field. */
+export function setCellVAlignCmd(
+  vAlign: NonNullable<TableCell["vAlign"]> | null,
+  range?: CellSelection | null,
+): Command {
+  return (state) => {
+    const found = cellRectAtSelection(state, range);
+    if (!found) return null;
+    const grid = buildTableGrid(found.table);
+    const rect = normalizeRect(grid, found.rect);
+    let changed = false;
+    const clear = vAlign === null || vAlign === "top";
+    const rows = rebuildRowsKeepProps(found.table, grid, (cell, s) => {
+      if (s.originRow < rect.r0 || s.originRow > rect.r1 || s.originCol < rect.c0 || s.originCol > rect.c1) return cell;
+      if (clear) {
+        if (cell.vAlign === undefined) return cell;
+        const { vAlign: _drop, ...rest } = cell;
+        changed = true;
+        return rest;
+      }
+      if (cell.vAlign === vAlign) return cell;
+      changed = true;
+      return { ...cell, vAlign };
+    });
+    if (!changed) return null;
+    return tr([structureOp(found.table, rows)], state.selection, "command");
+  };
+}
+
+/** Set (or clear, with `null`/"lrTb") the text-flow direction of every cell in
+ *  the range — w:tcPr/w:textDirection. "lrTb" is the default, so it clears. */
+export function setCellTextDirectionCmd(
+  dir: NonNullable<TableCell["textDirection"]> | null,
+  range?: CellSelection | null,
+): Command {
+  return (state) => {
+    const found = cellRectAtSelection(state, range);
+    if (!found) return null;
+    const grid = buildTableGrid(found.table);
+    const rect = normalizeRect(grid, found.rect);
+    let changed = false;
+    const clear = dir === null || dir === "lrTb";
+    const rows = rebuildRowsKeepProps(found.table, grid, (cell, s) => {
+      if (s.originRow < rect.r0 || s.originRow > rect.r1 || s.originCol < rect.c0 || s.originCol > rect.c1) return cell;
+      if (clear) {
+        if (cell.textDirection === undefined) return cell;
+        const { textDirection: _drop, ...rest } = cell;
+        changed = true;
+        return rest;
+      }
+      if (cell.textDirection === dir) return cell;
+      changed = true;
+      return { ...cell, textDirection: dir };
+    });
+    if (!changed) return null;
+    return tr([structureOp(found.table, rows)], state.selection, "command");
+  };
+}
+
+/** Toggle the boolean row props (w:cantSplit / w:tblHeader) on every row the
+ *  selection covers. A falsy patch value clears the flag; an empty resulting
+ *  `props` object is dropped. Reuses setTableStructure (cells are untouched, so
+ *  carets survive). */
+export function setRowPropsCmd(
+  patch: { cantSplit?: boolean; repeatHeader?: boolean },
+  range?: CellSelection | null,
+): Command {
+  return (state) => {
+    const rr = selectedRowRange(state, range);
+    if (!rr) return null;
+    let changed = false;
+    const rows = rr.table.rows.map((row, ri) => {
+      if (ri < rr.r0 || ri > rr.r1) return row;
+      const props: RowProps = { ...(row.props ?? {}) };
+      let rowChanged = false;
+      for (const key of Object.keys(patch) as (keyof typeof patch)[]) {
+        const want = patch[key] ? true : undefined;
+        if (want === undefined) {
+          if (props[key] !== undefined) { delete props[key]; rowChanged = true; }
+        } else if (props[key] !== true) { props[key] = true; rowChanged = true; }
+      }
+      if (!rowChanged) return row;
+      changed = true;
+      if (Object.keys(props).length === 0) {
+        const { props: _drop, ...rest } = row;
+        return rest;
+      }
+      return { ...row, props };
+    });
+    if (!changed) return null;
+    return tr([structureOp(rr.table, rows)], state.selection, "command");
+  };
+}
+
+/** Set (or clear, with `null`) the fixed/min height of every row the selection
+ *  covers — one setRowHeight op per row in a single undoable transaction. */
+export function setRowHeightAtSelectionCmd(
+  height: NonNullable<RowProps["height"]> | null,
+  range?: CellSelection | null,
+): Command {
+  return (state) => {
+    const rr = selectedRowRange(state, range);
+    if (!rr) return null;
+    const sameHeight = (
+      a: NonNullable<RowProps["height"]> | null,
+      b: NonNullable<RowProps["height"]> | null,
+    ): boolean => (a === b ? true : !!a && !!b && a.value === b.value && a.rule === b.rule);
+    const ops: Op[] = [];
+    for (let ri = rr.r0; ri <= rr.r1; ri++) {
+      const cur = rr.table.rows[ri]?.props?.height ?? null;
+      if (sameHeight(cur, height)) continue;
+      ops.push({ type: "setRowHeight", tableId: rr.table.id, rowIndex: ri, height });
+    }
+    if (ops.length === 0) return null;
+    return tr(ops, state.selection, "command");
+  };
+}
+
+/** Resolve the table for a table-level prop edit: the caret's cell, else the
+ *  live cell selection's table. */
+function tableForPropsEdit(state: EditorState): TableBlock | null {
+  const ctx = cellContext(state);
+  if (ctx) return ctx.table;
+  const cs = state.cellSelection;
+  return cs ? findTableById(state.doc, cs.tableId)?.table ?? null : null;
+}
+
+/** Patch table-LEVEL props (indent + cascade defaults) of the caret/selection's
+ *  table — w:tblPr/w:tblInd, w:tblBorders, w:shd, w:tblCellMar. One setTableProps
+ *  op; `null` in the patch clears a field. */
+export function setTablePropsAtSelectionCmd(patch: TablePropsPatch): Command {
+  return (state) => {
+    if (Object.keys(patch).length === 0) return null;
+    const table = tableForPropsEdit(state);
+    if (!table) return null;
+    return tr([{ type: "setTableProps", blockId: table.id, patch }], state.selection, "command");
+  };
 }
 
 // ---------------------------------------------------------------------------
