@@ -12,7 +12,6 @@ import { resolveFont } from "../shared/fontRegistry";
 import { segmentByFace } from "../shared/glyphFallback";
 import { FontkitMeasureContext } from "../shared/fontkitContext";
 import { renderPdf } from "./renderPdf";
-import { MATH_FONT_FAMILY } from "../../fonts/clones";
 
 beforeAll(async () => {
   await installMeasureHost();
@@ -105,6 +104,15 @@ describe("segmentByFace — per-glyph fallback segmentation", () => {
     expect(segs.length).toBe(1);
     expect(segs[0]!.text).toBe("✓☒");
     expect(segs[0]!.face.font.hasGlyphForCodePoint(0x2713)).toBe(true);
+  });
+
+  it("keeps a trailing variation selector glued to its base symbol (☑️ → one run)", () => {
+    const primary = resolveFont("Calibri", false, false);
+    // ☑ U+2611 + VS16 U+FE0F — the selector must not split onto the primary face.
+    const segs = segmentByFace("☑️", primary);
+    expect(segs.length).toBe(1);
+    expect(segs[0]!.text).toBe("☑️");
+    expect(segs[0]!.face.font.hasGlyphForCodePoint(0x2611)).toBe(true);
   });
 });
 

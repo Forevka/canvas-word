@@ -3,9 +3,10 @@
 // advances of the resolved bundled face; vertical metrics from its font tables.
 //
 // Per-glyph fallback: when the resolved face lacks a codepoint, the advance is
-// taken from the first bundled fallback face (StixTwoMath → NotoSansSC) that
-// has it — the SAME face segmentation used by the PDF paint path so reserved
-// widths always match painted glyph positions.
+// taken from the bundled fallback face (StixTwoMath) when it has it — NotoSansSC
+// is intentionally NOT in the chain (CJK is pre-routed via scriptSplitRuns and is
+// opt-out-able). This is the SAME face segmentation the PDF paint path uses, so
+// reserved widths always match painted glyph positions.
 //
 // Letter/word spacing are intentionally ignored: pretext folds letterSpacing in
 // arithmetically (RichInlineItem.letterSpacing), and word spacing is a paint-time

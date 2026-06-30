@@ -76,6 +76,15 @@ export function segmentByFace(text: string, primary: ResolvedFont): FaceSegment[
   // treated as a single unit rather than two half-characters.
   for (const char of text) {
     const cp = char.codePointAt(0)!;
+    // Variation selectors (VS1–16 U+FE00–FE0F, and the supplementary range
+    // U+E0100–E01EF) modify the PRECEDING base character — keep them glued to
+    // its segment so e.g. ☑️ (U+2611 U+FE0F) stays one run on the symbol face
+    // instead of splitting the selector onto the primary face.
+    const isVariationSelector = (cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0xe0100 && cp <= 0xe01ef);
+    if (isVariationSelector && curFace !== null) {
+      curText += char;
+      continue;
+    }
     const face = faceForCP(cp, primary);
     if (curFace !== null && curFace.file === face.file) {
       curText += char;

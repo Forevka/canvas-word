@@ -364,6 +364,7 @@ function paintLine(ctx: PaintCtx, block: PlacedBlock, line: LineBox, baselineY: 
       // Apply wScale once around all segments — the scale origin is the fragment's
       // left edge (x) so every segment's logical advance maps to the right visual x.
       if (wScale !== 1) doc.save().scale(wScale, 1, { origin: [x, baselineY + vShift] });
+      const wordSpacingPx = frag.wordSpacingPx ?? 0;
       let curX = x;
       for (const seg of segs) {
         doc
@@ -373,9 +374,15 @@ function paintLine(ctx: PaintCtx, block: PlacedBlock, line: LineBox, baselineY: 
           .text(seg.text, curX, baselineY + vShift, {
             lineBreak: false,
             baseline: "alphabetic",
-            wordSpacing: frag.wordSpacingPx ?? 0,
+            wordSpacing: wordSpacingPx,
           });
-        curX += seg.font.layout(seg.text).advanceWidth * (sizePx / seg.font.unitsPerEm);
+        // Advance by the glyph run width PLUS pdfkit's per-space wordSpacing, which
+        // it adds to every U+0020 — otherwise a segment containing spaces leaves the
+        // next (fallback) segment shifted too far left.
+        const spaceCount = wordSpacingPx ? (seg.text.match(/ /g)?.length ?? 0) : 0;
+        curX +=
+          seg.font.layout(seg.text).advanceWidth * (sizePx / seg.font.unitsPerEm) +
+          spaceCount * wordSpacingPx;
       }
       if (wScale !== 1) doc.restore();
     } else {
