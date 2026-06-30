@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   both — were collapsed into one "Borders & shading" button.
 
 ### Fixed
+- **Arrow keys no longer stall next to a page-number field or hidden run.** With the caret just
+  before a `PAGE`/`NUMPAGES` field (e.g. "Page 1 of 3") — or before a bookmarked run that follows
+  hidden (`w:vanish`) text, as in the sample document — pressing ◀/▶ appeared to do nothing for
+  several presses. Such runs occupy multiple model offsets but paint at a single point: a token
+  field collapses its whole `{page}` range onto one resolved glyph (via `offsetMap`), and a hidden
+  run lays out zero-width. Caret movement stepped one *model* offset per press, so it walked those
+  dead offsets one at a time while the visible caret sat still. Horizontal movement now skips over
+  offsets that resolve to the same painted caret point, so a single press always moves the caret
+  past the field/hidden run (matching Word); ordinary text navigation is unchanged.
 - **Line numbering no longer bleeds across a dropped section break on import.** A document with a
   line-numbered section (`w:lnNumType`) preceded by a plain, geometry-preserving Next Page break
   reopened with line numbers printed beside *every* line from page 1 — the whole document looked
