@@ -17,6 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in `editor/commands.ts` (mirrors the insert-equation/insert-field path, undoable).
   The model field and `w:sym` docx round-trip already shipped — this only adds the
   authoring UI.
+- **Font dialog + caps / small-caps / double-strike ribbon toggles (editor UI).**
+  The previously-disabled Home-tab "Text effects" launcher now opens a real, draggable
+  **Font dialog** (`ui/fontDialog.ts`) that authors the run-level `CharStyle` fields that
+  already round-trip but had no UI: all-caps (`w:caps`), small caps (`w:smallCaps`), double
+  strikethrough (`w:dstrike`), underline **style** + **color** (`w:u/@w:val` + `@w:color`),
+  baseline raise/lower (`w:position`), width scaling (`w:w`), character spacing, the kerning
+  threshold (`w:kern`), the emphasis mark (`w:em`), the `outline`/`shadow`/`emboss`/`imprint`
+  effects, and the fit-text width (`w:fitText`). Apply routes a single `Partial<CharStyle>`
+  patch through `setCharStyle` (one undoable edit over the selection / pending typing-style).
+  Caps, small caps, and double strikethrough also get quick toggles beside B/I/U (via
+  `toggleCharStyle`), and `currentFormat()` now reflects all of these so the toggles light
+  up and the dialog opens seeded from the caret. Editor-only — no model, import/export, or
+  C# change.
 - **Minor run typography & effects (`CharStyle` w:rPr extras).** A grouped set of
   lower-frequency run properties now round-trip and (where visual) paint: double
   strikethrough (`w:dstrike` → `doubleStrikethrough`, two rules), baseline

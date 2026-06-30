@@ -24,6 +24,7 @@ import { showDevPanel, type DevPanelHandle } from "./ui/devPanel";
 import { showPageLayout, type PageLayoutHandle } from "./ui/pageLayout";
 import { showEquationEditor } from "./ui/equationEditor";
 import { showSymbolPicker, type SymbolPickerHandle } from "./ui/symbolPicker";
+import { showFontDialog } from "./ui/fontDialog";
 import { loadCollabDocument, loadCollabReview, publishDocument } from "./sync/collab";
 import { attachMentionAutocomplete } from "./review/mentions";
 import { showBusy } from "./app/busyOverlay";
@@ -1093,6 +1094,37 @@ if (toolbar) {
     setTimeout(() => input.focus(), 0);
   };
 
+  /** Open the Font dialog seeded from the caret's effective style; Apply routes
+   *  the edited patch through setCharStyle (one undoable edit over the selection,
+   *  or the pending typing-style when the caret is collapsed). */
+  const openFontDialog = (): void => {
+    const f = editor.currentFormat();
+    showFontDialog({
+      initial: {
+        underline: f.underline,
+        underlineStyle: f.underlineStyle,
+        underlineColor: f.underlineColor,
+        caps: f.caps,
+        smallCaps: f.smallCaps,
+        doubleStrikethrough: f.doubleStrikethrough,
+        positionPx: f.positionPx,
+        widthScalePct: f.widthScalePct,
+        letterSpacingPx: f.letterSpacingPx,
+        kerningMinPx: f.kerningMinPx,
+        emphasisMark: f.emphasisMark,
+        outline: f.outline,
+        shadow: f.shadow,
+        emboss: f.emboss,
+        imprint: f.imprint,
+        fitTextPx: f.fitTextPx,
+      },
+      onApply: (patch) => {
+        editor.setCharStyle(patch);
+        editor.focus();
+      },
+    });
+  };
+
   const exportAs = async (format: ExportFormat): Promise<void> => {
     // Rendering (especially PDF) can take a few seconds; show the busy overlay so
     // the app doesn't look hung. Dropped before any onSave dialog / download so it
@@ -1308,8 +1340,13 @@ if (toolbar) {
   toggle(txtBtn("ab", "Strikethrough", () => editor.toggleStyle("strikethrough"), "text-decoration:line-through;"), (f) => f.strikethrough);
   toggle(txtBtn("x²", "Superscript", () => editor.dispatch(toggleVerticalAlign("super"))), (f) => f.superscript);
   toggle(txtBtn("x₂", "Subscript", () => editor.dispatch(toggleVerticalAlign("sub"))), (f) => f.subscript);
+  toggle(txtBtn("AB", "All caps", () => editor.toggleStyle("caps"), "font-size:11px;font-weight:600;letter-spacing:.5px;"), (f) => f.caps);
+  toggle(txtBtn("Aᴮ", "Small caps", () => editor.toggleStyle("smallCaps"), "font-size:11px;font-weight:600;"), (f) => f.smallCaps);
+  toggle(txtBtn("ab", "Double strikethrough", () => editor.toggleStyle("doubleStrikethrough"), "text-decoration:line-through double;"), (f) => f.doubleStrikethrough);
   sep();
-  stub(`<span style="color:#2b579a;font-weight:700;">A</span>`, "Text effects (glow / shadow / outline)");
+  // Home-tab dialog-launcher for the full Font dialog (caps, underline style +
+  // colour, raise/lower, scaling, spacing, kerning, emphasis, text effects).
+  btn(`<span style="color:#2b579a;font-weight:700;">A</span>`, "Font — effects, caps, underline style, spacing", () => openFontDialog());
   // Highlight: face toggles the last colour (re-click clears); caret opens the
   // palette, where "No Color" strips the highlight.
   swatch({

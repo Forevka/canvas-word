@@ -2,7 +2,7 @@
 // One-way data flow: input -> command -> transaction -> applyOp* -> new state
 // -> incremental layout -> paint + caret + proxy reposition (same frame).
 
-import type { Block, CharStyle, Document, ParaStyle, TableBlock } from "@cw/shared";
+import type { Block, CharStyle, Document, EmphasisMark, ParaStyle, TableBlock, UnderlineStyle } from "@cw/shared";
 import { BAND_CONTAINERS, parseTocInstruction } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, UserInfo } from "@cw/shared";
 import { isCollapsed, colorForId, userDisplayName, freshId, DEFAULT_CHAR_STYLE } from "@cw/shared";
@@ -157,6 +157,25 @@ export interface CurrentFormat {
   highlight: boolean;
   superscript: boolean;
   subscript: boolean;
+  /** Run-level Font-dialog state at the caret (incl. the pending style): the
+   *  caps / small-caps / double-strike quick-toggle pressed state, plus the
+   *  initial values the Font dialog reads back. Booleans default false; the
+   *  rest are null when unset (inherit/Word-default). */
+  caps: boolean;
+  smallCaps: boolean;
+  doubleStrikethrough: boolean;
+  underlineStyle: UnderlineStyle | null;
+  underlineColor: string | null;
+  positionPx: number | null;
+  widthScalePct: number | null;
+  letterSpacingPx: number | null;
+  kerningMinPx: number | null;
+  emphasisMark: EmphasisMark | null;
+  outline: boolean;
+  shadow: boolean;
+  emboss: boolean;
+  imprint: boolean;
+  fitTextPx: number | null;
   /** Paragraph alignment, and which list (if any) the caret paragraph is in. */
   align: ParaStyle["align"] | null;
   /** Caret paragraph's base writing direction (RTL when w:bidi). null = mixed. */
@@ -3171,6 +3190,21 @@ export function createEditor(
         highlight: effective.highlightColor !== undefined && effective.highlightColor !== null,
         superscript: effective.verticalAlign === "super",
         subscript: effective.verticalAlign === "sub",
+        caps: effective.caps === true,
+        smallCaps: effective.smallCaps === true,
+        doubleStrikethrough: effective.doubleStrikethrough === true,
+        underlineStyle: effective.underlineStyle ?? null,
+        underlineColor: effective.underlineColor ?? null,
+        positionPx: effective.positionPx ?? null,
+        widthScalePct: effective.widthScalePct ?? null,
+        letterSpacingPx: effective.letterSpacingPx ?? null,
+        kerningMinPx: effective.kerningMinPx ?? null,
+        emphasisMark: effective.emphasisMark ?? null,
+        outline: effective.outline === true,
+        shadow: effective.shadow === true,
+        emboss: effective.emboss === true,
+        imprint: effective.imprint === true,
+        fitTextPx: effective.fitTextPx ?? null,
         align: block?.style.align ?? null,
         direction: block?.style.direction ?? null,
         listKind,

@@ -5,7 +5,7 @@
 import type { Command } from "../editor/state";
 import { insertColumnBreak, insertPageBreak } from "../editor/commands";
 
-export type StyleKey = "bold" | "italic" | "underline" | "strikethrough";
+export type StyleKey = "bold" | "italic" | "underline" | "strikethrough" | "caps" | "smallCaps" | "doubleStrikethrough";
 
 export interface KeymapDeps {
   dispatch(cmd: Command): void;
