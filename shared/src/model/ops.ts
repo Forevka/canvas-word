@@ -47,6 +47,17 @@ export interface ImagePropsPatch {
   anchor?: ImageBlock["anchor"] | null;
 }
 
+/** setTableProps payload — table-LEVEL fields (w:tblPr): indent + the cascade
+ *  defaults (borders/shading/cell margins). Each key follows the setImageProps
+ *  convention: a value sets the field, `null` clears it, and an absent key leaves
+ *  it unchanged (exactOptionalPropertyTypes keeps the two distinguishable). */
+export interface TablePropsPatch {
+  indentPx?: number | null;
+  defaultBorders?: import("./document").TableBorders | null;
+  defaultShading?: string | null;
+  defaultCellMargin?: import("./document").CellMargin | null;
+}
+
 export type Op =
   | { type: "insertText"; at: DocPosition; text: string; style?: CharStyle }
   | { type: "insertRuns"; at: DocPosition; runs: Run[] }
@@ -67,6 +78,7 @@ export type Op =
   | { type: "setTableWidthMode"; blockId: string; mode: TableBlock["widthMode"] }
   | { type: "setTablePreferredWidth"; blockId: string; width: TableBlock["preferredWidth"] | null }
   | { type: "setTableAlign"; blockId: string; align: TableBlock["align"] | null }
+  | { type: "setTableProps"; blockId: string; patch: TablePropsPatch }
   | { type: "insertTableRow"; tableId: string; rowIndex: number; row: TableRow }
   | { type: "removeTableRow"; tableId: string; rowIndex: number }
   | { type: "setRowHeight"; tableId: string; rowIndex: number; height: NonNullable<RowProps["height"]> | null }
@@ -834,6 +846,30 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       return {
         doc: replaceTable(doc, where, bi, next),
         inverse: { type: "setTableAlign", blockId: op.blockId, align: old ?? null },
+        mapPosition: identity,
+        dirtyBlockIds: [op.blockId],
+      };
+    }
+
+    case "setTableProps": {
+      // Table-LEVEL props (indent + cascade defaults). Patch keys present are
+      // applied (a value sets, `null` clears); the inverse captures each touched
+      // field's prior value (null = was absent) so undo restores it exactly.
+      const { where, bi, block } = mustTable(doc, op.blockId);
+      const keys = Object.keys(op.patch) as (keyof TablePropsPatch)[];
+      const oldPatch: TablePropsPatch = {};
+      const next: Record<string, unknown> = { ...block };
+      const blockRec = block as unknown as Record<string, unknown>;
+      const oldRec = oldPatch as Record<string, unknown>;
+      for (const key of keys) {
+        oldRec[key] = blockRec[key] ?? null;
+        const val = op.patch[key];
+        if (val === undefined || val === null) delete next[key];
+        else next[key] = val;
+      }
+      return {
+        doc: replaceTable(doc, where, bi, next as unknown as TableBlock),
+        inverse: { type: "setTableProps", blockId: op.blockId, patch: oldPatch },
         mapPosition: identity,
         dirtyBlockIds: [op.blockId],
       };
