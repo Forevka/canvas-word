@@ -78,6 +78,22 @@ describe("engine — vertical cell text sizing (w:textDirection)", () => {
     expect(cw.rows[0]!.cells[1]!.rotation).toBeUndefined();
   });
 
+  it("preserves paragraph shading (paraDecor) on a rotated cell's paragraph", () => {
+    const shaded: Paragraph = {
+      kind: "paragraph", id: fresh(), revision: 0,
+      runs: [{ text: HEADER, style: { ...CHAR } }],
+      style: { ...PARA, shading: "#ffe082" },
+    };
+    const t: TableBlock = {
+      kind: "table", id: fresh(), revision: 0,
+      rows: [{ cells: [{ id: fresh(), blocks: [shaded], textDirection: "tbRl" }, cell("x")] }],
+    };
+    const placed = layoutTable(t).rows[0]!.cells[0]!;
+    // The shading box survives into the local-frame placed paragraph (it paints
+    // under the cell's rotation transform).
+    expect(placed.blocks[0]!.paraDecor?.shading).toBe("#ffe082");
+  });
+
   it("places the rotation origin on the cell's inner edge", () => {
     const t = layoutTable(table([[cell(HEADER, { textDirection: "tbRl" }), cell("x")]]));
     const c = t.rows[0]!.cells[0]!;
@@ -91,7 +107,7 @@ describe("engine — vertical cell text sizing (w:textDirection)", () => {
 });
 
 describe("geometry — caret/hit-test inside a rotated cell", () => {
-  const build = (dir: TableCell["textDirection"]) => {
+  const build = (dir: "tbRl" | "btLr") => {
     const t = table([[cell(HEADER, { textDirection: dir }), cell("alpha")]], "autofitContents");
     const tree = createLayoutEngine().layout(doc([t]));
     let placed: PlacedTableCell | undefined;

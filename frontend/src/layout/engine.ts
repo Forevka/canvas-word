@@ -3088,9 +3088,32 @@ function placeTable(
           if (it.kind === "para") {
             ly += it.block.style.spaceBeforePx;
             const lx = it.block.style.indentLeftPx + listCtx.indentOf(it.block);
-            blocks.push({ blockId: it.block.id, x: lx, y: ly, firstLineIndex: 0, lines: it.lines });
+            const placedPara: PlacedBlock = { blockId: it.block.id, x: lx, y: ly, firstLineIndex: 0, lines: it.lines };
+            // Carry list markers and paragraph shading/border the same as the
+            // horizontal path — they're painted under the cell's rotation transform,
+            // so their local-frame coords map onto the page correctly.
+            const marker = listCtx.markers.get(it.block.id);
+            if (marker) placedPara.marker = { text: marker.text, style: marker.style, x: Math.max(0, lx - marker.hangingPx) };
+            const cellDecor = paraDecorFor(
+              it.block.style,
+              innerH - it.block.style.indentLeftPx - listCtx.indentOf(it.block) - (it.block.style.indentRightPx ?? 0),
+              totalLinesHeight(it.lines),
+            );
+            if (cellDecor) placedPara.paraDecor = cellDecor;
+            blocks.push(placedPara);
             ly += totalLinesHeight(it.lines) + it.block.style.spaceAfterPx;
           } else if (it.kind === "image") {
+            const anchor = it.block.anchor;
+            if (anchor) {
+              // Anchored (behind/in-front) image: positioned from the cell's content
+              // origin by its offsets, carrying behind/front/z — it does NOT advance
+              // the stack cursor, mirroring the horizontal cell path.
+              const placedImage: PlacedImage = { src: it.block.src, width: it.block.widthPx, height: it.block.heightPx, z: anchor.z ?? 0 };
+              if (anchor.behind) placedImage.behind = true;
+              else placedImage.front = true;
+              blocks.push({ blockId: it.block.id, x: anchor.offsetXPx, y: anchor.offsetYPx, firstLineIndex: 0, lines: [], image: placedImage });
+              continue;
+            }
             blocks.push({ blockId: it.block.id, x: 0, y: ly, firstLineIndex: 0, lines: [], image: { src: it.block.src, width: it.width, height: it.height } });
             ly += it.height + CELL_BLOCK_GAP;
           } else if (it.kind === "equation") {
