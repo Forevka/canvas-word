@@ -1601,17 +1601,21 @@ export function insertEndnoteCmd(): Command {
     const noteId = `en_${freshBlockId()}`;
     const block = blockById(state.doc, at.blockId)!;
     const inherited = styleAtRuns(block.runs, at.offset) ?? DEFAULT_CELL_CHAR;
+    // styleAtRuns can echo a preceding note marker's style, so drop BOTH ref
+    // flags before composing the new endnote runs — neither the superscript
+    // marker nor the seeded body may carry a stray footnoteRef/endnoteRef.
+    const baseNoteStyle = { ...inherited, footnoteRef: undefined, endnoteRef: undefined, verticalAlign: undefined, link: undefined };
     ops.push({
       type: "insertText",
       at,
       text: String(newNumber),
-      style: { ...inherited, verticalAlign: "super", endnoteRef: noteId, link: undefined },
+      style: { ...baseNoteStyle, verticalAlign: "super", endnoteRef: noteId },
     });
     const notePara: Paragraph = {
       kind: "paragraph",
       id: freshBlockId(),
       revision: 0,
-      runs: [{ text: "", style: { ...inherited, fontSizePx: 12, verticalAlign: undefined, endnoteRef: undefined, link: undefined } }],
+      runs: [{ text: "", style: { ...baseNoteStyle, fontSizePx: 12 } }],
       style: { align: "left", lineHeight: 1.4, spaceBeforePx: 0, spaceAfterPx: 2, indentFirstLinePx: 0, indentLeftPx: 0 },
     };
     ops.push({ type: "setEndnote", noteId, paras: [notePara] });

@@ -72,6 +72,22 @@ describe("insertEndnoteCmd", () => {
     expect(refs.map((r) => r.text)).toEqual(["1", "2"]); // new ref is 1, the pre-existing one bumps to 2
   });
 
+  it("does not inherit a preceding footnote marker's ref flag", () => {
+    // Caret sits right after a footnote marker run, so styleAtRuns echoes its
+    // style (footnoteRef + super). The new endnote runs must drop that.
+    const a = p(run("body"), run("1", { verticalAlign: "super", footnoteRef: "fn_x" }));
+    const state: EditorState = { doc: { ...docOf(a), footnotes: { fn_x: [p(run("a note"))] } }, selection: { anchor: { blockId: a.id, offset: 5 }, focus: { blockId: a.id, offset: 5 } } };
+    const { doc } = run_(state, insertEndnoteCmd());
+
+    const ref = refRun(doc);
+    expect(ref!.style.footnoteRef).toBeUndefined();
+    expect(ref!.style.endnoteRef).toBeDefined();
+    const noteRun = doc.endnotes![ref!.style.endnoteRef!]![0]!.runs[0]!;
+    expect(noteRun.style.footnoteRef).toBeUndefined();
+    expect(noteRun.style.endnoteRef).toBeUndefined();
+    expect(noteRun.style.verticalAlign).toBeUndefined();
+  });
+
   it("undoes cleanly, restoring the document to its prior state", () => {
     const a = p(run("hello"));
     const base = docOf(a);
