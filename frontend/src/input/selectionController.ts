@@ -103,6 +103,49 @@ export interface SelectionController {
   destroy(): void;
 }
 
+/** A painted caret point — the page it lands on and its position there. */
+export interface CaretXY {
+  page: number;
+  x: number;
+  y: number;
+}
+
+/** Step `offset` within ONE paragraph's `text` by a grapheme (or word) in `dir`,
+ *  then keep stepping while the new offset paints at the SAME caret point as the
+ *  start. A {page}/{pages} token field collapses its whole model range onto one
+ *  glyph (offsetMap) and a hidden (w:vanish) run lays out zero-width, so several
+ *  model offsets map onto ONE visual point — a plain step into that span reads as
+ *  a dead arrow key (the caret only moves once you've pressed past the run). This
+ *  collapses those offsets into a single stop, so one press always moves the caret
+ *  (Word does the same). Returns the resting offset, or null when the walk reaches
+ *  the block edge while still collapsed (the caller then crosses to the sibling). */
+export function advanceVisibleStop(
+  text: string,
+  offset: number,
+  dir: -1 | 1,
+  byWord: boolean,
+  caretXY: (offset: number) => CaretXY | null,
+): number | null {
+  const from = caretXY(offset);
+  const collapsed = (off: number): boolean => {
+    const r = caretXY(off);
+    return !!from && !!r && from.page === r.page && Math.abs(from.x - r.x) < 0.5 && Math.abs(from.y - r.y) < 0.5;
+  };
+  let o = offset;
+  if (dir === -1) {
+    while (o > 0) {
+      o = byWord ? prevWordStart(text, o) : prevGrapheme(text, o);
+      if (!collapsed(o)) return o;
+    }
+    return null;
+  }
+  while (o < text.length) {
+    o = byWord ? nextWordEnd(text, o) : nextGrapheme(text, o);
+    if (!collapsed(o)) return o;
+  }
+  return null;
+}
+
 export function createSelectionController(deps: SelectionControllerDeps): SelectionController {
   const { container } = deps;
   container.tabIndex = 0;
@@ -143,17 +186,17 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
     const text = textOf(pos.blockId);
     const blocks = paragraphs();
     const bi = blockIndexOf(pos.blockId);
+    const caretXY = (offset: number): CaretXY | null => {
+      const r = caretRect(deps.getTree(), { blockId: pos.blockId, offset }, scope());
+      return r ? { page: r.pageIndex, x: r.x, y: r.y } : null;
+    };
+    const stop = advanceVisibleStop(text, pos.offset, dir, byWord, caretXY);
+    if (stop !== null) return { blockId: pos.blockId, offset: stop };
+    // The walk fell off the block edge (its whole prefix/suffix was collapsed):
+    // cross into the adjacent paragraph, as a plain edge step would.
     if (dir === -1) {
-      if (pos.offset > 0) {
-        const offset = byWord ? prevWordStart(text, pos.offset) : prevGrapheme(text, pos.offset);
-        return { blockId: pos.blockId, offset };
-      }
       const prev = blocks[bi - 1];
       return prev ? { blockId: prev.id, offset: textOf(prev.id).length } : pos;
-    }
-    if (pos.offset < text.length) {
-      const offset = byWord ? nextWordEnd(text, pos.offset) : nextGrapheme(text, pos.offset);
-      return { blockId: pos.blockId, offset };
     }
     const next = blocks[bi + 1];
     return next ? { blockId: next.id, offset: 0 } : pos;
