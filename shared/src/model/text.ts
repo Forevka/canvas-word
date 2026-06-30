@@ -8,6 +8,29 @@ import { BAND_CONTAINERS } from "./document";
 export const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 export const words = new Intl.Segmenter(undefined, { granularity: "word" });
 
+/** Step-0 perf diagnostic (off by default, ~free when disabled). When `enabled`,
+ *  paragraphsOf/bandParagraphs tally how often they rebuild the paragraph list and
+ *  how many paragraph slots they walk+allocate — the exact work a WeakMap index
+ *  keyed on document identity would eliminate. Toggle via the export, read the
+ *  counters, reset between workloads. Used by frontend/src/perf/readsPerDoc.test.ts. */
+export const _paraScanStats = {
+  enabled: false,
+  /** # of full-document traversals (paragraphsOf calls). */
+  fullCalls: 0,
+  /** Sum of full-list lengths returned (body + band paragraphs walked). */
+  fullSlots: 0,
+  /** # of bandParagraphs calls (incl. the O(N²) isBandParagraph filter). */
+  bandCalls: 0,
+  /** Sum of band-list lengths walked. */
+  bandSlots: 0,
+};
+export const resetParaScanStats = (): void => {
+  _paraScanStats.fullCalls = 0;
+  _paraScanStats.fullSlots = 0;
+  _paraScanStats.bandCalls = 0;
+  _paraScanStats.bandSlots = 0;
+};
+
 /** A paragraph whose every non-empty run is hidden (w:vanish): it has text but
  *  none is visible. Such a paragraph is never laid out, caret-reachable, or
  *  deletable — it's preserved metadata. A truly empty paragraph (no text at all)
@@ -36,29 +59,136 @@ export type BandName = "header" | "footer";
 /** Editable paragraphs of a margin band container, document order — INCLUDING
  *  band-table cells (imported footers are routinely tables holding text next
  *  to a page-number paragraph). */
-export const bandParagraphs = (doc: Document, band: BandContainer): Paragraph[] =>
-  paragraphsInBlocks(doc.section[band] ?? [], true);
+export const bandParagraphs = (doc: Document, band: BandContainer): Paragraph[] => {
+  const list = paragraphsInBlocks(doc.section[band] ?? [], true);
+  if (_paraScanStats.enabled) {
+    _paraScanStats.bandCalls++;
+    _paraScanStats.bandSlots += list.length;
+  }
+  return list;
+};
 
 /** Body paragraphs in document order, INCLUDING table-cell paragraphs (one
  *  level deep). Excludes margin bands and footnote notes — the body story only.
  *  Heading/TOC scans use this so headings inside table cells are found too. */
 export const bodyParagraphs = (doc: Document): Paragraph[] => paragraphsInBlocks(doc.blocks, true);
 
+/** Per-document memoized index of the navigable-paragraph space. The model is
+ *  immutable — every edit returns a NEW Document object (path-clone) — so a
+ *  WeakMap keyed on document identity auto-invalidates: a fresh doc simply misses
+ *  the cache and the old entry is GC'd. Built once per doc, then `paragraphsOf`
+ *  is a cached-array return and `blockById`/`blockIndexOf` are O(1) Map lookups,
+ *  instead of re-walking the whole block tree (body + table cells + 6 bands +
+ *  footnotes/endnotes) on every call. Mirrors layout/geometry.ts's TreeIndex. */
+interface DocParaIndex {
+  list: Paragraph[];
+  /** id → its index in `list` (FIRST occurrence, matching the old `.find`/
+   *  `.findIndex` semantics for the rare duplicate id). */
+  byId: Map<string, number>;
+}
+const paraIndexCache = new WeakMap<Document, DocParaIndex>();
+
+const buildParaIndex = (doc: Document): DocParaIndex => {
+  const list = [
+    ...paragraphsInBlocks(doc.blocks, true),
+    ...BAND_CONTAINERS.flatMap((band) => bandParagraphs(doc, band)),
+    ...Object.values(doc.footnotes ?? {}).flat(),
+    ...Object.values(doc.endnotes ?? {}).flat(),
+  ];
+  const byId = new Map<string, number>();
+  for (let i = 0; i < list.length; i++) {
+    const id = list[i]!.id;
+    if (!byId.has(id)) byId.set(id, i); // keep first — matches old .find/.findIndex
+  }
+  if (_paraScanStats.enabled) {
+    _paraScanStats.fullCalls++;
+    _paraScanStats.fullSlots += list.length;
+  }
+  return { list, byId };
+};
+
+const paraIndex = (doc: Document): DocParaIndex => {
+  let idx = paraIndexCache.get(doc);
+  if (!idx) {
+    idx = buildParaIndex(doc);
+    paraIndexCache.set(doc, idx);
+  }
+  return idx;
+};
+
 /** All editable paragraphs in document order: body (including table cells),
  *  then every band story (header/footer + first/even variants). This is the
- *  index space commands use. */
-export const paragraphsOf = (doc: Document): Paragraph[] => [
-  ...paragraphsInBlocks(doc.blocks, true),
-  ...BAND_CONTAINERS.flatMap((band) => bandParagraphs(doc, band)),
-  ...Object.values(doc.footnotes ?? {}).flat(),
-  ...Object.values(doc.endnotes ?? {}).flat(),
-];
+ *  index space commands use. Cached per document identity (see DocParaIndex). */
+export const paragraphsOf = (doc: Document): Paragraph[] => paraIndex(doc).list;
 
-export const blockById = (doc: Document, blockId: string): Paragraph | undefined =>
-  paragraphsOf(doc).find((b) => b.id === blockId);
+export const blockById = (doc: Document, blockId: string): Paragraph | undefined => {
+  const idx = paraIndex(doc);
+  const i = idx.byId.get(blockId);
+  return i === undefined ? undefined : idx.list[i];
+};
 
-export const blockIndexOf = (doc: Document, blockId: string): number =>
-  paragraphsOf(doc).findIndex((b) => b.id === blockId);
+export const blockIndexOf = (doc: Document, blockId: string): number => {
+  const i = paraIndex(doc).byId.get(blockId);
+  return i === undefined ? -1 : i;
+};
+
+/** The set of every band (header/footer + variants) paragraph id, memoized per
+ *  document identity. Lets a body-vs-band membership test be an O(1) Set lookup
+ *  instead of re-walking all six band stories per query — the selection
+ *  controller's caret navigation filters the body paragraphs against this on
+ *  every arrow key. Same WeakMap-on-identity invalidation as the para index. */
+const bandIdCache = new WeakMap<Document, ReadonlySet<string>>();
+export const bandParagraphIds = (doc: Document): ReadonlySet<string> => {
+  let s = bandIdCache.get(doc);
+  if (!s) {
+    const built = new Set<string>();
+    for (const band of BAND_CONTAINERS) for (const p of bandParagraphs(doc, band)) built.add(p.id);
+    s = built;
+    bandIdCache.set(doc, s);
+  }
+  return s;
+};
+
+/** Body navigation order: the paragraphs the caret can reach while editing the
+ *  body — `paragraphsOf` minus band paragraphs (they belong to their own header/
+ *  footer story) and hidden (w:vanish) paragraphs (never laid out, so the caret
+ *  skips them). Memoized per document identity: the selection controller derives
+ *  this on every caret move, and the filter (a full pass plus a per-paragraph
+ *  hidden test) is otherwise re-run several times per keystroke. Same
+ *  WeakMap-on-identity invalidation as `paragraphsOf`. Treat the result as
+ *  IMMUTABLE (callers read-only; see paragraphsOf). */
+const navCache = new WeakMap<Document, Paragraph[]>();
+export const navigableParagraphs = (doc: Document): Paragraph[] => {
+  let list = navCache.get(doc);
+  if (!list) {
+    const bandIds = bandParagraphIds(doc);
+    list = paragraphsOf(doc).filter((p) => !bandIds.has(p.id) && !isHiddenParagraph(p));
+    navCache.set(doc, list);
+  }
+  return list;
+};
+
+/** Story (header/footer editing) navigation order for ONE band container:
+ *  `bandParagraphs(doc, band)` minus hidden (w:vanish) paragraphs the caret skips.
+ *  The body counterpart is `navigableParagraphs`; this is the per-band analogue the
+ *  selection controller derives on every caret move while editing a margin band.
+ *  Memoized per (document identity, band) — a nested `Map<BandContainer, …>` per
+ *  doc, with the same WeakMap-on-identity invalidation. Treat the result as
+ *  IMMUTABLE (callers read-only). */
+const navBandCache = new WeakMap<Document, Map<BandContainer, Paragraph[]>>();
+export const navigableBandParagraphs = (doc: Document, band: BandContainer): Paragraph[] => {
+  let perDoc = navBandCache.get(doc);
+  if (!perDoc) {
+    perDoc = new Map();
+    navBandCache.set(doc, perDoc);
+  }
+  let list = perDoc.get(band);
+  if (!list) {
+    list = bandParagraphs(doc, band).filter((p) => !isHiddenParagraph(p));
+    perDoc.set(band, list);
+  }
+  return list;
+};
 
 /** Every block id present anywhere in the doc — top-level blocks (paragraph,
  *  image, table) in body + bands, table ids, and paragraph/image ids nested in
