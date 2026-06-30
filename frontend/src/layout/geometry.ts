@@ -15,6 +15,10 @@ export interface CaretRect {
   x: number;
   y: number;
   height: number;
+  /** Rotation (radians) for a caret inside a vertical-text cell — the painter
+   *  rotates the bar about its center so it follows the text angle instead of
+   *  staying upright. Absent/0 for normal horizontal text. */
+  angle?: number;
 }
 
 export interface Rect {
@@ -543,10 +547,10 @@ export function caretRect(tree: LayoutTree, pos: DocPosition, scope?: GeoScope):
   const rot = e.cell?.rotation;
   if (rot) {
     // Vertical text: the caret's local x is the text-advance position; map the
-    // line-center point to the page. The DOM caret stays a vertical bar (its
-    // placement tracks the insertion point; orientation is a known limitation).
+    // line-center point to the page and carry the cell angle so the painter
+    // rotates the bar about its center to follow the text direction.
     const p = rotLocalToPage(rot, xAtOffset(e, off), e.block.y + e.line.y + e.line.height / 2);
-    return { pageIndex: e.pageIndex, x: p.x, y: p.y - e.line.height / 2, height: e.line.height };
+    return { pageIndex: e.pageIndex, x: p.x, y: p.y - e.line.height / 2, height: e.line.height, angle: rot.angle };
   }
   return {
     pageIndex: e.pageIndex,
