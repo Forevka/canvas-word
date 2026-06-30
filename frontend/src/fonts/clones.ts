@@ -59,6 +59,8 @@ export const CLONE_OF: Record<string, string> = {
   // CJK fallback family resolves to itself. NOT in CLONE_FAMILIES (single face;
   // bold/italic map to the same Regular, see resolveFont's single-face handling).
   notosanssc: "NotoSansSC",
+  // Noto Sans Arabic — the bundled Arabic fallback (single Regular face); identity.
+  notosansarabic: "NotoSansArabic",
 };
 
 /** Family name of the bundled math font. Math glyphs render with this face. */
@@ -72,13 +74,22 @@ export const MATH_FONT_FILE = "StixTwoMath-Regular.ttf";
 export const CJK_FONT_FAMILY = "NotoSansSC";
 export const CJK_FONT_FILE = "NotoSansSC-Regular.ttf";
 
-/** Built-in faces that ship a single Regular face only (math + CJK fallback). Every
- *  requested style resolves to this one file — there are no bold/italic faces, so
- *  the renderer/embedder use Regular outlines for all four styles (matching how the
+/** Family name of the bundled Arabic fallback font. Script-split Arabic runs render
+ *  with this face (Noto Sans Arabic Regular — full Arabic block coverage) so Arabic
+ *  text isn't `.notdef`/tofu in the export when no embedder font is configured.
+ *  It is the default Arabic fallback (always on; pass `arabicFallbackFont: ""`
+ *  in the CJK/Arabic config to opt out). */
+export const ARABIC_FONT_FAMILY = "NotoSansArabic";
+export const ARABIC_FONT_FILE = "NotoSansArabic-Regular.ttf";
+
+/** Built-in faces that ship a single Regular face only (math + CJK + Arabic fallback).
+ *  Every requested style resolves to this one file — there are no bold/italic faces,
+ *  so the renderer/embedder use Regular outlines for all four styles (matching how the
  *  custom-font path falls a missing style back to its Regular). */
 export const SINGLE_FACE_FILES: Record<string, string> = {
   [MATH_FONT_FAMILY]: MATH_FONT_FILE,
   [CJK_FONT_FAMILY]: CJK_FONT_FILE,
+  [ARABIC_FONT_FAMILY]: ARABIC_FONT_FILE,
 };
 
 // Per-clone vertical metrics as a fraction of font size (ascent, descent above/
@@ -102,6 +113,10 @@ export const CLONE_METRICS: Record<string, { ascent: number; descent: number }> 
   // and — since BOTH the editor and the exporters read these baked ratios — keeps
   // pagination identical across every environment.
   NotoSansSC: { ascent: 1.16, descent: 0.288 },
+  // Noto Sans Arabic v2.009 (hhea ascent 1374 / descent 738 at upem 1000). Arabic
+  // fonts carry tall vertical metrics to accommodate harakat (diacritics); the
+  // same "face's own ratios" rule applies so editor + export always agree.
+  NotoSansArabic: { ascent: 1.374, descent: 0.738 },
 };
 
 /** Resolve one CSS-stack family token to the face family the editor/exporters
