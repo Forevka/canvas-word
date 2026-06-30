@@ -85,6 +85,7 @@ export function runImport(
     numbering,
     (styleId) => resolveTableStyle(styles, styleId),
     refPgSize,
+    { lineNumbering: ir.section?.lineNumbering, pageNumberStart: ir.section?.pageNumberStart },
   );
   const mediaStores: MediaStore[] = [];
   const mediaFor = (partRels: Relationships): MediaStore => {

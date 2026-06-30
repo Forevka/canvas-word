@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   both — were collapsed into one "Borders & shading" button.
 
 ### Fixed
+- **Line numbering no longer bleeds across a dropped section break on import.** A document with a
+  line-numbered section (`w:lnNumType`) preceded by a plain, geometry-preserving Next Page break
+  reopened with line numbers printed beside *every* line from page 1 — the whole document looked
+  like it had become one numbered block. Line numbering (and page-number restart) are per-section
+  OWN properties that never inherit, but the importer flowed the geometry-preserving break instead
+  of keeping it, merging the unnumbered lead-in into the following numbered section so its property
+  bled backward. Such a break is now preserved whenever the section it closes differs from the
+  following section (the next `w:sectPr`, or the body `w:sectPr` for the last one) in line numbering
+  or page-number restart; footer-only Next Page breaks with matching properties still flow.
 - **Rows/columns added via the context menu now inherit the table's cell formatting.** Insert →
   Row Below / Column Right created cells with no borders, shading, or margin, so they fell back to
   the engine's bare defaults (light grid, no fill, default padding) instead of matching the table.

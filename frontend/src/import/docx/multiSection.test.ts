@@ -74,6 +74,76 @@ describe("per-section columns & page numbering", () => {
   });
 });
 
+// --- non-inheriting own-properties don't bleed across a dropped break --------
+
+describe("line numbering / page-number restart don't bleed backward", () => {
+  // Line numbering and page-number restart are per-section OWN properties that
+  // never inherit. A geometry-preserving Next Page break is normally dropped and
+  // its content flowed into the FOLLOWING section — but if that section declares
+  // one of these properties, dropping the boundary would let it bleed backward
+  // onto the earlier content (regression: a round-tripped doc showed line numbers
+  // on every page from page 1, not just inside its line-numbered section).
+  const numberedFollows = (firstSect: string, secondSect: string) =>
+    runImport(
+      simpleDocx(
+        `<w:p><w:r><w:t>intro</w:t></w:r></w:p>` +
+          `<w:p><w:pPr><w:sectPr>${firstSect}</w:sectPr></w:pPr></w:p>` +
+          `<w:p><w:r><w:t>numbered</w:t></w:r></w:p>` +
+          `<w:p><w:pPr><w:sectPr>${secondSect}</w:sectPr></w:pPr></w:p>` +
+          `<w:p><w:r><w:t>tail</w:t></w:r></w:p>` +
+          `<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>`,
+      ),
+    );
+  const breaksOf = (r: ReturnType<typeof runImport>): Paragraph[] =>
+    r.doc.blocks.filter((b): b is Paragraph => b.kind === "paragraph" && !!b.style.sectionBreak);
+
+  it("keeps a geometry-preserving break before a line-numbered section", () => {
+    const r = numberedFollows(
+      `<w:type w:val="nextPage"/>`,
+      `<w:lnNumType w:countBy="1" w:restart="newPage"/><w:type w:val="nextPage"/>`,
+    );
+    const breaks = breaksOf(r);
+    // The first break is NOT distinct on its own (same geometry, plain Next Page),
+    // but must survive so the intro keeps its own UNnumbered section.
+    expect(breaks).toHaveLength(2);
+    expect(breaks[0]!.style.sectionBreak!.props.lineNumbering).toBeUndefined();
+    expect(breaks[1]!.style.sectionBreak!.props.lineNumbering).toEqual({ countBy: 1, restart: "newPage" });
+  });
+
+  it("keeps a geometry-preserving break before a page-number restart", () => {
+    const r = numberedFollows(`<w:type w:val="nextPage"/>`, `<w:pgNumType w:start="1"/>`);
+    const breaks = breaksOf(r);
+    expect(breaks).toHaveLength(2);
+    expect(breaks[0]!.style.sectionBreak!.props.pageNumberStart).toBeUndefined();
+    expect(breaks[1]!.style.sectionBreak!.props.pageNumberStart).toBe(1);
+  });
+
+  it("keeps the final break when the body section itself is line-numbered", () => {
+    // No later in-paragraph break follows, so the 'following section' is the body
+    // sectPr — its line numbering must not bleed back onto the intro.
+    const r = runImport(
+      simpleDocx(
+        `<w:p><w:r><w:t>intro</w:t></w:r></w:p>` +
+          `<w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr></w:p>` +
+          `<w:p><w:r><w:t>numbered body</w:t></w:r></w:p>` +
+          `<w:sectPr><w:lnNumType w:countBy="1"/><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>`,
+      ),
+    );
+    expect(r.doc.section.lineNumbering).toEqual({ countBy: 1 });
+    const breaks = breaksOf(r);
+    expect(breaks).toHaveLength(1);
+    expect(breaks[0]!.style.sectionBreak!.props.lineNumbering).toBeUndefined();
+  });
+
+  it("still flows a geometry-preserving break when neither section is numbered", () => {
+    // Guard: the fix must NOT make every plain Next Page break page-breaking —
+    // footer-only breaks with matching own-properties continue to flow.
+    const r = numberedFollows(`<w:type w:val="nextPage"/>`, `<w:type w:val="nextPage"/>`);
+    // Only the body section remains; neither in-paragraph break is materialized.
+    expect(breaksOf(r)).toHaveLength(0);
+  });
+});
+
 // --- header/footer variants -------------------------------------------------
 
 const REFS = {
