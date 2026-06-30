@@ -109,18 +109,39 @@ export interface IRRunProps {
   color?: string;
   /** w:sz — half-points. */
   sizeHalfPoints?: number;
+  /** w:spacing w:val — character tracking (inter-glyph spacing) in twips
+   *  (twentieths of a point); negative = condensed. Maps to letterSpacingPx. */
+  letterSpacingTwips?: number;
   /** w:rFonts w:ascii. */
   fontAscii?: string;
   /** w:rFonts w:asciiTheme — theme font slot ("minorHAnsi", "majorHAnsi", …). */
   fontThemeAscii?: string;
+  /** w:rFonts w:hAnsi / w:hAnsiTheme — high-ANSI (Latin) slot. Falls back to the
+   *  ascii slot for the model's single Latin `fontFamily`. */
+  fontHAnsi?: string;
+  fontThemeHAnsi?: string;
+  /** w:rFonts w:cs / w:cstheme — complex-script slot (→ fontFamilyComplexScript). */
+  fontCs?: string;
+  fontThemeCs?: string;
+  /** w:rFonts w:eastAsia / w:eastAsiaTheme — East-Asian (CJK) slot (→ fontFamilyEastAsia). */
+  fontEastAsia?: string;
+  fontThemeEastAsia?: string;
   /** w:color w:themeColor — theme color slot ("accent1", "text1", …). */
   colorTheme?: string;
+  /** w:color w:themeTint — hex byte ("00".."FF"); lightens the theme color toward white. */
+  colorThemeTint?: string;
+  /** w:color w:themeShade — hex byte ("00".."FF"); darkens the theme color toward black. */
+  colorThemeShade?: string;
   /** w:highlight w:val — named highlight color ("yellow", "green", …). */
   highlight?: string;
   /** w:vertAlign w:val — "superscript" | "subscript" | "baseline". */
   vertAlign?: string;
   /** w:vanish — hidden text (Word shows it only with ¶ marks on). */
   vanish?: boolean;
+  /** w:caps — all-caps display toggle. */
+  caps?: boolean;
+  /** w:smallCaps — small-capitals display toggle. */
+  smallCaps?: boolean;
   /** w:rtl — explicit right-to-left run direction. */
   rtl?: boolean;
   /** w:dstrike — double strikethrough. */
@@ -145,6 +166,9 @@ export interface IRRunProps {
   runBorder?: IRRawBorder;
   /** w:fitText/@w:val — fit-text target width in twips. */
   fitTextTwips?: number;
+  /** w:sym — a symbol-font glyph: the font name + the hex code point Word stores.
+   *  mapToModel sets CharStyle.symbol (+ fontFamily) and the run text to the glyph. */
+  symbol?: { font: string; char: string };
   /** Hyperlink membership (set on runs inside a w:hyperlink). Resolved to a URL
    *  in mapToModel: relId via the part's rels (external target), or anchor for
    *  an in-document bookmark (kept as "#name"). */
@@ -153,6 +177,9 @@ export interface IRRunProps {
   /** w:footnoteReference w:id — this run is a footnote marker. mapToModel sets
    *  the run text to the sequential note number and CharStyle.footnoteRef. */
   footnoteId?: string;
+  /** w:endnoteReference w:id — this run is an endnote marker. mapToModel sets
+   *  the run text to the sequential note number and CharStyle.endnoteRef. */
+  endnoteId?: string;
 }
 
 /** w:sdtPr — content-control properties, decoded faithfully (mapToModel turns
@@ -187,6 +214,9 @@ export type IRInline =
       relId: string;
       widthEmu?: number;
       heightEmu?: number;
+      /** a:srcRect crop insets, each a 0..1 fraction of the source trimmed off that
+       *  edge (OOXML stores 1/1000 of a percent; the parser normalizes to a fraction). */
+      crop?: { left: number; top: number; right: number; bottom: number };
       anchored: boolean;
       /** For wp:anchor: square = text wraps around (maps to ImageBlock.wrap);
        *  block = wrap mode the model can't express (none/topAndBottom). */
@@ -216,6 +246,13 @@ export interface IRParaProps {
   spaceAfterTwips?: number;
   /** Multiplier — only set when lineRule is "auto" (or absent). */
   lineHeight?: number;
+  /** w:lineRule. "auto" pairs with `lineHeight` (a 240ths multiplier);
+   *  "exact"/"atLeast" pair with `lineExactTwips` (w:line as a twips height). An
+   *  explicit "auto" is kept (not just left absent) so it OVERRIDES an inherited
+   *  fixed rule through the strip-undefined style cascade (mergeProps). */
+  lineRule?: "auto" | "exact" | "atLeast";
+  /** Fixed line spacing in twips (w:line under lineRule exact/atLeast). */
+  lineExactTwips?: number;
   indentLeftTwips?: number;
   /** w:ind/@w:right|@w:end — right-edge indent. */
   indentRightTwips?: number;
@@ -225,6 +262,8 @@ export interface IRParaProps {
   keepWithNext?: boolean;
   /** w:keepLines — maps onto ParaStyle.keepLinesTogether. */
   keepLinesTogether?: boolean;
+  /** w:contextualSpacing — maps onto ParaStyle.contextualSpacing. */
+  contextualSpacing?: boolean;
   /** w:pPr/w:tabs — raw tab stops (pos in twips; val/leader raw OOXML names). */
   tabStops?: { posTwips: number; val?: string; leader?: string }[];
   /** w:pageBreakBefore — this paragraph starts a new page. */
@@ -237,6 +276,12 @@ export interface IRParaProps {
   /** w:pPr/w:sectPr — this paragraph ENDS a section. "page" (nextPage/odd/even)
    *  implies the following content starts a new page; "continuous" doesn't. */
   sectionBreak?: "page" | "continuous";
+  /** The exact w:sectPr/w:type of the ending section's FOLLOWING section start —
+   *  "evenPage"/"oddPage" force its first page onto an even/odd page number.
+   *  Absent (or "nextPage") = a plain next-page break. */
+  sectionBreakType?: "nextPage" | "evenPage" | "oddPage";
+  /** The ending section's w:sectPr/w:lnNumType (line numbering), raw OOXML units. */
+  sectionLineNumbering?: IRLineNumbering;
   /** The ending section's page size (twips), when its w:sectPr declares pgSz.
    *  A "page" break only forces a new page when this differs from the document's
    *  page size — geometry-preserving breaks (footer/header switches, which these
@@ -266,6 +311,16 @@ export interface IRParaProps {
   borders?: IRParaBorders;
   /** w:pPr/w:shd → CSS fill (paragraph-level shading). */
   shd?: string;
+  /** w:widowControl — widow/orphan control (Word default ON; explicit "0" = off). */
+  widowControl?: boolean;
+  /** w:suppressLineNumbers — exclude this paragraph from line numbering. */
+  suppressLineNumbers?: boolean;
+  /** w:textAlignment — vertical line alignment (top/center/bottom/baseline). */
+  textAlignment?: "top" | "center" | "bottom" | "baseline";
+  /** w:mirrorIndents — symmetric indents under mirrored section margins. */
+  mirrorIndents?: boolean;
+  /** w:adjustRightInd — auto-adjust the right indent to the document grid. */
+  adjustRightInd?: boolean;
 }
 
 /** Raw paragraph border edges (w:pBdr children). Mirrors IRBorders but carries
@@ -360,10 +415,27 @@ export interface IRTableCell {
   /** w:tcPr/w:vAlign — vertical alignment of cell content (→ TableCell.vAlign).
    *  Absent (or "top") = top-aligned, the default. */
   vAlign?: "top" | "center" | "bottom";
+  /** w:tcPr/w:textDirection — text flow direction (→ TableCell.textDirection).
+   *  Absent (or "lrTb") = normal horizontal text. */
+  textDirection?: "lrTb" | "tbRl" | "btLr" | "lrTbV" | "tbRlV" | "tbLrV";
+  /** w:tcPr/w:noWrap — suppress content wrapping (→ TableCell.noWrap). */
+  noWrap?: boolean;
+  /** w:tcPr/w:tcFitText — fit text to width (→ TableCell.fitText). */
+  fitText?: boolean;
+  /** w:tcPr/w:hideMark — ignore the end-of-cell mark for row height (→ TableCell.hideMark). */
+  hideMark?: boolean;
 }
 
 export interface IRTableRow {
   cells: IRTableCell[];
+  /** w:trPr row properties (→ TableRow.props). `heightTwips`/`heightRule` from
+   *  w:trHeight; `cantSplit` from w:cantSplit; `tblHeader` from w:tblHeader. */
+  props?: {
+    heightTwips?: number;
+    heightRule?: "atLeast" | "exact";
+    cantSplit?: boolean;
+    tblHeader?: boolean;
+  };
 }
 
 export interface IRTable {
@@ -379,6 +451,16 @@ export interface IRTable {
   preferredWidthPct?: number;
   /** w:tblPr/w:jc → table alignment within the content width (→ TableBlock.align). */
   align?: "left" | "center" | "right";
+  /** w:tblPr/w:tblInd preferred indent in twips (dxa) (→ TableBlock.indentPx). */
+  indentTwips?: number;
+  /** w:tblPr/w:bidiVisual → render columns right-to-left (→ TableBlock.bidiVisual). */
+  bidiVisual?: boolean;
+  /** w:tblPr/w:tblOverlap → floating-table overlap behavior (→ TableBlock.overlap). */
+  overlap?: "never" | "overlap";
+  /** w:tblPr/w:tblCaption → table title/caption (→ TableBlock.caption). */
+  caption?: string;
+  /** w:tblPr/w:tblDescription → table alt text (→ TableBlock.description). */
+  description?: string;
   /** w:tblPr/w:tblStyle — table style id (its borders/shd are the cascade base). */
   styleId?: string;
   /** w:tblPr/w:tblLook — which conditional bands of the table style are active. */
@@ -462,6 +544,20 @@ export interface IRSection {
   pageNumberStart?: number;
   /** w:pgBorders — page border box (raw twips/eighth-points, mapped downstream). */
   pageBorders?: IRPageBorders;
+  /** w:lnNumType — line numbering (raw OOXML units, mapped downstream). */
+  lineNumbering?: IRLineNumbering;
+  /** w:sectPr/w:type on the BODY section — an even/odd page-parity start for the
+   *  final section. Absent (or "nextPage") = a plain next-page start. */
+  breakType?: "nextPage" | "evenPage" | "oddPage";
+}
+
+/** w:lnNumType attributes as parsed — countBy/start are plain counts; distance is
+ *  twips; restart is the raw OOXML enum. Mapped to the model's LineNumbering. */
+export interface IRLineNumbering {
+  countBy?: number;
+  start?: number;
+  restart?: "continuous" | "newPage" | "newSection";
+  distanceTwips?: number;
 }
 
 /** w:pgBorders edge as parsed (w:sz eighth-points, w:space points). */

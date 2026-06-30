@@ -32,12 +32,18 @@ public enum BandVariant { Default, First, Even }
 public enum ListKind { Bullet, Number }
 public enum TextAlign { Left, Center, Right, Justify }
 public enum Orientation { Portrait, Landscape }
+/// <summary>How a section begins (OOXML w:sectPr/w:type).</summary>
+public enum SectionBreakType { NextPage, EvenPage, OddPage }
+/// <summary>When line numbering restarts (OOXML w:lnNumType/@w:restart).</summary>
+public enum LineNumberRestart { Continuous, NewPage, NewSection }
 public enum ImageWrap { Block, Square }
 public enum PageSizeName { Letter, Legal, A4, A3, Tabloid }
 /// <summary>Block/inline equation horizontal placement (display equations only).</summary>
 public enum EquationAlign { Left, Center, Right }
 /// <summary>Paragraph base writing direction (OOXML w:bidi).</summary>
 public enum Direction { Ltr, Rtl }
+/// <summary>Fixed line-spacing rule (docx w:spacing/@w:lineRule).</summary>
+public enum LineRule { Exact, AtLeast }
 /// <summary>Tab-stop alignment (docx w:tab/@w:val).</summary>
 public enum TabAlign { Left, Center, Right, Decimal }
 /// <summary>Tab-stop leader fill (docx w:tab/@w:leader).</summary>
@@ -53,6 +59,14 @@ public enum EmphasisMark { Dot, Comma, Circle, UnderDot }
 public enum WidthType { Abs, Pct }
 /// <summary>Cell vertical content alignment (OOXML w:tcPr/w:vAlign).</summary>
 public enum CellVAlign { Top, Center, Bottom }
+/// <summary>How a row's fixed height is enforced (OOXML w:trHeight/@w:hRule).</summary>
+public enum RowHeightRule { AtLeast, Exact }
+/// <summary>Vertical alignment of text within a line box (OOXML w:pPr/w:textAlignment).</summary>
+public enum LineVAlign { Top, Center, Bottom, Baseline }
+/// <summary>Cell text flow direction (OOXML w:tcPr/w:textDirection).</summary>
+public enum CellTextDirection { LrTb, TbRl, BtLr, LrTbV, TbRlV, TbLrV }
+/// <summary>Floating-table overlap behavior (OOXML w:tblPr/w:tblOverlap).</summary>
+public enum TableOverlap { Never, Overlap }
 /// <summary>List number format (docx w:numFmt).</summary>
 public enum ListNumberFormat { Bullet, Decimal, LowerLetter, UpperLetter, LowerRoman, UpperRoman }
 /// <summary>Conditional-format slot of a table style (OOXML w:tblStylePr/@w:type).</summary>
@@ -76,6 +90,18 @@ internal static class EnumJs
 
     public static string Wrap(ImageWrap w) => w == ImageWrap.Square ? "square" : "block";
     public static string Orient(Orientation o) => o == Orientation.Landscape ? "landscape" : "portrait";
+    public static string BreakType(SectionBreakType t) => t switch
+    {
+        SectionBreakType.EvenPage => "evenPage",
+        SectionBreakType.OddPage => "oddPage",
+        _ => "nextPage",
+    };
+    public static string LineRestart(LineNumberRestart r) => r switch
+    {
+        LineNumberRestart.Continuous => "continuous",
+        LineNumberRestart.NewSection => "newSection",
+        _ => "newPage",
+    };
     public static string Variant(BandVariant v) => v switch
     {
         BandVariant.First => "first",
@@ -91,6 +117,7 @@ internal static class EnumJs
         _ => "center",
     };
     public static string Dir(Direction d) => d == Direction.Rtl ? "rtl" : "ltr";
+    public static string LineRule(LineRule r) => r == Builder.LineRule.Exact ? "exact" : "atLeast";
     public static string TabAlign(TabAlign a) => a switch
     {
         Builder.TabAlign.Center => "center",
@@ -132,6 +159,23 @@ internal static class EnumJs
         CellVAlign.Bottom => "bottom",
         _ => "top",
     };
+    public static string TextVAlign(LineVAlign v) => v switch
+    {
+        LineVAlign.Top => "top",
+        LineVAlign.Center => "center",
+        LineVAlign.Bottom => "bottom",
+        _ => "baseline",
+    };
+    public static string TextDir(CellTextDirection d) => d switch
+    {
+        CellTextDirection.TbRl => "tbRl",
+        CellTextDirection.BtLr => "btLr",
+        CellTextDirection.LrTbV => "lrTbV",
+        CellTextDirection.TbRlV => "tbRlV",
+        CellTextDirection.TbLrV => "tbLrV",
+        _ => "lrTb",
+    };
+    public static string Overlap(TableOverlap o) => o == TableOverlap.Never ? "never" : "overlap";
     public static string ListFmt(ListNumberFormat f) => f switch
     {
         ListNumberFormat.Decimal => "decimal",
@@ -196,12 +240,20 @@ public sealed record CharStyle
     public string? Color { get; init; }
     public string? HighlightColor { get; init; }
     public string? FontFamily { get; init; }
+    /// <summary>Complex-script (bidi) font (OOXML w:rFonts/@w:cs); preserved through round-trip.</summary>
+    public string? FontFamilyComplexScript { get; init; }
+    /// <summary>East-Asian (CJK) font (OOXML w:rFonts/@w:eastAsia); preserved through round-trip.</summary>
+    public string? FontFamilyEastAsia { get; init; }
     public double? FontSizePx { get; init; }
     public string? Link { get; init; }
     public double? LetterSpacingPx { get; init; }
     public bool? Hidden { get; init; }
     /// <summary>Sub/superscript: "sub" or "super" (measured at 0.65× size, baseline-shifted).</summary>
     public string? VerticalAlign { get; init; }
+    /// <summary>All-caps display (OOXML w:caps): every letter renders uppercased.</summary>
+    public bool? Caps { get; init; }
+    /// <summary>Small-capitals display (OOXML w:smallCaps): uppercased, originally-lowercase letters drawn smaller.</summary>
+    public bool? SmallCaps { get; init; }
     /// <summary>Explicit right-to-left run (OOXML w:rtl).</summary>
     public bool? Rtl { get; init; }
     /// <summary>Character-style reference (OOXML w:rStyle → a character NamedStyle).</summary>
@@ -220,10 +272,14 @@ public sealed record CharStyle
         if (Color is { } c) Js.Set(o, "color", c);
         if (HighlightColor is { } h) Js.Set(o, "highlightColor", h);
         if (FontFamily is { } f) Js.Set(o, "fontFamily", f);
+        if (FontFamilyComplexScript is { } fcs) Js.Set(o, "fontFamilyComplexScript", fcs);
+        if (FontFamilyEastAsia is { } fea) Js.Set(o, "fontFamilyEastAsia", fea);
         if (FontSizePx is { } fs) Js.Set(o, "fontSizePx", fs);
         if (Link is { } lk) Js.Set(o, "link", lk);
         if (LetterSpacingPx is { } ls) Js.Set(o, "letterSpacingPx", ls);
         if (Hidden is { } hd) Js.Set(o, "hidden", hd);
+        if (Caps is { } cp) Js.Set(o, "caps", cp);
+        if (SmallCaps is { } sc) Js.Set(o, "smallCaps", sc);
         if (Rtl is { } rtl) Js.Set(o, "rtl", rtl);
         if (CharStyleId is { } csi) Js.Set(o, "charStyleId", csi);
         return o;
@@ -322,6 +378,30 @@ public sealed record TemplateOptions
 
 public sealed record ColumnsSpec(int Count, double? GapPx = null);
 
+/// <summary>Line numbering in the page margin (OOXML w:lnNumType). Only set fields
+/// are emitted; absent fields take Word's defaults (countBy 1, start 1, newPage).</summary>
+public sealed record LineNumbering
+{
+    /// <summary>Print every Nth line number (default 1 = every line).</summary>
+    public int? CountBy { get; init; }
+    /// <summary>The first line's number (default 1).</summary>
+    public int? Start { get; init; }
+    /// <summary>When the counter restarts.</summary>
+    public LineNumberRestart? Restart { get; init; }
+    /// <summary>Gap (px) between the numbers and the text edge.</summary>
+    public double? DistancePx { get; init; }
+
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        if (CountBy is { } cb) Js.Set(o, "countBy", cb);
+        if (Start is { } st) Js.Set(o, "start", st);
+        if (Restart is { } r) Js.Set(o, "restart", EnumJs.LineRestart(r));
+        if (DistancePx is { } d) Js.Set(o, "distancePx", d);
+        return o;
+    }
+}
+
 public sealed record PageSetup
 {
     public PageSizeName? PageSize { get; init; }
@@ -332,6 +412,10 @@ public sealed record PageSetup
     public double? HeaderDistancePx { get; init; }
     public double? FooterDistancePx { get; init; }
     public int? PageNumberStart { get; init; }
+    /// <summary>Line numbering in the margin (w:lnNumType) for the document section.</summary>
+    public LineNumbering? LineNumbering { get; init; }
+    /// <summary>How the final (body) section starts: next page (default) or even/odd parity.</summary>
+    public SectionBreakType? BreakType { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -343,6 +427,8 @@ public sealed record PageSetup
         if (HeaderDistancePx is { } hd) Js.Set(o, "headerDistancePx", hd);
         if (FooterDistancePx is { } fd) Js.Set(o, "footerDistancePx", fd);
         if (PageNumberStart is { } pns) Js.Set(o, "pageNumberStart", pns);
+        if (LineNumbering is { } ln) Js.Set(o, "lineNumbering", ln.ToJs(e));
+        if (BreakType is { } bt) Js.Set(o, "breakType", EnumJs.BreakType(bt));
         return o;
     }
 }
@@ -351,7 +437,12 @@ public sealed record SpacingOptions
 {
     public double? Before { get; init; }
     public double? After { get; init; }
+    /// <summary>Line height multiplier (1.0 = single). Used when <see cref="LineRule"/> is omitted.</summary>
     public double? LineHeight { get; init; }
+    /// <summary>Fixed line-spacing rule (docx w:lineRule="exact"|"atLeast"). Set <see cref="LineHeightPx"/> alongside it.</summary>
+    public LineRule? LineRule { get; init; }
+    /// <summary>Fixed line height in px — used with <see cref="LineRule"/>.</summary>
+    public double? LineHeightPx { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -359,6 +450,8 @@ public sealed record SpacingOptions
         if (Before is { } b) Js.Set(o, "before", b);
         if (After is { } a) Js.Set(o, "after", a);
         if (LineHeight is { } lh) Js.Set(o, "lineHeight", lh);
+        if (LineRule is { } lr) Js.Set(o, "lineRule", EnumJs.LineRule(lr));
+        if (LineHeightPx is { } lhp) Js.Set(o, "lineHeightPx", lhp);
         return o;
     }
 }
@@ -385,6 +478,9 @@ public sealed record ImageOptions
     public required double HeightPx { get; init; }
     public TextAlign? Align { get; init; }
     public ImageWrap? Wrap { get; init; }
+    /// <summary>Crop insets (OOXML a:srcRect), each a 0..1 fraction trimmed off that
+    /// edge — so WidthPx/HeightPx describe the cropped box. Null = no crop.</summary>
+    public ImageCrop? Crop { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -398,6 +494,21 @@ public sealed record ImageOptions
             Js.Set(o, "align", EnumJs.Align(a));
         }
         if (Wrap is { } w) Js.Set(o, "wrap", EnumJs.Wrap(w));
+        if (Crop is { } cr) Js.Set(o, "crop", cr.ToJs(e));
+        return o;
+    }
+}
+
+/// <summary>Image crop insets (OOXML a:srcRect): 0..1 fractions trimmed off each edge.</summary>
+public sealed record ImageCrop(double Left, double Top, double Right, double Bottom)
+{
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        Js.Set(o, "left", Left);
+        Js.Set(o, "top", Top);
+        Js.Set(o, "right", Right);
+        Js.Set(o, "bottom", Bottom);
         return o;
     }
 }
@@ -451,6 +562,16 @@ public sealed record TableOptions
     public string? Shading { get; init; }
     /// <summary>Table-level default cell margins (w:tblPr/w:tblCellMar).</summary>
     public CellMargin? CellMargin { get; init; }
+    /// <summary>Table indent from the leading content edge (w:tblPr/w:tblInd), in px.</summary>
+    public double? Indent { get; init; }
+    /// <summary>Render columns right-to-left (w:tblPr/w:bidiVisual).</summary>
+    public bool? BidiVisual { get; init; }
+    /// <summary>Floating-table overlap behavior (w:tblPr/w:tblOverlap).</summary>
+    public TableOverlap? Overlap { get; init; }
+    /// <summary>Table caption / title (w:tblPr/w:tblCaption) — accessibility metadata.</summary>
+    public string? Caption { get; init; }
+    /// <summary>Table description / alt text (w:tblPr/w:tblDescription) — accessibility metadata.</summary>
+    public string? Description { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -464,6 +585,11 @@ public sealed record TableOptions
         if (Borders is { } bd) Js.Set(o, "borders", bd.ToJs(e));
         if (Shading is { } sh) Js.Set(o, "shading", sh);
         if (CellMargin is { } cm) Js.Set(o, "cellMargin", cm.ToJs(e));
+        if (Indent is { } ind) Js.Set(o, "indent", ind);
+        if (BidiVisual is { } bv) Js.Set(o, "bidiVisual", bv);
+        if (Overlap is { } ov) Js.Set(o, "overlap", EnumJs.Overlap(ov));
+        if (Caption is { } cap) Js.Set(o, "caption", cap);
+        if (Description is { } desc) Js.Set(o, "description", desc);
         return o;
     }
 }
@@ -484,6 +610,14 @@ public sealed record CellSpec
     public PreferredWidth? PreferredWidth { get; init; }
     /// <summary>Vertical content alignment (w:vAlign). Absent = top.</summary>
     public CellVAlign? VAlign { get; init; }
+    /// <summary>Text flow direction (w:textDirection). Absent = lrTb (horizontal).</summary>
+    public CellTextDirection? TextDirection { get; init; }
+    /// <summary>Suppress content wrapping (w:noWrap).</summary>
+    public bool? NoWrap { get; init; }
+    /// <summary>Fit text to the cell width (w:tcFitText).</summary>
+    public bool? FitText { get; init; }
+    /// <summary>Ignore the end-of-cell mark for row height (w:hideMark).</summary>
+    public bool? HideMark { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -498,6 +632,10 @@ public sealed record CellSpec
         if (Margin is { } mg) Js.Set(o, "margin", mg.ToJs(e));
         if (PreferredWidth is { } pw) Js.Set(o, "preferredWidth", pw.ToJs(e));
         if (VAlign is { } va) Js.Set(o, "vAlign", EnumJs.VAlign(va));
+        if (TextDirection is { } td) Js.Set(o, "textDirection", EnumJs.TextDir(td));
+        if (NoWrap is { } nw) Js.Set(o, "noWrap", nw);
+        if (FitText is { } ft) Js.Set(o, "fitText", ft);
+        if (HideMark is { } hm) Js.Set(o, "hideMark", hm);
         return o;
     }
 }
@@ -517,6 +655,14 @@ public sealed record CellOptions
     public PreferredWidth? PreferredWidth { get; init; }
     /// <summary>Vertical content alignment (w:vAlign). Absent = top.</summary>
     public CellVAlign? VAlign { get; init; }
+    /// <summary>Text flow direction (w:textDirection). Absent = lrTb (horizontal).</summary>
+    public CellTextDirection? TextDirection { get; init; }
+    /// <summary>Suppress content wrapping (w:noWrap).</summary>
+    public bool? NoWrap { get; init; }
+    /// <summary>Fit text to the cell width (w:tcFitText).</summary>
+    public bool? FitText { get; init; }
+    /// <summary>Ignore the end-of-cell mark for row height (w:hideMark).</summary>
+    public bool? HideMark { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -530,6 +676,10 @@ public sealed record CellOptions
         if (Margin is { } mg) Js.Set(o, "margin", mg.ToJs(e));
         if (PreferredWidth is { } pw) Js.Set(o, "preferredWidth", pw.ToJs(e));
         if (VAlign is { } va) Js.Set(o, "vAlign", EnumJs.VAlign(va));
+        if (TextDirection is { } td) Js.Set(o, "textDirection", EnumJs.TextDir(td));
+        if (NoWrap is { } nw) Js.Set(o, "noWrap", nw);
+        if (FitText is { } ft) Js.Set(o, "fitText", ft);
+        if (HideMark is { } hm) Js.Set(o, "hideMark", hm);
         return o;
     }
 }
@@ -559,6 +709,31 @@ public sealed record SdtListItem(string Display, string Value)
         var o = Js.Obj(e);
         Js.Set(o, "display", Display);
         Js.Set(o, "value", Value);
+        return o;
+    }
+}
+
+/// <summary>Row-level properties (w:trPr) for a single <c>Row()</c> — fixed/min
+/// height, cant-split, and repeat-header. Mirrors the JS <c>RowOptions</c>.</summary>
+public sealed record RowOptions
+{
+    /// <summary>Fixed/minimum row height in px (w:trHeight). Pair with <see cref="HeightRule"/>.</summary>
+    public double? Height { get; init; }
+    /// <summary>How <see cref="Height"/> is enforced: AtLeast (min, grows with content — the
+    /// default) or Exact (pinned; taller content is clipped).</summary>
+    public RowHeightRule? HeightRule { get; init; }
+    /// <summary>Keep the whole row on one page — never split across a page/column break (w:cantSplit).</summary>
+    public bool? CantSplit { get; init; }
+    /// <summary>Repeat this row as a header at the top of each page the table continues onto (w:tblHeader).</summary>
+    public bool? Header { get; init; }
+
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        if (Height is { } h) Js.Set(o, "height", h);
+        if (HeightRule is { } r) Js.Set(o, "heightRule", r == RowHeightRule.Exact ? "exact" : "atLeast");
+        if (CantSplit is { } cs) Js.Set(o, "cantSplit", cs);
+        if (Header is { } hd) Js.Set(o, "header", hd);
         return o;
     }
 }
@@ -618,6 +793,8 @@ public sealed record ParaStylePatch
     public bool? KeepWithNext { get; init; }
     /// <summary>Never split this paragraph across pages/columns (docx w:keepLines).</summary>
     public bool? KeepLinesTogether { get; init; }
+    /// <summary>Suppress before/after spacing between adjacent same-style paragraphs (docx w:contextualSpacing).</summary>
+    public bool? ContextualSpacing { get; init; }
     /// <summary>Base writing direction (OOXML w:bidi).</summary>
     public Direction? Direction { get; init; }
     /// <summary>Outline level 0..8 (TOC levels 1..9; docx w:outlineLvl) — heading styles carry this.</summary>
@@ -639,6 +816,7 @@ public sealed record ParaStylePatch
         if (IndentFirstLinePx is { } ifl) Js.Set(o, "indentFirstLinePx", ifl);
         if (KeepWithNext is { } kwn) Js.Set(o, "keepWithNext", kwn);
         if (KeepLinesTogether is { } klt) Js.Set(o, "keepLinesTogether", klt);
+        if (ContextualSpacing is { } cs) Js.Set(o, "contextualSpacing", cs);
         if (Direction is { } dir) Js.Set(o, "direction", EnumJs.Dir(dir));
         if (OutlineLevel is { } ol) Js.Set(o, "outlineLevel", Math.Clamp(ol, 0, 8));
         if (PageBreakBefore is { } pbb) Js.Set(o, "pageBreakBefore", pbb);

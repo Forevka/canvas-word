@@ -19,6 +19,9 @@ export interface ImageOptions {
   align?: "left" | "center" | "right";
   /** 'block' (default): own line. 'square': floats per align, text wraps. */
   wrap?: "block" | "square";
+  /** Crop insets (OOXML a:srcRect), each a 0..1 fraction trimmed off that edge —
+   *  so widthPx/heightPx describe the cropped box. Absent = no crop. */
+  crop?: { left: number; top: number; right: number; bottom: number };
 }
 
 export interface ListItem {
@@ -99,7 +102,7 @@ export class StoryBuilder {
       throw new TypeError("image() requires positive widthPx and heightPx (no DOM to auto-measure in Node).");
     }
     const url = typeof src === "string" ? src : bytesToDataUrl(src.data, src.mime);
-    this.push(this.ctx.image(url, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.wrap));
+    this.push(this.ctx.image(url, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.wrap, opts.crop));
     return this;
   }
 

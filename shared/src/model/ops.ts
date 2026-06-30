@@ -15,6 +15,7 @@ import type {
   ParaStyle,
   Paragraph,
   Run,
+  RowProps,
   SdtProps,
   TableBlock,
   TableCell,
@@ -68,6 +69,7 @@ export type Op =
   | { type: "setTableAlign"; blockId: string; align: TableBlock["align"] | null }
   | { type: "insertTableRow"; tableId: string; rowIndex: number; row: TableRow }
   | { type: "removeTableRow"; tableId: string; rowIndex: number }
+  | { type: "setRowHeight"; tableId: string; rowIndex: number; height: NonNullable<RowProps["height"]> | null }
   | { type: "insertTableColumn"; tableId: string; colIndex: number; cells: TableCell[]; fractions?: number[] }
   | { type: "removeTableColumn"; tableId: string; colIndex: number }
   | { type: "setStylesheet"; stylesheet: import("./stylesheet").Stylesheet }
@@ -119,9 +121,17 @@ export interface ApplyResult {
 // ---------------------------------------------------------------------------
 // Run-list surgery (pure helpers)
 
+/** Compare two w:sym markers by value (font + code point). */
+function symbolEq(a: CharStyle["symbol"], b: CharStyle["symbol"]): boolean {
+  if (!a || !b) return !a === !b;
+  return a.font === b.font && a.char === b.char;
+}
+
 export function styleEq(a: CharStyle, b: CharStyle): boolean {
   return (
     a.fontFamily === b.fontFamily &&
+    a.fontFamilyComplexScript === b.fontFamilyComplexScript &&
+    a.fontFamilyEastAsia === b.fontFamilyEastAsia &&
     a.fontSizePx === b.fontSizePx &&
     a.bold === b.bold &&
     a.italic === b.italic &&
@@ -134,6 +144,8 @@ export function styleEq(a: CharStyle, b: CharStyle): boolean {
     (a.letterSpacingPx ?? 0) === (b.letterSpacingPx ?? 0) &&
     a.highlightColor === b.highlightColor &&
     a.verticalAlign === b.verticalAlign &&
+    !!a.caps === !!b.caps && // case transforms change the rendered glyphs — never merge across
+    !!a.smallCaps === !!b.smallCaps &&
     a.link === b.link &&
     a.footnoteRef === b.footnoteRef && // adjacent refs must never merge into one run
     sdtPathEq(a.sdtPath, b.sdtPath) && // content-control boundaries (incl. nesting) survive normalization
@@ -151,7 +163,8 @@ export function styleEq(a: CharStyle, b: CharStyle): boolean {
     !!a.emboss === !!b.emboss &&
     !!a.imprint === !!b.imprint &&
     (a.fitTextPx ?? 0) === (b.fitTextPx ?? 0) &&
-    runBorderEq(a.runBorder, b.runBorder)
+    runBorderEq(a.runBorder, b.runBorder) &&
+    symbolEq(a.symbol, b.symbol) // symbol glyphs (w:sym) carry font+codepoint — never merge with text
   );
 }
 
@@ -855,6 +868,30 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
         inverse: { type: "insertTableRow", tableId: op.tableId, rowIndex: op.rowIndex, row: removed },
         mapPosition: (p) =>
           removedIds.has(p.blockId) && fallback ? { blockId: fallback.id, offset: 0 } : p,
+        dirtyBlockIds: [op.tableId],
+      };
+    }
+
+    case "setRowHeight": {
+      // Interactive row-drag height (w:trHeight). Mirrors the column op: replace a
+      // single row's `props.height`, leaving the rest of its props untouched, and
+      // invert to the prior height (null = none) for a free undo.
+      const { where, bi, block } = mustTable(doc, op.tableId);
+      const row = block.rows[op.rowIndex];
+      if (!row) throw new Error("setRowHeight: no such row");
+      const old = row.props?.height ?? null;
+      const nextRow: TableRow = { ...row };
+      const props: RowProps = { ...(row.props ?? {}) };
+      if (op.height) props.height = op.height;
+      else delete props.height;
+      if (Object.keys(props).length) nextRow.props = props;
+      else delete nextRow.props;
+      const rows = block.rows.slice();
+      rows[op.rowIndex] = nextRow;
+      return {
+        doc: replaceTable(doc, where, bi, { ...block, rows }),
+        inverse: { type: "setRowHeight", tableId: op.tableId, rowIndex: op.rowIndex, height: old },
+        mapPosition: identity,
         dirtyBlockIds: [op.tableId],
       };
     }

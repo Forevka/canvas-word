@@ -24,8 +24,8 @@ import type {
   IRTableRow,
 } from "./types";
 import { decodeBorders, decodeShdFill } from "./borders";
-import { decodeParaProps, decodeRunProps } from "./props";
-import { attr, children, el, els, findDeep, numAttr, parseXml, rootEl, textOf, val, type XmlNode } from "./xml";
+import { decodeLineNumbering, decodeParaProps, decodeRunProps } from "./props";
+import { attr, children, el, els, findDeep, numAttr, onOff, parseXml, rootEl, textOf, val, type XmlNode } from "./xml";
 import { ommlToMathml } from "../../mathml/fromOmml";
 
 interface ParseCtx {
@@ -461,6 +461,23 @@ function parseRun(r: XmlNode, out: IRInline[], ctx: ParseCtx, field: FieldState)
         case "w:noBreakHyphen":
           text += "‑";
           break;
+        case "w:sym": {
+          // A symbol-font glyph (font + hex code point). Flush pending text, then
+          // emit a standalone run carrying the symbol marker; its text is the
+          // decoded glyph so layout/paint render it in the symbol font.
+          const font = attr(node, "w:font");
+          const charHex = attr(node, "w:char");
+          if (font && charHex) {
+            flush();
+            out.push({
+              kind: "run",
+              text: symbolGlyph(charHex),
+              props: { ...props, symbol: { font, char: charHex.toUpperCase() } },
+              ...(field.resultFieldId ? { fieldId: field.resultFieldId } : {}),
+            });
+          }
+          break;
+        }
         case "w:drawing": {
           flush();
           const image = parseDrawing(node, ctx);
@@ -513,10 +530,20 @@ function parseRun(r: XmlNode, out: IRInline[], ctx: ParseCtx, field: FieldState)
           }
           break;
         }
+        case "w:endnoteReference": {
+          // The marker run: text becomes the note number in mapToModel.
+          const enId = attr(node, "w:id");
+          if (enId !== undefined) {
+            flush();
+            out.push({ kind: "run", text: "", props: { ...props, endnoteId: enId } });
+          }
+          break;
+        }
         case "w:footnoteRef":
-          break; // the auto-number placeholder inside a footnote BODY — engine paints it
+        case "w:endnoteRef":
+          break; // the auto-number placeholder inside a note BODY — engine paints it
         default:
-          break; // w:rPr, w:lastRenderedPageBreak, w:endnoteReference, …
+          break; // w:rPr, w:lastRenderedPageBreak, …
       }
     }
   };
@@ -615,6 +642,16 @@ function handleFldChar(
 // ---------------------------------------------------------------------------
 // Images
 
+/** Decode a w:sym/@w:char hex code point to its glyph. Word stores symbol-font
+ *  glyphs in the Private-Use range (e.g. "F0E0"); we render that code point in the
+ *  symbol font. Falls back to a replacement char for an unparseable code. */
+function symbolGlyph(charHex: string): string {
+  const cp = parseInt(charHex, 16);
+  // Guard the full valid range — String.fromCodePoint throws RangeError above
+  // 0x10FFFF, so a malformed w:char must fall back instead of aborting the import.
+  return Number.isFinite(cp) && cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : "�";
+}
+
 /** DrawingML: w:drawing → wp:inline|wp:anchor → … → a:blip r:embed. The exact
  *  nesting varies by producer, so the blip is found by deep search. */
 function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
@@ -633,6 +670,19 @@ function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
   if (cx !== undefined) image.widthEmu = cx;
   const cy = numAttr(extent, "cy");
   if (cy !== undefined) image.heightEmu = cy;
+  // a:srcRect — crop insets in 1/1000 of a percent (so 10% = 10000). Normalize to
+  // a 0..1 fraction per edge; skip a degenerate rect (would crop the whole image).
+  const srcRect = findDeep(container, "a:srcRect");
+  if (srcRect) {
+    const inset = (name: string): number => {
+      const v = numAttr(srcRect, name);
+      return v !== undefined && Number.isFinite(v) ? v / 100000 : 0;
+    };
+    const crop = { left: inset("l"), top: inset("t"), right: inset("r"), bottom: inset("b") };
+    if ((crop.left || crop.top || crop.right || crop.bottom) && crop.left + crop.right < 1 && crop.top + crop.bottom < 1) {
+      image.crop = crop;
+    }
+  }
   if (anchor) {
     // Square/tight/through wrap maps onto the model's "square" float; wrapNone
     // (behind/in-front of text) becomes an absolutely-positioned anchor; only
@@ -732,6 +782,28 @@ function decodeCellMargin(node: XmlNode | undefined): IRCellMargin | undefined {
   return Object.keys(m).length > 0 ? m : undefined;
 }
 
+/** w:trPr → row properties. w:trHeight carries a height (twips) + an hRule
+ *  ("auto"/"atLeast"/"exact"); an "auto" rule (or absent) is a pure hint we drop,
+ *  keeping only enforceable atLeast/exact heights. w:cantSplit and w:tblHeader are
+ *  on/off toggles. Returns undefined when no enforceable property is present. */
+function parseRowProps(trPr: XmlNode | undefined): IRTableRow["props"] | undefined {
+  if (!trPr) return undefined;
+  const props: NonNullable<IRTableRow["props"]> = {};
+  const trH = el(trPr, "w:trHeight");
+  if (trH) {
+    const h = numAttr(trH, "w:val");
+    const rule = attr(trH, "w:hRule");
+    // Only "atLeast"/"exact" pin the height; "auto" (the default) leaves it to content.
+    if (h !== undefined && h > 0 && (rule === "atLeast" || rule === "exact")) {
+      props.heightTwips = h;
+      props.heightRule = rule;
+    }
+  }
+  if (onOff(el(trPr, "w:cantSplit"))) props.cantSplit = true;
+  if (onOff(el(trPr, "w:tblHeader"))) props.tblHeader = true;
+  return Object.keys(props).length > 0 ? props : undefined;
+}
+
 function parseTable(tbl: XmlNode, ctx: ParseCtx): IRTable {
   const rows: IRTableRow[] = [];
   for (const tr of els(tbl, "w:tr")) {
@@ -739,7 +811,10 @@ function parseTable(tbl: XmlNode, ctx: ParseCtx): IRTable {
     for (const tc of els(tr, "w:tc")) {
       cells.push(parseCell(tc, ctx));
     }
-    rows.push({ cells });
+    const row: IRTableRow = { cells };
+    const props = parseRowProps(el(tr, "w:trPr"));
+    if (props) row.props = props;
+    rows.push(row);
   }
   const table: IRTable = { kind: "table", rows };
   const tblGrid = el(tbl, "w:tblGrid");
@@ -796,6 +871,28 @@ function parseTable(tbl: XmlNode, ctx: ParseCtx): IRTable {
     const tblJcVal = tblJc ? attr(tblJc, "w:val") : undefined;
     if (tblJcVal === "center") table.align = "center";
     else if (tblJcVal === "right" || tblJcVal === "end") table.align = "right";
+    // w:tblInd — table indent from the leading edge. Only dxa (twips) is meaningful
+    // for placement; a 0 or pct/auto indent round-trips as absent.
+    const tblInd = el(tblPr, "w:tblInd");
+    if (tblInd) {
+      const indType = attr(tblInd, "w:type");
+      const indVal = numAttr(tblInd, "w:w");
+      if (indVal !== undefined && indVal !== 0 && (indType === "dxa" || indType === undefined)) {
+        table.indentTwips = indVal;
+      }
+    }
+    // w:bidiVisual — RTL visual column order (a CT_OnOff toggle).
+    if (onOff(el(tblPr, "w:bidiVisual"))) table.bidiVisual = true;
+    // w:tblOverlap — floating-table overlap behavior. "overlap" is Word's default,
+    // so only "never" carries information; we still round-trip an explicit "overlap".
+    const overlapVal = val(tblPr, "w:tblOverlap");
+    if (overlapVal === "never") table.overlap = "never";
+    else if (overlapVal === "overlap") table.overlap = "overlap";
+    // w:tblCaption / w:tblDescription — accessibility title + alt text.
+    const caption = val(tblPr, "w:tblCaption");
+    if (caption) table.caption = caption;
+    const description = val(tblPr, "w:tblDescription");
+    if (description) table.description = description;
   }
   return table;
 }
@@ -839,6 +936,15 @@ function parseCell(tc: XmlNode, ctx: ParseCtx): IRTableCell {
     const vAlignEl = el(tcPr, "w:vAlign");
     const vAlign = vAlignEl && attr(vAlignEl, "w:val");
     if (vAlign === "center" || vAlign === "bottom") cell.vAlign = vAlign;
+    // w:textDirection — text flow direction. "lrTb" is the default (absent).
+    const textDir = val(tcPr, "w:textDirection");
+    if (textDir === "tbRl" || textDir === "btLr" || textDir === "lrTbV" || textDir === "tbRlV" || textDir === "tbLrV") {
+      cell.textDirection = textDir;
+    }
+    // w:noWrap / w:tcFitText / w:hideMark — CT_OnOff cell toggles.
+    if (onOff(el(tcPr, "w:noWrap"))) cell.noWrap = true;
+    if (onOff(el(tcPr, "w:tcFitText"))) cell.fitText = true;
+    if (onOff(el(tcPr, "w:hideMark"))) cell.hideMark = true;
   }
   return cell;
 }
@@ -965,6 +1071,10 @@ function parseSection(sectPr: XmlNode, warnings: WarningSink): IRSection {
   }
   const pgNumStart = numAttr(el(sectPr, "w:pgNumType"), "w:start");
   if (pgNumStart !== undefined) section.pageNumberStart = pgNumStart;
+  const lnNum = decodeLineNumbering(el(sectPr, "w:lnNumType"));
+  if (lnNum) section.lineNumbering = lnNum;
+  const bodyType = val(sectPr, "w:type");
+  if (bodyType === "evenPage" || bodyType === "oddPage") section.breakType = bodyType;
   return section;
 }
 
@@ -1021,6 +1131,49 @@ export function parseFootnotesXml(
     const blocks: IRBlock[] = [];
     walkBlocks(children(note), blocks, ctx);
     out.set(fnId, blocks);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Endnotes (endnotes.xml) — mirror of parseFootnotesXml. Endnotes lay out at
+// the END of the document rather than each page bottom; the IR is identical.
+
+/** endnotes.xml → IR block stories keyed by endnote id. The standard
+ *  separator/continuation pseudo-notes (type attrs) are skipped; only real
+ *  notes are returned. Each note's leading w:endnoteRef placeholder is dropped
+ *  (parseRun ignores it) — the engine paints the number. */
+export function parseEndnotesXml(
+  xmlText: string,
+  partName: string,
+  warnings: WarningSink,
+  sdts: Record<string, IRSdtProps> = {},
+): Map<string, IRBlock[]> {
+  const out = new Map<string, IRBlock[]>();
+  const root = rootEl(parseXml(xmlText, partName), "w:endnotes");
+  if (!root) return out;
+  const ctx: ParseCtx = {
+    warnings,
+    fieldTokens: false,
+    sdts,
+    nextSdt: { n: Object.keys(sdts).length },
+    blockSdtStack: [],
+    inlineSdtStack: [],
+    pendingBookmarks: [],
+    currentBookmarks: null,
+    pendingMarkers: [],
+    currentMarkers: null,
+    trackFields: false,
+    fieldTrack: newFieldTrack(),
+  };
+  for (const note of els(root, "w:endnote")) {
+    const enId = attr(note, "w:id");
+    if (enId === undefined) continue;
+    const type = attr(note, "w:type"); // "separator" | "continuationSeparator" | …
+    if (type) continue; // pseudo-notes, not real endnotes
+    const blocks: IRBlock[] = [];
+    walkBlocks(children(note), blocks, ctx);
+    out.set(enId, blocks);
   }
   return out;
 }

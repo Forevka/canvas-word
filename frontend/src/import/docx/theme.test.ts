@@ -8,8 +8,8 @@ const THEME_XML = `<?xml version="1.0"?>
 <a:theme xmlns:a="urn">
   <a:themeElements>
     <a:fontScheme>
-      <a:majorFont><a:latin typeface="Calibri Light"/></a:majorFont>
-      <a:minorFont><a:latin typeface="Calibri"/></a:minorFont>
+      <a:majorFont><a:latin typeface="Calibri Light"/><a:ea typeface="Yu Gothic Light"/><a:cs typeface="Times New Roman"/></a:majorFont>
+      <a:minorFont><a:latin typeface="Calibri"/><a:ea typeface="Yu Gothic"/><a:cs typeface="Arial"/></a:minorFont>
     </a:fontScheme>
     <a:clrScheme>
       <a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1>
@@ -26,6 +26,14 @@ describe("parseThemeXml", () => {
     const t = parseThemeXml(THEME_XML);
     expect(t.majorLatin).toBe("Calibri Light");
     expect(t.minorLatin).toBe("Calibri");
+  });
+
+  it("extracts the East-Asian (a:ea) and complex-script (a:cs) typefaces", () => {
+    const t = parseThemeXml(THEME_XML);
+    expect(t.majorEastAsia).toBe("Yu Gothic Light");
+    expect(t.minorEastAsia).toBe("Yu Gothic");
+    expect(t.majorComplexScript).toBe("Times New Roman");
+    expect(t.minorComplexScript).toBe("Arial");
   });
 
   it("extracts srgbClr scheme colors by slot name", () => {
@@ -79,13 +87,20 @@ describe("themeColor", () => {
 describe("themeFont", () => {
   const theme = parseThemeXml(THEME_XML);
 
-  it("maps any major* slot to the major latin typeface", () => {
+  it("maps major HAnsi/Ascii slots to the major latin typeface", () => {
     expect(themeFont(theme, "majorHAnsi")).toBe("Calibri Light");
-    expect(themeFont(theme, "majorBidi")).toBe("Calibri Light");
+    expect(themeFont(theme, "majorAscii")).toBe("Calibri Light");
   });
 
-  it("maps any minor* slot to the minor latin typeface", () => {
+  it("maps minor HAnsi/Ascii slots to the minor latin typeface", () => {
     expect(themeFont(theme, "minorHAnsi")).toBe("Calibri");
+  });
+
+  it("maps EastAsia / Bidi slots to their own (non-latin) theme faces", () => {
+    expect(themeFont(theme, "majorEastAsia")).toBe("Yu Gothic Light");
+    expect(themeFont(theme, "minorEastAsia")).toBe("Yu Gothic");
+    expect(themeFont(theme, "majorBidi")).toBe("Times New Roman");
+    expect(themeFont(theme, "minorBidi")).toBe("Arial");
   });
 
   it("returns undefined for a non major/minor slot", () => {

@@ -158,6 +158,9 @@ export interface PaintScheduler {
   /** Highlight the column boundary the pointer is poised to drag (a vertical
    *  accent line + soft grab-zone band over the table chunk). Null clears. */
   setColumnGuide(guide: ColumnGuide | null): void;
+  /** Highlight the row boundary the pointer is poised to drag (a horizontal accent
+   *  line + soft grab-zone band over the table chunk). Null clears. */
+  setRowGuide(guide: RowGuide | null): void;
   setCaret(caret: CaretRect | null): void;
   /** Remote collaborators' carets (DOM overlays with name flags). Replaces the
    *  whole set each call; pass [] to clear. */
@@ -256,6 +259,15 @@ export interface ColumnGuide {
   height: number;
 }
 
+/** A row-resize hover guide: the boundary y and the table chunk's horizontal span
+ *  on `pageIndex`, all in page-local document coords. */
+export interface RowGuide {
+  pageIndex: number;
+  y: number;
+  x: number;
+  width: number;
+}
+
 let caretCssInjected = false;
 function injectCaretCss(): void {
   if (caretCssInjected) return;
@@ -350,6 +362,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
   let showFormattingMarks = false;
   let lastCaret: CaretRect | null = null;
   let colGuide: ColumnGuide | null = null;
+  let rowGuide: RowGuide | null = null;
   // Remote collaborators' presence: per siteId a caret overlay (colored bar +
   // name flag) plus selection-highlight rect overlays, repositioned on zoom.
   const remoteCaretEls = new Map<string, { caret: HTMLDivElement; sels: HTMLDivElement[] }>();
@@ -712,15 +725,26 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       }
     }
 
-    // 3b. footnote separator rule (1/3 content width, Word style)
-    if (page.footnoteRuleY !== undefined) {
+    // 3b. footnote / endnote separator rule (1/3 content width, Word style)
+    for (const ruleY of [page.footnoteRuleY, page.endnoteRuleY]) {
+      if (ruleY === undefined) continue;
       const cw = page.widthPx - page.marginPx.left - page.marginPx.right;
       ctx.strokeStyle = theme.footnoteRule;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(page.marginPx.left, page.footnoteRuleY + 0.5);
-      ctx.lineTo(page.marginPx.left + cw * FOOTNOTE_RULE_WIDTH_FRACTION, page.footnoteRuleY + 0.5);
+      ctx.moveTo(page.marginPx.left, ruleY + 0.5);
+      ctx.lineTo(page.marginPx.left + cw * FOOTNOTE_RULE_WIDTH_FRACTION, ruleY + 0.5);
       ctx.stroke();
+    }
+
+    // 3c. margin line numbers (w:lnNumType) — pre-measured, right-aligned labels.
+    if (page.lineNumbers) {
+      ctx.textBaseline = "alphabetic";
+      for (const ln of page.lineNumbers) {
+        ctx.font = charStyleToFont(ln.style);
+        ctx.fillStyle = ln.style.color;
+        ctx.fillText(ln.text, ln.x, ln.baseline);
+      }
     }
 
     // 4. margin-band stories (headers/footers) — pre-laid-out rich blocks,
@@ -784,6 +808,19 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       ctx.fillRect(gx - 3, colGuide.y, 6, colGuide.height); // grab zone (matches the 6px grip)
       ctx.globalAlpha = 1;
       ctx.fillRect(gx - 0.75, colGuide.y, 1.5, colGuide.height); // the line itself
+      ctx.restore();
+    }
+
+    // 6b. row-resize hover guide: the horizontal boundary the pointer will drag,
+    //     drawn as a crisp accent line with a soft grab-zone band behind it.
+    if (rowGuide && rowGuide.pageIndex === page.index) {
+      const gy = rowGuide.y;
+      ctx.save();
+      ctx.fillStyle = theme.accent;
+      ctx.globalAlpha = 0.16;
+      ctx.fillRect(rowGuide.x, gy - 3, rowGuide.width, 6); // grab zone (matches the 6px grip)
+      ctx.globalAlpha = 1;
+      ctx.fillRect(rowGuide.x, gy - 0.75, rowGuide.width, 1.5); // the line itself
       ctx.restore();
     }
 
@@ -937,7 +974,18 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
         ctx.clip();
       }
       if (img.complete && img.naturalWidth > 0) {
-        ctx.drawImage(img, block.x, block.y, block.image.width, block.image.height);
+        const crop = block.image.crop;
+        if (crop) {
+          // a:srcRect crop: draw only the [left,1-right]×[top,1-bottom] source
+          // window into the (already cropped-size) destination box.
+          const sx = crop.left * img.naturalWidth;
+          const sy = crop.top * img.naturalHeight;
+          const sw = Math.max(1, (1 - crop.left - crop.right) * img.naturalWidth);
+          const sh = Math.max(1, (1 - crop.top - crop.bottom) * img.naturalHeight);
+          ctx.drawImage(img, sx, sy, sw, sh, block.x, block.y, block.image.width, block.image.height);
+        } else {
+          ctx.drawImage(img, block.x, block.y, block.image.width, block.image.height);
+        }
       } else {
         ctx.fillStyle = theme.imagePlaceholder;
         ctx.fillRect(block.x, block.y, block.image.width, block.image.height);
@@ -1285,6 +1333,22 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       if (colGuide) affected.add(colGuide.pageIndex);
       if (guide) affected.add(guide.pageIndex);
       colGuide = guide;
+      for (const i of affected) if (liveCanvases.has(i)) dirty.add(i);
+      schedule();
+    },
+
+    setRowGuide(guide: RowGuide | null): void {
+      // Value-dedupe: hover fires every mousemove; only repaint when it moves.
+      const same =
+        rowGuide === guide ||
+        (!!rowGuide && !!guide &&
+          rowGuide.pageIndex === guide.pageIndex && rowGuide.y === guide.y &&
+          rowGuide.x === guide.x && rowGuide.width === guide.width);
+      if (same) return;
+      const affected = new Set<number>();
+      if (rowGuide) affected.add(rowGuide.pageIndex);
+      if (guide) affected.add(guide.pageIndex);
+      rowGuide = guide;
       for (const i of affected) if (liveCanvases.has(i)) dirty.add(i);
       schedule();
     },

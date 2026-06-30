@@ -2,7 +2,7 @@
 // return an IR props bag, with the WarningSink capturing lossy decisions. We focus
 // on edge cases the roundtrip integration tests don't pin: on/off toggles,
 // underline none, justification aliases, hanging vs firstLine indent, outline-level
-// bounds, numId=0 sentinel, and the exact-line-spacing warning.
+// bounds, numId=0 sentinel, and fixed (exact/atLeast) line spacing.
 
 import { describe, expect, it } from "vitest";
 import { decodeParaProps, decodeRunProps } from "./props";
@@ -17,6 +17,13 @@ describe("decodeRunProps", () => {
     expect(decodeRunProps(rPr(`<w:b/>`)).bold).toBe(true);
     expect(decodeRunProps(rPr(`<w:i/>`)).italic).toBe(true);
     expect(decodeRunProps(rPr(`<w:strike/>`)).strikethrough).toBe(true);
+  });
+
+  it("decodes w:caps and w:smallCaps toggles", () => {
+    expect(decodeRunProps(rPr(`<w:caps/>`)).caps).toBe(true);
+    expect(decodeRunProps(rPr(`<w:smallCaps/>`)).smallCaps).toBe(true);
+    expect(decodeRunProps(rPr(`<w:caps w:val="0"/>`)).caps).toBe(false);
+    expect(decodeRunProps(rPr(`<w:smallCaps w:val="false"/>`)).smallCaps).toBe(false);
   });
 
   it("decodes a toggle turned off via w:val='0'/'false'", () => {
@@ -56,6 +63,29 @@ describe("decodeRunProps", () => {
     const p = decodeRunProps(rPr(`<w:rFonts w:ascii="Calibri" w:asciiTheme="minorHAnsi"/>`));
     expect(p.fontAscii).toBe("Calibri");
     expect(p.fontThemeAscii).toBe("minorHAnsi");
+  });
+
+  it("captures the complex-script and East-Asian rFonts slots (+ themes)", () => {
+    const p = decodeRunProps(
+      rPr(`<w:rFonts w:hAnsi="Calibri" w:cs="Arial" w:eastAsia="SimSun" w:eastAsiaTheme="minorEastAsia"/>`),
+    );
+    expect(p.fontHAnsi).toBe("Calibri");
+    expect(p.fontCs).toBe("Arial");
+    expect(p.fontEastAsia).toBe("SimSun");
+    expect(p.fontThemeEastAsia).toBe("minorEastAsia");
+  });
+
+  it("captures run-level character tracking (w:spacing)", () => {
+    expect(decodeRunProps(rPr(`<w:spacing w:val="40"/>`)).letterSpacingTwips).toBe(40);
+    expect(decodeRunProps(rPr(`<w:spacing w:val="-20"/>`)).letterSpacingTwips).toBe(-20);
+  });
+
+  it("captures theme tint/shade alongside the theme color", () => {
+    const tinted = decodeRunProps(rPr(`<w:color w:themeColor="accent1" w:themeTint="99"/>`));
+    expect(tinted.colorTheme).toBe("accent1");
+    expect(tinted.colorThemeTint).toBe("99");
+    const shaded = decodeRunProps(rPr(`<w:color w:themeColor="accent1" w:themeShade="80"/>`));
+    expect(shaded.colorThemeShade).toBe("80");
   });
 
   it("ignores highlight='none' but keeps a real highlight", () => {
@@ -132,12 +162,24 @@ describe("decodeParaProps", () => {
     expect(decode(`<w:spacing w:line="240"/>`).props.lineHeight).toBe(1);
   });
 
-  it("warns (and drops) exact/atLeast line spacing", () => {
-    const { props, warnings } = decode(`<w:spacing w:line="360" w:lineRule="exact"/>`);
+  it("decodes exact line spacing as fixed twips (no warning, no multiplier)", () => {
+    const { props, warnings } = decode(`<w:spacing w:line="420" w:lineRule="exact"/>`);
     expect(props.lineHeight).toBeUndefined();
-    expect(warnings.list).toEqual([
-      { code: "line-rule-exact", message: expect.stringContaining("line spacing") },
-    ]);
+    expect(props.lineRule).toBe("exact");
+    expect(props.lineExactTwips).toBe(420);
+    expect(warnings.list).toEqual([]);
+  });
+
+  it("decodes atLeast line spacing as fixed twips", () => {
+    const { props } = decode(`<w:spacing w:line="360" w:lineRule="atLeast"/>`);
+    expect(props.lineRule).toBe("atLeast");
+    expect(props.lineExactTwips).toBe(360);
+  });
+
+  it("ignores a zero atLeast floor (no-op)", () => {
+    const { props } = decode(`<w:spacing w:line="0" w:lineRule="atLeast"/>`);
+    expect(props.lineRule).toBeUndefined();
+    expect(props.lineExactTwips).toBeUndefined();
   });
 
   it("captures before/after spacing in twips", () => {
@@ -188,6 +230,12 @@ describe("decodeParaProps", () => {
     expect(p.keepWithNext).toBe(true);
     expect(p.keepLinesTogether).toBe(true);
     expect(p.pageBreakBefore).toBe(true);
+  });
+
+  it("decodes w:contextualSpacing (and its explicit off)", () => {
+    expect(decode(`<w:contextualSpacing/>`).props.contextualSpacing).toBe(true);
+    expect(decode(`<w:contextualSpacing w:val="0"/>`).props.contextualSpacing).toBe(false);
+    expect(decode(``).props.contextualSpacing).toBeUndefined();
   });
 
   it("collects tab stops, dropping 'clear' and 'bar' entries", () => {

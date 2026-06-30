@@ -33,3 +33,5 @@ perf/keystroke-burst-*.json
 out-node*/
 out-cs*/
 *.out.txt
+# per-worktree agent brief (pipeline cruft, never commit)
+TASK.md

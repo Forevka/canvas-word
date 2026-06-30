@@ -2355,6 +2355,19 @@ export function setTableColFractionsCmd(
     tr([{ type: "setTableColFractions", blockId: tableId, fractions }], state.selection, origin);
 }
 
+/** Set (or clear, with `null`) a single row's fixed/min height (w:trHeight). Drives
+ *  the interactive row-boundary drag — `"transient"` for live preview frames, then a
+ *  final committed op — mirroring {@link setTableColFractionsCmd}. */
+export function setRowHeightCmd(
+  tableId: string,
+  rowIndex: number,
+  height: NonNullable<NonNullable<TableRow["props"]>["height"]> | null,
+  origin: TransactionOrigin = "command",
+): Command {
+  return (state) =>
+    tr([{ type: "setRowHeight", tableId, rowIndex, height }], state.selection, origin);
+}
+
 /** Set a table's column-sizing mode. When switching to "fixed" (or cancelling
  *  autofit via a column drag), pass `freezeFractions` to pin the currently-
  *  rendered widths in the SAME transaction, so one undo reverts both. */

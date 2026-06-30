@@ -8,7 +8,7 @@
 // stays usable afterwards (rebuild-on-data-change just calls the author's
 // function again with fresh data).
 
-import type { BandContainer, Block, Document, ListLevel, ListNumberFormat, NamedStyle, SectionPatch, SectionProps, Stylesheet, TableStyle, TocOptions, TocSwitches } from "@cw/shared";
+import type { BandContainer, Block, Document, LineNumbering, ListLevel, ListNumberFormat, NamedStyle, SectionBreakType, SectionPatch, SectionProps, Stylesheet, TableStyle, TocOptions, TocSwitches } from "@cw/shared";
 import { buildTocInstruction, bulletListDefinition, defaultStylesheet, generateTocIntoDoc, multilevelListDefinition, numberListDefinition, styleById } from "@cw/shared";
 import { BuilderContext, type BuilderWarning } from "./blockFactory";
 import { StoryBuilder } from "./storyBuilder";
@@ -27,6 +27,10 @@ export interface PageSetup {
   headerDistancePx?: number;
   footerDistancePx?: number;
   pageNumberStart?: number;
+  /** Line numbering in the margin (w:lnNumType) for the document section. */
+  lineNumbering?: LineNumbering;
+  /** How the final (body) section starts: "nextPage" (default) or even/odd parity. */
+  breakType?: SectionBreakType;
 }
 
 export interface CreateOptions {
@@ -59,6 +63,12 @@ export interface SectionBreakOptions {
   /** Newspaper columns for the new section; null = single column. */
   columns?: { count: number; gapPx?: number } | null;
   pageNumberStart?: number;
+  /** How the new section begins: "nextPage" (default) or force its first page
+   *  onto an even/odd page number ("evenPage"/"oddPage", a blank filler page is
+   *  inserted when the running parity is wrong). */
+  breakType?: SectionBreakType;
+  /** Line numbering in the margin (w:lnNumType) for the new section. */
+  lineNumbering?: LineNumbering;
   header?: (s: StoryBuilder) => void;
   footer?: (s: StoryBuilder) => void;
   headerFirst?: (s: StoryBuilder) => void;
@@ -163,6 +173,16 @@ export class DocumentBuilder extends StoryBuilder {
     if (setup.headerDistancePx !== undefined) section.headerDistancePx = setup.headerDistancePx;
     if (setup.footerDistancePx !== undefined) section.footerDistancePx = setup.footerDistancePx;
     if (setup.pageNumberStart !== undefined) section.pageNumberStart = setup.pageNumberStart;
+    if (setup.lineNumbering !== undefined) section.lineNumbering = setup.lineNumbering;
+    if (setup.breakType !== undefined) section.breakType = setup.breakType;
+    return this;
+  }
+
+  /** Set the document's default tab interval in px (OOXML settings.xml
+   *  w:defaultTabStop). A `\t` running past the last explicit tab stop advances to
+   *  the next multiple of this. Non-positive values are ignored. */
+  defaultTabStop(px: number): this {
+    if (px > 0) this.ctx.doc.defaultTabStopPx = px;
     return this;
   }
 
@@ -246,10 +266,11 @@ export class DocumentBuilder extends StoryBuilder {
    *  columns, page-number restart, and its own header/footer bands). */
   sectionBreak(opts: SectionBreakOptions = {}): this {
     const patch = this.compileSectionPatch(opts);
+    const type: SectionBreakType = opts.breakType ?? "nextPage";
     const blocks = this.ctx.doc.blocks;
     const last = blocks[blocks.length - 1];
-    if (last && last.kind === "paragraph") last.style.sectionBreak = { type: "nextPage", props: patch };
-    else blocks.push(this.ctx.paragraph([], { sectionBreak: { type: "nextPage", props: patch } }));
+    if (last && last.kind === "paragraph") last.style.sectionBreak = { type, props: patch };
+    else blocks.push(this.ctx.paragraph([], { sectionBreak: { type, props: patch } }));
     return this;
   }
 
@@ -271,6 +292,11 @@ export class DocumentBuilder extends StoryBuilder {
     if (opts.margins !== undefined) patch.marginPx = { ...section.marginPx, ...opts.margins };
     if (opts.columns !== undefined) patch.columns = opts.columns === null ? null : { count: opts.columns.count, gapPx: opts.columns.gapPx ?? 48 };
     if (opts.pageNumberStart !== undefined) patch.pageNumberStart = opts.pageNumberStart;
+    // Line numbering is non-inheriting in the engine, so a new section without its
+    // own w:lnNumType would silently lose numbering the current section has. Carry
+    // the document section's setting forward by default; an explicit option wins.
+    if (opts.lineNumbering !== undefined) patch.lineNumbering = { ...opts.lineNumbering };
+    else if (section.lineNumbering !== undefined) patch.lineNumbering = { ...section.lineNumbering };
     const band = (cb?: (s: StoryBuilder) => void): Block[] | undefined => {
       if (!cb) return undefined;
       const blocks: Block[] = [];

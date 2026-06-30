@@ -9,7 +9,7 @@ import {
   materializeRichInlineLineRange,
   type RichInlineCursor,
 } from "@chenglou/pretext/rich-inline";
-import type { Block, CharStyle, Document, EquationBlock, ImageBlock, Paragraph, ParaStyle, Run, SectionPatch, SectionProps, TableBlock, TableCell, TabStop } from "@cw/shared";
+import type { Block, CharStyle, Document, EquationBlock, ImageBlock, LineNumbering, Paragraph, ParaStyle, Run, SectionBreakType, SectionPatch, SectionProps, TableBlock, TableCell, TabStop } from "@cw/shared";
 import { effectiveFractions, isHiddenParagraph } from "@cw/shared";
 import { formatListNumber, markerText, type ListDefinition, type ListLevel } from "@cw/shared";
 import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock, PlacedImage } from "./layoutTree";
@@ -28,6 +28,12 @@ const eqBox = (b: EquationBlock): MathBox => equationBox(b.equation, MATH_FONT_F
 /** Word's default tab interval when a `\t` runs past the last explicit stop
  *  (0.5 inch at 96 dpi). */
 const DEFAULT_TAB_STOP_PX = 48;
+
+/** Active default tab interval for the current layout pass — set from the
+ *  document's w:defaultTabStop (settings.xml) at the top of layout(), mirroring
+ *  the await-free module-level config the CJK fallback/font registry use. Falls
+ *  back to DEFAULT_TAB_STOP_PX for documents that don't override it. */
+let activeDefaultTabStopPx = DEFAULT_TAB_STOP_PX;
 
 /** Paint-only paragraph decoration (w:shd fill + w:pBdr border box) for a placed
  *  paragraph chunk. `boxWidth` is the content width between the paragraph's
@@ -183,6 +189,9 @@ export function createLayoutEngine(fontRegistry?: CustomFontRegistry, opts?: Lay
       // scriptSplitRuns reads the active fallback during this synchronous pass.
       setActiveCjkFallback(cjkFallback);
       applyCjkLocale(cjkLocale);
+      // Honor the document's w:defaultTabStop (settings.xml) for this pass; a `\t`
+      // past the last explicit stop advances by this interval (Word's behavior).
+      activeDefaultTabStopPx = doc.defaultTabStopPx && doc.defaultTabStopPx > 0 ? doc.defaultTabStopPx : DEFAULT_TAB_STOP_PX;
       const rawBand = options?.rawBand ?? null;
       touched = rawBand === null ? new Set<string>() : null;
       touchedBands = rawBand === null ? new Set<string>() : null;
@@ -306,13 +315,24 @@ function isHiddenLayoutSkip(p: Paragraph): boolean {
   return isHiddenParagraph(p) && !p.style.sectionBreak && !p.style.pageBreakBefore;
 }
 
+/** Line-box height for ONE line, honoring fixed line spacing (docx w:lineRule).
+ *  "exact" pins the box to `lineHeightPx` (taller glyphs clip); "atLeast" floors
+ *  it there but lets a taller line grow; "auto" (the default) scales the dominant
+ *  font size by the multiplier. `natural` is the line's glyph height (ascent +
+ *  descent of its tallest run). */
+function lineBoxHeight(style: ParaStyle, fontSizePx: number, natural: number): number {
+  if (style.lineRule === "exact") return style.lineHeightPx ?? natural;
+  if (style.lineRule === "atLeast") return Math.max(natural, style.lineHeightPx ?? 0);
+  return Math.max(natural, style.lineHeight * fontSizePx);
+}
+
 /** Default line metrics for a fragment-less line (empty paragraph / segment). */
 function emptyLineMetrics(p: Paragraph): { height: number; ascent: number } {
   const style = p.runs[0]?.style;
   const fontSize = style?.fontSizePx ?? 16;
   const m = style ? fontMetrics(charStyleToFont(style)) : { ascent: fontSize * 0.8, descent: fontSize * 0.2 };
   const natural = m.ascent + m.descent;
-  const height = Math.max(natural, p.style.lineHeight * fontSize);
+  const height = lineBoxHeight(p.style, fontSize, natural);
   return { height, ascent: (height - natural) / 2 + m.ascent };
 }
 
@@ -403,9 +423,29 @@ function breakNextLine(
   }
 
   const natural = maxAscent + maxDescent;
-  const height = Math.max(natural, p.style.lineHeight * maxFontSize);
-  const leading = (height - natural) / 2; // half-leading above and below
-  return { frags, width: line.width, height, ascent: leading + maxAscent, end: line.end };
+  const height = lineBoxHeight(p.style, maxFontSize, natural);
+  return { frags, width: line.width, height, ascent: lineBaseline(p.style.textAlignment, height, maxAscent, maxDescent), end: line.end };
+}
+
+/** Baseline offset from the line-box top for the line's shared baseline, per the
+ *  paragraph's w:textAlignment. "baseline"/absent and "center" both center the
+ *  natural text block via half-leading (Word's default); "top"/"bottom" hug the
+ *  respective edge of a tall line box. Mixed-size runs still share one baseline —
+ *  this shifts that baseline within the box rather than aligning each run's edge. */
+function lineBaseline(
+  textAlignment: ParaStyle["textAlignment"],
+  height: number,
+  maxAscent: number,
+  maxDescent: number,
+): number {
+  switch (textAlignment) {
+    case "top":
+      return maxAscent;
+    case "bottom":
+      return height - maxDescent;
+    default:
+      return (height - (maxAscent + maxDescent)) / 2 + maxAscent; // center / baseline
+  }
 }
 
 interface RawLine {
@@ -429,8 +469,9 @@ interface RawLine {
  *  default-interval multiple. */
 function resolveTabStop(curX: number, stops: TabStop[], contentWidth: number): TabStop {
   for (const s of stops) if (s.posPx > curX + 0.5) return s;
-  let pos = (Math.floor(curX / DEFAULT_TAB_STOP_PX) + 1) * DEFAULT_TAB_STOP_PX;
-  if (pos <= curX) pos = curX + DEFAULT_TAB_STOP_PX;
+  const interval = activeDefaultTabStopPx;
+  let pos = (Math.floor(curX / interval) + 1) * interval;
+  if (pos <= curX) pos = curX + interval;
   return { posPx: Math.min(pos, Math.max(curX + 1, contentWidth)), align: "left", leader: "none" };
 }
 
@@ -446,6 +487,11 @@ function decimalPrefixWidth(runs: Run[]): number {
   return measureTextWidth(m < 0 ? text : text.slice(0, m + 1), font);
 }
 const DEFAULT_DECIMAL_STYLE = { fontFamily: "Georgia, serif", fontSizePx: 16 } as CharStyle;
+
+/** Paint style for margin line numbers (w:lnNumType) — small, muted, like Word. */
+const LINE_NUMBER_STYLE = { fontFamily: "Georgia, serif", fontSizePx: 12, color: "#9aa0a6" } as CharStyle;
+/** Default gap (px) between the line numbers and the text edge when w:distance is absent. */
+const LINE_NUMBER_DISTANCE = 18;
 
 /** Lay out a `\t`-containing segment. Each tab-delimited piece is positioned at
  *  the next tab stop (left/center/right/decimal, with optional leaders); the
@@ -502,7 +548,7 @@ function layoutTabbedSegment(
   const flush = (isLast: boolean): void => {
     if (maxH === 0 && baseStyle) {
       const fm = fontMetrics(charStyleToFont(baseStyle));
-      maxH = Math.max(fm.ascent + fm.descent, p.style.lineHeight * baseStyle.fontSizePx);
+      maxH = lineBoxHeight(p.style, baseStyle.fontSizePx, fm.ascent + fm.descent);
       maxA = (maxH - (fm.ascent + fm.descent)) / 2 + fm.ascent;
     }
     out.push({
@@ -906,6 +952,9 @@ export function effectiveSection(base: SectionProps, patch: SectionPatch): Secti
   if (pageColorHex !== undefined) out.pageColorHex = pageColorHex;
   const pageBorders = patch.pageBorders ?? base.pageBorders;
   if (pageBorders !== undefined) out.pageBorders = pageBorders;
+  // Line numbering is a section's OWN property (like page-number restart): a
+  // section either declares its own w:lnNumType or has none — it never inherits.
+  if (patch.lineNumbering !== undefined) out.lineNumbering = patch.lineNumbering;
   for (const key of BAND_KEYS) {
     const blocks = patch[key] ?? base[key];
     if (blocks) out[key] = blocks;
@@ -932,6 +981,9 @@ interface ResolvedSection {
   props: SectionProps;
   /** Index (inclusive) of this section's last top-level block. */
   endBlock: number;
+  /** The OOXML w:type that governs how THIS section's first page begins
+   *  ("nextPage"/"evenPage"/"oddPage"). Read when the engine starts the section. */
+  breakType: SectionBreakType;
 }
 
 export function resolveSections(doc: Document): ResolvedSection[] {
@@ -939,10 +991,16 @@ export function resolveSections(doc: Document): ResolvedSection[] {
   for (let i = 0; i < doc.blocks.length; i++) {
     const b = doc.blocks[i]!;
     if (b.kind === "paragraph" && b.style.sectionBreak) {
-      out.push({ props: effectiveSection(doc.section, b.style.sectionBreak.props), endBlock: i });
+      out.push({
+        props: effectiveSection(doc.section, b.style.sectionBreak.props),
+        endBlock: i,
+        breakType: b.style.sectionBreak.type,
+      });
     }
   }
-  out.push({ props: doc.section, endBlock: doc.blocks.length - 1 });
+  // The trailing body section keeps its own start type (even/odd parity), so a
+  // document whose final section begins on a parity page is honored, not flattened.
+  out.push({ props: doc.section, endBlock: doc.blocks.length - 1, breakType: doc.section.breakType ?? "nextPage" });
   return out;
 }
 
@@ -1285,28 +1343,43 @@ function layoutDocument(
     }
   };
 
+  /** Re-stamp the current (empty) page with the active section's geometry instead
+   *  of leaving a blank page when a section starts at a fresh page boundary. */
+  const restampEmptyPage = (): void => {
+    page.widthPx = sec.pageWidthPx;
+    page.heightPx = sec.pageHeightPx;
+    page.marginPx = sec.marginPx;
+    page.contentTopPx = contentTop;
+    page.contentBottomPx = contentBottom;
+    if (sec.pageColorHex !== undefined) page.pageColorHex = sec.pageColorHex;
+    else delete page.pageColorHex;
+    if (sec.pageBorders !== undefined) page.pageBorders = sec.pageBorders;
+    else delete page.pageBorders;
+    if (colSeparatorsX.length) page.columnSeparatorsX = colSeparatorsX.slice();
+    else delete page.columnSeparatorsX;
+    pageSections[page.index] = sec;
+    colIdx = 0;
+    colStartCount = 0;
+    y = contentTop;
+    floats = [];
+  };
+
   /** Section boundary: start the next section's first page. An EMPTY current
-   *  page is re-stamped with the new geometry instead of leaving a blank page. */
-  const startSectionPage = (): void => {
-    if (page.blocks.length === 0) {
-      page.widthPx = sec.pageWidthPx;
-      page.heightPx = sec.pageHeightPx;
-      page.marginPx = sec.marginPx;
-      page.contentTopPx = contentTop;
-      page.contentBottomPx = contentBottom;
-      if (sec.pageColorHex !== undefined) page.pageColorHex = sec.pageColorHex;
-      else delete page.pageColorHex;
-      if (sec.pageBorders !== undefined) page.pageBorders = sec.pageBorders;
-      else delete page.pageBorders;
-      if (colSeparatorsX.length) page.columnSeparatorsX = colSeparatorsX.slice();
-      else delete page.columnSeparatorsX;
-      pageSections[page.index] = sec;
-      colIdx = 0;
-      colStartCount = 0;
-      y = contentTop;
-      floats = [];
-    } else {
-      hardPage();
+   *  page is re-stamped with the new geometry instead of leaving a blank page.
+   *  For an evenPage/oddPage break the section's first content page must land on
+   *  an even/odd page number — a blank filler page is inserted when the running
+   *  parity is wrong (Word's behavior). Parity is read off the provisional 1-based
+   *  page number, which equals the printed number absent a pageNumberStart restart. */
+  const startSectionPage = (breakType: SectionBreakType): void => {
+    if (page.blocks.length === 0) restampEmptyPage();
+    else hardPage();
+    if (breakType === "evenPage" || breakType === "oddPage") {
+      const wantEven = breakType === "evenPage";
+      if ((page.number % 2 === 0) !== wantEven) {
+        // Current page is the wrong parity: leave it blank (the filler) and push a
+        // fresh page (hardPage stamps it from the active section) for the content.
+        hardPage();
+      }
     }
   };
 
@@ -1459,10 +1532,13 @@ function layoutDocument(
         take = remaining;
       } else {
         take = fit;
+        // Widow/orphan control is Word's default (ON); w:widowControl="0" disables it,
+        // letting a lone first/last line break across the page boundary.
+        const widow = block.style.widowControl !== false;
         // Widow: never push a single last line to the next page — give it company.
-        if (remaining - take === 1) take -= WIDOW_MIN - 1;
+        if (widow && remaining - take === 1) take -= WIDOW_MIN - 1;
         // Orphan: at the paragraph's start, keep ≥2 lines here or move it whole.
-        if (i === 0 && take > 0 && take < ORPHAN_MIN) take = 0;
+        if (widow && i === 0 && take > 0 && take < ORPHAN_MIN) take = 0;
         // Forced progress: in an empty column the rules yield (a line taller than
         // the page, or a 3-line paragraph that can't satisfy 2+2) — place what fits.
         if (take <= 0) take = !colHasContent() ? Math.max(1, fit) : 0;
@@ -1537,7 +1613,7 @@ function layoutDocument(
       case "line": oy = y; break; // current flow position
       default: oy = sec.marginPx.top; break; // margin
     }
-    const placedImage: PlacedImage = { src: img.src, width: img.widthPx, height: img.heightPx, z: a.z ?? 0 };
+    const placedImage: PlacedImage = { src: img.src, width: img.widthPx, height: img.heightPx, z: a.z ?? 0, ...(img.crop ? { crop: img.crop } : {}) };
     if (a.behind) placedImage.behind = true;
     else placedImage.front = true;
     page.blocks.push({
@@ -1563,7 +1639,7 @@ function layoutDocument(
       y,
       firstLineIndex: 0,
       lines: [],
-      image: { src: img.src, width: img.widthPx, height: img.heightPx },
+      image: { src: img.src, width: img.widthPx, height: img.heightPx, ...(img.crop ? { crop: img.crop } : {}) },
     });
     if (floating) {
       // Text flows beside the image: register the float, do NOT advance y.
@@ -1728,10 +1804,33 @@ function layoutDocument(
     if (hasRowSpan && colHasContent() && y + m.height > bottomY() && m.height <= contentBottom - contentTop) {
       newPage();
     }
+    // Repeat-header rows (w:tblHeader): the LEADING contiguous header rows are
+    // re-drawn at the top of every continuation chunk. They appear normally inside
+    // the first chunk (rows 0..); on later pages we place them as a SEPARATE table
+    // block above the data chunk, which keeps each placed block's rows contiguous
+    // (the invariant geometry/cellRangeRects rely on). Disabled when a vertical
+    // merge is present (a rowSpan can't survive being detached from its band) or
+    // when every row is a header (nothing left to continue).
+    let headerCount = 0;
+    while (headerCount < m.rows.length && m.block.rows[headerCount]?.props?.repeatHeader) headerCount++;
+    const repeatHeader = headerCount > 0 && headerCount < m.rows.length && !hasRowSpan;
+    const headerRows = repeatHeader ? m.rows.slice(0, headerCount) : [];
+    const headerHeight = headerRows.reduce((s, r) => s + r.height, 0);
+    // w:cantSplit needs no dedicated branch here: this paginator is ROW-ATOMIC — the
+    // chunk loop below only ever slices at row boundaries (m.rows.slice(ri, ri+fit))
+    // and places whole measured rows, so a row's cells are never broken across a page.
+    // Every row is therefore kept-whole already; `props.cantSplit` round-trips for
+    // fidelity and stays the marker to exclude a row should true intra-row splitting
+    // ever be added. (A row taller than a full empty column still overflows — there is
+    // nowhere to move it — matching the no-cantSplit case.)
     let ri = 0;
     while (ri < m.rows.length) {
+      // Once we are past the original header band, every continuation chunk reserves
+      // space for the repeated header at the top.
+      const repeat = repeatHeader && ri >= headerCount;
+      const topUsed = repeat ? headerHeight : 0;
       let fit = 0;
-      let yy = y;
+      let yy = y + topUsed;
       while (ri + fit < m.rows.length && yy + m.rows[ri + fit]!.height <= bottomY()) {
         yy += m.rows[ri + fit]!.height;
         fit++;
@@ -1752,7 +1851,7 @@ function layoutDocument(
         if (refs.length === 0) break;
         const { H, measures } = measureNotes(refs);
         if (measures.length === 0) break;
-        let chunkH = 0;
+        let chunkH = topUsed;
         for (let k = ri; k < ri + fit; k++) chunkH += m.rows[k]!.height;
         if (y + chunkH + H <= bottomY() || (fit === 1 && !colHasContent())) {
           pendingNotes = measures;
@@ -1767,6 +1866,11 @@ function layoutDocument(
         continue;
       }
       if (pendingNotes.length > 0) commitNotes(pendingNotes, pendingNotesH);
+      if (repeat) {
+        // Repeated header band — its own contiguous placed block at logical rows 0..
+        page.blocks.push(placeTable(m.block, headerRows, m.colWidths, colX() + m.xOffset, y, m.tableWidth, 0, cellListCtx));
+        y += headerHeight;
+      }
       const chunk = m.rows.slice(ri, ri + fit);
       page.blocks.push(placeTable(m.block, chunk, m.colWidths, colX() + m.xOffset, y, m.tableWidth, ri, cellListCtx));
       y += chunk.reduce((s, r) => s + r.height, 0);
@@ -1775,11 +1879,22 @@ function layoutDocument(
     }
   };
 
+  // Contextual spacing (docx w:contextualSpacing): a paragraph flagged with it
+  // drops its before/after spacing against an adjacent SAME-STYLE paragraph
+  // (Word's list-style default), so a run of same-style paragraphs sits tight
+  // while the run's outer edges keep their spacing. True when `cur` is such a
+  // paragraph sitting flush against same-named-style paragraph `adj`.
+  const csSuppresses = (cur: Measured | undefined, adj: Measured | undefined): boolean =>
+    cur?.kind === "para" &&
+    adj?.kind === "para" &&
+    cur.block.style.contextualSpacing === true &&
+    cur.block.style.namedStyle === adj.block.style.namedStyle;
+
   for (let bi = 0; bi < measured.length; bi++) {
     // Crossing into a new section: swap geometry, force its first page.
     if (bi > sections[secIdx]!.endBlock) {
       while (bi > sections[secIdx]!.endBlock) applySection(sections[++secIdx]!.props);
-      startSectionPage();
+      startSectionPage(sections[secIdx]!.breakType);
     }
     const m = measured[bi]!;
 
@@ -1822,14 +1937,18 @@ function layoutDocument(
     // Page break = fresh PAGE (even from column 2); column break = next column.
     if (block.style.pageBreakBefore === true && (page.blocks.length > 0 || colIdx > 0)) hardPage();
     else if (block.style.columnBreakBefore === true && colHasContent()) newPage();
-    y += block.style.spaceBeforePx;
+    // Contextual spacing: suppress this paragraph's outer spacing against an
+    // adjacent same-style paragraph (see csSuppresses).
+    const suppressBefore = csSuppresses(m, measured[bi - 1]);
+    const suppressAfter = csSuppresses(m, measured[bi + 1]);
+    if (!suppressBefore) y += block.style.spaceBeforePx;
     if (y >= bottomY() && colHasContent()) newPage();
 
     // Float-affected paragraphs re-break per line with float-shrunk widths —
     // bypassing the precomputed full-width lines (and widow/orphan rules).
     if (floatsActiveAt(y)) {
       placeParagraphFloating(block);
-      y += block.style.spaceAfterPx;
+      if (!suppressAfter) y += block.style.spaceAfterPx;
       continue;
     }
 
@@ -1838,7 +1957,9 @@ function layoutDocument(
     // the first non-keep successor must keep ≥ its orphan/widow take —
     // mirroring placeParagraph's rules), break before this block instead.
     if (block.style.keepWithNext === true && measured[bi + 1] !== undefined && colHasContent()) {
-      let yy = y + totalHeight(lines) + block.style.spaceAfterPx;
+      // Mirror the contextual-spacing suppression the real placement applies, so
+      // a same-style contextual run isn't over-measured and broken when it fits.
+      let yy = y + totalHeight(lines) + (suppressAfter ? 0 : block.style.spaceAfterPx);
       let ok = yy <= bottomY();
       for (let k = bi + 1; ok; k++) {
         const m2 = measured[k];
@@ -1850,7 +1971,8 @@ function layoutDocument(
           if (yy + ATOMIC_GAP + firstUnit > bottomY()) ok = false;
           break;
         }
-        yy += m2.block.style.spaceBeforePx;
+        if (!csSuppresses(m2, measured[k - 1])) yy += m2.block.style.spaceBeforePx;
+        const afterGap = csSuppresses(m2, measured[k + 1]) ? 0 : m2.block.style.spaceAfterPx;
         const inChain = m2.block.style.keepWithNext === true && measured[k + 1] !== undefined;
         if (inChain || m2.block.style.keepLinesTogether === true) {
           // Chain member (or keep-lines paragraph): must fit WHOLE.
@@ -1859,7 +1981,7 @@ function layoutDocument(
             ok = false;
             break;
           }
-          yy += h + m2.block.style.spaceAfterPx;
+          yy += h + afterGap;
           if (!inChain) break;
           continue;
         }
@@ -1873,7 +1995,7 @@ function layoutDocument(
             ok = false;
             break;
           }
-          yy += h + m2.block.style.spaceAfterPx;
+          yy += h + afterGap;
           continue;
         }
         // Chain terminator: needs its orphan/widow-legal first take.
@@ -1884,7 +2006,9 @@ function layoutDocument(
           fit++;
         }
         let take = fit;
-        if (fit < m2.lines.length) {
+        // Apply the orphan/widow take only when the terminator has widow control on
+        // (default); widowControl:false lets a lone line stand, so don't force a page.
+        if (fit < m2.lines.length && m2.block.style.widowControl !== false) {
           if (m2.lines.length - take === 1) take -= WIDOW_MIN - 1; // widow
           if (take < ORPHAN_MIN) take = 0; // orphan
         }
@@ -1900,7 +2024,57 @@ function layoutDocument(
     if (bd?.top) y += bd.top.widthPx;
     placeParagraph(block, lines);
     if (bd?.bottom) y += bd.bottom.widthPx;
-    y += block.style.spaceAfterPx;
+    if (!suppressAfter) y += block.style.spaceAfterPx;
+  }
+
+  // Margin line numbers (w:lnNumType): walk pages in order and number each body
+  // text line of every line-numbered section. Runs BEFORE footnote paragraphs are
+  // appended below, so notes are never numbered, and reads page.blocks in flow
+  // order (which is vertical order within a column). `countBy` selects which
+  // numbers show; `restart` controls when the counter resets — "newPage" (Word's
+  // default), "newSection", or "continuous" (straight through). Numbers are
+  // paint-only, pre-measured and right-aligned into the left margin so both the
+  // canvas renderer and PDF painter just fillText at (x, baseline).
+  if (pageSections.some((s) => s.lineNumbering)) {
+    const font = charStyleToFont(LINE_NUMBER_STYLE);
+    let counter = 1;
+    let started = false; // "continuous": initialise the counter only once
+    let prevSection: SectionProps | null = null;
+    for (const pg of pages) {
+      const s = pageSections[pg.index]!;
+      const ln: LineNumbering | undefined = s.lineNumbering;
+      if (!ln) {
+        prevSection = s;
+        continue;
+      }
+      const start = ln.start ?? 1;
+      const countBy = Math.max(1, Math.round(ln.countBy ?? 1));
+      const restart = ln.restart ?? "newPage";
+      if (restart === "newPage") counter = start;
+      else if (restart === "newSection") {
+        if (s !== prevSection) counter = start;
+      } else if (!started) counter = start; // continuous
+      started = true;
+      const rightEdge = pg.marginPx.left - (ln.distancePx ?? LINE_NUMBER_DISTANCE);
+      const labels: NonNullable<Page["lineNumbers"]> = [];
+      for (const b of pg.blocks) {
+        if (b.lines.length === 0 || b.image || b.table || b.equation) continue; // body paragraphs only
+        for (const line of b.lines) {
+          if (counter % countBy === 0) {
+            const text = String(counter);
+            labels.push({
+              x: rightEdge - measureTextWidth(text, font),
+              baseline: b.y + line.y + line.ascent,
+              text,
+              style: LINE_NUMBER_STYLE,
+            });
+          }
+          counter++;
+        }
+      }
+      if (labels.length > 0) pg.lineNumbers = labels;
+      prevSection = s;
+    }
   }
 
   // Footnote areas: each page's notes stack at the bottom under a separator
@@ -1942,6 +2116,89 @@ function layoutDocument(
         if (noteDecor) placed.paraDecor = noteDecor;
         pg.blocks.push(placed);
         ny += totalHeight(np.lines) + np.p.style.spaceAfterPx;
+      }
+    }
+  }
+
+  // Endnotes: collected at the END of the document, under a separator rule, in
+  // reference order (Word's "end of document" placement — the counterpart to the
+  // page-bottom footnote area above). Like footnotes, note paragraphs are REAL
+  // model paragraphs pushed as page blocks so caret/selection work; the number
+  // marker (the ref run's text) is paint-only, hung in the indent. Notes flow
+  // onto continuation pages but aren't split across them (matching footnotes).
+  const ens = doc.endnotes ?? {};
+  if (Object.keys(ens).length > 0) {
+    // References in document order → [noteId, markerText], deduped.
+    const enRefs: [string, string][] = [];
+    const seenEn = new Set<string>();
+    const collectEn = (blocks: Block[]): void => {
+      for (const b of blocks) {
+        if (b.kind === "paragraph") {
+          for (const r of b.runs) {
+            const id = r.style.endnoteRef;
+            if (id && ens[id] && !seenEn.has(id)) {
+              seenEn.add(id);
+              enRefs.push([id, r.text]);
+            }
+          }
+        } else if (b.kind === "table") {
+          for (const row of b.rows) for (const cell of row.cells) collectEn(cell.blocks);
+        }
+      }
+    };
+    collectEn(doc.blocks);
+    if (enRefs.length > 0) {
+      // Endnotes use the document-end (last) section geometry, single column.
+      applySection(sections[sections.length - 1]!.props);
+      const enWidth = Math.max(40, contentWidth - FN_INDENT);
+      const enx = sec.marginPx.left;
+      let epage = pages[pages.length - 1]!;
+      const newEndnotePage = (): void => {
+        epage = mkPage();
+        delete epage.columnSeparatorsX; // endnotes are a full-width single-column story
+        pages.push(epage);
+        pageNotes.push([]);
+        pageReserved.push(0);
+      };
+      // Start on a fresh page if the last body page already has content.
+      if (epage.blocks.length > 0) newEndnotePage();
+      else delete epage.columnSeparatorsX; // reused last page → drop its column rules too
+      let ey = epage.contentTopPx;
+      epage.endnoteRuleY = ey + 4;
+      ey += FN_SEP;
+      for (const [id, numText] of enRefs) {
+        let first = true;
+        for (const p of ens[id]!) {
+          const lines = getLines(p, enWidth);
+          // Page-break before a note paragraph that won't fit (notes aren't split).
+          // Gate on the page already holding content — never bump the first note
+          // off a fresh page (whose `ey` is past the top only because of the rule),
+          // which would strand a blank separator-only page.
+          if (ey + p.style.spaceBeforePx + totalHeight(lines) > epage.contentBottomPx && epage.blocks.length > 0) {
+            newEndnotePage();
+            ey = epage.contentTopPx;
+          }
+          ey += p.style.spaceBeforePx;
+          const placed: PlacedBlock = {
+            blockId: p.id,
+            x: enx + FN_INDENT,
+            y: ey,
+            firstLineIndex: 0,
+            lines,
+          };
+          if (first && p.runs[0]) {
+            placed.marker = { text: `${numText}.`, style: p.runs[0].style, x: enx };
+            first = false;
+          }
+          const noteDecor = paraDecorFor(
+            p.style,
+            contentWidth - FN_INDENT - p.style.indentLeftPx - (p.style.indentRightPx ?? 0),
+            totalHeight(lines),
+          );
+          if (noteDecor) placed.paraDecor = noteDecor;
+          epage.blocks.push(placed);
+          ey += totalHeight(lines) + p.style.spaceAfterPx;
+        }
       }
     }
   }
@@ -2238,7 +2495,7 @@ function layoutBand(
         y,
         firstLineIndex: 0,
         lines: [],
-        image: { src: b.src, width: b.widthPx, height: b.heightPx },
+        image: { src: b.src, width: b.widthPx, height: b.heightPx, ...(b.crop ? { crop: b.crop } : {}) },
       });
       y += b.heightPx;
     } else if (b.kind === "equation") {
@@ -2607,6 +2864,14 @@ function measureTable(
   // Row heights: single-row cells fix their row; a rowspan cell only forces extra
   // height (added to its last row) when its content exceeds the rows it covers.
   const rowHeight = rows.map((r) => Math.max(0, ...r.cells.filter((c) => c.rowSpan === 1).map((c) => c.height)));
+  // Fixed/min row height (w:trHeight): "atLeast" grows the row to the height floor;
+  // "exact" pins it (content taller than the box is clipped at paint). Applied
+  // before the rowspan-overflow pass so a forced-tall row counts toward a span.
+  t.rows.forEach((row, ri) => {
+    const h = row.props?.height;
+    if (!h) return;
+    rowHeight[ri] = h.rule === "exact" ? h.value : Math.max(rowHeight[ri]!, h.value);
+  });
   rows.forEach((r, ri) => {
     for (const mc of r.cells) {
       if (mc.rowSpan <= 1) continue;
@@ -2625,7 +2890,9 @@ function measureTable(
     mode === "fixed" && !t.preferredWidth ? contentWidth : colWidths.reduce((s, w) => s + w, 0);
   // Alignment only has room to act when the table is narrower than its band — true
   // for a preferred width OR AutoFit-to-Contents; a full-width table never shifts.
-  const xOffset = tableAlignOffset(t.align, contentWidth, tableWidth);
+  // A table indent (w:tblInd) shifts the whole table right on TOP of that, like a
+  // paragraph's left indent (issue #61).
+  const xOffset = tableAlignOffset(t.align, contentWidth, tableWidth) + (t.indentPx ?? 0);
   return { rows, colWidths, height: rowHeight.reduce((s, h) => s + h, 0), tableWidth, xOffset };
 }
 
@@ -2677,6 +2944,10 @@ function placeTable(
   for (const w of colWidths) colX.push(colX[colX.length - 1]! + w);
   const rowY = [y];
   for (const row of rows) rowY.push(rowY[rowY.length - 1]! + row.height);
+  // RTL visual column order (w:bidiVisual, issue #61): mirror each cell's left edge
+  // about the grid so grid column 0 paints at the right. The logical cell order and
+  // content are unchanged — only the x placement flips.
+  const gridWidth = colX[colX.length - 1] ?? 0;
 
   const placedRows = [];
   for (let lr = 0; lr < rows.length; lr++) {
@@ -2684,7 +2955,8 @@ function placeTable(
     const ry = rowY[lr]!;
     const cells = [];
     for (const mc of row.cells) {
-      const cx = x + (colX[mc.colStart] ?? colX[colX.length - 1]!);
+      const cxStart = colX[mc.colStart] ?? colX[colX.length - 1]!;
+      const cx = x + (t.bidiVisual ? gridWidth - cxStart - mc.width : cxStart);
       const endLr = Math.min(rows.length - 1, lr + mc.rowSpan - 1);
       const cellHeight = rowY[endLr + 1]! - ry;
       const blocks: PlacedBlock[] = [];

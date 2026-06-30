@@ -23,7 +23,7 @@ import {
   type CustomFontPayload,
   type CustomFontRegistry,
 } from "../../fonts/customRegistry";
-import { paintBlock, type PaintCtx } from "./paintBlock";
+import { paintBlock, paintLineNumbers, type PaintCtx } from "./paintBlock";
 import {
   COLUMN_SEPARATOR_COLOR,
   FOOTNOTE_RULE_COLOR,
@@ -182,14 +182,17 @@ async function renderPdfInner(doc: Document, opts: RenderPdfOptions, fontReg: Cu
       }
     }
 
-    if (page.footnoteRuleY !== undefined) {
+    for (const ruleY of [page.footnoteRuleY, page.endnoteRuleY]) {
+      if (ruleY === undefined) continue;
       const cw = page.widthPx - page.marginPx.left - page.marginPx.right;
       pdf.undash().lineWidth(1).strokeColor(FOOTNOTE_RULE_COLOR);
       pdf
-        .moveTo(page.marginPx.left, page.footnoteRuleY + 0.5)
-        .lineTo(page.marginPx.left + cw * FOOTNOTE_RULE_WIDTH_FRACTION, page.footnoteRuleY + 0.5)
+        .moveTo(page.marginPx.left, ruleY + 0.5)
+        .lineTo(page.marginPx.left + cw * FOOTNOTE_RULE_WIDTH_FRACTION, ruleY + 0.5)
         .stroke();
     }
+
+    if (page.lineNumbers) paintLineNumbers(ctx, page.lineNumbers);
 
     if (page.header) for (const b of page.header) paintBlock(ctx, b);
     if (page.footer) for (const b of page.footer) paintBlock(ctx, b);

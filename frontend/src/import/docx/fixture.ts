@@ -51,6 +51,7 @@ export const REL_TYPES = {
   numbering: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering",
   hyperlink: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
   footnotes: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes",
+  endnotes: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes",
   settings: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings",
 } as const;
 

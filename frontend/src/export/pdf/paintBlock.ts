@@ -6,7 +6,7 @@
 
 import type { CellBorder } from "@cw/shared";
 import { DEFAULT_CHAR_STYLE } from "@cw/shared";
-import type { LineBox, PlacedBlock, PlacedTableCell } from "../../layout/layoutTree";
+import type { LineBox, Page, PlacedBlock, PlacedTableCell } from "../../layout/layoutTree";
 import type { MathBox } from "../../layout/math/mathBox";
 import { MATH_FONT_FAMILY } from "../../fonts/clones";
 import {
@@ -89,19 +89,49 @@ export interface PaintCtx {
 
 const firstFamily = (stack: string): string => (stack.split(",")[0] ?? "sans-serif").trim();
 
+/** Paint a page's margin line numbers (w:lnNumType). Each label is already
+ *  pre-measured and right-aligned (`x` is its left edge, `baseline` the text
+ *  baseline), so this just selects the font and draws — the PDF counterpart of
+ *  the canvas renderer's line-number pass. */
+export function paintLineNumbers(ctx: PaintCtx, lineNumbers: NonNullable<Page["lineNumbers"]>): void {
+  const { doc } = ctx;
+  for (const ln of lineNumbers) {
+    const s = ln.style;
+    const name = ctx.font(firstFamily(s.fontFamily), !!s.bold, !!s.italic);
+    doc
+      .font(name)
+      .fontSize(s.fontSizePx)
+      .fillColor(s.color as string)
+      .text(ln.text, ln.x, ln.baseline, { lineBreak: false, baseline: "alphabetic" });
+  }
+}
+
 export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
   const { doc } = ctx;
 
   if (block.image) {
     const bytes = ctx.image(block.image.src);
-    const { width, height, clip } = block.image;
+    const { width, height, clip, crop } = block.image;
     if (clip) {
       doc.save();
       doc.rect(clip.x, clip.y, clip.width, clip.height).clip();
     }
     if (bytes) {
       try {
-        drawImage(doc, toBuffer(bytes), block.x, block.y, width, height);
+        if (crop) {
+          // pdfkit can't source-crop, so clip to the box and draw the full image
+          // scaled up so its visible [left,1-right]×[top,1-bottom] window fills it.
+          const fracW = Math.max(0.0001, 1 - crop.left - crop.right);
+          const fracH = Math.max(0.0001, 1 - crop.top - crop.bottom);
+          const fullW = width / fracW;
+          const fullH = height / fracH;
+          doc.save();
+          doc.rect(block.x, block.y, width, height).clip();
+          drawImage(doc, toBuffer(bytes), block.x - crop.left * fullW, block.y - crop.top * fullH, fullW, fullH);
+          doc.restore();
+        } else {
+          drawImage(doc, toBuffer(bytes), block.x, block.y, width, height);
+        }
       } catch {
         ctx.warn("image-format-unsupported", block.image.src);
         placeholderBox(ctx, block.x, block.y, width, height);

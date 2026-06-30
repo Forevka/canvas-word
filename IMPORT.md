@@ -143,7 +143,7 @@ buf ─► unzip ─► contentTypes ─► rels ─► styles+theme ─► pars
 | half-points | font size (`w:sz`) | `hp * 2 / 3` |
 | EMU (914400/inch) | image extents | `emu / 9525` |
 | `w:line` @ `lineRule="auto"` | line height | multiplier = `line / 240` |
-| `w:line` @ `exact`/`atLeast` | line height | twips → px, **approximated** to multiplier vs font size + warning (`ParaStyle.lineHeight` is multiplier-only) |
+| `w:line` @ `exact`/`atLeast` | line height | twips → px, kept as fixed spacing (`ParaStyle.lineRule` + `lineHeightPx`) |
 
 ## Lossy mappings — explicit decisions, all emitting `ImportWarning`
 

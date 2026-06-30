@@ -9,6 +9,7 @@ import { WarningSink } from "../warnings";
 import { buildDocumentXml, type AddBandPart, type ExportBookmarkMark, type PartCtx } from "./documentXml";
 import { contentTypesXml, CT } from "./contentTypes";
 import { footnotesXml } from "./footnotesXml";
+import { endnotesXml } from "./endnotesXml";
 import { headerFooterXml } from "./headerFooterXml";
 import { MediaManager } from "./mediaPack";
 import { numberingXml } from "./numberingXml";
@@ -145,9 +146,22 @@ export function writeDocx(
     bodyRels.add(REL.footnotes, "footnotes.xml");
   }
 
-  // settings.xml (always — carries the even/odd flag + background-display flag).
+  // endnotes.xml
+  if (doc.endnotes && Object.keys(doc.endnotes).length > 0) {
+    parts["word/endnotes.xml"] = endnotesXml(doc.endnotes, bodyCtx);
+    overrides.push(["/word/endnotes.xml", CT.endnotes]);
+    bodyRels.add(REL.endnotes, "endnotes.xml");
+  }
+
+  // settings.xml (always — carries the even/odd flag, background-display flag, a
+  // non-default tab interval, and any round-tripped compat settings).
   const evenAndOdd = sectionsHaveEvenBands(doc);
-  parts["word/settings.xml"] = settingsXml(evenAndOdd, doc.section.pageColorHex !== undefined);
+  parts["word/settings.xml"] = settingsXml({
+    evenAndOdd,
+    displayBackgroundShape: doc.section.pageColorHex !== undefined,
+    ...(doc.defaultTabStopPx !== undefined ? { defaultTabStopPx: doc.defaultTabStopPx } : {}),
+    ...(doc.compatSettings ? { compatSettings: doc.compatSettings } : {}),
+  });
   overrides.push(["/word/settings.xml", CT.settings]);
   bodyRels.add(REL.settings, "settings.xml");
 

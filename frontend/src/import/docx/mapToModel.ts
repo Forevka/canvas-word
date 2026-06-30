@@ -6,7 +6,7 @@
 //   w:tab            → fixed spaces
 //   gridSpan/vMerge  → padded uniform cell grid
 //   inline images    → block-level ImageBlock (paragraph splits around it)
-//   images in cells  → skipped (TableCell holds paragraphs only)
+//   images in cells  → ImageBlock inside the cell's block list (incl. anchored/floating)
 
 import type {
   Block,
@@ -19,14 +19,18 @@ import type {
   PageBorderEdge,
   PageBorders,
   ParaStyle,
+  LineNumbering,
   Paragraph,
   Run,
   SdtProps,
+  RowProps,
+  SectionBreakType,
   SectionPatch,
   SectionProps,
   TabAlign,
   TableBlock,
   TableCell,
+  TableRow,
   TabLeader,
   TabStop,
   UnderlineStyle,
@@ -43,6 +47,7 @@ import type {
   IRBlock,
   IRBorders,
   IRInline,
+  IRLineNumbering,
   IRListDefinition,
   IRPageBorders,
   IRParaProps,
@@ -54,7 +59,7 @@ import type {
   IRTableCell,
 } from "./types";
 import { WarningSink } from "./types";
-import { emuToPx, halfPointsToPx, marginTwipsToPx, round2, twipsToPx } from "./units";
+import { emuToPx, halfPointsToPx, marginTwipsToPx, round2, round4, twipsToPx } from "./units";
 
 const PAGE_BORDER_STYLES = new Set(["single", "double", "dashed", "dotted", "thick", "none"]);
 
@@ -101,6 +106,16 @@ function irPageBordersToModel(b: IRPageBorders): PageBorders {
   if (bottom) out.bottom = bottom;
   const left = edge(b.left);
   if (left) out.left = left;
+  return out;
+}
+
+/** IR line numbering → model LineNumbering (distance twips→px; counts as-is). */
+function irLineNumberingToModel(ln: IRLineNumbering): LineNumbering {
+  const out: LineNumbering = {};
+  if (ln.countBy !== undefined) out.countBy = ln.countBy;
+  if (ln.start !== undefined) out.start = ln.start;
+  if (ln.restart !== undefined) out.restart = ln.restart;
+  if (ln.distanceTwips !== undefined) out.distancePx = round2(twipsToPx(ln.distanceTwips));
   return out;
 }
 
@@ -159,6 +174,9 @@ export interface Mapper {
   /** Footnotes referenced (in document order) — the pipeline maps their bodies
    *  into Document.footnotes. `noteId` is the model key, `docxId` the source id. */
   footnoteRefs(): { docxId: string; noteId: string }[];
+  /** Endnotes referenced (in document order) — the pipeline maps their bodies
+   *  into Document.endnotes. `noteId` is the model key, `docxId` the source id. */
+  endnoteRefs(): { docxId: string; noteId: string }[];
   /** The first `TOC` field's block id + verbatim instruction, or undefined. */
   tocField(): { blockId: string; instruction: string } | undefined;
 }
@@ -193,6 +211,21 @@ export function createMapper(
       num = String(footnoteNum.size + 1);
       footnoteNum.set(docxId, num);
       footnoteOrder.push(docxId);
+    }
+    return num;
+  };
+
+  // Endnote markers numbered sequentially in document order (docx id → number),
+  // mirroring footnotes. The pipeline maps the referenced bodies into
+  // Document.endnotes keyed by `en<docxId>`.
+  const endnoteNum = new Map<string, string>();
+  const endnoteOrder: string[] = [];
+  const endnoteNumber = (docxId: string): string => {
+    let num = endnoteNum.get(docxId);
+    if (num === undefined) {
+      num = String(endnoteNum.size + 1);
+      endnoteNum.set(docxId, num);
+      endnoteOrder.push(docxId);
     }
     return num;
   };
@@ -258,7 +291,12 @@ export function createMapper(
     sectionChangesGeometry(props) ||
     !!props.sectionColumns ||
     props.sectionPageNumberStart !== undefined ||
-    !!props.sectionPgBorders;
+    !!props.sectionPgBorders ||
+    // An even/odd page-parity break or line numbering is a real, page-breaking
+    // section even when the geometry is identical to the document section.
+    props.sectionBreakType === "evenPage" ||
+    props.sectionBreakType === "oddPage" ||
+    !!props.sectionLineNumbering;
 
   /** Build a SectionPatch from a section-ending paragraph's geometry/columns. */
   const buildSectionPatch = (props: IRParaProps): SectionPatch => {
@@ -275,6 +313,7 @@ export function createMapper(
     if (props.sectionHeaderDistTwips !== undefined) patch.headerDistancePx = round2(twipsToPx(props.sectionHeaderDistTwips));
     if (props.sectionFooterDistTwips !== undefined) patch.footerDistancePx = round2(twipsToPx(props.sectionFooterDistTwips));
     if (props.sectionPgBorders) patch.pageBorders = irPageBordersToModel(props.sectionPgBorders);
+    if (props.sectionLineNumbering) patch.lineNumbering = irLineNumberingToModel(props.sectionLineNumbering);
     return patch;
   };
 
@@ -399,7 +438,8 @@ export function createMapper(
             carrier = emptyParagraph();
             mapped.push(carrier);
           }
-          carrier.style.sectionBreak = { type: "nextPage", props: buildSectionPatch(props) };
+          const breakType: SectionBreakType = props.sectionBreakType ?? "nextPage";
+          carrier.style.sectionBreak = { type: breakType, props: buildSectionPatch(props) };
           pending = false;
         } else {
           if (props.sectionHasBands) {
@@ -626,6 +666,13 @@ export function createMapper(
       heightPx: round2(emuToPx(inline.heightEmu)),
       align: inline.anchorAlign ?? (paraAlign === "justify" ? "left" : paraAlign),
     };
+    // a:srcRect crop insets (fractions), rounded for a stable round-trip.
+    if (inline.crop) {
+      image.crop = {
+        left: round4(inline.crop.left), top: round4(inline.crop.top),
+        right: round4(inline.crop.right), bottom: round4(inline.crop.bottom),
+      };
+    }
     // Anchored with square/tight wrap → an honest float; the model flows
     // following text around it.
     if (inline.anchored && inline.anchorWrap === "square") image.wrap = "square";
@@ -663,6 +710,12 @@ export function createMapper(
       // numbers are sequential in document order, matching the editor's convention.
       text = footnoteNumber(effective.footnoteId);
       style.footnoteRef = `fn${effective.footnoteId}`;
+      style.verticalAlign = "super";
+    }
+    if (effective.endnoteId !== undefined) {
+      // Same as footnotes, but the engine paints these at the document end.
+      text = endnoteNumber(effective.endnoteId);
+      style.endnoteRef = `en${effective.endnoteId}`;
       style.verticalAlign = "super";
     }
     if (sdtPath && sdtPath.length > 0) {
@@ -751,6 +804,10 @@ export function createMapper(
             : { type: "abs", px: round2(twipsToPx(irCell.preferredWidth.twips)) };
       }
       if (irCell.vAlign) cell.vAlign = irCell.vAlign;
+      if (irCell.textDirection) cell.textDirection = irCell.textDirection;
+      if (irCell.noWrap) cell.noWrap = true;
+      if (irCell.fitText) cell.fitText = true;
+      if (irCell.hideMark) cell.hideMark = true;
       return cell;
     };
 
@@ -803,7 +860,20 @@ export function createMapper(
       ir.rows.some((r) => r.cells.some((c) => c.borders || c.bordersSpecified));
     for (const row of placedRows) for (const p of row) styleCell(p, ir, styled, hasBorderInfo, width, ir.rows.length);
 
-    const rows = placedRows.map((row) => ({ cells: row.map((p) => p.cell) }));
+    const rows: TableRow[] = placedRows.map((row, ri) => {
+      const out: TableRow = { cells: row.map((p) => p.cell) };
+      const irProps = ir.rows[ri]?.props;
+      if (irProps) {
+        const props: RowProps = {};
+        if (irProps.heightTwips !== undefined && irProps.heightRule) {
+          props.height = { value: round2(twipsToPx(irProps.heightTwips)), rule: irProps.heightRule };
+        }
+        if (irProps.cantSplit) props.cantSplit = true;
+        if (irProps.tblHeader) props.repeatHeader = true;
+        if (Object.keys(props).length > 0) out.props = props;
+      }
+      return out;
+    });
     const table: TableBlock = { kind: "table", id: id(), revision: 0, rows };
     // Table-style reference + active bands (the style itself goes to
     // Document.tableStyles via buildTableStyles; cells are baked above).
@@ -817,6 +887,13 @@ export function createMapper(
     if (ir.preferredWidthTwips) table.preferredWidth = { type: "px", value: round2(twipsToPx(ir.preferredWidthTwips)) };
     else if (ir.preferredWidthPct) table.preferredWidth = { type: "pct", value: ir.preferredWidthPct };
     if (ir.align && ir.align !== "left") table.align = ir.align;
+    // Minor & advanced table props (issue #61): indent + RTL column order drive
+    // layout; overlap/caption/description round-trip as metadata.
+    if (ir.indentTwips) table.indentPx = round2(twipsToPx(ir.indentTwips));
+    if (ir.bidiVisual) table.bidiVisual = true;
+    if (ir.overlap) table.overlap = ir.overlap;
+    if (ir.caption) table.caption = ir.caption;
+    if (ir.description) table.description = ir.description;
     // Table-level defaults (w:tblBorders/w:shd/w:tblCellMar). These are cascaded
     // onto the cells above for layout/paint; retained here so export re-emits them
     // at tblPr level (issue #48) rather than only as the baked per-cell copies.
@@ -856,6 +933,8 @@ export function createMapper(
     if (ir.headerDistTwips !== undefined) section.headerDistancePx = round2(twipsToPx(ir.headerDistTwips));
     if (ir.footerDistTwips !== undefined) section.footerDistancePx = round2(twipsToPx(ir.footerDistTwips));
     if (ir.pageBorders) section.pageBorders = irPageBordersToModel(ir.pageBorders);
+    if (ir.lineNumbering) section.lineNumbering = irLineNumberingToModel(ir.lineNumbering);
+    if (ir.breakType) section.breakType = ir.breakType;
     return section;
   }
 
@@ -877,6 +956,7 @@ export function createMapper(
       return out;
     },
     footnoteRefs: () => footnoteOrder.map((docxId) => ({ docxId, noteId: `fn${docxId}` })),
+    endnoteRefs: () => endnoteOrder.map((docxId) => ({ docxId, noteId: `en${docxId}` })),
     tocField: () => tocAnchor,
   };
 }
@@ -1035,7 +1115,16 @@ function mapUnderlineStyle(raw: string): UnderlineStyle | undefined {
 
 /** Shared run-property mapping for full CharStyle and partial style-gallery patches. */
 function applyRunProps(style: Partial<CharStyle>, props: IRRunProps): void {
+  // ascii is the Latin slot the model lays out; hAnsi is its high-ANSI twin (used
+  // when ascii is absent). cs/eastAsia are preserved for round-trip only, and only
+  // when they name a DISTINCT face: Word writes w:cs (and often w:eastAsia) equal to
+  // w:ascii for plain Latin runs, which carries no extra information.
+  const latinFont = props.fontAscii ?? props.fontHAnsi;
   if (props.fontAscii) style.fontFamily = `${props.fontAscii}, serif`;
+  else if (props.fontHAnsi) style.fontFamily = `${props.fontHAnsi}, serif`;
+  if (props.fontCs && props.fontCs !== latinFont) style.fontFamilyComplexScript = `${props.fontCs}, serif`;
+  if (props.fontEastAsia && props.fontEastAsia !== latinFont) style.fontFamilyEastAsia = `${props.fontEastAsia}, serif`;
+  if (props.letterSpacingTwips !== undefined) style.letterSpacingPx = round2(twipsToPx(props.letterSpacingTwips));
   if (props.sizeHalfPoints !== undefined) style.fontSizePx = round2(halfPointsToPx(props.sizeHalfPoints));
   if (props.bold !== undefined) style.bold = props.bold;
   if (props.italic !== undefined) style.italic = props.italic;
@@ -1054,6 +1143,8 @@ function applyRunProps(style: Partial<CharStyle>, props: IRRunProps): void {
   if (props.vertAlign === "superscript") style.verticalAlign = "super";
   else if (props.vertAlign === "subscript") style.verticalAlign = "sub";
   if (props.vanish) style.hidden = true; // preserved, never displayed (see CharStyle.hidden)
+  if (props.caps !== undefined) style.caps = props.caps; // w:caps — all-caps display
+  if (props.smallCaps !== undefined) style.smallCaps = props.smallCaps; // w:smallCaps — small capitals
   if (props.rtl !== undefined) style.rtl = props.rtl; // explicit w:rtl="0" clears inherited RTL
   // Minor run typography & effects (w:rPr extras): unit-convert and collapse onto
   // the model's CharStyle fields. Each is additive — only set when present.
@@ -1074,6 +1165,12 @@ function applyRunProps(style: Partial<CharStyle>, props: IRRunProps): void {
     if (b) style.runBorder = b;
   }
   if (props.fitTextTwips !== undefined && props.fitTextTwips > 0) style.fitTextPx = round2(twipsToPx(props.fitTextTwips));
+  if (props.symbol) {
+    // Symbol glyph (w:sym): keep the marker for round-trip AND set the font so the
+    // decoded code point paints in the symbol face (e.g. Wingdings), not body text.
+    style.symbol = { font: props.symbol.font, char: props.symbol.char };
+    style.fontFamily = `${props.symbol.font}, sans-serif`;
+  }
 }
 
 /** Fold the OOXML w:em vocabulary onto the model's set; unknown values drop. */
@@ -1119,6 +1216,11 @@ function mapParaPatch(props: IRParaProps): Partial<ParaStyle> {
   if (props.align) out.align = props.align;
   if (props.direction) out.direction = props.direction;
   if (props.lineHeight !== undefined) out.lineHeight = round2(props.lineHeight);
+  // "auto" carries a multiplier and clears any fixed rule; exact/atLeast set one.
+  if (props.lineRule === "exact" || props.lineRule === "atLeast") {
+    out.lineRule = props.lineRule;
+    if (props.lineExactTwips !== undefined) out.lineHeightPx = round2(twipsToPx(props.lineExactTwips));
+  }
   if (props.spaceBeforeTwips !== undefined) out.spaceBeforePx = round2(twipsToPx(props.spaceBeforeTwips));
   if (props.spaceAfterTwips !== undefined) out.spaceAfterPx = round2(twipsToPx(props.spaceAfterTwips));
   if (props.indentLeftTwips !== undefined) out.indentLeftPx = round2(twipsToPx(props.indentLeftTwips));
@@ -1127,11 +1229,25 @@ function mapParaPatch(props: IRParaProps): Partial<ParaStyle> {
     out.indentFirstLinePx = round2(twipsToPx(props.indentFirstLineTwips));
   if (props.keepWithNext) out.keepWithNext = true;
   if (props.keepLinesTogether) out.keepLinesTogether = true;
+  // Keep explicit false (w:contextualSpacing w:val="0") so a style can clear an
+  // inherited `true` through the cascade.
+  if (props.contextualSpacing !== undefined) out.contextualSpacing = props.contextualSpacing;
   if (props.tabStops) out.tabStops = mapTabStops(props.tabStops);
   const pb = paraBordersFromIR(props.borders);
   if (pb) out.borders = pb;
   if (props.shd !== undefined) out.shading = props.shd;
+  mapMinorParaProps(props, out);
   return out;
+}
+
+/** Minor w:pPr props (issue #62) shared by the full-paragraph and style-patch
+ *  mappers. Each is a direct passthrough (no unit conversion). */
+function mapMinorParaProps(props: IRParaProps, out: Partial<ParaStyle>): void {
+  if (props.widowControl !== undefined) out.widowControl = props.widowControl;
+  if (props.suppressLineNumbers !== undefined) out.suppressLineNumbers = props.suppressLineNumbers;
+  if (props.textAlignment !== undefined) out.textAlignment = props.textAlignment;
+  if (props.mirrorIndents !== undefined) out.mirrorIndents = props.mirrorIndents;
+  if (props.adjustRightInd !== undefined) out.adjustRightInd = props.adjustRightInd;
 }
 
 /** styles.xml → editor Stylesheet. ALL defined paragraph and character styles
@@ -1215,6 +1331,12 @@ function mapParaStyle(props: IRParaProps): ParaStyle {
   if (props.align) style.align = props.align;
   if (props.direction) style.direction = props.direction;
   if (props.lineHeight !== undefined) style.lineHeight = round2(props.lineHeight);
+  // Fixed point spacing (exact/atLeast) overrides the multiplier; "auto" leaves
+  // the concrete style on its (already-set) lineHeight with no fixed rule.
+  if (props.lineRule === "exact" || props.lineRule === "atLeast") {
+    style.lineRule = props.lineRule;
+    if (props.lineExactTwips !== undefined) style.lineHeightPx = round2(twipsToPx(props.lineExactTwips));
+  }
   if (props.spaceBeforeTwips !== undefined) style.spaceBeforePx = round2(twipsToPx(props.spaceBeforeTwips));
   if (props.spaceAfterTwips !== undefined) style.spaceAfterPx = round2(twipsToPx(props.spaceAfterTwips));
   if (props.indentLeftTwips !== undefined) style.indentLeftPx = round2(twipsToPx(props.indentLeftTwips));
@@ -1223,12 +1345,15 @@ function mapParaStyle(props: IRParaProps): ParaStyle {
     style.indentFirstLinePx = round2(twipsToPx(props.indentFirstLineTwips));
   if (props.keepWithNext) style.keepWithNext = true;
   if (props.keepLinesTogether) style.keepLinesTogether = true;
+  // Keep explicit false so a paragraph can override an inherited style's suppression.
+  if (props.contextualSpacing !== undefined) style.contextualSpacing = props.contextualSpacing;
   if (props.tabStops) style.tabStops = mapTabStops(props.tabStops);
   if (props.pageBreakBefore) style.pageBreakBefore = true;
   if (props.outlineLevel !== undefined) style.outlineLevel = props.outlineLevel;
   const pb = paraBordersFromIR(props.borders);
   if (pb) style.borders = pb;
   if (props.shd !== undefined) style.shading = props.shd;
+  mapMinorParaProps(props, style);
   if (props.styleId) style.namedStyle = props.styleId;
   return style;
 }

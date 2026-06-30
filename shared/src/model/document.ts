@@ -15,6 +15,15 @@ export type EmphasisMark = "dot" | "comma" | "circle" | "underDot";
 
 export interface CharStyle {
   fontFamily: string;
+  /** OOXML `w:rFonts/@w:cs` — complex-script (bidi) typeface, used by Word for
+   *  runs in complex scripts (Arabic, Hebrew, …). Preserved through the `.docx`
+   *  round-trip; layout/paint use `fontFamily` (the ascii/hAnsi slot). A CSS font
+   *  stack like `fontFamily`. `| undefined` so a patch can strip it. */
+  fontFamilyComplexScript?: string | undefined;
+  /** OOXML `w:rFonts/@w:eastAsia` — East-Asian (CJK) typeface. Preserved through
+   *  the `.docx` round-trip; layout/paint use `fontFamily`. A CSS font stack like
+   *  `fontFamily`. `| undefined` so a patch can strip it. */
+  fontFamilyEastAsia?: string | undefined;
   fontSizePx: number;
   bold: boolean;
   italic: boolean;
@@ -44,6 +53,10 @@ export interface CharStyle {
    *  kept in sync by the insert command's renumber pass; typically also
    *  verticalAlign 'super'). Points into Document.footnotes. */
   footnoteRef?: string | undefined;
+  /** Endnote reference: like `footnoteRef`, but the note body lives in
+   *  Document.endnotes and lays out at the END of the document (not the page
+   *  bottom). The run's text is the note number; typically verticalAlign 'super'. */
+  endnoteRef?: string | undefined;
   /** Content-control membership (OOXML w:sdt) as an ORDERED ANCESTRY PATH,
    *  outermost→innermost. Contiguous runs sharing the same path form one inline
    *  control; runs sharing a path PREFIX are nested inside the same outer
@@ -121,6 +134,26 @@ export interface CharStyle {
    *  run to occupy exactly this width. Round-tripped; degrades to natural width in
    *  layout/paint. Absent = natural width. */
   fitTextPx?: number | undefined;
+  /** All-caps display (OOXML w:caps). The model text stays as authored; the layout
+   *  and painters render every letter UPPERCASED (offset-transparent — caret and
+   *  measurement see the transformed glyphs). Common on headings/styles. `| undefined`
+   *  so a patch can clear it. Mutually reinforced by `smallCaps` (which also
+   *  uppercases, but shrinks the originally-lowercase letters). */
+  caps?: boolean | undefined;
+  /** Small-capitals display (OOXML w:smallCaps). Letters render UPPERCASED, but the
+   *  ones that were lowercase in the source are drawn at a reduced size (Word's small
+   *  caps). Like `caps`, the model text is untouched and the transform is
+   *  offset-transparent. Takes precedence over `caps` when both are set. `| undefined`
+   *  so a patch can clear it. */
+  smallCaps?: boolean | undefined;
+  /** Symbol-font glyph (OOXML w:sym): `font` is the symbol font (e.g. "Wingdings")
+   *  and `char` is the UPPER-CASE hex code point Word stores (usually a Private-Use
+   *  value like "F0E0"). The run's `text` is the decoded character (so layout/paint
+   *  measure and draw it in `font`); on export the run re-emits w:sym instead of
+   *  w:t. `fontFamily` is set to `font` on import so the glyph paints correctly even
+   *  without consulting this marker — which exists for a faithful docx round-trip.
+   *  `| undefined` so a patch can strip it. */
+  symbol?: { font: string; char: string } | undefined;
 }
 
 /** Structured document tag (Word content control) properties — a direct
@@ -156,7 +189,16 @@ export interface ParaStyle {
    *  existing document is unaffected). Resolved through the Stylesheet cascade like
    *  `align`. */
   direction?: "ltr" | "rtl";
-  lineHeight: number; // multiplier
+  lineHeight: number; // multiplier (used when lineRule is absent/"auto")
+  /** Fixed line-spacing rule (docx w:spacing/@w:lineRule). Absent = `lineHeight`
+   *  is a multiplier of the single-line height ("auto" — the default every
+   *  existing document keeps). "exact" = the line is EXACTLY `lineHeightPx` tall,
+   *  clipping taller content; "atLeast" = at least `lineHeightPx`, growing for a
+   *  taller line. When set, `lineHeightPx` carries the fixed height and
+   *  `lineHeight` is ignored. */
+  lineRule?: "exact" | "atLeast";
+  /** Fixed line height in px — meaningful only alongside `lineRule`. */
+  lineHeightPx?: number;
   spaceBeforePx: number;
   spaceAfterPx: number;
   indentFirstLinePx: number;
@@ -169,6 +211,12 @@ export interface ParaStyle {
   /** Never split this paragraph across pages/columns (docx w:keepLines) — it
    *  moves whole instead; only a paragraph taller than a page still splits. */
   keepLinesTogether?: boolean;
+  /** Suppress before/after spacing between this paragraph and an adjacent
+   *  paragraph of the SAME style (docx w:contextualSpacing) — Word's default for
+   *  list styles, so same-style runs (list items, verse) sit tight while the
+   *  run's outer edges keep their spacing. Resolved through the Stylesheet
+   *  cascade like `align`. Absent = normal spacing on every edge. */
+  contextualSpacing?: boolean;
   /** This paragraph starts a new page (Ctrl+Enter; docx w:pageBreakBefore). */
   pageBreakBefore?: boolean;
   /** List membership (docx w:numPr): definition ref + level 0..8.
@@ -182,9 +230,13 @@ export interface ParaStyle {
   outlineLevel?: number;
   /** This paragraph ENDS a section (OOXML puts sectPr ON a paragraph). `props`
    *  describes the section being terminated; blocks after it belong to the next
-   *  break's section, or to `Document.section` (the final/body sectPr).
+   *  break's section, or to `Document.section` (the final/body sectPr). `type`
+   *  is the OOXML w:sectPr/w:type of the FOLLOWING section: "nextPage" starts it
+   *  on the next page (the default); "evenPage"/"oddPage" additionally force its
+   *  first page onto an even/odd page number, inserting a blank filler page when
+   *  the running page count has the wrong parity.
    *  `| undefined` so a setParaStyle patch can remove the break. */
-  sectionBreak?: { type: "nextPage"; props: SectionPatch } | undefined;
+  sectionBreak?: { type: SectionBreakType; props: SectionPatch } | undefined;
   /** Ctrl+Shift+Enter: this paragraph starts the next newspaper column
    *  (no-op in single-column sections, like Word). */
   columnBreakBefore?: boolean;
@@ -206,6 +258,27 @@ export interface ParaStyle {
    *  behind the paragraph's box. Mirrors the table cell `shading` value type.
    *  Absent = no fill. `| undefined` so a patch can remove it. */
   shading?: string | undefined;
+  /** Widow/orphan control (OOXML w:widowControl). Word's default is ON — keep
+   *  ≥2 lines together at a page boundary rather than stranding a lone first/last
+   *  line. Explicit `false` (w:widowControl w:val="0") lets a single line break
+   *  away. Absent = default (ON). Honored by the pagination engine. */
+  widowControl?: boolean;
+  /** Exclude this paragraph from line numbering (OOXML w:suppressLineNumbers).
+   *  Round-trips; no layout effect here (line numbers aren't rendered). Absent = off. */
+  suppressLineNumbers?: boolean;
+  /** Vertical alignment of the glyphs on each line within its line box (OOXML
+   *  w:textAlignment): "top"/"center"/"bottom" hug the respective edge of a tall
+   *  line, "baseline" (Word's default, == absent) rides the shared baseline. Most
+   *  visible with extra line spacing or mixed font sizes. Honored by the engine. */
+  textAlignment?: "top" | "center" | "bottom" | "baseline";
+  /** Symmetric (mirrored) indents for facing-page layouts (OOXML w:mirrorIndents):
+   *  start/end indents swap on verso pages. Round-trips; visible only under mirrored
+   *  section margins. Absent = off. */
+  mirrorIndents?: boolean;
+  /** Automatically adjust the right indent to the document grid (OOXML
+   *  w:adjustRightInd). Round-trips; no layout effect in our grid-less model.
+   *  Absent = off. */
+  adjustRightInd?: boolean;
 }
 
 /** Resolved per-edge paragraph borders (OOXML w:pBdr). Reuses the table
@@ -275,6 +348,12 @@ export interface ImageBlock {
   mediaId?: string;
   widthPx: number;
   heightPx: number;
+  /** Crop insets (OOXML DrawingML a:srcRect), each a 0..1 fraction of the source
+   *  image trimmed off that edge — so `widthPx`/`heightPx` describe the displayed
+   *  (cropped) box and the visible source window is
+   *  [left, 1-right] × [top, 1-bottom] of the original bytes. Absent = no crop.
+   *  Paint scales+clips to show only the window; export re-emits a:srcRect. */
+  crop?: { left: number; top: number; right: number; bottom: number };
   align: "left" | "center" | "right";
   /** 'block' (default): occupies vertical space like a paragraph.
    *  'square': floats at the left/right margin (per align) and following text
@@ -379,10 +458,46 @@ export interface TableCell {
    *  the block stack by the slack between content height and the cell's height — most
    *  visible in a tall (rowSpan) or fixed-height cell with short content. */
   vAlign?: "top" | "center" | "bottom";
+  /** Text flow direction inside the cell (OOXML w:tcPr/w:textDirection). Absent =
+   *  "lrTb" (normal horizontal left-to-right). "tbRl"/"btLr" are Word's rotated
+   *  (vertical) cell text, common in narrow header columns. Currently preserved
+   *  through import/export round-trips; the layout still flows the text
+   *  horizontally (vertical-text typesetting is out of scope for this pass). */
+  textDirection?: "lrTb" | "tbRl" | "btLr" | "lrTbV" | "tbRlV" | "tbLrV";
+  /** Suppress wrapping of the cell's content (OOXML w:tcPr/w:noWrap): in autofit
+   *  the cell prefers to widen rather than wrap. Round-tripped; absent = wrap. */
+  noWrap?: boolean;
+  /** Fit the cell's text to its width by inter-character spacing (OOXML
+   *  w:tcPr/w:tcFitText). Round-tripped; absent = off. */
+  fitText?: boolean;
+  /** Ignore the cell's end-of-cell mark when computing the minimum row height
+   *  (OOXML w:tcPr/w:hideMark) — lets a row shrink below one empty text line.
+   *  Round-tripped; absent = off. */
+  hideMark?: boolean;
+}
+
+/** Row-level properties (OOXML `w:trPr`). Absent = no explicit row formatting. */
+export interface RowProps {
+  /** Fixed/minimum row height (OOXML `w:trHeight`). `value` is CSS px. `rule`:
+   *  "atLeast" — the row is AT LEAST this tall and grows with its content (the
+   *  common case); "exact" — the row is forced to exactly this height (taller
+   *  content is clipped). The "auto" rule (height as a pure hint) round-trips as
+   *  absent. */
+  height?: { value: number; rule: "atLeast" | "exact" };
+  /** Keep the whole row on one page — never split its cells across a page/column
+   *  break (OOXML `w:cantSplit`). */
+  cantSplit?: boolean;
+  /** Repeat this row as a header at the top of every page the table continues onto
+   *  (OOXML `w:tblHeader`). Honored for the LEADING contiguous header rows; a header
+   *  flag on a later row is preserved for round-trip but not repeated. */
+  repeatHeader?: boolean;
 }
 
 export interface TableRow {
   cells: TableCell[];
+  /** Row-level properties (`w:trPr`): fixed/min height, cant-split, repeat-header.
+   *  Absent = none. */
+  props?: RowProps;
 }
 
 /** Which conditional bands of a table style this table activates (OOXML w:tblLook).
@@ -420,6 +535,25 @@ export interface TableBlock {
   /** Horizontal alignment of the table within the content width (OOXML w:tblPr/w:jc),
    *  applied whenever the table is narrower than the band. Absent = "left". */
   align?: "left" | "center" | "right";
+  /** Table indent from the leading content edge (OOXML w:tblPr/w:tblInd), in px.
+   *  Shifts the whole table to the right (LTR) like a paragraph's left indent, on
+   *  top of any alignment offset. Absent = 0. */
+  indentPx?: number;
+  /** Render the table's columns in right-to-left visual order (OOXML
+   *  w:tblPr/w:bidiVisual): grid column 0 paints at the RIGHT edge and columns run
+   *  leftward. The logical row/cell order is unchanged — only the visual placement
+   *  mirrors. Absent = left-to-right. */
+  bidiVisual?: boolean;
+  /** Floating-table overlap behavior (OOXML w:tblPr/w:tblOverlap): "never" forbids
+   *  another floating table from overlapping this one. Preserved through round-trips;
+   *  absent = "overlap" (Word's default). */
+  overlap?: "never" | "overlap";
+  /** Table caption / title (OOXML w:tblPr/w:tblCaption) — accessibility metadata.
+   *  Round-tripped; absent = none. */
+  caption?: string;
+  /** Table description / alt text (OOXML w:tblPr/w:tblDescription) — accessibility
+   *  metadata. Round-tripped; absent = none. */
+  description?: string;
   /** Table-level default borders (OOXML w:tblPr/w:tblBorders), including interior
    *  edges. The importer cascades these onto each cell so layout/paint stay
    *  per-cell; kept here so export hoists the table-level defaults back to tblPr
@@ -545,6 +679,29 @@ export interface PageBorders {
   offsetFrom?: "page" | "text";
 }
 
+/** OOXML w:sectPr/w:type for a section START. "nextPage" begins the section on
+ *  the next page; "evenPage"/"oddPage" force its first page onto an even/odd page
+ *  number (a blank filler page is inserted when the running parity is wrong).
+ *  "continuous" is never modeled as a break here — geometry-preserving continuous
+ *  sections flow inline (see the importer). */
+export type SectionBreakType = "nextPage" | "evenPage" | "oddPage";
+
+/** w:sectPr/w:lnNumType — line numbering printed in the page margin. Counts body
+ *  text lines per section; `countBy` controls which line numbers are shown. */
+export interface LineNumbering {
+  /** w:lnNumType/@w:countBy — print every Nth line number (default 1 = every line). */
+  countBy?: number;
+  /** w:lnNumType/@w:start — the first line's number (default 1). */
+  start?: number;
+  /** w:lnNumType/@w:restart — when the counter resets. "newPage" (Word's default)
+   *  restarts each page; "newSection" restarts at the section's first page;
+   *  "continuous" never restarts (counts straight through). */
+  restart?: "continuous" | "newPage" | "newSection";
+  /** w:lnNumType/@w:distance — gap (px) between the numbers and the text edge.
+   *  Absent = a small default. */
+  distancePx?: number;
+}
+
 /** Per-section overrides carried on a section-break paragraph. Absent fields
  *  inherit from `Document.section` — Word's "link to previous" for bands, and
  *  shared page geometry unless the user changes it for one section. */
@@ -567,6 +724,8 @@ export interface SectionPatch {
   /** w:pgMar/@w:footer — distance (px) from the page BOTTOM to the footer's bottom
    *  edge (ECMA-376). The footer grows upward from there. */
   footerDistancePx?: number;
+  /** w:sectPr/w:lnNumType — line numbering for this section's body text. */
+  lineNumbering?: LineNumbering;
   header?: Block[];
   footer?: Block[];
   headerFirst?: Block[];
@@ -600,6 +759,13 @@ export interface SectionProps {
   /** w:pgMar/@w:footer — distance (px) from the page BOTTOM to the footer's bottom
    *  edge (footer grows up). Absent = center the band in the bottom margin. */
   footerDistancePx?: number;
+  /** w:sectPr/w:lnNumType — line numbering printed in this section's margin.
+   *  Absent = no line numbers (the historical default). */
+  lineNumbering?: LineNumbering;
+  /** OOXML w:sectPr/w:type for the FINAL (body) section's start. "evenPage"/"oddPage"
+   *  force its first page onto an even/odd page number (mid-document sections carry
+   *  this on their `sectionBreak` paragraph instead). Absent ⇒ "nextPage". */
+  breakType?: SectionBreakType;
   /** Header/footer are full block stories (paragraphs, images, tables) laid out
    *  by the same engine into the margin bands. {page}/{pages} tokens in run text
    *  are substituted per page ({page:roman|Roman|alpha|Alpha} formats). The
@@ -626,6 +792,10 @@ export interface Document {
    *  a paragraph story laid out in the page-bottom footnote area; notes render
    *  on whatever page their reference run lands on. */
   footnotes?: Record<string, Paragraph[]>;
+  /** Endnote bodies keyed by ref id (docx endnotes.xml space). Each note is a
+   *  paragraph story collected at the END of the document, under a separator
+   *  rule, in reference order — Word's "end of document" endnote placement. */
+  endnotes?: Record<string, Paragraph[]>;
   /** Content-control properties keyed by sdt id. Runs carry inline membership via
    *  `CharStyle.sdtPath`; blocks carry block-level membership via `Block.sdtPath`.
    *  Every id appearing on any path has an entry here. */
@@ -650,6 +820,14 @@ export interface Document {
    *  region as a real complex field; the editor refreshes it via `resolveField`.
    *  Absent when the document has no custom fields. */
   fields?: Record<string, FieldDef>;
+  /** Default tab interval in px (OOXML settings.xml w:defaultTabStop, twips→px).
+   *  A `\t` running past the last explicit tab stop advances to the next multiple
+   *  of this. Absent = the engine's Word-matching default (0.5in = 48px). */
+  defaultTabStopPx?: number;
+  /** Compatibility settings round-tripped from settings.xml w:compat/w:compatSetting
+   *  (the modern `name`/`uri`/`val` triples Word emits, e.g. compatibilityMode).
+   *  Preserved verbatim so a Word→edit→Word cycle keeps them. Absent = none. */
+  compatSettings?: { name: string; uri: string; val: string }[];
 }
 
 export interface BookmarkRange {

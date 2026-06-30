@@ -25,6 +25,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`ParagraphBuilder.Effects(RunEffectsOptions)` + the `EmphasisMark` enum), and
   demonstrated in the default sample document and the C# showcase. Runs without any of
   these fields serialize and paint exactly as before — no drift.
+- **Minor paragraph properties (`ParaStyle.widowControl` / `suppressLineNumbers` /
+  `textAlignment` / `mirrorIndents` / `adjustRightInd`).** Five lower-frequency `w:pPr`
+  children now parse, export, and round-trip through `.docx` where before they were
+  silently dropped: `w:widowControl` (widow/orphan control — Word's default ON, honored
+  by the pagination engine so an explicit `w:val="0"` lets a lone first/last line break
+  across a page boundary), `w:suppressLineNumbers`, `w:textAlignment` (vertical alignment
+  of the glyphs within each line box — `top`/`center`/`bottom` hug the respective edge of
+  a tall line while `baseline` rides the shared baseline, honored by the layout engine),
+  `w:mirrorIndents`, and `w:adjustRightInd`. Authorable via the builder
+  (`paragraph(...).widowControl(false).textAlignment("bottom").suppressLineNumbers()
+  .mirrorIndents().adjustRightInd()`) and the C# bindings (`ParagraphBuilder.WidowControl`,
+  `.SuppressLineNumbers`, `.TextAlignment(LineVAlign)`, `.MirrorIndents`, `.AdjustRightInd`),
+  and demonstrated in the default showcase document.
+- **Miscellaneous OOXML round-trip — symbols, image crop, in-cell floating images & default
+  tab stops (#63).** A grouped backlog of previously-dropped Word features now round-trips:
+  - **Symbol characters (`CharStyle.symbol`, OOXML `w:sym`).** Inline symbol-font runs carry
+    their font + hex code point (e.g. Wingdings `F0E0`) instead of being dropped or flattened
+    to a stray Private-Use character. The run's text is the decoded glyph (painted in the symbol
+    font); export re-emits `w:sym`. Authorable via `paragraph(...).symbol(font, charHex)` and the
+    C# `ParagraphBuilder.Symbol(font, charHex)`.
+  - **Image cropping (`ImageBlock.crop`, OOXML `a:srcRect`).** DrawingML crop insets (1/1000 of a
+    percent) are parsed into 0..1 fractions, painted (canvas source-rect crop; PDF clip + scaled
+    draw), and re-emitted as `a:srcRect`. Authorable via the `image()` `crop` option and the C#
+    `ImageOptions.Crop` / `ImageCrop` record.
+  - **Floating images inside table cells.** Anchored (`wp:anchor`/`wrapNone`) images inside a
+    `w:tc` are preserved as cell `ImageBlock`s instead of being dropped (cells previously kept
+    only paragraphs/tables).
+  - **`settings.xml` (`Document.defaultTabStopPx` + `Document.compatSettings`).** `w:defaultTabStop`
+    is honored at layout — a `\t` past the last explicit tab stop now advances by the document's
+    interval instead of a fixed 0.5in constant — and `w:compat/w:compatSetting` triples round-trip
+    verbatim. Authorable via `DocumentBuilder.defaultTabStop(px)` / C# `DefaultTabStop(px)`.
+  All four are demonstrated in the default showcase document and the C# showcase, with docx
+  round-trip + layout tests.
+- **Drag-to-resize table row height.** A horizontal grip on each table row's bottom
+  edge can now be dragged to set that row's height, mirroring the existing
+  column-width resize interaction. The pointer shows a `row-resize` cursor and an
+  accent guide over a grabbable boundary; the drag previews live (each frame
+  relayouts the table) and commits one undoable step on drop, writing the dragged
+  pixel height into `TableRow.height` as `{ value, rule: "atLeast" }` by default (an
+  existing `exact` rule is preserved). Layout still floors an `atLeast` row at its
+  content height, so a row never drags below its content. Column grips win at a cell
+  corner, so the two interactions never collide. Editor-UX only — it reuses the
+  `TableRow.height` model (and thus the `.docx` round-trip) added previously; built
+  on a new `setRowHeight` op with an undo inverse.
+- **Minor & advanced table properties (issue #61).** Tables and cells now carry a set of
+  previously-dropped OOXML properties. Table-level: `TableBlock.indentPx` (`w:tblPr/w:tblInd`)
+  indents the whole table from the leading margin, and `TableBlock.bidiVisual`
+  (`w:tblPr/w:bidiVisual`) lays the columns out in **right-to-left** visual order (grid column
+  0 paints at the right edge) — both honored by the layout engine; `TableBlock.overlap`
+  (`w:tblOverlap`) plus `caption`/`description` (`w:tblCaption`/`w:tblDescription` alt text)
+  round-trip as metadata. Cell-level: `TableCell.textDirection` (`w:textDirection` — vertical
+  text), `noWrap` (`w:noWrap`), `fitText` (`w:tcFitText`), and `hideMark` (`w:hideMark`) all
+  round-trip through `.docx` (parsed in `documentParser`, emitted from `documentXml` in
+  `CT_TblPrBase`/`CT_TcPr` child order). Authorable via the builder
+  (`.table(rows, { indent, bidiVisual, overlap, caption, description })` and cell
+  `{ textDirection, noWrap, fitText, hideMark }`) and the mirrored C# bindings
+  (`TableOptions` + `CellOptions`/`CellSpec`, new `CellTextDirection`/`TableOverlap` enums),
+  and demonstrated in the default showcase document. (Floating positioned tables `w:tblpPr`
+  and conditional-band cell margins `w:tblStylePr/w:tcMar` remain out of scope for this pass.)
+- **Endnotes (`Document.endnotes` + `CharStyle.endnoteRef`).** Endnotes now round-trip
+  alongside footnotes: `endnotes.xml` and `w:endnoteReference` markers import into a
+  per-document note store (previously dropped on import), export back out with their own
+  content-type override, relationship, and part, and lay out at the **end of the document**
+  under a separator rule (Word's "end of document" placement — the counterpart to the
+  page-bottom footnote area). Reference markers auto-number in document order, render in the
+  canvas and PDF, and notes collect on continuation pages as needed. Authorable via the builder
+  (`paragraph(...).endnote("…")` / callback form) and the C# bindings (`ParagraphBuilder.Endnote(…)`),
+  and demonstrated in the default showcase document.
+- **Section break parity (`evenPage`/`oddPage`) + line numbering (`w:lnNumType`).** Section
+  breaks now carry an OOXML `w:sectPr/w:type` of `nextPage` (the default), `evenPage`, or
+  `oddPage` (`Paragraph.style.sectionBreak.type`): an even/odd break forces the new section's
+  first page onto an even/odd page number, with the layout inserting a blank filler page when
+  the running page count has the wrong parity (Word's behavior). Sections can also enable line
+  numbering (`SectionProps.lineNumbering` / `SectionPatch.lineNumbering`, OOXML `w:lnNumType` —
+  `countBy`/`start`/`restart` `continuous`/`newPage`/`newSection`/`distance`), printing a number
+  in the margin beside each body line; previously the break type was silently flattened to
+  `nextPage` and `w:lnNumType` was dropped on import. Both parse, round-trip through `.docx`,
+  and render in the canvas renderer and PDF export. Authorable via the builder
+  (`sectionBreak({ breakType, lineNumbering })`, `pageSetup({ lineNumbering })`) and the C#
+  bindings (`SectionBreakOptions.BreakType`/`LineNumbering`, `PageSetup.LineNumbering`), and
+  demonstrated in the default showcase document.
 - **Paragraph borders & shading (`ParaStyle.borders` + `ParaStyle.shading`).** A whole
   paragraph can now carry a border box (OOXML `w:pBdr` — `top`/`right`/`bottom`/`left`,
   plus a round-tripped inter-paragraph `between` edge) and a background fill (paragraph-level
@@ -38,6 +119,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   via the builder (`paragraph(...).borders({...}).shading("#rrggbb")`) and the C# bindings
   (`ParagraphBuilder.Borders(ParaBorders.All(...))` / `.Shading(...)`), and demonstrated in
   the default showcase document.
+- **Paragraph contextual spacing (`ParaStyle.contextualSpacing`).** Paragraphs flagged
+  with OOXML `w:contextualSpacing` now drop their before/after spacing against an
+  adjacent paragraph of the **same style** — Word's default for list styles, so
+  same-style runs (list items, verse stanzas) sit tight while the run's outer edges
+  keep their spacing. Previously the flag was ignored, so imported lists over-spaced.
+  Parsed in `props.ts`, baked through the style cascade onto the concrete paragraph,
+  re-emitted on export both as direct paragraph formatting (`paraCoreXml`) and as a
+  paragraph-style delta (`partialPPrXml`); the layout engine suppresses the spacing
+  between adjacent same-`namedStyle` paragraphs. Authorable via the builder
+  (`ParagraphBuilder.contextualSpacing()`) and the mirrored C# bindings
+  (`ParagraphBuilder.ContextualSpacing` / `ParaStylePatch.ContextualSpacing`);
+  demonstrated in the default sample document and the C# showcase.
+- **Table row properties (`TableRow.props` — `w:trPr`).** Rows now carry their own
+  OOXML row properties, previously dropped entirely (`TableRow` was just `{ cells }`):
+  `height` (`w:trHeight`) pins a fixed/minimum row height — `rule: "atLeast"` grows the
+  row with its content, `rule: "exact"` forces the height (taller content clips);
+  `cantSplit` (`w:cantSplit`) keeps a row whole across a page break — the paginator is
+  row-atomic (it only ever breaks a table between rows, never inside one), so this
+  invariant already holds for every row and the flag round-trips for `.docx` fidelity; and
+  `repeatHeader` (`w:tblHeader`) re-draws the leading contiguous header rows at the top
+  of every page a table continues onto. All three round-trip through `.docx` (parsed in
+  `documentParser`, emitted from `documentXml` as `w:trPr`) and drive the layout engine
+  (`measureTable` honors the height; `placeTableChunked` repeats the header band as its
+  own contiguous placed block per continuation page). Authorable via the builder
+  (`TableBuilder.row(cells, { height, heightRule, cantSplit, header })`) and the mirrored
+  C# bindings (`RowOptions` + `RowHeightRule`); demonstrated in the default sample
+  document and the C# showcase.
+- **Run case transforms (`CharStyle.caps` + `CharStyle.smallCaps`).** All-caps
+  (OOXML `w:caps`) and small-capitals (`w:smallCaps`) now parse, model, render and
+  round-trip — common on headings and styles. The model text is untouched; the
+  layout bakes the transform into throwaway display runs (uppercasing every letter,
+  and for small caps splitting the originally-lowercase letters into reduced-size
+  sub-runs), so the canvas renderer and the PDF painter draw the transformed glyphs
+  with no painter-specific code. The transform is offset-transparent — it preserves
+  the UTF-16 length per code point — so the caret, hit-testing and measurement land
+  on the uppercased glyphs. Parsed in `props.ts` (a `w:rPr` toggle, including the
+  style-cascade XOR), emitted in `styleProps.ts`, transformed in the layout prepare
+  cache. Authorable via the builder (`.caps()` / `.smallCaps()`) and the mirrored C#
+  bindings (`Caps` / `SmallCaps`); demonstrated in the default sample document and
+- **Fixed line spacing (`ParaStyle.lineRule` + `lineHeightPx`).** Line spacing can now
+  be a fixed point height, not just a multiplier of the font size. OOXML
+  `w:spacing/@w:lineRule="exact"` pins every line box to `lineHeightPx` (taller glyphs
+  clip); `"atLeast"` floors the height there but lets a taller line grow. Previously
+  both were dropped on import (with a `line-rule-exact` warning) and re-exported as
+  `auto`. Now parsed in `import/docx/props.ts` (the `w:line` value read as twips, not
+  240ths), honored in the layout engine's line-metrics (so it drives pagination), and
+  re-emitted with the correct `w:lineRule` on export — a full round-trip. Authorable via
+  the builder (`SpacingOptions.lineRule` / `.lineHeightPx`) and the mirrored C# bindings
+  (`LineRule` enum on `SpacingOptions`); demonstrated in the default sample document and
+  the C# showcase.
+- **Run-level round-trip fidelity — character tracking, theme tint/shade, and CS/EA
+  font slots.** Three details Word stores on a run now survive a full `.docx`
+  round-trip. (1) **Character tracking** (`w:spacing`): the importer reads run-level
+  `w:spacing` into `CharStyle.letterSpacingPx` — export already emitted it, so authored
+  tracking was lost inbound until now. (2) **Theme tint/shade** (`w:themeTint` /
+  `w:themeShade`): a theme color with a tint/shade now resolves to its actual lighter
+  /darker shade instead of flattening to the flat base hue (applied per RGB channel in
+  `theme.ts`). (3) **Complex-script & East-Asian font slots** (`w:rFonts/@w:cs` and
+  `@w:eastAsia`, plus their themed variants): captured into the new
+  `CharStyle.fontFamilyComplexScript` / `fontFamilyEastAsia` (only when they name a face
+  distinct from the Latin slot, since Word writes `w:cs = w:ascii` for plain Latin runs),
+  emitted back from `documentXml`. Authorable via the builder (`fontComplexScript()` /
+  `fontEastAsia()`, plus the existing `letterSpacing()`) and the mirrored C# bindings
+  (`ParagraphBuilder.FontComplexScript` / `FontEastAsia`, `CharStyle.FontFamilyComplexScript`
+  / `FontFamilyEastAsia`); demonstrated in the default sample document and the C# showcase.
 - **Table cell vertical alignment (`TableCell.vAlign`).** Cells can now align their
   content to the `top` (default), `center`, or `bottom` of the cell box via OOXML
   `w:tcPr/w:vAlign` — previously content always hugged the top regardless of the

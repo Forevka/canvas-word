@@ -36,6 +36,12 @@ export interface CharStyle {
   /** Explicit right-to-left run (OOXML w:rPr/w:rtl). Forces a bidi-RTL embedding
    *  regardless of the run's characters. Absent = resolve from Unicode bidi classes. */
   rtl?: boolean | undefined;
+  /** All-caps display (OOXML w:caps) — letters render uppercased; the model text is
+   *  unchanged and the transform is offset-transparent (caret/measurement included). */
+  caps?: boolean | undefined;
+  /** Small-capitals display (OOXML w:smallCaps) — letters render uppercased, with the
+   *  originally-lowercase ones drawn smaller. Takes precedence over `caps`. */
+  smallCaps?: boolean | undefined;
 }
 
 export interface TabStop {
@@ -51,8 +57,14 @@ export interface ParaStyle {
    *  right-to-left: align "left"/"right" read as START/END (mirrored), and
    *  left/right indents swap to start/end. Absent = "ltr". */
   direction?: "ltr" | "rtl";
-  /** Line height multiplier. */
+  /** Line height multiplier (used when `lineRule` is absent/"auto"). */
   lineHeight: number;
+  /** Fixed line-spacing rule (docx w:lineRule). Absent = `lineHeight` is a
+   *  multiplier. "exact" = the line is exactly `lineHeightPx` tall (taller content
+   *  clips); "atLeast" = at least `lineHeightPx`, growing for a taller line. */
+  lineRule?: "exact" | "atLeast";
+  /** Fixed line height in px — meaningful only alongside `lineRule`. */
+  lineHeightPx?: number;
   spaceBeforePx: number;
   spaceAfterPx: number;
   indentFirstLinePx: number;
@@ -60,6 +72,9 @@ export interface ParaStyle {
   indentRightPx?: number;
   keepWithNext?: boolean;
   keepLinesTogether?: boolean;
+  /** Suppress before/after spacing between adjacent same-style paragraphs (docx
+   *  w:contextualSpacing) — Word's default for list styles. */
+  contextualSpacing?: boolean;
   /** This paragraph starts a new page. */
   pageBreakBefore?: boolean;
   /** List membership: definition id + level 0..8. */

@@ -5,14 +5,15 @@
 import type { Block, BandContainer, Paragraph, SectionProps } from "@cw/shared";
 import { markImportedTocEntries } from "@cw/shared";
 import { findMainDocumentPart } from "./contentTypes";
-import { parseDocumentXml, parseFootnotesXml, parseHeaderFooterXml } from "./documentParser";
+import { parseDocumentXml, parseEndnotesXml, parseFootnotesXml, parseHeaderFooterXml } from "./documentParser";
 import { buildStylesheet, buildTableStyles, createMapper, mapSdts, type LinkResolver, type Mapper } from "./mapToModel";
 import { createMediaStore, type MediaStore } from "./media";
 import { parseNumberingXml, EMPTY_NUMBERING } from "./numbering";
 import { findByType, parseRelationships, relsPartFor, type Relationships } from "./relationships";
 import { createStyleResolver, parseStylesXml, resolveTableStyle, EMPTY_STYLES } from "./styles";
 import { parseThemeXml, EMPTY_THEME } from "./theme";
-import { el, parseXml, rootEl } from "./xml";
+import { attr, el, els, numAttr, parseXml, rootEl } from "./xml";
+import { round2, twipsToPx } from "./units";
 import { openArchive, type Archive } from "./zip";
 import { ImportError, WarningSink, type BandRefs, type ImportMedia, type ImportPhase, type ImportResult, type IRSdtProps, type MediaCollector, type RunImportOpts } from "./types";
 
@@ -103,7 +104,8 @@ export function runImport(
   // Their content controls join the document's sdt registry. The first/even
   // variants only apply when Word would use them (w:titlePg / settings evenAndOdd).
   const settingsXml = partByRelType(archive, rels, "settings") ?? archive.text("word/settings.xml");
-  const evenAndOdd = settingsXml !== undefined && hasEvenAndOdd(settingsXml);
+  const settings = settingsXml !== undefined ? parseSettings(settingsXml) : { evenAndOdd: false };
+  const evenAndOdd = settings.evenAndOdd;
   mapBands(section, "header", ir.section?.headerRefs, ir.section?.titlePg ?? false, evenAndOdd, archive, rels, mapper, mediaFor, warnings, ir.sdts);
   mapBands(section, "footer", ir.section?.footerRefs, ir.section?.titlePg ?? false, evenAndOdd, archive, rels, mapper, mediaFor, warnings, ir.sdts);
 
@@ -131,10 +133,40 @@ export function runImport(
       if (paras.length > 0) footnotes[noteId] = paras;
     }
   }
+
+  // Endnotes: same shape as footnotes, but laid out at the document end. Map the
+  // bodies of the notes actually referenced (document order, so numbering matches).
+  const endnotePart = partNameByRelType(rels, "endnotes") ?? "word/endnotes.xml";
+  const endnoteXml = archive.text(endnotePart);
+  const endnoteIR = endnoteXml !== undefined ? parseEndnotesXml(endnoteXml, endnotePart, warnings, ir.sdts) : new Map();
+  // Walk the refs unconditionally so a document with w:endnoteReference markers
+  // but no real note bodies (missing part, only pseudo-notes) still surfaces an
+  // endnote-missing warning rather than silently dropping doc.endnotes. The note
+  // part's rels/media are resolved lazily, only once a body is actually found.
+  const endnotes: Record<string, Paragraph[]> = {};
+  let endCtx: { media: MediaStore; link: LinkResolver } | undefined;
+  for (const { docxId, noteId } of mapper.endnoteRefs()) {
+    const bodyIR = endnoteIR.get(docxId);
+    if (!bodyIR) {
+      warnings.add("endnote-missing", "An endnote reference had no matching note body.");
+      continue;
+    }
+    if (!endCtx) {
+      const endRels = relsOf(archive, endnotePart);
+      endCtx = { media: mediaFor(endRels), link: linkResolverFor(endRels) };
+    }
+    const noteBlocks = mapper.mapBlocks(bodyIR, endCtx.media, endCtx.link);
+    const paras = noteBlocks.filter((b): b is Paragraph => b.kind === "paragraph");
+    if (paras.length < noteBlocks.length) {
+      warnings.add("endnote-tables", "Tables inside endnotes were dropped (endnotes hold paragraphs only).");
+    }
+    if (paras.length > 0) endnotes[noteId] = paras;
+  }
   progress("map", 1);
 
   const doc: ImportResult["doc"] = { section, blocks };
   if (Object.keys(footnotes).length > 0) doc.footnotes = footnotes;
+  if (Object.keys(endnotes).length > 0) doc.endnotes = endnotes;
   const sdts = mapSdts(ir.sdts);
   if (Object.keys(sdts).length > 0) doc.sdts = sdts;
   const lists = mapper.lists();
@@ -164,6 +196,11 @@ export function runImport(
   // Custom (non-built-in) fields captured during the body walk — their result
   // blocks already carry the matching fieldId (see mapToModel).
   if (ir.fields) doc.fields = ir.fields;
+
+  // Document-level settings.xml bits: a non-default tab interval honored at layout,
+  // and compat triples round-tripped verbatim.
+  if (settings.defaultTabStopPx !== undefined) doc.defaultTabStopPx = settings.defaultTabStopPx;
+  if (settings.compatSettings) doc.compatSettings = settings.compatSettings;
 
   return {
     doc,
@@ -222,10 +259,32 @@ function mapBands(
   if (evenAndOdd) set(slot("Even"), refs.even);
 }
 
-/** settings.xml w:evenAndOddHeadersAndFooters — even-page bands only apply when on. */
-function hasEvenAndOdd(settingsXml: string): boolean {
+interface ParsedSettings {
+  /** w:evenAndOddHeadersAndFooters — even-page bands only apply when on. */
+  evenAndOdd: boolean;
+  /** w:defaultTabStop (twips) → px — the layout's tab interval past the last stop. */
+  defaultTabStopPx?: number;
+  /** w:compat/w:compatSetting triples, round-tripped verbatim. */
+  compatSettings?: { name: string; uri: string; val: string }[];
+}
+
+/** Decode the document-level settings.xml bits the model cares about. */
+function parseSettings(settingsXml: string): ParsedSettings {
   const root = rootEl(parseXml(settingsXml, "settings.xml"), "w:settings");
-  return !!root && !!el(root, "w:evenAndOddHeadersAndFooters");
+  if (!root) return { evenAndOdd: false };
+  const out: ParsedSettings = { evenAndOdd: !!el(root, "w:evenAndOddHeadersAndFooters") };
+  const twips = numAttr(el(root, "w:defaultTabStop"), "w:val");
+  // Word's own default is 720 twips; only carry an explicit, non-default value so a
+  // plain document keeps the engine's fallback constant (no needless model field).
+  if (twips !== undefined && twips > 0 && twips !== 720) out.defaultTabStopPx = round2(twipsToPx(twips));
+  const compat = el(root, "w:compat");
+  if (compat) {
+    const settings = els(compat, "w:compatSetting")
+      .map((c) => ({ name: attr(c, "w:name") ?? "", uri: attr(c, "w:uri") ?? "", val: attr(c, "w:val") ?? "" }))
+      .filter((c) => c.name !== "");
+    if (settings.length > 0) out.compatSettings = settings;
+  }
+  return out;
 }
 
 function relsOf(archive: Archive, partName: string): Relationships {

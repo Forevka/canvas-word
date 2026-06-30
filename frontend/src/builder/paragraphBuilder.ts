@@ -24,8 +24,14 @@ export interface SpacingOptions {
   before?: number;
   /** Space after the paragraph, px. */
   after?: number;
-  /** Line height multiplier (1.0 = single). */
+  /** Line height multiplier (1.0 = single). Used when `lineRule` is omitted. */
   lineHeight?: number;
+  /** Fixed line-spacing rule (docx w:lineRule). "exact" = the line is exactly
+   *  `lineHeightPx` tall (taller content clips); "atLeast" = at least that,
+   *  growing for a taller line. Set `lineHeightPx` alongside it. */
+  lineRule?: "exact" | "atLeast";
+  /** Fixed line height in px — used with `lineRule`. */
+  lineHeightPx?: number;
 }
 
 export interface IndentOptions {
@@ -183,6 +189,18 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     return this.applyChar({ fontFamily: family });
   }
 
+  /** Set the complex-script (bidi) font — OOXML w:rFonts/@w:cs. Preserved through
+   *  the .docx round-trip; layout/paint still use the main font(). */
+  fontComplexScript(family: string): this {
+    return this.applyChar({ fontFamilyComplexScript: family });
+  }
+
+  /** Set the East-Asian (CJK) font — OOXML w:rFonts/@w:eastAsia. Preserved through
+   *  the .docx round-trip; layout/paint still use the main font(). */
+  fontEastAsia(family: string): this {
+    return this.applyChar({ fontFamilyEastAsia: family });
+  }
+
   /** Make the paragraph's text a hyperlink (painted blue+underlined, Ctrl+click). */
   link(url: string): this {
     return this.applyChar({ link: url });
@@ -222,10 +240,35 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     return on ? this.applyChar({ hidden: true }) : this.clearChar("hidden");
   }
 
+  /** All-caps display (OOXML w:caps): every letter renders UPPERCASED while the
+   *  model text stays as authored (offset-transparent). Common on headings. An
+   *  explicit `caps(false)` writes the OFF override (w:caps="0"), so it can clear
+   *  casing inherited from a character style — mirroring bold(false). */
+  caps(on = true): this {
+    return this.applyChar({ caps: on });
+  }
+
+  /** Small-capitals display (OOXML w:smallCaps): letters render uppercased, with the
+   *  originally-lowercase ones drawn smaller. Takes precedence over caps(). An
+   *  explicit `smallCaps(false)` writes the OFF override (w:smallCaps="0"). */
+  smallCaps(on = true): this {
+    return this.applyChar({ smallCaps: on });
+  }
+
   /** Force this run's text to a right-to-left embedding (OOXML w:rtl), regardless
    *  of its characters. For the paragraph's base direction use .direction("rtl"). */
   rtl(on = true): this {
     return on ? this.applyChar({ rtl: true }) : this.clearChar("rtl");
+  }
+
+  /** Append a symbol-font glyph (OOXML w:sym). `font` is the symbol font (e.g.
+   *  "Wingdings"); `charHex` is the hex code point Word stores (e.g. "F0E0", usually
+   *  a Private-Use value). The run renders the decoded glyph in `font` and re-emits
+   *  w:sym on export. */
+  symbol(font: string, charHex: string): this {
+    const cp = parseInt(charHex, 16);
+    const text = Number.isFinite(cp) && cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : "�";
+    return this.pushRun(this.ctx.run(text, { ...this.charPatch, fontFamily: `${font}, sans-serif`, symbol: { font, char: charHex.toUpperCase() } }));
   }
 
   /** Apply a registered character style (a type:"character" NamedStyle): bakes its
@@ -382,6 +425,27 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     return this.pushRun(this.ctx.run(String(n), { footnoteRef: id, verticalAlign: "super", fontSizePx: 11 }));
   }
 
+  /** Append an auto-numbered endnote reference; the note body is a string (one
+   *  paragraph) or a StoryBuilder callback (rich, multi-paragraph). Endnotes
+   *  collect at the END of the document instead of the page bottom. */
+  endnote(content: string | ((s: StoryBuilder) => void)): this {
+    const endnotes = (this.ctx.doc.endnotes ??= {});
+    const n = this.ctx.nextEndnoteNumber();
+    const id = this.ctx.ids.next();
+    let paras: Paragraph[];
+    if (typeof content === "string") {
+      paras = [this.ctx.paragraph([this.ctx.run(content, { fontSizePx: 12 })], { spaceAfterPx: 0 })];
+    } else {
+      const blocks: Block[] = [];
+      content(new StoryBuilder(this.ctx, blocks));
+      paras = blocks.filter((b): b is Paragraph => b.kind === "paragraph");
+      if (paras.length < blocks.length) this.ctx.warn("endnote-non-paragraph", "Endnote bodies hold paragraphs only — non-paragraph blocks were dropped.");
+      if (paras.length === 0) paras = [this.ctx.paragraph([])];
+    }
+    endnotes[id] = paras;
+    return this.pushRun(this.ctx.run(String(n), { endnoteRef: id, verticalAlign: "super", fontSizePx: 11 }));
+  }
+
   /** Append `text` and bookmark exactly that run's range in this paragraph. */
   bookmark(name: string, text: string, style?: Partial<CharStyle>): this {
     const bookmarks = (this.ctx.doc.bookmarks ??= {});
@@ -404,6 +468,21 @@ export class ParagraphBuilder<P extends StoryBuilder> {
   spacing(opts: SpacingOptions): this {
     if (opts.before !== undefined) this.para.style.spaceBeforePx = opts.before;
     if (opts.after !== undefined) this.para.style.spaceAfterPx = opts.after;
+    if (opts.lineRule !== undefined) {
+      // A fixed rule is meaningless without its height; never store a half-set rule
+      // (it would export as w:line="0" and disagree with layout).
+      if (opts.lineHeightPx === undefined) {
+        this.ctx.warn("spacing-line-height-missing", ".spacing({ lineRule }) requires lineHeightPx; ignored.");
+      } else {
+        this.para.style.lineRule = opts.lineRule;
+        this.para.style.lineHeightPx = opts.lineHeightPx;
+      }
+    } else if (opts.lineHeight !== undefined) {
+      // Switching back to multiplier spacing — drop any previously-set fixed rule so
+      // call-order precedence holds (a later .spacing({ lineHeight }) wins).
+      delete (this.para.style as Partial<ParaStyle>).lineRule;
+      delete (this.para.style as Partial<ParaStyle>).lineHeightPx;
+    }
     if (opts.lineHeight !== undefined) this.para.style.lineHeight = opts.lineHeight;
     return this;
   }
@@ -423,6 +502,13 @@ export class ParagraphBuilder<P extends StoryBuilder> {
   /** Never split this paragraph across pages/columns (docx w:keepLines). */
   keepTogether(on = true): this {
     this.para.style.keepLinesTogether = on;
+    return this;
+  }
+
+  /** Suppress before/after spacing between this paragraph and an adjacent
+   *  same-style paragraph (docx w:contextualSpacing) — Word's list-style default. */
+  contextualSpacing(on = true): this {
+    this.para.style.contextualSpacing = on;
     return this;
   }
 
@@ -459,6 +545,38 @@ export class ParagraphBuilder<P extends StoryBuilder> {
   /** Paragraph shading — a CSS fill painted behind the paragraph (OOXML w:shd). */
   shading(cssColor: string): this {
     this.para.style.shading = cssColor;
+    return this;
+  }
+
+  /** Widow/orphan control (OOXML w:widowControl). Word's default is ON; pass
+   *  `false` to let a lone first/last line break across a page boundary. */
+  widowControl(on = true): this {
+    this.para.style.widowControl = on;
+    return this;
+  }
+
+  /** Exclude this paragraph from line numbering (OOXML w:suppressLineNumbers). */
+  suppressLineNumbers(on = true): this {
+    this.para.style.suppressLineNumbers = on;
+    return this;
+  }
+
+  /** Vertical alignment of text within each line box (OOXML w:textAlignment):
+   *  "top"/"center"/"bottom" hug the edge, "baseline" (default) rides the baseline. */
+  textAlignment(v: "top" | "center" | "bottom" | "baseline"): this {
+    this.para.style.textAlignment = v;
+    return this;
+  }
+
+  /** Symmetric (mirrored) indents for facing-page layouts (OOXML w:mirrorIndents). */
+  mirrorIndents(on = true): this {
+    this.para.style.mirrorIndents = on;
+    return this;
+  }
+
+  /** Auto-adjust the right indent to the document grid (OOXML w:adjustRightInd). */
+  adjustRightInd(on = true): this {
+    this.para.style.adjustRightInd = on;
     return this;
   }
 

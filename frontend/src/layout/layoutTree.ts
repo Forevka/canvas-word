@@ -61,6 +61,9 @@ export interface PlacedImage {
   /** Clip rect (block-absolute) for object-fit:cover — a sole image filling a
    *  tall cell is scaled to cover and clipped to the cell box. Absent = no clip. */
   clip?: { x: number; y: number; width: number; height: number };
+  /** Source crop insets (ImageBlock.crop, OOXML a:srcRect) as 0..1 fractions —
+   *  paint shows only [left,1-right]×[top,1-bottom] of the source. Absent = none. */
+  crop?: { left: number; top: number; right: number; bottom: number };
   /** Behind-text anchored image (ImageBlock.anchor.behind): painted under the
    *  text and ignored by hit-testing so the text beneath stays selectable. */
   behind?: boolean;
@@ -173,6 +176,12 @@ export interface Page {
   columnSeparatorsX?: number[];
   /** Footnote separator rule (present only on pages carrying notes). */
   footnoteRuleY?: number;
+  /** Endnote separator rule (present only on the page where endnotes begin). */
+  endnoteRuleY?: number;
+  /** Margin line numbers (w:lnNumType) — paint-only labels already positioned in
+   *  page coords (`x` is the pre-measured left edge; `baseline` the text baseline).
+   *  Present only on pages whose section enables line numbering. */
+  lineNumbers?: { x: number; baseline: number; text: string; style: CharStyle }[];
   /** Margin-band stories, already positioned in page coords. Read-only: the
    *  geometry index deliberately skips them (no caret/selection in bands yet). */
   header?: PlacedBlock[];

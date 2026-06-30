@@ -196,6 +196,49 @@ describe("engine — pagination", () => {
   });
 });
 
+// --- contextual spacing (w:contextualSpacing) -----------------------------
+
+describe("engine — contextual spacing", () => {
+  // Pure line advance (no before/after spacing) — the reference each case compares to.
+  const lineAdvance = (): number => {
+    const plain = [para("a"), para("b")];
+    const t = layout(doc(plain));
+    return placedOf(t, plain[1]!.id)!.pb.y - placedOf(t, plain[0]!.id)!.pb.y;
+  };
+
+  it("collapses inter-paragraph spacing across a same-style run", () => {
+    const adv = lineAdvance();
+    const opts = { spaceBeforePx: 20, spaceAfterPx: 20, contextualSpacing: true };
+    const a = para("a", opts), b = para("b", opts), c = para("c", opts);
+    const tree = layout(doc([a, b, c]));
+    const ya = placedOf(tree, a.id)!.pb.y;
+    const yb = placedOf(tree, b.id)!.pb.y;
+    const yc = placedOf(tree, c.id)!.pb.y;
+    // Same style + contextualSpacing → all inter-paragraph spacing collapses, so
+    // each paragraph advances by exactly one line height — as if unspaced.
+    expect(yb - ya).toBe(adv);
+    expect(yc - yb).toBe(adv);
+  });
+
+  it("keeps inter-paragraph spacing without the flag (control)", () => {
+    const opts = { spaceBeforePx: 20, spaceAfterPx: 20 };
+    const a = para("a", opts), b = para("b", opts);
+    const tree = layout(doc([a, b]));
+    const gap = placedOf(tree, b.id)!.pb.y - placedOf(tree, a.id)!.pb.y;
+    // No flag: a.after (20) + b.before (20) on top of the line advance.
+    expect(gap).toBe(lineAdvance() + 40);
+  });
+
+  it("does not collapse against a paragraph of a different style", () => {
+    const a = para("a", { spaceAfterPx: 20, contextualSpacing: true, namedStyle: "Verse" });
+    const b = para("b", { spaceBeforePx: 20, contextualSpacing: true, namedStyle: "Body" });
+    const tree = layout(doc([a, b]));
+    const gap = placedOf(tree, b.id)!.pb.y - placedOf(tree, a.id)!.pb.y;
+    // Different namedStyle → suppression doesn't apply; both spacings remain.
+    expect(gap).toBe(lineAdvance() + 40);
+  });
+});
+
 // --- table grid sizing (pure) ---------------------------------------------
 
 describe("engine — grid column count", () => {
@@ -329,6 +372,40 @@ describe("engine — cell shading and borders", () => {
     // Sanity: the text actually wrapped (more than one line), so the assertion
     // above is meaningful rather than vacuously true on a single short line.
     expect(pb.lines.length).toBeGreaterThan(1);
+  });
+});
+
+describe("engine — fixed line spacing (w:lineRule)", () => {
+  const lineHeightsOf = (p: Paragraph): number[] =>
+    placedOf(layout(doc([p])), p.id)!.pb.lines.map((l) => l.height);
+
+  // The natural single-line glyph height of a 16px run under the test metrics:
+  // an "auto" paragraph at multiplier 1 floors to exactly the glyph height.
+  const NATURAL = lineHeightsOf(para("short line", { lineHeight: 1 }))[0]!;
+
+  it("'exact' pins every line to lineHeightPx, ignoring the multiplier", () => {
+    const tall = para("short line", { lineRule: "exact", lineHeightPx: NATURAL + 12, lineHeight: 1 });
+    expect(lineHeightsOf(tall)).toEqual([NATURAL + 12]);
+  });
+
+  it("'exact' clamps BELOW the natural glyph height (content clips)", () => {
+    const tight = para("short line", { lineRule: "exact", lineHeightPx: NATURAL - 6 });
+    expect(lineHeightsOf(tight)).toEqual([NATURAL - 6]); // exact wins even under natural
+  });
+
+  it("'atLeast' floors the line height but grows for a taller line", () => {
+    const floored = para("short line", { lineRule: "atLeast", lineHeightPx: NATURAL + 10 });
+    expect(lineHeightsOf(floored)).toEqual([NATURAL + 10]); // floor above natural applies
+
+    const grown = para("short line", { lineRule: "atLeast", lineHeightPx: NATURAL - 6 });
+    expect(lineHeightsOf(grown)).toEqual([NATURAL]); // floor below natural → natural wins
+  });
+
+  it("a multi-line 'exact' paragraph keeps a constant line pitch", () => {
+    const p = para("x".repeat(400), { lineRule: "exact", lineHeightPx: NATURAL + 8 });
+    const heights = lineHeightsOf(p);
+    expect(heights.length).toBeGreaterThan(1);
+    expect(heights.every((h) => h === NATURAL + 8)).toBe(true);
   });
 });
 
@@ -555,6 +632,72 @@ describe("engine — sections", () => {
     expect(tree.pages[0]!.number).toBe(1);
     expect(tree.pages[1]!.number).toBe(2);
   });
+
+  it("resolveSections carries the section-break type", () => {
+    const a = para("sec one", { sectionBreak: { type: "oddPage", props: {} } });
+    const sections = resolveSections(doc([a, para("sec two")]));
+    expect(sections[0]!.breakType).toBe("oddPage");
+    expect(sections.at(-1)!.breakType).toBe("nextPage"); // the body section
+  });
+});
+
+// --- even/odd section-start parity (issue #59) -----------------------------
+
+describe("engine — section parity (evenPage/oddPage)", () => {
+  it("inserts a blank filler page so an oddPage section starts on an odd page", () => {
+    // sec0 ends at block 0 (nextPage), sec1 ends at block 1 (oddPage) and is the
+    // section crossed into; the body section follows. block0 → page 1; crossing
+    // into sec1 needs a new page (would be 2, even) so a blank filler is inserted
+    // and the content lands on page 3 (odd).
+    const blocks: Block[] = [
+      para("first", { sectionBreak: { type: "nextPage", props: {} } }),
+      para("numbered", { sectionBreak: { type: "oddPage", props: {} } }),
+      para("tail"),
+    ];
+    const tree = layout(doc(blocks));
+    const numbered = placedOf(tree, blocks[1]!.id)!;
+    expect(numbered.page).toBe(2); // page index 2 = page number 3
+    expect(tree.pages[2]!.number % 2).toBe(1); // odd
+    expect(tree.pages[1]!.blocks).toHaveLength(0); // the filler is blank
+  });
+
+  it("does NOT insert a filler when the parity already matches", () => {
+    // Crossing into the second section lands on page 2 naturally; an evenPage
+    // break wants even, so no filler is needed.
+    const blocks: Block[] = [
+      para("first", { sectionBreak: { type: "nextPage", props: {} } }),
+      para("even", { sectionBreak: { type: "evenPage", props: {} } }),
+      para("tail"),
+    ];
+    const tree = layout(doc(blocks));
+    const even = placedOf(tree, blocks[1]!.id)!;
+    expect(even.page).toBe(1); // page number 2 — already even, no filler
+    expect(tree.pages[1]!.blocks.length).toBeGreaterThan(0);
+  });
+});
+
+// --- margin line numbers (w:lnNumType) -------------------------------------
+
+describe("engine — line numbering", () => {
+  it("numbers every body line in the margin when countBy is 1", () => {
+    const blocks = [para("one"), para("two"), para("three")];
+    const tree = layout(doc(blocks, { lineNumbering: { countBy: 1 } }));
+    const lns = tree.pages[0]!.lineNumbers!;
+    expect(lns.map((l) => l.text)).toEqual(["1", "2", "3"]);
+    // numbers sit in the left margin (left of the content start)
+    for (const l of lns) expect(l.x).toBeLessThan(SECTION.marginPx.left);
+  });
+
+  it("honors countBy and start (shows only multiples)", () => {
+    const blocks = Array.from({ length: 6 }, (_, i) => para(`l${i}`));
+    const tree = layout(doc(blocks, { lineNumbering: { countBy: 2, start: 1 } }));
+    expect(tree.pages[0]!.lineNumbers!.map((l) => l.text)).toEqual(["2", "4", "6"]);
+  });
+
+  it("leaves pages unnumbered when no section enables line numbering", () => {
+    const tree = layout(doc([para("plain")]));
+    expect(tree.pages[0]!.lineNumbers).toBeUndefined();
+  });
 });
 
 // --- newspaper columns -----------------------------------------------------
@@ -646,6 +789,64 @@ describe("engine — footnotes", () => {
     const placedNote = placedOf(tree, note.id)!;
     expect(placedNote.page).toBe(refPage);
     expect(placedNote.pb.y).toBeGreaterThan(tree.pages[refPage]!.footnoteRuleY!);
+  });
+});
+
+// --- endnotes -------------------------------------------------------------
+
+describe("engine — endnotes", () => {
+  it("collects the referenced note at the document end, under a separator rule", () => {
+    const note = para("the endnote body");
+    const refPara: Paragraph = {
+      kind: "paragraph",
+      id: fresh(),
+      revision: 0,
+      runs: [
+        { text: "body text", style: { ...CHAR } },
+        { text: "1", style: { ...CHAR, endnoteRef: "en1", verticalAlign: "super" } },
+      ],
+      style: { ...PARA },
+    };
+    const d: Document = { ...doc([refPara]), endnotes: { en1: [note] } };
+    const tree = layout(d);
+    // The note body is placed somewhere…
+    const placedNote = placedOf(tree, note.id)!;
+    expect(placedNote).not.toBeNull();
+    // …on a page carrying the endnote separator rule, below that rule…
+    const enRuleY = tree.pages[placedNote.page]!.endnoteRuleY;
+    expect(enRuleY).toBeGreaterThan(0);
+    expect(placedNote.pb.y).toBeGreaterThan(enRuleY!);
+    // …and at or after the page the reference landed on (document-end placement).
+    const refPage = placedOf(tree, refPara.id)!.page;
+    expect(placedNote.page).toBeGreaterThanOrEqual(refPage);
+    // The note carries its number marker (paint-only), hung in the indent.
+    expect(placedNote.pb.marker?.text).toBe("1.");
+  });
+
+  it("collects an endnote referenced from inside a table cell", () => {
+    const note = para("the endnote body");
+    const refCell: TableCell = {
+      id: fresh(),
+      blocks: [
+        {
+          kind: "paragraph",
+          id: fresh(),
+          revision: 0,
+          runs: [
+            { text: "cell text", style: { ...CHAR } },
+            { text: "1", style: { ...CHAR, endnoteRef: "en1", verticalAlign: "super" } },
+          ],
+          style: { ...PARA },
+        },
+      ],
+    };
+    const t = table([[refCell, cell("other")]]);
+    const d: Document = { ...doc([t]), endnotes: { en1: [note] } };
+    const tree = layout(d);
+    const placedNote = placedOf(tree, note.id)!;
+    expect(placedNote).not.toBeNull();
+    expect(tree.pages[placedNote.page]!.endnoteRuleY).toBeGreaterThan(0);
+    expect(placedNote.pb.y).toBeGreaterThan(tree.pages[placedNote.page]!.endnoteRuleY!);
   });
 });
 

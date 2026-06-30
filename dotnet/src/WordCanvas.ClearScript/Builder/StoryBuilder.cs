@@ -208,13 +208,26 @@ public sealed class ParagraphBuilder
     public ParagraphBuilder Highlight(string cssColor) { _js.InvokeMethod("highlight", cssColor); return this; }
     public ParagraphBuilder FontSize(double px) { _js.InvokeMethod("fontSize", px); return this; }
     public ParagraphBuilder Font(string family) { _js.InvokeMethod("font", family); return this; }
+    /// <summary>Complex-script (bidi) font — OOXML w:rFonts/@w:cs; preserved through the .docx round-trip.</summary>
+    public ParagraphBuilder FontComplexScript(string family) { _js.InvokeMethod("fontComplexScript", family); return this; }
+    /// <summary>East-Asian (CJK) font — OOXML w:rFonts/@w:eastAsia; preserved through the .docx round-trip.</summary>
+    public ParagraphBuilder FontEastAsia(string family) { _js.InvokeMethod("fontEastAsia", family); return this; }
     public ParagraphBuilder Link(string url) { _js.InvokeMethod("link", url); return this; }
     public ParagraphBuilder Superscript(bool on = true) { _js.InvokeMethod("superscript", on); return this; }
     public ParagraphBuilder Subscript(bool on = true) { _js.InvokeMethod("subscript", on); return this; }
     public ParagraphBuilder LetterSpacing(double px) { _js.InvokeMethod("letterSpacing", px); return this; }
     public ParagraphBuilder Hidden(bool on = true) { _js.InvokeMethod("hidden", on); return this; }
+    /// <summary>All-caps display (OOXML w:caps): every letter renders uppercased; model text is unchanged.</summary>
+    public ParagraphBuilder Caps(bool on = true) { _js.InvokeMethod("caps", on); return this; }
+    /// <summary>Small-capitals display (OOXML w:smallCaps): uppercased letters with the originally-lowercase ones drawn smaller. Takes precedence over Caps.</summary>
+    public ParagraphBuilder SmallCaps(bool on = true) { _js.InvokeMethod("smallCaps", on); return this; }
     /// <summary>Force this run's text to a right-to-left embedding (OOXML w:rtl).</summary>
     public ParagraphBuilder Rtl(bool on = true) { _js.InvokeMethod("rtl", on); return this; }
+
+    /// <summary>Append a symbol-font glyph (OOXML w:sym). <paramref name="font"/> is the
+    /// symbol font (e.g. "Wingdings"); <paramref name="charHex"/> is the hex code point Word
+    /// stores (e.g. "F0E0"). The run renders the decoded glyph and re-emits w:sym on export.</summary>
+    public ParagraphBuilder Symbol(string font, string charHex) { _js.InvokeMethod("symbol", font, charHex); return this; }
 
     /// <summary>Apply a registered character style (a character NamedStyle): bakes its
     /// formatting onto the runs AND sets the w:rStyle reference.</summary>
@@ -242,6 +255,9 @@ public sealed class ParagraphBuilder
     public ParagraphBuilder KeepWithNext(bool on = true) { _js.InvokeMethod("keepWithNext", on); return this; }
     /// <summary>Never split this paragraph across pages/columns (docx w:keepLines).</summary>
     public ParagraphBuilder KeepTogether(bool on = true) { _js.InvokeMethod("keepTogether", on); return this; }
+    /// <summary>Suppress before/after spacing between this paragraph and an adjacent same-style
+    /// paragraph (docx w:contextualSpacing) — Word's list-style default.</summary>
+    public ParagraphBuilder ContextualSpacing(bool on = true) { _js.InvokeMethod("contextualSpacing", on); return this; }
     /// <summary>Base writing direction (OOXML w:bidi); "rtl" lays the paragraph out right-to-left.</summary>
     public ParagraphBuilder Direction(Direction dir) { _js.InvokeMethod("direction", EnumJs.Dir(dir)); return this; }
     /// <summary>Outline level 0..8 (TOC levels 1..9) — a TOC entry without a heading style.</summary>
@@ -264,6 +280,18 @@ public sealed class ParagraphBuilder
 
     /// <summary>Paragraph shading — a CSS fill painted behind the paragraph (OOXML w:shd).</summary>
     public ParagraphBuilder Shading(string cssColor) { _js.InvokeMethod("shading", cssColor); return this; }
+
+    /// <summary>Widow/orphan control (OOXML w:widowControl). Word's default is ON;
+    /// pass false to let a lone first/last line break across a page boundary.</summary>
+    public ParagraphBuilder WidowControl(bool on = true) { _js.InvokeMethod("widowControl", on); return this; }
+    /// <summary>Exclude this paragraph from line numbering (OOXML w:suppressLineNumbers).</summary>
+    public ParagraphBuilder SuppressLineNumbers(bool on = true) { _js.InvokeMethod("suppressLineNumbers", on); return this; }
+    /// <summary>Vertical alignment of text within each line box (OOXML w:textAlignment).</summary>
+    public ParagraphBuilder TextAlignment(LineVAlign v) { _js.InvokeMethod("textAlignment", EnumJs.TextVAlign(v)); return this; }
+    /// <summary>Symmetric (mirrored) indents for facing-page layouts (OOXML w:mirrorIndents).</summary>
+    public ParagraphBuilder MirrorIndents(bool on = true) { _js.InvokeMethod("mirrorIndents", on); return this; }
+    /// <summary>Auto-adjust the right indent to the document grid (OOXML w:adjustRightInd).</summary>
+    public ParagraphBuilder AdjustRightInd(bool on = true) { _js.InvokeMethod("adjustRightInd", on); return this; }
 
     // ---- inline fields ----
     public ParagraphBuilder PageField() { _js.InvokeMethod("pageField"); return this; }
@@ -358,6 +386,17 @@ public sealed class ParagraphBuilder
         _js.InvokeMethod("footnote", cb);
         return this;
     }
+
+    /// <summary>Append an auto-numbered endnote whose body is a single paragraph (collected at the document end).</summary>
+    public ParagraphBuilder Endnote(string text) { _js.InvokeMethod("endnote", text); return this; }
+
+    /// <summary>Append an auto-numbered endnote whose body is built via the callback.</summary>
+    public ParagraphBuilder Endnote(Action<StoryBuilder> build)
+    {
+        Action<object> cb = s => build(new StoryBuilder(_engine, (ScriptObject)s));
+        _js.InvokeMethod("endnote", cb);
+        return this;
+    }
 }
 
 /// <summary>Structural table scope (rows, spans, column fractions).</summary>
@@ -372,18 +411,20 @@ public sealed class TableBuilder
         _js = js;
     }
 
-    public TableBuilder Row(IEnumerable<CellContent> cells)
+    public TableBuilder Row(IEnumerable<CellContent> cells, RowOptions? opts = null)
     {
         var arr = Js.Arr(_engine);
         foreach (var c in cells) Js.Push(arr, c.ToJs(_engine));
-        _js.InvokeMethod("row", arr);
+        if (opts is not null) _js.InvokeMethod("row", arr, opts.ToJs(_engine));
+        else _js.InvokeMethod("row", arr);
         return this;
     }
 
-    public TableBuilder Row(Action<RowBuilder> build)
+    public TableBuilder Row(Action<RowBuilder> build, RowOptions? opts = null)
     {
         Action<object> cb = r => build(new RowBuilder(_engine, (ScriptObject)r));
-        _js.InvokeMethod("row", cb);
+        if (opts is not null) _js.InvokeMethod("row", cb, opts.ToJs(_engine));
+        else _js.InvokeMethod("row", cb);
         return this;
     }
 

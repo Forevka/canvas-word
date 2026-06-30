@@ -14,6 +14,7 @@ import type {
   FieldDef,
   Paragraph,
   ParaStyle,
+  RowProps,
   Run,
   SdtProps,
   SectionPatch,
@@ -142,10 +143,20 @@ function singleRun(run: Run, ctx: PartCtx): string {
     return oMath;
   }
   const rPr = rPrXml(s);
+  if (s.symbol) {
+    // Symbol-font glyph: re-emit w:sym (font + hex code point) instead of w:t, so
+    // it round-trips as a real Word symbol rather than a stray Private-Use char.
+    return el("w:r", undefined, rPr + el("w:sym", { "w:font": s.symbol.font, "w:char": s.symbol.char }));
+  }
   if (s.footnoteRef) {
     // model footnoteRef "fn<docxId>" -> w:footnoteReference w:id="<docxId>".
     const docxId = s.footnoteRef.replace(/^fn/, "");
     return el("w:r", undefined, rPr + el("w:footnoteReference", { "w:id": docxId }));
+  }
+  if (s.endnoteRef) {
+    // model endnoteRef "en<docxId>" -> w:endnoteReference w:id="<docxId>".
+    const docxId = s.endnoteRef.replace(/^en/, "");
+    return el("w:r", undefined, rPr + el("w:endnoteReference", { "w:id": docxId }));
   }
   // Page-number tokens -> live PAGE/NUMPAGES fields (header/footer only). Skipped
   // inside hyperlinks (page tokens never live in a link) so the wrapper logic
@@ -258,6 +269,15 @@ function pPrXml(style: ParaStyle, ctx: PartCtx, markRun?: CharStyle): string {
   if (style.pageBreakBefore) c.push(el("w:pageBreakBefore"));
   if (style.keepWithNext) c.push(el("w:keepNext"));
   if (style.keepLinesTogether) c.push(el("w:keepLines"));
+  // Minor paragraph props (issue #62). Each on/off element is emitted whenever the
+  // field is DEFINED (an explicit "0" preserves an OFF that overrides a true value
+  // inherited from style.namedStyle); absent stays absent. w:textAlignment is the
+  // sole valued element. Our importer is order-independent, so grouping here is fine.
+  if (style.widowControl !== undefined) c.push(el("w:widowControl", style.widowControl ? undefined : { "w:val": "0" }));
+  if (style.suppressLineNumbers !== undefined) c.push(el("w:suppressLineNumbers", style.suppressLineNumbers ? undefined : { "w:val": "0" }));
+  if (style.mirrorIndents !== undefined) c.push(el("w:mirrorIndents", style.mirrorIndents ? undefined : { "w:val": "0" }));
+  if (style.adjustRightInd !== undefined) c.push(el("w:adjustRightInd", style.adjustRightInd ? undefined : { "w:val": "0" }));
+  if (style.textAlignment) c.push(el("w:textAlignment", { "w:val": style.textAlignment }));
   // w:pBdr / w:shd precede spacing/ind/jc in the CT_PPr schema sequence.
   if (style.borders) c.push(paraBordersXml(style.borders));
   if (style.shading) c.push(el("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": hex(style.shading) }));
@@ -273,7 +293,7 @@ function pPrXml(style: ParaStyle, ctx: PartCtx, markRun?: CharStyle): string {
   if (markRun) c.push(rPrXml(markRun));
 
   // A mid-document section break rides the paragraph that ENDS the section.
-  if (style.sectionBreak) c.push(sectPrXml(style.sectionBreak.props, ctx, () => "", false));
+  if (style.sectionBreak) c.push(sectPrXml(style.sectionBreak.props, ctx, () => "", false, style.sectionBreak.type));
 
   return el("w:pPr", undefined, c.join(""));
 }
@@ -390,6 +410,8 @@ function cellXml(cell: TableCell, ctx: PartCtx, vMergeRestart = false): string {
   if (vMergeRestart) pr.push(el("w:vMerge", { "w:val": "restart" }));
   if (cell.shading) pr.push(el("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": hex(cell.shading) }));
   if (cell.borders) pr.push(bordersXml("w:tcBorders", cell.borders));
+  // w:noWrap (CT_OnOff) precedes w:tcMar per CT_TcPr.
+  if (cell.noWrap) pr.push(el("w:noWrap"));
   // Cell padding (w:tcMar). The importer resolves every side onto cell.margin, so
   // omitting it would re-import as Word's default (0 top/bottom) — silently
   // shrinking every row and drifting page count. Emit all four sides to round-trip.
@@ -402,9 +424,14 @@ function cellXml(cell: TableCell, ctx: PartCtx, vMergeRestart = false): string {
       el("w:right", { "w:w": pxToTwips(m.right), "w:type": "dxa" }),
     ));
   }
+  // w:textDirection + w:tcFitText follow w:tcMar and precede w:vAlign per CT_TcPr.
+  if (cell.textDirection) pr.push(el("w:textDirection", { "w:val": cell.textDirection }));
+  if (cell.fitText) pr.push(el("w:tcFitText"));
   // w:vAlign (vertical content alignment) follows w:tcMar per CT_TcPr. "top" is the
   // default, so only center/bottom are emitted.
   if (cell.vAlign === "center" || cell.vAlign === "bottom") pr.push(el("w:vAlign", { "w:val": cell.vAlign }));
+  // w:hideMark is the LAST child of CT_TcPr.
+  if (cell.hideMark) pr.push(el("w:hideMark"));
   const tcPr = el("w:tcPr", undefined, pr.join(""));
   // A cell must contain at least one paragraph.
   const content = cell.blocks.length > 0 ? emitBlocks(cell.blocks, 0, ctx) : el("w:p");
@@ -437,6 +464,18 @@ function continueCellXml(m: PendingMerge): string {
     if (b.left || b.right || b.bottom) pr.push(bordersXml("w:tcBorders", b));
   }
   return el("w:tc", undefined, el("w:tcPr", undefined, pr.join("")) + el("w:p"));
+}
+
+/** w:trPr — row properties. w:cantSplit/w:tblHeader are on/off toggles; w:trHeight
+ *  carries the height in twips + the hRule. Returns "" when there are no props, so
+ *  a plain row emits no w:trPr. */
+function rowPrXml(props: RowProps | undefined): string {
+  if (!props) return "";
+  const pr: string[] = [];
+  if (props.cantSplit) pr.push(el("w:cantSplit"));
+  if (props.height) pr.push(el("w:trHeight", { "w:val": pxToTwips(props.height.value), "w:hRule": props.height.rule }));
+  if (props.repeatHeader) pr.push(el("w:tblHeader"));
+  return pr.length > 0 ? el("w:trPr", undefined, pr.join("")) : "";
 }
 
 /** Build per-row cells, re-synthesizing the w:vMerge "continue" cells the
@@ -491,7 +530,7 @@ function tableXml(table: TableBlock, ctx: PartCtx): string {
     }
     // Trailing columns still under a span.
     col = emitContinues(col, out);
-    rowsXml.push(el("w:tr", undefined, out.join("")));
+    rowsXml.push(el("w:tr", undefined, rowPrXml(row.props) + out.join("")));
   }
 
   // w:tblStyle (style reference) must precede the rest of tblPr; w:tblLook records
@@ -530,7 +569,17 @@ function tableXml(table: TableBlock, ctx: PartCtx): string {
     ? el("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": hex(table.defaultShading) })
     : "";
   const cellMarEl = table.defaultCellMargin ? tblCellMarXml(table.defaultCellMargin) : "";
-  const tblPr = el("w:tblPr", undefined, styleRef + tblWEl + jcEl + bordersEl + shdEl + tblLayoutEl + cellMarEl + look);
+  // Minor & advanced props (issue #61). Per CT_TblPrBase ordering: w:tblOverlap and
+  // w:bidiVisual sit right after w:tblStyle (before w:tblW); w:tblInd follows w:jc
+  // (before w:tblBorders); w:tblCaption/w:tblDescription are the final children
+  // (after w:tblLook).
+  const overlapEl = table.overlap ? el("w:tblOverlap", { "w:val": table.overlap }) : "";
+  const bidiEl = table.bidiVisual ? el("w:bidiVisual") : "";
+  const tblIndEl = table.indentPx ? el("w:tblInd", { "w:w": pxToTwips(table.indentPx), "w:type": "dxa" }) : "";
+  const captionEl = table.caption ? el("w:tblCaption", { "w:val": table.caption }) : "";
+  const descEl = table.description ? el("w:tblDescription", { "w:val": table.description }) : "";
+  const tblPr = el("w:tblPr", undefined,
+    styleRef + overlapEl + bidiEl + tblWEl + jcEl + tblIndEl + bordersEl + shdEl + tblLayoutEl + cellMarEl + look + captionEl + descEl);
   return el("w:tbl", undefined, tblPr + el("w:tblGrid", undefined, grid) + rowsXml.join(""));
 }
 
@@ -744,6 +793,11 @@ function imageParagraphXml(img: Extract<Block, { kind: "image" }>, ctx: PartCtx)
   const relId = ctx.rels.add(REL.image, target);
   const cx = pxToEmu(img.widthPx);
   const cy = pxToEmu(img.heightPx);
+  // a:srcRect crop (insets as 1/1000 of a percent); omitted when there's no crop.
+  const pct = (frac: number): number => Math.round(frac * 100000);
+  const srcRect = img.crop
+    ? el("a:srcRect", { l: pct(img.crop.left), t: pct(img.crop.top), r: pct(img.crop.right), b: pct(img.crop.bottom) })
+    : "";
   const graphic = el(
     "a:graphic",
     undefined,
@@ -758,7 +812,7 @@ function imageParagraphXml(img: Extract<Block, { kind: "image" }>, ctx: PartCtx)
           undefined,
           el("pic:cNvPr", { id: 0, name: "image" }) + el("pic:cNvPicPr"),
         ) +
-          el("pic:blipFill", undefined, el("a:blip", { "r:embed": relId }) + el("a:stretch", undefined, el("a:fillRect"))) +
+          el("pic:blipFill", undefined, el("a:blip", { "r:embed": relId }) + srcRect + el("a:stretch", undefined, el("a:fillRect"))) +
           el(
             "pic:spPr",
             undefined,
@@ -826,11 +880,23 @@ function pgBordersXml(b: import("@cw/shared").PageBorders): string {
   return el("w:pgBorders", { "w:offsetFrom": b.offsetFrom ?? "page" }, inner);
 }
 
+/** w:lnNumType — line numbering. countBy/start are plain counts; distance is in
+ *  twips (px→twips); only set attributes are emitted. */
+function lnNumTypeXml(ln: import("@cw/shared").LineNumbering): string {
+  const attrs: Record<string, string | number> = {};
+  if (ln.countBy !== undefined) attrs["w:countBy"] = ln.countBy;
+  if (ln.start !== undefined) attrs["w:start"] = ln.start;
+  if (ln.distancePx !== undefined) attrs["w:distance"] = pxToTwips(ln.distancePx);
+  if (ln.restart !== undefined) attrs["w:restart"] = ln.restart;
+  return el("w:lnNumType", attrs);
+}
+
 export function sectPrXml(
   s: SectionProps | SectionPatch,
   ctx: PartCtx,
   addBand: AddBandPart,
   isBody: boolean,
+  breakType: import("@cw/shared").SectionBreakType = "nextPage",
 ): string {
   const c: string[] = [];
   // Header/footer references (default/first/even).
@@ -885,8 +951,11 @@ export function sectPrXml(
   }
   if (s.pageBorders) c.push(pgBordersXml(s.pageBorders));
   if (s.pageNumberStart !== undefined) c.push(el("w:pgNumType", { "w:start": s.pageNumberStart }));
-  // A non-body sectPr (on a paragraph) implies a Next Page break.
-  if (!isBody) c.push(el("w:type", { "w:val": "nextPage" }));
+  if (s.lineNumbering) c.push(lnNumTypeXml(s.lineNumbering));
+  // A non-body sectPr (on a paragraph) always carries its break type. The body
+  // sectPr omits w:type for the default (nextPage) but emits an even/odd parity
+  // start when the final section requests one.
+  if (!isBody || breakType !== "nextPage") c.push(el("w:type", { "w:val": breakType }));
   return el("w:sectPr", undefined, c.join(""));
 }
 
@@ -900,7 +969,7 @@ export function buildDocumentXml(
   ctx: PartCtx,
   addBand: AddBandPart,
 ): string {
-  const body = emitBlocks(blocks, 0, ctx) + sectPrXml(section, ctx, addBand, true);
+  const body = emitBlocks(blocks, 0, ctx) + sectPrXml(section, ctx, addBand, true, section.breakType ?? "nextPage");
   // w:background is document-global (one element, first child of w:document);
   // read the page color only from the body section. Word needs
   // <w:displayBackgroundShape/> in settings.xml to actually paint it.

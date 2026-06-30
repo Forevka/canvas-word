@@ -4,7 +4,7 @@
 // Cells hold full block stories; a cell callback gets a StoryBuilder, so
 // paragraphs/images/lists inside cells reuse the normal scope surface.
 
-import type { Block, CellBorders, CellMargin, CharStyle, ParaStyle, TableBlock, TableBorders, TableCell, TableCondOverrides, TableRow } from "@cw/shared";
+import type { Block, CellBorders, CellMargin, CharStyle, ParaStyle, RowProps, TableBlock, TableBorders, TableCell, TableCondOverrides, TableRow } from "@cw/shared";
 import { bakeTableStyleRows, DEFAULT_TBL_LOOK } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import { StoryBuilder } from "./storyBuilder";
@@ -31,11 +31,45 @@ export interface CellSpec {
   /** Vertical alignment of the cell's content (w:vAlign). Absent = "top". Visible
    *  when the cell is taller than its content (a rowSpan or a tall sibling row). */
   vAlign?: "top" | "center" | "bottom";
+  /** Text flow direction inside the cell (w:textDirection). Absent = "lrTb"
+   *  (horizontal). "tbRl"/"btLr" are Word's rotated (vertical) cell text. */
+  textDirection?: "lrTb" | "tbRl" | "btLr" | "lrTbV" | "tbRlV" | "tbLrV";
+  /** Suppress content wrapping (w:noWrap). Absent = wrap. */
+  noWrap?: boolean;
+  /** Fit text to the cell width by tracking (w:tcFitText). Absent = off. */
+  fitText?: boolean;
+  /** Ignore the end-of-cell mark for row-height (w:hideMark). Absent = off. */
+  hideMark?: boolean;
 }
 
 export type CellContent = string | CellSpec;
 
 export type CellOptions = Omit<CellSpec, "text">;
+
+/** Row-level properties (w:trPr) for a single .row(). */
+export interface RowOptions {
+  /** Fixed/minimum row height in px (w:trHeight). Pair with `heightRule`. */
+  height?: number;
+  /** How `height` is enforced: "atLeast" (min, grows with content — default) or
+   *  "exact" (pinned; taller content is clipped). */
+  heightRule?: "atLeast" | "exact";
+  /** Keep the whole row on one page — never split across a page/column break
+   *  (w:cantSplit). */
+  cantSplit?: boolean;
+  /** Repeat this row as a header at the top of each page the table continues onto
+   *  (w:tblHeader). Honored for the leading contiguous header rows. */
+  header?: boolean;
+}
+
+/** Build the model RowProps a RowOptions describes (undefined when nothing set). */
+function rowPropsFrom(o: RowOptions | undefined): RowProps | undefined {
+  if (!o) return undefined;
+  const props: RowProps = {};
+  if (o.height !== undefined && o.height > 0) props.height = { value: o.height, rule: o.heightRule ?? "atLeast" };
+  if (o.cantSplit) props.cantSplit = true;
+  if (o.header) props.repeatHeader = true;
+  return Object.keys(props).length > 0 ? props : undefined;
+}
 
 export interface TableOptions {
   /** Column widths as fractions of the content width (normalized to sum 1). */
@@ -67,6 +101,19 @@ export interface TableOptions {
   /** Table-level default cell margins (w:tblPr/w:tblCellMar), the base each cell's
    *  own margin overrides per side. */
   cellMargin?: CellMargin;
+  /** Table indent from the leading content edge (w:tblPr/w:tblInd), in px. Shifts
+   *  the whole table right like a paragraph's left indent. Absent = 0. */
+  indent?: number;
+  /** Render the table's columns right-to-left (w:tblPr/w:bidiVisual): grid column 0
+   *  paints at the right edge. Absent = left-to-right. */
+  bidiVisual?: boolean;
+  /** Floating-table overlap behavior (w:tblPr/w:tblOverlap). Absent = "overlap"
+   *  (Word's default). */
+  overlap?: "never" | "overlap";
+  /** Table caption / title (w:tblPr/w:tblCaption) — accessibility metadata. */
+  caption?: string;
+  /** Table description / alt text (w:tblPr/w:tblDescription) — accessibility metadata. */
+  description?: string;
 }
 
 /** Cell paragraphs are compact (no after-spacing, tighter leading) — matching
@@ -84,13 +131,16 @@ export class TableBuilder {
     this.fractions = opts.colFractions;
   }
 
-  row(cells: CellContent[]): this;
-  row(build: (r: RowBuilder) => void): this;
-  row(arg: CellContent[] | ((r: RowBuilder) => void)): this {
+  row(cells: CellContent[], rowOpts?: RowOptions): this;
+  row(build: (r: RowBuilder) => void, rowOpts?: RowOptions): this;
+  row(arg: CellContent[] | ((r: RowBuilder) => void), rowOpts?: RowOptions): this {
     const r = new RowBuilder(this.ctx);
     if (typeof arg === "function") arg(r);
     else for (const c of arg) r.cell(c);
-    this.tableRows.push({ cells: r.cells });
+    const row: TableRow = { cells: r.cells };
+    const props = rowPropsFrom(rowOpts);
+    if (props) row.props = props;
+    this.tableRows.push(row);
     return this;
   }
 
@@ -152,6 +202,12 @@ export class TableBuilder {
     // styleId + active bands for docx round-trip. Shares the editor's bake path.
     if (this.opts.styleId !== undefined) this.applyTableStyleRef(table, this.opts.styleId, this.opts.condOverrides);
     this.applyTableDefaults(table);
+    // Minor & advanced table props (issue #61).
+    if (this.opts.indent !== undefined && this.opts.indent !== 0) table.indentPx = this.opts.indent;
+    if (this.opts.bidiVisual) table.bidiVisual = true;
+    if (this.opts.overlap !== undefined) table.overlap = this.opts.overlap;
+    if (this.opts.caption !== undefined) table.caption = this.opts.caption;
+    if (this.opts.description !== undefined) table.description = this.opts.description;
     return table;
   }
 
@@ -278,6 +334,10 @@ export class RowBuilder {
     if (spec.margin !== undefined) cell.margin = spec.margin;
     if (spec.preferredWidth !== undefined) cell.preferredWidth = spec.preferredWidth;
     if (spec.vAlign !== undefined && spec.vAlign !== "top") cell.vAlign = spec.vAlign;
+    if (spec.textDirection !== undefined && spec.textDirection !== "lrTb") cell.textDirection = spec.textDirection;
+    if (spec.noWrap) cell.noWrap = true;
+    if (spec.fitText) cell.fitText = true;
+    if (spec.hideMark) cell.hideMark = true;
     this.cells.push(cell);
     return this;
   }

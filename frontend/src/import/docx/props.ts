@@ -3,7 +3,7 @@
 // inside w:style and w:docDefaults). Decode only; no resolution here.
 
 import { decodeShdFill } from "./borders";
-import type { IRParaBorders, IRParaProps, IRRawBorder, IRRunProps } from "./types";
+import type { IRLineNumbering, IRParaBorders, IRParaProps, IRRawBorder, IRRunProps } from "./types";
 import { WarningSink } from "./types";
 import { lineAutoToMultiplier } from "./units";
 import { attr, el, els, numAttr, onOff, val, type XmlNode } from "./xml";
@@ -36,15 +36,35 @@ export function decodeRunProps(rPr: XmlNode): IRRunProps {
     if (hex) props.color = hex;
     const themeColor = attr(color, "w:themeColor");
     if (themeColor) props.colorTheme = themeColor;
+    const themeTint = attr(color, "w:themeTint");
+    if (themeTint) props.colorThemeTint = themeTint;
+    const themeShade = attr(color, "w:themeShade");
+    if (themeShade) props.colorThemeShade = themeShade;
   }
   const sz = numAttr(el(rPr, "w:sz"), "w:val");
   if (sz !== undefined) props.sizeHalfPoints = sz;
+  // w:spacing on a run is character tracking (twips); on a paragraph it is line
+  // spacing — decodeParaProps reads the paragraph form separately.
+  const spacing = numAttr(el(rPr, "w:spacing"), "w:val");
+  if (spacing !== undefined) props.letterSpacingTwips = spacing;
   const rFonts = el(rPr, "w:rFonts");
   if (rFonts) {
     const font = attr(rFonts, "w:ascii");
     if (font) props.fontAscii = font;
     const themeFont = attr(rFonts, "w:asciiTheme");
     if (themeFont) props.fontThemeAscii = themeFont;
+    const hAnsi = attr(rFonts, "w:hAnsi");
+    if (hAnsi) props.fontHAnsi = hAnsi;
+    const hAnsiTheme = attr(rFonts, "w:hAnsiTheme");
+    if (hAnsiTheme) props.fontThemeHAnsi = hAnsiTheme;
+    const cs = attr(rFonts, "w:cs");
+    if (cs) props.fontCs = cs;
+    const csTheme = attr(rFonts, "w:cstheme");
+    if (csTheme) props.fontThemeCs = csTheme;
+    const eastAsia = attr(rFonts, "w:eastAsia");
+    if (eastAsia) props.fontEastAsia = eastAsia;
+    const eastAsiaTheme = attr(rFonts, "w:eastAsiaTheme");
+    if (eastAsiaTheme) props.fontThemeEastAsia = eastAsiaTheme;
   }
   const highlight = val(rPr, "w:highlight");
   if (highlight && highlight !== "none") props.highlight = highlight;
@@ -52,6 +72,10 @@ export function decodeRunProps(rPr: XmlNode): IRRunProps {
   if (vertAlign) props.vertAlign = vertAlign;
   const vanish = onOff(el(rPr, "w:vanish"));
   if (vanish !== undefined) props.vanish = vanish;
+  const caps = onOff(el(rPr, "w:caps"));
+  if (caps !== undefined) props.caps = caps;
+  const smallCaps = onOff(el(rPr, "w:smallCaps"));
+  if (smallCaps !== undefined) props.smallCaps = smallCaps;
   const rtl = onOff(el(rPr, "w:rtl"));
   if (rtl !== undefined) props.rtl = rtl; // keep an explicit w:rtl="0" (clears inherited RTL)
   // Minor run typography & effects (w:rPr extras): double strike, baseline position,
@@ -124,8 +148,18 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
     const line = numAttr(spacing, "w:line");
     const rule = attr(spacing, "w:lineRule") ?? "auto";
     if (line !== undefined) {
-      if (rule === "auto") props.lineHeight = lineAutoToMultiplier(line);
-      else warnings.add("line-rule-exact", "Exact/atLeast line spacing was ignored (model is multiplier-only).");
+      if (rule === "exact" || (rule === "atLeast" && line > 0)) {
+        // Fixed point spacing: w:line is twips here, not 240ths.
+        props.lineRule = rule;
+        props.lineExactTwips = line;
+      } else if (rule === "auto") {
+        // Multiplier of the single line height. Record the explicit "auto" so it
+        // overrides an inherited fixed rule through the cascade (mergeProps strips
+        // undefined, so absence can't clear an inherited value).
+        props.lineRule = "auto";
+        props.lineHeight = lineAutoToMultiplier(line);
+      }
+      // else: a no-op atLeast=0 floor — leave line spacing untouched.
     }
   }
 
@@ -146,6 +180,9 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
 
   const keepLines = onOff(el(pPr, "w:keepLines"));
   if (keepLines !== undefined) props.keepLinesTogether = keepLines;
+
+  const contextualSpacing = onOff(el(pPr, "w:contextualSpacing"));
+  if (contextualSpacing !== undefined) props.contextualSpacing = contextualSpacing;
 
   const bidi = onOff(el(pPr, "w:bidi"));
   if (bidi !== undefined) props.direction = bidi ? "rtl" : "ltr"; // keep explicit w:bidi="0"
@@ -216,6 +253,21 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
   const shd = decodeShdFill(el(pPr, "w:shd"));
   if (shd !== undefined) props.shd = shd;
 
+  // Minor paragraph props (issue #62): widow/orphan control, line-number
+  // suppression, vertical line alignment, mirrored indents, right-indent adjust.
+  const widow = onOff(el(pPr, "w:widowControl"));
+  if (widow !== undefined) props.widowControl = widow;
+  const suppressLn = onOff(el(pPr, "w:suppressLineNumbers"));
+  if (suppressLn !== undefined) props.suppressLineNumbers = suppressLn;
+  const textAlign = val(pPr, "w:textAlignment");
+  if (textAlign === "top" || textAlign === "center" || textAlign === "bottom" || textAlign === "baseline") {
+    props.textAlignment = textAlign;
+  }
+  const mirror = onOff(el(pPr, "w:mirrorIndents"));
+  if (mirror !== undefined) props.mirrorIndents = mirror;
+  const adjustRight = onOff(el(pPr, "w:adjustRightInd"));
+  if (adjustRight !== undefined) props.adjustRightInd = adjustRight;
+
   const rPr = el(pPr, "w:rPr");
   if (rPr) props.markRunProps = decodeRunProps(rPr);
 
@@ -224,7 +276,11 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
     // Page geometry of non-last sections is still lossy (last wins), but the
     // page boundary the break implies IS respected via pageBreakBefore — when
     // the geometry actually changes (mapToModel compares sectionPgSize).
-    props.sectionBreak = val(sectPr, "w:type") === "continuous" ? "continuous" : "page";
+    const sectType = val(sectPr, "w:type");
+    props.sectionBreak = sectType === "continuous" ? "continuous" : "page";
+    if (sectType === "evenPage" || sectType === "oddPage") props.sectionBreakType = sectType;
+    const lnNum = decodeLineNumbering(el(sectPr, "w:lnNumType"));
+    if (lnNum) props.sectionLineNumbering = lnNum;
     const pgSz = el(sectPr, "w:pgSz");
     const w = numAttr(pgSz, "w:w");
     const h = numAttr(pgSz, "w:h");
@@ -291,4 +347,20 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
     }
   }
   return props;
+}
+
+/** Decode w:lnNumType (line numbering) into raw OOXML units. Returns undefined
+ *  when the element is absent so callers can leave the section unnumbered. */
+export function decodeLineNumbering(lnNumType: XmlNode | undefined): IRLineNumbering | undefined {
+  if (!lnNumType) return undefined;
+  const out: IRLineNumbering = {};
+  const countBy = numAttr(lnNumType, "w:countBy");
+  if (countBy !== undefined) out.countBy = countBy;
+  const start = numAttr(lnNumType, "w:start");
+  if (start !== undefined) out.start = start;
+  const distance = numAttr(lnNumType, "w:distance");
+  if (distance !== undefined) out.distanceTwips = distance;
+  const restart = attr(lnNumType, "w:restart");
+  if (restart === "continuous" || restart === "newPage" || restart === "newSection") out.restart = restart;
+  return out;
 }

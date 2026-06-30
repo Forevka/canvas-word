@@ -50,15 +50,41 @@ function runEffectsXml(s: Partial<CharStyle>): string {
 // direct formatting fully overrides any inherited paragraph/named style on
 // re-import. Shared by the main exporter (documentXml) and the headless TOC
 // generator (recalc/generateTocDocx) so they can't drift.
+// First family of a CSS font stack ("Georgia, serif" → "Georgia"); "" if absent.
+const firstFamily = (stack: string | undefined): string => (stack ? (stack.split(",")[0] ?? "").trim() : "");
+
+/** A w:rFonts element covering the Latin (ascii/hAnsi), complex-script (cs) and
+ *  East-Asian (eastAsia) slots, or "" when no slot is set. cs defaults to the
+ *  Latin family (Word's convention) so a plain run keeps round-tripping its w:cs. */
+function rFontsXml(fontFamily: string | undefined, complexScript?: string, eastAsia?: string): string {
+  const latin = firstFamily(fontFamily);
+  const cs = firstFamily(complexScript) || latin;
+  const ea = firstFamily(eastAsia);
+  if (!latin && !cs && !ea) return "";
+  const attrs: Record<string, string> = {};
+  if (latin) {
+    attrs["w:ascii"] = latin;
+    attrs["w:hAnsi"] = latin;
+  }
+  if (cs) attrs["w:cs"] = cs;
+  if (ea) attrs["w:eastAsia"] = ea;
+  return el("w:rFonts", attrs);
+}
+
 export function runPropsXml(s: CharStyle): string {
-  const family = (s.fontFamily.split(",")[0] ?? "").trim();
   const children: string[] = [];
   // w:rStyle (character-style reference) must be the first child of w:rPr; the
   // concrete props below still override it on re-import (Word semantics).
   if (s.charStyleId) children.push(el("w:rStyle", { "w:val": s.charStyleId }));
-  if (family) children.push(el("w:rFonts", { "w:ascii": family, "w:hAnsi": family, "w:cs": family }));
+  const rFonts = rFontsXml(s.fontFamily, s.fontFamilyComplexScript, s.fontFamilyEastAsia);
+  if (rFonts) children.push(rFonts);
   children.push(el("w:b", { "w:val": s.bold ? "1" : "0" }));
   children.push(el("w:i", { "w:val": s.italic ? "1" : "0" }));
+  // w:caps / w:smallCaps precede w:strike in the CT_RPr schema sequence. Emit an
+  // explicit OFF (w:val="0") for a false value so it clears an inherited (rStyle/
+  // style-cascade) all-caps/small-caps on re-import; undefined stays absent.
+  if (s.caps !== undefined) children.push(el("w:caps", { "w:val": s.caps ? "1" : "0" }));
+  if (s.smallCaps !== undefined) children.push(el("w:smallCaps", { "w:val": s.smallCaps ? "1" : "0" }));
   if (s.strikethrough) children.push(el("w:strike", { "w:val": "1" }));
   if (s.hidden) children.push(el("w:vanish", { "w:val": "1" })); // preserved hidden text
   children.push(el("w:color", { "w:val": hex(s.color) }));
@@ -91,11 +117,15 @@ export function paraCoreXml(style: ParaStyle): string {
   // RTL); undefined stays absent.
   if (style.direction === "rtl") c.push(el("w:bidi"));
   else if (style.direction === "ltr") c.push(el("w:bidi", { "w:val": "0" }));
+  // Fixed (exact/atLeast) spacing emits w:line in twips, but only with a height —
+  // a rule without lineHeightPx would serialize w:line="0"; fall back to the
+  // multiplier (240ths, lineRule="auto") instead.
+  const fixed = style.lineRule !== undefined && style.lineHeightPx !== undefined;
   c.push(el("w:spacing", {
     "w:before": pxToTwips(style.spaceBeforePx),
     "w:after": pxToTwips(style.spaceAfterPx),
-    "w:line": multiplierToLine(style.lineHeight),
-    "w:lineRule": "auto",
+    "w:line": fixed ? pxToTwips(style.lineHeightPx!) : multiplierToLine(style.lineHeight),
+    "w:lineRule": fixed ? style.lineRule! : "auto",
   }));
   const ind: Record<string, number> = {};
   if (style.indentLeftPx) ind["w:left"] = pxToTwips(style.indentLeftPx);
@@ -103,6 +133,11 @@ export function paraCoreXml(style: ParaStyle): string {
   if (style.indentFirstLinePx > 0) ind["w:firstLine"] = pxToTwips(style.indentFirstLinePx);
   else if (style.indentFirstLinePx < 0) ind["w:hanging"] = pxToTwips(-style.indentFirstLinePx);
   if (Object.keys(ind).length > 0) c.push(el("w:ind", ind));
+  // w:contextualSpacing follows w:ind in the CT_PPr schema sequence. Emit an
+  // explicit OFF (w:val="0") for `false` so it can clear an inherited style's
+  // suppression on re-import; undefined stays absent.
+  if (style.contextualSpacing === true) c.push(el("w:contextualSpacing"));
+  else if (style.contextualSpacing === false) c.push(el("w:contextualSpacing", { "w:val": "0" }));
   c.push(el("w:jc", { "w:val": JC[style.align] }));
   if (style.tabStops && style.tabStops.length > 0) {
     const tabs = style.tabStops
@@ -121,12 +156,14 @@ export function paraCoreXml(style: ParaStyle): string {
 
 export function partialRPrXml(c: Partial<CharStyle>): string {
   const out: string[] = [];
-  if (c.fontFamily) {
-    const fam = (c.fontFamily.split(",")[0] ?? "").trim();
-    if (fam) out.push(el("w:rFonts", { "w:ascii": fam, "w:hAnsi": fam, "w:cs": fam }));
+  if (c.fontFamily || c.fontFamilyComplexScript || c.fontFamilyEastAsia) {
+    const rFonts = rFontsXml(c.fontFamily, c.fontFamilyComplexScript, c.fontFamilyEastAsia);
+    if (rFonts) out.push(rFonts);
   }
   if (c.bold !== undefined) out.push(el("w:b", { "w:val": c.bold ? "1" : "0" }));
   if (c.italic !== undefined) out.push(el("w:i", { "w:val": c.italic ? "1" : "0" }));
+  if (c.caps !== undefined) out.push(el("w:caps", { "w:val": c.caps ? "1" : "0" }));
+  if (c.smallCaps !== undefined) out.push(el("w:smallCaps", { "w:val": c.smallCaps ? "1" : "0" }));
   if (c.strikethrough !== undefined) out.push(el("w:strike", { "w:val": c.strikethrough ? "1" : "0" }));
   if (c.color) out.push(el("w:color", { "w:val": hex(c.color) }));
   if (c.fontSizePx !== undefined) {
@@ -165,7 +202,10 @@ export function partialPPrXml(p: Partial<ParaStyle>): string {
   const sp: Record<string, number | string> = {};
   if (p.spaceBeforePx !== undefined) sp["w:before"] = pxToTwips(p.spaceBeforePx);
   if (p.spaceAfterPx !== undefined) sp["w:after"] = pxToTwips(p.spaceAfterPx);
-  if (p.lineHeight !== undefined) {
+  if (p.lineRule !== undefined && p.lineHeightPx !== undefined) {
+    sp["w:line"] = pxToTwips(p.lineHeightPx);
+    sp["w:lineRule"] = p.lineRule;
+  } else if (p.lineHeight !== undefined) {
     sp["w:line"] = multiplierToLine(p.lineHeight);
     sp["w:lineRule"] = "auto";
   }
@@ -178,8 +218,18 @@ export function partialPPrXml(p: Partial<ParaStyle>): string {
     else ind["w:hanging"] = pxToTwips(-p.indentFirstLinePx);
   }
   if (Object.keys(ind).length > 0) out.push(el("w:ind", ind));
+  if (p.contextualSpacing === true) out.push(el("w:contextualSpacing"));
+  else if (p.contextualSpacing === false) out.push(el("w:contextualSpacing", { "w:val": "0" }));
   if (p.keepWithNext) out.push(el("w:keepNext"));
   if (p.keepLinesTogether) out.push(el("w:keepLines"));
+  // Minor paragraph props (issue #62) — see documentXml.pPrXml. In a style patch
+  // `false` is a real override, so emit each on/off element whenever it is DEFINED
+  // (false → w:val="0") to keep the style contract lossless.
+  if (p.widowControl !== undefined) out.push(el("w:widowControl", p.widowControl ? undefined : { "w:val": "0" }));
+  if (p.suppressLineNumbers !== undefined) out.push(el("w:suppressLineNumbers", p.suppressLineNumbers ? undefined : { "w:val": "0" }));
+  if (p.mirrorIndents !== undefined) out.push(el("w:mirrorIndents", p.mirrorIndents ? undefined : { "w:val": "0" }));
+  if (p.adjustRightInd !== undefined) out.push(el("w:adjustRightInd", p.adjustRightInd ? undefined : { "w:val": "0" }));
+  if (p.textAlignment) out.push(el("w:textAlignment", { "w:val": p.textAlignment }));
   if (p.borders) out.push(paraBordersXml(p.borders));
   if (p.shading) out.push(shdFillXml(p.shading));
   if (p.tabStops && p.tabStops.length > 0) {

@@ -32,6 +32,7 @@ import {
   hitTestCell,
   hitTestSelectableObject,
   hitTestColumnBoundary,
+  hitTestRowBoundary,
   inlineEquationAt,
   caretRect,
   lineEdges,
@@ -40,9 +41,10 @@ import {
   positionOnAdjacentLine,
   visualCaretStep,
   type ColumnBoundaryHit,
+  type RowBoundaryHit,
   type GeoScope,
 } from "../layout/geometry";
-import type { ColumnGuide, PagePoint } from "../paint/renderer";
+import type { ColumnGuide, RowGuide, PagePoint } from "../paint/renderer";
 import type { CellSelection } from "../editor/state";
 import { extractFragment, fragmentToHtml, fragmentToPlainText, tableRectToClipboard } from "./clipboard";
 
@@ -78,6 +80,10 @@ export interface SelectionControllerDeps {
   startColumnDrag(hit: ColumnBoundaryHit, ev: MouseEvent): void;
   /** Highlight (or clear) the column boundary under the pointer before a drag. */
   setColumnGuide(guide: ColumnGuide | null): void;
+  /** Begin a table row-boundary drag (wiring owns the transient/commit loop). */
+  startRowDrag(hit: RowBoundaryHit, ev: MouseEvent): void;
+  /** Highlight (or clear) the row boundary under the pointer before a drag. */
+  setRowGuide(guide: RowGuide | null): void;
   /** Reposition an anchored image during a drag. `transient` = live preview
    *  (outside undo); false = the committed drop (one undoable step). */
   applyObjectMove(blockId: string, offsetXPx: number, offsetYPx: number, transient: boolean): void;
@@ -310,13 +316,21 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
       // overlaps the header/footer margin still selects, since that's inside the
       // page. A double-click in a band falls through to enter the band story.
       if (pt.inside && !(band && ev.detail >= 2)) {
-        // Column grips live only in the body content area, never the margins.
+        // Column/row grips live only in the body content area, never the margins.
+        // Columns are tested FIRST so a cell-corner pixel prefers the column grip.
         if (!band) {
           const colHit = hitTestColumnBoundary(deps.getTree(), pt.pageIndex, pt.x, pt.y);
           if (colHit) {
             ev.preventDefault();
             deps.setColumnGuide(null); // the live border itself shows the drag now
             deps.startColumnDrag(colHit, ev);
+            return;
+          }
+          const rowHit = hitTestRowBoundary(deps.getTree(), pt.pageIndex, pt.x, pt.y);
+          if (rowHit) {
+            ev.preventDefault();
+            deps.setRowGuide(null); // the live row reflow itself shows the drag now
+            deps.startRowDrag(rowHit, ev);
             return;
           }
         }
@@ -530,12 +544,16 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
     return !!(pos && paragraphs().find((p) => p.id === pos.blockId)?.style.tocEntry);
   };
 
-  // Pointer left the editor: drop any column-resize guide so it doesn't linger.
+  // Pointer left the editor: drop any column/row-resize guide so it doesn't linger.
   const onHoverLeave = (): void => {
-    if (!drag) deps.setColumnGuide(null);
+    if (!drag) {
+      deps.setColumnGuide(null);
+      deps.setRowGuide(null);
+    }
   };
 
-  // Hover affordances: col-resize over column grips, pointer + tooltip over links.
+  // Hover affordances: col-resize over column grips, row-resize over row grips,
+  // pointer + tooltip over links.
   const onHoverMove = (ev: MouseEvent): void => {
     if (drag) return;
     if (container.dataset["painter"]) {
@@ -543,17 +561,21 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
       return;
     }
     const pt = deps.clientToPage(ev.clientX, ev.clientY);
-    const hit =
-      pt && !deps.getStory()
-        ? hitTestColumnBoundary(deps.getTree(), pt.pageIndex, pt.x, pt.y)
-        : null;
+    const inBody = !!pt && !deps.getStory();
+    const colHit = inBody ? hitTestColumnBoundary(deps.getTree(), pt!.pageIndex, pt!.x, pt!.y) : null;
+    // Columns win at a cell corner (tested first), so only probe rows clear of one.
+    const rowHit = inBody && !colHit ? hitTestRowBoundary(deps.getTree(), pt!.pageIndex, pt!.x, pt!.y) : null;
+    const hit = colHit || rowHit;
     const href = !hit && pt ? linkAt(deps.getTree(), pt.pageIndex, pt.x, pt.y, scope()) : null;
     // A TOC entry is Ctrl-clickable (jumps to its heading via tocEntry.targetId)
     // even with no run link — match the cursor to that click affordance, so
     // regenerated/link-free entries still read as clickable.
     // Paint a highlight on the boundary the pointer can grab (cleared otherwise).
     deps.setColumnGuide(
-      hit ? { pageIndex: hit.pageIndex, x: hit.x, y: hit.tableY, height: hit.tableHeight } : null,
+      colHit ? { pageIndex: colHit.pageIndex, x: colHit.x, y: colHit.tableY, height: colHit.tableHeight } : null,
+    );
+    deps.setRowGuide(
+      rowHit ? { pageIndex: rowHit.pageIndex, y: rowHit.y, x: rowHit.tableX, width: rowHit.tableWidth } : null,
     );
     const overTocEntry = !hit && !href && pt ? isTocEntryAt(pt) : false;
     // Over an image, swap the I-beam for an object cursor: a move cursor on a
@@ -563,7 +585,13 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
       const oh = hitTestSelectableObject(deps.getTree(), pt.pageIndex, pt.x, pt.y, scope());
       if (oh) objCursor = movableImage(oh.blockId) ? "move" : "default";
     }
-    container.style.cursor = hit ? "col-resize" : href || overTocEntry ? "pointer" : objCursor ?? "text";
+    container.style.cursor = colHit
+      ? "col-resize"
+      : rowHit
+        ? "row-resize"
+        : href || overTocEntry
+          ? "pointer"
+          : objCursor ?? "text";
     if ((container.title || "") !== (href ?? "")) container.title = href ?? "";
   };
 
