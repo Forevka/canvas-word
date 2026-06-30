@@ -45,6 +45,8 @@ export interface ImagePropsPatch {
   align?: ImageBlock["align"];
   wrap?: ImageBlock["wrap"] | null;
   anchor?: ImageBlock["anchor"] | null;
+  /** Crop insets (a:srcRect 0..1 fractions). `null` clears the crop. */
+  crop?: ImageBlock["crop"] | null;
 }
 
 /** setTableProps payload — table-LEVEL fields (w:tblPr): indent + the cascade
@@ -56,6 +58,25 @@ export interface TablePropsPatch {
   defaultBorders?: import("./document").TableBorders | null;
   defaultShading?: string | null;
   defaultCellMargin?: import("./document").CellMargin | null;
+}
+
+/** Clamp crop insets to the documented invariant — each in [0,1) with a non-empty
+ *  visible window — so a malformed local/remote patch can't persist impossible
+ *  values (negative, NaN, or a fully-collapsed window) in the shared model. */
+function normalizeCrop(c: NonNullable<ImageBlock["crop"]>): NonNullable<ImageBlock["crop"]> {
+  const clamp = (v: number): number => (Number.isFinite(v) ? Math.min(0.999, Math.max(0, v)) : 0);
+  let { left, top, right, bottom } = { left: clamp(c.left), top: clamp(c.top), right: clamp(c.right), bottom: clamp(c.bottom) };
+  if (left + right >= 1) {
+    const k = 0.999 / (left + right);
+    left *= k;
+    right *= k;
+  }
+  if (top + bottom >= 1) {
+    const k = 0.999 / (top + bottom);
+    top *= k;
+    bottom *= k;
+  }
+  return { left, top, right, bottom };
 }
 
 export type Op =
@@ -738,6 +759,7 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       if (op.patch.align !== undefined) oldPatch.align = block.align;
       if (op.patch.wrap !== undefined) oldPatch.wrap = block.wrap ?? null;
       if (op.patch.anchor !== undefined) oldPatch.anchor = block.anchor ?? null;
+      if (op.patch.crop !== undefined) oldPatch.crop = block.crop ?? null;
       const updated: ImageBlock = { ...block, revision: block.revision + 1 };
       if (op.patch.widthPx !== undefined) updated.widthPx = op.patch.widthPx;
       if (op.patch.heightPx !== undefined) updated.heightPx = op.patch.heightPx;
@@ -749,6 +771,10 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       if (op.patch.anchor !== undefined) {
         if (op.patch.anchor === null) delete updated.anchor;
         else updated.anchor = op.patch.anchor;
+      }
+      if (op.patch.crop !== undefined) {
+        if (op.patch.crop === null) delete updated.crop;
+        else updated.crop = normalizeCrop(op.patch.crop);
       }
       let next: Document;
       if (loc.kind === "top") {

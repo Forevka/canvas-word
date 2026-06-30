@@ -2,7 +2,7 @@
 // One-way data flow: input -> command -> transaction -> applyOp* -> new state
 // -> incremental layout -> paint + caret + proxy reposition (same frame).
 
-import type { Block, CharStyle, Document, EmphasisMark, ParaStyle, TableBlock, UnderlineStyle } from "@cw/shared";
+import type { Block, CharStyle, Document, EmphasisMark, ImageBlock, ParaStyle, TableBlock, UnderlineStyle } from "@cw/shared";
 import { BAND_CONTAINERS, parseTocInstruction } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, UserInfo } from "@cw/shared";
 import { isCollapsed, colorForId, userDisplayName, freshId, DEFAULT_CHAR_STYLE } from "@cw/shared";
@@ -97,6 +97,7 @@ import {
   setAlignment,
   setCharStyle as setCharStyleCmd,
   setImageProps,
+  setImageCropCmd,
   setImageLayer,
   bringImageToFront,
   sendImageToBack,
@@ -1065,6 +1066,9 @@ export function createEditor(
   // ---- object selection (images): frame, resize, alignment, delete --------
 
   let selectedObject: string | null = null;
+  // Crop session baseline: the image's crop when crop mode was entered (to revert
+  // the live transient preview on exit) + whether any live preview was written.
+  const cropOrigin = { crop: null as NonNullable<ImageBlock["crop"]> | null, previewed: false };
 
   const contentWidth = (): number =>
     doc.section.pageWidthPx - doc.section.marginPx.left - doc.section.marginPx.right;
@@ -1079,17 +1083,32 @@ export function createEditor(
       if (!selectedObject) return;
       dispatch(setImageProps(selectedObject, { widthPx: w, heightPx: h }));
     },
+    // Live crop preview: each crop-handle release writes the crop field as a
+    // TRANSIENT op (outside undo). exitCropMode reverts it and commits once.
+    onCropPreview: (crop) => {
+      if (!selectedObject) return;
+      cropOrigin.previewed = true;
+      dispatch(setImageCropCmd(selectedObject, crop, "transient"));
+    },
   });
 
   const refreshObjectFrame = (): void => {
     if (!selectedObject) {
+      if (objectFrame.isCropping()) exitCropMode(false); // selection gone — drop crop, no commit
       objectFrame.hide();
       return;
     }
     const rect = objectRect(tree, selectedObject);
     if (!rect) {
+      if (objectFrame.isCropping()) exitCropMode(false);
       selectedObject = null;
       objectFrame.hide();
+      return;
+    }
+    // Crop mode owns the overlay: re-pin it to the (possibly reflowed/zoomed) rect
+    // instead of the resize frame. The live crop window survives the rescale.
+    if (objectFrame.isCropping()) {
+      objectFrame.refreshCrop(rect);
       return;
     }
     // locateImage (not doc.blocks) so in-cell images resolve too — needed for both
@@ -1122,6 +1141,8 @@ export function createEditor(
     // View-only: never raise the image frame (resize handles) — clearing (null)
     // still runs so any stale frame can be torn down.
     if (readonly && blockId !== null) return;
+    // Changing the object selection ends any crop in progress (committing it).
+    if (objectFrame.isCropping() && blockId !== selectedObject) exitCropMode(true);
     if (blockId === selectedObject) {
       if (blockId) refreshObjectFrame();
       return;
@@ -1134,6 +1155,42 @@ export function createEditor(
     refreshSelectionVisuals();
     refreshObjectFrame();
     notifyChange(); // object selection drives the floating image toolbar
+  };
+
+  // ---- image crop mode -----------------------------------------------------
+  // Enter: drag the 8 crop handles to set the visible window. Each handle release
+  // writes the crop field LIVE via a transient op (so the model tracks the crop as
+  // the user works, mirroring the drag-to-resize-row-height protocol #79); exit
+  // (Esc / click-away / a new selection) reverts the transient preview and commits
+  // the final insets as ONE undoable op. Crop is editing-only, session/UI state.
+  const enterCropMode = (imgId: string): void => {
+    if (mode === "view") return; // editing-only; gate on the LIVE mode, not frozen readonly
+    selectObject(imgId);
+    const rect = objectRect(tree, imgId);
+    const img = locateImage(doc, imgId)?.image;
+    if (!rect || !img) return;
+    cropOrigin.crop = img.crop ?? null; // the session baseline to revert the preview to
+    cropOrigin.previewed = false;
+    objectFrame.beginCrop(rect, img.src, img.crop ?? null);
+    notifyChange(); // refresh the context-menu "Crop"/"Reset Crop" state
+  };
+
+  const cropEq = (a: ImageBlock["crop"] | null, b: ImageBlock["crop"] | null): boolean => {
+    if (!a || !b) return !a === !b; // both absent → equal; one absent → differ
+    return a.left === b.left && a.top === b.top && a.right === b.right && a.bottom === b.bottom;
+  };
+
+  const exitCropMode = (commit: boolean): void => {
+    if (!objectFrame.isCropping()) return;
+    const id = selectedObject;
+    const next = objectFrame.endCrop(); // hides the overlay; null = clear the crop
+    const previewed = cropOrigin.previewed;
+    cropOrigin.previewed = false;
+    // Roll the live transient preview back to the session baseline so the committed
+    // op below (or the cancel) is the only entry on the undo stack.
+    if (previewed && id) dispatch(setImageCropCmd(id, cropOrigin.crop, "transient"));
+    if (commit && id && !cropEq(cropOrigin.crop, next)) dispatch(setImageCropCmd(id, next));
+    else refreshObjectFrame(); // no net change → repaint the resize frame ourselves
   };
 
   // ---- table column-boundary drag ------------------------------------------
@@ -1629,6 +1686,9 @@ export function createEditor(
   const setMode = (next: EditMode): boolean => {
     if (allowedModes && !allowedModes.includes(next)) return false;
     if (next === mode) return true;
+    // End any crop session BEFORE the switch so it commits under the still-active
+    // editable mode and never outlives it (crop is editing-only, session/UI state).
+    if (objectFrame.isCropping()) exitCropMode(true);
     mode = next;
     pendingStyle = null; // clear pending preview on switch
     if (mode !== "suggest") {
@@ -2757,6 +2817,8 @@ export function createEditor(
             { kind: "item", label: "Right", icon: ICONS.alignRight, onClick: () => dispatch(setImageProps(imgId, { align: "right" })) },
           ],
         },
+        item("Crop", () => enterCropMode(imgId)),
+        ...(locateImage(doc, imgId)?.image.crop ? [item("Reset Crop", () => dispatch(setImageCropCmd(imgId, null)))] : []),
         item("Bring to Front", () => dispatch(bringImageToFront(imgId))),
         item("Send to Back", () => dispatch(sendImageToBack(imgId))),
         item("Wrap in Content Control", () => dispatch(wrapImageInContentControl(imgId, "richText", { alias: "Text" })), { icon: ICONS.sdtText }),
@@ -3072,6 +3134,18 @@ export function createEditor(
     if (entries.length > 0) contextMenu = showContextMenu(ev.clientX, ev.clientY, entries);
   };
   container.addEventListener("contextmenu", onContextMenu);
+
+  // Esc while cropping commits the crop and stays on the image (keeps it selected),
+  // rather than falling through to the object-deselect Escape in selectionController.
+  // Capture phase so it pre-empts that bubble-phase handler on the same container.
+  const onCropKeyCapture = (ev: KeyboardEvent): void => {
+    if (ev.key === "Escape" && objectFrame.isCropping()) {
+      exitCropMode(true);
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+  };
+  container.addEventListener("keydown", onCropKeyCapture, true);
 
   // Hover highlighting for content controls (incl. nested) — point at any control
   // to see its frame(s) and breadcrumb, without moving the caret.
@@ -3476,6 +3550,7 @@ export function createEditor(
       sdtInspector?.close();
       tableProps?.close();
       container.removeEventListener("keydown", keymapHandler);
+      container.removeEventListener("keydown", onCropKeyCapture, true);
       container.removeEventListener("contextmenu", onContextMenu);
       container.removeEventListener("mousemove", onSdtHoverMove);
       container.removeEventListener("mouseleave", onSdtHoverLeave);

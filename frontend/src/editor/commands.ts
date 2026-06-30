@@ -2314,6 +2314,22 @@ export function setImageProps(
   };
 }
 
+/** Set (or clear, with `null`) the SELECTED image's crop insets (a:srcRect 0..1
+ *  fractions). The interactive crop tool previews the new window purely in the DOM
+ *  overlay and commits ONE op here on exit — same single-undo-step protocol as
+ *  drag-to-resize. Reuses the `setImageProps` op (its inverse restores the prior
+ *  crop), so no new op is needed. */
+export function setImageCropCmd(
+  blockId: string,
+  crop: NonNullable<ImageBlock["crop"]> | null,
+  origin: TransactionOrigin = "command",
+): Command {
+  return (state) => {
+    if (!locateImage(state.doc, blockId)) return null;
+    return tr([{ type: "setImageProps", blockId, patch: { crop } }], state.selection, origin);
+  };
+}
+
 type ImageAnchor = NonNullable<ImageBlock["anchor"]>;
 
 /** Anchor for an image being lifted out of the flow into the behind/front layer:

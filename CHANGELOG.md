@@ -76,6 +76,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **adjust right indent**. Controls are seeded from the caret paragraph via the new
   `editor.currentParaStyle()`. Editor-UI only — the model fields and `.docx`
   round-trip already shipped; no model/import/export or C# change.
+- **Interactive image crop (editor UI).** A selected image's context menu gains a
+  **Crop** entry that enters crop mode: the full source is shown dimmed behind a
+  bright, draggable window with 8 handles (mirroring the image-resize handles). The
+  whole session previews purely in the DOM overlay — `Esc`, a click away, or
+  selecting another object commits the new insets as a single undoable op (the same
+  one-step protocol as drag-to-resize / drag-to-resize-row-height). A **Reset Crop**
+  entry (shown only when the image is cropped) clears it. Crop writes the existing
+  `ImageBlock.crop` field (OOXML `a:srcRect`, round-trip shipped in #63) via a new
+  `setImageCropCmd` reusing the `setImageProps` op — no model/import/export change.
 - **Minor run typography & effects (`CharStyle` w:rPr extras).** A grouped set of
   lower-frequency run properties now round-trip and (where visual) paint: double
   strikethrough (`w:dstrike` → `doubleStrikethrough`, two rules), baseline
