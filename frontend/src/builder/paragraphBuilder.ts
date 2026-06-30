@@ -143,7 +143,15 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     const patch: Partial<CharStyle> = {};
     if (opts.doubleStrikethrough !== undefined) patch.doubleStrikethrough = opts.doubleStrikethrough;
     if (opts.positionPx !== undefined) patch.positionPx = opts.positionPx;
-    if (opts.widthScalePct !== undefined) patch.widthScalePct = opts.widthScalePct;
+    if (opts.widthScalePct !== undefined) {
+      // OOXML w:w (and the import/export round-trip) only preserve a positive
+      // percentage in 1..600; reject out-of-range values rather than author state
+      // the .docx pipeline would silently drop.
+      if (opts.widthScalePct <= 0 || opts.widthScalePct > 600) {
+        throw new RangeError("effects: widthScalePct must be in the range 1..600");
+      }
+      patch.widthScalePct = opts.widthScalePct;
+    }
     if (opts.kerningMinPx !== undefined) patch.kerningMinPx = opts.kerningMinPx;
     if (opts.emphasisMark !== undefined) patch.emphasisMark = opts.emphasisMark;
     if (opts.outline !== undefined) patch.outline = opts.outline;
@@ -151,7 +159,11 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     if (opts.emboss !== undefined) patch.emboss = opts.emboss;
     if (opts.imprint !== undefined) patch.imprint = opts.imprint;
     if (opts.border !== undefined) patch.runBorder = opts.border;
-    if (opts.fitTextPx !== undefined) patch.fitTextPx = opts.fitTextPx;
+    if (opts.fitTextPx !== undefined) {
+      // w:fitText is a positive width; a non-positive value would not round-trip.
+      if (opts.fitTextPx <= 0) throw new RangeError("effects: fitTextPx must be greater than 0");
+      patch.fitTextPx = opts.fitTextPx;
+    }
     return this.applyChar(patch);
   }
 

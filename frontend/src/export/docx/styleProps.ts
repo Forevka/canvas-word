@@ -29,11 +29,14 @@ function runBorderXml(b: NonNullable<CharStyle["runBorder"]>): string {
  *  exactly as before (no drift). */
 function runEffectsXml(s: Partial<CharStyle>): string {
   const out: string[] = [];
-  if (s.doubleStrikethrough) out.push(el("w:dstrike", { "w:val": "1" }));
-  if (s.outline) out.push(el("w:outline", { "w:val": "1" }));
-  if (s.shadow) out.push(el("w:shadow", { "w:val": "1" }));
-  if (s.emboss) out.push(el("w:emboss", { "w:val": "1" }));
-  if (s.imprint) out.push(el("w:imprint", { "w:val": "1" }));
+  // Emit explicit on/off (w:val="1"/"0") whenever DEFINED — so a style patch's
+  // `false` can clear an inherited w:rStyle value, mirroring w:b/w:i/w:strike.
+  // Concrete runs leave these undefined unless set, so output stays drift-free.
+  if (s.doubleStrikethrough !== undefined) out.push(el("w:dstrike", { "w:val": s.doubleStrikethrough ? "1" : "0" }));
+  if (s.outline !== undefined) out.push(el("w:outline", { "w:val": s.outline ? "1" : "0" }));
+  if (s.shadow !== undefined) out.push(el("w:shadow", { "w:val": s.shadow ? "1" : "0" }));
+  if (s.emboss !== undefined) out.push(el("w:emboss", { "w:val": s.emboss ? "1" : "0" }));
+  if (s.imprint !== undefined) out.push(el("w:imprint", { "w:val": s.imprint ? "1" : "0" }));
   if (s.widthScalePct !== undefined) out.push(el("w:w", { "w:val": s.widthScalePct }));
   if (s.kerningMinPx !== undefined) out.push(el("w:kern", { "w:val": pxToHalfPoints(s.kerningMinPx) }));
   if (s.positionPx !== undefined) out.push(el("w:position", { "w:val": pxToHalfPoints(s.positionPx) }));

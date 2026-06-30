@@ -309,3 +309,42 @@ describe("real table-style content bake — callback-cell provenance (#45)", () 
     expect(para(header.cells[1]!.blocks[0]).style.align).toBe("center");
   });
 });
+
+describe("paragraph.effects — minor run typography & effects", () => {
+  it("applies every effect onto the paragraph's runs", () => {
+    const doc = DocumentBuilder.create({ idSeed: "t" })
+      .paragraph("fx")
+      .effects({
+        doubleStrikethrough: true,
+        positionPx: 4,
+        widthScalePct: 150,
+        kerningMinPx: 12,
+        emphasisMark: "dot",
+        outline: true,
+        shadow: true,
+        emboss: true,
+        imprint: true,
+        border: { color: "#1a73e8", widthPx: 1 },
+        fitTextPx: 60,
+      })
+      .build();
+    const s = para(doc.blocks[0]).runs[0]!.style;
+    expect(s.doubleStrikethrough).toBe(true);
+    expect(s.positionPx).toBe(4);
+    expect(s.widthScalePct).toBe(150);
+    expect(s.kerningMinPx).toBe(12);
+    expect(s.emphasisMark).toBe("dot");
+    expect(s.outline).toBe(true);
+    expect(s.shadow).toBe(true);
+    expect(s.emboss).toBe(true);
+    expect(s.imprint).toBe(true);
+    expect(s.runBorder).toEqual({ color: "#1a73e8", widthPx: 1 });
+    expect(s.fitTextPx).toBe(60);
+  });
+
+  it("rejects an out-of-range widthScalePct and a non-positive fitTextPx", () => {
+    expect(() => DocumentBuilder.create().paragraph("x").effects({ widthScalePct: 0 })).toThrow(/widthScalePct/);
+    expect(() => DocumentBuilder.create().paragraph("x").effects({ widthScalePct: 700 })).toThrow(/widthScalePct/);
+    expect(() => DocumentBuilder.create().paragraph("x").effects({ fitTextPx: -1 })).toThrow(/fitTextPx/);
+  });
+});

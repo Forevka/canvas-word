@@ -265,7 +265,13 @@ public sealed record RunEffectsOptions
         var o = Js.Obj(e);
         if (DoubleStrikethrough is { } ds) Js.Set(o, "doubleStrikethrough", ds);
         if (PositionPx is { } pos) Js.Set(o, "positionPx", pos);
-        if (WidthScalePct is { } ws) Js.Set(o, "widthScalePct", ws);
+        if (WidthScalePct is { } ws)
+        {
+            // OOXML w:w (and the round-trip) only preserve a positive percentage in
+            // 1..600; reject out-of-range values rather than author dropped state.
+            if (ws <= 0 || ws > 600) throw new ArgumentOutOfRangeException(nameof(WidthScalePct), ws, "widthScalePct must be in the range 1..600");
+            Js.Set(o, "widthScalePct", ws);
+        }
         if (KerningMinPx is { } km) Js.Set(o, "kerningMinPx", km);
         if (EmphasisMark is { } em) Js.Set(o, "emphasisMark", EnumJs.Emphasis(em));
         if (Outline is { } ol) Js.Set(o, "outline", ol);
@@ -273,7 +279,12 @@ public sealed record RunEffectsOptions
         if (Emboss is { } eb) Js.Set(o, "emboss", eb);
         if (Imprint is { } im) Js.Set(o, "imprint", im);
         if (Border is { } bd) Js.Set(o, "border", bd.ToJs(e));
-        if (FitTextPx is { } ft) Js.Set(o, "fitTextPx", ft);
+        if (FitTextPx is { } ft)
+        {
+            // w:fitText is a positive width; a non-positive value would not round-trip.
+            if (ft <= 0) throw new ArgumentOutOfRangeException(nameof(FitTextPx), ft, "fitTextPx must be greater than 0");
+            Js.Set(o, "fitTextPx", ft);
+        }
         return o;
     }
 }
