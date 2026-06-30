@@ -223,9 +223,18 @@ describe("insert row/column inherits the proto cell's format", () => {
       expect(c.margin).toEqual({ top: 2, right: 8, bottom: 2, left: 8 });
       expect(c.vAlign).toBe("center");
     }
-    // Deep-cloned — the new row must not share the proto's border/margin objects.
-    expect(t.rows[1]!.cells[0]!.borders).not.toBe(t.rows[0]!.cells[0]!.borders);
-    expect(t.rows[1]!.cells[0]!.margin).not.toBe(t.rows[0]!.cells[0]!.margin);
+    // Deep-cloned — neither the borders container NOR its nested edge objects may
+    // be shared with the proto row (a shallow `{ ...borders }` would leak edges).
+    const proto = t.rows[0]!.cells[0]!;
+    const added = t.rows[1]!.cells[0]!;
+    expect(added.borders).not.toBe(proto.borders);
+    expect(added.margin).not.toBe(proto.margin);
+    expect((added.borders as never as Record<string, object>)["top"]).not.toBe(
+      (proto.borders as never as Record<string, object>)["top"],
+    );
+    // Mutating a cloned edge must not bleed back into the proto cell.
+    (added.borders as never as Record<string, { color: string }>)["top"]!.color = "#00ff00";
+    expect((proto.borders as never as Record<string, { color: string }>)["top"]!.color).toBe("#ff0000");
     expect(tableOf(undo()).rows.length).toBe(1);
   });
 
