@@ -49,7 +49,8 @@ function walkStory(
       for (let row = 0; row < block.rows.length; row++) {
         const cells = block.rows[row]!.cells;
         for (let col = 0; col < cells.length; col++) {
-          walkStory(cells[col]!.blocks, { container: ctx.container, cell: { tableId: block.id, row, col } }, opts, visit);
+          // Spread ctx so a table nested in a note body keeps its `note` membership.
+          walkStory(cells[col]!.blocks, { ...ctx, cell: { tableId: block.id, row, col } }, opts, visit);
         }
       }
     }
@@ -66,6 +67,17 @@ export function walk(doc: Document, visit: BlockVisitor, options: WalkOptions = 
     for (const band of BAND_CONTAINERS) {
       const blocks = doc.section[band];
       if (blocks) walkStory(blocks, { container: band }, opts, visit);
+    }
+    // Bands can also be attached to an EARLIER section via its section-break
+    // paragraph's props (see effectiveSection); those stories live nowhere else,
+    // so visit any explicitly present here. Absent props inherit doc.section,
+    // already visited above — so this never double-counts.
+    for (const block of doc.blocks) {
+      if (block.kind !== "paragraph" || !block.style.sectionBreak) continue;
+      for (const band of BAND_CONTAINERS) {
+        const blocks = block.style.sectionBreak.props[band];
+        if (blocks) walkStory(blocks, { container: band }, opts, visit);
+      }
     }
   }
   if (opts.notes) {
@@ -85,8 +97,15 @@ export function textOf(block: Block): string {
     case "paragraph":
       return textOfRuns(block.runs);
     case "table":
+      // Preserve paragraph boundaries inside a cell (newline), columns with tabs,
+      // rows with newlines. Empty blocks (images/equations) drop out so they don't
+      // inject blank lines.
       return block.rows
-        .map((row) => row.cells.map((cell) => cell.blocks.map(textOf).join("")).join("\t"))
+        .map((row) =>
+          row.cells
+            .map((cell) => cell.blocks.map(textOf).filter((t) => t.length > 0).join("\n"))
+            .join("\t"),
+        )
         .join("\n");
     default:
       return "";

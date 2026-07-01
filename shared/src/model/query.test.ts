@@ -138,6 +138,50 @@ describe("query.getBlockById + typed getters", () => {
   });
 });
 
+describe("query.walk — section-break bands & nested notes", () => {
+  it("visits a header stored on an earlier section's section-break props", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [
+        para("a", "sec one", { sectionBreak: { type: "nextPage", props: { header: [para("sbHeader", "break header")] } } }),
+        para("b", "sec two"),
+      ],
+    };
+    const seen: Record<string, unknown> = {};
+    walk(doc, (block, ctx) => {
+      seen[block.id] = ctx;
+    });
+    expect(seen["sbHeader"]).toEqual({ container: "header" });
+    expect(getParagraphs(doc).map((p) => p.id)).toContain("sbHeader");
+  });
+
+  it("keeps the band container for a table nested inside a header", () => {
+    // The context spread also carries `note` into cells; note bodies are
+    // paragraph-only in the model, so `container` is the reachable field to pin.
+    const doc: Document = {
+      section: { ...section(), header: [table("htbl", para("hcell", "head cell"))] },
+      blocks: [para("p1", "body")],
+    };
+    let ctx: unknown;
+    walk(doc, (block, c) => {
+      if (block.id === "hcell") ctx = c;
+    });
+    expect(ctx).toEqual({ container: "header", cell: { tableId: "htbl", row: 0, col: 0 } });
+  });
+});
+
+describe("query.textOf — multi-paragraph cell", () => {
+  it("joins paragraphs within a cell with newlines", () => {
+    const t: TableBlock = {
+      kind: "table",
+      id: "t",
+      revision: 0,
+      rows: [{ cells: [cell("c0", para("a", "A"), para("b", "B"))] }],
+    };
+    expect(textOf(t)).toBe("A\nB");
+  });
+});
+
 describe("query.getSections", () => {
   it("returns one section for a plain document with the full block range", () => {
     const doc = richDoc();
