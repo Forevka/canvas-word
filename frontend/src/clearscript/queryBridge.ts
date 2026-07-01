@@ -4,8 +4,8 @@
 // the V8 bundle. Shapes here MUST stay in lockstep with the C# records in
 // dotnet/src/WordCanvas.ClearScript/WordDocumentQuery.cs.
 
-import type { Document, Paragraph } from "@cw/shared";
-import { findParagraphs, getSdtNodes, getSections, sdtText, textOfRuns, walk, type BlockContext } from "@cw/shared";
+import type { Document, Paragraph, Run } from "@cw/shared";
+import { findParagraphs, getSdtNodes, getSections, textOf, textOfRuns, walk, type BlockContext } from "@cw/shared";
 import type { PageInfo as LayoutPageInfo } from "../layout/pages";
 
 /** A paragraph flattened for the host: text + where it lives (container / table
@@ -118,9 +118,45 @@ export function querySections(doc: Document): SectionInfo[] {
   }));
 }
 
+/** Enclosed text for EVERY control in one document walk, keyed by control id —
+ *  the batched equivalent of calling `sdtText(doc, id)` per control (which would
+ *  re-walk the whole doc each time, O(controls × blocks)). A control is block-level
+ *  OR inline, never both, so exactly one branch contributes per id; parts join with
+ *  newlines, matching `sdtText`. */
+function sdtTextMap(doc: Document): Map<string, string[]> {
+  const parts = new Map<string, string[]>();
+  const push = (id: string, text: string): void => {
+    const a = parts.get(id);
+    if (a) a.push(text);
+    else parts.set(id, [text]);
+  };
+  walk(doc, (b) => {
+    if (b.sdtPath) {
+      const t = textOf(b); // block-level members contribute the whole block
+      if (t.length > 0) for (const id of b.sdtPath) push(id, t);
+    }
+    if (b.kind === "paragraph") {
+      // Inline members contribute their runs, grouped per control, per paragraph.
+      const perId = new Map<string, Run[]>();
+      for (const run of b.runs) {
+        const ip = run.style.sdtPath;
+        if (!ip) continue;
+        for (const id of ip) {
+          const arr = perId.get(id);
+          if (arr) arr.push(run);
+          else perId.set(id, [run]);
+        }
+      }
+      for (const [id, runs] of perId) push(id, textOfRuns(runs));
+    }
+  });
+  return parts;
+}
+
 /** Every content control, flattened with its nesting links and enclosed text —
  *  the SDT forest in one call (the primary templating surface, for .NET hosts). */
 export function querySdts(doc: Document): SdtInfo[] {
+  const textById = sdtTextMap(doc);
   return getSdtNodes(doc).map((n) => ({
     id: n.id,
     sdtType: n.props.type,
@@ -132,7 +168,7 @@ export function querySdts(doc: Document): SdtInfo[] {
     childIds: n.childIds,
     path: n.path,
     depth: n.depth,
-    text: sdtText(doc, n.id),
+    text: (textById.get(n.id) ?? []).join("\n"),
   }));
 }
 

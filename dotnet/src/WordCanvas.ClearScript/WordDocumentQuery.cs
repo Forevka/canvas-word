@@ -100,22 +100,26 @@ public sealed partial class WordDocument
     public IReadOnlyList<SdtInfo> GetSdts() =>
         ReadArray(_engine.Api.InvokeMethod("querySdts", Doc), ReadSdt);
 
+    // Each convenience filter re-queries by default; pass a list from a prior
+    // GetSdts() to reuse it (WordDocument wraps an immutable snapshot) and avoid a
+    // fresh querySdts bridge traversal.
+
     /// <summary>A single content control by id, or null.</summary>
-    public SdtInfo? GetSdt(string id)
+    public SdtInfo? GetSdt(string id, IReadOnlyList<SdtInfo>? sdts = null)
     {
         ArgumentNullException.ThrowIfNull(id);
-        return GetSdts().FirstOrDefault(s => s.Id == id);
+        return (sdts ?? GetSdts()).FirstOrDefault(s => s.Id == id);
     }
 
     /// <summary>The top-level controls — those not nested inside any other.</summary>
-    public IReadOnlyList<SdtInfo> GetSdtRoots() =>
-        GetSdts().Where(s => s.ParentId is null).ToList();
+    public IReadOnlyList<SdtInfo> GetSdtRoots(IReadOnlyList<SdtInfo>? sdts = null) =>
+        (sdts ?? GetSdts()).Where(s => s.ParentId is null).ToList();
 
     /// <summary>The controls nested directly (one level) inside <paramref name="id"/>.</summary>
-    public IReadOnlyList<SdtInfo> GetSdtChildren(string id)
+    public IReadOnlyList<SdtInfo> GetSdtChildren(string id, IReadOnlyList<SdtInfo>? sdts = null)
     {
         ArgumentNullException.ThrowIfNull(id);
-        return GetSdts().Where(s => s.ParentId == id).ToList();
+        return (sdts ?? GetSdts()).Where(s => s.ParentId == id).ToList();
     }
 
     // ---- marshalling --------------------------------------------------------

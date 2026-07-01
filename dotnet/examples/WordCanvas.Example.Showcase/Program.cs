@@ -435,7 +435,7 @@ Console.WriteLine($"  round-trip    : re-imported edited docx → find 'EDITED H
 // ---- Content controls (SDTs) — the templating surface ---------------------
 var sdts = re.GetSdts();
 Console.WriteLine("Content controls (SDTs):");
-Console.WriteLine($"  total         : {sdts.Count} ({re.GetSdtRoots().Count} root)");
+Console.WriteLine($"  total         : {sdts.Count} ({re.GetSdtRoots(sdts).Count} root)"); // reuse the fetched list
 foreach (var s in sdts.Take(4))
     Console.WriteLine($"      [{s.SdtType}] {(s.Alias is { } a ? $"\"{a}\" " : "")}depth={s.Depth} text=\"{Trunc(s.Text)}\"");
 
