@@ -14,7 +14,7 @@
 import { setMeasureContext } from "../../layout/metrics";
 import { FontkitMeasureContext } from "./fontkitContext";
 import { builtinsRegistered, registerFont } from "./fontRegistry";
-import { ARABIC_FONT_FILE, CJK_FONT_FILE, FONT_FILES, MATH_FONT_FILE } from "../../fonts/clones";
+import { ARABIC_FONT_FILE, CJK_FONT_FILE, FONT_FILES, HEBREW_FONT_FILE, MATH_FONT_FILE } from "../../fonts/clones";
 
 async function readFontBytes(file: string): Promise<Uint8Array> {
   const url = new URL(`./fonts/${file}`, import.meta.url);
@@ -65,6 +65,13 @@ export function installMeasureHost(): Promise<void> {
         registerFont(ARABIC_FONT_FILE, await readFontBytes(ARABIC_FONT_FILE));
       } catch (e) {
         console.warn(`[wordcanvas] Arabic font ${ARABIC_FONT_FILE} failed to load; Arabic text will not render correctly`, e);
+      }
+      // The bundled Hebrew fallback (Noto Sans Hebrew) — registered so script-split
+      // Hebrew runs measure + embed identically instead of rendering as .notdef/tofu.
+      try {
+        registerFont(HEBREW_FONT_FILE, await readFontBytes(HEBREW_FONT_FILE));
+      } catch (e) {
+        console.warn(`[wordcanvas] Hebrew font ${HEBREW_FONT_FILE} failed to load; Hebrew text will not render correctly`, e);
       }
     }
     // Route pretext + metrics through the fontkit shim over the bundled clones.

@@ -13,7 +13,7 @@ import type { Block, CharStyle, Document, EquationBlock, ImageBlock, LineNumberi
 import { effectiveFractions, isHiddenParagraph } from "@cw/shared";
 import { formatListNumber, markerText, type ListDefinition, type ListLevel } from "@cw/shared";
 import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock, PlacedImage } from "./layoutTree";
-import { PrepareCache, prepareRunSegment, setActiveCjkFallback, setActiveArabicFallback, applyCjkLocale, type PreparedSegment } from "./prepareCache";
+import { PrepareCache, prepareRunSegment, setActiveCjkFallback, setActiveArabicFallback, setActiveHebrewFallback, applyCjkLocale, type PreparedSegment } from "./prepareCache";
 import { charStyleToFont, fontMetrics, measureTextWidth } from "./metrics";
 import { widthScale, PARA_BORDER_PAD_PX } from "../paint/paintStyle";
 import { baseLevelFor, effectiveAlign, hasRtlChars, levelsFor, visualOrder } from "./bidi";
@@ -100,6 +100,9 @@ export interface LayoutEngineOptions {
   /** Arabic fallback family: script-split Arabic runs render with it. `""`/whitespace
    *  or omitted = no fallback (browser system fallback renders Arabic on screen). */
   arabicFallback?: string | null;
+  /** Hebrew fallback family: script-split Hebrew runs render with it. `""`/whitespace
+   *  or omitted = no fallback (browser system fallback renders Hebrew on screen). */
+  hebrewFallback?: string | null;
 }
 
 /** @param fontRegistry custom-font registry to make active for this engine's layout
@@ -110,6 +113,7 @@ export function createLayoutEngine(fontRegistry?: CustomFontRegistry, opts?: Lay
   const cjkFallback = opts?.cjkFallback ?? null;
   const cjkLocale = opts?.cjkLocale;
   const arabicFallback = opts?.arabicFallback ?? null;
+  const hebrewFallback = opts?.hebrewFallback ?? null;
   const prepCache = new PrepareCache();
   // Second cache tier: LineBox[] per (block revision, width). A keystroke
   // re-breaks ONE paragraph; every other block's lines are reused as-is and
@@ -216,6 +220,7 @@ export function createLayoutEngine(fontRegistry?: CustomFontRegistry, opts?: Lay
       // prepareCache.ts): scriptSplitRuns reads both fallbacks during this pass.
       setActiveCjkFallback(cjkFallback);
       setActiveArabicFallback(arabicFallback);
+      setActiveHebrewFallback(hebrewFallback);
       applyCjkLocale(cjkLocale);
       // Honor the document's w:defaultTabStop (settings.xml) for this pass; a `\t`
       // past the last explicit stop advances by this interval (Word's behavior).

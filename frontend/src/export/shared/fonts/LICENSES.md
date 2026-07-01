@@ -14,6 +14,7 @@ PDFs. The OFL/Apache faces below are freely redistributable.
 | StixTwoMath    | (math typesetting)   | The STIX Fonts project / Tiro Typeworks     | SIL OFL 1.1        |
 | NotoSansSC     | (CJK fallback)       | Google                                      | SIL OFL 1.1        |
 | NotoSansArabic | (Arabic fallback)    | Google                                      | SIL OFL 1.1        |
+| NotoSansHebrew | (Hebrew fallback)    | Google                                      | SIL OFL 1.1        |
 
 `StixTwoMath-Regular.ttf` is **STIX Two Math** — the math font equations are
 typeset and rendered with (real math glyphs + the Mathematical Alphanumeric block
@@ -33,6 +34,13 @@ fallback so Arabic text isn't `.notdef`/tofu in PDF export when no embedder font
 configured. Full Arabic Unicode block coverage (Basic Arabic, Arabic Supplement,
 Extended-A, Presentation Forms-A/B); contextual joining forms via OpenType GSUB.
 ~240 KB. Single Regular face (all styles map to it; no bold/italic faces). Source:
+https://github.com/notofonts/noto-fonts (OFL 1.1).
+
+`NotoSansHebrew-Regular.ttf` is **Noto Sans Hebrew** — the default Hebrew fallback so
+Hebrew text isn't `.notdef`/tofu ("x") in PDF export when no embedder font is
+configured. Full Hebrew Unicode block coverage (Hebrew block plus the Hebrew letters
+and ligatures in the Alphabetic Presentation Forms range). ~27 KB. Single Regular
+face (all styles map to it; no bold/italic faces). Source:
 https://github.com/notofonts/noto-fonts (OFL 1.1).
 
 Full license texts: SIL OFL 1.1 — https://openfontlicense.org ;

@@ -61,18 +61,19 @@ const heading = (text: string, level: 1 | 2 | 3): Paragraph => {
 };
 
 // --- images --------------------------------------------------------------------
-const SVG = (label: string, w: number, h: number): string =>
-  "data:image/svg+xml," + encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">` +
-    `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1a73e8"/><stop offset="1" stop-color="#9c27b0"/></linearGradient></defs>` +
-    `<rect width="${w}" height="${h}" rx="8" fill="url(#g)"/><text x="${w / 2}" y="${h / 2 + 6}" font-family="Arial" font-size="18" fill="#fff" text-anchor="middle">${label}</text></svg>`,
-  );
-const image = (label: string, w: number, h: number, align: ImageBlock["align"], wrap?: "block" | "square"): ImageBlock => ({
-  kind: "image", id: id(), revision: 0, src: SVG(label, w, h), widthPx: w, heightPx: h, align, ...(wrap ? { wrap } : {}) });
-/** A cropped image (OOXML a:srcRect): the same SVG, with crop insets so only the
+// A tiny raster PNG (a #1a73e8 → #9c27b0 diagonal gradient tile), embedded as a
+// data URI. Deliberately a PNG, not an SVG: pdfkit (the PDF exporter) only decodes
+// PNG/JPEG, so an SVG data URI throws `image-format-unsupported` and renders as a
+// gray placeholder box in the export. Stretched to each image box below. General
+// SVG-in-export support is tracked in issue #116.
+const TILE_PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAACgCAIAAAC9uXYyAAAEU0lEQVR42u3cQW7jRgBFwdY/Rq6ZS+cWzEKWLY+MWUyAAHoorwSqabLlgtEQmu/219//nHNu55zrnHPdzsfP7Xq8ONfLkXPOda7zNfhx+uPd8/Tu9XLkPv5p8Ncv/3Hwdb+FPzv9nOv7nd/HX9+OXI9Jfc3l6f5/OP23k71+e62n018ud718zudc17eJf1zuT0//ZfDLZH/8s/5HFf8nqtFMc0bzOWc005zRfDtnNNOc0XzOGc00ZzQ/lhw005zQfLvOaKY5o/m+5KCZ5ojmc67RTHNG8+18Ljlopvn9NT+WHDTTnNB8rjOaac5oflpy0Ezz+2t+/ZaDZprfWPM5ZzTTnNF8O9dopjmj+VxnNNOc0fy5l4Nmmgua799y0ExzRPO574emmeaG5u/bR2mm+c01P+/loJnmt9f860OyNNP81pq/PSRLM83vrvnrIVmaaQ5o/nhIlmaaG5o/90PTTPNpJIdGM80ZzR//oWmmORPQGs00l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysH9C3YjxNIK1Tm9AAAAAElFTkSuQmCC";
+const image = (w: number, h: number, align: ImageBlock["align"], wrap?: "block" | "square"): ImageBlock => ({
+  kind: "image", id: id(), revision: 0, src: TILE_PNG, widthPx: w, heightPx: h, align, ...(wrap ? { wrap } : {}) });
+/** A cropped image (OOXML a:srcRect): the same tile, with crop insets so only the
  *  inner window shows — demonstrating the #63 image-crop round-trip. */
-const croppedImage = (label: string, w: number, h: number, crop: NonNullable<ImageBlock["crop"]>): ImageBlock => ({
-  kind: "image", id: id(), revision: 0, src: SVG(label, w, h), widthPx: w, heightPx: h, align: "left", crop });
+const croppedImage = (w: number, h: number, crop: NonNullable<ImageBlock["crop"]>): ImageBlock => ({
+  kind: "image", id: id(), revision: 0, src: TILE_PNG, widthPx: w, heightPx: h, align: "left", crop });
 
 // --- symbols (w:sym) -----------------------------------------------------------
 /** A symbol-font glyph run (OOXML w:sym): font + hex code point, decoded to the
@@ -460,11 +461,11 @@ export function sampleDoc(): Document {
 
     richHeading,
     para([run("An inline block image:")], { spaceAfterPx: 6 }),
-    image("block image", 360, 110, "center", "block"),
+    image(360, 110, "center", "block"),
     para([
       run("A square-wrapped image floats and text flows around it. " + LOREM.repeat(3)),
     ]),
-    image("square wrap", 150, 110, "left", "square"),
+    image(150, 110, "left", "square"),
     para([run("Multilevel numbered list:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
     para([run("Model — invertible ops")], { list: { listId: DEFAULT_NUMBER_LIST_ID, level: 0 }, spaceAfterPx: 2 }),
     para([run("Layout — pretext pagination")], { list: { listId: DEFAULT_NUMBER_LIST_ID, level: 0 }, spaceAfterPx: 2 }),
@@ -527,8 +528,8 @@ export function sampleDoc(): Document {
       run(" — each is a glyph from a symbol font, not text."),
     ], { spaceAfterPx: 8 }),
     para([run("Image cropping (a:srcRect) trims the source to a window — here the same tile is shown whole, then center-cropped:")], { spaceAfterPx: 6 }),
-    image("full", 150, 110, "left", "block"),
-    croppedImage("crop", 150, 110, { left: 0.25, top: 0.2, right: 0.25, bottom: 0.2 }),
+    image(150, 110, "left", "block"),
+    croppedImage(150, 110, { left: 0.25, top: 0.2, right: 0.25, bottom: 0.2 }),
     para([
       run("Tab stops honor the document's default interval (w:defaultTabStop): columns\tline up\tat\teach default tab."),
     ], { spaceBeforePx: 8 }),

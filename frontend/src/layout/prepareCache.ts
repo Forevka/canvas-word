@@ -49,6 +49,16 @@ export function setActiveArabicFallback(family: string | null | undefined): void
   activeArabicFallback = family && family.trim().length > 0 ? family.trim() : null;
 }
 
+// The Hebrew fallback family active for the CURRENT layout pass (null = leave Hebrew
+// runs untouched, so the browser's system fallback renders them on screen).
+let activeHebrewFallback: string | null = null;
+
+/** Set the Hebrew fallback family for the upcoming layout pass. The engine calls
+ *  this synchronously at layout() top; `""`/whitespace is treated as "no fallback". */
+export function setActiveHebrewFallback(family: string | null | undefined): void {
+  activeHebrewFallback = family && family.trim().length > 0 ? family.trim() : null;
+}
+
 // pretext's analyzer locale is PROCESS-GLOBAL inside the library (it can't be made
 // per-call), so the engine applies it synchronously at layout() top too — within the
 // same await-free span, so concurrent layouts each assert their own. Idempotent per
@@ -91,12 +101,27 @@ const hasArabic = (text: string): boolean => {
   return false;
 };
 
-/** Script tag for a character: "arabic" | "cjk" | "other". Used to split runs at
- *  script boundaries when both a CJK and an Arabic fallback are configured. */
-type ScriptTag = "arabic" | "cjk" | "other";
+/** True when the code point is in a Hebrew Unicode block.
+ *  Covers the Hebrew block (0590–05FF) and the Hebrew letters/ligatures in
+ *  Alphabetic Presentation Forms (FB1D–FB4F). */
+function isHebrew(ch: string): boolean {
+  const cp = ch.codePointAt(0);
+  if (cp === undefined) return false;
+  return (cp >= 0x0590 && cp <= 0x05ff) || (cp >= 0xfb1d && cp <= 0xfb4f);
+}
 
-function scriptOf(ch: string, cjkFam: string | null, arabicFam: string | null): ScriptTag {
+const hasHebrew = (text: string): boolean => {
+  for (const ch of text) if (isHebrew(ch)) return true;
+  return false;
+};
+
+/** Script tag for a character: "arabic" | "hebrew" | "cjk" | "other". Used to split
+ *  runs at script boundaries when CJK, Arabic, and/or Hebrew fallbacks are configured. */
+type ScriptTag = "arabic" | "hebrew" | "cjk" | "other";
+
+function scriptOf(ch: string, cjkFam: string | null, arabicFam: string | null, hebrewFam: string | null): ScriptTag {
   if (arabicFam && isArabic(ch)) return "arabic";
+  if (hebrewFam && isHebrew(ch)) return "hebrew";
   if (cjkFam && isCJK(ch)) return "cjk";
   return "other";
 }
@@ -108,7 +133,8 @@ function scriptOf(ch: string, cjkFam: string | null, arabicFam: string | null): 
 export function scriptSplitRuns(runs: Run[]): Run[] {
   const cjkFam = activeCjkFallback;
   const arabicFam = activeArabicFallback;
-  if (!cjkFam && !arabicFam) return runs;
+  const hebrewFam = activeHebrewFallback;
+  if (!cjkFam && !arabicFam && !hebrewFam) return runs;
 
   const out: Run[] = [];
   let changed = false;
@@ -116,7 +142,8 @@ export function scriptSplitRuns(runs: Run[]): Run[] {
     const runFamily = firstFamilyToken(run.style.fontFamily);
     const needsCjk = cjkFam && runFamily !== cjkFam && hasCjk(run.text);
     const needsArabic = arabicFam && runFamily !== arabicFam && hasArabic(run.text);
-    if (run.text.length === 0 || (!needsCjk && !needsArabic)) {
+    const needsHebrew = hebrewFam && runFamily !== hebrewFam && hasHebrew(run.text);
+    if (run.text.length === 0 || (!needsCjk && !needsArabic && !needsHebrew)) {
       out.push(run);
       continue;
     }
@@ -127,12 +154,13 @@ export function scriptSplitRuns(runs: Run[]): Run[] {
       if (buf.length === 0) return;
       let fontFamily = run.style.fontFamily;
       if (bufScript === "arabic" && arabicFam) fontFamily = arabicFam;
+      else if (bufScript === "hebrew" && hebrewFam) fontFamily = hebrewFam;
       else if (bufScript === "cjk" && cjkFam) fontFamily = cjkFam;
       out.push({ text: buf, style: fontFamily === run.style.fontFamily ? run.style : { ...run.style, fontFamily } });
       buf = "";
     };
     for (const ch of run.text) {
-      const s = scriptOf(ch, cjkFam, arabicFam);
+      const s = scriptOf(ch, cjkFam, arabicFam, hebrewFam);
       if (bufScript !== null && s !== bufScript) flush();
       bufScript = s;
       buf += ch;
