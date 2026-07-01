@@ -61,6 +61,8 @@ export const CLONE_OF: Record<string, string> = {
   notosanssc: "NotoSansSC",
   // Noto Sans Arabic — the bundled Arabic fallback (single Regular face); identity.
   notosansarabic: "NotoSansArabic",
+  // Noto Sans Hebrew — the bundled Hebrew fallback (single Regular face); identity.
+  notosanshebrew: "NotoSansHebrew",
 };
 
 /** Family name of the bundled math font. Math glyphs render with this face. */
@@ -82,7 +84,15 @@ export const CJK_FONT_FILE = "NotoSansSC-Regular.ttf";
 export const ARABIC_FONT_FAMILY = "NotoSansArabic";
 export const ARABIC_FONT_FILE = "NotoSansArabic-Regular.ttf";
 
-/** Built-in faces that ship a single Regular face only (math + CJK + Arabic fallback).
+/** Family name of the bundled Hebrew fallback font. Script-split Hebrew runs render
+ *  with this face (Noto Sans Hebrew Regular — full Hebrew block coverage) so Hebrew
+ *  text isn't `.notdef`/tofu ("x") in the export when no embedder font is configured.
+ *  It is the default Hebrew fallback (always on; pass `hebrewFallbackFont: ""` in the
+ *  CJK config to opt out). */
+export const HEBREW_FONT_FAMILY = "NotoSansHebrew";
+export const HEBREW_FONT_FILE = "NotoSansHebrew-Regular.ttf";
+
+/** Built-in faces that ship a single Regular face only (math + CJK + Arabic + Hebrew fallback).
  *  Every requested style resolves to this one file — there are no bold/italic faces,
  *  so the renderer/embedder use Regular outlines for all four styles (matching how the
  *  custom-font path falls a missing style back to its Regular). */
@@ -90,6 +100,7 @@ export const SINGLE_FACE_FILES: Record<string, string> = {
   [MATH_FONT_FAMILY]: MATH_FONT_FILE,
   [CJK_FONT_FAMILY]: CJK_FONT_FILE,
   [ARABIC_FONT_FAMILY]: ARABIC_FONT_FILE,
+  [HEBREW_FONT_FAMILY]: HEBREW_FONT_FILE,
 };
 
 // Per-clone vertical metrics as a fraction of font size (ascent, descent above/
@@ -117,6 +128,9 @@ export const CLONE_METRICS: Record<string, { ascent: number; descent: number }> 
   // fonts carry tall vertical metrics to accommodate harakat (diacritics); the
   // same "face's own ratios" rule applies so editor + export always agree.
   NotoSansArabic: { ascent: 1.374, descent: 0.738 },
+  // Noto Sans Hebrew (hhea ascent 1068 / descent 292 at upem 1000). The face's own
+  // ratios keep editor + export pagination in lock-step, like the other fallbacks.
+  NotoSansHebrew: { ascent: 1.068, descent: 0.292 },
 };
 
 /** Resolve one CSS-stack family token to the face family the editor/exporters

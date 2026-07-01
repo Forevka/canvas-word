@@ -15,17 +15,19 @@ import {
   type CustomFontPayload,
 } from "../fonts/customRegistry";
 import { createLayoutEngine, type LayoutEngineOptions } from "../layout/engine";
-import { ARABIC_FONT_FAMILY, CJK_FONT_FAMILY } from "../fonts/clones";
+import { ARABIC_FONT_FAMILY, CJK_FONT_FAMILY, HEBREW_FONT_FAMILY } from "../fonts/clones";
 import { pageOfBlockMap } from "../recalc/recalcToc";
 
 /** CJK + Arabic tuning for an export job (mirror of the editor's `cjk` config). The
- *  CJK fallback defaults to the bundled `NotoSansSC` face and the Arabic fallback to
- *  `NotoSansArabic` — both are built-ins that embed without a `fonts` payload entry.
- *  Pass `fallbackFont: ""` / `arabicFallbackFont: ""` to opt out per script. */
+ *  CJK fallback defaults to the bundled `NotoSansSC` face, the Arabic fallback to
+ *  `NotoSansArabic`, and the Hebrew fallback to `NotoSansHebrew` — all built-ins that
+ *  embed without a `fonts` payload entry. Pass `fallbackFont: ""` /
+ *  `arabicFallbackFont: ""` / `hebrewFallbackFont: ""` to opt out per script. */
 export interface CjkExportConfig {
   locale?: string;
   fallbackFont?: string;
   arabicFallbackFont?: string;
+  hebrewFallbackFont?: string;
 }
 
 /** Does the doc carry a generated table of contents (tocEntry paragraphs)? Their
@@ -58,6 +60,7 @@ export async function runExport(
   const cjkOpts: LayoutEngineOptions = {
     cjkFallback: cjk?.fallbackFont ?? CJK_FONT_FAMILY,
     arabicFallback: cjk?.arabicFallbackFont ?? ARABIC_FONT_FAMILY,
+    hebrewFallback: cjk?.hebrewFallbackFont ?? HEBREW_FONT_FAMILY,
     ...(cjk?.locale !== undefined ? { cjkLocale: cjk.locale } : {}),
   };
   return runExportInner(doc, format, images, cjkOpts, fonts);

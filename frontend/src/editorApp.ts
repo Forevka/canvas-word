@@ -10,8 +10,8 @@ import { sampleDoc } from "./model/sampleDoc";
 import { stressDoc } from "./model/stressDoc";
 import { importDocx, type ImportResult, type ImportPhase } from "./import/docx/importDocx";
 import { exportDocument, type ExportFormat, type ExportWarning } from "./export/exportDocument";
-import { loadArabicFallbackFont, loadCjkFallbackFont, loadEditorFonts } from "./export/shared/editorFonts";
-import { ARABIC_FONT_FAMILY, CJK_FONT_FAMILY } from "./fonts/clones";
+import { loadArabicFallbackFont, loadCjkFallbackFont, loadHebrewFallbackFont, loadEditorFonts } from "./export/shared/editorFonts";
+import { ARABIC_FONT_FAMILY, CJK_FONT_FAMILY, HEBREW_FONT_FAMILY } from "./fonts/clones";
 import { fontsProgress } from "./app/loadProgress";
 import { toolbarFonts } from "./fonts/clones";
 import { createFontRegistry, normalizeFamily } from "./fonts/customRegistry";
@@ -234,6 +234,7 @@ const engine = createLayoutEngine(fontRegistry, {
   ...(config.cjk.fallbackFont !== undefined ? { cjkFallback: config.cjk.fallbackFont } : {}),
   ...(config.cjk.locale !== undefined ? { cjkLocale: config.cjk.locale } : {}),
   ...(config.cjk.arabicFallbackFont !== undefined ? { arabicFallback: config.cjk.arabicFallbackFont } : {}),
+  ...(config.cjk.hebrewFallbackFont !== undefined ? { hebrewFallback: config.cjk.hebrewFallbackFont } : {}),
 });
 const t0 = performance.now();
 const tree = engine.layout(doc); // cold: every paragraph hits prepareRichInline
@@ -354,6 +355,15 @@ if (config.cjk.fallbackFont === CJK_FONT_FAMILY) {
 // it so the screen matches the PDF export exactly.
 if (config.cjk.arabicFallbackFont === ARABIC_FONT_FAMILY) {
   void loadArabicFallbackFont().then((ok) => {
+    if (!ok || teardown.signal.aborted) return;
+    editor.refreshFonts();
+  });
+}
+
+// Same lazy-load pattern for the bundled Hebrew fallback; once it loads, re-layout
+// re-measures Hebrew runs against it so the screen matches the PDF export.
+if (config.cjk.hebrewFallbackFont === HEBREW_FONT_FAMILY) {
+  void loadHebrewFallbackFont().then((ok) => {
     if (!ok || teardown.signal.aborted) return;
     editor.refreshFonts();
   });

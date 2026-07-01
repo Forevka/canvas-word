@@ -7,7 +7,7 @@
 //     charStyleToFont also emits verbatim for a registered custom family).
 // Call (and await) before the first layout.
 
-import { ARABIC_FONT_FAMILY, ARABIC_FONT_FILE, CJK_FONT_FAMILY, CJK_FONT_FILE, CLONE_FAMILIES, FONT_STYLES } from "../../fonts/clones";
+import { ARABIC_FONT_FAMILY, ARABIC_FONT_FILE, CJK_FONT_FAMILY, CJK_FONT_FILE, CLONE_FAMILIES, FONT_STYLES, HEBREW_FONT_FAMILY, HEBREW_FONT_FILE } from "../../fonts/clones";
 import {
   CUSTOM_FONT_STYLES,
   faceUrlForStyle,
@@ -129,6 +129,36 @@ export function loadArabicFallbackFont(): Promise<boolean> {
     }
   })();
   return arabicStarted;
+}
+
+let hebrewStarted: Promise<boolean> | null = null;
+
+/** Lazily load the bundled Hebrew fallback face (Noto Sans Hebrew) under family
+ *  "NotoSansHebrew". Mirrors {@link loadArabicFallbackFont}: deliberately NOT awaited
+ *  at mount so it doesn't block the first paint of Latin-only documents. The caller
+ *  starts it after mount and calls editor.refreshFonts() when it resolves so Hebrew
+ *  text re-measures against the bundled face (matching the exporters). Registered for
+ *  every weight/style from the one buffer (single Regular face; no faux bold/italic).
+ *  Resolves to whether the face loaded. Defensive: never rejects. */
+export function loadHebrewFallbackFont(): Promise<boolean> {
+  if (hebrewStarted) return hebrewStarted;
+  if (typeof document === "undefined" || !("fonts" in document)) return Promise.resolve(false);
+  hebrewStarted = (async () => {
+    try {
+      const url = new URL(`./fonts/${HEBREW_FONT_FILE}`, import.meta.url);
+      const buf = await (await fetch(url)).arrayBuffer();
+      const faces = Object.values(STYLE_ATTRS).map(
+        (a) => new FontFace(HEBREW_FONT_FAMILY, buf, { weight: a.weight, style: a.style }),
+      );
+      await Promise.all(faces.map((f) => f.load()));
+      for (const f of faces) (document as Document & { fonts: FontFaceSet }).fonts.add(f);
+      return true;
+    } catch (e) {
+      console.warn(`[wordcanvas] failed to load the bundled Hebrew fallback font (${HEBREW_FONT_FAMILY})`, e);
+      return false;
+    }
+  })();
+  return hebrewStarted;
 }
 
 function loadBuiltins(onProgress?: (loaded: number, total: number) => void): Promise<void> {

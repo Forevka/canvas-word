@@ -10,7 +10,7 @@
 import type { EditorTypography, Stylesheet } from "@cw/shared";
 import { makeDefaultStylesheet } from "@cw/shared";
 import type { FontsConfig, ResolvedFontsConfig } from "./fonts/customRegistry";
-import { ARABIC_FONT_FAMILY, CJK_FONT_FAMILY } from "./fonts/clones";
+import { ARABIC_FONT_FAMILY, CJK_FONT_FAMILY, HEBREW_FONT_FAMILY } from "./fonts/clones";
 import {
   ACCENT_BLUE,
   COLUMN_SEPARATOR_COLOR,
@@ -103,6 +103,11 @@ export interface CjkConfig {
    *  contextual joining forms via GSUB), and embeds with a known face out of the box.
    *  Set to a registered custom font's family to override, or `""` to opt out. */
   arabicFallbackFont?: string;
+  /** Family name of the font to use for Hebrew runs. Defaults to the bundled Hebrew
+   *  fallback (`NotoSansHebrew`), so Hebrew text measures, renders, and embeds with a
+   *  known face out of the box instead of rendering as tofu ("x") in PDF export.
+   *  Set to a registered custom font's family to override, or `""` to opt out. */
+  hebrewFallbackFont?: string;
 }
 
 /** Editor behavior tuning — every field optional. Pass to `WordCanvas({ behavior })`. */
@@ -259,15 +264,16 @@ export function resolveConfig(input: EditorConfigInput = {}): ResolvedConfig {
   };
 }
 
-/** Resolve the public partial `cjk` option, defaulting the CJK and Arabic fallback
- *  fonts to their bundled faces so non-Latin text renders out of the box. An explicit
- *  `""` is preserved (the opt-out: keeps the browser's system fallback on screen). */
+/** Resolve the public partial `cjk` option, defaulting the CJK, Arabic, and Hebrew
+ *  fallback fonts to their bundled faces so non-Latin text renders out of the box. An
+ *  explicit `""` is preserved (the opt-out: keeps the browser's system fallback on screen). */
 export function resolveCjk(c?: CjkConfig): CjkConfig {
   const base = c ? stripUndefined(c) : {};
   return {
     ...base,
     fallbackFont: base.fallbackFont ?? CJK_FONT_FAMILY,
     arabicFallbackFont: base.arabicFallbackFont ?? ARABIC_FONT_FAMILY,
+    hebrewFallbackFont: base.hebrewFallbackFont ?? HEBREW_FONT_FAMILY,
   };
 }
 

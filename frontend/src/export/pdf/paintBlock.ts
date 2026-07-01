@@ -145,8 +145,15 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
           const fullH = height / fracH;
           doc.save();
           doc.rect(block.x, block.y, width, height).clip();
-          drawImage(doc, toBuffer(bytes), block.x - crop.left * fullW, block.y - crop.top * fullH, fullW, fullH);
-          doc.restore();
+          try {
+            drawImage(doc, toBuffer(bytes), block.x - crop.left * fullW, block.y - crop.top * fullH, fullW, fullH);
+          } finally {
+            // Always pop the clip, even if drawImage throws on an undecodable
+            // image: otherwise the clip leaks and blanks the rest of the page
+            // (body, header, footer). The outer catch then draws the placeholder
+            // unclipped. See the white-on-white page regression from SVG images.
+            doc.restore();
+          }
         } else {
           drawImage(doc, toBuffer(bytes), block.x, block.y, width, height);
         }

@@ -26,6 +26,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   both — were collapsed into one "Borders & shading" button.
 
 ### Fixed
+- **Hebrew text no longer renders as tofu ("x") in PDF export.** Only CJK and Arabic had bundled
+  fallback faces, so Hebrew runs fell through to a Latin metric-clone that lacks Hebrew glyphs and
+  exported as `.notdef` boxes. A bundled **Noto Sans Hebrew** fallback (single Regular face, OFL 1.1)
+  now joins the CJK/Arabic fallbacks: Hebrew runs are script-split onto it automatically so they
+  measure, render, and subset-embed with a real face out of the box. On by default; opt out with
+  `cjk: { hebrewFallbackFont: "" }`, or override with a registered custom family.
+- **A cropped image that fails to decode no longer blanks the rest of the PDF page.** The PDF
+  renderer clips to the crop window before drawing the image; if the image bytes were undecodable
+  (e.g. an SVG, which pdfkit can't rasterize) the draw threw *after* the clip was applied but
+  *before* it was restored, so the clip leaked and every following element on the page — body text,
+  header, and footer — was clipped away and rendered invisible (white-on-white). The clip is now
+  always restored (even on a decode error), so a bad image degrades to a placeholder box without
+  affecting the rest of the page.
+- **The showcase document's demo images now appear in PDF export.** They were SVG data URIs, which
+  pdfkit can't decode, so they exported as gray placeholder boxes (and, for the cropped one,
+  triggered the clip leak above). They are now a bundled raster (PNG) tile. General SVG support in
+  the exporter is tracked in issue #116.
 - **Arrow keys no longer stall next to a page-number field or hidden run.** With the caret just
   before a `PAGE`/`NUMPAGES` field (e.g. "Page 1 of 3") — or before a bookmarked run that follows
   hidden (`w:vanish`) text, as in the sample document — pressing ◀/▶ appeared to do nothing for
