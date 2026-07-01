@@ -70,8 +70,12 @@ export type QueryPublicSurfaceParity = [
   Assert<AssignableTo<Rt.BookmarkEntry, Pub.BookmarkEntry>>,
   Assert<AssignableTo<Rt.NoteStory, Pub.NoteStory>>,
   Assert<AssignableTo<Rt.ListItem, Pub.ListItem>>,
+  // Range / text addressing.
+  Assert<AssignableTo<typeof Rt.rangeText, typeof Pub.rangeText>>,
+  Assert<AssignableTo<typeof Rt.positionOfText, typeof Pub.positionOfText>>,
   Assert<AssignableTo<typeof Rt.getPages, typeof Pub.getPages>>,
   Assert<AssignableTo<typeof Rt.pageOfBlock, typeof Pub.pageOfBlock>>,
+  Assert<AssignableTo<typeof Rt.indexOnPage, typeof Pub.indexOnPage>>,
   // A runtime DocumentEditor instance must satisfy the published instance surface.
   Assert<AssignableTo<RtEditor, PubEditor>>,
   // Shared value-type shapes.

@@ -11,6 +11,7 @@ import type { Container } from "./ops";
 import { fullSdtChain } from "./sdt";
 import { markerText, type ListDefinition } from "./lists";
 import type { NamedStyle } from "./stylesheet";
+import type { DocPosition, DocSelection } from "./position";
 import { textOfRuns } from "./text";
 import { resolveSections, type ResolvedSection } from "./sections";
 
@@ -544,6 +545,60 @@ export function blockPath(doc: Document, id: string, options?: WalkOptions): Blo
   let found: BlockContext | undefined;
   walk(doc, (b, ctx) => {
     if (found === undefined && b.id === id) found = ctx;
+  }, options);
+  return found;
+}
+
+// ---------------------------------------------------------------------------
+// Range / text addressing. Offsets are UTF-16 code-unit indices into a block's
+// text (a paragraph's concatenated run text; a table's `textOf`).
+
+/** The text a block addresses by offset — a paragraph's run text, or `textOf` for
+ *  other kinds. */
+function blockText(block: Block): string {
+  return block.kind === "paragraph" ? textOfRuns(block.runs) : textOf(block);
+}
+
+/** The text covered by a selection. A collapsed or single-block selection slices
+ *  that block's text (works in any story). A multi-block selection is supported
+ *  across TOP-LEVEL BODY blocks — first/last blocks sliced at the caret, whole
+ *  blocks between, joined by newlines; it returns "" if an endpoint is not a
+ *  top-level body block (a cross-cell/band/note range is out of scope). Endpoints
+ *  are ordered automatically, so anchor/focus direction does not matter. */
+export function rangeText(doc: Document, selection: DocSelection): string {
+  const { anchor, focus } = selection;
+  if (anchor.blockId === focus.blockId) {
+    const b = getBlockById(doc, anchor.blockId);
+    if (!b) return "";
+    const lo = Math.min(anchor.offset, focus.offset);
+    const hi = Math.max(anchor.offset, focus.offset);
+    return blockText(b).slice(lo, hi);
+  }
+  const index = new Map(doc.blocks.map((b, i) => [b.id, i] as const));
+  const ai = index.get(anchor.blockId);
+  const fi = index.get(focus.blockId);
+  if (ai === undefined || fi === undefined) return "";
+  const [start, end, si, ei] = ai <= fi ? [anchor, focus, ai, fi] : [focus, anchor, fi, ai];
+  const parts: string[] = [];
+  for (let i = si; i <= ei; i++) {
+    const full = blockText(doc.blocks[i]!);
+    if (i === si) parts.push(full.slice(start.offset));
+    else if (i === ei) parts.push(full.slice(0, end.offset));
+    else parts.push(full);
+  }
+  return parts.join("\n");
+}
+
+/** The first `DocPosition` where `needle` (a substring) appears in a paragraph's
+ *  text, scanning in reading order — the offset side of an edit, so callers can
+ *  target `insertText`/`replaceText` without computing offsets by hand. Undefined
+ *  when not found. */
+export function positionOfText(doc: Document, needle: string, options?: WalkOptions): DocPosition | undefined {
+  let found: DocPosition | undefined;
+  walk(doc, (b) => {
+    if (found !== undefined || b.kind !== "paragraph") return;
+    const at = textOfRuns(b.runs).indexOf(needle);
+    if (at >= 0) found = { blockId: b.id, offset: at };
   }, options);
   return found;
 }

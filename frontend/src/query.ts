@@ -51,6 +51,9 @@ export {
   getStyles,
   getStyleById,
   blockPath,
+  // range / text addressing
+  rangeText,
+  positionOfText,
   // edit facade
   DocumentEditor,
 } from "@cw/shared";
@@ -68,6 +71,7 @@ export type {
   BookmarkEntry,
   NoteStory,
   ListItem,
+  DocSelection,
 } from "@cw/shared";
 
 // Re-export the core model types consumers need to name when using the API.
@@ -92,5 +96,5 @@ export type {
 } from "@cw/shared";
 
 // Layout-backed page query ("what's on page N").
-export { getPages, pageOfBlock } from "./layout/pages";
+export { getPages, pageOfBlock, indexOnPage } from "./layout/pages";
 export type { PageInfo, GetPagesOptions } from "./layout/pages";

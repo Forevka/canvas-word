@@ -323,6 +323,13 @@ export interface DocPosition {
   offset: number;
 }
 
+export interface DocSelection {
+  anchor: DocPosition;
+  focus: DocPosition;
+  /** Preserved X column for Up/Down caret movement. */
+  goalX?: number;
+}
+
 export interface BookmarkRange {
   start: DocPosition;
   end: DocPosition;
