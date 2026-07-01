@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Document query API (`@cw/shared`).** A read-only traversal layer over the document model, the
+  rough analog of .NET's `WordprocessingDocument` descendant queries: `walk` (visit every block,
+  descending into table cells, header/footer bands, and note bodies), `getParagraphs`/`getTables`/
+  `getImages`, `findParagraphs` (substring or RegExp, reporting each match's container/cell/note
+  context), `getBlockById` with typed `getParagraphById`/`getTableById`/`getImageById` narrowers,
+  `textOf` (block plain text; tables join cells with tabs, rows with newlines), and `getSections`
+  (per-section page geometry with the top-level block range each covers). Pure and DOM-free; page-level
+  queries are not here (pages exist only after layout).
+
+### Changed
+- **`effectiveSection`/`resolveSections` moved into the shared model core** (`@cw/shared`) from the
+  layout engine, so the editor, the exporter, and the new query API resolve sections identically. The
+  layout engine re-exports them, so existing importers are unaffected; `resolveSections` now also
+  reports each section's `index` and `startBlock`.
+
 ## [0.8.1] — 2026-07-01
 
 ### Fixed

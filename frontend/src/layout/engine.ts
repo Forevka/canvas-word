@@ -9,8 +9,11 @@ import {
   materializeRichInlineLineRange,
   type RichInlineCursor,
 } from "@chenglou/pretext/rich-inline";
-import type { Block, CharStyle, Document, EquationBlock, ImageBlock, LineNumbering, Paragraph, ParaStyle, Run, SectionBreakType, SectionPatch, SectionProps, TableBlock, TableCell, TabStop } from "@cw/shared";
-import { effectiveFractions, isHiddenParagraph } from "@cw/shared";
+import type { Block, CharStyle, Document, EquationBlock, ImageBlock, LineNumbering, Paragraph, ParaStyle, Run, SectionBreakType, SectionProps, TableBlock, TableCell, TabStop } from "@cw/shared";
+import { effectiveFractions, isHiddenParagraph, resolveSections } from "@cw/shared";
+// Section resolution moved to the shared model core; re-export so existing
+// importers of these from "./engine" (and the layout tests) keep working.
+export { effectiveSection, resolveSections } from "@cw/shared";
 import { formatListNumber, markerText, type ListDefinition, type ListLevel } from "@cw/shared";
 import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock, PlacedImage } from "./layoutTree";
 import { PrepareCache, prepareRunSegment, setActiveCjkFallback, setActiveArabicFallback, setActiveHebrewFallback, applyCjkLocale, type PreparedSegment } from "./prepareCache";
@@ -964,37 +967,6 @@ const TOC_GUTTER = 48; // right gutter reserved on TOC entries for the page numb
 
 const BAND_KEYS = ["header", "footer", "headerFirst", "headerEven", "footerFirst", "footerEven"] as const;
 
-export function effectiveSection(base: SectionProps, patch: SectionPatch): SectionProps {
-  const out: SectionProps = {
-    pageWidthPx: patch.pageWidthPx ?? base.pageWidthPx,
-    pageHeightPx: patch.pageHeightPx ?? base.pageHeightPx,
-    marginPx: patch.marginPx ?? base.marginPx,
-  };
-  // columns: undefined = inherit, null = explicitly single-column
-  const columns = patch.columns === undefined ? base.columns : (patch.columns ?? undefined);
-  if (columns) out.columns = columns;
-  // page-number restart is a section's OWN property — never inherited
-  if (patch.pageNumberStart !== undefined) out.pageNumberStart = patch.pageNumberStart;
-  // Band distances inherit from the document section (the report sets them once).
-  const headerDist = patch.headerDistancePx ?? base.headerDistancePx;
-  if (headerDist !== undefined) out.headerDistancePx = headerDist;
-  const footerDist = patch.footerDistancePx ?? base.footerDistancePx;
-  if (footerDist !== undefined) out.footerDistancePx = footerDist;
-  // Page fill & borders inherit from the document section unless overridden.
-  const pageColorHex = patch.pageColorHex ?? base.pageColorHex;
-  if (pageColorHex !== undefined) out.pageColorHex = pageColorHex;
-  const pageBorders = patch.pageBorders ?? base.pageBorders;
-  if (pageBorders !== undefined) out.pageBorders = pageBorders;
-  // Line numbering is a section's OWN property (like page-number restart): a
-  // section either declares its own w:lnNumType or has none — it never inherits.
-  if (patch.lineNumbering !== undefined) out.lineNumbering = patch.lineNumbering;
-  for (const key of BAND_KEYS) {
-    const blocks = patch[key] ?? base[key];
-    if (blocks) out[key] = blocks;
-  }
-  return out;
-}
-
 /** Top Y of the header band. Word anchors the header's TOP edge at w:header from
  *  the page top (the band grows down); absent that, center it in the top margin. */
 function headerBandTop(s: SectionProps, bandHeight: number): number {
@@ -1008,33 +980,6 @@ function headerBandTop(s: SectionProps, bandHeight: number): number {
 function footerBandTop(s: SectionProps, bandHeight: number): number {
   if (s.footerDistancePx !== undefined) return s.pageHeightPx - s.footerDistancePx - bandHeight;
   return s.pageHeightPx - Math.max(8, (s.marginPx.bottom - bandHeight) / 2) - bandHeight;
-}
-
-interface ResolvedSection {
-  props: SectionProps;
-  /** Index (inclusive) of this section's last top-level block. */
-  endBlock: number;
-  /** The OOXML w:type that governs how THIS section's first page begins
-   *  ("nextPage"/"evenPage"/"oddPage"). Read when the engine starts the section. */
-  breakType: SectionBreakType;
-}
-
-export function resolveSections(doc: Document): ResolvedSection[] {
-  const out: ResolvedSection[] = [];
-  for (let i = 0; i < doc.blocks.length; i++) {
-    const b = doc.blocks[i]!;
-    if (b.kind === "paragraph" && b.style.sectionBreak) {
-      out.push({
-        props: effectiveSection(doc.section, b.style.sectionBreak.props),
-        endBlock: i,
-        breakType: b.style.sectionBreak.type,
-      });
-    }
-  }
-  // The trailing body section keeps its own start type (even/odd parity), so a
-  // document whose final section begins on a parity page is honored, not flattened.
-  out.push({ props: doc.section, endBlock: doc.blocks.length - 1, breakType: doc.section.breakType ?? "nextPage" });
-  return out;
 }
 
 function layoutDocument(
