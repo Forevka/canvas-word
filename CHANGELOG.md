@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Document edit facade `DocumentEditor` (`@cw/shared`).** A headless, ergonomic editing layer over the
+  `applyOp` operation engine — the rough analog of mutating a .NET `WordprocessingDocument` and saving.
+  Holds a mutable `doc` (every edit swaps in a new immutable value via structural sharing), translates
+  high-level calls into the existing typed ops, and keeps an undo/redo stack for free from the engine's
+  inverses. Methods: `setParagraphText`, `insertText`/`deleteText`/`replaceText` (UTF-16 offsets),
+  `setParagraphStyle`, `insertParagraph` (before/after a top-level block; clones the reference style
+  minus structural markers and mints an id), `removeBlock`, plus `undo`/`redo`/`canUndo`/`canRedo` and
+  `find`/`getParagraph` conveniences. Not the interactive editor's Command/caret machinery — plain data,
+  usable from Node, the browser, and the C# bindings.
 - **Document query API (`@cw/shared`).** A read-only traversal layer over the document model, the
   rough analog of .NET's `WordprocessingDocument` descendant queries: `walk` (visit every block,
   descending into table cells, header/footer bands, and note bodies), `getParagraphs`/`getTables`/
