@@ -51,6 +51,24 @@ public sealed record PageInfo(
     double MarginLeft,
     IReadOnlyList<string> BlockIds);
 
+/// <summary>A content control (OOXML w:sdt) flattened with its place in the nesting
+/// tree and the text it encloses — the primary templating surface. Controls nest
+/// (membership is an ordered ancestry path), so <see cref="ParentId"/>/
+/// <see cref="ChildIds"/>/<see cref="Path"/>/<see cref="Depth"/> describe the forest.
+/// <see cref="Checked"/> is null for non-checkbox controls.</summary>
+public sealed record SdtInfo(
+    string Id,
+    string SdtType,
+    string? Tag,
+    string? Alias,
+    bool? Checked,
+    bool Placeholder,
+    string? ParentId,
+    IReadOnlyList<string> ChildIds,
+    IReadOnlyList<string> Path,
+    int Depth,
+    string Text);
+
 public sealed partial class WordDocument
 {
     /// <summary>Every paragraph in the document (body, table cells, header/footer
@@ -75,6 +93,34 @@ public sealed partial class WordDocument
     /// re-query after mutating. Runs a full layout pass (like export).</summary>
     public IReadOnlyList<PageInfo> GetPages() =>
         ReadArray(_engine.ResolveValue(_engine.Api.InvokeMethod("layoutPages", Doc), "layoutPages"), ReadPage);
+
+    /// <summary>Every content control (w:sdt) — the primary templating surface —
+    /// flattened with its nesting links (parent/children/path/depth) and the text it
+    /// encloses. Controls nest, so this is the whole forest in one call.</summary>
+    public IReadOnlyList<SdtInfo> GetSdts() =>
+        ReadArray(_engine.Api.InvokeMethod("querySdts", Doc), ReadSdt);
+
+    // Each convenience filter re-queries by default; pass a list from a prior
+    // GetSdts() to reuse it (WordDocument wraps an immutable snapshot) and avoid a
+    // fresh querySdts bridge traversal.
+
+    /// <summary>A single content control by id, or null.</summary>
+    public SdtInfo? GetSdt(string id, IReadOnlyList<SdtInfo>? sdts = null)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        return (sdts ?? GetSdts()).FirstOrDefault(s => s.Id == id);
+    }
+
+    /// <summary>The top-level controls — those not nested inside any other.</summary>
+    public IReadOnlyList<SdtInfo> GetSdtRoots(IReadOnlyList<SdtInfo>? sdts = null) =>
+        (sdts ?? GetSdts()).Where(s => s.ParentId is null).ToList();
+
+    /// <summary>The controls nested directly (one level) inside <paramref name="id"/>.</summary>
+    public IReadOnlyList<SdtInfo> GetSdtChildren(string id, IReadOnlyList<SdtInfo>? sdts = null)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        return (sdts ?? GetSdts()).Where(s => s.ParentId == id).ToList();
+    }
 
     // ---- marshalling --------------------------------------------------------
 
@@ -114,9 +160,24 @@ public sealed partial class WordDocument
         Convert.ToDouble(p.GetProperty("marginLeft")),
         ReadStrings(p.GetProperty("blockIds")));
 
+    private static SdtInfo ReadSdt(ScriptObject s) => new(
+        s.GetProperty("id")?.ToString() ?? "",
+        s.GetProperty("sdtType")?.ToString() ?? "",
+        Str(s.GetProperty("tag")),
+        Str(s.GetProperty("alias")),
+        Bool(s.GetProperty("checked")),
+        Convert.ToBoolean(s.GetProperty("placeholder")),
+        Str(s.GetProperty("parentId")),
+        ReadStrings(s.GetProperty("childIds")),
+        ReadStrings(s.GetProperty("path")),
+        Convert.ToInt32(s.GetProperty("depth")),
+        s.GetProperty("text")?.ToString() ?? "");
+
     private static string? Str(object? v) => v is null or Undefined ? null : v.ToString();
 
     private static int? Nullable(object? v) => v is null or Undefined ? null : Convert.ToInt32(v);
+
+    private static bool? Bool(object? v) => v is null or Undefined ? null : Convert.ToBoolean(v);
 
     private static IReadOnlyList<T> ReadArray<T>(object? array, Func<ScriptObject, T> map)
     {

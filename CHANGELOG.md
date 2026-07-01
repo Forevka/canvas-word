@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **C# SDT (content control) query + edit parity (ClearScript bindings).** The templating surface now reaches
+  .NET. Query: `WordDocument.GetSdts()` returns the whole control forest flattened — each `SdtInfo` carries its
+  type/tag/alias/checked/placeholder, its nesting links (`ParentId`/`ChildIds`/`Path`/`Depth`), and the text it
+  encloses — plus `GetSdt(id)`, `GetSdtRoots()`, `GetSdtChildren(id)`. Edit: `WordDocumentEditor.SetSdtText(id, text)`
+  (fill a field, nesting-preserving), `SetCheckbox(id, checked)`, and `SetSdtProps(id, SdtPropsPatch)` (tag/alias/
+  placeholder/date-format/locks; `type` stays fixed). Backed by a `querySdts` JS bridge fn; the C# showcase now
+  lists the document's controls and fills/toggles them.
 - **SDT (content control) editing on `DocumentEditor` — the write half of templating (`@cw/shared` + `@forevka/wordcanvas/query`).**
   Fill and update content controls headlessly, over the same op engine (undo/redo for free): `setSdtProps(id, patch)`
   (merge alias/tag/checked/list/locks, preserving `type`), `setCheckbox(id, checked)` (checkbox controls), and
