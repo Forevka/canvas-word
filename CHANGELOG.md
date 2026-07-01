@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Document query getters: fields, bookmarks, notes, list items, styles, block location (`@cw/shared` + `@forevka/wordcanvas/query`).**
+  Rounds out the read surface beyond paragraphs/tables/sections: `getField`/`getFields`/`getFieldsByName`/`getFieldBlocks`
+  (custom + built-in fields and their result region), `getBookmark`/`getBookmarks`, `getFootnotes`/`getEndnotes`
+  (note stories by ref id), `getListItems(listId)` (paragraphs bound to a list, in body reading order, each with its
+  **resolved marker** — mirrors the layout engine's numbering pass, purely), `getStyles`/`getStyleById`, and
+  `blockPath(id)` ("where is this block" — its container/cell/note context). Published on the npm `/query` subpath
+  with hand-written types (`BookmarkEntry`/`NoteStory`/`ListItem` + `FieldDef`/`NamedStyle`/`BookmarkRange` re-exports),
+  guarded by the parity check.
 - **SDT value select + unwrap (`@cw/shared` + `@forevka/wordcanvas/query`).** Rounds out the content-control edit
   surface: `getSdtValue(doc, id)` reads a control's value in the shape its `type` implies (`text`, plus `checked`
   for checkboxes and the resolved `selected` value for dropDown/comboBox); `DocumentEditor.setSdtValue(id, value)`

@@ -5,10 +5,12 @@
 // ("what's on page N") are NOT here — pages exist only after layout, so they live
 // in the layout package.
 
-import type { Block, Document, ImageBlock, Paragraph, SdtProps, TableBlock } from "./document";
+import type { Block, BookmarkRange, Document, FieldDef, ImageBlock, Paragraph, SdtProps, TableBlock } from "./document";
 import { BAND_CONTAINERS } from "./document";
 import type { Container } from "./ops";
 import { fullSdtChain } from "./sdt";
+import { markerText, type ListDefinition } from "./lists";
+import type { NamedStyle } from "./stylesheet";
 import { textOfRuns } from "./text";
 import { resolveSections, type ResolvedSection } from "./sections";
 
@@ -418,4 +420,130 @@ export function getSdtValue(doc: Document, id: string): SdtValue | undefined {
     else if (props.type === "comboBox") value.selected = value.text;
   }
   return value;
+}
+
+// ---------------------------------------------------------------------------
+// Fields (OOXML complex fields) — definitions live in `doc.fields`; the result
+// region is the blocks (or runs) carrying the id as `fieldId`. Covers custom
+// (host-resolved) fields and the built-ins the editor understands (PAGE/DATE/…).
+
+/** A field definition by id, or undefined. */
+export function getField(doc: Document, id: string): FieldDef | undefined {
+  return doc.fields?.[id];
+}
+
+/** Every tracked field definition (custom + built-in), in `doc.fields` order. */
+export function getFields(doc: Document): FieldDef[] {
+  return Object.values(doc.fields ?? {});
+}
+
+/** Fields whose keyword matches `name`, case-insensitively (e.g. "PAGE", "MYCHART"). */
+export function getFieldsByName(doc: Document, name: string): FieldDef[] {
+  const want = name.toUpperCase();
+  return getFields(doc).filter((f) => f.name.toUpperCase() === want);
+}
+
+/** The blocks forming a region field's result (their `fieldId` === id). Empty for
+ *  a purely inline field (its result is runs, not blocks). */
+export function getFieldBlocks(doc: Document, id: string, options?: WalkOptions): Block[] {
+  const out: Block[] = [];
+  walk(doc, (b) => {
+    if (b.fieldId === id) out.push(b);
+  }, options);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Bookmarks — name → character range (may span paragraphs). Resolving a range to
+// its text needs cross-block offset math (see `rangeText`, a follow-up); these
+// expose the ranges themselves.
+
+export interface BookmarkEntry {
+  name: string;
+  range: BookmarkRange;
+}
+
+/** A bookmark's character range by name, or undefined. */
+export function getBookmark(doc: Document, name: string): BookmarkRange | undefined {
+  return doc.bookmarks?.[name];
+}
+
+/** Every bookmark as `{ name, range }`, in `doc.bookmarks` order. */
+export function getBookmarks(doc: Document): BookmarkEntry[] {
+  return Object.entries(doc.bookmarks ?? {}).map(([name, range]) => ({ name, range }));
+}
+
+// ---------------------------------------------------------------------------
+// Footnote / endnote stories, keyed by their reference id (the value a run's
+// `footnoteRef`/`endnoteRef` points at).
+
+export interface NoteStory {
+  id: string;
+  paragraphs: Paragraph[];
+}
+
+export function getFootnotes(doc: Document): NoteStory[] {
+  return Object.entries(doc.footnotes ?? {}).map(([id, paragraphs]) => ({ id, paragraphs }));
+}
+
+export function getEndnotes(doc: Document): NoteStory[] {
+  return Object.entries(doc.endnotes ?? {}).map(([id, paragraphs]) => ({ id, paragraphs }));
+}
+
+// ---------------------------------------------------------------------------
+// List items — the paragraphs bound to one list definition, in body reading
+// order, each with its resolved marker ("1.", "a.", "•", …). Mirrors the layout
+// engine's numbering pass (per-level counters; incrementing a level resets deeper
+// ones) but purely, so callers get markers without a layout. Counting runs over
+// the BODY (incl. table cells) only — exactly like the engine — so list markers in
+// header/footer bands are not part of this sequence.
+
+export interface ListItem {
+  paragraph: Paragraph;
+  /** 0-based list level (OOXML w:ilvl). */
+  level: number;
+  /** Resolved marker text ("1.", "a.", "•", …); "" for a markerless/unknown list. */
+  marker: string;
+  context: BlockContext;
+}
+
+export function getListItems(doc: Document, listId: string): ListItem[] {
+  const def: ListDefinition | undefined = doc.lists?.[listId];
+  const stack: number[] = [];
+  const out: ListItem[] = [];
+  walk(doc, (block, context) => {
+    if (block.kind !== "paragraph") return;
+    const ref = block.style.list;
+    if (!ref || ref.listId !== listId) return;
+    const lvl = def?.levels[Math.min(ref.level, def.levels.length - 1)];
+    stack[ref.level] = (stack[ref.level] ?? (lvl?.start ?? 1) - 1) + 1;
+    stack.length = ref.level + 1; // incrementing a level resets deeper ones
+    const marker = def ? markerText(def, ref.level, stack) : "";
+    out.push({ paragraph: block, level: ref.level, marker, context });
+  }, { bands: false, notes: false });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Stylesheet enumeration (Word's style gallery).
+
+export function getStyles(doc: Document): NamedStyle[] {
+  return doc.stylesheet?.styles ?? [];
+}
+
+export function getStyleById(doc: Document, styleId: string): NamedStyle | undefined {
+  return doc.stylesheet?.styles.find((s) => s.id === styleId);
+}
+
+// ---------------------------------------------------------------------------
+// "Where is this block?" — the resolved container/cell/note context of a block by
+// id (the same `BlockContext` walk reports), for a nested block. Undefined when no
+// block carries the id.
+
+export function blockPath(doc: Document, id: string, options?: WalkOptions): BlockContext | undefined {
+  let found: BlockContext | undefined;
+  walk(doc, (b, ctx) => {
+    if (found === undefined && b.id === id) found = ctx;
+  }, options);
+  return found;
 }
