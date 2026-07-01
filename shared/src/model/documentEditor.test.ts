@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { CharStyle, Document, Paragraph, SectionProps } from "./document";
+import type { CharStyle, Document, Paragraph, Run, SdtProps, SectionProps } from "./document";
 import { DocumentEditor } from "./documentEditor";
-import { getParagraphs, textOf } from "./query";
+import { getParagraphs, sdtText, textOf } from "./query";
 
 const CHAR: CharStyle = { fontFamily: "Georgia", fontSizePx: 16, bold: false, italic: false, underline: false, strikethrough: false, color: "#000" };
 const PARA = { align: "left" as const, lineHeight: 1.2, spaceBeforePx: 0, spaceAfterPx: 0, indentFirstLinePx: 0, indentLeftPx: 0 };
@@ -153,5 +153,129 @@ describe("DocumentEditor — chaining & find", () => {
     const ed = new DocumentEditor(docOf(para("a", "alpha"), para("b", "beta")));
     ed.setParagraphText("a", "gamma").setParagraphText("b", "gamma two");
     expect(ed.find("gamma").map((m) => m.paragraph.id)).toEqual(["a", "b"]);
+  });
+});
+
+// --- SDT (content control) editing — the primary templating surface ----------
+
+const runOf = (text: string, sdtPath?: string[]): Run => ({ text, style: sdtPath ? { ...CHAR, sdtPath } : CHAR });
+
+const mkPara = (id: string, runs: Run[], extra: Partial<Paragraph> = {}): Paragraph => ({
+  kind: "paragraph",
+  id,
+  revision: 0,
+  runs,
+  style: { ...PARA },
+  ...extra,
+});
+
+describe("DocumentEditor — SDT props", () => {
+  const docWith = (props: SdtProps): Document => ({
+    section: section(),
+    blocks: [mkPara("p", [runOf("before "), runOf("val", ["c"]), runOf(" after")])],
+    sdts: { c: props },
+  });
+
+  it("setSdtProps merges the patch and preserves type; undo restores", () => {
+    const ed = new DocumentEditor(docWith({ type: "plainText", tag: "T" }));
+    ed.setSdtProps("c", { alias: "Full Name", tag: "Name" });
+    expect(ed.doc.sdts!.c).toEqual({ type: "plainText", tag: "Name", alias: "Full Name" });
+    ed.undo();
+    expect(ed.doc.sdts!.c).toEqual({ type: "plainText", tag: "T" });
+  });
+
+  it("setSdtProps never changes the control type, even for an untyped caller", () => {
+    const ed = new DocumentEditor(docWith({ type: "plainText", tag: "T" }));
+    // `type` is excluded from the patch shape; force it through as an untyped
+    // runtime caller would, and confirm it is ignored.
+    ed.setSdtProps("c", { type: "checkbox", tag: "N" } as unknown as Partial<Omit<SdtProps, "type">>);
+    expect(ed.doc.sdts!.c!.type).toBe("plainText");
+    expect(ed.doc.sdts!.c!.tag).toBe("N");
+  });
+
+  it("setCheckbox flips a checkbox control's state", () => {
+    const ed = new DocumentEditor(docWith({ type: "checkbox", checked: false }));
+    ed.setCheckbox("c", true);
+    expect(ed.doc.sdts!.c!.checked).toBe(true);
+  });
+
+  it("setCheckbox throws for a non-checkbox control", () => {
+    const ed = new DocumentEditor(docWith({ type: "plainText" }));
+    expect(() => ed.setCheckbox("c", true)).toThrow(/not a checkbox/);
+  });
+
+  it("throws on unknown control ids", () => {
+    const ed = new DocumentEditor(docWith({ type: "plainText" }));
+    expect(() => ed.setSdtProps("nope", {})).toThrow(/not found/);
+    expect(() => ed.setSdtText("nope", "x")).toThrow(/not found/);
+  });
+});
+
+describe("DocumentEditor — setSdtText", () => {
+  it("fills an inline control, keeping surrounding text and the control tag", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [mkPara("p", [runOf("Name: "), runOf("Ada", ["c"]), runOf("!")])],
+      sdts: { c: { type: "plainText", tag: "Name" } },
+    };
+    const ed = new DocumentEditor(doc);
+    ed.setSdtText("c", "Bob");
+    const p = ed.getParagraph("p")!;
+    expect(textOf(p)).toBe("Name: Bob!");
+    expect(sdtText(ed.doc, "c")).toBe("Bob");
+    // the replacement run is still tagged with the control id
+    expect(p.runs.find((r) => r.text === "Bob")!.style.sdtPath).toEqual(["c"]);
+    ed.undo();
+    expect(sdtText(ed.doc, "c")).toBe("Ada");
+  });
+
+  it("preserves ancestry when filling a NESTED inline control", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [mkPara("p", [runOf("x"), runOf("42", ["outer", "inner"]), runOf("y")])],
+      sdts: { outer: { type: "richText" }, inner: { type: "plainText" } },
+    };
+    const ed = new DocumentEditor(doc);
+    ed.setSdtText("inner", "99");
+    const run = ed.getParagraph("p")!.runs.find((r) => r.text === "99")!;
+    expect(run.style.sdtPath).toEqual(["outer", "inner"]); // outer control survives
+    expect(sdtText(ed.doc, "inner")).toBe("99");
+    expect(sdtText(ed.doc, "outer")).toBe("99");
+  });
+
+  it("fills a block-level control over a single paragraph, keeping its sdtPath", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [mkPara("b", [runOf("old value")], { sdtPath: ["sec"] })],
+      sdts: { sec: { type: "richText", tag: "Section" } },
+    };
+    const ed = new DocumentEditor(doc);
+    ed.setSdtText("sec", "new value");
+    const b = ed.getParagraph("b")!;
+    expect(textOf(b)).toBe("new value");
+    expect(b.sdtPath).toEqual(["sec"]); // block-level membership intact
+  });
+
+  it("clears the placeholder flag when filling a control", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [mkPara("p", [runOf("placeholder", ["c"])])],
+      sdts: { c: { type: "plainText", placeholder: true } },
+    };
+    const ed = new DocumentEditor(doc);
+    ed.setSdtText("c", "real");
+    expect(ed.doc.sdts!.c!.placeholder).toBe(false);
+    ed.undo();
+    expect(ed.doc.sdts!.c!.placeholder).toBe(true); // both ops undo as one step
+  });
+
+  it("throws for a control spanning multiple blocks", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [mkPara("b0", [runOf("one")], { sdtPath: ["sec"] }), mkPara("b1", [runOf("two")], { sdtPath: ["sec"] })],
+      sdts: { sec: { type: "richText" } },
+    };
+    const ed = new DocumentEditor(doc);
+    expect(() => ed.setSdtText("sec", "x")).toThrow(/spans 2 block/);
   });
 });

@@ -8,9 +8,10 @@
 // machinery (that lives in the frontend and is UI-coupled). It is a plain data
 // facade usable from Node, the browser, and — later — the C# bindings.
 
-import type { CharStyle, Document, Paragraph, ParaStyle, Run } from "./document";
+import type { CharStyle, Document, Paragraph, ParaStyle, Run, SdtProps } from "./document";
 import { applyOp, containerOf, type Op } from "./ops";
-import { findParagraphs, getBlockById, getParagraphById, type ParagraphMatch } from "./query";
+import { findParagraphs, getBlockById, getParagraphById, getSdt, getSdtBlocks, walk, type ParagraphMatch } from "./query";
+import { ancestryThrough } from "./sdt";
 import { freshId } from "../ids";
 
 /** One undoable step: the forward ops and their inverses (already in
@@ -132,6 +133,100 @@ export class DocumentEditor {
   /** The id minted by the most recent `insertParagraph`, or null. */
   get lastInsertedId(): string | null {
     return this._lastInsertedId;
+  }
+
+  // --- content controls (SDTs) — the primary templating surface ---------------
+
+  /** Merge a patch onto a content control's properties (alias, tag, checked,
+   *  listItems, date format, locks…). The control must already exist. The control
+   *  `type` is the discriminant for how it round-trips and paints, so it is NOT
+   *  patchable here — it is always preserved (excluded from the patch shape and
+   *  re-forced on the merge, even against an untyped runtime caller). */
+  setSdtProps(id: string, patch: Partial<Omit<SdtProps, "type">>): this {
+    const current = getSdt(this._doc, id);
+    if (!current) throw new Error(`setSdtProps: content control ${id} not found`);
+    const props: SdtProps = { ...current, ...patch, type: current.type };
+    return this.commit([{ type: "setSdtProps", id, props }]);
+  }
+
+  /** Set a checkbox content control's state (☒/☐). Throws if `id` is not a
+   *  checkbox control. */
+  setCheckbox(id: string, checked: boolean): this {
+    const current = getSdt(this._doc, id);
+    if (!current) throw new Error(`setCheckbox: content control ${id} not found`);
+    if (current.type !== "checkbox") {
+      throw new Error(`setCheckbox: ${id} is a "${current.type}" control, not a checkbox`);
+    }
+    return this.setSdtProps(id, { checked });
+  }
+
+  /** Replace the text of a content control that occupies a SINGLE paragraph —
+   *  either an inline control (runs tagged with `id`) or a block-level control
+   *  wrapping one paragraph. The killer templating primitive: "fill this field".
+   *  Preserves the control's ancestry (so nesting survives) and clears any
+   *  placeholder flag. Throws for controls spanning multiple blocks (edit those by
+   *  block id) or not found. */
+  setSdtText(id: string, text: string): this {
+    const current = getSdt(this._doc, id);
+    if (!current) throw new Error(`setSdtText: content control ${id} not found`);
+
+    const blocks = getSdtBlocks(this._doc, id);
+    if (blocks.length > 0) {
+      // Block-level control: require exactly one paragraph member.
+      if (blocks.length > 1 || blocks[0]!.kind !== "paragraph") {
+        throw new Error(`setSdtText: ${id} spans ${blocks.length} block(s); edit multi-block controls by block id`);
+      }
+      const para = blocks[0] as Paragraph;
+      const runStyle = para.runs[0]?.style;
+      if (text.length > 0 && !runStyle) {
+        throw new Error(`setSdtText: block control ${id} is empty; cannot infer a run style`);
+      }
+      // setRuns keeps Block.sdtPath (block-level membership) intact.
+      const runs: Run[] = text.length > 0 ? [{ text, style: runStyle! }] : [];
+      return this.commit(this.withPlaceholderCleared(id, current, [{ type: "setRuns", blockId: para.id, runs }]));
+    }
+
+    // Inline control: find the single paragraph carrying tagged runs.
+    const hit = this.locateInlineSdt(id);
+    if (!hit) throw new Error(`setSdtText: content control ${id} has no editable text region`);
+    const { para, from, to, baseStyle } = hit;
+    // Preserve the run's full ancestry up to and including `id` so outer controls
+    // survive and the new content sits at this control's level.
+    const style: CharStyle = { ...baseStyle, sdtPath: ancestryThrough(baseStyle.sdtPath, id) ?? [id] };
+    const rebuilt: Run[] = [
+      ...para.runs.slice(0, from),
+      ...(text.length > 0 ? [{ text, style }] : []),
+      ...para.runs.slice(to),
+    ];
+    return this.commit(this.withPlaceholderCleared(id, current, [{ type: "setRuns", blockId: para.id, runs: rebuilt }]));
+  }
+
+  /** Find the single paragraph holding the contiguous run span tagged with the
+   *  inline control `id`, plus that span `[from, to)` and its base run style. */
+  private locateInlineSdt(
+    id: string,
+  ): { para: Paragraph; from: number; to: number; baseStyle: CharStyle } | undefined {
+    let found: { para: Paragraph; from: number; to: number; baseStyle: CharStyle } | undefined;
+    walk(this._doc, (block) => {
+      if (found || block.kind !== "paragraph") return;
+      let from = -1;
+      let to = -1;
+      block.runs.forEach((run, i) => {
+        if (run.style.sdtPath?.includes(id)) {
+          if (from === -1) from = i;
+          to = i + 1;
+        }
+      });
+      if (from !== -1) found = { para: block, from, to, baseStyle: block.runs[from]!.style };
+    });
+    return found;
+  }
+
+  /** Append a `setSdtProps` op clearing a placeholder flag, when set — so filling
+   *  a control drops its gray placeholder styling, like the interactive editor. */
+  private withPlaceholderCleared(id: string, current: SdtProps, ops: Op[]): Op[] {
+    if (!current.placeholder) return ops;
+    return [...ops, { type: "setSdtProps", id, props: { ...current, placeholder: false } }];
   }
 
   // --- undo / redo ------------------------------------------------------------

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **SDT (content control) editing on `DocumentEditor` — the write half of templating (`@cw/shared` + `@forevka/wordcanvas/query`).**
+  Fill and update content controls headlessly, over the same op engine (undo/redo for free): `setSdtProps(id, patch)`
+  (merge alias/tag/checked/list/locks, preserving `type`), `setCheckbox(id, checked)` (checkbox controls), and
+  `setSdtText(id, text)` — the killer "fill this field" primitive: replaces the text of a control occupying a single
+  paragraph (inline or block-level), preserving the control's ancestry so **nested controls survive**, and clearing
+  any placeholder flag in the same undoable step. Multi-block controls throw (edit those by block id). Published on
+  the npm `/query` subpath and guarded by the parity check.
 - **SDT (content control) query API — the primary templating surface (`@cw/shared` + `@forevka/wordcanvas/query`).**
   Content controls are how documents get templated, so the query layer now treats them first-class, including
   **nested controls** (an SDT inside another — membership is an ordered `sdtPath` ancestry, so nesting is native).
