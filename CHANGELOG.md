@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`walkRuns` run-level traversal + nested-cell ancestry (`@cw/shared` + `@forevka/wordcanvas/query`).** A new
+  `walkRuns(doc, visit)` primitive visits every run with its paragraph, run index, and full enclosing content-control
+  chain (`RunContext`) — the run-level companion to `walk`. `BlockContext` also gains a `cellPath` (full `CellRef[]`
+  ancestry outer→inner) that is present only for a block nested in a table-within-a-cell (≥2 cells deep), so
+  single-cell blocks keep their existing `{ container, cell }` shape — additive, no breaking change.
 - **Edit-facade ergonomics on `DocumentEditor` (`@cw/shared` + `@forevka/wordcanvas/query`).** Higher-level
   one-undo edits: `replaceAllText(pattern, replacement)` (find/replace across every paragraph — string replaces
   all, RegExp per run; matches spanning a style boundary are preserved), `setStyleByName(blockId, styleName)`

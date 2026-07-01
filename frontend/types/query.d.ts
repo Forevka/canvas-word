@@ -19,6 +19,7 @@ import type {
   NamedStyle,
   Paragraph,
   ParaStyle,
+  Run,
   SdtProps,
   SectionProps,
   TableBlock,
@@ -52,17 +53,36 @@ export type {
  *  Note bodies report `"body"` and set `note` instead. */
 export type Container = "body" | BandContainer;
 
+/** A table cell coordinate. */
+export interface CellRef {
+  tableId: string;
+  row: number;
+  col: number;
+}
+
 /** Where a visited block sits. `cell`/`note` are set when the block is nested
  *  below the top level of its story. */
 export interface BlockContext {
   container: Container;
   /** Set when the block lives inside a table cell (innermost cell if nested). */
-  cell?: { tableId: string; row: number; col: number };
+  cell?: CellRef;
+  /** Full cell ancestry outer→inner, present only for a block nested ≥2 cells deep
+   *  (a table within a cell); single-cell blocks keep the simple `{ cell }` shape. */
+  cellPath?: CellRef[];
   /** Set when the block belongs to a footnote/endnote body. */
   note?: { kind: "footnote" | "endnote"; id: string };
 }
 
 export type BlockVisitor = (block: Block, ctx: BlockContext) => void;
+
+/** Where a visited run sits: its paragraph context plus the paragraph, run index,
+ *  and full enclosing content-control chain (outer→inner). */
+export interface RunContext extends BlockContext {
+  block: Paragraph;
+  runIndex: number;
+  sdtChain: string[];
+}
+export type RunVisitor = (run: Run, ctx: RunContext) => void;
 
 /** Which stories `walk` descends into. All default to `true`. */
 export interface WalkOptions {
@@ -89,6 +109,8 @@ export interface ResolvedSection {
 /** Visit every block, descending (by default) into table cells, header/footer
  *  bands, and note bodies. */
 export declare function walk(doc: Document, visit: BlockVisitor, options?: WalkOptions): void;
+/** Visit every run (paragraphs only) with its paragraph context + full sdt chain. */
+export declare function walkRuns(doc: Document, visit: RunVisitor, options?: WalkOptions): void;
 /** Plain text of a block (tables join cells with tabs, rows with newlines). */
 export declare function textOf(block: Block): string;
 export declare function getParagraphs(doc: Document, options?: WalkOptions): Paragraph[];

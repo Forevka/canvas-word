@@ -5,7 +5,7 @@
 // ("what's on page N") are NOT here — pages exist only after layout, so they live
 // in the layout package.
 
-import type { Block, BookmarkRange, Document, FieldDef, ImageBlock, Paragraph, SdtProps, TableBlock, TableCell } from "./document";
+import type { Block, BookmarkRange, Document, FieldDef, ImageBlock, Paragraph, Run, SdtProps, TableBlock, TableCell } from "./document";
 import { BAND_CONTAINERS } from "./document";
 import type { Container } from "./ops";
 import { fullSdtChain } from "./sdt";
@@ -15,14 +15,25 @@ import type { DocPosition, DocSelection } from "./position";
 import { textOfRuns } from "./text";
 import { resolveSections, type ResolvedSection } from "./sections";
 
+/** A table cell coordinate (which table, which row/col). */
+export interface CellRef {
+  tableId: string;
+  row: number;
+  col: number;
+}
+
 /** Where a visited block sits. `cell`/`note` are set when the block is nested
  *  below the top level of its story. */
 export interface BlockContext {
   /** The top-level story this block belongs to (body or a header/footer band).
    *  Note bodies report `"body"` and set `note` instead. */
   container: Container;
-  /** Set when the block lives inside a table cell (innermost cell if nested). */
-  cell?: { tableId: string; row: number; col: number };
+  /** Set when the block lives inside a table cell (INNERMOST cell if nested). */
+  cell?: CellRef;
+  /** The full cell ancestry outer→inner, present ONLY for a block nested in a
+   *  TABLE-WITHIN-A-CELL (≥2 levels deep) — so single-cell blocks keep the simple
+   *  `{ container, cell }` shape. Use this to answer "which outer table/cell". */
+  cellPath?: CellRef[];
   /** Set when the block belongs to a footnote/endnote body. */
   note?: { kind: "footnote" | "endnote"; id: string };
 }
@@ -46,6 +57,7 @@ function walkStory(
   ctx: BlockContext,
   opts: ResolvedWalkOptions,
   visit: BlockVisitor,
+  cellStack: CellRef[] = [],
 ): void {
   for (const block of blocks) {
     visit(block, ctx);
@@ -53,8 +65,14 @@ function walkStory(
       for (let row = 0; row < block.rows.length; row++) {
         const cells = block.rows[row]!.cells;
         for (let col = 0; col < cells.length; col++) {
+          const cell: CellRef = { tableId: block.id, row, col };
+          const stack = [...cellStack, cell];
           // Spread ctx so a table nested in a note body keeps its `note` membership.
-          walkStory(cells[col]!.blocks, { ...ctx, cell: { tableId: block.id, row, col } }, opts, visit);
+          // `cellPath` is attached only when nested ≥2 deep, so single-cell blocks
+          // keep the historical `{ container, cell }` shape.
+          const childCtx: BlockContext = { ...ctx, cell };
+          if (stack.length >= 2) childCtx.cellPath = stack;
+          walkStory(cells[col]!.blocks, childCtx, opts, visit, stack);
         }
       }
     }
@@ -98,6 +116,31 @@ export function walk(doc: Document, visit: BlockVisitor, options: WalkOptions = 
  *  single definition of cell-text joining (shared by `textOf` and the editor). */
 export function textOfCell(cell: TableCell): string {
   return cell.blocks.map(textOf).filter((t) => t.length > 0).join("\n");
+}
+
+/** Where a visited run sits: its paragraph's `BlockContext`, plus the paragraph,
+ *  the run's index, and its FULL enclosing content-control chain (block ancestry
+ *  ++ inline ancestry, outer→inner). */
+export interface RunContext extends BlockContext {
+  block: Paragraph;
+  runIndex: number;
+  /** `block.sdtPath ++ run.style.sdtPath`, outer→inner; empty if none. */
+  sdtChain: string[];
+}
+
+export type RunVisitor = (run: Run, ctx: RunContext) => void;
+
+/** Visit every run in the document (only paragraphs have runs), in reading order,
+ *  with its paragraph context and full sdt chain. The run-level companion to
+ *  `walk` — the primitive behind inline content-control / field / bookmark text
+ *  resolution. Descends into the same stories as `walk` (options apply). */
+export function walkRuns(doc: Document, visit: RunVisitor, options?: WalkOptions): void {
+  walk(doc, (block, ctx) => {
+    if (block.kind !== "paragraph") return;
+    block.runs.forEach((run, runIndex) => {
+      visit(run, { ...ctx, block, runIndex, sdtChain: fullSdtChain(block, run.style) });
+    });
+  }, options);
 }
 
 /** The plain text of a block. Tables join cells with tabs and rows with newlines;

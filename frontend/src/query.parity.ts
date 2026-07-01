@@ -27,6 +27,9 @@ type PubEditor = InstanceType<typeof Pub.DocumentEditor>;
  *  published one. Value shapes are checked in the direction that matters. */
 export type QueryPublicSurfaceParity = [
   Assert<AssignableTo<typeof Rt.walk, typeof Pub.walk>>,
+  Assert<AssignableTo<typeof Rt.walkRuns, typeof Pub.walkRuns>>,
+  Assert<AssignableTo<Rt.RunContext, Pub.RunContext>>,
+  Assert<AssignableTo<Rt.CellRef, Pub.CellRef>>,
   Assert<AssignableTo<typeof Rt.textOf, typeof Pub.textOf>>,
   Assert<AssignableTo<typeof Rt.getParagraphs, typeof Pub.getParagraphs>>,
   Assert<AssignableTo<typeof Rt.getTables, typeof Pub.getTables>>,
