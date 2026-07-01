@@ -7,7 +7,7 @@ namespace WordCanvas.ClearScript;
 /// .docx or produced by <see cref="Builder.DocumentBuilder"/>). The model data
 /// never leaves V8; only export blobs cross the boundary.
 /// </summary>
-public sealed class WordDocument
+public sealed partial class WordDocument
 {
     private readonly WordCanvasEngine _engine;
 

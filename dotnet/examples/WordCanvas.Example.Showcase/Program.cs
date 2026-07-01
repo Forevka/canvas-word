@@ -400,7 +400,25 @@ Console.WriteLine($"Built {doc.BlockCount} blocks with the typed builder.");
 Console.WriteLine($"  showcase.pdf  : {pdf.Length / 1024} KB");
 Console.WriteLine($"  showcase.docx : {docx.Length / 1024} KB");
 Console.WriteLine($"  round-trip    : re-imported to {re.BlockCount} blocks, {re.MediaCount} images, {re.Warnings.Count} warnings");
+
+// ---- Query the re-imported document (WordprocessingDocument-style access) --
+var paragraphs = re.GetParagraphs();
+var sections = re.GetSections();
+var pages = re.GetPages();
+Console.WriteLine("Query:");
+Console.WriteLine($"  paragraphs    : {paragraphs.Count} (first: \"{Trunc(paragraphs.Count > 0 ? paragraphs[0].Text : "")}\")");
+Console.WriteLine($"  sections      : {sections.Count}");
+Console.WriteLine($"  pages         : {pages.Count}");
+var hits = re.FindText("Showcase");
+Console.WriteLine($"  find 'Showcase': {hits.Count} paragraph(s)");
+foreach (var h in hits.Take(3))
+{
+    var pageNo = pages.FirstOrDefault(p => p.BlockIds.Contains(h.Id))?.Number;
+    Console.WriteLine($"      [{h.Container}] {(pageNo is { } n ? $"p{n} " : "")}\"{Trunc(h.Text)}\"");
+}
 Console.WriteLine($"Output written to: {outDir}");
+
+static string Trunc(string s) => s.Length <= 60 ? s : s[..57] + "...";
 return;
 
 static CellOptions Bold() => new() { Style = new CharStyle { Bold = true } };
