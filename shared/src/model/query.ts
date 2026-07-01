@@ -5,7 +5,7 @@
 // ("what's on page N") are NOT here — pages exist only after layout, so they live
 // in the layout package.
 
-import type { Block, BookmarkRange, Document, FieldDef, ImageBlock, Paragraph, SdtProps, TableBlock } from "./document";
+import type { Block, BookmarkRange, Document, FieldDef, ImageBlock, Paragraph, SdtProps, TableBlock, TableCell } from "./document";
 import { BAND_CONTAINERS } from "./document";
 import type { Container } from "./ops";
 import { fullSdtChain } from "./sdt";
@@ -94,6 +94,12 @@ export function walk(doc: Document, visit: BlockVisitor, options: WalkOptions = 
   }
 }
 
+/** A table cell's text — its blocks' text joined by newlines, empties dropped. The
+ *  single definition of cell-text joining (shared by `textOf` and the editor). */
+export function textOfCell(cell: TableCell): string {
+  return cell.blocks.map(textOf).filter((t) => t.length > 0).join("\n");
+}
+
 /** The plain text of a block. Tables join cells with tabs and rows with newlines;
  *  images and equations have no text. */
 export function textOf(block: Block): string {
@@ -104,13 +110,7 @@ export function textOf(block: Block): string {
       // Preserve paragraph boundaries inside a cell (newline), columns with tabs,
       // rows with newlines. Empty blocks (images/equations) drop out so they don't
       // inject blank lines.
-      return block.rows
-        .map((row) =>
-          row.cells
-            .map((cell) => cell.blocks.map(textOf).filter((t) => t.length > 0).join("\n"))
-            .join("\t"),
-        )
-        .join("\n");
+      return block.rows.map((row) => row.cells.map(textOfCell).join("\t")).join("\n");
     default:
       return "";
   }

@@ -9,8 +9,8 @@
 // facade usable from Node, the browser, and — later — the C# bindings.
 
 import type { Block, CharStyle, Document, Paragraph, ParaStyle, Run, SdtProps, TableCell, TableRow } from "./document";
-import { applyOp, applyStylePatchToRuns, containerOf, type Op } from "./ops";
-import { findParagraphs, getBlockById, getParagraphById, getSdt, getSdtBlocks, getTableById, textOf, walk, type ParagraphMatch } from "./query";
+import { applyOp, applyStylePatchToRuns, containerOf, gridColumnCount, type Op } from "./ops";
+import { findParagraphs, getBlockById, getParagraphById, getSdt, getSdtBlocks, getTableById, textOfCell, walk, type ParagraphMatch } from "./query";
 import { ancestryThrough, removeSdt as stripSdtFromPath } from "./sdt";
 import { resolveStyle } from "./stylesheet";
 import { DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE } from "./defaults";
@@ -334,7 +334,8 @@ export class DocumentEditor {
   insertTableRowAt(tableId: string, rowIndex: number, cellTexts: string[] = []): this {
     const table = getTableById(this._doc, tableId);
     if (!table) throw new Error(`insertTableRowAt: table ${tableId} not found`);
-    const cols = table.rows[0]?.cells.length ?? cellTexts.length;
+    // Span-aware column count so a first row with colSpans doesn't undercount.
+    const cols = gridColumnCount(table) || cellTexts.length;
     const runStyle = firstRunStyle(table.rows) ?? DEFAULT_CHAR_STYLE;
     const cells: TableCell[] = Array.from({ length: cols }, (_, c) => {
       const text = cellTexts[c] ?? "";
@@ -357,7 +358,7 @@ export class DocumentEditor {
     const table = getTableById(this._doc, tableId);
     if (!table) throw new Error(`deleteColumnByHeader: table ${tableId} not found`);
     const header = table.rows[0];
-    const col = header ? header.cells.findIndex((cell) => cellText(cell) === headerText) : -1;
+    const col = header ? header.cells.findIndex((cell) => textOfCell(cell) === headerText) : -1;
     if (col === -1) throw new Error(`deleteColumnByHeader: no column headed "${headerText}" in table ${tableId}`);
     return this.commit([{ type: "removeTableColumn", tableId, colIndex: col }]);
   }
@@ -490,9 +491,4 @@ function firstRunStyle(rows: TableRow[]): CharStyle | undefined {
     }
   }
   return undefined;
-}
-
-/** A table cell's text — its blocks' text joined by newlines (empties dropped). */
-function cellText(cell: TableCell): string {
-  return cell.blocks.map(textOf).filter((t) => t.length > 0).join("\n");
 }

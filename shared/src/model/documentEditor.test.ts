@@ -506,15 +506,20 @@ describe("DocumentEditor — moveBlock", () => {
     expect(ed.doc.blocks.map((x) => x.id)).toEqual(["a", "b", "c"]);
   });
 
-  it("is a no-op when the destination equals the current index", () => {
+  it("is a no-op (nothing committed) when already at the destination index", () => {
     const ed = new DocumentEditor(docOf(para("a", "A"), para("b", "B")));
-    ed.moveBlock("a", 0);
-    expect(ed.canUndo).toBe(false);
+    ed.moveBlock("b", 0); // real move → [b, a]
+    const before = ed.doc;
+    ed.moveBlock("b", 0); // b is already at index 0 → no-op
+    expect(ed.doc).toBe(before); // same reference: no new commit
+    expect(ed.doc.blocks.map((x) => x.id)).toEqual(["b", "a"]);
   });
 
-  it("throws for a non-top-level block", () => {
-    const ed = new DocumentEditor(docOf(para("a", "A")));
-    expect(() => ed.moveBlock("nope", 0)).toThrow(/not a top-level body block/);
+  it("throws for a block that exists but is not top-level (nested in a table)", () => {
+    const doc: Document = { section: section(), blocks: [table2("t", [["Name"]])] };
+    const ed = new DocumentEditor(doc);
+    expect(() => ed.moveBlock("t-Name", 0)).toThrow(/not a top-level body block/); // a cell paragraph
+    expect(() => ed.moveBlock("missing", 0)).toThrow(/not a top-level body block/);
   });
 });
 
