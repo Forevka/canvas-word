@@ -16,6 +16,7 @@ import {
   getSdts,
   getSdtsByAlias,
   getSdtsByTag,
+  getSdtValue,
   getSections,
   getTableById,
   getTables,
@@ -365,5 +366,44 @@ describe("query SDT: edge cases", () => {
     expect(getSdtDescendants(doc, "x")).toEqual([]);
     expect(getSdtBlocks(doc, "x")).toEqual([]);
     expect(sdtText(doc, "x")).toBe("");
+    expect(getSdtValue(doc, "x")).toBeUndefined();
+  });
+});
+
+describe("query SDT: getSdtValue (typed value read)", () => {
+  it("reads text controls as plain text", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [mkPara("p", [sdtRun("Ada", ["name"])])],
+      sdts: { name: { type: "plainText", tag: "Name" } },
+    };
+    expect(getSdtValue(doc, "name")).toEqual({ type: "plainText", text: "Ada" });
+  });
+
+  it("reads a checkbox's state", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [mkPara("p", [sdtRun("x")])],
+      sdts: { agree: { type: "checkbox", checked: true } },
+    };
+    expect(getSdtValue(doc, "agree")).toEqual({ type: "checkbox", text: "", checked: true });
+  });
+
+  it("resolves a dropdown's selected VALUE from its display text", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [mkPara("p", [sdtRun("Two", ["choice"])])],
+      sdts: { choice: { type: "dropDown", listItems: [{ display: "One", value: "1" }, { display: "Two", value: "2" }] } },
+    };
+    expect(getSdtValue(doc, "choice")).toEqual({ type: "dropDown", text: "Two", selected: "2" });
+  });
+
+  it("falls back to the raw text for a combo box's free entry", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [mkPara("p", [sdtRun("Custom", ["combo"])])],
+      sdts: { combo: { type: "comboBox", listItems: [{ display: "Alpha", value: "a" }] } },
+    };
+    expect(getSdtValue(doc, "combo")).toEqual({ type: "comboBox", text: "Custom", selected: "Custom" });
   });
 });

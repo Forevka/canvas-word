@@ -37,6 +37,7 @@ export {
   getSdtDescendants,
   getSdtBlocks,
   sdtText,
+  getSdtValue,
   // edit facade
   DocumentEditor,
 } from "@cw/shared";
@@ -50,6 +51,7 @@ export type {
   InsertParagraphOptions,
   SdtMatch,
   SdtNode,
+  SdtValue,
 } from "@cw/shared";
 
 // Re-export the core model types consumers need to name when using the API.

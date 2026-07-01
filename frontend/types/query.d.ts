@@ -141,6 +141,18 @@ export declare function getSdtBlocks(doc: Document, id: string, options?: WalkOp
  *  nested controls' text included). Blocks join with newlines. */
 export declare function sdtText(doc: Document, id: string, options?: WalkOptions): string;
 
+/** A content control's value in the shape its `type` implies. `text` is always the
+ *  enclosed text; `checked` is set for checkboxes; `selected` for dropDown/comboBox
+ *  (the VALUE of the matching listItem, or the raw text for combo free entry). */
+export interface SdtValue {
+  type: SdtProps["type"];
+  text: string;
+  checked?: boolean;
+  selected?: string;
+}
+/** Read a control's typed value, or undefined if it does not exist. */
+export declare function getSdtValue(doc: Document, id: string): SdtValue | undefined;
+
 // ---------------------------------------------------------------------------
 // Edit facade
 
@@ -175,6 +187,13 @@ export declare class DocumentEditor {
   /** Fill a single-paragraph content control's text (inline or block-level),
    *  preserving nesting and clearing any placeholder. */
   setSdtText(id: string, text: string): this;
+  /** Select a value on a dropDown/comboBox control (by listItem value then display;
+   *  comboBox allows free text). Throws for other control kinds. */
+  setSdtValue(id: string, value: string): this;
+  /** Remove a content control, unwrapping it (strip its id from member paths and
+   *  delete its props; nested controls survive). `deleteContents` removes the
+   *  wrapped content too. Block-level members outside the top-level body throw. */
+  removeSdt(id: string, options?: { deleteContents?: boolean }): this;
 
   undo(): boolean;
   redo(): boolean;

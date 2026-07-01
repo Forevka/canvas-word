@@ -279,3 +279,127 @@ describe("DocumentEditor — setSdtText", () => {
     expect(() => ed.setSdtText("sec", "x")).toThrow(/spans 2 block/);
   });
 });
+
+describe("DocumentEditor — setSdtValue", () => {
+  const listDoc = (type: "dropDown" | "comboBox"): Document => ({
+    section: section(),
+    blocks: [mkPara("p", [runOf("One", ["c"])])],
+    sdts: { c: { type, listItems: [{ display: "One", value: "1" }, { display: "Two", value: "2" }] } },
+  });
+
+  it("selects a dropdown option by value (text becomes the display)", () => {
+    const ed = new DocumentEditor(listDoc("dropDown"));
+    ed.setSdtValue("c", "2");
+    expect(sdtText(ed.doc, "c")).toBe("Two");
+  });
+
+  it("selects by display when no value matches", () => {
+    const ed = new DocumentEditor(listDoc("dropDown"));
+    ed.setSdtValue("c", "Two");
+    expect(sdtText(ed.doc, "c")).toBe("Two");
+  });
+
+  it("throws for a value that is not a dropdown option", () => {
+    const ed = new DocumentEditor(listDoc("dropDown"));
+    expect(() => ed.setSdtValue("c", "nope")).toThrow(/not an option/);
+  });
+
+  it("allows free text on a combo box", () => {
+    const ed = new DocumentEditor(listDoc("comboBox"));
+    ed.setSdtValue("c", "Freeform");
+    expect(sdtText(ed.doc, "c")).toBe("Freeform");
+  });
+
+  it("throws for a non-list control", () => {
+    const ed = new DocumentEditor({ section: section(), blocks: [mkPara("p", [runOf("x", ["c"])])], sdts: { c: { type: "plainText" } } });
+    expect(() => ed.setSdtValue("c", "x")).toThrow(/use setSdtText/);
+  });
+});
+
+describe("DocumentEditor — removeSdt", () => {
+  it("unwraps an inline control: strips the tag, keeps text, deletes props; undo restores", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [mkPara("p", [runOf("A "), runOf("val", ["c"]), runOf(" B")])],
+      sdts: { c: { type: "plainText", tag: "T" } },
+    };
+    const ed = new DocumentEditor(doc);
+    ed.removeSdt("c");
+    expect(textOf(ed.getParagraph("p")!)).toBe("A val B"); // content preserved
+    expect(ed.getParagraph("p")!.runs.every((r) => r.style.sdtPath === undefined)).toBe(true);
+    expect(ed.doc.sdts?.c).toBeUndefined(); // props deleted (invariant kept)
+    ed.undo();
+    expect(ed.doc.sdts!.c).toEqual({ type: "plainText", tag: "T" });
+    expect(sdtText(ed.doc, "c")).toBe("val");
+  });
+
+  it("unwrapping an OUTER control keeps the nested inner control", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [mkPara("p", [runOf("42", ["outer", "inner"])])],
+      sdts: { outer: { type: "richText" }, inner: { type: "plainText" } },
+    };
+    const ed = new DocumentEditor(doc);
+    ed.removeSdt("outer");
+    expect(ed.doc.sdts?.outer).toBeUndefined();
+    expect(ed.doc.sdts!.inner).toBeDefined();
+    // inner survives with its path shortened to just [inner]
+    expect(ed.getParagraph("p")!.runs[0]!.style.sdtPath).toEqual(["inner"]);
+    expect(sdtText(ed.doc, "inner")).toBe("42");
+  });
+
+  it("deleteContents removes the tagged runs too", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [mkPara("p", [runOf("keep "), runOf("gone", ["c"])])],
+      sdts: { c: { type: "plainText" } },
+    };
+    const ed = new DocumentEditor(doc);
+    ed.removeSdt("c", { deleteContents: true });
+    expect(textOf(ed.getParagraph("p")!)).toBe("keep ");
+    expect(ed.doc.sdts?.c).toBeUndefined();
+  });
+
+  it("unwraps a block-level control on a top-level body paragraph", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [mkPara("b", [runOf("body value")], { sdtPath: ["sec"] })],
+      sdts: { sec: { type: "richText" } },
+    };
+    const ed = new DocumentEditor(doc);
+    ed.removeSdt("sec");
+    const b = ed.getParagraph("b")!;
+    expect(b.sdtPath).toBeUndefined();
+    expect(textOf(b)).toBe("body value");
+    expect(ed.doc.sdts?.sec).toBeUndefined();
+  });
+
+  it("deleteContents removes a block-level member block", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [mkPara("keep", [runOf("stay")]), mkPara("b", [runOf("go")], { sdtPath: ["sec"] })],
+      sdts: { sec: { type: "richText" } },
+    };
+    const ed = new DocumentEditor(doc);
+    ed.removeSdt("sec", { deleteContents: true });
+    expect(ed.doc.blocks.map((x) => x.id)).toEqual(["keep"]);
+    expect(ed.doc.sdts?.sec).toBeUndefined();
+  });
+
+  it("throws for a block-level member inside a table cell", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [
+        { kind: "table", id: "t", revision: 0, rows: [{ cells: [{ id: "c0", blocks: [mkPara("cp", [runOf("x")], { sdtPath: ["sec"] })] }] }] },
+      ],
+      sdts: { sec: { type: "richText" } },
+    };
+    const ed = new DocumentEditor(doc);
+    expect(() => ed.removeSdt("sec")).toThrow(/table cell/);
+  });
+
+  it("throws on unknown control ids", () => {
+    const ed = new DocumentEditor({ section: section(), blocks: [mkPara("p", [runOf("x")])] });
+    expect(() => ed.removeSdt("nope")).toThrow(/not found/);
+  });
+});
