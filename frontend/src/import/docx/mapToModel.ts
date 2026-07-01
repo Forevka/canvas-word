@@ -672,8 +672,34 @@ export function createMapper(
     if (ir.bookmarkMarkers && ir.bookmarkMarkers.length > 0 && blocks[0]) {
       const home = blocks[0]!;
       const homeLen = home.kind === "paragraph" ? home.runs.reduce((s, r) => s + r.text.length, 0) : 0;
+      // Marker offsets were recorded in IR-inline coordinates, where a few inlines
+      // occupy a different width than in the final model: a footnote/endnote
+      // reference is an empty (0-width) IR run but paints its number in the model,
+      // and an inline equation is 0-width in the IR but a single object char. Walk
+      // the first paragraph's inlines to build the IR→model offset shift so a
+      // marker sitting AFTER such an inline lands on the right character instead of
+      // drifting one (or more) chars early. (footnoteNumber/endnoteNumber were
+      // already assigned during the run walk above, so re-reading them here is a
+      // cache hit — it does not bump the counter.)
+      const shifts: { at: number; delta: number }[] = [];
+      let irPos = 0;
+      for (const inline of ir.inlines) {
+        if (inline.kind === "break" || inline.kind === "image") break; // first paragraph only
+        if (inline.kind === "run") {
+          if (inline.props.footnoteId !== undefined) shifts.push({ at: irPos, delta: footnoteNumber(inline.props.footnoteId).length });
+          else if (inline.props.endnoteId !== undefined) shifts.push({ at: irPos, delta: endnoteNumber(inline.props.endnoteId).length });
+          else irPos += inline.text.length;
+        } else if (inline.kind === "mathInline") {
+          shifts.push({ at: irPos, delta: 1 }); // U+FFFC object-replacement char
+        }
+      }
+      const toModel = (o: number): number => {
+        let add = 0;
+        for (const s of shifts) if (s.at < o) add += s.delta;
+        return o + add;
+      };
       for (const m of ir.bookmarkMarkers) {
-        const pos: DocPosition = { blockId: home.id, offset: Math.min(m.offset, homeLen) };
+        const pos: DocPosition = { blockId: home.id, offset: Math.min(toModel(m.offset), homeLen) };
         if (m.kind === "start" && m.name) bookmarkStarts.set(m.id, { name: m.name, pos });
         else if (m.kind === "end") bookmarkEnds.set(m.id, pos);
       }

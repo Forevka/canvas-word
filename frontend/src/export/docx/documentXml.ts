@@ -346,8 +346,29 @@ function paragraphXml(p: Paragraph, ctx: PartCtx): string {
       while (ri < runs.length && runs[ri]!.style.fieldId === fid) { seg.push(runs[ri]!); cum += runs[ri]!.text.length; ri++; }
       body += fieldRunsXml(seg, ctx);
     } else {
-      body += singleRun(runs[ri]!, ctx);
-      cum += runs[ri]!.text.length;
+      const run = runs[ri]!;
+      const end = cum + run.text.length;
+      // Split a plain run at any bookmark marker that falls strictly inside it, so
+      // the marker lands at its exact character offset rather than snapping to the
+      // run's END boundary (which would grow the bookmarked span every save once
+      // adjacent same-style runs coalesce on import). Atomic runs are never split —
+      // a marker inside a field (handled above), equation, symbol, note reference,
+      // or page-number token flushes at the boundary, which re-imports as one unit.
+      const atomic = !!(run.style.equation || run.style.symbol || run.style.footnoteRef
+        || run.style.endnoteRef || (ctx.fieldTokens && PAGE_TOKEN_TEST.test(run.text)));
+      if (!atomic && mi < sorted.length && sorted[mi]!.offset < end) {
+        let pos = cum;
+        while (mi < sorted.length && sorted[mi]!.offset < end) {
+          const at = sorted[mi]!.offset;
+          if (at > pos) body += singleRun({ ...run, text: run.text.slice(pos - cum, at - cum) }, ctx);
+          flush(at); // emit the marker(s) exactly at this offset, mid-run
+          pos = at;
+        }
+        if (pos < end) body += singleRun({ ...run, text: run.text.slice(pos - cum) }, ctx);
+      } else {
+        body += singleRun(run, ctx);
+      }
+      cum = end;
       ri++;
     }
   }
