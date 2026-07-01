@@ -29,6 +29,8 @@ import { patchTocFromLayout } from "../recalc/patchTocDocx";
 import { recalcToc } from "../recalc/recalcToc";
 import { generateTocIntoDoc } from "@cw/shared";
 import type { Document, TocOptions } from "@cw/shared";
+import { getPages } from "../layout/pages";
+import { findText, mapPages, queryParagraphs, querySections, type PageInfo as PageInfoDto } from "./queryBridge";
 import type { CustomFontPayload } from "../fonts/customRegistry";
 import type { CjkExportConfig } from "../export/pipeline";
 import type { ImageBytes } from "../export/types";
@@ -261,6 +263,13 @@ async function updateFields(doc: Document, opts?: TocOptions): Promise<Document>
   return next;
 }
 
+/** Lay the document out and return the host page map (flattened). Async because
+ *  it must ensure text measurement is installed, exactly like export. */
+async function layoutPages(doc: Document): Promise<PageInfoDto[]> {
+  await installMeasureHost();
+  return mapPages(getPages(doc));
+}
+
 const api = {
   // Builder surface (the host's typed C# wrapper drives these objects directly).
   DocumentBuilder,
@@ -276,6 +285,11 @@ const api = {
   generateToc,
   recalcTocPageNumbers,
   updateFields,
+  // Read-only query surface (the host's WordDocument query methods drive these).
+  queryParagraphs,
+  findText,
+  querySections,
+  layoutPages,
   // Block counting helper (round-trip oracle for the smoke test / benchmark).
   countBlocks,
 };

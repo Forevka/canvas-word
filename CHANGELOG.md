@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **C# read-only query surface on `WordDocument` (ClearScript bindings).** An imported or built document
+  can now be inspected from .NET — the read half of WordprocessingDocument-style access: `GetParagraphs()`
+  (every paragraph with its container/table-cell/note location, style name, outline level), `FindText(needle)`,
+  `GetSections()` (per-section page geometry + block range), and `GetPages()` (runs a layout pass in V8 and
+  reports the block ids on each page — "what's on page N"). Backed by a JS query bridge on the ClearScript
+  entry; results marshal into `ParagraphInfo`/`SectionInfo`/`PageInfo` records. The C# showcase now imports
+  its own exported docx and prints a query summary.
 - **Page query + public `@forevka/wordcanvas/query` subpath.** A new package export exposes the document
   query + edit API to embedders: the traversal/find helpers, `DocumentEditor`, section enumeration, and a
   new layout-backed **`getPages`** / `pageOfBlock` — the answer to "what's on page N" (pages don't exist in
