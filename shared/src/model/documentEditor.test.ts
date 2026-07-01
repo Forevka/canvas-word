@@ -438,3 +438,117 @@ describe("DocumentEditor — removeSdt", () => {
     expect(() => ed.removeSdt("nope")).toThrow(/not found/);
   });
 });
+
+// --- ergonomic bulk / structural edits ---------------------------------------
+
+const table2 = (id: string, rows: string[][]): import("./document").TableBlock => ({
+  kind: "table",
+  id,
+  revision: 0,
+  rows: rows.map((cells) => ({
+    cells: cells.map((t, c) => ({ id: `${id}-r-c${c}`, blocks: [para(`${id}-${t}`, t)] })),
+  })),
+});
+
+describe("DocumentEditor — replaceAllText", () => {
+  it("replaces all string occurrences across paragraphs in one undoable step", () => {
+    const ed = new DocumentEditor(docOf(para("a", "foo and foo"), para("b", "no match"), para("c", "foo")));
+    ed.replaceAllText("foo", "bar");
+    expect(textAt(ed, "a")).toBe("bar and bar");
+    expect(textAt(ed, "c")).toBe("bar");
+    expect(textAt(ed, "b")).toBe("no match");
+    ed.undo();
+    expect(textAt(ed, "a")).toBe("foo and foo"); // one undo reverts every paragraph
+  });
+
+  it("supports a global RegExp", () => {
+    const ed = new DocumentEditor(docOf(para("a", "a1 b2 c3")));
+    ed.replaceAllText(/\d/g, "#");
+    expect(textAt(ed, "a")).toBe("a# b# c#");
+  });
+
+  it("does not match across a run/style boundary (preserving run styling)", () => {
+    const split: Paragraph = { kind: "paragraph", id: "p", revision: 0, style: { ...PARA }, runs: [{ text: "fo", style: CHAR }, { text: "o!", style: { ...CHAR, bold: true } }] };
+    const ed = new DocumentEditor(docOf(split));
+    ed.replaceAllText("foo", "X"); // "foo" spans the two runs → not replaced
+    expect(textAt(ed, "p")).toBe("foo!");
+  });
+});
+
+describe("DocumentEditor — setStyleByName", () => {
+  const styledDoc = (): Document => ({
+    section: section(),
+    blocks: [para("p", "text")],
+    stylesheet: { defaultStyleId: "Normal", styles: [{ id: "H1", name: "Heading 1", char: { bold: true }, para: { align: "center" } }] },
+  });
+
+  it("resolves a style by name and bakes its formatting + reference", () => {
+    const ed = new DocumentEditor(styledDoc());
+    ed.setStyleByName("p", "Heading 1");
+    const p = ed.getParagraph("p")!;
+    expect(p.style.namedStyle).toBe("H1");
+    expect(p.style.align).toBe("center"); // resolved para baked
+    expect(p.runs[0]!.style.bold).toBe(true); // resolved char baked
+  });
+
+  it("throws for an unknown style name or a document without a stylesheet", () => {
+    expect(() => new DocumentEditor(styledDoc()).setStyleByName("p", "Nope")).toThrow(/no style named/);
+    expect(() => new DocumentEditor(docOf(para("p", "x"))).setStyleByName("p", "Heading 1")).toThrow(/no style named/);
+  });
+});
+
+describe("DocumentEditor — moveBlock", () => {
+  it("moves a body block to a new index in one step", () => {
+    const ed = new DocumentEditor(docOf(para("a", "A"), para("b", "B"), para("c", "C")));
+    ed.moveBlock("a", 2);
+    expect(ed.doc.blocks.map((x) => x.id)).toEqual(["b", "c", "a"]);
+    ed.undo();
+    expect(ed.doc.blocks.map((x) => x.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("is a no-op when the destination equals the current index", () => {
+    const ed = new DocumentEditor(docOf(para("a", "A"), para("b", "B")));
+    ed.moveBlock("a", 0);
+    expect(ed.canUndo).toBe(false);
+  });
+
+  it("throws for a non-top-level block", () => {
+    const ed = new DocumentEditor(docOf(para("a", "A")));
+    expect(() => ed.moveBlock("nope", 0)).toThrow(/not a top-level body block/);
+  });
+});
+
+describe("DocumentEditor — table row/column edits", () => {
+  it("inserts a row with the given cell texts at an index", () => {
+    const doc: Document = { section: section(), blocks: [table2("t", [["Name", "Age"], ["Ada", "36"]])] };
+    const ed = new DocumentEditor(doc);
+    ed.insertTableRowAt("t", 1, ["Bob", "40"]);
+    const t = ed.doc.blocks[0] as import("./document").TableBlock;
+    expect(t.rows).toHaveLength(3);
+    expect(textOf(t.rows[1]!.cells[0]!.blocks[0] as Paragraph)).toBe("Bob");
+    expect(textOf(t.rows[1]!.cells[1]!.blocks[0] as Paragraph)).toBe("40");
+  });
+
+  it("pads missing cell texts to the column count (empty cells)", () => {
+    const doc: Document = { section: section(), blocks: [table2("t", [["Name", "Age"]])] };
+    const ed = new DocumentEditor(doc);
+    ed.insertTableRowAt("t", 1, ["only"]);
+    const t = ed.doc.blocks[0] as import("./document").TableBlock;
+    expect(t.rows[1]!.cells).toHaveLength(2);
+    expect((t.rows[1]!.cells[1]!.blocks[0] as Paragraph).runs).toEqual([]); // empty cell
+  });
+
+  it("deletes a column by its header text", () => {
+    const doc: Document = { section: section(), blocks: [table2("t", [["Name", "Age"], ["Ada", "36"]])] };
+    const ed = new DocumentEditor(doc);
+    ed.deleteColumnByHeader("t", "Age");
+    const t = ed.doc.blocks[0] as import("./document").TableBlock;
+    expect(t.rows[0]!.cells).toHaveLength(1);
+    expect(textOf(t.rows[0]!.cells[0]!.blocks[0] as Paragraph)).toBe("Name");
+  });
+
+  it("throws for an unknown header", () => {
+    const doc: Document = { section: section(), blocks: [table2("t", [["Name"]])] };
+    expect(() => new DocumentEditor(doc).deleteColumnByHeader("t", "Nope")).toThrow(/no column headed/);
+  });
+});
