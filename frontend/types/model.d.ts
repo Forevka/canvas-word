@@ -328,6 +328,33 @@ export interface BookmarkRange {
   end: DocPosition;
 }
 
+/** OOXML page-number / list format (the field `\* <fmt>` switch). */
+export type PageNumFmt = "arabic" | "roman" | "Roman" | "alpha" | "Alpha";
+/** IF-field comparison operators. */
+export type IfOp = "=" | "<>" | "<" | ">" | "<=" | ">=";
+
+/** Typed, parsed form of a BUILT-IN field's definition (drives the field UI + the
+ *  evaluator). TOC keeps its own path and is not here. */
+export type FieldSpec =
+  | { type: "PAGE"; numFmt?: PageNumFmt }
+  | { type: "NUMPAGES"; numFmt?: PageNumFmt }
+  | { type: "DATE"; format: string }
+  | { type: "TIME"; format: string }
+  | { type: "IF"; operandA: string; op: IfOp; operandB: string; trueRuns: Run[]; falseRuns: Run[] };
+
+/** A generic OOXML field tracked in the model (custom host-resolved + built-in).
+ *  Its result is the blocks/runs carrying its `id` as `fieldId`. */
+export interface FieldDef {
+  id: string;
+  /** Verbatim w:instrText, re-emitted on export. */
+  instruction: string;
+  /** Field keyword, uppercased (the first instruction token). */
+  name: string;
+  kind: "builtin" | "custom";
+  /** Parsed spec for built-ins the editor understands; absent for opaque fields. */
+  spec?: FieldSpec;
+}
+
 export type SdtType = "richText" | "plainText" | "checkbox" | "dropDown" | "comboBox" | "date";
 
 export interface SdtProps {

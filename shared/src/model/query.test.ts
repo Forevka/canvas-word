@@ -23,8 +23,21 @@ import {
   sdtText,
   textOf,
   walk,
+  getField,
+  getFields,
+  getFieldsByName,
+  getFieldBlocks,
+  getBookmark,
+  getBookmarks,
+  getFootnotes,
+  getEndnotes,
+  getListItems,
+  getStyles,
+  getStyleById,
+  blockPath,
 } from "./query";
 import type { Run } from "./document";
+import { numberListDefinition } from "./lists";
 
 const CHAR: CharStyle = { fontFamily: "Georgia", fontSizePx: 16, bold: false, italic: false, underline: false, strikethrough: false, color: "#000" };
 const PARA = { align: "left" as const, lineHeight: 1.2, spaceBeforePx: 0, spaceAfterPx: 0, indentFirstLinePx: 0, indentLeftPx: 0 };
@@ -417,5 +430,102 @@ describe("query SDT: getSdtValue (typed value read)", () => {
     const v = getSdtValue(doc, "choice")!;
     expect(v).toEqual({ type: "dropDown", text: "Stale" }); // no `selected` key
     expect(v.selected).toBeUndefined();
+  });
+});
+
+describe("query: fields", () => {
+  const doc = (): Document => ({
+    section: section(),
+    blocks: [{ ...para("b", "chart"), fieldId: "f2" }],
+    fields: {
+      f1: { id: "f1", instruction: " PAGE ", name: "PAGE", kind: "builtin" },
+      f2: { id: "f2", instruction: ' MYCHART "x" ', name: "MYCHART", kind: "custom" },
+    },
+  });
+
+  it("looks up by id / all / by name (case-insensitive)", () => {
+    expect(getField(doc(), "f1")?.name).toBe("PAGE");
+    expect(getField(doc(), "nope")).toBeUndefined();
+    expect(getFields(doc()).map((f) => f.id)).toEqual(["f1", "f2"]); // preserves doc.fields order
+    expect(getFieldsByName(doc(), "page").map((f) => f.id)).toEqual(["f1"]);
+  });
+
+  it("getFieldBlocks returns the region blocks", () => {
+    expect(getFieldBlocks(doc(), "f2").map((b) => b.id)).toEqual(["b"]);
+    expect(getFieldBlocks(doc(), "f1")).toEqual([]);
+  });
+});
+
+describe("query: bookmarks", () => {
+  const doc: Document = {
+    section: section(),
+    blocks: [para("p", "hello")],
+    bookmarks: { bm: { start: { blockId: "p", offset: 0 }, end: { blockId: "p", offset: 3 } } },
+  };
+
+  it("returns a range by name and enumerates entries", () => {
+    expect(getBookmark(doc, "bm")).toEqual({ start: { blockId: "p", offset: 0 }, end: { blockId: "p", offset: 3 } });
+    expect(getBookmark(doc, "x")).toBeUndefined();
+    expect(getBookmarks(doc).map((b) => b.name)).toEqual(["bm"]);
+  });
+});
+
+describe("query: notes", () => {
+  const doc: Document = {
+    section: section(),
+    blocks: [para("p", "body")],
+    footnotes: { fn1: [para("fp", "foot")] },
+    endnotes: { en1: [para("ep", "end")] },
+  };
+
+  it("enumerates footnote and endnote stories", () => {
+    expect(getFootnotes(doc)).toEqual([{ id: "fn1", paragraphs: [para("fp", "foot")] }]);
+    expect(getEndnotes(doc).map((n) => n.id)).toEqual(["en1"]);
+    expect(getFootnotes({ section: section(), blocks: [] })).toEqual([]);
+  });
+});
+
+describe("query: getListItems", () => {
+  it("resolves markers in body reading order, resetting deeper levels", () => {
+    const li = (id: string, level: number): Paragraph => ({ ...para(id, id), style: { ...PARA, list: { listId: "L", level } } });
+    const doc: Document = {
+      section: section(),
+      blocks: [li("a", 0), li("b", 1), li("c", 0), li("d", 1)],
+      lists: { L: numberListDefinition("L", "decimal", ".") },
+    };
+    const items = getListItems(doc, "L");
+    expect(items.map((i) => [i.paragraph.id, i.level, i.marker])).toEqual([
+      ["a", 0, "1."],
+      ["b", 1, "1."],
+      ["c", 0, "2."], // back to level 0 → level-1 counter resets
+      ["d", 1, "1."], // level-1 restarts at 1, proving the reset
+    ]);
+    expect(getListItems(doc, "other")).toEqual([]);
+  });
+});
+
+describe("query: styles", () => {
+  const doc: Document = {
+    section: section(),
+    blocks: [para("p", "x")],
+    stylesheet: { defaultStyleId: "Normal", styles: [{ id: "H1", name: "Heading 1", char: {}, para: {} }] },
+  };
+
+  it("enumerates and looks up named styles", () => {
+    expect(getStyles(doc).map((s) => s.id)).toEqual(["H1"]);
+    expect(getStyleById(doc, "H1")?.name).toBe("Heading 1");
+    expect(getStyleById(doc, "nope")).toBeUndefined();
+    expect(getStyles({ section: section(), blocks: [] })).toEqual([]);
+  });
+});
+
+describe("query: blockPath", () => {
+  it("reports the container/cell/note context of a block", () => {
+    const doc = richDoc();
+    expect(blockPath(doc, "p1")).toEqual({ container: "body" });
+    expect(blockPath(doc, "cellPara")).toEqual({ container: "body", cell: { tableId: "t1", row: 0, col: 0 } });
+    expect(blockPath(doc, "h1")).toEqual({ container: "header" });
+    expect(blockPath(doc, "fnp")).toEqual({ container: "body", note: { kind: "footnote", id: "fn1" } });
+    expect(blockPath(doc, "nope")).toBeUndefined();
   });
 });

@@ -9,9 +9,12 @@
 import type {
   BandContainer,
   Block,
+  BookmarkRange,
   CharStyle,
   Document,
+  FieldDef,
   ImageBlock,
+  NamedStyle,
   Paragraph,
   ParaStyle,
   SdtProps,
@@ -21,11 +24,15 @@ import type {
 
 export type {
   Block,
+  BookmarkRange,
   CharStyle,
   Document,
   DocPosition,
   EquationBlock,
+  FieldDef,
+  FieldSpec,
   ImageBlock,
+  NamedStyle,
   Paragraph,
   ParaStyle,
   Run,
@@ -152,6 +159,57 @@ export interface SdtValue {
 }
 /** Read a control's typed value, or undefined if it does not exist. */
 export declare function getSdtValue(doc: Document, id: string): SdtValue | undefined;
+
+// ---------------------------------------------------------------------------
+// Fields / bookmarks / notes / lists / styles / block location
+
+/** A field definition by id, or undefined. */
+export declare function getField(doc: Document, id: string): FieldDef | undefined;
+/** Every tracked field (custom + built-in), in document order. */
+export declare function getFields(doc: Document): FieldDef[];
+/** Fields whose keyword matches `name`, case-insensitively. */
+export declare function getFieldsByName(doc: Document, name: string): FieldDef[];
+/** The blocks forming a region field's result (their `fieldId` === id). */
+export declare function getFieldBlocks(doc: Document, id: string, options?: WalkOptions): Block[];
+
+export interface BookmarkEntry {
+  name: string;
+  range: BookmarkRange;
+}
+/** A bookmark's character range by name, or undefined. */
+export declare function getBookmark(doc: Document, name: string): BookmarkRange | undefined;
+/** Every bookmark as `{ name, range }`. */
+export declare function getBookmarks(doc: Document): BookmarkEntry[];
+
+export interface NoteStory {
+  id: string;
+  paragraphs: Paragraph[];
+}
+/** Footnote stories keyed by ref id. */
+export declare function getFootnotes(doc: Document): NoteStory[];
+/** Endnote stories keyed by ref id. */
+export declare function getEndnotes(doc: Document): NoteStory[];
+
+export interface ListItem {
+  paragraph: Paragraph;
+  /** 0-based list level (OOXML w:ilvl). */
+  level: number;
+  /** Resolved marker text ("1.", "a.", "•", …); "" for a markerless/unknown list. */
+  marker: string;
+  context: BlockContext;
+}
+/** Paragraphs bound to a list definition, in body reading order, each with its
+ *  resolved marker (mirrors the layout engine's numbering pass, body-only). */
+export declare function getListItems(doc: Document, listId: string): ListItem[];
+
+/** Enumerate the stylesheet (Word's style gallery). */
+export declare function getStyles(doc: Document): NamedStyle[];
+/** A named style by id, or undefined. */
+export declare function getStyleById(doc: Document, styleId: string): NamedStyle | undefined;
+
+/** "Where is this block?" — the resolved container/cell/note context of a block by
+ *  id, or undefined if no block carries the id. */
+export declare function blockPath(doc: Document, id: string, options?: WalkOptions): BlockContext | undefined;
 
 // ---------------------------------------------------------------------------
 // Edit facade

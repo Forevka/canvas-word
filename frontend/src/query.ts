@@ -38,6 +38,19 @@ export {
   getSdtBlocks,
   sdtText,
   getSdtValue,
+  // fields / bookmarks / notes / lists / styles / block location
+  getField,
+  getFields,
+  getFieldsByName,
+  getFieldBlocks,
+  getBookmark,
+  getBookmarks,
+  getFootnotes,
+  getEndnotes,
+  getListItems,
+  getStyles,
+  getStyleById,
+  blockPath,
   // edit facade
   DocumentEditor,
 } from "@cw/shared";
@@ -52,16 +65,23 @@ export type {
   SdtMatch,
   SdtNode,
   SdtValue,
+  BookmarkEntry,
+  NoteStory,
+  ListItem,
 } from "@cw/shared";
 
 // Re-export the core model types consumers need to name when using the API.
 export type {
   Block,
+  BookmarkRange,
   CharStyle,
   Document,
   DocPosition,
   EquationBlock,
+  FieldDef,
+  FieldSpec,
   ImageBlock,
+  NamedStyle,
   Paragraph,
   ParaStyle,
   Run,
