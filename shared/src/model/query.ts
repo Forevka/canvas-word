@@ -5,9 +5,10 @@
 // ("what's on page N") are NOT here — pages exist only after layout, so they live
 // in the layout package.
 
-import type { Block, Document, ImageBlock, Paragraph, TableBlock } from "./document";
+import type { Block, Document, ImageBlock, Paragraph, SdtProps, TableBlock } from "./document";
 import { BAND_CONTAINERS } from "./document";
 import type { Container } from "./ops";
+import { fullSdtChain } from "./sdt";
 import { textOfRuns } from "./text";
 import { resolveSections, type ResolvedSection } from "./sections";
 
@@ -194,4 +195,197 @@ export function getImageById(doc: Document, id: string, options?: WalkOptions): 
  *  document returns one entry. Thin friendly alias over `resolveSections`. */
 export function getSections(doc: Document): ResolvedSection[] {
   return resolveSections(doc);
+}
+
+// ---------------------------------------------------------------------------
+// Content controls (OOXML w:sdt) — the primary templating surface.
+//
+// Properties for every control live in `doc.sdts` keyed by id. Membership is an
+// ORDERED ANCESTRY PATH (outer→inner): block-level controls put their ids on
+// `Block.sdtPath`, inline controls on `run.style.sdtPath`; a run's full enclosing
+// chain is `block.sdtPath ++ run.style.sdtPath`. Because membership is a path,
+// controls NEST — these helpers expose both the flat list (by id/tag/alias) and
+// the nesting tree (roots/children/ancestors/descendants), plus the wrapped
+// blocks and text.
+
+/** A content control's id paired with its properties. */
+export interface SdtMatch {
+  id: string;
+  props: SdtProps;
+}
+
+/** A content control as a node in the nesting tree. */
+export interface SdtNode extends SdtMatch {
+  /** The control DIRECTLY wrapping this one, or undefined for a top-level control. */
+  parentId?: string;
+  /** Direct child controls, in first-appearance order. */
+  childIds: string[];
+  /** Full ancestry outer→inner ENDING at this id (`[this]` for a root,
+   *  `[outer, this]` when nested one level, …). */
+  path: string[];
+  /** Nesting depth: 0 for a root, 1 for its children, … (== `path.length - 1`). */
+  depth: number;
+}
+
+/** A content control's properties by id, or undefined. */
+export function getSdt(doc: Document, id: string): SdtProps | undefined {
+  return doc.sdts?.[id];
+}
+
+/** Every content control, as `{ id, props }`, in `doc.sdts` order. */
+export function getSdts(doc: Document): SdtMatch[] {
+  return Object.entries(doc.sdts ?? {}).map(([id, props]) => ({ id, props }));
+}
+
+/** Controls whose machine-readable tag (w:tag) equals `tag`. A tag is not unique
+ *  (a template can repeat a field), so this returns every match. */
+export function getSdtsByTag(doc: Document, tag: string): SdtMatch[] {
+  return getSdts(doc).filter((s) => s.props.tag === tag);
+}
+
+/** Controls whose title/alias (w:alias) equals `alias`. */
+export function getSdtsByAlias(doc: Document, alias: string): SdtMatch[] {
+  return getSdts(doc).filter((s) => s.props.alias === alias);
+}
+
+/** Derive parent→child control relationships from every membership path present
+ *  in the document (block `sdtPath`s + full run chains). In a path `[a, b, c]`,
+ *  `a` wraps `b` wraps `c`. */
+function sdtRelations(doc: Document): { parentOf: Map<string, string>; childrenOf: Map<string, string[]> } {
+  const parentOf = new Map<string, string>();
+  const childrenOf = new Map<string, string[]>();
+  const seenEdge = new Set<string>();
+  const record = (path: string[] | undefined): void => {
+    if (!path || path.length < 2) return;
+    for (let i = 1; i < path.length; i++) {
+      const parent = path[i - 1]!;
+      const child = path[i]!;
+      if (!parentOf.has(child)) parentOf.set(child, parent);
+      const edge = `${parent} ${child}`;
+      if (seenEdge.has(edge)) continue;
+      seenEdge.add(edge);
+      const kids = childrenOf.get(parent) ?? [];
+      kids.push(child);
+      childrenOf.set(parent, kids);
+    }
+  };
+  walk(doc, (block) => {
+    record(block.sdtPath);
+    if (block.kind === "paragraph") {
+      for (const run of block.runs) record(fullSdtChain(block, run.style));
+    }
+  });
+  return { parentOf, childrenOf };
+}
+
+/** Build every declared control's tree node, keyed by id. Nodes come from
+ *  `doc.sdts` (the property source of truth); relationships come from the paths.
+ *  Path ids missing from `doc.sdts` are ignored (defensive — the model declares
+ *  every path id). */
+function sdtNodeMap(doc: Document): Map<string, SdtNode> {
+  const sdts = doc.sdts ?? {};
+  const has = (id: string): boolean => Object.prototype.hasOwnProperty.call(sdts, id);
+  const { parentOf, childrenOf } = sdtRelations(doc);
+  // Ancestry via parent walk, cycle-guarded; stop at the first parent not declared.
+  const pathOf = (id: string): string[] => {
+    const chain: string[] = [id];
+    const seen = new Set<string>([id]);
+    for (let cur = parentOf.get(id); cur !== undefined && has(cur) && !seen.has(cur); cur = parentOf.get(cur)) {
+      chain.unshift(cur);
+      seen.add(cur);
+    }
+    return chain;
+  };
+  const nodes = new Map<string, SdtNode>();
+  for (const [id, props] of Object.entries(sdts)) {
+    const rawParent = parentOf.get(id);
+    const parentId = rawParent !== undefined && has(rawParent) ? rawParent : undefined;
+    const childIds = (childrenOf.get(id) ?? []).filter(has);
+    const path = pathOf(id);
+    nodes.set(id, {
+      id,
+      props,
+      ...(parentId !== undefined ? { parentId } : {}),
+      childIds,
+      path,
+      depth: path.length - 1,
+    });
+  }
+  return nodes;
+}
+
+/** Every content control as a tree node (parent/child links, path, depth). */
+export function getSdtNodes(doc: Document): SdtNode[] {
+  return [...sdtNodeMap(doc).values()];
+}
+
+/** The top-level controls — those not nested inside any other. */
+export function getSdtRoots(doc: Document): SdtNode[] {
+  return getSdtNodes(doc).filter((n) => n.parentId === undefined);
+}
+
+/** The controls nested DIRECTLY (one level) inside `id`. Empty if `id` has no
+ *  children or does not exist. */
+export function getSdtChildren(doc: Document, id: string): SdtNode[] {
+  const nodes = sdtNodeMap(doc);
+  const self = nodes.get(id);
+  if (!self) return [];
+  return self.childIds.map((c) => nodes.get(c)).filter((n): n is SdtNode => n !== undefined);
+}
+
+/** The controls wrapping `id`, outermost→innermost (excluding `id` itself). */
+export function getSdtAncestors(doc: Document, id: string): SdtNode[] {
+  const nodes = sdtNodeMap(doc);
+  const self = nodes.get(id);
+  if (!self) return [];
+  return self.path.slice(0, -1).map((a) => nodes.get(a)).filter((n): n is SdtNode => n !== undefined);
+}
+
+/** Every control nested ANYWHERE below `id` (depth-first, pre-order). */
+export function getSdtDescendants(doc: Document, id: string): SdtNode[] {
+  const nodes = sdtNodeMap(doc);
+  const out: SdtNode[] = [];
+  const visit = (nid: string): void => {
+    for (const child of nodes.get(nid)?.childIds ?? []) {
+      const c = nodes.get(child);
+      if (!c) continue;
+      out.push(c);
+      visit(child);
+    }
+  };
+  if (nodes.has(id)) visit(id);
+  return out;
+}
+
+/** The blocks a block-level control wraps (their `sdtPath` includes `id`). Empty
+ *  for a purely inline control (its content is runs — see `sdtText`). Blocks
+ *  wrapped by controls NESTED under `id` are included too, since membership is by
+ *  path containment. */
+export function getSdtBlocks(doc: Document, id: string, options?: WalkOptions): Block[] {
+  const out: Block[] = [];
+  walk(doc, (b) => {
+    if (b.sdtPath?.includes(id)) out.push(b);
+  }, options);
+  return out;
+}
+
+/** The plain text a control encloses — the "read the value" half of the template
+ *  round-trip. Covers block-level membership (whole blocks whose `sdtPath`
+ *  includes `id`) and inline membership (the matching runs of a paragraph whose
+ *  `style.sdtPath` includes `id`). Text inside NESTED controls is naturally
+ *  included (membership is by path containment). Blocks join with newlines. */
+export function sdtText(doc: Document, id: string, options?: WalkOptions): string {
+  const parts: string[] = [];
+  walk(doc, (b) => {
+    if (b.sdtPath?.includes(id)) {
+      const t = textOf(b);
+      if (t.length > 0) parts.push(t);
+      return;
+    }
+    if (b.kind === "paragraph") {
+      const runs = b.runs.filter((r) => r.style.sdtPath?.includes(id));
+      if (runs.length > 0) parts.push(textOfRuns(runs));
+    }
+  }, options);
+  return parts.join("\n");
 }

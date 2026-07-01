@@ -25,6 +25,18 @@ export {
   getImageById,
   getSections,
   resolveSections,
+  // content controls (SDTs) — the primary templating surface
+  getSdt,
+  getSdts,
+  getSdtsByTag,
+  getSdtsByAlias,
+  getSdtNodes,
+  getSdtRoots,
+  getSdtChildren,
+  getSdtAncestors,
+  getSdtDescendants,
+  getSdtBlocks,
+  sdtText,
   // edit facade
   DocumentEditor,
 } from "@cw/shared";
@@ -36,6 +48,8 @@ export type {
   ParagraphMatch,
   ResolvedSection,
   InsertParagraphOptions,
+  SdtMatch,
+  SdtNode,
 } from "@cw/shared";
 
 // Re-export the core model types consumers need to name when using the API.
@@ -49,6 +63,8 @@ export type {
   Paragraph,
   ParaStyle,
   Run,
+  SdtProps,
+  SdtType,
   SectionProps,
   TableBlock,
 } from "@cw/shared";

@@ -6,12 +6,24 @@ import {
   getImageById,
   getParagraphById,
   getParagraphs,
+  getSdt,
+  getSdtAncestors,
+  getSdtBlocks,
+  getSdtChildren,
+  getSdtDescendants,
+  getSdtNodes,
+  getSdtRoots,
+  getSdts,
+  getSdtsByAlias,
+  getSdtsByTag,
   getSections,
   getTableById,
   getTables,
+  sdtText,
   textOf,
   walk,
 } from "./query";
+import type { Run } from "./document";
 
 const CHAR: CharStyle = { fontFamily: "Georgia", fontSizePx: 16, bold: false, italic: false, underline: false, strikethrough: false, color: "#000" };
 const PARA = { align: "left" as const, lineHeight: 1.2, spaceBeforePx: 0, spaceAfterPx: 0, indentFirstLinePx: 0, indentLeftPx: 0 };
@@ -203,5 +215,155 @@ describe("query.getSections", () => {
     expect(secs).toHaveLength(2);
     expect(secs[0]).toMatchObject({ index: 0, startBlock: 0, endBlock: 0, breakType: "nextPage" });
     expect(secs[1]).toMatchObject({ index: 1, startBlock: 1, endBlock: 1 });
+  });
+});
+
+// --- SDTs (content controls) — the primary templating surface -----------------
+
+const sdtRun = (text: string, sdtPath?: string[]): Run => ({ text, style: sdtPath ? { ...CHAR, sdtPath } : CHAR });
+
+const mkPara = (id: string, runs: Run[], extra: Partial<Paragraph> = {}): Paragraph => ({
+  kind: "paragraph",
+  id,
+  revision: 0,
+  runs,
+  style: { ...PARA },
+  ...extra,
+});
+
+describe("query SDT: flat lookups", () => {
+  const doc = (): Document => ({
+    section: section(),
+    blocks: [mkPara("para", [sdtRun("before "), sdtRun("Ada", ["name"]), sdtRun(" after")])],
+    sdts: {
+      name: { type: "plainText", tag: "Name", alias: "Full Name" },
+      note: { type: "richText", tag: "Name" }, // shares a tag with `name`
+    },
+  });
+
+  it("getSdt returns props by id, undefined otherwise", () => {
+    expect(getSdt(doc(), "name")).toMatchObject({ type: "plainText", tag: "Name" });
+    expect(getSdt(doc(), "missing")).toBeUndefined();
+    expect(getSdt({ section: section(), blocks: [] }, "x")).toBeUndefined();
+  });
+
+  it("getSdts lists every control", () => {
+    expect(getSdts(doc()).map((s) => s.id).sort()).toEqual(["name", "note"]);
+  });
+
+  it("getSdtsByTag returns every control sharing the tag", () => {
+    expect(getSdtsByTag(doc(), "Name").map((s) => s.id).sort()).toEqual(["name", "note"]);
+    expect(getSdtsByTag(doc(), "nope")).toEqual([]);
+  });
+
+  it("getSdtsByAlias filters by title/alias", () => {
+    expect(getSdtsByAlias(doc(), "Full Name").map((s) => s.id)).toEqual(["name"]);
+  });
+
+  it("sdtText reads an inline control's text", () => {
+    expect(sdtText(doc(), "name")).toBe("Ada");
+  });
+});
+
+describe("query SDT: nested (block-level control wrapping an inline control)", () => {
+  // `sec` is a block-level control over two paragraphs; `field` is an inline
+  // control on a run WITHIN the first paragraph → nested under `sec`.
+  const doc = (): Document => ({
+    section: section(),
+    blocks: [
+      mkPara("b0", [sdtRun("Label: "), sdtRun("42", ["field"])], { sdtPath: ["sec"] }),
+      mkPara("b1", [sdtRun("more")], { sdtPath: ["sec"] }),
+    ],
+    sdts: {
+      sec: { type: "richText", tag: "Section" },
+      field: { type: "plainText", tag: "Field" },
+    },
+  });
+
+  it("derives roots / children / ancestors / descendants", () => {
+    expect(getSdtRoots(doc()).map((n) => n.id)).toEqual(["sec"]);
+    expect(getSdtChildren(doc(), "sec").map((n) => n.id)).toEqual(["field"]);
+    expect(getSdtChildren(doc(), "field")).toEqual([]);
+    expect(getSdtAncestors(doc(), "field").map((n) => n.id)).toEqual(["sec"]);
+    expect(getSdtAncestors(doc(), "sec")).toEqual([]);
+    expect(getSdtDescendants(doc(), "sec").map((n) => n.id)).toEqual(["field"]);
+  });
+
+  it("nodes carry parentId / path / depth / childIds", () => {
+    const byId = new Map(getSdtNodes(doc()).map((n) => [n.id, n]));
+    expect(byId.get("sec")).toMatchObject({ path: ["sec"], depth: 0, childIds: ["field"] });
+    expect(byId.get("sec")!.parentId).toBeUndefined();
+    expect(byId.get("field")).toMatchObject({ parentId: "sec", path: ["sec", "field"], depth: 1, childIds: [] });
+  });
+
+  it("getSdtBlocks returns block-level members only", () => {
+    expect(getSdtBlocks(doc(), "sec").map((b) => b.id)).toEqual(["b0", "b1"]);
+    expect(getSdtBlocks(doc(), "field")).toEqual([]); // inline control has no block members
+  });
+
+  it("sdtText: block-level joins its blocks; inline reads its runs", () => {
+    expect(sdtText(doc(), "sec")).toBe("Label: 42\nmore");
+    expect(sdtText(doc(), "field")).toBe("42");
+  });
+});
+
+describe("query SDT: deeply nested inline controls", () => {
+  // One run belongs to control `b` nested inside `a` (inline path a→b).
+  const doc = (): Document => ({
+    section: section(),
+    blocks: [mkPara("p", [sdtRun("x"), sdtRun("y", ["a", "b"]), sdtRun("z")])],
+    sdts: { a: { type: "richText" }, b: { type: "plainText" } },
+  });
+
+  it("reads nesting from a run's full inline path", () => {
+    expect(getSdtRoots(doc()).map((n) => n.id)).toEqual(["a"]);
+    expect(getSdtChildren(doc(), "a").map((n) => n.id)).toEqual(["b"]);
+    expect(getSdtAncestors(doc(), "b").map((n) => n.id)).toEqual(["a"]);
+    expect(getSdtNodes(doc()).find((n) => n.id === "b")).toMatchObject({ parentId: "a", path: ["a", "b"], depth: 1 });
+  });
+
+  it("sdtText includes descendants (membership is by path containment)", () => {
+    expect(sdtText(doc(), "a")).toBe("y");
+    expect(sdtText(doc(), "b")).toBe("y");
+  });
+});
+
+describe("query SDT: controls in cells and header bands are traversed", () => {
+  const doc = (): Document => ({
+    section: { ...section(), header: [mkPara("h", [sdtRun("H "), sdtRun("hv", ["hdr"])])] },
+    blocks: [table("t", mkPara("cp", [sdtRun("cell "), sdtRun("cv", ["cell"])]))],
+    sdts: { cell: { type: "plainText", tag: "Cell" }, hdr: { type: "plainText", tag: "Hdr" } },
+  });
+
+  it("finds inline controls inside table cells and header bands", () => {
+    expect(sdtText(doc(), "cell")).toBe("cv");
+    expect(sdtText(doc(), "hdr")).toBe("hv");
+    expect(getSdtRoots(doc()).map((n) => n.id).sort()).toEqual(["cell", "hdr"]);
+  });
+});
+
+describe("query SDT: edge cases", () => {
+  it("a declared control with no membership path is a childless root with empty text", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [mkPara("p", [sdtRun("plain")])],
+      sdts: { orphan: { type: "checkbox", tag: "Agree", checked: true } },
+    };
+    expect(getSdtNodes(doc)[0]).toMatchObject({ id: "orphan", childIds: [], path: ["orphan"], depth: 0 });
+    expect(getSdtNodes(doc)[0]!.parentId).toBeUndefined();
+    expect(sdtText(doc, "orphan")).toBe("");
+    expect(getSdt(doc, "orphan")?.checked).toBe(true); // checkbox value lives in props
+  });
+
+  it("no sdts → empty everywhere; unknown ids → empty", () => {
+    const doc: Document = { section: section(), blocks: [mkPara("p", [sdtRun("x")])] };
+    expect(getSdts(doc)).toEqual([]);
+    expect(getSdtNodes(doc)).toEqual([]);
+    expect(getSdtRoots(doc)).toEqual([]);
+    expect(getSdtChildren(doc, "x")).toEqual([]);
+    expect(getSdtAncestors(doc, "x")).toEqual([]);
+    expect(getSdtDescendants(doc, "x")).toEqual([]);
+    expect(getSdtBlocks(doc, "x")).toEqual([]);
+    expect(sdtText(doc, "x")).toBe("");
   });
 });
