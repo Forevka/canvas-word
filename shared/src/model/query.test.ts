@@ -406,4 +406,16 @@ describe("query SDT: getSdtValue (typed value read)", () => {
     };
     expect(getSdtValue(doc, "combo")).toEqual({ type: "comboBox", text: "Custom", selected: "Custom" });
   });
+
+  it("leaves selected undefined for a dropdown whose text matches no option", () => {
+    // A malformed/imported dropdown whose current text is not a listItem display.
+    const doc: Document = {
+      section: section(),
+      blocks: [mkPara("p", [sdtRun("Stale", ["choice"])])],
+      sdts: { choice: { type: "dropDown", listItems: [{ display: "One", value: "1" }] } },
+    };
+    const v = getSdtValue(doc, "choice")!;
+    expect(v).toEqual({ type: "dropDown", text: "Stale" }); // no `selected` key
+    expect(v.selected).toBeUndefined();
+  });
 });

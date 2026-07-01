@@ -394,9 +394,10 @@ export function sdtText(doc: Document, id: string, options?: WalkOptions): strin
 
 /** A content control's value, read in the shape its `type` implies — the typed
  *  companion to `sdtText`. `text` is always the enclosed text; `checked` is set
- *  for checkboxes; `selected` is set for dropDown/comboBox (the VALUE of the
- *  listItem whose display matches the current text, or the raw text for a combo
- *  box's free-text entry). Undefined when the control does not exist. */
+ *  for checkboxes; `selected` is set for dropDown/comboBox — the VALUE of the
+ *  listItem whose display matches the current text. When nothing matches, a combo
+ *  box (free text) reports the raw text, while a dropdown (a closed option set)
+ *  leaves `selected` undefined. Undefined when the control does not exist. */
 export interface SdtValue {
   type: SdtProps["type"];
   text: string;
@@ -411,7 +412,10 @@ export function getSdtValue(doc: Document, id: string): SdtValue | undefined {
   if (props.type === "checkbox") value.checked = props.checked ?? false;
   if (props.type === "dropDown" || props.type === "comboBox") {
     const match = props.listItems?.find((i) => i.display === value.text);
-    value.selected = match ? match.value : value.text;
+    // A dropdown is a closed set: an unmatched value is not a valid selection, so
+    // leave it undefined. A combo box accepts free text, so echo the raw text.
+    if (match) value.selected = match.value;
+    else if (props.type === "comboBox") value.selected = value.text;
   }
   return value;
 }

@@ -398,6 +398,41 @@ describe("DocumentEditor — removeSdt", () => {
     expect(() => ed.removeSdt("sec")).toThrow(/table cell/);
   });
 
+  it("throws for a block-level member in a header/footer band", () => {
+    const doc: Document = {
+      section: { ...section(), header: [mkPara("hp", [runOf("x")], { sdtPath: ["sec"] })] },
+      blocks: [mkPara("p", [runOf("body")])],
+      sdts: { sec: { type: "richText" } },
+    };
+    const ed = new DocumentEditor(doc);
+    expect(() => ed.removeSdt("sec")).toThrow(/header band/);
+  });
+
+  it("throws for a block-level member in a note body", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [mkPara("p", [runOf("body")])],
+      footnotes: { fn1: [mkPara("fp", [runOf("x")], { sdtPath: ["sec"] })] },
+      sdts: { sec: { type: "richText" } },
+    };
+    const ed = new DocumentEditor(doc);
+    expect(() => ed.removeSdt("sec")).toThrow(/note body/);
+  });
+
+  it("undo restores a block-level control's path and props", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [mkPara("b", [runOf("value")], { sdtPath: ["sec"] })],
+      sdts: { sec: { type: "richText", tag: "S" } },
+    };
+    const ed = new DocumentEditor(doc);
+    ed.removeSdt("sec");
+    expect(ed.getParagraph("b")!.sdtPath).toBeUndefined();
+    ed.undo();
+    expect(ed.getParagraph("b")!.sdtPath).toEqual(["sec"]);
+    expect(ed.doc.sdts!.sec).toEqual({ type: "richText", tag: "S" });
+  });
+
   it("throws on unknown control ids", () => {
     const ed = new DocumentEditor({ section: section(), blocks: [mkPara("p", [runOf("x")])] });
     expect(() => ed.removeSdt("nope")).toThrow(/not found/);
