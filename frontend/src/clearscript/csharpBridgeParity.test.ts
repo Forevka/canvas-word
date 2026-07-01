@@ -6,14 +6,15 @@
 // C# source and asserts each targets a real JS target, so drift breaks `npm test`.
 
 import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { DocumentEditor } from "@cw/shared";
 import * as bridge from "./queryBridge";
 
-const HERE = fileURLToPath(new URL(".", import.meta.url));
-const CS = (name: string): string =>
-  readFileSync(fileURLToPath(new URL(`../../../dotnet/src/WordCanvas.ClearScript/${name}`, `file://${HERE}`)), "utf8");
+const HERE = dirname(fileURLToPath(import.meta.url));
+const readSrc = (relative: string): string => readFileSync(resolve(HERE, relative), "utf8");
+const CS = (name: string): string => readSrc(`../../../dotnet/src/WordCanvas.ClearScript/${name}`);
 
 const namesFrom = (src: string, re: RegExp): string[] => {
   const out = new Set<string>();
@@ -27,8 +28,8 @@ describe("C#↔JS bridge parity", () => {
     const methods = namesFrom(src, /_editor\.InvokeMethod\("(\w+)"/g);
     const props = namesFrom(src, /_editor\.GetProperty\("(\w+)"/g);
 
-    const proto = DocumentEditor.prototype;
-    const isMethod = (n: string): boolean => typeof (proto as Record<string, unknown>)[n] === "function";
+    const proto = DocumentEditor.prototype as unknown as Record<string, unknown>;
+    const isMethod = (n: string): boolean => typeof proto[n] === "function";
     const isGetter = (n: string): boolean => Object.getOwnPropertyDescriptor(proto, n)?.get !== undefined;
 
     expect(methods.length).toBeGreaterThan(0);
@@ -42,13 +43,16 @@ describe("C#↔JS bridge parity", () => {
     // Bridge mappers are exported from queryBridge.ts; `layoutPages` is composed in
     // entry.ts (async page layout). Both must also be wired onto the entry `api`.
     const bridgeExports = new Set(Object.keys(bridge));
-    const entrySrc = readFileSync(fileURLToPath(new URL("./entry.ts", import.meta.url)), "utf8");
+    const entrySrc = readSrc("./entry.ts");
 
     expect(names.length).toBeGreaterThan(0);
     for (const name of names) {
       const hasImpl = bridgeExports.has(name) || name === "layoutPages";
       expect(hasImpl, `no JS bridge fn named "${name}" (queryBridge export or layoutPages)`).toBe(true);
-      expect(entrySrc.includes(name), `"${name}" is not wired onto the entry api`).toBe(true);
+      // Word-boundary match so a substring hit inside a comment/other identifier
+      // can't count as "wired" — the name must appear as its own token.
+      const wired = new RegExp(`\\b${name}\\b`).test(entrySrc);
+      expect(wired, `"${name}" is not wired onto the entry api`).toBe(true);
     }
   });
 });
