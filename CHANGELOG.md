@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] — 2026-07-01
+
 ### Fixed
 - **Inline bookmarks no longer drift or grow across a `.docx` open → save → open cycle.** A bookmark
   whose boundary fell in the middle of a run used to snap to the run's *end* on export (the writer
