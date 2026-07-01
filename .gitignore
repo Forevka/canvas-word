@@ -37,3 +37,5 @@ out-cs*/
 *.out.txt
 # per-worktree agent brief (pipeline cruft, never commit)
 TASK.md
+# running backlog of query/edit-API follow-ups (local planning scratch)
+builder-mutator-additions.md

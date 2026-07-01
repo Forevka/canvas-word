@@ -12,6 +12,8 @@ export * from "./model/stylesheet";
 export * from "./model/lists";
 export * from "./model/tableStyles";
 export * from "./model/ops";
+export * from "./model/sections";
+export * from "./model/query";
 export * from "./model/sdt";
 export * from "./model/math";
 export * from "./model/tableGrid";
