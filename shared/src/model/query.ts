@@ -232,7 +232,9 @@ export function getSdt(doc: Document, id: string): SdtProps | undefined {
   return doc.sdts?.[id];
 }
 
-/** Every content control, as `{ id, props }`, in `doc.sdts` order. */
+/** Every content control, as `{ id, props }`, in `doc.sdts` insertion order
+ *  (import adds controls as it encounters them — close to, but not guaranteed to
+ *  be, document reading order). */
 export function getSdts(doc: Document): SdtMatch[] {
   return Object.entries(doc.sdts ?? {}).map(([id, props]) => ({ id, props }));
 }

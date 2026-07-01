@@ -119,7 +119,7 @@ export interface SdtNode extends SdtMatch {
 
 /** A content control's properties by id, or undefined. */
 export declare function getSdt(doc: Document, id: string): SdtProps | undefined;
-/** Every content control, as `{ id, props }`, in document order. */
+/** Every content control, as `{ id, props }`, in `doc.sdts` insertion order. */
 export declare function getSdts(doc: Document): SdtMatch[];
 /** Controls whose machine-readable tag (w:tag) equals `tag` (a tag is not unique). */
 export declare function getSdtsByTag(doc: Document, tag: string): SdtMatch[];
