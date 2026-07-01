@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **SDT (content control) query API — the primary templating surface (`@cw/shared` + `@forevka/wordcanvas/query`).**
+  Content controls are how documents get templated, so the query layer now treats them first-class, including
+  **nested controls** (an SDT inside another — membership is an ordered `sdtPath` ancestry, so nesting is native).
+  Flat lookup: `getSdt(id)`, `getSdts()`, `getSdtsByTag(tag)`, `getSdtsByAlias(alias)`. Nesting tree:
+  `getSdtNodes()` (each node carries `parentId`/`childIds`/`path`/`depth`), `getSdtRoots()`, `getSdtChildren(id)`,
+  `getSdtAncestors(id)`, `getSdtDescendants(id)`. Content: `getSdtBlocks(id)` (block-level members) and
+  `sdtText(id)` (the enclosed text — the "read the value" half of a template round-trip, covering block-level
+  and inline membership, nested controls included). Exposed on the npm `/query` subpath with hand-written
+  types (`SdtMatch`/`SdtNode`, guarded by the compile-time parity check).
 - **C# in-place edit surface `WordDocumentEditor` (ClearScript bindings).** `WordDocument.Edit()` opens a
   stateful editor over a JS `DocumentEditor` in V8 (the write half of WordprocessingDocument-style access):
   `SetParagraphText`, `InsertText`/`DeleteText`/`ReplaceText`, `RemoveBlock`, `InsertParagraphAfter`/

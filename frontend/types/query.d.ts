@@ -14,6 +14,7 @@ import type {
   ImageBlock,
   Paragraph,
   ParaStyle,
+  SdtProps,
   SectionProps,
   TableBlock,
 } from "./model";
@@ -28,6 +29,8 @@ export type {
   Paragraph,
   ParaStyle,
   Run,
+  SdtProps,
+  SdtType,
   SectionProps,
   TableBlock,
 } from "./model";
@@ -90,6 +93,53 @@ export declare function getImageById(doc: Document, id: string, options?: WalkOp
 /** Enumerate sections (page geometry + the block range each covers). */
 export declare function getSections(doc: Document): ResolvedSection[];
 export declare function resolveSections(doc: Document): ResolvedSection[];
+
+// ---------------------------------------------------------------------------
+// Content controls (SDTs) — the primary templating surface. Membership is an
+// ordered ancestry path, so controls nest; these expose the flat list (by
+// id/tag/alias), the nesting tree, and the wrapped blocks/text.
+
+/** A content control's id paired with its properties. */
+export interface SdtMatch {
+  id: string;
+  props: SdtProps;
+}
+
+/** A content control as a node in the nesting tree. */
+export interface SdtNode extends SdtMatch {
+  /** The control directly wrapping this one, or undefined for a top-level control. */
+  parentId?: string;
+  /** Direct child controls, in first-appearance order. */
+  childIds: string[];
+  /** Full ancestry outer→inner ending at this id (`[this]` for a root). */
+  path: string[];
+  /** Nesting depth: 0 for a root (== path.length - 1). */
+  depth: number;
+}
+
+/** A content control's properties by id, or undefined. */
+export declare function getSdt(doc: Document, id: string): SdtProps | undefined;
+/** Every content control, as `{ id, props }`, in `doc.sdts` insertion order. */
+export declare function getSdts(doc: Document): SdtMatch[];
+/** Controls whose machine-readable tag (w:tag) equals `tag` (a tag is not unique). */
+export declare function getSdtsByTag(doc: Document, tag: string): SdtMatch[];
+/** Controls whose title/alias (w:alias) equals `alias`. */
+export declare function getSdtsByAlias(doc: Document, alias: string): SdtMatch[];
+/** Every content control as a tree node (parent/child links, path, depth). */
+export declare function getSdtNodes(doc: Document): SdtNode[];
+/** The top-level controls — those not nested inside any other. */
+export declare function getSdtRoots(doc: Document): SdtNode[];
+/** The controls nested directly (one level) inside `id`. */
+export declare function getSdtChildren(doc: Document, id: string): SdtNode[];
+/** The controls wrapping `id`, outermost→innermost (excluding `id`). */
+export declare function getSdtAncestors(doc: Document, id: string): SdtNode[];
+/** Every control nested anywhere below `id` (depth-first, pre-order). */
+export declare function getSdtDescendants(doc: Document, id: string): SdtNode[];
+/** The blocks a block-level control wraps (their `sdtPath` includes `id`). */
+export declare function getSdtBlocks(doc: Document, id: string, options?: WalkOptions): Block[];
+/** The plain text a control encloses (block-level whole blocks + inline runs;
+ *  nested controls' text included). Blocks join with newlines. */
+export declare function sdtText(doc: Document, id: string, options?: WalkOptions): string;
 
 // ---------------------------------------------------------------------------
 // Edit facade
