@@ -138,12 +138,14 @@ export class DocumentEditor {
   // --- content controls (SDTs) — the primary templating surface ---------------
 
   /** Merge a patch onto a content control's properties (alias, tag, checked,
-   *  listItems, date format, locks…). The control must already exist; `type` is
-   *  preserved unless the patch overrides it. */
-  setSdtProps(id: string, patch: Partial<SdtProps>): this {
+   *  listItems, date format, locks…). The control must already exist. The control
+   *  `type` is the discriminant for how it round-trips and paints, so it is NOT
+   *  patchable here — it is always preserved (excluded from the patch shape and
+   *  re-forced on the merge, even against an untyped runtime caller). */
+  setSdtProps(id: string, patch: Partial<Omit<SdtProps, "type">>): this {
     const current = getSdt(this._doc, id);
     if (!current) throw new Error(`setSdtProps: content control ${id} not found`);
-    const props: SdtProps = { ...current, ...patch };
+    const props: SdtProps = { ...current, ...patch, type: current.type };
     return this.commit([{ type: "setSdtProps", id, props }]);
   }
 

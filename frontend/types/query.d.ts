@@ -167,8 +167,9 @@ export declare class DocumentEditor {
   removeBlock(blockId: string): this;
   insertParagraph(refBlockId: string, text: string, options?: InsertParagraphOptions): this;
 
-  /** Merge a patch onto a content control's properties (the control must exist). */
-  setSdtProps(id: string, patch: Partial<SdtProps>): this;
+  /** Merge a patch onto a content control's properties (the control must exist).
+   *  The control `type` is not patchable — it is always preserved. */
+  setSdtProps(id: string, patch: Partial<Omit<SdtProps, "type">>): this;
   /** Set a checkbox control's state (throws if `id` is not a checkbox). */
   setCheckbox(id: string, checked: boolean): this;
   /** Fill a single-paragraph content control's text (inline or block-level),

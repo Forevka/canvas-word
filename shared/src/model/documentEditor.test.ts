@@ -184,6 +184,15 @@ describe("DocumentEditor — SDT props", () => {
     expect(ed.doc.sdts!.c).toEqual({ type: "plainText", tag: "T" });
   });
 
+  it("setSdtProps never changes the control type, even for an untyped caller", () => {
+    const ed = new DocumentEditor(docWith({ type: "plainText", tag: "T" }));
+    // `type` is excluded from the patch shape; force it through as an untyped
+    // runtime caller would, and confirm it is ignored.
+    ed.setSdtProps("c", { type: "checkbox", tag: "N" } as unknown as Partial<Omit<SdtProps, "type">>);
+    expect(ed.doc.sdts!.c!.type).toBe("plainText");
+    expect(ed.doc.sdts!.c!.tag).toBe("N");
+  });
+
   it("setCheckbox flips a checkbox control's state", () => {
     const ed = new DocumentEditor(docWith({ type: "checkbox", checked: false }));
     ed.setCheckbox("c", true);
