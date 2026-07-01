@@ -334,8 +334,10 @@ export class DocumentEditor {
   insertTableRowAt(tableId: string, rowIndex: number, cellTexts: string[] = []): this {
     const table = getTableById(this._doc, tableId);
     if (!table) throw new Error(`insertTableRowAt: table ${tableId} not found`);
-    // Span-aware column count so a first row with colSpans doesn't undercount.
-    const cols = gridColumnCount(table) || cellTexts.length;
+    // Span-aware column count so a first row with colSpans doesn't undercount;
+    // `gridColumnCount` never returns 0, so for a brand-new EMPTY table fall back
+    // to the requested cell count (else it would force a single column).
+    const cols = table.rows.length > 0 ? gridColumnCount(table) : Math.max(1, cellTexts.length);
     const runStyle = firstRunStyle(table.rows) ?? DEFAULT_CHAR_STYLE;
     const cells: TableCell[] = Array.from({ length: cols }, (_, c) => {
       const text = cellTexts[c] ?? "";

@@ -556,4 +556,13 @@ describe("DocumentEditor — table row/column edits", () => {
     const doc: Document = { section: section(), blocks: [table2("t", [["Name"]])] };
     expect(() => new DocumentEditor(doc).deleteColumnByHeader("t", "Nope")).toThrow(/no column headed/);
   });
+
+  it("uses the requested cell count for a brand-new empty table (no truncation)", () => {
+    const empty: import("./document").TableBlock = { kind: "table", id: "t", revision: 0, rows: [] };
+    const ed = new DocumentEditor({ section: section(), blocks: [empty] });
+    ed.insertTableRowAt("t", 0, ["A", "B", "C"]);
+    const t = ed.doc.blocks[0] as import("./document").TableBlock;
+    expect(t.rows[0]!.cells).toHaveLength(3); // all three cells kept, not forced to 1
+    expect(t.rows[0]!.cells.map((c) => textOf(c.blocks[0] as Paragraph))).toEqual(["A", "B", "C"]);
+  });
 });
