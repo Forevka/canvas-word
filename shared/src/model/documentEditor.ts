@@ -8,10 +8,12 @@
 // machinery (that lives in the frontend and is UI-coupled). It is a plain data
 // facade usable from Node, the browser, and — later — the C# bindings.
 
-import type { Block, CharStyle, Document, Paragraph, ParaStyle, Run, SdtProps } from "./document";
-import { applyOp, containerOf, type Op } from "./ops";
-import { findParagraphs, getBlockById, getParagraphById, getSdt, getSdtBlocks, walk, type ParagraphMatch } from "./query";
+import type { Block, CharStyle, Document, Paragraph, ParaStyle, Run, SdtProps, TableCell, TableRow } from "./document";
+import { applyOp, applyStylePatchToRuns, containerOf, gridColumnCount, type Op } from "./ops";
+import { findParagraphs, getBlockById, getParagraphById, getSdt, getSdtBlocks, getTableById, textOfCell, walk, type ParagraphMatch } from "./query";
 import { ancestryThrough, removeSdt as stripSdtFromPath } from "./sdt";
+import { resolveStyle } from "./stylesheet";
+import { DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE } from "./defaults";
 import { freshId } from "../ids";
 
 /** One undoable step: the forward ops and their inverses (already in
@@ -269,6 +271,100 @@ export class DocumentEditor {
     return this.commit(ops);
   }
 
+  // --- ergonomic bulk / structural edits --------------------------------------
+
+  /** Find/replace across every paragraph in the document as ONE undoable step.
+   *  A string replaces ALL occurrences; a RegExp is applied per run (pass the `g`
+   *  flag to replace all). Replacement happens WITHIN each run — matches that span
+   *  a style boundary are not replaced (a deliberate limit so run styling is always
+   *  preserved). Returns `this`. */
+  replaceAllText(pattern: string | RegExp, replacement: string): this {
+    const ops: Op[] = [];
+    walk(this._doc, (b) => {
+      if (b.kind !== "paragraph") return;
+      let changed = false;
+      const runs = b.runs.map((r) => {
+        const text = typeof pattern === "string" ? r.text.split(pattern).join(replacement) : r.text.replace(pattern, replacement);
+        if (text !== r.text) changed = true;
+        return text === r.text ? r : { ...r, text };
+      });
+      if (changed) ops.push({ type: "setRuns", blockId: b.id, runs });
+    });
+    return this.commit(ops);
+  }
+
+  /** Apply a named paragraph style by its human NAME (e.g. "Heading 1"), resolving
+   *  it to a styleId via the stylesheet and BAKING the resolved paragraph + run
+   *  formatting onto the block (the model is concrete), plus setting the `namedStyle`
+   *  reference. Throws if the document has no stylesheet or no style with that name. */
+  setStyleByName(blockId: string, styleName: string): this {
+    const sheet = this._doc.stylesheet;
+    const style = sheet?.styles.find((s) => s.name === styleName);
+    if (!sheet || !style) throw new Error(`setStyleByName: no style named "${styleName}"`);
+    const para = this.mustParagraph(blockId);
+    const resolved = resolveStyle(sheet, style.id);
+    const ops: Op[] = [{ type: "setParaStyle", blockId, patch: { ...resolved.para, namedStyle: style.id } }];
+    if (Object.keys(resolved.char).length > 0 && para.runs.length > 0) {
+      const len = para.runs.reduce((n, r) => n + r.text.length, 0);
+      ops.push({ type: "setRuns", blockId, runs: applyStylePatchToRuns(para.runs, 0, len, resolved.char) });
+    }
+    return this.commit(ops);
+  }
+
+  /** Move a top-level BODY block to a new index among the body blocks (remove +
+   *  insert as one undoable step). `toIndex` is the destination among the OTHER
+   *  blocks (after removal), clamped to range. Throws if the block is not a
+   *  top-level body block. */
+  moveBlock(blockId: string, toIndex: number): this {
+    const from = this._doc.blocks.findIndex((b) => b.id === blockId);
+    if (from === -1) throw new Error(`moveBlock: ${blockId} is not a top-level body block`);
+    const block = this._doc.blocks[from]!;
+    const dest = Math.max(0, Math.min(toIndex, this._doc.blocks.length - 1));
+    if (dest === from) return this;
+    return this.commit([
+      { type: "removeBlock", blockId },
+      { type: "insertBlock", index: dest, block, where: "body" },
+    ]);
+  }
+
+  /** Insert a row into a table at `rowIndex` (clamped). `cellTexts` fills the new
+   *  cells left-to-right (missing/extra entries pad/trim to the table's column
+   *  count); omit for an empty row. New cells inherit a run style from an existing
+   *  table paragraph (or the document default). */
+  insertTableRowAt(tableId: string, rowIndex: number, cellTexts: string[] = []): this {
+    const table = getTableById(this._doc, tableId);
+    if (!table) throw new Error(`insertTableRowAt: table ${tableId} not found`);
+    // Span-aware column count so a first row with colSpans doesn't undercount;
+    // `gridColumnCount` never returns 0, so for a brand-new EMPTY table fall back
+    // to the requested cell count (else it would force a single column).
+    const cols = table.rows.length > 0 ? gridColumnCount(table) : Math.max(1, cellTexts.length);
+    const runStyle = firstRunStyle(table.rows) ?? DEFAULT_CHAR_STYLE;
+    const cells: TableCell[] = Array.from({ length: cols }, (_, c) => {
+      const text = cellTexts[c] ?? "";
+      const paragraph: Paragraph = {
+        kind: "paragraph",
+        id: freshId(),
+        revision: 0,
+        runs: text.length > 0 ? [{ text, style: runStyle }] : [],
+        style: { ...DEFAULT_PARA_STYLE },
+      };
+      return { id: freshId(), blocks: [paragraph] };
+    });
+    const at = Math.max(0, Math.min(rowIndex, table.rows.length));
+    return this.commit([{ type: "insertTableRow", tableId, rowIndex: at, row: { cells } }]);
+  }
+
+  /** Delete the column whose header (first-row cell text) equals `headerText`.
+   *  Throws if the table or a matching header is not found. */
+  deleteColumnByHeader(tableId: string, headerText: string): this {
+    const table = getTableById(this._doc, tableId);
+    if (!table) throw new Error(`deleteColumnByHeader: table ${tableId} not found`);
+    const header = table.rows[0];
+    const col = header ? header.cells.findIndex((cell) => textOfCell(cell) === headerText) : -1;
+    if (col === -1) throw new Error(`deleteColumnByHeader: no column headed "${headerText}" in table ${tableId}`);
+    return this.commit([{ type: "removeTableColumn", tableId, colIndex: col }]);
+  }
+
   /** Find the single paragraph holding the contiguous run span tagged with the
    *  inline control `id`, plus that span `[from, to)` and its base run style. */
   private locateInlineSdt(
@@ -384,4 +480,17 @@ function stripBlockSdt(block: Block, id: string): Block {
   if (path) bag.sdtPath = path;
   else delete bag.sdtPath;
   return next;
+}
+
+/** The style of the first run found in any cell of `rows` — a template for new
+ *  cell paragraphs. Undefined if every cell is empty. */
+function firstRunStyle(rows: TableRow[]): CharStyle | undefined {
+  for (const row of rows) {
+    for (const cell of row.cells) {
+      for (const block of cell.blocks) {
+        if (block.kind === "paragraph" && block.runs[0]) return block.runs[0].style;
+      }
+    }
+  }
+  return undefined;
 }

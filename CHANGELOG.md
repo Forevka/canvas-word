@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Edit-facade ergonomics on `DocumentEditor` (`@cw/shared` + `@forevka/wordcanvas/query`).** Higher-level
+  one-undo edits: `replaceAllText(pattern, replacement)` (find/replace across every paragraph — string replaces
+  all, RegExp per run; matches spanning a style boundary are preserved), `setStyleByName(blockId, styleName)`
+  (resolve a human style name → styleId and bake the resolved paragraph + run formatting plus the reference),
+  `moveBlock(blockId, toIndex)` (reorder a top-level body block), and table edits `insertTableRowAt(tableId,
+  rowIndex, cellTexts?)` / `deleteColumnByHeader(tableId, headerText)`.
 - **Range / text addressing helpers (`@cw/shared` + `@forevka/wordcanvas/query`).** `rangeText(doc, selection)`
   returns the text a selection covers (a single-block range slices that block; a multi-block range spans top-level
   body blocks joined by newlines; endpoints auto-ordered), `positionOfText(doc, needle)` returns the first

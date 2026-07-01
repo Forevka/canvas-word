@@ -267,6 +267,23 @@ export declare class DocumentEditor {
    *  wrapped content too. Block-level members outside the top-level body throw. */
   removeSdt(id: string, options?: { deleteContents?: boolean }): this;
 
+  /** Find/replace across every paragraph as one undoable step. A string replaces
+   *  all occurrences; a RegExp is applied per run. Matches spanning a style
+   *  boundary are not replaced (run styling is always preserved). */
+  replaceAllText(pattern: string | RegExp, replacement: string): this;
+  /** Apply a named paragraph style by its human name (resolving to a styleId and
+   *  baking the resolved formatting + setting the reference). Throws if unknown. */
+  setStyleByName(blockId: string, styleName: string): this;
+  /** Move a top-level body block to a new index among the body blocks (clamped),
+   *  as one undoable step. Throws if it is not a top-level body block. */
+  moveBlock(blockId: string, toIndex: number): this;
+  /** Insert a row into a table at `rowIndex` (clamped); `cellTexts` fills cells
+   *  left-to-right (padded/trimmed to the column count). Throws if unknown. */
+  insertTableRowAt(tableId: string, rowIndex: number, cellTexts?: string[]): this;
+  /** Delete the column whose first-row cell text equals `headerText`. Throws if the
+   *  table or a matching header is not found. */
+  deleteColumnByHeader(tableId: string, headerText: string): this;
+
   undo(): boolean;
   redo(): boolean;
 
