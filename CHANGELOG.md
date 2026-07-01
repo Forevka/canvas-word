@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **C# `WordDocumentEditor` completion — SDT value/unwrap + edit ergonomics (ClearScript bindings).** Mirrors the
+  TS edit facade so the .NET write surface matches: `SetSdtValue` (dropDown/comboBox select), `RemoveSdt(id,
+  deleteContents?)` (unwrap), and the ergonomic bulk/structural edits `ReplaceAllText`, `SetStyleByName`,
+  `MoveBlock`, `InsertTableRowAt`, `DeleteColumnByHeader`. Thin wrappers over the existing JS `DocumentEditor`
+  methods (no bundle change), covered by the bridge parity guard; the C# showcase now selects a dropdown value,
+  find/replaces, and moves a block.
 - **C#↔JS bridge parity guard + C# SDT nesting query completion (ClearScript bindings).** A new TS test
   (`csharpBridgeParity.test.ts`) scrapes the `InvokeMethod`/`GetProperty` names the C# bindings call
   (`WordDocumentEditor` → a real `DocumentEditor` member; `WordDocumentQuery` → a wired JS bridge fn) and fails

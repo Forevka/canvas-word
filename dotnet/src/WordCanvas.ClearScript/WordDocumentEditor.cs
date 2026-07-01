@@ -105,6 +105,72 @@ public sealed class WordDocumentEditor
         return this;
     }
 
+    /// <summary>Select a value on a dropDown/comboBox content control (matches a
+    /// listItem by value then display; a comboBox accepts free text). Throws JS-side
+    /// for other control kinds.</summary>
+    public WordDocumentEditor SetSdtValue(string id, string value)
+    {
+        _editor.InvokeMethod("setSdtValue", NonNull(id), NonNull(value));
+        return this;
+    }
+
+    /// <summary>Remove a content control by UNWRAPPING it — strip its id from member
+    /// paths and delete its props (nested controls survive). With
+    /// <paramref name="deleteContents"/> the wrapped content is deleted too. Throws
+    /// JS-side for a block-level member outside the top-level body.</summary>
+    public WordDocumentEditor RemoveSdt(string id, bool deleteContents = false)
+    {
+        dynamic options = _engine.NewObject();
+        options.deleteContents = deleteContents;
+        _editor.InvokeMethod("removeSdt", NonNull(id), (object)options);
+        return this;
+    }
+
+    // ---- ergonomic bulk / structural edits ----
+
+    /// <summary>Find/replace across every paragraph as one undoable step (a string
+    /// replaces all occurrences; matches spanning a run/style boundary are preserved).</summary>
+    public WordDocumentEditor ReplaceAllText(string pattern, string replacement)
+    {
+        _editor.InvokeMethod("replaceAllText", NonNull(pattern), NonNull(replacement));
+        return this;
+    }
+
+    /// <summary>Apply a named paragraph style by its human name — resolves it to a
+    /// styleId, bakes the resolved formatting, and sets the reference. Throws JS-side
+    /// if the style is unknown.</summary>
+    public WordDocumentEditor SetStyleByName(string blockId, string styleName)
+    {
+        _editor.InvokeMethod("setStyleByName", NonNull(blockId), NonNull(styleName));
+        return this;
+    }
+
+    /// <summary>Move a top-level body block to a new index among the body blocks
+    /// (clamped), as one undoable step. Throws JS-side if it is not a top-level body block.</summary>
+    public WordDocumentEditor MoveBlock(string blockId, int toIndex)
+    {
+        _editor.InvokeMethod("moveBlock", NonNull(blockId), toIndex);
+        return this;
+    }
+
+    /// <summary>Insert a row into a table at <paramref name="rowIndex"/> (clamped);
+    /// <paramref name="cellTexts"/> fill cells left-to-right (padded/trimmed to the
+    /// column count). Throws JS-side if the table is unknown.</summary>
+    public WordDocumentEditor InsertTableRowAt(string tableId, int rowIndex, IEnumerable<string>? cellTexts = null)
+    {
+        var texts = Builder.Js.ToArray(_engine, (cellTexts ?? Array.Empty<string>()).Select(t => (object?)NonNull(t)));
+        _editor.InvokeMethod("insertTableRowAt", NonNull(tableId), rowIndex, texts);
+        return this;
+    }
+
+    /// <summary>Delete the column whose first-row cell text equals
+    /// <paramref name="headerText"/>. Throws JS-side if the table or header is not found.</summary>
+    public WordDocumentEditor DeleteColumnByHeader(string tableId, string headerText)
+    {
+        _editor.InvokeMethod("deleteColumnByHeader", NonNull(tableId), NonNull(headerText));
+        return this;
+    }
+
     /// <summary>Undo the most recent edit. Returns false when there's nothing to undo.</summary>
     public bool Undo() => Convert.ToBoolean(_editor.InvokeMethod("undo"));
 
