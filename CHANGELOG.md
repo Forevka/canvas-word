@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **C#↔JS bridge parity guard + C# SDT nesting query completion (ClearScript bindings).** A new TS test
+  (`csharpBridgeParity.test.ts`) scrapes the `InvokeMethod`/`GetProperty` names the C# bindings call
+  (`WordDocumentEditor` → a real `DocumentEditor` member; `WordDocumentQuery` → a wired JS bridge fn) and fails
+  `npm test` if a JS method is renamed/removed out from under the C# side (which CI otherwise wouldn't catch,
+  since it doesn't build .NET). Also completes the C# SDT nesting surface with `WordDocument.GetSdtAncestors(id)`
+  / `GetSdtDescendants(id)` (pure LINQ over the flattened `SdtInfo` list, no bridge round-trip).
 - **`walkRuns` run-level traversal + nested-cell ancestry (`@cw/shared` + `@forevka/wordcanvas/query`).** A new
   `walkRuns(doc, visit)` primitive visits every run with its paragraph, run index, and full enclosing content-control
   chain (`RunContext`) — the run-level companion to `walk`. `BlockContext` also gains a `cellPath` (full `CellRef[]`
