@@ -49,6 +49,12 @@ describe("DocumentEditor — text editing", () => {
     const ed = new DocumentEditor(docOf(para("p", "x")));
     expect(() => ed.setParagraphText("nope", "y")).toThrow(/not found/);
   });
+
+  it("clears an already-empty paragraph without requiring a style", () => {
+    const ed = new DocumentEditor(docOf(para("p", "")));
+    expect(() => ed.setParagraphText("p", "")).not.toThrow();
+    expect(ed.getParagraph("p")!.runs).toEqual([]);
+  });
 });
 
 describe("DocumentEditor — structural editing", () => {
@@ -74,6 +80,27 @@ describe("DocumentEditor — structural editing", () => {
     const ed = new DocumentEditor(docOf(para("a", "first"), para("b", "second")));
     ed.removeBlock("a");
     expect(ed.doc.blocks.map((x) => x.id)).toEqual(["b"]);
+  });
+
+  it("insertParagraph throws when the reference is not a top-level block", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [
+        para("p", "body"),
+        { kind: "table", id: "t", revision: 0, rows: [{ cells: [{ id: "c0", blocks: [para("cellPara", "in cell")] }] }] },
+      ],
+    };
+    const ed = new DocumentEditor(doc);
+    expect(() => ed.insertParagraph("cellPara", "x")).toThrow(/not a top-level block/);
+  });
+
+  it("insertParagraph throws when the reference is not a paragraph and no style is given", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [{ kind: "table", id: "t", revision: 0, rows: [{ cells: [{ id: "c0", blocks: [para("cellPara", "in cell")] }] }] }],
+    };
+    const ed = new DocumentEditor(doc);
+    expect(() => ed.insertParagraph("t", "x")).toThrow(/not a paragraph/);
   });
 });
 

@@ -66,9 +66,12 @@ export class DocumentEditor {
    *  defaults to the paragraph's current first-run style. */
   setParagraphText(blockId: string, text: string, style?: CharStyle): this {
     const para = this.mustParagraph(blockId);
-    const runStyle = style ?? para.runs[0]?.style;
-    if (!runStyle) throw new Error(`setParagraphText: paragraph ${blockId} is empty; pass a style`);
-    const runs: Run[] = text.length > 0 ? [{ text, style: runStyle }] : [];
+    const runs: Run[] = [];
+    if (text.length > 0) {
+      const runStyle = style ?? para.runs[0]?.style;
+      if (!runStyle) throw new Error(`setParagraphText: paragraph ${blockId} is empty; pass a style`);
+      runs.push({ text, style: runStyle });
+    }
     return this.commit([{ type: "setRuns", blockId, runs }]);
   }
 
