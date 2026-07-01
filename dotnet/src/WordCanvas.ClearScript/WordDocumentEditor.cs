@@ -76,6 +76,35 @@ public sealed class WordDocumentEditor
         return this;
     }
 
+    // ---- content controls (SDTs) — the primary templating surface ----
+
+    /// <summary>Merge a patch onto a content control's properties (tag, alias, checked,
+    /// placeholder, date format, locks). The control must exist; its <c>type</c> is the
+    /// discriminant and is always preserved (not patchable).</summary>
+    public WordDocumentEditor SetSdtProps(string id, SdtPropsPatch patch)
+    {
+        ArgumentNullException.ThrowIfNull(patch);
+        _editor.InvokeMethod("setSdtProps", NonNull(id), patch.ToJs(_engine));
+        return this;
+    }
+
+    /// <summary>Set a checkbox content control's state (☒/☐). Throws JS-side if
+    /// <paramref name="id"/> is not a checkbox control.</summary>
+    public WordDocumentEditor SetCheckbox(string id, bool isChecked)
+    {
+        _editor.InvokeMethod("setCheckbox", NonNull(id), isChecked);
+        return this;
+    }
+
+    /// <summary>Fill a single-paragraph content control's text (inline or block-level) —
+    /// the "fill this field" primitive. Preserves the control's ancestry (nesting) and
+    /// clears any placeholder. Throws JS-side for controls spanning multiple blocks.</summary>
+    public WordDocumentEditor SetSdtText(string id, string text)
+    {
+        _editor.InvokeMethod("setSdtText", NonNull(id), NonNull(text));
+        return this;
+    }
+
     /// <summary>Undo the most recent edit. Returns false when there's nothing to undo.</summary>
     public bool Undo() => Convert.ToBoolean(_editor.InvokeMethod("undo"));
 
@@ -93,5 +122,39 @@ public sealed class WordDocumentEditor
     {
         ArgumentNullException.ThrowIfNull(value);
         return value;
+    }
+}
+
+/// <summary>A patch of content-control properties for <see cref="WordDocumentEditor.SetSdtProps"/>.
+/// Only the set fields are applied; the control's <c>type</c> is never patchable (it is
+/// preserved JS-side). Mirrors the patchable subset of the model's SdtProps.</summary>
+public sealed record SdtPropsPatch
+{
+    /// <summary>Machine-readable tag (w:tag).</summary>
+    public string? Tag { get; init; }
+    /// <summary>Title shown on the control's tab (w:alias).</summary>
+    public string? Alias { get; init; }
+    /// <summary>Checkbox state (checkbox controls).</summary>
+    public bool? Checked { get; init; }
+    /// <summary>Whether the content is the gray placeholder.</summary>
+    public bool? Placeholder { get; init; }
+    /// <summary>Date display format (date controls).</summary>
+    public string? DateFormat { get; init; }
+    /// <summary>w:lock="sdtContentLocked" — contents cannot be edited.</summary>
+    public bool? LockContent { get; init; }
+    /// <summary>w:lock="sdtLocked" — the control cannot be deleted.</summary>
+    public bool? LockControl { get; init; }
+
+    internal ScriptObject ToJs(WordCanvasEngine engine)
+    {
+        dynamic o = engine.NewObject();
+        if (Tag is { } t) o.tag = t;
+        if (Alias is { } a) o.alias = a;
+        if (Checked is { } c) o.@checked = c;
+        if (Placeholder is { } p) o.placeholder = p;
+        if (DateFormat is { } d) o.dateFormat = d;
+        if (LockContent is { } lc) o.lockContent = lc;
+        if (LockControl is { } lk) o.lockControl = lk;
+        return (ScriptObject)o;
     }
 }

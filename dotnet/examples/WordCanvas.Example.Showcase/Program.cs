@@ -432,6 +432,27 @@ var editedDocx = editor.ToDocument().ExportDocx();
 var reEdited = engine.ImportDocx(editedDocx);
 Console.WriteLine($"  round-trip    : re-imported edited docx → find 'EDITED HEADING' = {reEdited.FindText("EDITED HEADING").Count}");
 
+// ---- Content controls (SDTs) — the templating surface ---------------------
+var sdts = re.GetSdts();
+Console.WriteLine("Content controls (SDTs):");
+Console.WriteLine($"  total         : {sdts.Count} ({re.GetSdtRoots().Count} root)");
+foreach (var s in sdts.Take(4))
+    Console.WriteLine($"      [{s.SdtType}] {(s.Alias is { } a ? $"\"{a}\" " : "")}depth={s.Depth} text=\"{Trunc(s.Text)}\"");
+
+var plain = sdts.FirstOrDefault(s => s.Alias == "Plain text");
+var check = sdts.FirstOrDefault(s => s.SdtType == "checkbox");
+if (plain is not null && check is not null)
+{
+    var sdtEditor = re.Edit()
+        .SetSdtText(plain.Id, "FILLED BY C#")
+        .SetSdtProps(plain.Id, new SdtPropsPatch { Tag = "FilledField" })
+        .SetCheckbox(check.Id, false);
+    var after = sdtEditor.ToDocument().GetSdts();
+    var plainAfter = after.First(s => s.Id == plain.Id);
+    var checkAfter = after.First(s => s.Id == check.Id);
+    Console.WriteLine($"  after fill    : plain text=\"{plainAfter.Text}\" tag={plainAfter.Tag}, checkbox checked={checkAfter.Checked}");
+}
+
 Console.WriteLine($"Output written to: {outDir}");
 
 static string Trunc(string s) => s.Length <= 60 ? s : s[..57] + "...";

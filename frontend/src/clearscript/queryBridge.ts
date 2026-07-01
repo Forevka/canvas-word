@@ -5,7 +5,7 @@
 // dotnet/src/WordCanvas.ClearScript/WordDocumentQuery.cs.
 
 import type { Document, Paragraph } from "@cw/shared";
-import { findParagraphs, getSections, textOfRuns, walk, type BlockContext } from "@cw/shared";
+import { findParagraphs, getSdtNodes, getSections, sdtText, textOfRuns, walk, type BlockContext } from "@cw/shared";
 import type { PageInfo as LayoutPageInfo } from "../layout/pages";
 
 /** A paragraph flattened for the host: text + where it lives (container / table
@@ -50,6 +50,29 @@ export interface PageInfo {
   blockIds: string[];
 }
 
+/** A content control flattened for the host: its properties, its place in the
+ *  nesting tree, and its enclosed text — one call yields the whole SDT forest.
+ *  Nullable fields are null (not undefined) so the C# side reads a stable shape. */
+export interface SdtInfo {
+  id: string;
+  sdtType: string;
+  tag: string | null;
+  alias: string | null;
+  /** Checkbox state (null for non-checkbox controls). */
+  checked: boolean | null;
+  placeholder: boolean;
+  /** Parent control id, or null for a top-level control. */
+  parentId: string | null;
+  /** Direct child control ids, first-appearance order. */
+  childIds: string[];
+  /** Full ancestry outer→inner ending at this id. */
+  path: string[];
+  /** Nesting depth (0 = root). */
+  depth: number;
+  /** The plain text the control encloses. */
+  text: string;
+}
+
 function paragraphInfo(p: Paragraph, ctx: BlockContext): ParagraphInfo {
   return {
     id: p.id,
@@ -92,6 +115,24 @@ export function querySections(doc: Document): SectionInfo[] {
     marginBottom: s.props.marginPx.bottom,
     marginLeft: s.props.marginPx.left,
     columnCount: s.props.columns?.count ?? 1,
+  }));
+}
+
+/** Every content control, flattened with its nesting links and enclosed text —
+ *  the SDT forest in one call (the primary templating surface, for .NET hosts). */
+export function querySdts(doc: Document): SdtInfo[] {
+  return getSdtNodes(doc).map((n) => ({
+    id: n.id,
+    sdtType: n.props.type,
+    tag: n.props.tag ?? null,
+    alias: n.props.alias ?? null,
+    checked: n.props.type === "checkbox" ? (n.props.checked ?? false) : null,
+    placeholder: n.props.placeholder ?? false,
+    parentId: n.parentId ?? null,
+    childIds: n.childIds,
+    path: n.path,
+    depth: n.depth,
+    text: sdtText(doc, n.id),
   }));
 }
 
