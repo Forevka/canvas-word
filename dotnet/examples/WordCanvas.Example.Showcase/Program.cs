@@ -441,17 +441,29 @@ foreach (var s in sdts.Take(4))
 
 var plain = sdts.FirstOrDefault(s => s.Alias == "Plain text");
 var check = sdts.FirstOrDefault(s => s.SdtType == "checkbox");
-if (plain is not null && check is not null)
+var choice = sdts.FirstOrDefault(s => s.SdtType == "dropDown");
+if (plain is not null && check is not null && choice is not null)
 {
     var sdtEditor = re.Edit()
         .SetSdtText(plain.Id, "FILLED BY C#")
         .SetSdtProps(plain.Id, new SdtPropsPatch { Tag = "FilledField" })
-        .SetCheckbox(check.Id, false);
+        .SetCheckbox(check.Id, false)
+        .SetSdtValue(choice.Id, "2"); // select the dropdown option whose value is "2"
     var after = sdtEditor.ToDocument().GetSdts();
     var plainAfter = after.First(s => s.Id == plain.Id);
     var checkAfter = after.First(s => s.Id == check.Id);
-    Console.WriteLine($"  after fill    : plain text=\"{plainAfter.Text}\" tag={plainAfter.Tag}, checkbox checked={checkAfter.Checked}");
+    var choiceAfter = after.First(s => s.Id == choice.Id);
+    Console.WriteLine($"  after fill    : plain text=\"{plainAfter.Text}\" tag={plainAfter.Tag}, checkbox checked={checkAfter.Checked}, dropdown=\"{choiceAfter.Text}\"");
 }
+
+// ---- Ergonomic bulk / structural edits (find/replace, move, table) ---------
+var ergo = re.Edit();
+var firstBlock = re.GetParagraphs()[0].Id;
+ergo.ReplaceAllText("canvas-word", "CANVAS-WORD").MoveBlock(firstBlock, 2);
+var ergoDoc = ergo.ToDocument();
+Console.WriteLine("Ergonomic edits:");
+Console.WriteLine($"  replaceAllText: 'canvas-word' → 'CANVAS-WORD' hits = {ergoDoc.FindText("CANVAS-WORD").Count}");
+Console.WriteLine($"  moveBlock     : first block moved away from the top = {ergoDoc.GetParagraphs()[0].Id != firstBlock}");
 
 Console.WriteLine($"Output written to: {outDir}");
 
