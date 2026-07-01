@@ -482,6 +482,11 @@ Console.WriteLine("Ergonomic edits:");
 Console.WriteLine($"  replaceAllText: literal hits={literalHits}, after regex 'cw' hits={ergoDoc.FindText("cw").Count}");
 Console.WriteLine($"  moveBlock     : first block moved away from the top = {ergoDoc.GetParagraphs()[0].Id != firstBlock}");
 
+// setParagraphStyle: patch the first paragraph (align + outline level + spacing).
+var styled = re.Edit();
+styled.SetParagraphStyle(firstBlock, new ParaStylePatch { Align = TextAlign.Center, OutlineLevel = 0, SpaceBeforePx = 12 });
+Console.WriteLine($"  setParaStyle  : first block outlineLevel now = {styled.ToDocument().GetParagraphs()[0].OutlineLevel}");
+
 Console.WriteLine($"Output written to: {outDir}");
 
 static string Trunc(string s) => s.Length <= 60 ? s : s[..57] + "...";

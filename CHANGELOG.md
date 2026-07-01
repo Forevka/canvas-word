@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **C# `WordDocumentEditor.SetParagraphStyle(blockId, ParaStylePatch)` (ClearScript bindings).** Closes the last
+  C#↔TS edit-parity gap — patch a paragraph's style (alignment, indents, spacing, breaks, outline level, direction,
+  tab stops) from .NET, reusing the builder's existing `ParaStylePatch` record. Thin wrapper over the JS
+  `setParagraphStyle` (no bundle change); the showcase patches the first paragraph.
 - **C# query getters — fields / bookmarks / notes / lists / styles / location / text (ClearScript bindings).**
   Mirrors the TS read surface into .NET: `WordDocument.GetFields`/`GetField`/`GetFieldsByName`, `GetBookmarks`/
   `GetBookmark`, `GetFootnotes`/`GetEndnotes`, `GetListItems(listId)` (resolved markers), `GetStyles`/`GetStyleById`,

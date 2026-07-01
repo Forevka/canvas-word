@@ -30,6 +30,16 @@ public sealed class WordDocumentEditor
         return this;
     }
 
+    /// <summary>Patch a paragraph's style (alignment, indents, spacing, breaks, outline
+    /// level, …). Only the fields set on <paramref name="patch"/> are applied. Reuses the
+    /// builder's <see cref="Builder.ParaStylePatch"/>.</summary>
+    public WordDocumentEditor SetParagraphStyle(string blockId, Builder.ParaStylePatch patch)
+    {
+        ArgumentNullException.ThrowIfNull(patch);
+        _editor.InvokeMethod("setParagraphStyle", NonNull(blockId), patch.ToJs(_engine));
+        return this;
+    }
+
     /// <summary>Insert <paramref name="text"/> at a UTF-16 offset within a paragraph.</summary>
     public WordDocumentEditor InsertText(string blockId, int offset, string text)
     {
