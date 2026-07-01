@@ -50,8 +50,10 @@ export type QueryPublicSurfaceParity = [
   Assert<AssignableTo<typeof Rt.getSdtDescendants, typeof Pub.getSdtDescendants>>,
   Assert<AssignableTo<typeof Rt.getSdtBlocks, typeof Pub.getSdtBlocks>>,
   Assert<AssignableTo<typeof Rt.sdtText, typeof Pub.sdtText>>,
+  Assert<AssignableTo<typeof Rt.getSdtValue, typeof Pub.getSdtValue>>,
   Assert<AssignableTo<Rt.SdtMatch, Pub.SdtMatch>>,
   Assert<AssignableTo<Rt.SdtNode, Pub.SdtNode>>,
+  Assert<AssignableTo<Rt.SdtValue, Pub.SdtValue>>,
   Assert<AssignableTo<typeof Rt.getPages, typeof Pub.getPages>>,
   Assert<AssignableTo<typeof Rt.pageOfBlock, typeof Pub.pageOfBlock>>,
   // A runtime DocumentEditor instance must satisfy the published instance surface.

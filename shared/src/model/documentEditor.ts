@@ -8,10 +8,10 @@
 // machinery (that lives in the frontend and is UI-coupled). It is a plain data
 // facade usable from Node, the browser, and — later — the C# bindings.
 
-import type { CharStyle, Document, Paragraph, ParaStyle, Run, SdtProps } from "./document";
+import type { Block, CharStyle, Document, Paragraph, ParaStyle, Run, SdtProps } from "./document";
 import { applyOp, containerOf, type Op } from "./ops";
 import { findParagraphs, getBlockById, getParagraphById, getSdt, getSdtBlocks, walk, type ParagraphMatch } from "./query";
-import { ancestryThrough } from "./sdt";
+import { ancestryThrough, removeSdt as stripSdtFromPath } from "./sdt";
 import { freshId } from "../ids";
 
 /** One undoable step: the forward ops and their inverses (already in
@@ -201,6 +201,74 @@ export class DocumentEditor {
     return this.commit(this.withPlaceholderCleared(id, current, [{ type: "setRuns", blockId: para.id, runs: rebuilt }]));
   }
 
+  /** Select a value on a dropDown/comboBox content control — the "choose an
+   *  option" primitive. `value` matches a listItem by its VALUE first, then by its
+   *  display; the control's text becomes that item's display. A comboBox accepts
+   *  free text (no match ⇒ `value` is used verbatim); a dropDown requires a listed
+   *  option (throws otherwise). For other control kinds use `setSdtText`/`setCheckbox`. */
+  setSdtValue(id: string, value: string): this {
+    const props = getSdt(this._doc, id);
+    if (!props) throw new Error(`setSdtValue: content control ${id} not found`);
+    if (props.type !== "dropDown" && props.type !== "comboBox") {
+      throw new Error(`setSdtValue: ${id} is a "${props.type}" control; use setSdtText or setCheckbox`);
+    }
+    const items = props.listItems ?? [];
+    const match = items.find((i) => i.value === value) ?? items.find((i) => i.display === value);
+    if (!match && props.type === "dropDown") {
+      throw new Error(`setSdtValue: "${value}" is not an option of dropdown ${id}`);
+    }
+    return this.setSdtText(id, match ? match.display : value);
+  }
+
+  /** Remove a content control, UNWRAPPING it: strip its id from every member run
+   *  (inline) and body block (block-level) path — so NESTED controls survive — and
+   *  delete its properties, keeping the "every path id has a props entry" invariant.
+   *  With `deleteContents: true` the wrapped content is deleted too. Inline controls
+   *  are handled in any story (body, cells, bands, notes); block-level controls are
+   *  handled at the TOP LEVEL of the body — a block-level control nested in a table
+   *  cell, band, or note throws (remove it by block id). */
+  removeSdt(id: string, options: { deleteContents?: boolean } = {}): this {
+    const props = getSdt(this._doc, id);
+    if (!props) throw new Error(`removeSdt: content control ${id} not found`);
+    const deleteContents = options.deleteContents ?? false;
+    const bodyIndex = new Map(this._doc.blocks.map((b, i) => [b.id, i] as const));
+
+    // Gather members: inline paragraphs (a run carries id) and block-level members.
+    const inlineParaIds: string[] = [];
+    const blockMembers: Block[] = [];
+    let unsupported: string | undefined;
+    walk(this._doc, (b, ctx) => {
+      if (b.sdtPath?.includes(id)) {
+        if (ctx.container === "body" && !ctx.cell && !ctx.note && bodyIndex.has(b.id)) blockMembers.push(b);
+        else unsupported ??= ctx.note ? "a note body" : ctx.cell ? "a table cell" : `the ${ctx.container} band`;
+      } else if (b.kind === "paragraph" && b.runs.some((r) => r.style.sdtPath?.includes(id))) {
+        inlineParaIds.push(b.id);
+      }
+    });
+    if (unsupported) {
+      throw new Error(`removeSdt: ${id} has a block-level member in ${unsupported}; not supported — remove it by block id`);
+    }
+
+    const ops: Op[] = [];
+    // Inline members: rewrite each paragraph's runs (strip id, or drop tagged runs).
+    for (const blockId of inlineParaIds) {
+      const para = getParagraphById(this._doc, blockId)!;
+      const runs = deleteContents
+        ? para.runs.filter((r) => !r.style.sdtPath?.includes(id))
+        : para.runs.map((r) => (r.style.sdtPath?.includes(id) ? stripRunSdt(r, id) : r));
+      ops.push({ type: "setRuns", blockId, runs });
+    }
+    // Block-level members (top-level body): remove, then re-insert stripped unless
+    // deleting content. Descending index so each original index stays valid.
+    for (const b of blockMembers.slice().sort((a, z) => bodyIndex.get(z.id)! - bodyIndex.get(a.id)!)) {
+      const index = bodyIndex.get(b.id)!;
+      ops.push({ type: "removeBlock", blockId: b.id });
+      if (!deleteContents) ops.push({ type: "insertBlock", index, block: stripBlockSdt(b, id), where: "body" });
+    }
+    ops.push({ type: "setSdtProps", id, props: null });
+    return this.commit(ops);
+  }
+
   /** Find the single paragraph holding the contiguous run span tagged with the
    *  inline control `id`, plus that span `[from, to)` and its base run style. */
   private locateInlineSdt(
@@ -295,4 +363,25 @@ function cloneInsertableStyle(style: ParaStyle): ParaStyle {
   const bag = clone as unknown as Record<string, unknown>;
   for (const key of NON_INHERITED_STYLE_KEYS) delete bag[key];
   return clone;
+}
+
+/** A run with control `id` removed from its inline sdt path (nesting preserved);
+ *  the marker is dropped entirely once the path becomes empty. */
+function stripRunSdt(run: Run, id: string): Run {
+  const path = stripSdtFromPath(run.style.sdtPath, id);
+  const style: CharStyle = { ...run.style };
+  if (path) style.sdtPath = path;
+  else delete style.sdtPath;
+  return { ...run, style };
+}
+
+/** A block with control `id` removed from its block-level sdt path (nesting
+ *  preserved); revision bumped so the layout/prepare caches invalidate. */
+function stripBlockSdt(block: Block, id: string): Block {
+  const path = stripSdtFromPath(block.sdtPath, id);
+  const next = { ...block, revision: block.revision + 1 } as Block;
+  const bag = next as { sdtPath?: string[] };
+  if (path) bag.sdtPath = path;
+  else delete bag.sdtPath;
+  return next;
 }

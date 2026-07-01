@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **SDT value select + unwrap (`@cw/shared` + `@forevka/wordcanvas/query`).** Rounds out the content-control edit
+  surface: `getSdtValue(doc, id)` reads a control's value in the shape its `type` implies (`text`, plus `checked`
+  for checkboxes and the resolved `selected` value for dropDown/comboBox); `DocumentEditor.setSdtValue(id, value)`
+  selects a dropDown/comboBox option (by listItem value then display; comboBox allows free text; dropDown requires
+  a listed option); and `DocumentEditor.removeSdt(id, { deleteContents? })` removes a control by **unwrapping** it —
+  stripping its id from every member run and body block path so **nested controls survive**, then deleting its
+  props (keeping the "every path id has a props entry" invariant), optionally deleting the wrapped content too.
 - **C# SDT (content control) query + edit parity (ClearScript bindings).** The templating surface now reaches
   .NET. Query: `WordDocument.GetSdts()` returns the whole control forest flattened — each `SdtInfo` carries its
   type/tag/alias/checked/placeholder, its nesting links (`ParentId`/`ChildIds`/`Path`/`Depth`), and the text it
