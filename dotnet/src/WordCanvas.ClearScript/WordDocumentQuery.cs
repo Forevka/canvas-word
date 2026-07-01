@@ -122,6 +122,44 @@ public sealed partial class WordDocument
         return (sdts ?? GetSdts()).Where(s => s.ParentId == id).ToList();
     }
 
+    /// <summary>The controls wrapping <paramref name="id"/>, outermost→innermost
+    /// (excluding <paramref name="id"/> itself). Pure over the flattened list.</summary>
+    public IReadOnlyList<SdtInfo> GetSdtAncestors(string id, IReadOnlyList<SdtInfo>? sdts = null)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        var all = sdts ?? GetSdts();
+        var self = all.FirstOrDefault(s => s.Id == id);
+        if (self is null) return Array.Empty<SdtInfo>();
+        var byId = all.ToDictionary(s => s.Id);
+        return self.Path
+            .Take(self.Path.Count - 1) // drop self (the last path entry)
+            .Where(byId.ContainsKey)
+            .Select(pid => byId[pid])
+            .ToList();
+    }
+
+    /// <summary>Every control nested anywhere below <paramref name="id"/> (depth-first,
+    /// pre-order). Pure over the flattened list.</summary>
+    public IReadOnlyList<SdtInfo> GetSdtDescendants(string id, IReadOnlyList<SdtInfo>? sdts = null)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        var all = sdts ?? GetSdts();
+        var byId = all.ToDictionary(s => s.Id);
+        var result = new List<SdtInfo>();
+        void Visit(string nid)
+        {
+            if (!byId.TryGetValue(nid, out var node)) return;
+            foreach (var childId in node.ChildIds)
+            {
+                if (!byId.TryGetValue(childId, out var child)) continue;
+                result.Add(child);
+                Visit(childId);
+            }
+        }
+        if (byId.ContainsKey(id)) Visit(id);
+        return result;
+    }
+
     // ---- marshalling --------------------------------------------------------
 
     private static ParagraphInfo ReadParagraph(ScriptObject p) => new(
