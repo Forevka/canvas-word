@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Page query + public `@forevka/wordcanvas/query` subpath.** A new package export exposes the document
+  query + edit API to embedders: the traversal/find helpers, `DocumentEditor`, section enumeration, and a
+  new layout-backed **`getPages`** / `pageOfBlock` — the answer to "what's on page N" (pages don't exist in
+  the model; `getPages` runs a layout pass and returns a serializable per-page map of placed block ids +
+  geometry, honoring `pageNumberStart`). Hand-written self-contained types ship in `types/query.d.ts`.
 - **Document edit facade `DocumentEditor` (`@cw/shared`).** A headless, ergonomic editing layer over the
   `applyOp` operation engine — the rough analog of mutating a .NET `WordprocessingDocument` and saving.
   Holds a mutable `doc` (every edit swaps in a new immutable value via structural sharing), translates
