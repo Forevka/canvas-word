@@ -15,8 +15,9 @@ import type * as Pub from "../types/query";
 
 /** Fails to compile unless `T` is exactly `true`. */
 type Assert<T extends true> = T;
-/** True when type `A` is assignable to type `B`. */
-type AssignableTo<A, B> = A extends B ? true : false;
+/** True when type `A` is assignable to type `B`. Tuple-wrapped so a union `A`/`B`
+ *  is compared as a whole instead of distributing to `boolean`. */
+type AssignableTo<A, B> = [A] extends [B] ? true : false;
 
 type RtEditor = InstanceType<typeof Rt.DocumentEditor>;
 type PubEditor = InstanceType<typeof Pub.DocumentEditor>;
@@ -42,7 +43,7 @@ export type QueryPublicSurfaceParity = [
   // A runtime DocumentEditor instance must satisfy the published instance surface.
   Assert<AssignableTo<RtEditor, PubEditor>>,
   // Shared value-type shapes.
-  Assert<AssignableTo<import("./layout/pages").PageInfo, Pub.PageInfo>>,
+  Assert<AssignableTo<Rt.PageInfo, Pub.PageInfo>>,
   Assert<AssignableTo<Pub.WalkOptions, Rt.WalkOptions>>,
   Assert<AssignableTo<Rt.ParagraphMatch, Pub.ParagraphMatch>>,
   Assert<AssignableTo<Pub.InsertParagraphOptions, Rt.InsertParagraphOptions>>,
