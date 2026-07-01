@@ -37,18 +37,20 @@ describe("C#↔JS bridge parity", () => {
     for (const name of props) expect(isGetter(name), `DocumentEditor.${name} getter missing`).toBe(true);
   });
 
-  it("every WordDocumentQuery Api call targets a wired JS bridge fn", () => {
-    const src = CS("WordDocumentQuery.cs");
-    const names = namesFrom(src, /_engine\.Api\.InvokeMethod\("(\w+)"/g);
-    // Bridge mappers are exported from queryBridge.ts; `layoutPages` is composed in
-    // entry.ts (async page layout). Both must also be wired onto the entry `api`.
+  it("every `_engine.Api` call (query + editor) targets a wired JS bridge fn", () => {
+    // Query methods and a few editor methods (e.g. newRegExp) drive the entry `api`.
+    const re = /_engine\.Api\.InvokeMethod\("(\w+)"/g;
+    const names = [...new Set([...namesFrom(CS("WordDocumentQuery.cs"), re), ...namesFrom(CS("WordDocumentEditor.cs"), re)])];
+    // Bridge mappers are exported from queryBridge.ts; a few helpers live directly
+    // on the entry `api`. Every name must have a JS impl AND be wired onto the api.
     const bridgeExports = new Set(Object.keys(bridge));
+    const entryLocal = new Set(["layoutPages", "newRegExp"]);
     const entrySrc = readSrc("./entry.ts");
 
     expect(names.length).toBeGreaterThan(0);
     for (const name of names) {
-      const hasImpl = bridgeExports.has(name) || name === "layoutPages";
-      expect(hasImpl, `no JS bridge fn named "${name}" (queryBridge export or layoutPages)`).toBe(true);
+      const hasImpl = bridgeExports.has(name) || entryLocal.has(name);
+      expect(hasImpl, `no JS bridge fn named "${name}" (queryBridge export or an entry-local helper)`).toBe(true);
       // Word-boundary match so a substring hit inside a comment/other identifier
       // can't count as "wired" — the name must appear as its own token.
       const wired = new RegExp(`\\b${name}\\b`).test(entrySrc);

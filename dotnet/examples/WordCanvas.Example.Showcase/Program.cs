@@ -456,13 +456,30 @@ if (plain is not null && check is not null && choice is not null)
     Console.WriteLine($"  after fill    : plain text=\"{plainAfter.Text}\" tag={plainAfter.Tag}, checkbox checked={checkAfter.Checked}, dropdown=\"{choiceAfter.Text}\"");
 }
 
+// ---- More query getters (fields / styles / bookmarks / notes / text) -------
+Console.WriteLine("More query:");
+Console.WriteLine($"  fields        : {re.GetFields().Count}, styles: {re.GetStyles().Count}, bookmarks: {re.GetBookmarks().Count}, footnotes: {re.GetFootnotes().Count}");
+var pos = re.PositionOfText("Showcase");
+Console.WriteLine($"  positionOf 'Showcase': {(pos is { } pp ? $"{Trunc(pp.BlockId)}@{pp.Offset}" : "not found")}");
+if (pos is { } p2)
+    Console.WriteLine($"  rangeText     : \"{Trunc(re.RangeText(p2.BlockId, p2.Offset, p2.BlockId, p2.Offset + 8))}\"");
+if (choice is not null) // reuse the dropdown SDT already fetched above
+{
+    var val = re.GetSdtValue(choice.Id);
+    Console.WriteLine($"  dropdown value: text=\"{val?.Text}\" selected={val?.Selected}");
+}
+Console.WriteLine($"  blockPath[0]  : container={re.GetBlockPath(paragraphs[0].Id)?.Container}"); // reuse `paragraphs`
+
 // ---- Ergonomic bulk / structural edits (find/replace, move, table) ---------
 var ergo = re.Edit();
 var firstBlock = re.GetParagraphs()[0].Id;
-ergo.ReplaceAllText("canvas-word", "CANVAS-WORD").MoveBlock(firstBlock, 2);
+ergo.ReplaceAllText("canvas-word", "CANVAS-WORD");          // literal
+var literalHits = ergo.ToDocument().FindText("CANVAS-WORD").Count;
+ergo.ReplaceAllText("CANVAS-\\w+", "cw", "g");              // regex overload → collapse to "cw"
+ergo.MoveBlock(firstBlock, 2);
 var ergoDoc = ergo.ToDocument();
 Console.WriteLine("Ergonomic edits:");
-Console.WriteLine($"  replaceAllText: 'canvas-word' → 'CANVAS-WORD' hits = {ergoDoc.FindText("CANVAS-WORD").Count}");
+Console.WriteLine($"  replaceAllText: literal hits={literalHits}, after regex 'cw' hits={ergoDoc.FindText("cw").Count}");
 Console.WriteLine($"  moveBlock     : first block moved away from the top = {ergoDoc.GetParagraphs()[0].Id != firstBlock}");
 
 Console.WriteLine($"Output written to: {outDir}");
