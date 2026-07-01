@@ -73,11 +73,15 @@ export type {
 // Re-export the core model types consumers need to name when using the API.
 export type {
   Block,
+  BookmarkRange,
   CharStyle,
   Document,
   DocPosition,
   EquationBlock,
+  FieldDef,
+  FieldSpec,
   ImageBlock,
+  NamedStyle,
   Paragraph,
   ParaStyle,
   Run,

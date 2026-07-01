@@ -446,7 +446,7 @@ describe("query: fields", () => {
   it("looks up by id / all / by name (case-insensitive)", () => {
     expect(getField(doc(), "f1")?.name).toBe("PAGE");
     expect(getField(doc(), "nope")).toBeUndefined();
-    expect(getFields(doc()).map((f) => f.id).sort()).toEqual(["f1", "f2"]);
+    expect(getFields(doc()).map((f) => f.id)).toEqual(["f1", "f2"]); // preserves doc.fields order
     expect(getFieldsByName(doc(), "page").map((f) => f.id)).toEqual(["f1"]);
   });
 
