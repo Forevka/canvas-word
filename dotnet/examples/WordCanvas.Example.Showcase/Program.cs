@@ -456,6 +456,21 @@ if (plain is not null && check is not null && choice is not null)
     Console.WriteLine($"  after fill    : plain text=\"{plainAfter.Text}\" tag={plainAfter.Tag}, checkbox checked={checkAfter.Checked}, dropdown=\"{choiceAfter.Text}\"");
 }
 
+// ---- More query getters (fields / styles / bookmarks / notes / text) -------
+Console.WriteLine("More query:");
+Console.WriteLine($"  fields        : {re.GetFields().Count}, styles: {re.GetStyles().Count}, bookmarks: {re.GetBookmarks().Count}, footnotes: {re.GetFootnotes().Count}");
+var pos = re.PositionOfText("Showcase");
+Console.WriteLine($"  positionOf 'Showcase': {(pos is { } pp ? $"{Trunc(pp.BlockId)}@{pp.Offset}" : "not found")}");
+if (pos is { } p2)
+    Console.WriteLine($"  rangeText     : \"{Trunc(re.RangeText(p2.BlockId, p2.Offset, p2.BlockId, p2.Offset + 8))}\"");
+var dropdown = re.GetSdts().FirstOrDefault(s => s.SdtType == "dropDown");
+if (dropdown is not null)
+{
+    var val = re.GetSdtValue(dropdown.Id);
+    Console.WriteLine($"  dropdown value: text=\"{val?.Text}\" selected={val?.Selected}");
+}
+Console.WriteLine($"  blockPath[0]  : container={re.GetBlockPath(re.GetParagraphs()[0].Id)?.Container}");
+
 // ---- Ergonomic bulk / structural edits (find/replace, move, table) ---------
 var ergo = re.Edit();
 var firstBlock = re.GetParagraphs()[0].Id;

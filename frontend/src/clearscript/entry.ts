@@ -30,7 +30,24 @@ import { recalcToc } from "../recalc/recalcToc";
 import { DocumentEditor, generateTocIntoDoc } from "@cw/shared";
 import type { Document, TocOptions } from "@cw/shared";
 import { getPages } from "../layout/pages";
-import { findText, mapPages, queryParagraphs, querySdts, querySections, type PageInfo as PageInfoDto } from "./queryBridge";
+import {
+  findText,
+  mapPages,
+  queryBlockPath,
+  queryBookmarks,
+  queryEndnotes,
+  queryFields,
+  queryFootnotes,
+  queryListItems,
+  queryParagraphs,
+  queryPositionOfText,
+  queryRangeText,
+  querySdts,
+  querySdtValue,
+  querySections,
+  queryStyles,
+  type PageInfo as PageInfoDto,
+} from "./queryBridge";
 import type { CustomFontPayload } from "../fonts/customRegistry";
 import type { CjkExportConfig } from "../export/pipeline";
 import type { ImageBytes } from "../export/types";
@@ -290,6 +307,16 @@ const api = {
   findText,
   querySections,
   querySdts,
+  querySdtValue,
+  queryFields,
+  queryBookmarks,
+  queryFootnotes,
+  queryEndnotes,
+  queryListItems,
+  queryStyles,
+  queryBlockPath,
+  queryPositionOfText,
+  queryRangeText,
   layoutPages,
   // Edit surface: open a stateful editor over a doc; the host's WordDocumentEditor
   // drives the returned instance's methods (setParagraphText, insertParagraph,

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **C# query getters — fields / bookmarks / notes / lists / styles / location / text (ClearScript bindings).**
+  Mirrors the TS read surface into .NET: `WordDocument.GetFields`/`GetField`/`GetFieldsByName`, `GetBookmarks`/
+  `GetBookmark`, `GetFootnotes`/`GetEndnotes`, `GetListItems(listId)` (resolved markers), `GetStyles`/`GetStyleById`,
+  `GetBlockPath(id)`, `PositionOfText(needle)`, `RangeText(startBlockId, startOffset, endBlockId, endOffset)`,
+  `GetSdtValue(id)`, and `IndexOnPage(blockId)`. Backed by new `queryBridge` mappers (`queryFields`/`queryBookmarks`/
+  … → flat DTO records); the C# showcase now prints field/style/bookmark/footnote counts and exercises
+  position/range/value/block-path.
 - **C# `WordDocumentEditor` completion — SDT value/unwrap + edit ergonomics (ClearScript bindings).** Mirrors the
   TS edit facade so the .NET write surface matches: `SetSdtValue` (dropDown/comboBox select), `RemoveSdt(id,
   deleteContents?)` (unwrap), and the ergonomic bulk/structural edits `ReplaceAllText`, `SetStyleByName`,

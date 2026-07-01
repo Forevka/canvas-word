@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
 import type { CharStyle, Document, Paragraph, ParaStyle, SectionProps, TableBlock } from "@cw/shared";
-import { findText, mapPages, queryParagraphs, querySdts, querySections } from "./queryBridge";
+import {
+  findText,
+  mapPages,
+  queryBlockPath,
+  queryBookmarks,
+  queryEndnotes,
+  queryFields,
+  queryFootnotes,
+  queryListItems,
+  queryParagraphs,
+  queryPositionOfText,
+  queryRangeText,
+  querySdts,
+  querySdtValue,
+  querySections,
+  queryStyles,
+} from "./queryBridge";
 import type { PageInfo as LayoutPageInfo } from "../layout/pages";
 
 const CHAR: CharStyle = { fontFamily: "Georgia", fontSizePx: 16, bold: false, italic: false, underline: false, strikethrough: false, color: "#000" };
@@ -94,6 +110,88 @@ describe("queryBridge.querySdts", () => {
 
   it("is empty when the document has no controls", () => {
     expect(querySdts({ section: section(), blocks: [para("p1", "plain")] })).toEqual([]);
+  });
+});
+
+describe("queryBridge — fields / bookmarks / notes / lists / styles / location / value", () => {
+  const numberList = (): import("@cw/shared").ListDefinition => ({
+    id: "L",
+    levels: Array.from({ length: 9 }, (_, i) => ({ format: "decimal" as const, text: `%${i + 1}.`, indentLeftPx: 0, hangingPx: 0, start: 1 })),
+  });
+
+  it("queryFields flattens field defs", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [para("p", "x")],
+      fields: { f1: { id: "f1", instruction: " PAGE ", name: "PAGE", kind: "builtin" } },
+    };
+    expect(queryFields(doc)).toEqual([{ id: "f1", name: "PAGE", kind: "builtin", instruction: " PAGE " }]);
+  });
+
+  it("queryBookmarks flattens ranges", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [para("p", "hello")],
+      bookmarks: { bm: { start: { blockId: "p", offset: 0 }, end: { blockId: "p", offset: 5 } } },
+    };
+    expect(queryBookmarks(doc)).toEqual([{ name: "bm", startBlockId: "p", startOffset: 0, endBlockId: "p", endOffset: 5 }]);
+  });
+
+  it("queryFootnotes / queryEndnotes flatten note stories to id + text", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [para("p", "body")],
+      footnotes: { fn1: [para("fp", "foot")] },
+      endnotes: { en1: [para("ep", "end")] },
+    };
+    expect(queryFootnotes(doc)).toEqual([{ id: "fn1", text: "foot" }]);
+    expect(queryEndnotes(doc)).toEqual([{ id: "en1", text: "end" }]);
+  });
+
+  it("queryListItems resolves markers with container", () => {
+    const li = (id: string, level: number): Paragraph => ({ ...para(id, id), style: { ...PARA, list: { listId: "L", level } } });
+    const doc: Document = { section: section(), blocks: [li("a", 0), li("b", 0)], lists: { L: numberList() } };
+    expect(queryListItems(doc, "L")).toEqual([
+      { paragraphId: "a", level: 0, marker: "1.", text: "a", container: "body" },
+      { paragraphId: "b", level: 0, marker: "2.", text: "b", container: "body" },
+    ]);
+  });
+
+  it("queryStyles flattens the stylesheet", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [para("p", "x")],
+      stylesheet: { defaultStyleId: "Normal", styles: [{ id: "H1", name: "Heading 1", type: "paragraph", char: {}, para: {} }] },
+    };
+    expect(queryStyles(doc)).toEqual([{ id: "H1", name: "Heading 1", styleType: "paragraph", basedOn: null }]);
+  });
+
+  it("queryBlockPath reports location (null for unknown)", () => {
+    const doc: Document = { section: section(), blocks: [para("p", "x"), table("t", para("cp", "in cell"))] };
+    expect(queryBlockPath(doc, "cp")).toEqual({ container: "body", tableId: "t", row: 0, col: 0, noteKind: null, noteId: null });
+    expect(queryBlockPath(doc, "p")).toEqual({ container: "body", tableId: null, row: -1, col: -1, noteKind: null, noteId: null });
+    expect(queryBlockPath(doc, "nope")).toBeNull();
+  });
+
+  it("queryPositionOfText finds the first offset (null if absent)", () => {
+    const doc: Document = { section: section(), blocks: [para("p", "hello world")] };
+    expect(queryPositionOfText(doc, "world")).toEqual({ blockId: "p", offset: 6 });
+    expect(queryPositionOfText(doc, "nope")).toBeNull();
+  });
+
+  it("queryRangeText slices across positions", () => {
+    const doc: Document = { section: section(), blocks: [para("a", "hello world"), para("b", "second")] };
+    expect(queryRangeText(doc, "a", 6, "b", 2)).toBe("world\nse");
+  });
+
+  it("querySdtValue returns the typed value (null if absent)", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [{ ...para("p", "One"), runs: [{ text: "One", style: { ...CHAR, sdtPath: ["c"] } }] }],
+      sdts: { c: { type: "dropDown", listItems: [{ display: "One", value: "1" }] } },
+    };
+    expect(querySdtValue(doc, "c")).toEqual({ sdtType: "dropDown", text: "One", checked: null, selected: "1" });
+    expect(querySdtValue(doc, "nope")).toBeNull();
   });
 });
 
