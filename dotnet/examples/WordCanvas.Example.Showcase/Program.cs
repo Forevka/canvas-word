@@ -416,6 +416,22 @@ foreach (var h in hits.Take(3))
     var pageNo = pages.FirstOrDefault(p => p.BlockIds.Contains(h.Id))?.Number;
     Console.WriteLine($"      [{h.Container}] {(pageNo is { } n ? $"p{n} " : "")}\"{Trunc(h.Text)}\"");
 }
+
+// ---- Edit the document in place (undo/redo), then round-trip --------------
+var firstId = paragraphs[0].Id;
+var editor = re.Edit()
+    .SetParagraphText(firstId, "EDITED HEADING")
+    .InsertParagraphAfter(firstId, "Inserted by the C# editor.");
+Console.WriteLine("Edit:");
+Console.WriteLine($"  after 2 edits : first=\"{editor.ToDocument().GetParagraphs()[0].Text}\", blocks={editor.ToDocument().BlockCount}, canUndo={editor.CanUndo}");
+editor.Undo(); // undo the insert
+editor.Undo(); // undo the text change
+Console.WriteLine($"  after 2 undos : first=\"{editor.ToDocument().GetParagraphs()[0].Text}\", blocks={editor.ToDocument().BlockCount}, canRedo={editor.CanRedo}");
+editor.Redo(); // redo the text change
+var editedDocx = editor.ToDocument().ExportDocx();
+var reEdited = engine.ImportDocx(editedDocx);
+Console.WriteLine($"  round-trip    : re-imported edited docx → find 'EDITED HEADING' = {reEdited.FindText("EDITED HEADING").Count}");
+
 Console.WriteLine($"Output written to: {outDir}");
 
 static string Trunc(string s) => s.Length <= 60 ? s : s[..57] + "...";

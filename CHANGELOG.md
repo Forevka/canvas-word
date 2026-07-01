@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **C# in-place edit surface `WordDocumentEditor` (ClearScript bindings).** `WordDocument.Edit()` opens a
+  stateful editor over a JS `DocumentEditor` in V8 (the write half of WordprocessingDocument-style access):
+  `SetParagraphText`, `InsertText`/`DeleteText`/`ReplaceText`, `RemoveBlock`, `InsertParagraphAfter`/
+  `InsertParagraphBefore`, and `Undo`/`Redo`/`CanUndo`/`CanRedo`. `ToDocument()` returns a handle over the
+  edited model (preserving embedded image bytes) to query or export. The C# showcase now edits, undoes,
+  redoes, and round-trips a change through docx.
 - **C# read-only query surface on `WordDocument` (ClearScript bindings).** An imported or built document
   can now be inspected from .NET — the read half of WordprocessingDocument-style access: `GetParagraphs()`
   (every paragraph with its container/table-cell/note location, style name, outline level), `FindText(needle)`,
