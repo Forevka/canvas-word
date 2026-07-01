@@ -30,8 +30,10 @@ export interface PageInfo {
 }
 
 export interface GetPagesOptions {
-  /** Custom-font registry to make active for the layout pass (see createLayoutEngine). */
-  fontRegistry?: Parameters<typeof createLayoutEngine>[0];
+  /** Custom-font registry to make active for the layout pass (see createLayoutEngine).
+   *  Opaque to public consumers (the registry type is not part of the published
+   *  model surface); pass the value the editor/export path hands you. */
+  fontRegistry?: unknown;
   /** Per-engine CJK/script fallback + locale (see createLayoutEngine). */
   engineOptions?: Parameters<typeof createLayoutEngine>[1];
 }
@@ -40,7 +42,7 @@ export interface GetPagesOptions {
  *  "what's on page 8–9". Page numbers can shift after edits, so re-run this after
  *  mutating the document. */
 export function getPages(doc: Document, options: GetPagesOptions = {}): PageInfo[] {
-  const engine = createLayoutEngine(options.fontRegistry, options.engineOptions);
+  const engine = createLayoutEngine(options.fontRegistry as Parameters<typeof createLayoutEngine>[0], options.engineOptions);
   const tree = engine.layout(doc);
   return tree.pages.map((page) => {
     const seen = new Set<string>();
