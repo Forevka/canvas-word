@@ -215,13 +215,13 @@ function walkBlocks(nodes: XmlNode[], out: IRBlock[], ctx: ParseCtx): void {
         const idAttr = attr(node, "w:id");
         if (name) {
           ctx.pendingBookmarks.push(name);
-          if (idAttr) ctx.pendingMarkers.push({ id: idAttr, name, kind: "start", offset: 0 });
+          if (idAttr) ctx.pendingMarkers.push({ id: idAttr, name, kind: "start", offset: 0, inlineIndex: 0 });
         }
         break;
       }
       case "w:bookmarkEnd": {
         const idAttr = attr(node, "w:id");
-        if (idAttr) ctx.pendingMarkers.push({ id: idAttr, kind: "end", offset: 0 });
+        if (idAttr) ctx.pendingMarkers.push({ id: idAttr, kind: "end", offset: 0, inlineIndex: 0 });
         break;
       }
       case "m:oMathPara": {
@@ -388,13 +388,13 @@ function walkInlines(nodes: XmlNode[], out: IRInline[], ctx: ParseCtx, field: Fi
         const idAttr = attr(node, "w:id");
         if (name && ctx.currentBookmarks) ctx.currentBookmarks.push(name);
         if (name && idAttr && ctx.currentMarkers) {
-          ctx.currentMarkers.push({ id: idAttr, name, kind: "start", offset: inlineOffset(out) });
+          ctx.currentMarkers.push({ id: idAttr, name, kind: "start", offset: inlineOffset(out), inlineIndex: out.length });
         }
         break;
       }
       case "w:bookmarkEnd": {
         const idAttr = attr(node, "w:id");
-        if (idAttr && ctx.currentMarkers) ctx.currentMarkers.push({ id: idAttr, kind: "end", offset: inlineOffset(out) });
+        if (idAttr && ctx.currentMarkers) ctx.currentMarkers.push({ id: idAttr, kind: "end", offset: inlineOffset(out), inlineIndex: out.length });
         break;
       }
       case "m:oMath": {

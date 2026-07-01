@@ -84,4 +84,43 @@ describe("inline bookmark span survives repeated open → save", () => {
     const r2 = await roundtrip(r1);
     expect(coveredText(r2, "mark")).toBe("keep this"); // did not grow to the run end
   }, 60_000);
+
+  it("keeps a bookmark boundary on the correct side of an adjacent footnote reference", async () => {
+    // A footnote reference is 0-width in the import IR but paints its number ("1")
+    // in the model. A bookmark that STARTS immediately after the reference must
+    // begin after that number; one that ENDS immediately before it must stop
+    // before it. Offsets alone can't tell the two apart (both share the ref's
+    // offset) — XML order does. Here: "note<fnRef>[start]body[end]", so the
+    // bookmark must cover exactly "body", not "1body".
+    const CHAR: CharStyle = {
+      fontFamily: "Times New Roman", fontSizePx: 16, bold: false, italic: false,
+      underline: false, strikethrough: false, color: "#000",
+    };
+    const PARA: ParaStyle = {
+      align: "left", lineHeight: 1.5, spaceBeforePx: 0, spaceAfterPx: 8,
+      indentFirstLinePx: 0, indentLeftPx: 0,
+    };
+    // Model: "note" + footnote ref "1" + "body". Bookmark covers "body" (the ref's
+    // number sits at offset 4, so "body" is offsets 5..9).
+    const doc: Document = {
+      section: { pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } },
+      blocks: [{
+        kind: "paragraph", id: "p0", revision: 0, style: PARA,
+        runs: [
+          { text: "note", style: CHAR },
+          { text: "1", style: { ...CHAR, footnoteRef: "fn1", verticalAlign: "super" } },
+          { text: "body", style: CHAR },
+        ],
+      }],
+      footnotes: { fn1: [{ kind: "paragraph", id: "fnp", revision: 0, style: PARA, runs: [{ text: "the note", style: CHAR }] }] },
+      bookmarks: { mark: { start: { blockId: "p0", offset: 5 }, end: { blockId: "p0", offset: 9 } } },
+    };
+    expect(coveredText(doc, "mark")).toBe("body");
+
+    const r1 = await roundtrip(doc);
+    expect(coveredText(r1, "mark")).toBe("body"); // start not dragged before the "1"
+
+    const r2 = await roundtrip(r1);
+    expect(coveredText(r2, "mark")).toBe("body");
+  }, 60_000);
 });

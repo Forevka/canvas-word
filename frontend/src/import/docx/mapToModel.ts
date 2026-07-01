@@ -675,31 +675,28 @@ export function createMapper(
       // Marker offsets were recorded in IR-inline coordinates, where a few inlines
       // occupy a different width than in the final model: a footnote/endnote
       // reference is an empty (0-width) IR run but paints its number in the model,
-      // and an inline equation is 0-width in the IR but a single object char. Walk
-      // the first paragraph's inlines to build the IR→model offset shift so a
-      // marker sitting AFTER such an inline lands on the right character instead of
-      // drifting one (or more) chars early. (footnoteNumber/endnoteNumber were
-      // already assigned during the run walk above, so re-reading them here is a
-      // cache hit — it does not bump the counter.)
-      const shifts: { at: number; delta: number }[] = [];
-      let irPos = 0;
+      // and an inline equation is 0-width in the IR but a single object char. Build
+      // the cumulative IR→model width shift indexed BY INLINE POSITION so each
+      // marker is shifted past exactly the zero-width inlines that precede it in XML
+      // order — a marker sitting just before such an inline (same offset) stays put
+      // while one just after it advances past the rendered char. shiftByIndex[k] is
+      // the total expansion among the first k inlines. (footnoteNumber/endnoteNumber
+      // were already assigned during the run walk above, so re-reading them here is
+      // a cache hit — it does not bump the counter.)
+      const shiftByIndex: number[] = [0];
       for (const inline of ir.inlines) {
-        if (inline.kind === "break" || inline.kind === "image") break; // first paragraph only
+        let delta = 0;
         if (inline.kind === "run") {
-          if (inline.props.footnoteId !== undefined) shifts.push({ at: irPos, delta: footnoteNumber(inline.props.footnoteId).length });
-          else if (inline.props.endnoteId !== undefined) shifts.push({ at: irPos, delta: endnoteNumber(inline.props.endnoteId).length });
-          else irPos += inline.text.length;
+          if (inline.props.footnoteId !== undefined) delta = footnoteNumber(inline.props.footnoteId).length;
+          else if (inline.props.endnoteId !== undefined) delta = endnoteNumber(inline.props.endnoteId).length;
         } else if (inline.kind === "mathInline") {
-          shifts.push({ at: irPos, delta: 1 }); // U+FFFC object-replacement char
+          delta = 1; // U+FFFC object-replacement char
         }
+        shiftByIndex.push(shiftByIndex[shiftByIndex.length - 1]! + delta);
       }
-      const toModel = (o: number): number => {
-        let add = 0;
-        for (const s of shifts) if (s.at < o) add += s.delta;
-        return o + add;
-      };
+      const shiftFor = (idx: number | undefined): number => shiftByIndex[Math.min(idx ?? 0, ir.inlines.length)]!;
       for (const m of ir.bookmarkMarkers) {
-        const pos: DocPosition = { blockId: home.id, offset: Math.min(toModel(m.offset), homeLen) };
+        const pos: DocPosition = { blockId: home.id, offset: Math.min(m.offset + shiftFor(m.inlineIndex), homeLen) };
         if (m.kind === "start" && m.name) bookmarkStarts.set(m.id, { name: m.name, pos });
         else if (m.kind === "end") bookmarkEnds.set(m.id, pos);
       }

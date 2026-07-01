@@ -12,7 +12,7 @@
 // pin a structural fingerprint so a regression that drops/duplicates content is
 // caught with a legible diff rather than a giant object mismatch.
 //
-// This caught two real defects (see defaultDocRoundtrip.bookmark.test.ts): an
+// This caught two real defects (see docx/bookmarkRoundtrip.test.ts): an
 // inline bookmark whose end drifted 65→89 chars across saves (writer snapped a
 // mid-run marker to the run boundary) and a 1-char offset shift from a footnote
 // reference (importer counted the reference as 0-width while the model paints its
