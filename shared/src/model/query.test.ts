@@ -35,6 +35,8 @@ import {
   getStyles,
   getStyleById,
   blockPath,
+  rangeText,
+  positionOfText,
 } from "./query";
 import type { Run } from "./document";
 import { numberListDefinition } from "./lists";
@@ -527,5 +529,31 @@ describe("query: blockPath", () => {
     expect(blockPath(doc, "h1")).toEqual({ container: "header" });
     expect(blockPath(doc, "fnp")).toEqual({ container: "body", note: { kind: "footnote", id: "fn1" } });
     expect(blockPath(doc, "nope")).toBeUndefined();
+  });
+});
+
+describe("query: rangeText", () => {
+  const sel = (aId: string, aOff: number, fId: string, fOff: number) => ({ anchor: { blockId: aId, offset: aOff }, focus: { blockId: fId, offset: fOff } });
+  const doc = (): Document => ({ section: section(), blocks: [para("p1", "hello world"), para("p2", "second"), para("p3", "third")] });
+
+  it("slices within a single block (order-independent)", () => {
+    expect(rangeText(doc(), sel("p1", 0, "p1", 5))).toBe("hello");
+    expect(rangeText(doc(), sel("p1", 5, "p1", 0))).toBe("hello"); // reversed → same
+  });
+
+  it("spans multiple top-level body blocks, joined by newlines", () => {
+    expect(rangeText(doc(), sel("p1", 6, "p3", 2))).toBe("world\nsecond\nth");
+  });
+
+  it("returns empty string when an endpoint block is unknown", () => {
+    expect(rangeText(doc(), sel("p1", 0, "nope", 2))).toBe("");
+  });
+});
+
+describe("query: positionOfText", () => {
+  it("returns the first DocPosition of a substring in reading order", () => {
+    expect(positionOfText(richDoc(), "world")).toEqual({ blockId: "p1", offset: 6 });
+    expect(positionOfText(richDoc(), "inside")).toEqual({ blockId: "cellPara", offset: 0 });
+    expect(positionOfText(richDoc(), "nowhere")).toBeUndefined();
   });
 });

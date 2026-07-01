@@ -77,3 +77,16 @@ export function pageOfBlock(doc: Document, blockId: string, options?: GetPagesOp
   }
   return null;
 }
+
+/** Where a top-level block sits within a laid-out page map (from `getPages`): its
+ *  page `index` and the 0-based `order` of the block among that page's `blockIds`.
+ *  Null if the block isn't placed. Pure over the page map — no layout pass — so it
+ *  pairs with a single `getPages` call. A block split across a page boundary
+ *  reports its FIRST page. */
+export function indexOnPage(pages: PageInfo[], blockId: string): { index: number; order: number } | null {
+  for (const page of pages) {
+    const order = page.blockIds.indexOf(blockId);
+    if (order >= 0) return { index: page.index, order };
+  }
+  return null;
+}

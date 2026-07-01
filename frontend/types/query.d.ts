@@ -12,6 +12,8 @@ import type {
   BookmarkRange,
   CharStyle,
   Document,
+  DocPosition,
+  DocSelection,
   FieldDef,
   ImageBlock,
   NamedStyle,
@@ -28,6 +30,7 @@ export type {
   CharStyle,
   Document,
   DocPosition,
+  DocSelection,
   EquationBlock,
   FieldDef,
   FieldSpec,
@@ -212,6 +215,17 @@ export declare function getStyleById(doc: Document, styleId: string): NamedStyle
 export declare function blockPath(doc: Document, id: string, options?: WalkOptions): BlockContext | undefined;
 
 // ---------------------------------------------------------------------------
+// Range / text addressing
+
+/** The text a selection covers. A collapsed/single-block selection slices that
+ *  block's text (any story); a multi-block selection is supported across top-level
+ *  body blocks (joined by newlines), else "". Endpoints are ordered automatically. */
+export declare function rangeText(doc: Document, selection: DocSelection): string;
+/** The first `DocPosition` where `needle` appears in a paragraph's text (reading
+ *  order), or undefined — target an edit without computing offsets by hand. */
+export declare function positionOfText(doc: Document, needle: string, options?: WalkOptions): DocPosition | undefined;
+
+// ---------------------------------------------------------------------------
 // Edit facade
 
 export interface InsertParagraphOptions {
@@ -291,3 +305,6 @@ export interface GetPagesOptions {
 export declare function getPages(doc: Document, options?: GetPagesOptions): PageInfo[];
 /** The displayed page number a top-level block first appears on, or null. */
 export declare function pageOfBlock(doc: Document, blockId: string, options?: GetPagesOptions): number | null;
+/** Where a top-level block sits in a `getPages` map: its page `index` and 0-based
+ *  `order` among that page's block ids, or null. Pure over the page map (no layout). */
+export declare function indexOnPage(pages: PageInfo[], blockId: string): { index: number; order: number } | null;

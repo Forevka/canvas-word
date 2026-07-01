@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Range / text addressing helpers (`@cw/shared` + `@forevka/wordcanvas/query`).** `rangeText(doc, selection)`
+  returns the text a selection covers (a single-block range slices that block; a multi-block range spans top-level
+  body blocks joined by newlines; endpoints auto-ordered), `positionOfText(doc, needle)` returns the first
+  `DocPosition` of a substring in reading order (target an edit without hand-computing offsets), and the
+  layout-backed `indexOnPage(pages, blockId)` reports a block's page index + order within a `getPages` map.
 - **Document query getters: fields, bookmarks, notes, list items, styles, block location (`@cw/shared` + `@forevka/wordcanvas/query`).**
   Rounds out the read surface beyond paragraphs/tables/sections: `getField`/`getFields`/`getFieldsByName`/`getFieldBlocks`
   (custom + built-in fields and their result region), `getBookmark`/`getBookmarks`, `getFootnotes`/`getEndnotes`

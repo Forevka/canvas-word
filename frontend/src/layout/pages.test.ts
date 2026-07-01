@@ -5,7 +5,7 @@ import "./test-canvas-setup";
 
 import { describe, expect, it } from "vitest";
 import type { CharStyle, Document, Paragraph, ParaStyle, SectionProps } from "@cw/shared";
-import { getPages, pageOfBlock } from "./pages";
+import { getPages, indexOnPage, pageOfBlock } from "./pages";
 
 const CHAR: CharStyle = { fontFamily: "Georgia, serif", fontSizePx: 16, bold: false, italic: false, underline: false, strikethrough: false, color: "#000000" };
 const PARA: ParaStyle = { align: "left", lineHeight: 1, spaceBeforePx: 0, spaceAfterPx: 0, indentFirstLinePx: 0, indentLeftPx: 0 };
@@ -58,5 +58,27 @@ describe("pageOfBlock", () => {
 
   it("returns null for a block that is not placed", () => {
     expect(pageOfBlock(threePageDoc(), "missing")).toBeNull();
+  });
+});
+
+describe("indexOnPage", () => {
+  it("reports a block's page index and order among that page's blocks", () => {
+    const pages = getPages(threePageDoc());
+    expect(indexOnPage(pages, "a")).toEqual({ index: 0, order: 0 });
+    expect(indexOnPage(pages, "c")).toEqual({ index: 2, order: 0 });
+  });
+
+  it("finds the order for multiple blocks on the same page", () => {
+    // Two blocks share page 1 (no break between a2 and a1).
+    const pages = getPages({
+      section: SECTION,
+      blocks: [para("a1", "one"), para("a2", "two"), para("b", "next", { pageBreakBefore: true })],
+    });
+    expect(indexOnPage(pages, "a2")).toEqual({ index: 0, order: 1 });
+    expect(indexOnPage(pages, "b")).toEqual({ index: 1, order: 0 });
+  });
+
+  it("returns null for an unplaced block", () => {
+    expect(indexOnPage(getPages(threePageDoc()), "missing")).toBeNull();
   });
 });
