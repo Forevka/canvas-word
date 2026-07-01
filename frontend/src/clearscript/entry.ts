@@ -27,7 +27,7 @@ import { installMeasureHost } from "../export/shared/measureHost";
 import { generateTocInDocx } from "../recalc/generateTocDocx";
 import { patchTocFromLayout } from "../recalc/patchTocDocx";
 import { recalcToc } from "../recalc/recalcToc";
-import { generateTocIntoDoc } from "@cw/shared";
+import { DocumentEditor, generateTocIntoDoc } from "@cw/shared";
 import type { Document, TocOptions } from "@cw/shared";
 import { getPages } from "../layout/pages";
 import { findText, mapPages, queryParagraphs, querySections, type PageInfo as PageInfoDto } from "./queryBridge";
@@ -290,6 +290,10 @@ const api = {
   findText,
   querySections,
   layoutPages,
+  // Edit surface: open a stateful editor over a doc; the host's WordDocumentEditor
+  // drives the returned instance's methods (setParagraphText, insertParagraph,
+  // undo/redo, …) and reads its `.doc` back for export/query.
+  openEditor: (doc: Document): DocumentEditor => new DocumentEditor(doc),
   // Block counting helper (round-trip oracle for the smoke test / benchmark).
   countBlocks,
 };

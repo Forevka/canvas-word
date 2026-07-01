@@ -54,6 +54,12 @@ public sealed partial class WordDocument
     /// document and return the updated handle. See <see cref="WordCanvasEngine.UpdateFields"/>.</summary>
     public WordDocument UpdateFields(Builder.TocOptions? options = null) => _engine.UpdateFields(this, options);
 
+    /// <summary>Open a stateful editor over this document for programmatic in-place
+    /// edits (with undo/redo). Call <see cref="WordDocumentEditor.ToDocument"/> to get
+    /// a handle over the edited model to query or export.</summary>
+    public WordDocumentEditor Edit() =>
+        new(_engine, this, (ScriptObject)_engine.Api.InvokeMethod("openEditor", Doc));
+
     private static IReadOnlyList<WordWarning> ReadWarnings(ScriptObject? arr)
     {
         if (arr is null) return Array.Empty<WordWarning>();
