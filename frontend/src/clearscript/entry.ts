@@ -322,6 +322,9 @@ const api = {
   // drives the returned instance's methods (setParagraphText, insertParagraph,
   // undo/redo, …) and reads its `.doc` back for export/query.
   openEditor: (doc: Document): DocumentEditor => new DocumentEditor(doc),
+  // Construct a real JS RegExp from a host (C#) source+flags — lets the C#
+  // ReplaceAllText expose the JS `pattern: string | RegExp` overload.
+  newRegExp: (source: string, flags: string): RegExp => new RegExp(source, flags),
   // Block counting helper (round-trip oracle for the smoke test / benchmark).
   countBlocks,
 };

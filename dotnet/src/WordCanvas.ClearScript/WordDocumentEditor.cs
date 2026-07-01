@@ -136,6 +136,17 @@ public sealed class WordDocumentEditor
         return this;
     }
 
+    /// <summary>Find/replace by REGEX — <paramref name="pattern"/> + <paramref name="flags"/>
+    /// (e.g. "gi") are compiled into a JS RegExp and applied per run (pass "g" to
+    /// replace all). One undoable step; run styling is preserved.</summary>
+    public WordDocumentEditor ReplaceAllText(string pattern, string replacement, string flags)
+    {
+        ArgumentNullException.ThrowIfNull(flags);
+        var regex = _engine.Api.InvokeMethod("newRegExp", NonNull(pattern), flags);
+        _editor.InvokeMethod("replaceAllText", regex, NonNull(replacement));
+        return this;
+    }
+
     /// <summary>Apply a named paragraph style by its human name — resolves it to a
     /// styleId, bakes the resolved formatting, and sets the reference. Throws JS-side
     /// if the style is unknown.</summary>

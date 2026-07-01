@@ -474,10 +474,13 @@ Console.WriteLine($"  blockPath[0]  : container={re.GetBlockPath(re.GetParagraph
 // ---- Ergonomic bulk / structural edits (find/replace, move, table) ---------
 var ergo = re.Edit();
 var firstBlock = re.GetParagraphs()[0].Id;
-ergo.ReplaceAllText("canvas-word", "CANVAS-WORD").MoveBlock(firstBlock, 2);
+ergo.ReplaceAllText("canvas-word", "CANVAS-WORD");          // literal
+var literalHits = ergo.ToDocument().FindText("CANVAS-WORD").Count;
+ergo.ReplaceAllText("CANVAS-\\w+", "cw", "g");              // regex overload → collapse to "cw"
+ergo.MoveBlock(firstBlock, 2);
 var ergoDoc = ergo.ToDocument();
 Console.WriteLine("Ergonomic edits:");
-Console.WriteLine($"  replaceAllText: 'canvas-word' → 'CANVAS-WORD' hits = {ergoDoc.FindText("CANVAS-WORD").Count}");
+Console.WriteLine($"  replaceAllText: literal hits={literalHits}, after regex 'cw' hits={ergoDoc.FindText("cw").Count}");
 Console.WriteLine($"  moveBlock     : first block moved away from the top = {ergoDoc.GetParagraphs()[0].Id != firstBlock}");
 
 Console.WriteLine($"Output written to: {outDir}");
