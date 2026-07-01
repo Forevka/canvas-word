@@ -323,8 +323,13 @@ const api = {
   // undo/redo, …) and reads its `.doc` back for export/query.
   openEditor: (doc: Document): DocumentEditor => new DocumentEditor(doc),
   // Construct a real JS RegExp from a host (C#) source+flags — lets the C#
-  // ReplaceAllText expose the JS `pattern: string | RegExp` overload.
-  newRegExp: (source: string, flags: string): RegExp => new RegExp(source, flags),
+  // ReplaceAllText expose the JS `pattern: string | RegExp` overload. The pattern
+  // is TRUSTED developer input (a .NET binding caller, not an end user); a modest
+  // length cap is cheap defense-in-depth against a runaway/catastrophic source.
+  newRegExp: (source: string, flags: string): RegExp => {
+    if (source.length > 1000) throw new Error("newRegExp: pattern too long (max 1000 chars)");
+    return new RegExp(source, flags);
+  },
   // Block counting helper (round-trip oracle for the smoke test / benchmark).
   countBlocks,
 };

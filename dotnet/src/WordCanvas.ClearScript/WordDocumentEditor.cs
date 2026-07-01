@@ -142,8 +142,17 @@ public sealed class WordDocumentEditor
     public WordDocumentEditor ReplaceAllText(string pattern, string replacement, string flags)
     {
         ArgumentNullException.ThrowIfNull(flags);
+        // The transient RegExp is a ScriptObject holding V8 state — dispose it once
+        // replaceAllText has consumed it (it isn't retained JS-side).
         var regex = _engine.Api.InvokeMethod("newRegExp", NonNull(pattern), flags);
-        _editor.InvokeMethod("replaceAllText", regex, NonNull(replacement));
+        try
+        {
+            _editor.InvokeMethod("replaceAllText", regex, NonNull(replacement));
+        }
+        finally
+        {
+            (regex as IDisposable)?.Dispose();
+        }
         return this;
     }
 

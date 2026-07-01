@@ -463,13 +463,12 @@ var pos = re.PositionOfText("Showcase");
 Console.WriteLine($"  positionOf 'Showcase': {(pos is { } pp ? $"{Trunc(pp.BlockId)}@{pp.Offset}" : "not found")}");
 if (pos is { } p2)
     Console.WriteLine($"  rangeText     : \"{Trunc(re.RangeText(p2.BlockId, p2.Offset, p2.BlockId, p2.Offset + 8))}\"");
-var dropdown = re.GetSdts().FirstOrDefault(s => s.SdtType == "dropDown");
-if (dropdown is not null)
+if (choice is not null) // reuse the dropdown SDT already fetched above
 {
-    var val = re.GetSdtValue(dropdown.Id);
+    var val = re.GetSdtValue(choice.Id);
     Console.WriteLine($"  dropdown value: text=\"{val?.Text}\" selected={val?.Selected}");
 }
-Console.WriteLine($"  blockPath[0]  : container={re.GetBlockPath(re.GetParagraphs()[0].Id)?.Container}");
+Console.WriteLine($"  blockPath[0]  : container={re.GetBlockPath(paragraphs[0].Id)?.Container}"); // reuse `paragraphs`
 
 // ---- Ergonomic bulk / structural edits (find/replace, move, table) ---------
 var ergo = re.Edit();
