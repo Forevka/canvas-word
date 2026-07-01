@@ -341,6 +341,13 @@ export interface BookmarkMarker {
   name?: string;
   kind: "start" | "end";
   offset: number;
+  /** Count of paragraph inlines emitted BEFORE this marker (its position in XML
+   *  order). Lets mapToModel shift the offset past only the zero-width inlines
+   *  (footnote/endnote references, inline equations) that genuinely precede the
+   *  marker — a distinction the offset alone can't make, since a marker sitting
+   *  just before such a 0-width inline shares its offset with one sitting just
+   *  after. Block-level markers (start of the next paragraph) are 0. */
+  inlineIndex?: number;
 }
 
 export interface IRParagraph {

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Inline bookmarks no longer drift or grow across a `.docx` open → save → open cycle.** A bookmark
+  whose boundary fell in the middle of a run used to snap to the run's *end* on export (the writer
+  only emitted bookmark markers between runs). Once import coalesced the bookmarked run with an
+  adjacent same-style run, the bookmark expanded to swallow it — its span grew on every save until it
+  hit the run boundary. The writer now splits a run at an interior bookmark offset so the marker lands
+  on the exact character. Separately, the importer counted a footnote/endnote reference as zero-width
+  when resolving bookmark offsets, but the model paints the reference's number (1+ chars), so a
+  bookmark positioned after a note reference drifted one character early; the importer now shifts
+  bookmark offsets past note-reference and inline-equation expansions. The default showcase document
+  now survives repeated export→open→export as a stable fixed point.
+
 ## [0.8.0] — 2026-07-01
 
 ### Performance
