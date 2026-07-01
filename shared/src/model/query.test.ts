@@ -37,6 +37,7 @@ import {
   blockPath,
   rangeText,
   positionOfText,
+  walkRuns,
 } from "./query";
 import type { Run } from "./document";
 import { numberListDefinition } from "./lists";
@@ -555,5 +556,49 @@ describe("query: positionOfText", () => {
     expect(positionOfText(richDoc(), "world")).toEqual({ blockId: "p1", offset: 6 });
     expect(positionOfText(richDoc(), "inside")).toEqual({ blockId: "cellPara", offset: 0 });
     expect(positionOfText(richDoc(), "nowhere")).toBeUndefined();
+  });
+});
+
+describe("query: walkRuns", () => {
+  it("visits every run with its paragraph, index, and full sdt chain", () => {
+    const doc: Document = {
+      section: section(),
+      blocks: [{ kind: "paragraph", id: "p", revision: 0, style: { ...PARA }, runs: [{ text: "a", style: CHAR }, { text: "b", style: { ...CHAR, sdtPath: ["inner"] } }], sdtPath: ["outer"] }],
+      sdts: { outer: { type: "richText" }, inner: { type: "plainText" } },
+    };
+    const seen: Array<{ text: string; block: string; i: number; chain: string[] }> = [];
+    walkRuns(doc, (run, ctx) => seen.push({ text: run.text, block: ctx.block.id, i: ctx.runIndex, chain: ctx.sdtChain }));
+    expect(seen).toEqual([
+      { text: "a", block: "p", i: 0, chain: ["outer"] }, // block ancestry only
+      { text: "b", block: "p", i: 1, chain: ["outer", "inner"] }, // block ++ inline
+    ]);
+  });
+
+  it("descends into cells and bands like walk", () => {
+    const texts: string[] = [];
+    walkRuns(richDoc(), (run) => texts.push(run.text));
+    expect(texts).toEqual(["hello world", "inside the cell", "goodbye world", "header text", "footnote body"]);
+  });
+});
+
+describe("query: nested-cell ancestry (cellPath)", () => {
+  // A table `outer` whose single cell contains a table `inner`.
+  const innerTable = table("inner", para("deep", "deep cell"));
+  const outer = (): TableBlock => ({ kind: "table", id: "outer", revision: 0, rows: [{ cells: [{ id: "outer-c0", blocks: [innerTable] }] }] });
+
+  it("reports the full cell ancestry only for a table-within-a-cell", () => {
+    const doc: Document = { section: section(), blocks: [outer()] };
+    expect(blockPath(doc, "deep")).toEqual({
+      container: "body",
+      cell: { tableId: "inner", row: 0, col: 0 }, // innermost, back-compat
+      cellPath: [
+        { tableId: "outer", row: 0, col: 0 },
+        { tableId: "inner", row: 0, col: 0 },
+      ],
+    });
+  });
+
+  it("keeps the simple shape (no cellPath) for a single-level cell", () => {
+    expect(blockPath(richDoc(), "cellPara")).toEqual({ container: "body", cell: { tableId: "t1", row: 0, col: 0 } });
   });
 });

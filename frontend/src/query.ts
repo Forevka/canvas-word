@@ -14,6 +14,7 @@
 export {
   // traversal / query
   walk,
+  walkRuns,
   textOf,
   getParagraphs,
   getTables,
@@ -61,6 +62,9 @@ export {
 export type {
   BlockContext,
   BlockVisitor,
+  CellRef,
+  RunContext,
+  RunVisitor,
   WalkOptions,
   ParagraphMatch,
   ResolvedSection,
