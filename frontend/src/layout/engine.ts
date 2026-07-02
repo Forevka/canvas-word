@@ -568,7 +568,9 @@ function layoutTabbedSegment(
   }
   pieces.push({ runs: cur, start: pieceStart });
 
-  const stops = (p.style.tabStops ?? []).slice().sort((a, b) => a.posPx - b.posPx);
+  // Cleared stops (issue #154) are removal markers, not real stops — drop them here;
+  // they exist only so export can re-emit the clear.
+  const stops = (p.style.tabStops ?? []).filter((t) => !t.cleared).slice().sort((a, b) => a.posPx - b.posPx);
   const baseStyle = segRuns.find((r) => r.text.length > 0)?.style ?? p.runs[0]?.style;
   const out: RawLine[] = [];
 

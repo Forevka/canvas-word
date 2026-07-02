@@ -129,4 +129,22 @@ describe("builder feature round-trip (.docx)", () => {
     expect(p[1]!.style.borders).toBeUndefined(); // clear survived
     expect(p[1]!.style.bordersCleared).toBe(true);
   });
+
+  it("preserves a cleared tab stop against a tabbed named style (issue #154)", async () => {
+    const doc = DocumentBuilder.create({ idSeed: "tab" })
+      .style({ id: "Tabbed", name: "Tabbed", type: "paragraph", char: {}, para: { tabStops: [{ posPx: 96 }] } })
+      .paragraph("keeps the tab").withStyle("Tabbed")
+      .paragraph("clears the tab").withStyle("Tabbed").tabStops([{ posPx: 96, cleared: true }])
+      .build();
+    const p0 = doc.blocks.filter((b): b is Extract<Block, { kind: "paragraph" }> => b.kind === "paragraph");
+    expect(p0[0]!.style.tabStops).toEqual([{ posPx: 96 }]);
+    expect(p0[1]!.style.tabStops).toEqual([{ posPx: 96, cleared: true }]);
+
+    const back = runImport((await runExport(doc, "docx")).bytes).doc;
+    const p = back.blocks.filter((b): b is Extract<Block, { kind: "paragraph" }> => b.kind === "paragraph");
+    expect((p[0]!.style.tabStops ?? []).some((t) => !t.cleared && Math.round(t.posPx) === 96)).toBe(true);
+    const cleared = p[1]!.style.tabStops ?? [];
+    expect(cleared.some((t) => t.cleared && Math.round(t.posPx) === 96)).toBe(true); // clear survived
+    expect(cleared.some((t) => !t.cleared && Math.round(t.posPx) === 96)).toBe(false);
+  });
 });

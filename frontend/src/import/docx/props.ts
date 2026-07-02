@@ -205,8 +205,10 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
     for (const t of els(tabs, "w:tab")) {
       const pos = numAttr(t, "w:pos");
       const tabVal = attr(t, "w:val");
-      // "clear" removes a stop; "bar" is a vertical rule, not a tab stop.
-      if (pos === undefined || tabVal === "clear" || tabVal === "bar") continue;
+      // "bar" is a vertical rule, not a tab stop. "clear" is PRESERVED (issue #154):
+      // it explicitly removes a tab an inherited paragraph style provides, so it must
+      // round-trip instead of being silently dropped (the style tab would reappear).
+      if (pos === undefined || tabVal === "bar") continue;
       const stop: { posTwips: number; val?: string; leader?: string } = { posTwips: pos };
       if (tabVal) stop.val = tabVal;
       const leader = attr(t, "w:leader");

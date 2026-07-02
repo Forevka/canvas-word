@@ -90,7 +90,7 @@ describe("tab stops (w:tabs)", () => {
     ]);
   });
 
-  it("sorts stops by position and skips clear/bar", () => {
+  it("sorts stops by position, preserves clear (issue #154), skips bar", () => {
     const r = importBody(
       tabsP(
         `<w:tab w:val="left" w:pos="2880"/><w:tab w:val="clear" w:pos="1440"/>` +
@@ -98,7 +98,11 @@ describe("tab stops (w:tabs)", () => {
         `<w:r><w:t>x</w:t></w:r>`,
       ),
     );
-    expect(para(r.doc.blocks[0]).style.tabStops!.map((s) => s.posPx)).toEqual([48, 192]);
+    const stops = para(r.doc.blocks[0]).style.tabStops!;
+    // bar@100 dropped; clear@1440 (96px) kept as a removal marker between the two live stops.
+    expect(stops.map((s) => s.posPx)).toEqual([48, 96, 192]);
+    expect(stops.find((s) => s.posPx === 96)!.cleared).toBe(true);
+    expect(stops.filter((s) => !s.cleared).map((s) => s.posPx)).toEqual([48, 192]);
   });
 
   it("preserves the tab character in run text", () => {

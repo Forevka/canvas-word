@@ -238,7 +238,7 @@ describe("decodeParaProps", () => {
     expect(decode(``).props.contextualSpacing).toBeUndefined();
   });
 
-  it("collects tab stops, dropping 'clear' and 'bar' entries", () => {
+  it("collects tab stops, preserving 'clear' (issue #154) but dropping 'bar'", () => {
     const p = decode(
       `<w:tabs>` +
         `<w:tab w:val="left" w:pos="720"/>` +
@@ -247,8 +247,11 @@ describe("decodeParaProps", () => {
         `<w:tab w:val="right" w:pos="2880" w:leader="dot"/>` +
         `</w:tabs>`,
     ).props;
+    // "clear" is kept as an explicit removal marker (round-trips); "bar" (a vertical
+    // rule, not a tab stop) is still dropped.
     expect(p.tabStops).toEqual([
       { posTwips: 720, val: "left" },
+      { posTwips: 1440, val: "clear" },
       { posTwips: 2880, val: "right", leader: "dot" },
     ]);
   });
