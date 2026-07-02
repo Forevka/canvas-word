@@ -1212,7 +1212,10 @@ function applyRunProps(style: Partial<CharStyle>, props: IRRunProps): void {
   }
   if (props.strikethrough !== undefined) style.strikethrough = props.strikethrough;
   if (props.color && props.color !== "auto") style.color = `#${props.color.toLowerCase()}`;
-  if (props.highlight) {
+  // Tri-state (issue #155): null = explicit "No Color" clear of an inherited char-style
+  // highlight → marker (omitting highlightColor); a name → resolved hex.
+  if (props.highlight === null) style.highlightCleared = true;
+  else if (props.highlight) {
     const hex = HIGHLIGHT_HEX[props.highlight];
     if (hex) style.highlightColor = hex;
   }

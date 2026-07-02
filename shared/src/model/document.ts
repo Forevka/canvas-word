@@ -45,6 +45,12 @@ export interface CharStyle {
   letterSpacingPx?: number;
   /** Background highlight (Word's text highlight). `| undefined` so patches can remove. */
   highlightColor?: string | undefined;
+  /** Explicit "no highlight" override (OOXML `<w:highlight w:val="none"/>`): the run's
+   *  character style carries a highlight and this run CLEARS it (issue #155). Distinct
+   *  from absent `highlightColor` (never set / inherit) so the clear re-emits `w:val="none"`
+   *  on export instead of the style's highlight returning. Ignored when `highlightColor`
+   *  is set. */
+  highlightCleared?: boolean | undefined;
   /** Sub/superscript: measured at 0.65× size, baseline-shifted at paint time. */
   verticalAlign?: "sub" | "super" | undefined;
   /** Hyperlink target; linked runs paint blue+underlined, Ctrl+click opens. */

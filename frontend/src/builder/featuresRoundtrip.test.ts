@@ -147,4 +147,20 @@ describe("builder feature round-trip (.docx)", () => {
     expect(cleared.some((t) => t.cleared && Math.round(t.posPx) === 96)).toBe(true); // clear survived
     expect(cleared.some((t) => !t.cleared && Math.round(t.posPx) === 96)).toBe(false);
   });
+
+  it("preserves a run highlight clear against a highlighted character style (issue #155)", async () => {
+    const doc = DocumentBuilder.create({ idSeed: "hl" })
+      .style({ id: "HL", name: "Marker", type: "character", char: { highlightColor: "#ffff00" }, para: {} })
+      .paragraph("").text("inherits", { charStyleId: "HL" })
+      .paragraph("").text("cleared", { charStyleId: "HL" }).clearHighlight()
+      .build();
+    const built = doc.blocks.filter((b): b is Extract<Block, { kind: "paragraph" }> => b.kind === "paragraph");
+    expect(built[1]!.runs[0]!.style.highlightCleared).toBe(true);
+
+    const back = runImport((await runExport(doc, "docx")).bytes).doc;
+    const p = back.blocks.filter((b): b is Extract<Block, { kind: "paragraph" }> => b.kind === "paragraph");
+    expect(p[0]!.runs[0]!.style.highlightColor).toBeDefined(); // inherits the style highlight
+    expect(p[1]!.runs[0]!.style.highlightColor).toBeUndefined(); // clear survived
+    expect(p[1]!.runs[0]!.style.highlightCleared).toBe(true);
+  });
 });

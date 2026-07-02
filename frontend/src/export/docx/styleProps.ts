@@ -82,8 +82,12 @@ export function runPropsXml(s: CharStyle): string {
   // style-cascade) all-caps/small-caps on re-import; undefined stays absent.
   if (s.caps !== undefined) children.push(el("w:caps", { "w:val": s.caps ? "1" : "0" }));
   if (s.smallCaps !== undefined) children.push(el("w:smallCaps", { "w:val": s.smallCaps ? "1" : "0" }));
-  if (s.strikethrough) children.push(el("w:strike", { "w:val": "1" }));
+  // Always emit an explicit on/off (like w:b/w:i above) so a strike CLEARED against a
+  // striking character style survives re-import instead of the style's strike returning
+  // via toggle XOR (issue #155); undefined stays absent.
+  children.push(el("w:strike", { "w:val": s.strikethrough ? "1" : "0" }));
   if (s.hidden) children.push(el("w:vanish", { "w:val": "1" })); // preserved hidden text
+
   children.push(el("w:color", { "w:val": hex(s.color) }));
   children.push(el("w:sz", { "w:val": pxToHalfPoints(s.fontSizePx) }));
   children.push(el("w:szCs", { "w:val": pxToHalfPoints(s.fontSizePx) }));
@@ -92,6 +96,9 @@ export function runPropsXml(s: CharStyle): string {
   if (s.highlightColor) {
     const name = HIGHLIGHT_NAME[s.highlightColor.toLowerCase()];
     if (name) children.push(el("w:highlight", { "w:val": name }));
+  } else if (s.highlightCleared) {
+    // Explicit clear (issue #155) — beats a highlight the run's w:rStyle carries.
+    children.push(el("w:highlight", { "w:val": "none" }));
   }
   if (s.verticalAlign) children.push(el("w:vertAlign", { "w:val": s.verticalAlign === "super" ? "superscript" : "subscript" }));
   const effects = runEffectsXml(s);

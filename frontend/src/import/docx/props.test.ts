@@ -88,9 +88,12 @@ describe("decodeRunProps", () => {
     expect(shaded.colorThemeShade).toBe("80");
   });
 
-  it("ignores highlight='none' but keeps a real highlight", () => {
-    expect(decodeRunProps(rPr(`<w:highlight w:val="none"/>`)).highlight).toBeUndefined();
+  it("keeps highlight='none' as an explicit clear (null, issue #155) and a real highlight", () => {
+    // "none" is a tri-state clear (overrides a char-style highlight), kept as null;
+    // a real color is the name; absent stays undefined.
+    expect(decodeRunProps(rPr(`<w:highlight w:val="none"/>`)).highlight).toBeNull();
     expect(decodeRunProps(rPr(`<w:highlight w:val="yellow"/>`)).highlight).toBe("yellow");
+    expect(decodeRunProps(rPr(``)).highlight).toBeUndefined();
   });
 
   it("returns an empty bag for empty rPr", () => {
