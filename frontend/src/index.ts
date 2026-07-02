@@ -47,7 +47,11 @@ import { importDocx } from "./import/docx/importDocx";
 import { showContextMenu, type ContextMenuHandle, type MenuEntry } from "./ui/contextMenu";
 import { showSdtInspector, type SdtInspectorData, type SdtInspectorHandle } from "./ui/sdtInspector";
 import { showFieldConstructor } from "./ui/fieldConstructor";
-import { showEquationEditor, equationToMathmlString } from "./ui/equationEditor";
+// Lazy: the equation editor carries the LaTeX toolchain — load it on the
+// context-menu click, not in the core editor chunk (see editorApp.ts).
+const withEquationEditor = (use: (mod: typeof import("./ui/equationEditor")) => void): void => {
+  void import("./ui/equationEditor").then(use);
+};
 import { showTocProperties } from "./ui/tocProperties";
 import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
 import { showTableProperties, type BorderStyleName, type CellTextDir, type TablePropertiesHandle } from "./ui/tableProperties";
@@ -2748,12 +2752,14 @@ export function createEditor(
         entries.push(
           sep,
           item("Edit Equation…", () =>
-            showEquationEditor({
-              editing: true,
-              initialDisplay: true, // a display-equation block
-              initialMathml: equationToMathmlString(blk.equation),
-              onApply: (eq) => dispatch(editEquationCmd(blk.id, eq)),
-            }),
+            withEquationEditor(({ showEquationEditor, equationToMathmlString }) =>
+              showEquationEditor({
+                editing: true,
+                initialDisplay: true, // a display-equation block
+                initialMathml: equationToMathmlString(blk.equation),
+                onApply: (eq) => dispatch(editEquationCmd(blk.id, eq)),
+              }),
+            ),
           ),
           {
             kind: "submenu",
@@ -2782,12 +2788,14 @@ export function createEditor(
         entries.push(
           sep,
           item("Edit Equation…", () =>
-            showEquationEditor({
-              editing: true,
-              initialDisplay: false, // an inline equation — don't flip it to display
-              initialMathml: equationToMathmlString(equation),
-              onApply: (eq) => dispatch(editInlineEquationCmd(blockId, off, eq)),
-            }),
+            withEquationEditor(({ showEquationEditor, equationToMathmlString }) =>
+              showEquationEditor({
+                editing: true,
+                initialDisplay: false, // an inline equation — don't flip it to display
+                initialMathml: equationToMathmlString(equation),
+                onApply: (eq) => dispatch(editInlineEquationCmd(blockId, off, eq)),
+              }),
+            ),
           ),
           item("Delete Equation", () => dispatch(removeInlineEquationCmd(blockId, off)), { danger: true }),
         );

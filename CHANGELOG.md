@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+- **Session memory & bundle size.** The content-addressed media store no longer grows without bound:
+  each editor mount registers a retention provider, and replacing the open document (docx open /
+  `setDocument`) evicts bytes and revokes `blob:` URLs nothing references anymore — the undo-safe
+  moment, since a replacement rebuilds the editor and its history. (With several concurrent mounts
+  the store conservatively keeps everything, and destroying a mount doesn't evict — a remount may
+  still rehydrate the same document.) The equation editor and symbol picker — click-driven dialogs
+  that pulled the whole LaTeX toolchain (parser, serializer, symbol tables) into the initial editor
+  chunk — now load lazily on first use, like the WebMCP polyfill and agent chat (~28 kB moved out of
+  the critical path). Undo coalescing no longer re-copies the accumulated inverse-op array on every
+  keystroke (O(n²) array churn across a typing burst): an open typing run appends amortized O(1) and
+  folds back once when the run closes. Child-document editors (style previews) reuse the shared
+  measuring engine instead of allocating a throwaway layout engine per mount.
+
+### Fixed
+- **Collab: suggestions/comments authored while briefly disconnected are no longer dropped.**
+  Outbound review ops now queue while the socket is closed and drain on reconnect — the same
+  guarantee core edits always had (receivers causal-hold on `dependsOnSeq`, so late delivery is
+  safe).
+
 ### Added
 - **C# `WordCanvasEnginePool` — safe engine reuse for multi-threaded hosts (ClearScript bindings).** A thread-safe,
   concurrency-bounded pool of `WordCanvasEngine` instances for ASP.NET Core / worker hosts, where the single-isolate

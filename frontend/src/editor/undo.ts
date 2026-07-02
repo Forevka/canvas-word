@@ -30,6 +30,24 @@ const COALESCE_MS = 1000;
 export class UndoManager {
   private undoStack: UndoEntry[] = [];
   private redoStack: UndoEntry[] = [];
+  // While a typing run coalesces, its accumulated inverses live here in
+  // APPLICATION order, so each keystroke is an O(its own ops) append — the old
+  // prepend-and-respread (`[...entry.inverseOps, ...last.inverseOps]`) copied
+  // the whole run per keystroke, O(n²) array churn across a long burst. They
+  // fold back into the entry, in the documented reverse-application order, the
+  // moment the run closes (a non-coalescing record, or a pop).
+  private runInverses: Op[] | null = null;
+  private runReviewInverses: ReviewOp[] | null = null;
+
+  /** Fold an open typing run's accumulated inverses back onto its entry. */
+  private closeRun(): void {
+    if (!this.runInverses && !this.runReviewInverses) return;
+    const last = this.undoStack[this.undoStack.length - 1];
+    if (last && this.runInverses) last.inverseOps = this.runInverses.reverse();
+    if (last && this.runReviewInverses) last.reviewInverses = this.runReviewInverses.reverse();
+    this.runInverses = null;
+    this.runReviewInverses = null;
+  }
 
   record(entry: UndoEntry): void {
     this.redoStack.length = 0;
@@ -41,17 +59,28 @@ export class UndoManager {
       entry.time - last.time < COALESCE_MS
     ) {
       last.ops.push(...entry.ops);
-      last.inverseOps = [...entry.inverseOps, ...last.inverseOps];
-      if (entry.reviewOps?.length) last.reviewOps = [...(last.reviewOps ?? []), ...entry.reviewOps];
-      if (entry.reviewInverses?.length) last.reviewInverses = [...entry.reviewInverses, ...(last.reviewInverses ?? [])];
+      // entry.inverseOps is reverse-ordered within the entry; the run buffer is
+      // application-ordered, so append the entry's inverses reversed.
+      this.runInverses ??= last.inverseOps.slice().reverse();
+      for (let i = entry.inverseOps.length - 1; i >= 0; i--) this.runInverses.push(entry.inverseOps[i]!);
+      if (entry.reviewOps?.length) {
+        if (!last.reviewOps) last.reviewOps = [];
+        last.reviewOps.push(...entry.reviewOps);
+      }
+      if (entry.reviewInverses?.length) {
+        this.runReviewInverses ??= (last.reviewInverses ?? []).slice().reverse();
+        for (let i = entry.reviewInverses.length - 1; i >= 0; i--) this.runReviewInverses.push(entry.reviewInverses[i]!);
+      }
       last.selectionAfter = entry.selectionAfter;
       last.time = entry.time;
       return;
     }
+    this.closeRun();
     this.undoStack.push(entry);
   }
 
   popUndo(): UndoEntry | null {
+    this.closeRun(); // the popped entry may be the still-open typing run
     const entry = this.undoStack.pop();
     if (!entry) return null;
     this.redoStack.push(entry);
