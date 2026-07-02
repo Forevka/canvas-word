@@ -77,6 +77,28 @@ public sealed partial class WordDocument
         return FromMerge(_engine, res);
     }
 
+    /// <summary>Replace a block-level content control's entire content with another
+    /// document — the templating primitive: find control <paramref name="sdtId"/> (e.g.
+    /// via <see cref="GetSdtsByTag"/>), drop what's inside it, and splice in
+    /// <paramref name="source"/>'s content, reconciling every id space and unioning the
+    /// embedded-image maps. The control's ancestry is preserved (the source's own nested
+    /// controls survive inside it). Returns a NEW handle; both inputs are unchanged.
+    /// The control must be block-level at the top level of the body (an inline control,
+    /// or one in a table cell / band / note, throws JS-side). <paramref name="source"/>
+    /// MUST belong to the SAME engine.</summary>
+    public WordDocument ReplaceSdtContent(string sdtId, WordDocument source, MergeOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(sdtId);
+        ArgumentNullException.ThrowIfNull(source);
+        var res = (ScriptObject)_engine.Api.InvokeMethod(
+            "replaceSdtContent",
+            Doc, Images ?? (object)Undefined.Value,
+            sdtId,
+            source.Doc, source.Images ?? (object)Undefined.Value,
+            options?.ToJs(_engine) ?? (object)Undefined.Value);
+        return FromMerge(_engine, res);
+    }
+
     internal static WordDocument FromMerge(WordCanvasEngine engine, ScriptObject handle)
     {
         var doc = handle.GetProperty("doc");

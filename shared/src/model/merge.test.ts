@@ -271,6 +271,83 @@ describe("mergeAll", () => {
   });
 });
 
+describe("DocumentEditor.replaceSdtContent", () => {
+  /** A doc whose body has a block-level control `sdtId` wrapping `count` placeholder
+   *  paragraphs, plus a trailing non-member paragraph. */
+  function withSdt(sdtId: string, count: number): Document {
+    const members: Block[] = [];
+    for (let i = 0; i < count; i++) {
+      const p = para(`m${i}`, `placeholder ${i}`);
+      p.sdtPath = [sdtId];
+      members.push(p);
+    }
+    return doc([...members, para("after", "after the control")], { sdts: { [sdtId]: { type: "richText", tag: "BODY" } } });
+  }
+
+  it("replaces the control's content with the source document's blocks, reconciling ids", () => {
+    const editor = new DocumentEditor(withSdt("X", 2));
+    const source = doc([para("s1", "New heading", { namedStyle: "H" }), para("s2", "New body")], {
+      stylesheet: { defaultStyleId: "Normal", styles: [{ id: "H", name: "Heading 1", char: { bold: true }, para: {} }] },
+    });
+
+    const result = editor.replaceSdtContent("X", source);
+
+    // The two placeholders are gone; the two source blocks took their place, still
+    // inside control X, and the trailing paragraph is untouched.
+    const texts = editor.doc.blocks.map((b) => (b as { runs?: { text: string }[] }).runs?.map((r) => r.text).join("") ?? "");
+    expect(texts).toEqual(["New heading", "New body", "after the control"]);
+    const members = editor.doc.blocks.filter((b) => b.sdtPath?.includes("X"));
+    expect(members).toHaveLength(2);
+    expect(members.every((b) => b.id !== "s1" && b.id !== "s2")).toBe(true); // ids remapped
+    // The source's style was merged in and its reference resolves.
+    expect(editor.doc.stylesheet!.styles.some((s) => s.name === "Heading 1")).toBe(true);
+    expect(result.idMap.blocks["s1"]).toBeDefined();
+    // One undoable step restores the placeholders.
+    editor.undo();
+    expect(editor.doc.blocks.filter((b) => b.sdtPath?.includes("X"))).toHaveLength(2);
+    expect((editor.doc.blocks[0] as Paragraph).runs[0]!.text).toBe("placeholder 0");
+  });
+
+  it("preserves ancestry: source blocks nest INSIDE the target control", () => {
+    // Control X is nested inside an outer control O.
+    const p = para("m0", "placeholder");
+    p.sdtPath = ["O", "X"];
+    const dest = doc([p, para("after", "tail")], { sdts: { O: { type: "richText" }, X: { type: "richText" } } });
+    const editor = new DocumentEditor(dest);
+
+    editor.replaceSdtContent("X", doc([para("s1", "in")]));
+
+    const member = editor.doc.blocks.find((b) => b.sdtPath?.includes("X"))!;
+    expect(member.sdtPath).toEqual(["O", "X"]); // outer control retained, X preserved
+  });
+
+  it("keeps the source's own nested controls (prepended under the target)", () => {
+    const p = para("m0", "placeholder");
+    p.sdtPath = ["X"];
+    const dest = doc([p], { sdts: { X: { type: "richText" } } });
+    const srcInner = para("s1", "inner");
+    srcInner.sdtPath = ["inner"];
+    const source = doc([srcInner], { sdts: { inner: { type: "richText" } } });
+    const editor = new DocumentEditor(dest);
+
+    const { idMap } = editor.replaceSdtContent("X", source);
+
+    const member = editor.doc.blocks.find((b) => b.id === idMap.blocks["s1"])!;
+    const newInner = idMap.sdts["inner"];
+    expect(member.sdtPath).toEqual(["X", newInner]); // X (target) wraps the source's control
+  });
+
+  it("throws for an unknown, inline, or non-body control", () => {
+    const editor = new DocumentEditor(withSdt("X", 1));
+    expect(() => editor.replaceSdtContent("nope", doc([para("s1", "x")]))).toThrow(/not found/);
+
+    // inline control
+    const inlineDoc = doc([para("p1", "hi", {}, [run("hi", { sdtPath: ["I"] })])], { sdts: { I: { type: "richText" } } });
+    const inlineEditor = new DocumentEditor(inlineDoc);
+    expect(() => inlineEditor.replaceSdtContent("I", doc([para("s1", "x")]))).toThrow(/inline/);
+  });
+});
+
 describe("DocumentEditor.setSectionBand / setSectionFooter", () => {
   it("sets the body (final) section's footer on the document", () => {
     const editor = new DocumentEditor(doc([para("b1", "Body")]));

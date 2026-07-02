@@ -18,7 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in C# (`WordDocument.Append(other, MergeOptions)`, `WordCanvasEngine.Merge(params…)`, unioning the embedded-image
   maps). Also `DocumentEditor.setSectionFooter`/`setSectionHeader`/`setSectionBand` (and C#
   `WordDocumentEditor.SetSectionFooter`/`SetSectionHeader` via a `StoryBuilder` callback) for a post-merge
-  per-section footer pass. New `examples/merge-docs` (TS/Vite) + `WordCanvas.Example.MergeReport` (C# — render
+  per-section footer pass. **Templating:** `DocumentEditor.replaceSdtContent(sdtId, source, opts)` /
+  C# `WordDocument.ReplaceSdtContent` swaps a block-level content control's entire content with another
+  document (reconciling all id spaces + media, preserving the control's ancestry) — find control "X" (e.g.
+  C# `GetSdtsByTag`/`GetSdtsByAlias`, now also exposed) and fill it with a rendered section. New
+  `examples/merge-docs` (TS/Vite) + `WordCanvas.Example.MergeReport` (C# — render
   parts in a loop, fold with explicit `MergeOptions`, per-section footers) demos + a table+logo footer recipe in
   the showcase; published
   `query.d.ts` (+ parity guard) and `builder.d.ts` (inline fields / bookmarks / footnotes on `ParagraphBuilder`)

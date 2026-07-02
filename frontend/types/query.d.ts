@@ -357,6 +357,13 @@ export declare class DocumentEditor {
    *  Returns the merge's id map + warnings; the merged document becomes `doc`. */
   append(source: Document, options?: MergeOptions): MergeResult;
 
+  /** Replace a block-level content control's entire content with another document
+   *  (the templating primitive): reconciles every id space and preserves the control's
+   *  ancestry (the source's own nested controls survive inside it). One undoable step.
+   *  The control must be block-level at the top level of the body — an inline control,
+   *  or one in a table cell / band / note, throws (use setSdtText for inline). */
+  replaceSdtContent(sdtId: string, source: Document, options?: MergeOptions): MergeResult;
+
   /** Set (or clear, with `null`) a header/footer band on a specific section by index
    *  (see getSections). The final/body section stores bands on the document; a
    *  mid-document section on its break paragraph. Throws if the index is out of range. */

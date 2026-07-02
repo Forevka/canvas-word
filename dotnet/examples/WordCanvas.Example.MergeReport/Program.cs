@@ -95,6 +95,32 @@ Console.WriteLine("MergeOptions.Styles:");
 Console.WriteLine($"  useDestination : {useDest.GetStyles().Count} named styles (duplicates collapsed by name)");
 Console.WriteLine($"  keepSource     : {keepSrc.GetStyles().Count} named styles (source styles kept, ids renamed)");
 
+// 6. Templating: open a template with a block-level content control, find it by tag,
+//    and replace its whole content with a freshly rendered section — media, tables,
+//    styles and nested controls all reconciled.
+var template = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Letter })
+    .Style(new NamedStyle { Id = "Heading1", Name = "Heading 1", Char = new CharStyle { Bold = true, FontSizePx = 24 } })
+    .Paragraph("Valuation Report", p => p.WithStyle("Heading1"))
+    .ContentControlRange(cc => cc.Paragraph("[ BODY — replaced at fill time ]"), new SdtOptions { Tag = "BODY", Alias = "Body" })
+    .Paragraph("— end of template —")
+    .Build();
+
+var freshSection = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Letter })
+    .Style(new NamedStyle { Id = "Heading1", Name = "Heading 1", Char = new CharStyle { Bold = true, FontSizePx = 24 } })
+    .Paragraph("Filled Section", p => p.WithStyle("Heading1"))
+    .Paragraph("This content was rendered separately and merged into the BODY control.")
+    .Build();
+
+var filled = template;
+foreach (var sdt in template.GetSdtsByTag("BODY"))
+    filled = filled.ReplaceSdtContent(sdt.Id, freshSection, new MergeOptions { Styles = StyleMergeMode.UseDestination });
+
+File.WriteAllBytes(Path.Combine(outDir, "template-filled.docx"), filled.ExportDocx());
+var filledBack = engine.ImportDocx(filled.ExportDocx());
+Console.WriteLine();
+Console.WriteLine("Template SDT fill (ReplaceSdtContent):");
+Console.WriteLine($"  control 'BODY' filled → placeholder gone={filled.FindText("replaced at fill time").Count == 0}, section present={filledBack.FindText("Filled Section").Count > 0}");
+
 Console.WriteLine();
 Console.WriteLine($"Output written to: {outDir}");
 return;

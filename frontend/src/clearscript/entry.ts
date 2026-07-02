@@ -49,7 +49,7 @@ import {
   queryStyles,
   type PageInfo as PageInfoDto,
 } from "./queryBridge";
-import { mergeBridge } from "./mergeBridge";
+import { mergeBridge, replaceSdtContentBridge } from "./mergeBridge";
 import type { MergeOptions } from "@cw/shared";
 import type { CustomFontPayload } from "../fonts/customRegistry";
 import type { CjkExportConfig } from "../export/pipeline";
@@ -335,6 +335,16 @@ const api = {
     srcImages: ImageBytes | undefined,
     opts?: MergeOptions,
   ) => mergeBridge(destDoc, destImages, srcDoc, srcImages, opts),
+  // Replace a block-level content control's content with another in-V8 document
+  // (+ its media) — the host's WordDocument.ReplaceSdtContent.
+  replaceSdtContent: (
+    destDoc: Document,
+    destImages: ImageBytes | undefined,
+    sdtId: string,
+    srcDoc: Document,
+    srcImages: ImageBytes | undefined,
+    opts?: MergeOptions,
+  ) => replaceSdtContentBridge(destDoc, destImages, sdtId, srcDoc, srcImages, opts),
   // Build a standalone story (Block[]) from a StoryBuilder callback — lets the C#
   // WordDocumentEditor.SetSectionFooter/Header author a band's content and hand the
   // resulting blocks to the editor's setSectionBand. Built via a throwaway builder's

@@ -13,7 +13,7 @@ import { resolveSections } from "./sections";
 import { applyOp, applyStylePatchToRuns, containerOf, gridColumnCount, type Op } from "./ops";
 import { findParagraphs, getBlockById, getParagraphById, getSdt, getSdtBlocks, getTableById, textOfCell, walk, type ParagraphMatch } from "./query";
 import { ancestryThrough, removeSdt as stripSdtFromPath } from "./sdt";
-import { mergeDocuments, type MergeOptions, type MergeResult } from "./merge";
+import { foldRegistries, mergeDocuments, reconcileSource, type MergeOptions, type MergeResult } from "./merge";
 import { resolveStyle } from "./stylesheet";
 import { DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE } from "./defaults";
 import { freshId } from "../ids";
@@ -427,6 +427,62 @@ export class DocumentEditor {
     const result = mergeDocuments(this._doc, source, options);
     this.commit([{ type: "setDocument", doc: result.doc }]);
     return result;
+  }
+
+  /** Replace a block-level content control's entire content with another document —
+   *  the templating primitive: find control `sdtId`, drop what's inside it, and splice
+   *  in `sourceDoc`'s blocks, reconciling every id space (styles, lists, table styles,
+   *  content controls, fields, notes, bookmarks — see mergeDocuments). The control's
+   *  ancestry is preserved and PREPENDED onto the inserted blocks, so the source's own
+   *  nested controls survive nested inside this one. One undoable step; returns the
+   *  merge's id map + warnings.
+   *
+   *  The control must be a BLOCK-LEVEL control at the TOP LEVEL of the body. A control
+   *  inside a table cell / header-footer band / note body, or an inline (single-run)
+   *  control, throws — use `setSdtText` to fill an inline control. */
+  replaceSdtContent(sdtId: string, sourceDoc: Document, options: MergeOptions = {}): MergeResult {
+    if (!getSdt(this._doc, sdtId)) throw new Error(`replaceSdtContent: content control ${sdtId} not found`);
+
+    // Locate block-level members at the top level of the body; reject other placements.
+    const bodyIndex = new Map(this._doc.blocks.map((b, i) => [b.id, i] as const));
+    const memberIds: string[] = [];
+    let ancestry: string[] | undefined;
+    let unsupported: string | undefined;
+    let inline = false;
+    walk(this._doc, (b, ctx) => {
+      if (b.sdtPath?.includes(sdtId)) {
+        if (ctx.container === "body" && !ctx.cell && !ctx.note && bodyIndex.has(b.id)) {
+          memberIds.push(b.id);
+          ancestry ??= ancestryThrough(b.sdtPath, sdtId);
+        } else {
+          unsupported ??= ctx.note ? "a note body" : ctx.cell ? "a table cell" : `the ${ctx.container} band`;
+        }
+      } else if (b.kind === "paragraph" && b.runs.some((r) => r.style.sdtPath?.includes(sdtId))) {
+        inline = true;
+      }
+    });
+    if (inline) throw new Error(`replaceSdtContent: ${sdtId} is an inline control; use setSdtText`);
+    if (unsupported) throw new Error(`replaceSdtContent: ${sdtId} has a block-level member in ${unsupported}; not supported`);
+    if (memberIds.length === 0) throw new Error(`replaceSdtContent: ${sdtId} has no block-level content in the body`);
+
+    // Reconcile the source into this document; stamp the control's ancestry onto its
+    // blocks (PREPENDED, so the source's own nested controls stay inside this one).
+    const r = reconcileSource(this._doc, sourceDoc, options);
+    const chain = ancestry ?? [sdtId];
+    const stamped: Block[] = r.sourceBlocks.map((b) => ({ ...b, sdtPath: [...chain, ...(b.sdtPath ?? [])] }));
+
+    // Splice: replace the (contiguous) member blocks with the stamped source blocks.
+    const memberSet = new Set(memberIds);
+    const firstIndex = bodyIndex.get(memberIds[0]!)!;
+    const newBlocks: Block[] = [];
+    this._doc.blocks.forEach((b, i) => {
+      if (i === firstIndex) newBlocks.push(...stamped);
+      if (!memberSet.has(b.id)) newBlocks.push(b);
+    });
+
+    const newDoc = foldRegistries(this._doc, r, this._doc.section, newBlocks);
+    this.commit([{ type: "setDocument", doc: newDoc }]);
+    return { doc: newDoc, idMap: r.idMap, warnings: r.warnings };
   }
 
   /** Set (or clear, with `null`) a header/footer band on a specific section by its

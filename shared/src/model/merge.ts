@@ -367,23 +367,39 @@ function mergeKeyed<T>(
 
 // ---------------------------------------------------------------------------
 
-/** Append `source` after `dest`, reconciling every id space. Pure — returns a new
- *  document; the inputs are not mutated. */
-export function mergeDocuments(dest: Document, source: Document, opts: MergeOptions = {}): MergeResult {
+function emptyIdMap(): MergeIdMap {
+  return { blocks: {}, styles: {}, lists: {}, tableStyles: {}, sdts: {}, fields: {}, footnotes: {}, endnotes: {}, bookmarks: {} };
+}
+
+/** The result of reconciling `source`'s registries + id spaces INTO `dest`: the
+ *  merged registry records, the source's body blocks + section cloned through the
+ *  new id maps, and the id map / warnings. Shared by `mergeDocuments` (append) and
+ *  `replaceSdtContent` (splice into a control). Does NOT decide where the blocks go. */
+export interface Reconciled {
+  stylesheet: Document["stylesheet"];
+  lists: NonNullable<Document["lists"]>;
+  tableStyles: NonNullable<Document["tableStyles"]>;
+  sdts: NonNullable<Document["sdts"]>;
+  fields: NonNullable<Document["fields"]>;
+  footnotes: NonNullable<Document["footnotes"]>;
+  endnotes: NonNullable<Document["endnotes"]>;
+  bookmarks: NonNullable<Document["bookmarks"]>;
+  /** The source's body blocks, cloned through the new id maps (ready to place). */
+  sourceBlocks: Block[];
+  /** The source's section, cloned through the new id maps (used when it governs a
+   *  merged tail section; ignored when the source flows into the destination's). */
+  sourceSection: SectionProps;
+  idMap: MergeIdMap;
+  warnings: MergeWarning[];
+}
+
+/** Reconcile `source` into `dest`: allocate + remap every id space, merge the
+ *  registries, and clone the source's blocks/section/notes/bookmarks through the
+ *  resulting maps. Pure — reads both docs, mutates neither. */
+export function reconcileSource(dest: Document, source: Document, opts: MergeOptions = {}): Reconciled {
   const mode: StyleMergeMode = opts.styles ?? "useDestination";
-  const seam: MergeSectionBreak = opts.sectionBreak ?? "nextPage";
   const renameBookmarks = opts.renameBookmarksOnCollision ?? true;
   const warnings: MergeWarning[] = [];
-
-  const empty: MergeIdMap = {
-    blocks: {}, styles: {}, lists: {}, tableStyles: {}, sdts: {}, fields: {}, footnotes: {}, endnotes: {}, bookmarks: {},
-  };
-
-  // Nothing to append — return the destination as a fresh top-level object.
-  if (source.blocks.length === 0) {
-    warnings.push({ code: "empty-source" });
-    return { doc: { ...dest }, idMap: empty, warnings };
-  }
 
   // ---- Pass A: allocate every id space (keys only; content cloned in pass B) ----
   const blockIdMap = new Map<string, string>();
@@ -434,7 +450,7 @@ export function mergeDocuments(dest: Document, source: Document, opts: MergeOpti
 
   const remapPos = (pos: DocPosition): DocPosition => ({ blockId: remap(blockIdMap, pos.blockId), offset: pos.offset });
   const bookmarkNameMap = new Map<string, string>();
-  const mergedBookmarks: Record<string, { start: DocPosition; end: DocPosition }> = { ...(dest.bookmarks ?? {}) };
+  const mergedBookmarks: NonNullable<Document["bookmarks"]> = { ...(dest.bookmarks ?? {}) };
   const takenBookmarks = new Set(Object.keys(mergedBookmarks));
   for (const [name, range] of Object.entries(source.bookmarks ?? {})) {
     let newName = name;
@@ -451,42 +467,18 @@ export function mergeDocuments(dest: Document, source: Document, opts: MergeOpti
     mergedBookmarks[newName] = { start: remapPos(range.start), end: remapPos(range.end) };
   }
 
-  const sourceBlocks = source.blocks.map((b) => cloneBlock(b, ctx));
-
-  // ---- seam + block assembly ----
-  let blocks: Block[];
-  let section: SectionProps;
-  if (dest.blocks.length === 0) {
-    blocks = sourceBlocks;
-    section = cloneSection(source.section, ctx); // adopt the source's section wholesale
-  } else if (seam === "continuous" || seam === "none") {
-    blocks = [...dest.blocks, ...sourceBlocks];
-    section = dest.section; // destination governs the trailing (now-extended) section
-    warnings.push({ code: "source-section-dropped", detail: seam });
-  } else {
-    blocks = [...dest.blocks, seamParagraph(dest.section, seam), ...sourceBlocks];
-    section = cloneSection(source.section, ctx); // source governs its own tail section
-  }
-
-  // ---- assemble ----
-  const doc: Document = { section, blocks };
-  if (stylesheet) doc.stylesheet = stylesheet;
-  if (Object.keys(mergedLists).length) doc.lists = mergedLists;
-  if (Object.keys(mergedTableStyles).length) doc.tableStyles = mergedTableStyles;
-  if (Object.keys(mergedFootnotes).length) doc.footnotes = mergedFootnotes;
-  if (Object.keys(mergedEndnotes).length) doc.endnotes = mergedEndnotes;
-  if (Object.keys(mergedSdts).length) doc.sdts = mergedSdts;
-  if (Object.keys(mergedBookmarks).length) doc.bookmarks = mergedBookmarks;
-  if (Object.keys(mergedFields).length) doc.fields = mergedFields;
-  // Document-level scalars: destination wins.
-  if (dest.tocInstruction !== undefined) doc.tocInstruction = dest.tocInstruction;
-  if (dest.tocAnchorBlockId !== undefined) doc.tocAnchorBlockId = dest.tocAnchorBlockId;
-  if (dest.defaultTabStopPx !== undefined) doc.defaultTabStopPx = dest.defaultTabStopPx;
-  if (dest.compatSettings) doc.compatSettings = dest.compatSettings;
-
   const asRecord = (m: ReadonlyMap<string, string>): Record<string, string> => Object.fromEntries(m);
   return {
-    doc,
+    stylesheet,
+    lists: mergedLists,
+    tableStyles: mergedTableStyles,
+    sdts: mergedSdts,
+    fields: mergedFields,
+    footnotes: mergedFootnotes,
+    endnotes: mergedEndnotes,
+    bookmarks: mergedBookmarks,
+    sourceBlocks: source.blocks.map((b) => cloneBlock(b, ctx)),
+    sourceSection: cloneSection(source.section, ctx),
     idMap: {
       blocks: asRecord(blockIdMap),
       styles: asRecord(styleIdMap),
@@ -502,16 +494,63 @@ export function mergeDocuments(dest: Document, source: Document, opts: MergeOpti
   };
 }
 
+/** Build a new document from `dest` with the reconciled registries folded in and an
+ *  explicit `section` + `blocks`. Document-level scalars follow the destination. */
+export function foldRegistries(dest: Document, r: Reconciled, section: SectionProps, blocks: Block[]): Document {
+  const doc: Document = { section, blocks };
+  if (r.stylesheet) doc.stylesheet = r.stylesheet;
+  if (Object.keys(r.lists).length) doc.lists = r.lists;
+  if (Object.keys(r.tableStyles).length) doc.tableStyles = r.tableStyles;
+  if (Object.keys(r.footnotes).length) doc.footnotes = r.footnotes;
+  if (Object.keys(r.endnotes).length) doc.endnotes = r.endnotes;
+  if (Object.keys(r.sdts).length) doc.sdts = r.sdts;
+  if (Object.keys(r.bookmarks).length) doc.bookmarks = r.bookmarks;
+  if (Object.keys(r.fields).length) doc.fields = r.fields;
+  // Document-level scalars: destination wins.
+  if (dest.tocInstruction !== undefined) doc.tocInstruction = dest.tocInstruction;
+  if (dest.tocAnchorBlockId !== undefined) doc.tocAnchorBlockId = dest.tocAnchorBlockId;
+  if (dest.defaultTabStopPx !== undefined) doc.defaultTabStopPx = dest.defaultTabStopPx;
+  if (dest.compatSettings) doc.compatSettings = dest.compatSettings;
+  return doc;
+}
+
+/** Append `source` after `dest`, reconciling every id space. Pure — returns a new
+ *  document; the inputs are not mutated. */
+export function mergeDocuments(dest: Document, source: Document, opts: MergeOptions = {}): MergeResult {
+  const seam: MergeSectionBreak = opts.sectionBreak ?? "nextPage";
+
+  // Nothing to append — return the destination as a fresh top-level object.
+  if (source.blocks.length === 0) {
+    return { doc: { ...dest }, idMap: emptyIdMap(), warnings: [{ code: "empty-source" }] };
+  }
+
+  const r = reconcileSource(dest, source, opts);
+
+  // ---- seam + block assembly ----
+  let blocks: Block[];
+  let section: SectionProps;
+  if (dest.blocks.length === 0) {
+    blocks = r.sourceBlocks;
+    section = r.sourceSection; // adopt the source's section wholesale
+  } else if (seam === "continuous" || seam === "none") {
+    blocks = [...dest.blocks, ...r.sourceBlocks];
+    section = dest.section; // destination governs the trailing (now-extended) section
+    r.warnings.push({ code: "source-section-dropped", detail: seam });
+  } else {
+    blocks = [...dest.blocks, seamParagraph(dest.section, seam), ...r.sourceBlocks];
+    section = r.sourceSection; // source governs its own tail section
+  }
+
+  return { doc: foldRegistries(dest, r, section, blocks), idMap: r.idMap, warnings: r.warnings };
+}
+
 /** Fold N documents left-to-right: `mergeAll([a, b, c])` ≡ merge(merge(a, b), c).
  *  Returns the FINAL merge's id map (the last source's remap) and the accumulated
  *  warnings. Throws on an empty list. */
 export function mergeAll(docs: Document[], opts: MergeOptions = {}): MergeResult {
   if (docs.length === 0) throw new Error("mergeAll requires at least one document");
-  const emptyMap: MergeIdMap = {
-    blocks: {}, styles: {}, lists: {}, tableStyles: {}, sdts: {}, fields: {}, footnotes: {}, endnotes: {}, bookmarks: {},
-  };
   let doc = docs[0]!;
-  let idMap = emptyMap;
+  let idMap = emptyIdMap();
   const warnings: MergeWarning[] = [];
   for (let i = 1; i < docs.length; i++) {
     const r = mergeDocuments(doc, docs[i]!, opts);

@@ -11,7 +11,7 @@
 // rewrites the src on the merged source-origin image blocks.
 
 import type { Block, Document } from "@cw/shared";
-import { BAND_CONTAINERS, mergeDocuments, type MergeOptions, type MergeResult } from "@cw/shared";
+import { BAND_CONTAINERS, DocumentEditor, mergeDocuments, type MergeOptions, type MergeResult } from "@cw/shared";
 import type { ImageBytes } from "../export/types";
 
 export interface MergeBridgeResult {
@@ -96,6 +96,23 @@ export function mergeBridge(
 ): MergeBridgeResult {
   const { images, remap } = unionMedia(destImages ?? {}, srcImages ?? {});
   const result = mergeDocuments(destDoc, srcDoc, opts);
+  const sourceBlockIds = new Set(Object.values(result.idMap.blocks));
+  rewriteSourceImageSrcs(result.doc, sourceBlockIds, remap);
+  return { doc: result.doc, images, mediaCount: Object.keys(images).length, warnings: result.warnings };
+}
+
+/** Replace the content of block-level control `sdtId` in `destDoc` with `srcDoc`
+ *  (model + media). The host's WordDocument.ReplaceSdtContent. */
+export function replaceSdtContentBridge(
+  destDoc: Document,
+  destImages: ImageBytes | undefined,
+  sdtId: string,
+  srcDoc: Document,
+  srcImages: ImageBytes | undefined,
+  opts?: MergeOptions,
+): MergeBridgeResult {
+  const { images, remap } = unionMedia(destImages ?? {}, srcImages ?? {});
+  const result = new DocumentEditor(destDoc).replaceSdtContent(sdtId, srcDoc, opts);
   const sourceBlockIds = new Set(Object.values(result.idMap.blocks));
   rewriteSourceImageSrcs(result.doc, sourceBlockIds, remap);
   return { doc: result.doc, images, mediaCount: Object.keys(images).length, warnings: result.warnings };
