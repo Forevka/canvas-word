@@ -46,7 +46,23 @@ export function openArchive(bytes: Uint8Array): Archive {
     throw new ImportError("NOT_ZIP", `Corrupt zip container: ${e instanceof Error ? e.message : String(e)}`);
   }
   const texts = new Map<string, string>();
+  // Media parts inflate on FIRST media access, all in one pass: each unzipSync
+  // call re-parses the container's central directory, so pulling N images one
+  // at a time cost N full scans (O(images × entries) on image-heavy reports).
+  // A docx whose images are never resolved still pays nothing — the batch only
+  // runs once something requests a media part.
+  let mediaBatchTried = false;
   const lazyExtract = (name: string): Uint8Array | undefined => {
+    if (!mediaBatchTried) {
+      mediaBatchTried = true;
+      try {
+        Object.assign(entries, unzipSync(bytes, { filter: (f) => isMedia(f.name) }));
+        return entries[name];
+      } catch {
+        // A corrupt sibling media entry must not take down every other image —
+        // fall through to the old per-part extraction for just the parts asked for.
+      }
+    }
     const extracted = unzipSync(bytes, { filter: (f) => f.name === name })[name];
     if (extracted) entries[name] = extracted; // cache for repeated references
     return extracted;
