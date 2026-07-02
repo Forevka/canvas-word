@@ -5,8 +5,7 @@
 
 import type { CellBorder, CellMargin, RowProps, TableCell } from "@cw/shared";
 import type { BorderEdgeFlags } from "../editor/commands";
-import { injectCssOnce } from "./styles";
-import { makeFloatingDialog } from "./floatingDialog";
+import { createDialogShell } from "./dialogShell";
 
 export type BorderStyleName = NonNullable<CellBorder["style"]> | "single";
 
@@ -129,8 +128,6 @@ const cssBorderStyle = (s: BorderStyleName): string =>
   s === "double" ? "double" : s === "dashed" ? "dashed" : s === "dotted" ? "dotted" : "solid";
 
 export function showTableProperties(init: TablePropertiesInit, cb: TablePropertiesCallbacks): TablePropertiesHandle {
-  injectCssOnce("cw-tbl-styles", TBL_CSS);
-
   // Live border spec the buttons apply.
   let color = init.color;
   let widthPx = init.widthPx;
@@ -154,22 +151,17 @@ export function showTableProperties(init: TablePropertiesInit, cb: TableProperti
     cb.applyShading(fill);
   };
 
-  const backdrop = el("div", "cw-tbl-backdrop");
-  const modal = el("div", "cw-tbl-modal");
-  modal.addEventListener("mousedown", (e) => e.stopPropagation());
-
-  // Header
-  const head = el("div", "cw-tbl-head");
-  const h2 = el("h2");
-  h2.textContent = "Borders & Shading";
   const badge = el("span", "cw-tbl-badge");
   badge.textContent = init.rangeLabel;
-  const xBtn = el("button", "cw-tbl-x");
-  xBtn.textContent = "×";
-  xBtn.title = "Close (Esc)";
-  head.append(h2, badge, xBtn);
-
-  const body = el("div", "cw-tbl-body");
+  const shell = createDialogShell({
+    prefix: "cw-tbl",
+    cssId: "cw-tbl-styles",
+    css: TBL_CSS,
+    title: "Borders & Shading",
+    headExtras: [badge],
+  });
+  shell.closeBtn.title = "Close (Esc)";
+  const { body, foot } = shell;
 
   // ---- Borders section ----------------------------------------------------
   const bSection = el("div");
@@ -533,37 +525,11 @@ export function showTableProperties(init: TablePropertiesInit, cb: TableProperti
   body.append(bSection, sSection, zSection, cSection, rSection, dfSection);
 
   // Footer
-  const foot = el("div", "cw-tbl-foot");
   const doneBtn = el("button", "cw-tbl-btn primary");
   doneBtn.textContent = "Done";
   foot.append(doneBtn);
 
-  modal.append(head, body, foot);
-  backdrop.appendChild(modal);
-  document.body.appendChild(backdrop);
-
-  const ac = new AbortController();
-  const handle: TablePropertiesHandle = {
-    close(): void {
-      backdrop.remove();
-      ac.abort(); // detaches every listener registered with ac.signal
-    },
-  };
-  // Draggable, non-blocking floating panel (so border/fill changes are seen live).
-  makeFloatingDialog({ backdrop, modal, handle: head, signal: ac.signal, noDrag: ".cw-tbl-x" });
-
-  window.addEventListener(
-    "keydown",
-    (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") {
-        ev.preventDefault();
-        ev.stopPropagation();
-        handle.close();
-      }
-    },
-    { capture: true, signal: ac.signal },
-  );
-  xBtn.addEventListener("click", () => handle.close());
+  const handle: TablePropertiesHandle = { close: shell.close };
   // Done commits spec/fill the user adjusted but didn't apply via a preset — so
   // "set Width=5 → Done" borders the selection (All) at 5px, as expected. If they
   // already clicked a preset/edge (live), Done just closes without re-applying.

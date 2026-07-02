@@ -18,8 +18,7 @@ import type {
   SectionGeometry,
 } from "@cw/shared";
 import { applyPageSetup, pageSetupAt, setBandVariantEnabled } from "../editor/commands";
-import { injectCssOnce } from "./styles";
-import { makeFloatingDialog } from "./floatingDialog";
+import { createDialogShell } from "./dialogShell";
 import { formatUnit, unitToPx, type LengthUnit } from "./units";
 
 /** The slice of the editor the dialog needs (the full Editor satisfies it). */
@@ -118,7 +117,6 @@ interface NumField {
 }
 
 export function showPageLayout(opts: PageLayoutOptions): PageLayoutHandle {
-  injectCssOnce("cw-pl-styles", CSS);
   const { editor } = opts;
 
   // ---- draft state (seeded from the caret's section) ------------------------
@@ -177,22 +175,23 @@ export function showPageLayout(opts: PageLayoutOptions): PageLayoutHandle {
   };
 
   // ---- scaffold -------------------------------------------------------------
-  const backdrop = el("div", "cw-pl-backdrop");
-  backdrop.style.pointerEvents = "none";
-  const modal = el("div", "cw-pl-modal");
-  modal.style.pointerEvents = "auto";
-  modal.addEventListener("mousedown", (e) => e.stopPropagation());
-
-  const head = el("div", "cw-pl-head");
-  const h2 = el("h2", undefined, "Page layout");
   const unitWrap = el("div", "cw-pl-unit");
   const unitSel = el("select");
   unitSel.append(option("in", "inches"), option("cm", "cm"));
   unitWrap.append(el("span", undefined, "Units"), unitSel);
-  const xBtn = el("button", "cw-pl-x", "×");
-  head.append(h2, unitWrap, xBtn);
-
-  const bodyWrap = el("div", "cw-pl-body");
+  // The unit dropdown is excluded from drag — otherwise the header's mousedown
+  // preventDefault swallows the native <select> open.
+  const shell = createDialogShell({
+    prefix: "cw-pl",
+    cssId: "cw-pl-styles",
+    css: CSS,
+    title: "Page layout",
+    headExtras: [unitWrap],
+    extraNoDrag: ".cw-pl-unit",
+    ...(opts.onClose ? { onClose: opts.onClose } : {}),
+  });
+  const bodyWrap = shell.body;
+  const foot = shell.foot;
   const mainCol = el("div", "cw-pl-main");
   const tabsBar = el("div", "cw-pl-tabs");
   const right = el("div", "cw-pl-right");
@@ -564,7 +563,6 @@ export function showPageLayout(opts: PageLayoutOptions): PageLayoutHandle {
   });
 
   // ---- footer ---------------------------------------------------------------
-  const foot = el("div", "cw-pl-foot");
   const spacer = el("div", "spacer");
   const cancel = el("button", "cw-pl-btn", "Cancel");
   const apply = el("button", "cw-pl-btn primary", "Apply to this section");
@@ -572,9 +570,6 @@ export function showPageLayout(opts: PageLayoutOptions): PageLayoutHandle {
 
   bodyWrap.append(mainCol, right);
   mainCol.insertBefore(tabsBar, mainCol.firstChild);
-  modal.append(head, bodyWrap, foot);
-  backdrop.append(modal);
-  document.body.append(backdrop);
 
   rebuildColumns();
   syncOrient();
@@ -588,29 +583,11 @@ export function showPageLayout(opts: PageLayoutOptions): PageLayoutHandle {
   requestAnimationFrame(redrawPreview);
 
   // ---- lifecycle ------------------------------------------------------------
-  const ac = new AbortController();
-  const handle: PageLayoutHandle = {
-    close(): void {
-      backdrop.remove();
-      ac.abort();
-      opts.onClose?.();
-    },
-  };
-  window.addEventListener(
-    "keydown",
-    (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); handle.close(); }
-    },
-    { capture: true, signal: ac.signal },
-  );
-  // Exclude the unit dropdown from drag — otherwise the header's mousedown
-  // preventDefault swallows the native <select> open.
-  makeFloatingDialog({ backdrop, modal, handle: head, signal: ac.signal, noDrag: ".cw-pl-x, .cw-pl-unit" });
-  xBtn.addEventListener("click", () => handle.close());
-  cancel.addEventListener("click", () => handle.close());
+  const handle: PageLayoutHandle = { close: shell.close };
+  cancel.addEventListener("click", shell.close);
   apply.addEventListener("click", () => {
     editor.dispatch(applyPageSetup(buildGeometry()));
-    handle.close();
+    shell.close();
     editor.focus();
   });
 

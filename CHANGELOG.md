@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **One dialog shell for the editor's floating dialogs (no visual change).** The Font, Paragraph,
+  Borders & Shading, Page Layout, Field Constructor, Content-Control Inspector, Style Manager, and
+  TOC Properties dialogs each hand-rolled the same backdrop + modal + header(title, ×) + body + foot
+  DOM, the Escape/×-to-close wiring, the teardown `AbortController`, and the floating-panel setup.
+  That scaffold now lives in one `createDialogShell` (`ui/dialogShell.ts`); each dialog keeps its own
+  CSS (widths and backdrop shades intentionally differ per dialog) and its full public API, so the
+  rendered DOM — class names, header order, badges, the Page Layout unit dropdown — is unchanged.
+  Verified live: all eight dialogs mount, drag by the header, and close via Escape and ×.
+
 ### Added
 - **C# `WordCanvasEnginePool` — safe engine reuse for multi-threaded hosts (ClearScript bindings).** A thread-safe,
   concurrency-bounded pool of `WordCanvasEngine` instances for ASP.NET Core / worker hosts, where the single-isolate

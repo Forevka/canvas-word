@@ -5,8 +5,7 @@
 // the entries. Pure presentation, modeled on the field constructor modal.
 
 import type { TocSwitches } from "@cw/shared";
-import { injectCssOnce } from "./styles";
-import { makeFloatingDialog } from "./floatingDialog";
+import { createDialogShell } from "./dialogShell";
 
 export interface TocPropertiesOptions {
   /** Current switches, parsed from the TOC field's instruction. */
@@ -60,18 +59,15 @@ const checkbox = (label: string, checked: boolean): { row: HTMLElement; input: H
 };
 
 export function showTocProperties(opts: TocPropertiesOptions): TocPropertiesHandle {
-  injectCssOnce("cw-toc-styles", CSS);
   const init = opts.initial;
 
-  const backdrop = el("div", "cw-toc-backdrop");
-  const modal = el("div", "cw-toc-modal");
-  modal.addEventListener("mousedown", (e) => e.stopPropagation());
-
-  const head = el("div", "cw-toc-head");
-  head.append(el("h2", undefined, "Table of contents — field options"), (() => { const x = el("button", "cw-toc-x", "×"); return x; })());
-  const xBtn = head.querySelector("button")!;
-
-  const body = el("div", "cw-toc-body");
+  const shell = createDialogShell({
+    prefix: "cw-toc",
+    cssId: "cw-toc-styles",
+    css: CSS,
+    title: "Table of contents — field options",
+  });
+  const { body, foot } = shell;
 
   // \o "from-to" — heading level range
   const oField = el("div", "cw-toc-field");
@@ -103,14 +99,9 @@ export function showTocProperties(opts: TocPropertiesOptions): TocPropertiesHand
   instrField.append(el("label", undefined, "Field instruction"), instr);
   body.append(instrField);
 
-  const foot = el("div", "cw-toc-foot");
   const cancel = el("button", "cw-toc-btn", "Cancel");
   const apply = el("button", "cw-toc-btn primary", "Apply");
   foot.append(el("div", "spacer"), cancel, apply);
-
-  modal.append(head, body, foot);
-  backdrop.append(modal);
-  document.body.append(backdrop);
 
   const read = (): TocSwitches => {
     const sw: TocSwitches = {
@@ -145,17 +136,9 @@ export function showTocProperties(opts: TocPropertiesOptions): TocPropertiesHand
   for (const c of [oToggle.input, uChk.input, hChk.input, zChk.input]) c.addEventListener("change", refresh);
   for (const i of [fromIn, toIn, sepIn]) i.addEventListener("input", refresh);
 
-  const ac = new AbortController();
-  const handle: TocPropertiesHandle = {
-    close(): void { backdrop.remove(); ac.abort(); },
-  };
-  window.addEventListener("keydown", (ev: KeyboardEvent) => {
-    if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); handle.close(); }
-  }, { capture: true, signal: ac.signal });
-  makeFloatingDialog({ backdrop, modal, handle: head, signal: ac.signal, noDrag: ".cw-toc-x" });
-  xBtn.addEventListener("click", () => handle.close());
-  cancel.addEventListener("click", () => handle.close());
-  apply.addEventListener("click", () => { opts.onApply(read()); handle.close(); });
+  const handle: TocPropertiesHandle = { close: shell.close };
+  cancel.addEventListener("click", shell.close);
+  apply.addEventListener("click", () => { opts.onApply(read()); shell.close(); });
 
   refresh();
   return handle;

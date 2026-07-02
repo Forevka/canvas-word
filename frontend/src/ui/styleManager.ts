@@ -16,8 +16,7 @@ import type { ChildDocument, ChildContent } from "../child/childDocument";
 import type { Command } from "../editor/state";
 import { deleteListDefinition, deleteNamedStyle, deleteTableStyle, mergeDuplicateStyles, setDefaultStyle, upsertListDefinition, upsertNamedStyle, upsertTableStyle, type NamedStyleSpec } from "../editor/commands";
 import { showContextMenu, type MenuEntry } from "./contextMenu";
-import { makeFloatingDialog } from "./floatingDialog";
-import { injectCssOnce } from "./styles";
+import { createDialogShell } from "./dialogShell";
 import { mountTextStyleEditor, type StyleEditorController } from "./styleEditorText";
 import { mountListStyleEditor, type ListStyleController } from "./styleEditorList";
 import { mountTableStyleEditor, type TableStyleController } from "./styleEditorTable";
@@ -103,23 +102,24 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
 };
 
 export function showStyleManager(opts: StyleManagerOptions): StyleManagerHandle {
-  injectCssOnce("cw-sm-styles", CSS);
   const { editor } = opts;
   const child = editor.createChild();
 
   const sheet = (): Stylesheet => editor.getDocument().stylesheet ?? defaultStylesheet();
 
   // ---- DOM scaffold ---------------------------------------------------------
-  const backdrop = el("div", "cw-sm-backdrop");
-  const modal = el("div", "cw-sm-modal");
-  modal.addEventListener("mousedown", (e) => e.stopPropagation());
-
-  const head = el("div", "cw-sm-head");
-  const h2 = el("h2", undefined, "Manage Styles");
-  const xBtn = el("button", "cw-sm-x", "×");
-  head.append(h2, xBtn);
-
-  const body = el("div", "cw-sm-body");
+  const shell = createDialogShell({
+    prefix: "cw-sm",
+    cssId: "cw-sm-styles",
+    css: CSS,
+    title: "Manage Styles",
+    onClose: () => {
+      held?.ctl.dispose();
+      child.destroy();
+      opts.onClose?.();
+    },
+  });
+  const { body, foot } = shell;
   const listHost = el("div", "cw-sm-list");
   const editorHost = el("div", "cw-sm-editor");
   const previewCol = el("div", "cw-sm-preview");
@@ -127,7 +127,6 @@ export function showStyleManager(opts: StyleManagerOptions): StyleManagerHandle 
   previewCol.append(el("div", "ttl", "Preview"), prevHost);
   body.append(listHost, editorHost, previewCol);
 
-  const foot = el("div", "cw-sm-foot");
   const newBtn = el("button", "cw-sm-btn", "New ▾");
   const delBtn = el("button", "cw-sm-btn danger", "Delete");
   const mergeBtn = el("button", "cw-sm-btn", "Merge duplicates");
@@ -135,10 +134,6 @@ export function showStyleManager(opts: StyleManagerOptions): StyleManagerHandle 
   const applyBtn = el("button", "cw-sm-btn primary", "Apply");
   const closeBtn = el("button", "cw-sm-btn", "Close");
   foot.append(newBtn, delBtn, mergeBtn, el("div", "spacer"), applyBtn, closeBtn);
-
-  modal.append(head, body, foot);
-  backdrop.append(modal);
-  document.body.append(backdrop);
 
   // ---- State ----------------------------------------------------------------
   let selKind: StyleKind = "paragraph";
@@ -444,23 +439,11 @@ export function showStyleManager(opts: StyleManagerOptions): StyleManagerHandle 
   });
 
   // ---- Lifecycle ------------------------------------------------------------
-  const ac = new AbortController();
   const handle: StyleManagerHandle = {
-    close(): void {
-      held?.ctl.dispose();
-      child.destroy();
-      backdrop.remove();
-      ac.abort();
-      opts.onClose?.();
-    },
+    close: shell.close,
     refresh(): void { rebuildList(); syncFooter(); },
   };
-  window.addEventListener("keydown", (ev: KeyboardEvent) => {
-    if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); handle.close(); }
-  }, { capture: true, signal: ac.signal });
-  makeFloatingDialog({ backdrop, modal, handle: head, signal: ac.signal, noDrag: ".cw-sm-x" });
-  xBtn.addEventListener("click", () => handle.close());
-  closeBtn.addEventListener("click", () => handle.close());
+  closeBtn.addEventListener("click", shell.close);
 
   // ---- Initial selection ----------------------------------------------------
   rebuildList();
