@@ -468,6 +468,9 @@ export class DocumentEditor {
     // Reconcile the source into this document; stamp the control's ancestry onto its
     // blocks (PREPENDED, so the source's own nested controls stay inside this one).
     const r = reconcileSource(this._doc, sourceDoc, options);
+    // The control now holds real content — clear any gray-placeholder state (as setSdtText does).
+    const targetProps = r.sdts[sdtId];
+    if (targetProps?.placeholder) r.sdts[sdtId] = { ...targetProps, placeholder: false };
     const chain = ancestry ?? [sdtId];
     const stamped: Block[] = r.sourceBlocks.map((b) => ({ ...b, sdtPath: [...chain, ...(b.sdtPath ?? [])] }));
 

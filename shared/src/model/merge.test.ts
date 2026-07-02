@@ -281,7 +281,7 @@ describe("DocumentEditor.replaceSdtContent", () => {
       p.sdtPath = [sdtId];
       members.push(p);
     }
-    return doc([...members, para("after", "after the control")], { sdts: { [sdtId]: { type: "richText", tag: "BODY" } } });
+    return doc([...members, para("after", "after the control")], { sdts: { [sdtId]: { type: "richText", tag: "BODY", placeholder: true } } });
   }
 
   it("replaces the control's content with the source document's blocks, reconciling ids", () => {
@@ -302,6 +302,8 @@ describe("DocumentEditor.replaceSdtContent", () => {
     // The source's style was merged in and its reference resolves.
     expect(editor.doc.stylesheet!.styles.some((s) => s.name === "Heading 1")).toBe(true);
     expect(result.idMap.blocks["s1"]).toBeDefined();
+    // The control now holds real content — its placeholder flag was cleared.
+    expect(editor.doc.sdts!["X"]!.placeholder).toBe(false);
     // One undoable step restores the placeholders.
     editor.undo();
     expect(editor.doc.blocks.filter((b) => b.sdtPath?.includes("X"))).toHaveLength(2);
@@ -345,6 +347,13 @@ describe("DocumentEditor.replaceSdtContent", () => {
     const inlineDoc = doc([para("p1", "hi", {}, [run("hi", { sdtPath: ["I"] })])], { sdts: { I: { type: "richText" } } });
     const inlineEditor = new DocumentEditor(inlineDoc);
     expect(() => inlineEditor.replaceSdtContent("I", doc([para("s1", "x")]))).toThrow(/inline/);
+
+    // block-level control NOT at the top level of the body (inside a table cell)
+    const cellPara = para("cp", "in cell");
+    cellPara.sdtPath = ["C"];
+    const table: TableBlock = { kind: "table", id: "t1", revision: 0, rows: [{ cells: [{ id: "c1", blocks: [cellPara] }] }] };
+    const cellEditor = new DocumentEditor(doc([table], { sdts: { C: { type: "richText" } } }));
+    expect(() => cellEditor.replaceSdtContent("C", doc([para("s1", "x")]))).toThrow(/not supported/);
   });
 });
 

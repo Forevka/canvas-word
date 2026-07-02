@@ -85,6 +85,14 @@ function rewriteSourceImageSrcs(doc: Document, sourceBlockIds: Set<string>, rema
   for (const paras of Object.values(doc.endnotes ?? {})) visitImages(paras, fix);
 }
 
+/** Common post-merge wiring shared by both bridges: rewrite the merged source-origin
+ *  image srcs per `remap` and package the combined media map into a bridge result. */
+function finalizeBridgeResult(result: MergeResult, images: ImageBytes, remap: Record<string, string>): MergeBridgeResult {
+  const sourceBlockIds = new Set(Object.values(result.idMap.blocks));
+  rewriteSourceImageSrcs(result.doc, sourceBlockIds, remap);
+  return { doc: result.doc, images, mediaCount: Object.keys(images).length, warnings: result.warnings };
+}
+
 /** Merge `src` into `dest` (model + media). `destImages`/`srcImages` may be
  *  undefined (builder output). */
 export function mergeBridge(
@@ -95,10 +103,7 @@ export function mergeBridge(
   opts?: MergeOptions,
 ): MergeBridgeResult {
   const { images, remap } = unionMedia(destImages ?? {}, srcImages ?? {});
-  const result = mergeDocuments(destDoc, srcDoc, opts);
-  const sourceBlockIds = new Set(Object.values(result.idMap.blocks));
-  rewriteSourceImageSrcs(result.doc, sourceBlockIds, remap);
-  return { doc: result.doc, images, mediaCount: Object.keys(images).length, warnings: result.warnings };
+  return finalizeBridgeResult(mergeDocuments(destDoc, srcDoc, opts), images, remap);
 }
 
 /** Replace the content of block-level control `sdtId` in `destDoc` with `srcDoc`
@@ -112,8 +117,5 @@ export function replaceSdtContentBridge(
   opts?: MergeOptions,
 ): MergeBridgeResult {
   const { images, remap } = unionMedia(destImages ?? {}, srcImages ?? {});
-  const result = new DocumentEditor(destDoc).replaceSdtContent(sdtId, srcDoc, opts);
-  const sourceBlockIds = new Set(Object.values(result.idMap.blocks));
-  rewriteSourceImageSrcs(result.doc, sourceBlockIds, remap);
-  return { doc: result.doc, images, mediaCount: Object.keys(images).length, warnings: result.warnings };
+  return finalizeBridgeResult(new DocumentEditor(destDoc).replaceSdtContent(sdtId, srcDoc, opts), images, remap);
 }

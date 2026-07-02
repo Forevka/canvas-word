@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-02
+
 ### Added
 - **Merge / append documents — across TS/npm and C#.** A pure model
   `mergeDocuments(dest, source, opts)` / `mergeAll(docs, opts)` (shared) folds one document after another,
