@@ -418,8 +418,11 @@ export interface IRTableCell {
    *  author explicitly chose this cell's borders, so it must NOT fall back to the
    *  renderer's default grid. */
   bordersSpecified?: boolean;
-  /** w:tcPr/w:shd → CSS fill. */
-  shd?: string;
+  /** w:tcPr/w:shd → cell shading, tri-state like the paragraph path (issue #150):
+   *  a CSS fill string, `null` for a present-but-empty w:shd (explicit "No Color"
+   *  clear of a fill inherited from the table or table style), and absent when
+   *  there's no w:shd (inherit through the cell → table → table-style cascade). */
+  shd?: string | null;
   /** w:tcPr/w:tcMar — per-side inner padding override (twips). */
   marginTwips?: IRCellMargin;
   /** w:tcPr/w:tcW — preferred cell width. `abs` carries twips (dxa); `pct` carries
@@ -484,8 +487,10 @@ export interface IRTable {
   /** A w:tblBorders element is present — even if empty, the table explicitly
    *  declares its borders (e.g. "no borders"), suppressing the default grid. */
   bordersSpecified?: boolean;
-  /** w:tblPr/w:shd → CSS fill applied to every cell unless overridden. */
-  shd?: string;
+  /** w:tblPr/w:shd → cell shading applied to every cell unless overridden, tri-state
+   *  (issue #150): a CSS fill, `null` for a present-but-empty w:shd (a table-level
+   *  clear of a fill inherited from the table style), or absent (inherit). */
+  shd?: string | null;
   /** w:tblPr/w:tblCellMar — table-wide cell-margin default (twips), the base each
    *  cell's own w:tcMar overrides per side. */
   cellMarginTwips?: IRCellMargin;

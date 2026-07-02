@@ -600,6 +600,10 @@ public sealed record CellSpec
     public int? ColSpan { get; init; }
     public int? RowSpan { get; init; }
     public string? Shading { get; init; }
+    /// <summary>Explicitly clear shading (OOXML &lt;w:shd w:val="clear" w:fill="auto"/&gt;,
+    /// Word's "No Color") — overrides a fill inherited from the table's default shading or
+    /// table style so the clear survives round-trips (issue #150). Ignored if Shading is set.</summary>
+    public bool? ShadingCleared { get; init; }
     public CharStyle? Style { get; init; }
     public TextAlign? Align { get; init; }
     /// <summary>Per-edge borders; absent = the renderer's default light grid.</summary>
@@ -626,6 +630,7 @@ public sealed record CellSpec
         if (ColSpan is { } cs) Js.Set(o, "colSpan", cs);
         if (RowSpan is { } rs) Js.Set(o, "rowSpan", rs);
         if (Shading is { } sh) Js.Set(o, "shading", sh);
+        if (ShadingCleared is { } shc) Js.Set(o, "shadingCleared", shc);
         if (Style is { } st) Js.Set(o, "style", st.ToJs(e));
         if (Align is { } a) Js.Set(o, "align", EnumJs.Align(a));
         if (Borders is { } bd) Js.Set(o, "borders", bd.ToJs(e));
@@ -648,6 +653,10 @@ public sealed record CellOptions
     public int? ColSpan { get; init; }
     public int? RowSpan { get; init; }
     public string? Shading { get; init; }
+    /// <summary>Explicitly clear shading (OOXML &lt;w:shd w:val="clear" w:fill="auto"/&gt;,
+    /// Word's "No Color") — overrides a fill inherited from the table's default shading or
+    /// table style so the clear survives round-trips (issue #150). Ignored if Shading is set.</summary>
+    public bool? ShadingCleared { get; init; }
     public CharStyle? Style { get; init; }
     public TextAlign? Align { get; init; }
     public CellBorders? Borders { get; init; }
@@ -670,6 +679,7 @@ public sealed record CellOptions
         if (ColSpan is { } cs) Js.Set(o, "colSpan", cs);
         if (RowSpan is { } rs) Js.Set(o, "rowSpan", rs);
         if (Shading is { } sh) Js.Set(o, "shading", sh);
+        if (ShadingCleared is { } shc) Js.Set(o, "shadingCleared", shc);
         if (Style is { } st) Js.Set(o, "style", st.ToJs(e));
         if (Align is { } a) Js.Set(o, "align", EnumJs.Align(a));
         if (Borders is { } bd) Js.Set(o, "borders", bd.ToJs(e));

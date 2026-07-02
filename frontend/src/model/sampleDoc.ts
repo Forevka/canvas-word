@@ -279,6 +279,15 @@ const tableDefaultsTable = (): TableBlock => {
       { cells: [c("Borders (outer + interior)"), c("w:tblBorders")] },
       { cells: [c("Shading fill"), c("w:shd")] },
       { cells: [c("Cell margins / padding"), c("w:tblCellMar")] },
+      // A cell that explicitly CLEARS the table default shading (issue #150) —
+      // Word's "No Color". It stays unshaded (white) among its shaded siblings and
+      // re-emits <w:shd w:val="clear" w:fill="auto"/> so the clear round-trips.
+      {
+        cells: [
+          c('Explicit clear ("No Color")'),
+          cell("w:shd val=clear fill=auto", {}, { shadingCleared: true, margin: { ...pad }, borders: { top: rule, right: rule, bottom: rule, left: rule } }),
+        ],
+      },
     ],
   };
 };

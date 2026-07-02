@@ -92,4 +92,22 @@ describe("builder feature round-trip (.docx)", () => {
     expect(p[1]!.style.shading).toBeUndefined();
     expect(p[1]!.style.shadingCleared).toBe(true);
   });
+
+  it("preserves a cell shading clear against a table-level fill (issue #150)", async () => {
+    const doc = DocumentBuilder.create({ idSeed: "cellshd" })
+      // Table default shading #eeeeee; the first cell explicitly clears it.
+      .table([[{ text: "cleared", shadingCleared: true }, "inherits"]], { shading: "#eeeeee" })
+      .build();
+    const t0 = doc.blocks.find((b): b is Extract<Block, { kind: "table" }> => b.kind === "table")!;
+    // The cleared cell does NOT pick up the table default; the sibling does.
+    expect(t0.rows[0]!.cells[0]!.shading).toBeUndefined();
+    expect(t0.rows[0]!.cells[0]!.shadingCleared).toBe(true);
+    expect(t0.rows[0]!.cells[1]!.shading).toBe("#eeeeee");
+
+    const back = runImport((await runExport(doc, "docx")).bytes).doc;
+    const t = back.blocks.find((b): b is Extract<Block, { kind: "table" }> => b.kind === "table")!;
+    expect(t.rows[0]!.cells[0]!.shading).toBeUndefined(); // clear survived
+    expect(t.rows[0]!.cells[0]!.shadingCleared).toBe(true);
+    expect(t.rows[0]!.cells[1]!.shading).toBe("#eeeeee"); // sibling still shaded
+  });
 });

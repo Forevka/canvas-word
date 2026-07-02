@@ -203,6 +203,9 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
         new CellContent[] { "Borders (outer + interior)", "w:tblBorders" },
         new CellContent[] { "Shading fill", "w:shd" },
         new CellContent[] { "Cell margins / padding", "w:tblCellMar" },
+        // A cell that explicitly CLEARS the table default shading (issue #150) — Word's
+        // "No Color": stays unshaded among its shaded siblings and round-trips the clear.
+        new CellContent[] { "Explicit clear (\"No Color\")", new CellSpec { Text = "w:shd val=clear fill=auto", ShadingCleared = true } },
     }, new TableOptions
     {
         HeaderRow = true,
