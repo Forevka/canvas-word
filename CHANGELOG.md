@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **C# `WordCanvasEnginePool` — safe engine reuse for multi-threaded hosts (ClearScript bindings).** A thread-safe,
+  concurrency-bounded pool of `WordCanvasEngine` instances for ASP.NET Core / worker hosts, where the single-isolate
+  engine must never be shared across threads. Register it as a singleton; `UseAsync`/`Use` lease one engine to one
+  caller at a time (offloading the synchronous V8 pump to a thread-pool thread) and reuse engines across requests, so
+  the bundle-load + font-install cost is paid once. `maxConcurrency` caps parallel work — bounding V8 heap and thread
+  pressure at once — and the per-engine `WordCanvasEngineOptions` is fully configurable (bundle/fonts path, heap
+  limit). Faulted engines are disposed rather than re-pooled; `PrewarmAsync` optionally pre-builds engines (bounded so
+  it never exceeds `maxConcurrency` live engines). New README section documents the pattern.
+
 ## [0.9.0] - 2026-07-02
 
 ### Added

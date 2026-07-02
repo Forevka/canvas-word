@@ -255,6 +255,71 @@ empty TOC field's entries from the current headings without a docx round-trip), 
 WordDocument updated = doc.UpdateFields();      // or engine.UpdateFields(doc, opts)
 ```
 
+## Hosting in a multi-threaded app (ASP.NET Core)
+
+A `WordCanvasEngine` owns one V8 isolate and is **not thread-safe** — two threads
+must never touch the same engine at once. ASP.NET Core (and any worker host) runs
+requests concurrently on thread-pool threads, so **do not register one engine as a
+singleton** and call it from multiple requests. Three hazards apply: concurrent
+access corrupts the isolate; each engine keeps its own V8 heap (unbounded engines →
+OOM); and every call is a synchronous, CPU-bound pump that holds its thread.
+
+Use the built-in **`WordCanvasEnginePool`** — a concurrency-bounded, thread-safe pool
+that leases an engine to one caller at a time, reuses engines across requests (so the
+bundle-load + font-install cost is paid once), and caps how many run in parallel
+(bounding both V8 heap and thread pressure). Register it as a **singleton**:
+
+```csharp
+// Program.cs — the pool is thread-safe and shared; engineOptions is fully configurable.
+builder.Services.AddSingleton(_ => new WordCanvasEnginePool(
+    maxConcurrency: 4,                                   // ≈ memory ceiling: 4 × MaxHeapSizeMb
+    engineOptions: new WordCanvasEngineOptions
+    {
+        BundlePath     = Path.Combine(AppContext.BaseDirectory, "assets", "wordcanvas.clearscript.js"),
+        FontsDirectory = Path.Combine(AppContext.BaseDirectory, "fonts"),
+        MaxHeapSizeMb  = 512,
+    }));
+// maxConcurrency defaults to Environment.ProcessorCount; engineOptions to
+// WordCanvasEngineOptions.Default() (resolves bundle+fonts next to the assembly or
+// from WORDCANVAS_BUNDLE / WORDCANVAS_FONTS). Optionally pre-build engines at startup
+// with `await pool.PrewarmAsync(4)` (e.g. from an IHostedService).
+```
+
+```csharp
+// Endpoint — lease an engine for exactly one operation. UseAsync offloads the
+// synchronous pump to a thread-pool thread and returns the result; the engine is
+// used single-threaded for the whole lambda and returned to the pool afterwards.
+app.MapPost("/export.pdf", async (HttpRequest req, WordCanvasEnginePool pool, CancellationToken ct) =>
+{
+    using var body = new MemoryStream();
+    await req.Body.CopyToAsync(body, ct);
+    body.Position = 0;
+
+    byte[] pdf = await pool.UseAsync(engine =>
+    {
+        WordDocument doc = engine.ImportDocx(body);
+        return doc.ExportPdf();
+    }, ct);
+
+    return Results.File(pdf, "application/pdf");
+});
+```
+
+- **`UseAsync<T>` / `UseAsync`** — lease + run off the request thread (preferred in
+  request pipelines); **`Use<T>` / `Use`** — synchronous lease for workers already off
+  the request path. Both block (async or sync) until a lease frees up.
+- **`ct`** cancels only while *waiting* for a lease; once the lambda starts, the
+  synchronous V8 call can't be interrupted.
+- **Sizing.** `maxConcurrency × MaxHeapSizeMb` is roughly the memory ceiling for
+  document work — size it to the box, not to request volume. Excess concurrent
+  requests queue on the pool rather than spawning unbounded isolates.
+- Combine with the **stream overloads** (`doc.ExportPdf(Stream)`) inside the lambda for
+  allocation-free output under load (see *Notes & limitations*).
+
+If you'd rather not pool, the fallbacks are a single engine guarded by your own
+`SemaphoreSlim(1)` (serializes all document work), or a scoped/per-request engine
+(simple but pays full startup on every request).
+
 ## Benchmark
 
 ```sh
@@ -370,7 +435,8 @@ Differences to keep in mind when reading the numbers:
 
 - **One engine per thread.** A `WordCanvasEngine` owns one V8 isolate and is not
   thread-safe; create one per thread or serialize access. Engine construction loads a
-  ~6 MB bundle + 25 fonts, so reuse it across documents.
+  ~6 MB bundle + 25 fonts, so reuse it across documents. In a web/worker host use the
+  built-in **`WordCanvasEnginePool`** (see *Hosting in a multi-threaded app*).
 - **Memory.** Converting all five reports (13 + 9.6 + 9 + 2×2.7 MB) back-to-back in one
   engine peaks at ~700 MB working set: V8 heap ~100 MB used / ~160 MB committed, .NET
   managed ~67 MB (the transient output `byte[]`s), and ~480 MB of fixed V8 + ClearScript
