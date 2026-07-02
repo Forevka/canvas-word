@@ -1,5 +1,7 @@
 # Offline embed (no build step)
 
+[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/embed-offline)
+
 The smallest possible integration of `@forevka/wordcanvas`: a static HTML page
 that mounts the editor in fully offline mode (no backend, no sync, no share),
 using a browser **import map** to resolve the package — no bundler, no tooling.

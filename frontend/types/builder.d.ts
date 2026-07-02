@@ -9,7 +9,7 @@
 // Works in the browser (live preview via WordCanvas.setDocument) and in Node
 // (server-side DOCX/PDF generation via the export subpath).
 
-import type { CellBorders, CellMargin, CharStyle, Document, NamedStyle, ParaBorders, ParaStyle, Stylesheet, TableCondOverrides, TableStyle, TabStop } from "./model";
+import type { CellBorders, CellMargin, CharStyle, Document, NamedStyle, ParaBorders, ParaStyle, SdtProps, Stylesheet, TableCondOverrides, TableStyle, TabStop } from "./model";
 
 export type { Block, CharStyle, Document, NamedStyle, ParaStyle, Stylesheet, TableCondOverrides, TableStyle, TabStop } from "./model";
 
@@ -204,6 +204,21 @@ export declare class ParagraphBuilder<P extends StoryBuilder> {
   inlineEquation(latex: string, style?: Partial<CharStyle>): this;
   /** Append an inline equation from a presentation-MathML string. */
   inlineEquationMathml(mathml: string, style?: Partial<CharStyle>): this;
+  // ---- inline content controls (OOXML w:sdt) ----
+  /** Append an inline content control wrapping `text` with explicit properties. */
+  contentControl(props: SdtProps, text: string, style?: Partial<CharStyle>): this;
+  /** A rich-text content control. */
+  richTextControl(text: string, opts?: { alias?: string; tag?: string }): this;
+  /** A plain-text content control. */
+  plainTextControl(text: string, opts?: { alias?: string; tag?: string }): this;
+  /** A checkbox content control (☒/☐). */
+  checkbox(checked: boolean, opts?: { alias?: string; tag?: string }): this;
+  /** A drop-down content control (fixed list of `{ display, value }` items). */
+  dropDown(selected: string, items: { display: string; value: string }[], opts?: { alias?: string; tag?: string }): this;
+  /** A combo-box content control (list + free text). */
+  comboBox(selected: string, items: { display: string; value: string }[], opts?: { alias?: string; tag?: string }): this;
+  /** A date-picker content control. */
+  dateControl(text: string, dateFormat?: string, opts?: { alias?: string; tag?: string }): this;
   align(align: ParaStyle["align"]): this;
   spacing(opts: SpacingOptions): this;
   indent(opts: IndentOptions): this;

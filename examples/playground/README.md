@@ -1,5 +1,7 @@
 # Document builder playground
 
+[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/playground)
+
 Interactive playground for the `@forevka/wordcanvas/builder` fluent API: write
 builder code on the left, feed it a JSON data model, and watch the document
 render live in the editor on the right.

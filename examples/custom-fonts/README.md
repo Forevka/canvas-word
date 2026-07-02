@@ -1,5 +1,7 @@
 # Custom fonts (no build step)
 
+[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/custom-fonts)
+
 Embed `@forevka/wordcanvas` with the **`fonts`** option: register your own font,
 loaded from URLs at runtime, with per-style faces and the required `sizing`
 metrics — and optionally hide built-ins from the toolbar. This example is fully
