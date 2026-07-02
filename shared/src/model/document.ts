@@ -222,6 +222,12 @@ export interface ParaStyle {
   /** List membership (docx w:numPr): definition ref + level 0..8.
    *  Explicitly `| undefined` so a setParaStyle patch can REMOVE it. */
   list?: { listId: string; level: number } | undefined;
+  /** Explicit "remove numbering" override (OOXML `<w:numPr><w:numId w:val="0"/>`):
+   *  the paragraph's named style carries a list and this paragraph OPTS OUT of it
+   *  (issue #152). Distinct from absent `list` (never in a list / inherit): a
+   *  cleared paragraph re-emits `w:numId="0"` so the opt-out survives a round-trip
+   *  instead of the style's list silently returning. Ignored when `list` is set. */
+  listCleared?: boolean | undefined;
   namedStyle?: string; // resolved through Stylesheet cascade, e.g. "heading1"
   /** Effective outline level (docx w:outlineLvl), 0-8 = TOC levels 1-9 — resolved
    *  through the paragraph-style cascade (heading styles carry it). Drives TOC

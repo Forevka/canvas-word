@@ -265,6 +265,10 @@ function pPrXml(style: ParaStyle, ctx: PartCtx, markRun?: CharStyle): string {
   if (style.list) {
     const numId = ctx.listIdMap.get(style.list.listId) ?? 0;
     c.push(el("w:numPr", undefined, el("w:ilvl", { "w:val": style.list.level }) + el("w:numId", { "w:val": numId })));
+  } else if (style.listCleared) {
+    // Explicit "remove numbering" (issue #152) — numId=0 overrides a list the
+    // paragraph's named style would otherwise provide, so the opt-out round-trips.
+    c.push(el("w:numPr", undefined, el("w:numId", { "w:val": 0 })));
   }
   if (style.pageBreakBefore) c.push(el("w:pageBreakBefore"));
   if (style.keepWithNext) c.push(el("w:keepNext"));

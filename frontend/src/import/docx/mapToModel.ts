@@ -279,7 +279,14 @@ export function createMapper(
    *  Returns the level indent (px) so soft-break continuation lines — which
    *  drop list membership — can restore it and stay aligned under the item. */
   const applyListMembership = (style: ParaStyle, ref: IRParaProps["list"]): number => {
-    if (!ref) return 0; // undefined (no list) or null (explicitly removed)
+    // Tri-state (issue #152): null = explicit numId=0 removal (opt out of an
+    // inherited style list) — record the marker so export re-emits it; undefined =
+    // simply not in a list (inherit).
+    if (ref === null) {
+      style.listCleared = true;
+      return 0;
+    }
+    if (!ref) return 0;
     const def = listDefFor(ref.numId);
     if (!def) {
       warnings.add("list-missing", "A list reference had no matching definition — markers were dropped.");

@@ -606,6 +606,16 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     return this;
   }
 
+  /** Explicitly remove list membership (OOXML `<w:numPr><w:numId w:val="0"/>`,
+   *  Word's "opt out of the list") — overrides a list the paragraph's named style
+   *  carries, so the opt-out survives export/re-import instead of the style's list
+   *  silently returning (issue #152). Distinct from simply not being in a list. */
+  clearList(): this {
+    delete this.para.style.list;
+    this.para.style.listCleared = true;
+    return this;
+  }
+
   /** Widow/orphan control (OOXML w:widowControl). Word's default is ON; pass
    *  `false` to let a lone first/last line break across a page boundary. */
   widowControl(on = true): this {
