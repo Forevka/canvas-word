@@ -108,6 +108,11 @@ export interface GeoScope {
 const indexCache = new WeakMap<LayoutTree, TreeIndex>();
 const bandIndexCache = new WeakMap<LayoutTree, Map<string, TreeIndex>>();
 
+/** INVARIANT: `entries` is sorted by pageIndex — pages are walked first-to-last
+ *  and every entry of a page is appended before the next page starts, so each
+ *  page's lines form one contiguous span. pageSpan()'s binary search (and the
+ *  `earlier = entries[span.start - 1]` derivation in hitTest) depend on this;
+ *  don't reorder the walk without updating them. */
 function buildIndex(
   pageBlocks: Iterable<{ pageIndex: number; blocks: PlacedBlock[] }>,
   indexBandTables: boolean,
@@ -166,6 +171,30 @@ function buildIndex(
     for (const block of pb.blocks) indexBlock(pb.pageIndex, block);
   }
   return { entries, byBlock, blockOrder };
+}
+
+/** Index of the first entry whose pageIndex >= p. buildIndex walks pages
+ *  first-to-last, so entries are sorted by pageIndex and one page's lines form
+ *  a contiguous span. */
+function lowerBoundPage(entries: LineEntry[], p: number): number {
+  let lo = 0;
+  let hi = entries.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (entries[mid]!.pageIndex < p) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** The contiguous [start, end) entry range of one page. Pointer-driven queries
+ *  (hit-testing, hover probes) iterate this span instead of every line in the
+ *  document, so a click/hover costs O(lines on the page), not O(lines in doc). */
+function pageSpan(idx: TreeIndex, pageIndex: number): { start: number; end: number } {
+  return {
+    start: lowerBoundPage(idx.entries, pageIndex),
+    end: lowerBoundPage(idx.entries, pageIndex + 1),
+  };
 }
 
 function treeIndex(tree: LayoutTree): TreeIndex {
@@ -463,14 +492,16 @@ export function hitTest(
   scope?: GeoScope,
 ): DocPosition | null {
   const idx = getIndex(tree, scope);
+  const span = pageSpan(idx, pageIndex);
 
   // If the point lands inside a table cell, the caret belongs in THAT cell —
   // never a neighbour. A short line in the clicked cell can sit farther from x
   // than a longer line in the next column, so the x-distance ranking below
   // would otherwise jump columns. Pin candidates to the containing cell.
   let targetCell: PlacedTableCell | undefined;
-  for (const e of idx.entries) {
-    if (e.pageIndex !== pageIndex || !e.cell) continue;
+  for (let i = span.start; i < span.end; i++) {
+    const e = idx.entries[i]!;
+    if (!e.cell) continue;
     const c = e.cell;
     if (x >= c.x && x < c.x + c.width && y >= c.y && y < c.y + c.height) {
       targetCell = c;
@@ -494,8 +525,9 @@ export function hitTest(
     let contain: LineEntry | null = null;
     let nearest: LineEntry | null = null;
     let nearestD = Infinity;
-    for (const e of idx.entries) {
-      if (e.pageIndex !== pageIndex || e.cell !== targetCell) continue;
+    for (let i = span.start; i < span.end; i++) {
+      const e = idx.entries[i]!;
+      if (e.cell !== targetCell) continue;
       const top = e.block.y + e.line.y;
       const bottom = top + e.line.height;
       if (ly >= top && ly < bottom) {
@@ -515,14 +547,12 @@ export function hitTest(
   let containing: LineEntry | null = null; // best line whose vertical span holds y
   let before: LineEntry | null = null; // nearest line fully above y on this page
   let after: LineEntry | null = null; // first line below y on this page
-  let earlier: LineEntry | null = null; // last line on an earlier page
+  // Last line on an earlier page: entries are page-ordered, so it's the one
+  // right before this page's span.
+  const earlier: LineEntry | null = span.start > 0 ? idx.entries[span.start - 1]! : null;
 
-  for (const e of idx.entries) {
-    if (e.pageIndex > pageIndex) break;
-    if (e.pageIndex < pageIndex) {
-      earlier = e;
-      continue;
-    }
+  for (let i = span.start; i < span.end; i++) {
+    const e = idx.entries[i]!;
     if (targetCell && e.cell !== targetCell) continue; // pinned to the clicked cell
     const top = e.block.y + e.line.y;
     const bottom = top + e.line.height;
@@ -747,8 +777,9 @@ export function hitTestBehindObject(tree: LayoutTree, pageIndex: number, x: numb
  *  stealing a click meant for the text drawn on top of it. */
 export function pointOnText(tree: LayoutTree, pageIndex: number, x: number, y: number, scope?: GeoScope): boolean {
   const idx = getIndex(tree, scope);
-  for (const e of idx.entries) {
-    if (e.pageIndex !== pageIndex) continue;
+  const span = pageSpan(idx, pageIndex);
+  for (let i = span.start; i < span.end; i++) {
+    const e = idx.entries[i]!;
     const top = e.block.y + e.line.y;
     const bottom = top + e.line.height;
     if (y < top || y >= bottom) continue;
@@ -855,8 +886,9 @@ export function inlineEquationAt(
   scope?: GeoScope,
 ): { blockId: string; start: number; end: number } | null {
   const idx = getIndex(tree, scope);
-  for (const e of idx.entries) {
-    if (e.pageIndex !== pageIndex) continue;
+  const span = pageSpan(idx, pageIndex);
+  for (let i = span.start; i < span.end; i++) {
+    const e = idx.entries[i]!;
     const top = e.block.y + e.line.y;
     if (y < top || y >= top + e.line.height) continue;
     for (const frag of e.line.fragments) {
@@ -879,8 +911,9 @@ export function linkAt(
   scope?: GeoScope,
 ): string | null {
   const idx = getIndex(tree, scope);
-  for (const e of idx.entries) {
-    if (e.pageIndex !== pageIndex) continue;
+  const span = pageSpan(idx, pageIndex);
+  for (let i = span.start; i < span.end; i++) {
+    const e = idx.entries[i]!;
     const top = e.block.y + e.line.y;
     if (y < top || y >= top + e.line.height) continue;
     for (const frag of e.line.fragments) {

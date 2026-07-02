@@ -13,7 +13,7 @@
 import type { LayoutTree, LineBox, Page, PlacedBlock, PlacedTableCell } from "../layout/layoutTree";
 import type { CaretRect, Rect } from "../layout/geometry";
 import { spaceMarkXs } from "../layout/geometry";
-import type { CellBorder } from "@cw/shared";
+import type { CellBorder, CharStyle } from "@cw/shared";
 import { DEFAULT_CHAR_STYLE } from "@cw/shared";
 import { charStyleToFont } from "../layout/metrics";
 import { paintMathBoxCanvas, paintMathBoxCanvasRaw } from "./paintMath";
@@ -326,13 +326,35 @@ export interface PaintLayerOptions {
   fontRegistry?: CustomFontRegistry;
 }
 
-/** Serialize a page's paint inputs for change detection in setTree. Includes the
- *  whole Page (body blocks, bands, page chrome) — over-inclusive on purpose: a
- *  stray field can only trigger a harmless extra repaint, never a missed one.
- *  Overlays (selection, search, review, adornments) have their own dirty paths,
- *  so they are intentionally NOT part of this signature. */
-function pageSignature(p: Page): string {
-  return JSON.stringify(p);
+/** Structural equality of two pages' paint inputs for change detection in
+ *  setTree. Covers the whole Page (body blocks, bands, page chrome) — over-
+ *  inclusive on purpose: a stray field difference can only trigger a harmless
+ *  extra repaint, never a missed one. Overlays (selection, search, review,
+ *  adornments) have their own dirty paths, so they are intentionally NOT part
+ *  of this comparison.
+ *
+ *  A relayout rebuilds the LayoutTree (fresh Page/PlacedBlock objects), but the
+ *  engine's caches reference-share the heavy innards across passes (LineBox[]
+ *  per unchanged paragraph, measured tables, band layouts), so the identity
+ *  short-circuit means an unchanged page compares in O(blocks) without ever
+ *  descending into fragments — unlike the previous JSON.stringify signature,
+ *  which re-serialized every mounted page on every keystroke. */
+function paintInputsEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || a === null || typeof b !== "object" || b === null) return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (!paintInputsEqual(a[i], b[i])) return false;
+    return true;
+  }
+  const ka = Object.keys(a) as (keyof typeof a)[];
+  const kb = Object.keys(b) as (keyof typeof b)[];
+  if (ka.length !== kb.length) return false;
+  for (const k of ka) {
+    if (!Object.prototype.hasOwnProperty.call(b, k)) return false;
+    if (!paintInputsEqual(a[k], b[k])) return false;
+  }
+  return true;
 }
 
 export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions = {}): PaintScheduler {
@@ -345,6 +367,20 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
   const chrome = opts.chrome !== false;
   const fontRegistry = opts.fontRegistry;
   const gap = chrome ? theme.pageGapPx : 0;
+  // runPaint is pure in (style, linkColor), and linkColor is fixed for this paint
+  // layer (theme.externalLink) — memoize per CharStyle object so the fragment loop
+  // doesn't re-derive and re-allocate a RunPaint per fragment on every repaint.
+  // Object identity is a sound key: model styles are immutable (edits mint new
+  // objects — the same contract charStyleToFont's memo relies on).
+  const runPaintCache = new WeakMap<CharStyle, RunPaint>();
+  const runPaintFor = (s: CharStyle): RunPaint => {
+    let rp = runPaintCache.get(s);
+    if (!rp) {
+      rp = runPaint(s, theme.externalLink);
+      runPaintCache.set(s, rp);
+    }
+    return rp;
+  };
   let tree: LayoutTree | null = null;
   let selectionRects: Rect[] = [];
   let searchRects: Rect[] = [];
@@ -369,13 +405,14 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
   const placeholders: HTMLDivElement[] = [];
   const liveCanvases = new Map<number, HTMLCanvasElement>();
   const dirty = new Set<number>();
-  // Per-page paint signature from the last setTree. A relayout rebuilds the whole
-  // LayoutTree (fresh PlacedBlock objects), so we can't compare by reference —
-  // instead we serialize each LIVE page's paint inputs and repaint only the pages
-  // whose content actually changed, rather than every mounted canvas. Serializing
-  // is strictly over-dirty-safe (an unrelated field change can only cause an extra
+  // Each LIVE page as painted by the last setTree. A relayout rebuilds the whole
+  // LayoutTree (fresh Page objects), so top-level identity never matches — instead
+  // paintInputsEqual compares each live page structurally (with identity short-
+  // circuits on the cache-shared innards) and we repaint only the pages whose
+  // content actually changed, rather than every mounted canvas. The comparison is
+  // strictly over-dirty-safe (an unrelated field change can only cause an extra
   // repaint, never a missed one) and bounded to the few live pages.
-  const pageSigs = new Map<number, string>();
+  const prevPages = new Map<number, Page>();
   let rafId: number | null = null;
   let zoom = 1;
   // Drawing-grid view state (mirrors `zoom` — presentational, no model change).
@@ -470,9 +507,9 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     ph.prepend(canvas); // under the caret overlay if it lives on this page
     liveCanvases.set(index, canvas);
     dirty.add(index);
-    // Record the signature it's about to be painted at, so the next setTree only
+    // Record the page it's about to be painted at, so the next setTree only
     // repaints it if its content actually changes after this mount.
-    pageSigs.set(index, pageSignature(tree.pages[index]!));
+    prevPages.set(index, tree.pages[index]!);
     schedule();
   }
 
@@ -482,6 +519,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     canvas.remove();
     liveCanvases.delete(index);
     dirty.delete(index);
+    prevPages.delete(index); // don't retain scrolled-away pages' layout objects
   }
 
   function schedule(): void {
@@ -1083,6 +1121,17 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       ctx.setLineDash([]);
       return;
     }
+    // Skip redundant ctx.font assignments — consecutive fragments in a paragraph
+    // overwhelmingly share one style, and the setter re-parses the font string
+    // even for a no-op value. Tracked per text block; anything that sets ctx.font
+    // outside setFont (equation painting, formatting marks) resets the tracker.
+    let curFont: string | null = null;
+    const setFont = (font: string): void => {
+      if (font !== curFont) {
+        ctx.font = font;
+        curFont = font;
+      }
+    };
     // List marker — paint-only, on the first line's baseline in the hanging indent.
     const firstLine = block.lines[0];
     if (block.marker && firstLine) {
@@ -1093,7 +1142,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       if (shape) {
         paintBulletShape(ctx, shape, block.marker.style.color);
       } else {
-        ctx.font = charStyleToFont(block.marker.style);
+        setFont(charStyleToFont(block.marker.style));
         ctx.fillStyle = block.marker.style.color;
         (ctx as CanvasRenderingContext2D & { wordSpacing: string }).wordSpacing = "0px";
         ctx.fillText(block.marker.text, block.marker.x, markerBaseline);
@@ -1104,7 +1153,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       const line = block.lines[block.toc.lineIndex];
       if (line) {
         const baseline = block.y + line.y + line.ascent;
-        ctx.font = charStyleToFont(block.toc.style);
+        setFont(charStyleToFont(block.toc.style));
         // The number inherits the entry's first-run style; normalize the
         // imported Hyperlink blue so it reads as plain text like the leader.
         ctx.fillStyle = normalizeLinkBlue(block.toc.style.color);
@@ -1159,19 +1208,20 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
           // Honor the run's color/decorations: a hyperlinked or underlined/struck
           // inline equation paints in the link color with the rule(s) drawn over
           // its box (highlight was already filled above, with the other frags).
-          const rp = runPaint(s, theme.externalLink);
+          const rp = runPaintFor(s);
           paintMathBoxCanvasRaw(ctx, frag.equation, x, baselineY, MATH_FONT_FAMILY, rp.color);
           const th = decorationThickness(s.fontSizePx);
           if (rp.underline) paintUnderline(ctx, x, baselineY + UNDERLINE_OFFSET_PX, frag.width, s.fontSizePx, rp);
           ctx.fillStyle = rp.color;
           if (rp.strike) ctx.fillRect(x, baselineY + strikeOffset(s.fontSizePx), frag.width, th);
+          curFont = null; // math painting set its own ctx.font
           continue;
         }
-        ctx.font = charStyleToFont(s);
+        setFont(charStyleToFont(s));
         // EXTERNAL hyperlinks paint blue+underlined as an affordance. In-document
         // anchors ("#bookmark" — TOC entries, cross-references) read as normal
         // paragraph text like Word (handled by runPaint's link normalization).
-        const rp = runPaint(s, theme.externalLink);
+        const rp = runPaintFor(s);
         ctx.fillStyle = rp.color;
         (ctx as CanvasRenderingContext2D & { wordSpacing: string }).wordSpacing =
           `${frag.wordSpacingPx ?? 0}px`;
@@ -1216,7 +1266,10 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       // the next block, and overlays draw with the default left anchor.
       ctx.direction = "ltr";
       ctx.textAlign = "left";
-      if (showFormattingMarks) paintFormattingMarks(ctx, block, line, baselineY);
+      if (showFormattingMarks) {
+        paintFormattingMarks(ctx, block, line, baselineY);
+        curFont = null; // formatting marks set their own ctx.font
+      }
     }
     // Paragraph border box (w:pBdr) — drawn over the (already-filled) shading and
     // text, like a cell's edges. `between` is not drawn for a standalone paragraph.
@@ -1299,17 +1352,17 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
         });
       tree = next;
       if (dimsChanged) {
-        pageSigs.clear(); // page set / geometry changed wholesale
+        prevPages.clear(); // page set / geometry changed wholesale
         rebuildPlaceholders();
       } else {
         // Same page set & dimensions: repaint only the live pages whose paint
         // inputs actually changed (typing usually touches one page; the rest of
         // the mounted canvases are identical and can be left alone).
         for (const i of liveCanvases.keys()) {
-          const sig = pageSignature(next.pages[i]!);
-          if (pageSigs.get(i) !== sig) {
+          const page = next.pages[i]!;
+          if (!paintInputsEqual(prevPages.get(i), page)) {
             dirty.add(i);
-            pageSigs.set(i, sig);
+            prevPages.set(i, page);
           }
         }
       }

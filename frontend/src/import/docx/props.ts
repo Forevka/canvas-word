@@ -6,19 +6,28 @@ import { decodeShdFill } from "./borders";
 import type { IRLineNumbering, IRParaBorders, IRParaProps, IRRawBorder, IRRunProps } from "./types";
 import { WarningSink } from "./types";
 import { lineAutoToMultiplier } from "./units";
-import { attr, el, els, numAttr, onOff, val, type XmlNode } from "./xml";
+import { attr, el, els, indexChildren, numAttr, onOff, val, type XmlNode } from "./xml";
+
+/** `val()` against a pre-built child index (see indexChildren). */
+const bagVal = (bag: Map<string, XmlNode>, tagName: string): string | undefined => {
+  const child = bag.get(tagName);
+  return child ? attr(child, "w:val") : undefined;
+};
 
 export function decodeRunProps(rPr: XmlNode): IRRunProps {
+  // ~26 tag probes per run bag — index the children once (O(1) per probe)
+  // instead of a linear children scan per probe.
+  const bag = indexChildren(rPr);
   const props: IRRunProps = {};
-  const styleId = val(rPr, "w:rStyle");
+  const styleId = bagVal(bag, "w:rStyle");
   if (styleId) props.styleId = styleId;
-  const bold = onOff(el(rPr, "w:b"));
+  const bold = onOff(bag.get("w:b"));
   if (bold !== undefined) props.bold = bold;
-  const italic = onOff(el(rPr, "w:i"));
+  const italic = onOff(bag.get("w:i"));
   if (italic !== undefined) props.italic = italic;
-  const strike = onOff(el(rPr, "w:strike"));
+  const strike = onOff(bag.get("w:strike"));
   if (strike !== undefined) props.strikethrough = strike;
-  const u = el(rPr, "w:u");
+  const u = bag.get("w:u");
   if (u) {
     const uVal = attr(u, "w:val");
     props.underline = uVal !== "none";
@@ -30,7 +39,7 @@ export function decodeRunProps(rPr: XmlNode): IRRunProps {
     const uThemeColor = attr(u, "w:themeColor");
     if (uThemeColor) props.underlineColorTheme = uThemeColor;
   }
-  const color = el(rPr, "w:color");
+  const color = bag.get("w:color");
   if (color) {
     const hex = attr(color, "w:val");
     if (hex) props.color = hex;
@@ -41,13 +50,13 @@ export function decodeRunProps(rPr: XmlNode): IRRunProps {
     const themeShade = attr(color, "w:themeShade");
     if (themeShade) props.colorThemeShade = themeShade;
   }
-  const sz = numAttr(el(rPr, "w:sz"), "w:val");
+  const sz = numAttr(bag.get("w:sz"), "w:val");
   if (sz !== undefined) props.sizeHalfPoints = sz;
   // w:spacing on a run is character tracking (twips); on a paragraph it is line
   // spacing — decodeParaProps reads the paragraph form separately.
-  const spacing = numAttr(el(rPr, "w:spacing"), "w:val");
+  const spacing = numAttr(bag.get("w:spacing"), "w:val");
   if (spacing !== undefined) props.letterSpacingTwips = spacing;
-  const rFonts = el(rPr, "w:rFonts");
+  const rFonts = bag.get("w:rFonts");
   if (rFonts) {
     const font = attr(rFonts, "w:ascii");
     if (font) props.fontAscii = font;
@@ -66,28 +75,28 @@ export function decodeRunProps(rPr: XmlNode): IRRunProps {
     const eastAsiaTheme = attr(rFonts, "w:eastAsiaTheme");
     if (eastAsiaTheme) props.fontThemeEastAsia = eastAsiaTheme;
   }
-  const highlight = val(rPr, "w:highlight");
+  const highlight = bagVal(bag, "w:highlight");
   if (highlight && highlight !== "none") props.highlight = highlight;
-  const vertAlign = val(rPr, "w:vertAlign");
+  const vertAlign = bagVal(bag, "w:vertAlign");
   if (vertAlign) props.vertAlign = vertAlign;
-  const vanish = onOff(el(rPr, "w:vanish"));
+  const vanish = onOff(bag.get("w:vanish"));
   if (vanish !== undefined) props.vanish = vanish;
-  const caps = onOff(el(rPr, "w:caps"));
+  const caps = onOff(bag.get("w:caps"));
   if (caps !== undefined) props.caps = caps;
-  const smallCaps = onOff(el(rPr, "w:smallCaps"));
+  const smallCaps = onOff(bag.get("w:smallCaps"));
   if (smallCaps !== undefined) props.smallCaps = smallCaps;
-  const rtl = onOff(el(rPr, "w:rtl"));
+  const rtl = onOff(bag.get("w:rtl"));
   if (rtl !== undefined) props.rtl = rtl; // keep an explicit w:rtl="0" (clears inherited RTL)
   // Minor run typography & effects (w:rPr extras): double strike, baseline position,
   // kerning, character-width scaling, emphasis marks, the boolean text effects, a run
   // border, and fitText. Decode-only; mapToModel converts units / collapses borders.
-  const dstrike = onOff(el(rPr, "w:dstrike"));
+  const dstrike = onOff(bag.get("w:dstrike"));
   if (dstrike !== undefined) props.doubleStrikethrough = dstrike;
-  const position = numAttr(el(rPr, "w:position"), "w:val");
+  const position = numAttr(bag.get("w:position"), "w:val");
   if (position !== undefined) props.positionHalfPoints = position;
-  const kern = numAttr(el(rPr, "w:kern"), "w:val");
+  const kern = numAttr(bag.get("w:kern"), "w:val");
   if (kern !== undefined) props.kerningHalfPoints = kern;
-  const w = el(rPr, "w:w");
+  const w = bag.get("w:w");
   if (w) {
     // w:w/@w:val is a percentage; older producers append "%". Parse the number out.
     const raw = attr(w, "w:val");
@@ -96,17 +105,17 @@ export function decodeRunProps(rPr: XmlNode): IRRunProps {
       if (Number.isFinite(pct) && pct > 0) props.widthScalePct = pct;
     }
   }
-  const em = val(rPr, "w:em");
+  const em = bagVal(bag, "w:em");
   if (em && em !== "none") props.emphasisMark = em;
-  const outline = onOff(el(rPr, "w:outline"));
+  const outline = onOff(bag.get("w:outline"));
   if (outline !== undefined) props.outline = outline;
-  const shadow = onOff(el(rPr, "w:shadow"));
+  const shadow = onOff(bag.get("w:shadow"));
   if (shadow !== undefined) props.shadow = shadow;
-  const emboss = onOff(el(rPr, "w:emboss"));
+  const emboss = onOff(bag.get("w:emboss"));
   if (emboss !== undefined) props.emboss = emboss;
-  const imprint = onOff(el(rPr, "w:imprint"));
+  const imprint = onOff(bag.get("w:imprint"));
   if (imprint !== undefined) props.imprint = imprint;
-  const bdr = el(rPr, "w:bdr");
+  const bdr = bag.get("w:bdr");
   if (bdr) {
     const raw: IRRawBorder = { val: attr(bdr, "w:val") ?? "single" };
     const sz = numAttr(bdr, "w:sz");
@@ -115,7 +124,7 @@ export function decodeRunProps(rPr: XmlNode): IRRunProps {
     if (color) raw.color = color;
     props.runBorder = raw;
   }
-  const fitText = numAttr(el(rPr, "w:fitText"), "w:val");
+  const fitText = numAttr(bag.get("w:fitText"), "w:val");
   if (fitText !== undefined) props.fitTextTwips = fitText;
   return props;
 }
@@ -131,15 +140,18 @@ const JC_MAP: Record<string, IRParaProps["align"]> = {
 };
 
 export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProps {
+  // Same one-pass child index as decodeRunProps — this bag is probed for ~20
+  // tags and runs once per paragraph.
+  const bag = indexChildren(pPr);
   const props: IRParaProps = {};
-  const styleId = val(pPr, "w:pStyle");
+  const styleId = bagVal(bag, "w:pStyle");
   if (styleId) props.styleId = styleId;
 
-  const jc = val(pPr, "w:jc");
+  const jc = bagVal(bag, "w:jc");
   const align = jc !== undefined ? JC_MAP[jc] : undefined;
   if (align) props.align = align;
 
-  const spacing = el(pPr, "w:spacing");
+  const spacing = bag.get("w:spacing");
   if (spacing) {
     const before = numAttr(spacing, "w:before");
     if (before !== undefined) props.spaceBeforeTwips = before;
@@ -163,7 +175,7 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
     }
   }
 
-  const ind = el(pPr, "w:ind");
+  const ind = bag.get("w:ind");
   if (ind) {
     const left = numAttr(ind, "w:left") ?? numAttr(ind, "w:start");
     if (left !== undefined) props.indentLeftTwips = left;
@@ -175,19 +187,19 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
     else if (hanging !== undefined) props.indentFirstLineTwips = -hanging;
   }
 
-  const keepNext = onOff(el(pPr, "w:keepNext"));
+  const keepNext = onOff(bag.get("w:keepNext"));
   if (keepNext !== undefined) props.keepWithNext = keepNext;
 
-  const keepLines = onOff(el(pPr, "w:keepLines"));
+  const keepLines = onOff(bag.get("w:keepLines"));
   if (keepLines !== undefined) props.keepLinesTogether = keepLines;
 
-  const contextualSpacing = onOff(el(pPr, "w:contextualSpacing"));
+  const contextualSpacing = onOff(bag.get("w:contextualSpacing"));
   if (contextualSpacing !== undefined) props.contextualSpacing = contextualSpacing;
 
-  const bidi = onOff(el(pPr, "w:bidi"));
+  const bidi = onOff(bag.get("w:bidi"));
   if (bidi !== undefined) props.direction = bidi ? "rtl" : "ltr"; // keep explicit w:bidi="0"
 
-  const tabs = el(pPr, "w:tabs");
+  const tabs = bag.get("w:tabs");
   if (tabs) {
     const stops: NonNullable<IRParaProps["tabStops"]> = [];
     for (const t of els(tabs, "w:tab")) {
@@ -204,18 +216,18 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
     if (stops.length > 0) props.tabStops = stops;
   }
 
-  const pageBreakBefore = onOff(el(pPr, "w:pageBreakBefore"));
+  const pageBreakBefore = onOff(bag.get("w:pageBreakBefore"));
   if (pageBreakBefore !== undefined) props.pageBreakBefore = pageBreakBefore;
 
   // w:outlineLvl (0-8) — heading styles set it; absent = body text. Resolved
   // through the style cascade (mergeProps), so a heading paragraph inherits it.
-  const outline = val(pPr, "w:outlineLvl");
+  const outline = bagVal(bag, "w:outlineLvl");
   if (outline !== undefined) {
     const n = Number(outline);
     if (Number.isFinite(n) && n >= 0 && n <= 8) props.outlineLevel = n;
   }
 
-  const numPr = el(pPr, "w:numPr");
+  const numPr = bag.get("w:numPr");
   if (numPr) {
     const numId = val(numPr, "w:numId");
     if (numId !== undefined) {
@@ -226,7 +238,7 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
 
   // w:pBdr — paragraph borders (top/left/bottom/right/between/bar). Decoded raw
   // here; mapToModel collapses each edge to px (reusing the table border path).
-  const pBdr = el(pPr, "w:pBdr");
+  const pBdr = bag.get("w:pBdr");
   if (pBdr) {
     const borders: IRParaBorders = {};
     const edge = (key: keyof IRParaBorders, tag: string): void => {
@@ -250,28 +262,28 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
   }
 
   // Paragraph-level w:shd (distinct from a run's or cell's shading).
-  const shd = decodeShdFill(el(pPr, "w:shd"));
+  const shd = decodeShdFill(bag.get("w:shd"));
   if (shd !== undefined) props.shd = shd;
 
   // Minor paragraph props (issue #62): widow/orphan control, line-number
   // suppression, vertical line alignment, mirrored indents, right-indent adjust.
-  const widow = onOff(el(pPr, "w:widowControl"));
+  const widow = onOff(bag.get("w:widowControl"));
   if (widow !== undefined) props.widowControl = widow;
-  const suppressLn = onOff(el(pPr, "w:suppressLineNumbers"));
+  const suppressLn = onOff(bag.get("w:suppressLineNumbers"));
   if (suppressLn !== undefined) props.suppressLineNumbers = suppressLn;
-  const textAlign = val(pPr, "w:textAlignment");
+  const textAlign = bagVal(bag, "w:textAlignment");
   if (textAlign === "top" || textAlign === "center" || textAlign === "bottom" || textAlign === "baseline") {
     props.textAlignment = textAlign;
   }
-  const mirror = onOff(el(pPr, "w:mirrorIndents"));
+  const mirror = onOff(bag.get("w:mirrorIndents"));
   if (mirror !== undefined) props.mirrorIndents = mirror;
-  const adjustRight = onOff(el(pPr, "w:adjustRightInd"));
+  const adjustRight = onOff(bag.get("w:adjustRightInd"));
   if (adjustRight !== undefined) props.adjustRightInd = adjustRight;
 
-  const rPr = el(pPr, "w:rPr");
+  const rPr = bag.get("w:rPr");
   if (rPr) props.markRunProps = decodeRunProps(rPr);
 
-  const sectPr = el(pPr, "w:sectPr");
+  const sectPr = bag.get("w:sectPr");
   if (sectPr) {
     // Page geometry of non-last sections is still lossy (last wins), but the
     // page boundary the break implies IS respected via pageBreakBefore — when
