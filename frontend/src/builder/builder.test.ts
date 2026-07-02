@@ -180,8 +180,12 @@ describe("images", () => {
     expect(img).toMatchObject({ widthPx: 100, heightPx: 50, align: "center" });
   });
 
-  it("requires explicit dimensions", () => {
-    expect(() => DocumentBuilder.create().image("data:image/png;base64,", { widthPx: 0, heightPx: 10 })).toThrow(TypeError);
+  it("requires explicit dimensions (warns and skips the image)", () => {
+    // Warn-and-continue (not throw) — the builder's uniform invalid-input contract.
+    const b = DocumentBuilder.create();
+    const doc = b.image("data:image/png;base64,", { widthPx: 0, heightPx: 10 }).build();
+    expect(b.warnings.some((w) => w.code === "image-size-invalid")).toBe(true);
+    expect(doc.blocks.some((blk) => blk.kind === "image")).toBe(false);
   });
 });
 
