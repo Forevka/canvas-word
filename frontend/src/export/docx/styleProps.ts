@@ -2,7 +2,7 @@
 // list-marker run props. Only DEFINED fields are written — the importer reads
 // each w:* element into a patch field, so absent elements stay absent.
 
-import type { CellBorders, CharStyle, ParaStyle, TableCond, TableCondProps, TableStyle } from "@cw/shared";
+import type { CellBorders, CharStyle, ParaStyle, TableCond, TableCondProps, TableStyle, TabStop } from "@cw/shared";
 import { multiplierToLine, pxToHalfPoints, pxToTwips } from "../units";
 import { borderEdgeXml, HIGHLIGHT_NAME, hexColor as hex, JC, TAB_LEADER, TAB_VAL } from "./mappings";
 import { el } from "./xmlWrite";
@@ -137,18 +137,20 @@ export function paraCoreXml(style: ParaStyle): string {
   else if (style.contextualSpacing === false) c.push(el("w:contextualSpacing", { "w:val": "0" }));
   c.push(el("w:jc", { "w:val": JC[style.align] }));
   if (style.tabStops && style.tabStops.length > 0) {
-    const tabs = style.tabStops
-      .map((t) =>
-        el("w:tab", {
-          "w:val": t.align ? (TAB_VAL[t.align] ?? "left") : "left",
-          "w:pos": pxToTwips(t.posPx),
-          "w:leader": t.leader && t.leader !== "none" ? TAB_LEADER[t.leader] : undefined,
-        }),
-      )
-      .join("");
-    c.push(el("w:tabs", undefined, tabs));
+    c.push(el("w:tabs", undefined, style.tabStops.map(tabXml).join("")));
   }
   return c.join("");
+}
+
+/** One w:tab element — a real stop, or an explicit clear (issue #154) that re-emits
+ *  `w:val="clear"` (position only) so a removed style tab stays removed on re-import. */
+function tabXml(t: TabStop): string {
+  if (t.cleared) return el("w:tab", { "w:val": "clear", "w:pos": pxToTwips(t.posPx) });
+  return el("w:tab", {
+    "w:val": t.align ? (TAB_VAL[t.align] ?? "left") : "left",
+    "w:pos": pxToTwips(t.posPx),
+    "w:leader": t.leader && t.leader !== "none" ? TAB_LEADER[t.leader] : undefined,
+  });
 }
 
 export function partialRPrXml(c: Partial<CharStyle>): string {
@@ -233,16 +235,7 @@ export function partialPPrXml(p: Partial<ParaStyle>): string {
   if (p.shading) out.push(shdFillXml(p.shading));
   else if (p.shadingCleared) out.push(shdClearXml()); // issue #147: explicit "No Color" delta
   if (p.tabStops && p.tabStops.length > 0) {
-    const tabs = p.tabStops
-      .map((t) =>
-        el("w:tab", {
-          "w:val": t.align ? (TAB_VAL[t.align] ?? "left") : "left",
-          "w:pos": pxToTwips(t.posPx),
-          "w:leader": t.leader && t.leader !== "none" ? TAB_LEADER[t.leader] : undefined,
-        }),
-      )
-      .join("");
-    out.push(el("w:tabs", undefined, tabs));
+    out.push(el("w:tabs", undefined, p.tabStops.map(tabXml).join("")));
   }
   return out.length > 0 ? el("w:pPr", undefined, out.join("")) : "";
 }

@@ -1128,6 +1128,8 @@ const TAB_LEADER: Record<string, TabLeader> = {
 /** Raw w:tabs → model TabStop[] (twips → px), sorted by position. */
 function mapTabStops(raw: NonNullable<IRParaProps["tabStops"]>): TabStop[] {
   const stops = raw.map((t) => {
+    // An explicit clear (issue #154) is a position-only "remove" marker — no align/leader.
+    if (t.val === "clear") return { posPx: round2(twipsToPx(t.posTwips)), cleared: true } as TabStop;
     const stop: TabStop = { posPx: round2(twipsToPx(t.posTwips)) };
     const align = t.val ? TAB_ALIGN[t.val] : undefined;
     if (align && align !== "left") stop.align = align;

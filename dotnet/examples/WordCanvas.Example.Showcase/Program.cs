@@ -315,6 +315,10 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
     .Image(quad, "image/png", new ImageOptions { WidthPx = 150, HeightPx = 110, Align = TextAlign.Left, Wrap = ImageWrap.Block })
     .Image(quad, "image/png", new ImageOptions { WidthPx = 150, HeightPx = 110, Align = TextAlign.Left, Wrap = ImageWrap.Block, Crop = new ImageCrop(0.25, 0.2, 0.25, 0.2) })
     .Paragraph("Tab stops honor the document's default interval (w:defaultTabStop): columns\tline up\tat\teach default tab.")
+    // Explicit tab clear (issue #154): a paragraph can REMOVE a tab an inherited style
+    // provides with w:val="clear" — the removal round-trips instead of the style tab reappearing.
+    .Paragraph("This paragraph sets a left tab at 1.5\" and explicitly clears the tab at 1\" (w:val=clear).",
+        p => p.TabStops(new[] { new TabStop { PosPx = 96, Cleared = true }, new TabStop { PosPx = 144, Align = TabAlign.Left } }))
 
     // ---- International text (CJK) ----
     .Paragraph("International text — CJK", p => p.WithStyle("Heading1"))

@@ -882,6 +882,9 @@ public sealed record TabStop
     public required double PosPx { get; init; }
     public TabAlign? Align { get; init; }
     public TabLeader? Leader { get; init; }
+    /// <summary>Explicit clear (OOXML &lt;w:tab w:val="clear" w:pos="…"/&gt;) — removes an inherited
+    /// tab stop at this position (issue #154). Not a real stop; when set, Align/Leader are ignored.</summary>
+    public bool? Cleared { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -889,6 +892,7 @@ public sealed record TabStop
         Js.Set(o, "posPx", PosPx);
         if (Align is { } a) Js.Set(o, "align", EnumJs.TabAlign(a));
         if (Leader is { } l) Js.Set(o, "leader", EnumJs.TabLeader(l));
+        if (Cleared is { } cl) Js.Set(o, "cleared", cl);
         return o;
     }
 }

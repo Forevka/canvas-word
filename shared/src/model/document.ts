@@ -324,6 +324,11 @@ export interface TabStop {
   align?: TabAlign;
   /** Filler drawn from the previous content to the stop (default "none"). */
   leader?: TabLeader;
+  /** Explicit clear (OOXML `<w:tab w:val="clear" w:pos="…"/>`) — REMOVES an inherited
+   *  tab stop at this position (issue #154). Not a real stop: the layout ignores it,
+   *  but export re-emits the clear so a style-provided tab the paragraph removed
+   *  doesn't reappear on re-import. When set, `align`/`leader` are irrelevant. */
+  cleared?: boolean;
 }
 
 /** Style-homogeneous span of text. Adjacent equal-styled runs are merged on every edit. */
