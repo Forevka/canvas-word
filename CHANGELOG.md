@@ -28,6 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   probed per hover pass and per command dispatch — is now an O(1) lookup against a per-document
   location index (same WeakMap-on-identity contract as the paragraph index) instead of a full
   body + bands + notes walk.
+- **DOCX import/export throughput on media- and text-heavy documents.** Importing a docx re-parsed
+  the whole zip container once per distinct image (fflate's filtered `unzipSync` re-scans the central
+  directory every call — O(images × entries)); media parts now inflate in ONE batched pass on the
+  first media access, with the old per-part extraction kept as a fallback for containers with a
+  corrupt media entry (a docx whose images are never resolved still pays nothing). Export no longer
+  re-deflates already-compressed JPEG/PNG media bytes — `word/media/*` entries are stored at level 0
+  (Word stores media essentially uncompressed too), while the XML parts keep default compression.
+  `decodeRunProps`/`decodeParaProps` — the hottest import path, ~26 linear child scans per run bag —
+  now index each property bag's children once and probe O(1).
 
 ### Added
 - **C# `WordCanvasEnginePool` — safe engine reuse for multi-threaded hosts (ClearScript bindings).** A thread-safe,

@@ -44,6 +44,19 @@ export function els(node: XmlNode, tagName: string): XmlNode[] {
   return node.children.filter((c): c is XmlNode => isElementNode(c) && c.tagName === tagName);
 }
 
+/** One-pass child index for a property bag that is probed for many tags
+ *  (w:rPr / w:pPr). `el()` is a linear children scan per probe, and
+ *  decodeRunProps makes ~26 probes per run — the hottest import path. Build
+ *  the Map once, then each probe is O(1). Keeps the FIRST occurrence per tag,
+ *  matching `el()` semantics. */
+export function indexChildren(node: XmlNode): Map<string, XmlNode> {
+  const map = new Map<string, XmlNode>();
+  for (const c of node.children) {
+    if (isElementNode(c) && !map.has(c.tagName)) map.set(c.tagName, c);
+  }
+  return map;
+}
+
 /** Attribute value by qualified name; valueless attributes read as "". */
 export function attr(node: XmlNode, name: string): string | undefined {
   const v = node.attributes[name];
