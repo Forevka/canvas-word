@@ -77,8 +77,8 @@ const bridged = new Set<string>(
 // Internal helpers (TS `private`/`protected` erased onto the prototype) + the
 // JS-only paragraph-scope escape (`end()` — C# uses a configure lambda instead).
 const JS_INTERNAL = new Set([
-  "push", "flushPendingPageBreak", "band", "compileSectionPatch",
-  "pushRun", "applyChar", "clearChar", "markRunCharKeys", "emitField", "emitSdt",
+  "push", "flushPendingPageBreak", "band", "compileBand", "compileSectionPatch",
+  "pushRun", "applyChar", "clearChar", "markRunCharKeys", "emitField", "emitSdt", "emitNote",
   "toBlock", "applyTableStyleRef", "applyTableDefaults", "cascadeBordersOntoCells", "end",
 ]);
 // Generic JS escape hatches the C# surface exposes through TYPED variants instead

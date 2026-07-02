@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+<<<<<<< HEAD
 - **Single-sourced OOXML mappings (no behavior change).** The border-edge → WordprocessingML
   encoding — previously copy-pasted five times across the docx exporter (cell/table borders,
   paragraph borders twice, run border, conditional table-style borders) — is one shared
@@ -19,6 +20,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   paragraph-property import mapping is one `applyParaProps` core backing both the full-style and
   style-patch mappers (mirroring `applyRunProps`), so a new `w:pPr` field can no longer land in one
   and drift from the other.
+- **DocumentBuilder: uniform warn-and-continue for invalid input.** `.effects({ widthScalePct })` /
+  `.effects({ fitTextPx })` out of range and `.image()` without positive dimensions no longer THROW
+  mid-chain — they record a warning (`effects-width-scale-invalid`, `effects-fit-text-invalid`,
+  `image-size-invalid`) in `builder.warnings` and skip the invalid value/block, matching what
+  `.withStyle()`/`.list()`/`.spacing()` always did. One contract for the whole fluent surface: a bad
+  value can't abort a long chain, and every problem lands in the same diagnostics channel.
+- **DocumentBuilder output is run-canonical.** Consecutive same-style `.text()` calls now coalesce
+  into one run at author time. The merge requires the two styles to be STRUCTURALLY IDENTICAL —
+  stricter than the editor's own merge criterion, which skips fields like `charStyleId`/`rtl` — so
+  field/SDT/footnote/character-style/equation boundaries can never collapse. Builder output no
+  longer violates the model's "adjacent equal-styled runs are merged" invariant until first edited.
+
+### Fixed
+- **DocumentBuilder diagnostics and provenance.** `.defaultStyle()` with an unknown id emits its own
+  `default-style-missing:<id>` code — it previously shared `style-missing:<id>` with
+  `.withStyle()`, and the dedup-by-code warning channel silently swallowed whichever fired second.
+  `.withStyle()` now records explicit-key provenance on the runs it patches (like direct
+  formatting), so a styled value that equals the resolved default survives table-style band baking.
+  `.pageField()`/`.numPagesField()` accept a `style` option like every other field emitter (bold
+  footer page numbers no longer need the raw `.field()` escape hatch). The default builder id seed
+  is 10 random base36 chars (was 4 — ~1.7M values hit birthday-collision odds at a few thousand
+  documents, which matters now that `mergeDocuments` folds builder outputs together).
+- **Collab: suggestions/comments authored while briefly disconnected are no longer dropped.**
+  Outbound review ops now queue while the socket is closed and drain on reconnect — the same
+  guarantee core edits always had (receivers causal-hold on `dependsOnSeq`, so late delivery is
+  safe).
+
+### Performance
+- **Session memory & bundle size.** The content-addressed media store no longer grows without bound:
+  each editor mount registers a retention provider, and replacing the open document (docx open /
+  `setDocument`) evicts bytes and revokes `blob:` URLs nothing references anymore — the undo-safe
+  moment, since a replacement rebuilds the editor and its history. (With several concurrent mounts
+  the store conservatively keeps everything, and destroying a mount doesn't evict — a remount may
+  still rehydrate the same document.) The equation editor and symbol picker — click-driven dialogs
+  that pulled the whole LaTeX toolchain (parser, serializer, symbol tables) into the initial editor
+  chunk — now load lazily on first use, like the WebMCP polyfill and agent chat (~28 kB moved out of
+  the critical path). Undo coalescing no longer re-copies the accumulated inverse-op array on every
+  keystroke (O(n²) array churn across a typing burst): an open typing run appends amortized O(1) and
+  folds back once when the run closes. Child-document editors (style previews) reuse the shared
+  measuring engine instead of allocating a throwaway layout engine per mount.
+- **Keystroke / repaint hot path — structural page diffing + font-string memoization.** `setTree`'s
+  per-page change detection no longer `JSON.stringify`s every mounted page on every relayout (typing
+  re-serialized 2–4 full pages per keystroke, and per frame during IME composition / column drags);
+  it now compares pages structurally with identity short-circuits, so unchanged pages compare in
+  O(blocks) via the engine's cache-shared line/table/band objects without descending into fragments —
+  same over-inclusive "any difference repaints" safety. `charStyleToFont` — called per fragment on
+  every layout, paint, and hit-test pass — is now memoized per (font registry, CharStyle object), and
+  the canvas painter memoizes each run's `RunPaint` decision per style and skips redundant `ctx.font`
+  assignments across same-styled fragments.
+- **Pointer hot path — page-local hit-testing + one probe pass per frame.** Geometry queries
+  (`hitTest`, `linkAt`, `pointOnText`, `inlineEquationAt`) scanned every line in the document per
+  call; the line index is page-ordered, so they now binary-search the target page's contiguous span
+  and touch only its lines — a click/hover on page 90 of a long report no longer walks pages 0–89
+  (and the table-cell pin no longer walks the whole document even in table-free docs). Both hover
+  `mousemove` handlers (resize/link/object affordances; content-control adornments + inspector) are
+  coalesced to at most one probe pass per animation frame on the latest pointer position, so
+  high-polling mice no longer run 6–8 geometry probes several times per frame. `locateParagraph` —
+  probed per hover pass and per command dispatch — is now an O(1) lookup against a per-document
+  location index (same WeakMap-on-identity contract as the paragraph index) instead of a full
+  body + bands + notes walk.
+- **DOCX import/export throughput on media- and text-heavy documents.** Importing a docx re-parsed
+  the whole zip container once per distinct image (fflate's filtered `unzipSync` re-scans the central
+  directory every call — O(images × entries)); media parts now inflate in ONE batched pass on the
+  first media access, with the old per-part extraction kept as a fallback for containers with a
+  corrupt media entry (a docx whose images are never resolved still pays nothing). Export no longer
+  re-deflates already-compressed JPEG/PNG media bytes — `word/media/*` entries are stored at level 0
+  (Word stores media essentially uncompressed too), while the XML parts keep default compression.
+  `decodeRunProps`/`decodeParaProps` — the hottest import path, ~26 linear child scans per run bag —
+  now index each property bag's children once and probe O(1).
 
 ### Added
 - **C# `WordCanvasEnginePool` — safe engine reuse for multi-threaded hosts (ClearScript bindings).** A thread-safe,

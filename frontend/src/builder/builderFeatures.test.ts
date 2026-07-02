@@ -354,10 +354,17 @@ describe("paragraph.effects — minor run typography & effects", () => {
     expect(s.fitTextPx).toBe(60);
   });
 
-  it("rejects an out-of-range widthScalePct and a non-positive fitTextPx", () => {
-    expect(() => DocumentBuilder.create().paragraph("x").effects({ widthScalePct: 0 })).toThrow(/widthScalePct/);
-    expect(() => DocumentBuilder.create().paragraph("x").effects({ widthScalePct: 700 })).toThrow(/widthScalePct/);
-    expect(() => DocumentBuilder.create().paragraph("x").effects({ fitTextPx: 0 })).toThrow(/fitTextPx/);
-    expect(() => DocumentBuilder.create().paragraph("x").effects({ fitTextPx: -1 })).toThrow(/fitTextPx/);
+  it("warns and ignores an out-of-range widthScalePct and a non-positive fitTextPx", () => {
+    // Warn-and-continue (not throw) — the builder's uniform invalid-input contract.
+    const check = (effects: { widthScalePct?: number; fitTextPx?: number }, code: string, field: "widthScalePct" | "fitTextPx"): void => {
+      const b = DocumentBuilder.create();
+      const doc = b.paragraph("x").effects(effects).build();
+      expect(b.warnings.some((w) => w.code === code)).toBe(true);
+      expect(para(doc.blocks[0]).runs[0]!.style[field]).toBeUndefined();
+    };
+    check({ widthScalePct: 0 }, "effects-width-scale-invalid", "widthScalePct");
+    check({ widthScalePct: 700 }, "effects-width-scale-invalid", "widthScalePct");
+    check({ fitTextPx: 0 }, "effects-fit-text-invalid", "fitTextPx");
+    check({ fitTextPx: -1 }, "effects-fit-text-invalid", "fitTextPx");
   });
 });

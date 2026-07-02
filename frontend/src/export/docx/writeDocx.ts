@@ -185,7 +185,12 @@ export function writeDocx(
 
   const zippable: Zippable = {};
   for (const [name, content] of Object.entries(parts)) {
-    zippable[name] = typeof content === "string" ? strToU8(content) : content;
+    const data = typeof content === "string" ? strToU8(content) : content;
+    // Media bytes (JPEG/PNG/…) are already entropy-coded — deflating them burns
+    // CPU for ~0% size gain (Word stores media essentially uncompressed too).
+    // Store them at level 0; the XML parts (the compressible bulk) keep the
+    // default compression.
+    zippable[name] = name.startsWith("word/media/") ? [data, { level: 0 }] : data;
   }
   const bytes = zipSync(zippable);
   return { bytes, warnings: warnings.list() };

@@ -99,7 +99,10 @@ export class StoryBuilder {
   /** Insert an image from a URL (https:/data:) or raw bytes (inlined as data:). */
   image(src: string | { data: Uint8Array | ArrayBuffer; mime: string }, opts: ImageOptions): this {
     if (!Number.isFinite(opts?.widthPx) || !Number.isFinite(opts?.heightPx) || opts.widthPx <= 0 || opts.heightPx <= 0) {
-      throw new TypeError("image() requires positive widthPx and heightPx (no DOM to auto-measure in Node).");
+      // Warn-and-skip (not throw) — the builder's uniform invalid-input contract:
+      // a fluent chain keeps going and the problem lands in .warnings.
+      this.ctx.warn("image-size-invalid", ".image() requires positive widthPx and heightPx (no DOM to auto-measure in Node); image skipped.");
+      return this;
     }
     const url = typeof src === "string" ? src : bytesToDataUrl(src.data, src.mime);
     this.push(this.ctx.image(url, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.wrap, opts.crop));

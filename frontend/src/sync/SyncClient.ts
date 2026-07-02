@@ -69,6 +69,10 @@ export class SyncClient {
   // Review ops whose anchor depends on a core version we haven't applied yet
   // (causal hold). Flushed as the version catches up. REVIEW.md §5.4.
   private reviewBuffer: ReviewOpEnvelope[] = [];
+  // OUTBOUND review ops authored while the socket was closed — queued and
+  // drained on (re)open, mirroring how `buffer` queues core edits. Without this,
+  // a suggestion/comment made during a brief disconnect was silently dropped.
+  private outboundReview: ReviewOpEnvelope[] = [];
   // Join-window race guard: while false, review ops are held in preSeedReview
   // (not applied) so they aren't lost before the rehydrated snapshot is seeded;
   // markReviewReady() replays them. Defaults true (no hold) for freshly-shared
@@ -92,6 +96,7 @@ export class SyncClient {
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: WS_MSG.Hello, siteId: currentSiteId(), user: this.opts.user }));
       this.flush();
+      this.flushOutboundReview();
       this.opened = true;
       for (const w of this.openWaiters) w();
       this.openWaiters = [];
@@ -143,11 +148,24 @@ export class SyncClient {
   }
 
   /** Ship a locally-authored review op (suggestion/comment) to peers, tagged with
-   *  the core version its anchor depends on (causal delivery). */
+   *  the core version its anchor depends on (causal delivery). Queued while the
+   *  socket is closed and drained on reconnect — same guarantee core edits get. */
   localReviewOp(env: ReviewOpEnvelope): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: WS_MSG.Review, review: env }));
+    } else {
+      this.outboundReview.push(env);
     }
+  }
+
+  /** Drain review ops authored while offline (receivers causal-hold on
+   *  dependsOnSeq, so shipping them late is safe). */
+  private flushOutboundReview(): void {
+    if (this.outboundReview.length === 0) return;
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    const pending = this.outboundReview;
+    this.outboundReview = [];
+    for (const env of pending) this.ws.send(JSON.stringify({ type: WS_MSG.Review, review: env }));
   }
 
   /** Resolves once the socket is open (and the client is in the room receiving
