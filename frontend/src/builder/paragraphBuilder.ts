@@ -9,7 +9,7 @@
 // intent. Mixed formatting within a paragraph uses text(t, { …patch }).
 
 import type { Block, CellBorder, CharStyle, Document, EmphasisMark, FieldSpec, IfOp, NamedStyle, PageNumFmt, ParaBorders, ParaStyle, Paragraph, Run, SdtProps, TableStyle, TabStop, UnderlineStyle } from "@cw/shared";
-import { buildInstruction, evaluateField, resolveStyle, styleById, styleEq, textOfRuns } from "@cw/shared";
+import { buildInstruction, evaluateField, resolveStyle, styleById, textOfRuns } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import type { BandOptions, DocumentBuilder, ListDefinitionSpec, PageSetup, SectionBreakOptions } from "./documentBuilder";
 import { equationFromLatex, equationFromMathml } from "./mathInput";
@@ -41,6 +41,24 @@ export interface IndentOptions {
   right?: number;
   /** First-line indent, px (negative = hanging). */
   firstLine?: number;
+}
+
+/** Strict structural style equality for author-time run coalescing: every field
+ *  of both styles must match (Object.is; object-typed fields like equation/
+ *  sdtPath/runBorder compare by reference — builder-authored neighbors share
+ *  them via the charPatch spread, and a content-equal-but-distinct object just
+ *  skips the merge, which is harmless). Deliberately STRICTER than the editor's
+ *  styleEq, which skips fields (charStyleId, rtl, endnoteRef, theme metadata)
+ *  that must still keep author-time runs apart. */
+function identicalStyles(a: CharStyle, b: CharStyle): boolean {
+  const ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  const ra = a as unknown as Record<string, unknown>;
+  const rb = b as unknown as Record<string, unknown>;
+  for (const k of ka) {
+    if (!Object.is(ra[k], rb[k])) return false;
+  }
+  return true;
 }
 
 export class ParagraphBuilder<P extends StoryBuilder> {
@@ -77,11 +95,12 @@ export class ParagraphBuilder<P extends StoryBuilder> {
 
   /** Append a run, swapping out the empty placeholder a textless paragraph holds.
    *  Shared by text() and every inline-content emitter (field/sdt/footnote/…).
-   *  Coalesces into the previous run when their styles are equal (styleEq — the
-   *  editor's exact merge criterion, so field/SDT/footnote/equation boundaries
-   *  never merge): the model's invariant is that adjacent equal-styled runs are
-   *  merged on every edit, and builder output should be canonical from the start
-   *  instead of shipping fragmented runs from consecutive same-style text(). */
+   *  Coalesces into the previous run when the two styles are structurally
+   *  identical (see identicalStyles — field/SDT/footnote/equation boundaries can
+   *  never merge, since those fields differ): the model's invariant is that
+   *  adjacent equal-styled runs are merged on every edit, and builder output
+   *  should be canonical from the start instead of shipping fragmented runs
+   *  from consecutive same-style text(). */
   private pushRun(run: Run): this {
     const runs = this.para.runs;
     if (runs.length === 1 && runs[0]!.text === "") {
@@ -89,7 +108,7 @@ export class ParagraphBuilder<P extends StoryBuilder> {
       return this;
     }
     const last = runs[runs.length - 1];
-    if (last && last.text.length > 0 && run.text.length > 0 && styleEq(last.style, run.style)) {
+    if (last && last.text.length > 0 && run.text.length > 0 && identicalStyles(last.style, run.style)) {
       last.text += run.text;
       // Union the merged run's explicit-key provenance into the survivor.
       const extra = this.ctx.explicitCharKeys.get(run);

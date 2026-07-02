@@ -15,9 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.withStyle()`/`.list()`/`.spacing()` always did. One contract for the whole fluent surface: a bad
   value can't abort a long chain, and every problem lands in the same diagnostics channel.
 - **DocumentBuilder output is run-canonical.** Consecutive same-style `.text()` calls now coalesce
-  into one run at author time (using the editor's exact merge criterion, so field/SDT/footnote/
-  equation boundaries never merge) — builder output no longer violates the model's "adjacent
-  equal-styled runs are merged" invariant until first edited.
+  into one run at author time. The merge requires the two styles to be STRUCTURALLY IDENTICAL —
+  stricter than the editor's own merge criterion, which skips fields like `charStyleId`/`rtl` — so
+  field/SDT/footnote/character-style/equation boundaries can never collapse. Builder output no
+  longer violates the model's "adjacent equal-styled runs are merged" invariant until first edited.
 
 ### Fixed
 - **DocumentBuilder diagnostics and provenance.** `.defaultStyle()` with an unknown id emits its own
