@@ -48,6 +48,8 @@ import {
   queryStyles,
   type PageInfo as PageInfoDto,
 } from "./queryBridge";
+import { mergeBridge } from "./mergeBridge";
+import type { MergeOptions } from "@cw/shared";
 import type { CustomFontPayload } from "../fonts/customRegistry";
 import type { CjkExportConfig } from "../export/pipeline";
 import type { ImageBytes } from "../export/types";
@@ -322,6 +324,16 @@ const api = {
   // drives the returned instance's methods (setParagraphText, insertParagraph,
   // undo/redo, …) and reads its `.doc` back for export/query.
   openEditor: (doc: Document): DocumentEditor => new DocumentEditor(doc),
+  // Merge/append: fold one in-V8 document (+ its media) after another, unioning
+  // the media maps (the host's WordDocument.Append / WordCanvasEngine.Merge). The
+  // images args may be undefined for builder output.
+  mergeDocuments: (
+    destDoc: Document,
+    destImages: ImageBytes | undefined,
+    srcDoc: Document,
+    srcImages: ImageBytes | undefined,
+    opts?: MergeOptions,
+  ) => mergeBridge(destDoc, destImages, srcDoc, srcImages, opts),
   // Construct a real JS RegExp from a host (C#) source+flags — lets the C#
   // ReplaceAllText expose the JS `pattern: string | RegExp` overload. The pattern
   // is TRUSTED developer input (a .NET binding caller, not an end user); a modest

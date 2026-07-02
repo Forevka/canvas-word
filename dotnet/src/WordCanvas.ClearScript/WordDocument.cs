@@ -60,6 +60,33 @@ public sealed partial class WordDocument
     public WordDocumentEditor Edit() =>
         new(_engine, this, (ScriptObject)_engine.Api.InvokeMethod("openEditor", Doc));
 
+    /// <summary>Append another document's content after this one — the headless
+    /// equivalent of Word's "insert file at end" (a drop-in for Syncfusion
+    /// <c>ImportContent</c>). Reconciles every id space (styles, lists, table styles,
+    /// content controls, fields, notes, bookmarks) so the two cannot collide, unions the
+    /// embedded-image maps, and inserts a section seam per <paramref name="options"/>.
+    /// Returns a NEW handle; both inputs are unchanged. <paramref name="other"/> MUST
+    /// belong to the SAME engine (they live in one V8 isolate).</summary>
+    public WordDocument Append(WordDocument other, MergeOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        var res = (ScriptObject)_engine.Api.InvokeMethod(
+            "mergeDocuments",
+            Doc, Images ?? (object)Undefined.Value,
+            other.Doc, other.Images ?? (object)Undefined.Value,
+            options?.ToJs(_engine) ?? (object)Undefined.Value);
+        return FromMerge(_engine, res);
+    }
+
+    internal static WordDocument FromMerge(WordCanvasEngine engine, ScriptObject handle)
+    {
+        var doc = handle.GetProperty("doc");
+        var images = handle.GetProperty("images");
+        var mediaCount = Convert.ToInt32(handle.GetProperty("mediaCount"));
+        var warnings = ReadWarnings(handle.GetProperty("warnings") as ScriptObject);
+        return new WordDocument(engine, doc, images, engine.CountBlocks(doc), mediaCount, warnings);
+    }
+
     private static IReadOnlyList<WordWarning> ReadWarnings(ScriptObject? arr)
     {
         if (arr is null) return Array.Empty<WordWarning>();

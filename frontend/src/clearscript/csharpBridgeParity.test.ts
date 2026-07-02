@@ -40,11 +40,17 @@ describe("C#↔JS bridge parity", () => {
   it("every `_engine.Api` call (query + editor) targets a wired JS bridge fn", () => {
     // Query methods and a few editor methods (e.g. newRegExp) drive the entry `api`.
     const re = /_engine\.Api\.InvokeMethod\("(\w+)"/g;
-    const names = [...new Set([...namesFrom(CS("WordDocumentQuery.cs"), re), ...namesFrom(CS("WordDocumentEditor.cs"), re)])];
+    const names = [
+      ...new Set([
+        ...namesFrom(CS("WordDocumentQuery.cs"), re),
+        ...namesFrom(CS("WordDocumentEditor.cs"), re),
+        ...namesFrom(CS("WordDocument.cs"), re), // Append/Merge drive the merge bridge
+      ]),
+    ];
     // Bridge mappers are exported from queryBridge.ts; a few helpers live directly
     // on the entry `api`. Every name must have a JS impl AND be wired onto the api.
     const bridgeExports = new Set(Object.keys(bridge));
-    const entryLocal = new Set(["layoutPages", "newRegExp"]);
+    const entryLocal = new Set(["layoutPages", "newRegExp", "mergeDocuments", "openEditor"]);
     const entrySrc = readSrc("./entry.ts");
 
     expect(names.length).toBeGreaterThan(0);

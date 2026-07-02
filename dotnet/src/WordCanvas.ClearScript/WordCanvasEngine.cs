@@ -337,6 +337,25 @@ public sealed class WordCanvasEngine : IDisposable
     public Builder.DocumentBuilder NewBuilderFromTemplate(byte[] templateDocx, Builder.TemplateOptions? options = null)
         => Builder.DocumentBuilder.FromTemplate(this, templateDocx, options);
 
+    /// <summary>Merge (append) documents left-to-right into one — a headless replacement
+    /// for Syncfusion <c>ImportContent</c>. Each is folded via <see cref="WordDocument.Append"/>,
+    /// reconciling id spaces + unioning media. All documents must belong to THIS engine.</summary>
+    public WordDocument Merge(params WordDocument[] docs) => Merge(docs, null);
+
+    /// <summary>Merge (append) documents left-to-right into one, with explicit options.</summary>
+    public WordDocument Merge(IEnumerable<WordDocument> docs, MergeOptions? options = null)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(docs);
+        WordDocument? acc = null;
+        foreach (var d in docs)
+        {
+            ArgumentNullException.ThrowIfNull(d);
+            acc = acc is null ? d : acc.Append(d, options);
+        }
+        return acc ?? throw new WordCanvasException("Merge requires at least one document");
+    }
+
     /// <summary>Pin (or clear) the PDF export timestamp for byte-reproducible output.
     /// When set, CreationDate/ModDate and the content-derived /ID become deterministic;
     /// pass <c>null</c> to restore live wall-clock dates (the default).</summary>

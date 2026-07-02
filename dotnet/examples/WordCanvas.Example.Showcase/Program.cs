@@ -487,6 +487,28 @@ var styled = re.Edit();
 styled.SetParagraphStyle(firstBlock, new ParaStylePatch { Align = TextAlign.Center, OutlineLevel = 0, SpaceBeforePx = 12 });
 Console.WriteLine($"  setParaStyle  : first block outlineLevel now = {styled.ToDocument().GetParagraphs()[0].OutlineLevel}");
 
+// ---- Merge / append documents (Syncfusion ImportContent replacement) -------
+// Build two small extra parts and fold them after the showcase document, then
+// export the combined report. Each seam starts a new page; every id space
+// (styles, lists, controls, bookmarks, notes) is reconciled automatically.
+var appendix = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Letter })
+    .Paragraph("Appendix A", p => p.WithStyle("Heading1"))
+    .Paragraph("Appended as a separate part via merge.")
+    .Build();
+var glossary = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.A4 }) // distinct geometry → a real section
+    .Paragraph("Glossary", p => p.WithStyle("Heading1"))
+    .Paragraph("Merge — folding documents into one, rebasing every id space.")
+    .Build();
+
+var mergedReport = engine.Merge(doc, appendix, glossary); // == doc.Append(appendix).Append(glossary)
+var mergedDocx = mergedReport.ExportDocx();
+File.WriteAllBytes(Path.Combine(outDir, "showcase-merged.docx"), mergedDocx);
+var mergedBack = engine.ImportDocx(mergedDocx);
+Console.WriteLine("Merge:");
+Console.WriteLine($"  parts         : showcase({doc.BlockCount}) + appendix({appendix.BlockCount}) + glossary({glossary.BlockCount})");
+Console.WriteLine($"  merged        : {mergedReport.BlockCount} blocks, {mergedReport.MediaCount} images → showcase-merged.docx ({mergedDocx.Length / 1024} KB)");
+Console.WriteLine($"  round-trip    : re-imported to {mergedBack.BlockCount} blocks, sections={mergedBack.GetSections().Count}, appendix found={mergedBack.FindText("Appendix A").Count > 0}, glossary found={mergedBack.FindText("Glossary").Count > 0}");
+
 Console.WriteLine($"Output written to: {outDir}");
 
 static string Trunc(string s) => s.Length <= 60 ? s : s[..57] + "...";
