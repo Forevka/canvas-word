@@ -1690,16 +1690,22 @@ if (toolbar) {
     "select an image first",
   );
   group(insert, "Equation");
+  let equationEditorLoading = false; // debounce double-clicks while the chunk loads
   txtBtn("√x", "Insert equation (MathML)", () => {
-    void import("./ui/equationEditor").then(({ showEquationEditor }) => {
-      if (teardown.signal.aborted) return;
-      showEquationEditor({
-        onApply: (eq) => {
-          editor.dispatch(eq.display ? insertEquation(eq) : insertInlineEquation(eq));
-          editor.focus();
-        },
-      });
-    });
+    if (equationEditorLoading) return;
+    equationEditorLoading = true;
+    import("./ui/equationEditor")
+      .then(({ showEquationEditor }) => {
+        if (teardown.signal.aborted) return;
+        showEquationEditor({
+          onApply: (eq) => {
+            editor.dispatch(eq.display ? insertEquation(eq) : insertInlineEquation(eq));
+            editor.focus();
+          },
+        });
+      })
+      .catch((e: unknown) => console.warn("[wordcanvas] failed to load the equation editor:", e))
+      .finally(() => { equationEditorLoading = false; });
   }, "font-family:Georgia,serif;font-style:italic;");
 
   group(insert, "Symbols");
@@ -1710,7 +1716,7 @@ if (toolbar) {
     if (symbolPicker) { symbolPicker.close(); return; }
     if (symbolPickerLoading) return;
     symbolPickerLoading = true;
-    void import("./ui/symbolPicker")
+    import("./ui/symbolPicker")
       .then(({ showSymbolPicker }) => {
         if (teardown.signal.aborted || symbolPicker) return;
         symbolPicker = showSymbolPicker({
@@ -1721,6 +1727,7 @@ if (toolbar) {
           onClose: () => { symbolPicker = null; },
         });
       })
+      .catch((e: unknown) => console.warn("[wordcanvas] failed to load the symbol picker:", e))
       .finally(() => { symbolPickerLoading = false; });
   });
   teardown.signal.addEventListener("abort", () => symbolPicker?.close(), { once: true });

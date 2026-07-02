@@ -48,9 +48,17 @@ import { showContextMenu, type ContextMenuHandle, type MenuEntry } from "./ui/co
 import { showSdtInspector, type SdtInspectorData, type SdtInspectorHandle } from "./ui/sdtInspector";
 import { showFieldConstructor } from "./ui/fieldConstructor";
 // Lazy: the equation editor carries the LaTeX toolchain — load it on the
-// context-menu click, not in the core editor chunk (see editorApp.ts).
+// context-menu click, not in the core editor chunk (see editorApp.ts). Guarded
+// against double-invocation while the chunk loads (two fast clicks must not open
+// two dialogs) and against a failed chunk load (offline embedder).
+let equationEditorLoading = false;
 const withEquationEditor = (use: (mod: typeof import("./ui/equationEditor")) => void): void => {
-  void import("./ui/equationEditor").then(use);
+  if (equationEditorLoading) return;
+  equationEditorLoading = true;
+  import("./ui/equationEditor")
+    .then(use)
+    .catch((e: unknown) => console.warn("[wordcanvas] failed to load the equation editor:", e))
+    .finally(() => { equationEditorLoading = false; });
 };
 import { showTocProperties } from "./ui/tocProperties";
 import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
