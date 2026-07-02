@@ -145,11 +145,17 @@ export class DocumentBuilder extends StoryBuilder {
     const variant = opts.variant ?? "default";
     const container: BandContainer =
       variant === "default" ? kind : (`${kind}${variant === "first" ? "First" : "Even"}` as BandContainer);
+    this.ctx.doc.section[container] = this.compileBand(build);
+    return this;
+  }
+
+  /** Build one band story from its callback; an empty story gets a placeholder
+   *  paragraph. Shared by header()/footer() and sectionBreak()'s band options. */
+  private compileBand(build: (s: StoryBuilder) => void): Block[] {
     const blocks: Block[] = [];
     build(new StoryBuilder(this.ctx, blocks));
     if (blocks.length === 0) blocks.push(this.ctx.paragraph([]));
-    this.ctx.doc.section[container] = blocks;
-    return this;
+    return blocks;
   }
 
   /** Merge page geometry onto the section (template values are the base). */
@@ -201,7 +207,10 @@ export class DocumentBuilder extends StoryBuilder {
   defaultStyle(id: string): this {
     const sheet = this.ctx.stylesheet();
     if (!styleById(sheet, id)) {
-      this.ctx.warn(`style-missing:${id}`, `.defaultStyle("${id}") — no such style in the stylesheet; default unchanged.`);
+      // Distinct code from lookupStyle's `style-missing:${id}` — warn() dedupes by
+      // code, and these are different diagnostics (a missing DEFAULT vs a missing
+      // applied style); sharing the code silently swallowed the second one.
+      this.ctx.warn(`default-style-missing:${id}`, `.defaultStyle("${id}") — no such style in the stylesheet; default unchanged.`);
       return this;
     }
     sheet.defaultStyleId = id;
@@ -297,25 +306,11 @@ export class DocumentBuilder extends StoryBuilder {
     // the document section's setting forward by default; an explicit option wins.
     if (opts.lineNumbering !== undefined) patch.lineNumbering = { ...opts.lineNumbering };
     else if (section.lineNumbering !== undefined) patch.lineNumbering = { ...section.lineNumbering };
-    const band = (cb?: (s: StoryBuilder) => void): Block[] | undefined => {
-      if (!cb) return undefined;
-      const blocks: Block[] = [];
-      cb(new StoryBuilder(this.ctx, blocks));
-      if (blocks.length === 0) blocks.push(this.ctx.paragraph([]));
-      return blocks;
-    };
-    const hd = band(opts.header);
-    if (hd) patch.header = hd;
-    const ft = band(opts.footer);
-    if (ft) patch.footer = ft;
-    const hf = band(opts.headerFirst);
-    if (hf) patch.headerFirst = hf;
-    const ff = band(opts.footerFirst);
-    if (ff) patch.footerFirst = ff;
-    const he = band(opts.headerEven);
-    if (he) patch.headerEven = he;
-    const fe = band(opts.footerEven);
-    if (fe) patch.footerEven = fe;
+    const bands = ["header", "footer", "headerFirst", "footerFirst", "headerEven", "footerEven"] as const;
+    for (const key of bands) {
+      const cb = opts[key];
+      if (cb) patch[key] = this.compileBand(cb);
+    }
     return patch;
   }
 

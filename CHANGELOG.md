@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **DocumentBuilder: uniform warn-and-continue for invalid input.** `.effects({ widthScalePct })` /
+  `.effects({ fitTextPx })` out of range and `.image()` without positive dimensions no longer THROW
+  mid-chain — they record a warning (`effects-width-scale-invalid`, `effects-fit-text-invalid`,
+  `image-size-invalid`) in `builder.warnings` and skip the invalid value/block, matching what
+  `.withStyle()`/`.list()`/`.spacing()` always did. One contract for the whole fluent surface: a bad
+  value can't abort a long chain, and every problem lands in the same diagnostics channel.
+- **DocumentBuilder output is run-canonical.** Consecutive same-style `.text()` calls now coalesce
+  into one run at author time (using the editor's exact merge criterion, so field/SDT/footnote/
+  equation boundaries never merge) — builder output no longer violates the model's "adjacent
+  equal-styled runs are merged" invariant until first edited.
+
+### Fixed
+- **DocumentBuilder diagnostics and provenance.** `.defaultStyle()` with an unknown id emits its own
+  `default-style-missing:<id>` code — it previously shared `style-missing:<id>` with
+  `.withStyle()`, and the dedup-by-code warning channel silently swallowed whichever fired second.
+  `.withStyle()` now records explicit-key provenance on the runs it patches (like direct
+  formatting), so a styled value that equals the resolved default survives table-style band baking.
+  `.pageField()`/`.numPagesField()` accept a `style` option like every other field emitter (bold
+  footer page numbers no longer need the raw `.field()` escape hatch). The default builder id seed
+  is 10 random base36 chars (was 4 — ~1.7M values hit birthday-collision odds at a few thousand
+  documents, which matters now that `mergeDocuments` folds builder outputs together).
+
 ### Added
 - **C# `WordCanvasEnginePool` — safe engine reuse for multi-threaded hosts (ClearScript bindings).** A thread-safe,
   concurrency-bounded pool of `WordCanvasEngine` instances for ASP.NET Core / worker hosts, where the single-isolate

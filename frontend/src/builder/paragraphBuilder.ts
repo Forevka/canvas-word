@@ -9,7 +9,7 @@
 // intent. Mixed formatting within a paragraph uses text(t, { …patch }).
 
 import type { Block, CellBorder, CharStyle, Document, EmphasisMark, FieldSpec, IfOp, NamedStyle, PageNumFmt, ParaBorders, ParaStyle, Paragraph, Run, SdtProps, TableStyle, TabStop, UnderlineStyle } from "@cw/shared";
-import { buildInstruction, evaluateField, styleById, textOfRuns } from "@cw/shared";
+import { buildInstruction, evaluateField, resolveStyle, styleById, styleEq, textOfRuns } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import type { BandOptions, DocumentBuilder, ListDefinitionSpec, PageSetup, SectionBreakOptions } from "./documentBuilder";
 import { equationFromLatex, equationFromMathml } from "./mathInput";
@@ -63,16 +63,40 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     if (!resolved) return this; // unknown style → warning already recorded
     this.para.style.namedStyle = id;
     Object.assign(this.para.style, resolved.para);
-    for (const r of this.para.runs) Object.assign(r.style, resolved.char);
+    const charKeys = Object.keys(resolved.char);
+    for (const r of this.para.runs) {
+      Object.assign(r.style, resolved.char);
+      // Author-explicit like applyChar: record the keys so table-style baking
+      // preserves a styled value that equals the resolved default against a
+      // conflicting band (#45) — .withStyle() previously skipped this.
+      this.markRunCharKeys(r, charKeys);
+    }
     Object.assign(this.charPatch, resolved.char);
     return this;
   }
 
   /** Append a run, swapping out the empty placeholder a textless paragraph holds.
-   *  Shared by text() and every inline-content emitter (field/sdt/footnote/…). */
+   *  Shared by text() and every inline-content emitter (field/sdt/footnote/…).
+   *  Coalesces into the previous run when their styles are equal (styleEq — the
+   *  editor's exact merge criterion, so field/SDT/footnote/equation boundaries
+   *  never merge): the model's invariant is that adjacent equal-styled runs are
+   *  merged on every edit, and builder output should be canonical from the start
+   *  instead of shipping fragmented runs from consecutive same-style text(). */
   private pushRun(run: Run): this {
-    if (this.para.runs.length === 1 && this.para.runs[0]!.text === "") this.para.runs[0] = run;
-    else this.para.runs.push(run);
+    const runs = this.para.runs;
+    if (runs.length === 1 && runs[0]!.text === "") {
+      runs[0] = run;
+      return this;
+    }
+    const last = runs[runs.length - 1];
+    if (last && last.text.length > 0 && run.text.length > 0 && styleEq(last.style, run.style)) {
+      last.text += run.text;
+      // Union the merged run's explicit-key provenance into the survivor.
+      const extra = this.ctx.explicitCharKeys.get(run);
+      if (extra && extra.size > 0) this.markRunCharKeys(last, extra);
+      return this;
+    }
+    runs.push(run);
     return this;
   }
 
@@ -82,8 +106,9 @@ export class ParagraphBuilder<P extends StoryBuilder> {
   }
 
   private applyChar(patch: Partial<CharStyle>): this {
-    Object.assign(this.charPatch, patch);
     const keys = Object.keys(patch);
+    if (keys.length === 0) return this; // e.g. effects({}) — nothing to do
+    Object.assign(this.charPatch, patch);
     for (const r of this.para.runs) {
       Object.assign(r.style, patch);
       // Direct formatting applied to existing runs is author-explicit too — record
@@ -97,12 +122,16 @@ export class ParagraphBuilder<P extends StoryBuilder> {
 
   /** Merge `keys` into a run's explicit-char provenance (issue #45 — mirrors the
    *  data-driven cell path, where author-set CharStyle keys are tracked so an
-   *  explicit value equal to the resolved default survives a conflicting band). */
+   *  explicit value equal to the resolved default survives a conflicting band).
+   *  Mutates the run's existing Set in place — each run owns its Set (minted in
+   *  ctx.run / here), so chained formatting doesn't reallocate one per call. */
   private markRunCharKeys(run: Run, keys: Iterable<string>): void {
     const prev = this.ctx.explicitCharKeys.get(run);
-    const next = new Set(prev);
-    for (const k of keys) next.add(k);
-    this.ctx.explicitCharKeys.set(run, next);
+    if (prev) {
+      for (const k of keys) prev.add(k);
+      return;
+    }
+    this.ctx.explicitCharKeys.set(run, new Set(keys));
   }
 
   bold(on = true): this {
@@ -152,11 +181,14 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     if (opts.widthScalePct !== undefined) {
       // OOXML w:w (and the import/export round-trip) only preserve a positive
       // percentage in 1..600; reject out-of-range values rather than author state
-      // the .docx pipeline would silently drop.
+      // the .docx pipeline would silently drop. Warn-and-skip (not throw) — the
+      // builder's uniform invalid-input contract: a fluent chain keeps going and
+      // the problem lands in .warnings, like withStyle()/list()/spacing().
       if (opts.widthScalePct <= 0 || opts.widthScalePct > 600) {
-        throw new RangeError("effects: widthScalePct must be in the range 1..600");
+        this.ctx.warn("effects-width-scale-invalid", ".effects({ widthScalePct }) must be in 1..600; ignored.");
+      } else {
+        patch.widthScalePct = opts.widthScalePct;
       }
-      patch.widthScalePct = opts.widthScalePct;
     }
     if (opts.kerningMinPx !== undefined) patch.kerningMinPx = opts.kerningMinPx;
     if (opts.emphasisMark !== undefined) patch.emphasisMark = opts.emphasisMark;
@@ -167,8 +199,8 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     if (opts.border !== undefined) patch.runBorder = opts.border;
     if (opts.fitTextPx !== undefined) {
       // w:fitText is a positive width; a non-positive value would not round-trip.
-      if (opts.fitTextPx <= 0) throw new RangeError("effects: fitTextPx must be greater than 0");
-      patch.fitTextPx = opts.fitTextPx;
+      if (opts.fitTextPx <= 0) this.ctx.warn("effects-fit-text-invalid", ".effects({ fitTextPx }) must be greater than 0; ignored.");
+      else patch.fitTextPx = opts.fitTextPx;
     }
     return this.applyChar(patch);
   }
@@ -213,12 +245,7 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     for (const r of this.para.runs) {
       delete (r.style as unknown as Record<string, unknown>)[key];
       // No longer author-set — drop it from provenance so it falls back to value-equality.
-      const prov = this.ctx.explicitCharKeys.get(r);
-      if (prov?.has(key)) {
-        const next = new Set(prov);
-        next.delete(key);
-        this.ctx.explicitCharKeys.set(r, next);
-      }
+      this.ctx.explicitCharKeys.get(r)?.delete(key);
     }
     return this;
   }
@@ -280,16 +307,16 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     const def = sheet ? styleById(sheet, id) : undefined;
     // NamedStyle.type defaults to "paragraph" when absent — only an explicit
     // "character" style is a valid w:rStyle target.
-    if (!def || def.type !== "character") {
+    if (!sheet || !def || def.type !== "character") {
       this.ctx.warn(
         `char-style-invalid:${id}`,
         `.charStyle("${id}") — no such character style (it is missing or a paragraph style); ignored.`,
       );
       return this;
     }
-    const resolved = this.ctx.lookupStyle(id);
-    if (!resolved) return this;
-    return this.applyChar({ ...resolved.char, charStyleId: id });
+    // The style is validated present above — resolve directly (lookupStyle would
+    // redundantly re-run the styleById existence check).
+    return this.applyChar({ ...resolveStyle(sheet, id).char, charStyleId: id });
   }
 
   /** Append an INLINE equation from a LaTeX source — a single replaced glyph in the
@@ -322,12 +349,12 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     return this.emitField(spec, opts);
   }
 
-  pageField(numFmt?: PageNumFmt): this {
-    return this.emitField(numFmt ? { type: "PAGE", numFmt } : { type: "PAGE" });
+  pageField(numFmt?: PageNumFmt, opts?: { style?: Partial<CharStyle> }): this {
+    return this.emitField(numFmt ? { type: "PAGE", numFmt } : { type: "PAGE" }, opts);
   }
 
-  numPagesField(numFmt?: PageNumFmt): this {
-    return this.emitField(numFmt ? { type: "NUMPAGES", numFmt } : { type: "NUMPAGES" });
+  numPagesField(numFmt?: PageNumFmt, opts?: { style?: Partial<CharStyle> }): this {
+    return this.emitField(numFmt ? { type: "NUMPAGES", numFmt } : { type: "NUMPAGES" }, opts);
   }
 
   dateField(format = "M/d/yyyy", opts?: { now?: Date }): this {
@@ -405,11 +432,11 @@ export class ParagraphBuilder<P extends StoryBuilder> {
 
   // ---- footnotes + bookmarks -----------------------------------------------
 
-  /** Append an auto-numbered footnote reference; the note body is a string (one
-   *  paragraph) or a StoryBuilder callback (rich, multi-paragraph). */
-  footnote(content: string | ((s: StoryBuilder) => void)): this {
-    const footnotes = (this.ctx.doc.footnotes ??= {});
-    const n = this.ctx.nextFootnoteNumber();
+  /** Shared body of footnote()/endnote() — the two differ only in which registry
+   *  and counter they use and which ref key marks the reference run. */
+  private emitNote(kind: "footnote" | "endnote", content: string | ((s: StoryBuilder) => void)): this {
+    const notes = (this.ctx.doc[kind === "footnote" ? "footnotes" : "endnotes"] ??= {});
+    const n = kind === "footnote" ? this.ctx.nextFootnoteNumber() : this.ctx.nextEndnoteNumber();
     const id = this.ctx.ids.next();
     let paras: Paragraph[];
     if (typeof content === "string") {
@@ -418,41 +445,37 @@ export class ParagraphBuilder<P extends StoryBuilder> {
       const blocks: Block[] = [];
       content(new StoryBuilder(this.ctx, blocks));
       paras = blocks.filter((b): b is Paragraph => b.kind === "paragraph");
-      if (paras.length < blocks.length) this.ctx.warn("footnote-non-paragraph", "Footnote bodies hold paragraphs only — non-paragraph blocks were dropped.");
+      if (paras.length < blocks.length) {
+        this.ctx.warn(`${kind}-non-paragraph`, `${kind === "footnote" ? "Footnote" : "Endnote"} bodies hold paragraphs only — non-paragraph blocks were dropped.`);
+      }
       if (paras.length === 0) paras = [this.ctx.paragraph([])];
     }
-    footnotes[id] = paras;
-    return this.pushRun(this.ctx.run(String(n), { footnoteRef: id, verticalAlign: "super", fontSizePx: 11 }));
+    notes[id] = paras;
+    const refKey = kind === "footnote" ? { footnoteRef: id } : { endnoteRef: id };
+    return this.pushRun(this.ctx.run(String(n), { ...refKey, verticalAlign: "super", fontSizePx: 11 }));
+  }
+
+  /** Append an auto-numbered footnote reference; the note body is a string (one
+   *  paragraph) or a StoryBuilder callback (rich, multi-paragraph). */
+  footnote(content: string | ((s: StoryBuilder) => void)): this {
+    return this.emitNote("footnote", content);
   }
 
   /** Append an auto-numbered endnote reference; the note body is a string (one
    *  paragraph) or a StoryBuilder callback (rich, multi-paragraph). Endnotes
    *  collect at the END of the document instead of the page bottom. */
   endnote(content: string | ((s: StoryBuilder) => void)): this {
-    const endnotes = (this.ctx.doc.endnotes ??= {});
-    const n = this.ctx.nextEndnoteNumber();
-    const id = this.ctx.ids.next();
-    let paras: Paragraph[];
-    if (typeof content === "string") {
-      paras = [this.ctx.paragraph([this.ctx.run(content, { fontSizePx: 12 })], { spaceAfterPx: 0 })];
-    } else {
-      const blocks: Block[] = [];
-      content(new StoryBuilder(this.ctx, blocks));
-      paras = blocks.filter((b): b is Paragraph => b.kind === "paragraph");
-      if (paras.length < blocks.length) this.ctx.warn("endnote-non-paragraph", "Endnote bodies hold paragraphs only — non-paragraph blocks were dropped.");
-      if (paras.length === 0) paras = [this.ctx.paragraph([])];
-    }
-    endnotes[id] = paras;
-    return this.pushRun(this.ctx.run(String(n), { endnoteRef: id, verticalAlign: "super", fontSizePx: 11 }));
+    return this.emitNote("endnote", content);
   }
 
   /** Append `text` and bookmark exactly that run's range in this paragraph. */
   bookmark(name: string, text: string, style?: Partial<CharStyle>): this {
     const bookmarks = (this.ctx.doc.bookmarks ??= {});
+    // The appended run adds exactly text.length — no second full-run-list scan
+    // (pushRun may coalesce into the previous run, but lengths still add up).
     const start = textOfRuns(this.para.runs).length;
     this.pushRun(this.ctx.run(text, { ...this.charPatch, ...style }));
-    const end = textOfRuns(this.para.runs).length;
-    bookmarks[name] = { start: { blockId: this.para.id, offset: start }, end: { blockId: this.para.id, offset: end } };
+    bookmarks[name] = { start: { blockId: this.para.id, offset: start }, end: { blockId: this.para.id, offset: start + text.length } };
     return this;
   }
 
