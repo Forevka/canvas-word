@@ -108,6 +108,11 @@ export interface GeoScope {
 const indexCache = new WeakMap<LayoutTree, TreeIndex>();
 const bandIndexCache = new WeakMap<LayoutTree, Map<string, TreeIndex>>();
 
+/** INVARIANT: `entries` is sorted by pageIndex — pages are walked first-to-last
+ *  and every entry of a page is appended before the next page starts, so each
+ *  page's lines form one contiguous span. pageSpan()'s binary search (and the
+ *  `earlier = entries[span.start - 1]` derivation in hitTest) depend on this;
+ *  don't reorder the walk without updating them. */
 function buildIndex(
   pageBlocks: Iterable<{ pageIndex: number; blocks: PlacedBlock[] }>,
   indexBandTables: boolean,
