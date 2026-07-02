@@ -309,6 +309,12 @@ export interface IRParaProps {
   direction?: "ltr" | "rtl";
   /** w:pPr/w:pBdr — paragraph border edges (raw, mapped downstream). */
   borders?: IRParaBorders;
+  /** A w:pBdr element is present — even if it declares no drawable edge (empty or
+   *  all-nil), the paragraph EXPLICITLY declares its borders ("no box"), which
+   *  clears a border box an inherited paragraph style provides (issue #153).
+   *  Mirrors IRTableCell/IRTable.bordersSpecified. Flows through mergeProps so a
+   *  direct clear overrides the style; distinguished from an absent w:pBdr. */
+  bordersSpecified?: boolean;
   /** w:pPr/w:shd → paragraph-level shading, tri-state (issue #147):
    *  a CSS fill string when the element carries a real fill, `null` when the
    *  element is PRESENT but empty (`<w:shd w:val="clear" w:fill="auto"/>` /

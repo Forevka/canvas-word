@@ -110,4 +110,23 @@ describe("builder feature round-trip (.docx)", () => {
     expect(t.rows[0]!.cells[0]!.shadingCleared).toBe(true);
     expect(t.rows[0]!.cells[1]!.shading).toBe("#eeeeee"); // sibling still shaded
   });
+
+  it("preserves a paragraph border-box clear against a boxed named style (issue #153)", async () => {
+    const box = { top: { color: "#1a73e8", widthPx: 2 }, bottom: { color: "#1a73e8", widthPx: 2 } };
+    const doc = DocumentBuilder.create({ idSeed: "pbdr" })
+      .style({ id: "Boxed", name: "Boxed", type: "paragraph", char: {}, para: { borders: box } })
+      .paragraph("keeps the box").withStyle("Boxed")
+      .paragraph("clears the box").withStyle("Boxed").clearBorders()
+      .build();
+    const p0 = doc.blocks.filter((b): b is Extract<Block, { kind: "paragraph" }> => b.kind === "paragraph");
+    expect(p0[0]!.style.borders).toBeDefined();
+    expect(p0[1]!.style.borders).toBeUndefined();
+    expect(p0[1]!.style.bordersCleared).toBe(true);
+
+    const back = runImport((await runExport(doc, "docx")).bytes).doc;
+    const p = back.blocks.filter((b): b is Extract<Block, { kind: "paragraph" }> => b.kind === "paragraph");
+    expect(p[0]!.style.borders).toBeDefined(); // still inherits the box
+    expect(p[1]!.style.borders).toBeUndefined(); // clear survived
+    expect(p[1]!.style.bordersCleared).toBe(true);
+  });
 });

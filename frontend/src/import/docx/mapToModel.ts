@@ -1316,7 +1316,11 @@ function applyParaProps(out: Partial<ParaStyle>, props: IRParaProps): void {
   if (props.contextualSpacing !== undefined) out.contextualSpacing = props.contextualSpacing;
   if (props.tabStops) out.tabStops = mapTabStops(props.tabStops);
   const pb = paraBordersFromIR(props.borders);
+  // Tri-state (issue #153): real edges → borders; a w:pBdr present with no drawable
+  // edge (empty / all-nil) → an explicit clear marker so export re-emits the empty
+  // w:pBdr against a bordered named style instead of the style's box returning.
   if (pb) out.borders = pb;
+  else if (props.bordersSpecified) out.bordersCleared = true;
   // w:shd tri-state (issue #147): a `null` resolved fill is an explicit clear —
   // record the marker and omit `shading` (which stays a concrete-fill-only field)
   // so the export can re-emit `<w:shd w:val="clear" w:fill="auto"/>` against a
