@@ -291,6 +291,10 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
     .Paragraph("violets are blue,", p => p.Spacing(new SpacingOptions { After = 12 }).ContextualSpacing())
     .Paragraph("contextual spacing keeps these lines tight,", p => p.Spacing(new SpacingOptions { After = 12 }).ContextualSpacing())
     .Paragraph("the way Word's list paragraphs do.", p => p.Spacing(new SpacingOptions { After = 12 }).ContextualSpacing())
+    // Automatic paragraph spacing (issue #160): Word's w:beforeAutospacing/@w:afterAutospacing
+    // (the HTML-<p> behavior). It bakes an approximate auto value and round-trips the attributes.
+    .Paragraph("This paragraph uses Word's automatic before/after spacing (w:beforeAutospacing / w:afterAutospacing) instead of an explicit value.",
+        p => p.Spacing(new SpacingOptions { BeforeAuto = true, AfterAuto = true }))
 
     // ---- Minor paragraph properties (w:widowControl / w:suppressLineNumbers / w:mirrorIndents / w:adjustRightInd / w:textAlignment) ----
     .Paragraph("Minor paragraph properties", p => p.WithStyle("Heading1"))

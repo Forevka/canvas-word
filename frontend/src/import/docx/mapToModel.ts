@@ -38,7 +38,7 @@ import type {
 import type { NamedStyle, Stylesheet } from "@cw/shared";
 import type { ListDefinition, ListLevel, ListNumberFormat } from "@cw/shared";
 import type { TableCond, TableCondProps, TableStyle } from "@cw/shared";
-import { HIGHLIGHT_HEX, normalizeRuns } from "@cw/shared";
+import { AUTO_PARA_SPACING_PX, HIGHLIGHT_HEX, normalizeRuns } from "@cw/shared";
 import { cellBordersFromIR, paraBordersFromIR, resolveCellBorders, runBorderFromIR, tableBordersFromIR, type BorderSources, type CellPosition } from "./borders";
 import type { MediaStore } from "./media";
 import type { NumberingData } from "./numbering";
@@ -1310,6 +1310,17 @@ function applyParaProps(out: Partial<ParaStyle>, props: IRParaProps): void {
   }
   if (props.spaceBeforeTwips !== undefined) out.spaceBeforePx = round2(twipsToPx(props.spaceBeforeTwips));
   if (props.spaceAfterTwips !== undefined) out.spaceAfterPx = round2(twipsToPx(props.spaceAfterTwips));
+  // Auto-spacing (issue #160): bake a concrete approximation into the px field (Word
+  // ignores the explicit value when autospacing is on) and keep the flag for export.
+  // A per-context auto value + HTML-style margin collapsing are not reproduced.
+  if (props.spaceBeforeAuto !== undefined) {
+    out.spaceBeforeAuto = props.spaceBeforeAuto;
+    if (props.spaceBeforeAuto) out.spaceBeforePx = AUTO_PARA_SPACING_PX;
+  }
+  if (props.spaceAfterAuto !== undefined) {
+    out.spaceAfterAuto = props.spaceAfterAuto;
+    if (props.spaceAfterAuto) out.spaceAfterPx = AUTO_PARA_SPACING_PX;
+  }
   if (props.indentLeftTwips !== undefined) out.indentLeftPx = round2(twipsToPx(props.indentLeftTwips));
   if (props.indentRightTwips !== undefined) out.indentRightPx = round2(twipsToPx(props.indentRightTwips));
   if (props.indentFirstLineTwips !== undefined)

@@ -125,12 +125,17 @@ export function paraCoreXml(style: ParaStyle): string {
   // a rule without lineHeightPx would serialize w:line="0"; fall back to the
   // multiplier (240ths, lineRule="auto") instead.
   const fixed = style.lineRule !== undefined && style.lineHeightPx !== undefined;
-  c.push(el("w:spacing", {
+  const spacingAttrs: Record<string, string | number> = {
     "w:before": pxToTwips(style.spaceBeforePx),
     "w:after": pxToTwips(style.spaceAfterPx),
     "w:line": fixed ? pxToTwips(style.lineHeightPx!) : multiplierToLine(style.lineHeight),
     "w:lineRule": fixed ? style.lineRule! : "auto",
-  }));
+  };
+  // Auto-spacing (issue #160): re-emit the autospacing attributes; Word ignores the
+  // explicit before/after when these are on, but we emit both (as Word does).
+  if (style.spaceBeforeAuto) spacingAttrs["w:beforeAutospacing"] = "1";
+  if (style.spaceAfterAuto) spacingAttrs["w:afterAutospacing"] = "1";
+  c.push(el("w:spacing", spacingAttrs));
   const ind: Record<string, number> = {};
   if (style.indentLeftPx) ind["w:left"] = pxToTwips(style.indentLeftPx);
   if (style.indentRightPx) ind["w:right"] = pxToTwips(style.indentRightPx);
@@ -209,6 +214,8 @@ export function partialPPrXml(p: Partial<ParaStyle>): string {
   const sp: Record<string, number | string> = {};
   if (p.spaceBeforePx !== undefined) sp["w:before"] = pxToTwips(p.spaceBeforePx);
   if (p.spaceAfterPx !== undefined) sp["w:after"] = pxToTwips(p.spaceAfterPx);
+  if (p.spaceBeforeAuto) sp["w:beforeAutospacing"] = "1"; // issue #160
+  if (p.spaceAfterAuto) sp["w:afterAutospacing"] = "1";
   if (p.lineRule !== undefined && p.lineHeightPx !== undefined) {
     sp["w:line"] = pxToTwips(p.lineHeightPx);
     sp["w:lineRule"] = p.lineRule;

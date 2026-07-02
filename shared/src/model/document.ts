@@ -207,6 +207,13 @@ export interface ParaStyle {
   lineHeightPx?: number;
   spaceBeforePx: number;
   spaceAfterPx: number;
+  /** Word's "automatic" paragraph spacing (OOXML w:beforeAutospacing / w:afterAutospacing,
+   *  the HTML-<p> behavior — issue #160). When set, `spaceBeforePx`/`spaceAfterPx` hold the
+   *  BAKED auto value (a fixed approximation; Word's per-context auto-value + HTML-style
+   *  margin collapsing are not reproduced), and these flags exist so export re-emits the
+   *  autospacing attributes. Absent = the explicit spacing value is authoritative. */
+  spaceBeforeAuto?: boolean;
+  spaceAfterAuto?: boolean;
   indentFirstLinePx: number;
   indentLeftPx: number;
   /** Right-edge indent (docx w:ind/@w:right|@w:end): narrows every line from the
@@ -318,6 +325,13 @@ export interface ParaBorders {
   left?: CellBorder;
   between?: CellBorder;
 }
+
+/** Baked approximation of Word's "automatic" paragraph spacing (OOXML
+ *  w:beforeAutospacing/@w:afterAutospacing — issue #160): the before/after px used
+ *  when autospacing is on. Word computes it per context and collapses HTML-style;
+ *  we bake a flat ~1-line value so autospaced paragraphs don't collapse to 0. Shared
+ *  by the importer (bake) and the builder (author) so they stay in agreement. */
+export const AUTO_PARA_SPACING_PX = 14;
 
 export type TabAlign = "left" | "center" | "right" | "decimal";
 export type TabLeader = "none" | "dot" | "dash" | "underscore";

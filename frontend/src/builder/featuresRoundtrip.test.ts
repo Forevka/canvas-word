@@ -5,7 +5,7 @@
 // importer reshapes it — e.g. a TOC field flattens then re-marks).
 
 import { beforeAll, describe, expect, it } from "vitest";
-import type { Block } from "@cw/shared";
+import { AUTO_PARA_SPACING_PX, type Block } from "@cw/shared";
 import { runImport } from "../import/docx/pipeline";
 import { runExport } from "../export/pipeline";
 import { installMeasureHost } from "../export/shared/measureHost";
@@ -162,5 +162,20 @@ describe("builder feature round-trip (.docx)", () => {
     expect(p[0]!.runs[0]!.style.highlightColor).toBeDefined(); // inherits the style highlight
     expect(p[1]!.runs[0]!.style.highlightColor).toBeUndefined(); // clear survived
     expect(p[1]!.runs[0]!.style.highlightCleared).toBe(true);
+  });
+
+  it("preserves paragraph auto-spacing (issue #160)", async () => {
+    const doc = DocumentBuilder.create({ idSeed: "auto" })
+      .paragraph("autospaced").spacing({ beforeAuto: true, afterAuto: true })
+      .build();
+    const built = doc.blocks.find((b): b is Extract<Block, { kind: "paragraph" }> => b.kind === "paragraph")!;
+    expect(built.style.spaceBeforeAuto).toBe(true);
+    expect(built.style.spaceBeforePx).toBe(AUTO_PARA_SPACING_PX);
+
+    const back = runImport((await runExport(doc, "docx")).bytes).doc;
+    const p = back.blocks.find((b): b is Extract<Block, { kind: "paragraph" }> => b.kind === "paragraph")!;
+    expect(p.style.spaceBeforeAuto).toBe(true);
+    expect(p.style.spaceAfterAuto).toBe(true);
+    expect(p.style.spaceBeforePx).toBe(AUTO_PARA_SPACING_PX);
   });
 });

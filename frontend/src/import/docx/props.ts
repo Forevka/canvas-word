@@ -160,6 +160,13 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
     if (before !== undefined) props.spaceBeforeTwips = before;
     const after = numAttr(spacing, "w:after");
     if (after !== undefined) props.spaceAfterTwips = after;
+    // Auto-spacing (issue #160): when on, the explicit before/after is ignored and
+    // Word computes the space itself. Kept as a flag; the mapper bakes a concrete px.
+    // These are ATTRIBUTES of w:spacing (like w:before), not child on/off elements.
+    const beforeAuto = attr(spacing, "w:beforeAutospacing");
+    if (beforeAuto !== undefined) props.spaceBeforeAuto = beforeAuto !== "0" && beforeAuto !== "false";
+    const afterAuto = attr(spacing, "w:afterAutospacing");
+    if (afterAuto !== undefined) props.spaceAfterAuto = afterAuto !== "0" && afterAuto !== "false";
     const line = numAttr(spacing, "w:line");
     const rule = attr(spacing, "w:lineRule") ?? "auto";
     if (line !== undefined) {

@@ -9,7 +9,7 @@
 // intent. Mixed formatting within a paragraph uses text(t, { …patch }).
 
 import type { Block, CellBorder, CharStyle, Document, EmphasisMark, FieldSpec, IfOp, NamedStyle, PageNumFmt, ParaBorders, ParaStyle, Paragraph, Run, SdtProps, TableStyle, TabStop, UnderlineStyle } from "@cw/shared";
-import { buildInstruction, evaluateField, resolveStyle, styleById, textOfRuns } from "@cw/shared";
+import { AUTO_PARA_SPACING_PX, buildInstruction, evaluateField, resolveStyle, styleById, textOfRuns } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import type { BandOptions, DocumentBuilder, ListDefinitionSpec, PageSetup, SectionBreakOptions } from "./documentBuilder";
 import { equationFromLatex, equationFromMathml } from "./mathInput";
@@ -32,6 +32,11 @@ export interface SpacingOptions {
   lineRule?: "exact" | "atLeast";
   /** Fixed line height in px — used with `lineRule`. */
   lineHeightPx?: number;
+  /** Word's "automatic" space before/after (OOXML w:beforeAutospacing/@w:afterAutospacing,
+   *  issue #160). When true, bakes the approximate auto value and re-emits the attribute;
+   *  overrides `before`/`after` respectively. */
+  beforeAuto?: boolean;
+  afterAuto?: boolean;
 }
 
 export interface IndentOptions {
@@ -524,6 +529,15 @@ export class ParagraphBuilder<P extends StoryBuilder> {
   spacing(opts: SpacingOptions): this {
     if (opts.before !== undefined) this.para.style.spaceBeforePx = opts.before;
     if (opts.after !== undefined) this.para.style.spaceAfterPx = opts.after;
+    // Auto-spacing (issue #160): bake the approximate auto value + set the export flag.
+    if (opts.beforeAuto !== undefined) {
+      this.para.style.spaceBeforeAuto = opts.beforeAuto;
+      if (opts.beforeAuto) this.para.style.spaceBeforePx = AUTO_PARA_SPACING_PX;
+    }
+    if (opts.afterAuto !== undefined) {
+      this.para.style.spaceAfterAuto = opts.afterAuto;
+      if (opts.afterAuto) this.para.style.spaceAfterPx = AUTO_PARA_SPACING_PX;
+    }
     if (opts.lineRule !== undefined) {
       // A fixed rule is meaningless without its height; never store a half-set rule
       // (it would export as w:line="0" and disagree with layout).

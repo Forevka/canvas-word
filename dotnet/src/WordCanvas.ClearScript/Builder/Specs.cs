@@ -448,6 +448,11 @@ public sealed record SpacingOptions
     public LineRule? LineRule { get; init; }
     /// <summary>Fixed line height in px — used with <see cref="LineRule"/>.</summary>
     public double? LineHeightPx { get; init; }
+    /// <summary>Word's "automatic" space before/after (OOXML w:beforeAutospacing / w:afterAutospacing,
+    /// issue #160). When true, bakes the approximate auto value and re-emits the attribute; overrides
+    /// <see cref="Before"/>/<see cref="After"/> respectively.</summary>
+    public bool? BeforeAuto { get; init; }
+    public bool? AfterAuto { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -457,6 +462,8 @@ public sealed record SpacingOptions
         if (LineHeight is { } lh) Js.Set(o, "lineHeight", lh);
         if (LineRule is { } lr) Js.Set(o, "lineRule", EnumJs.LineRule(lr));
         if (LineHeightPx is { } lhp) Js.Set(o, "lineHeightPx", lhp);
+        if (BeforeAuto is { } ba) Js.Set(o, "beforeAuto", ba);
+        if (AfterAuto is { } aa) Js.Set(o, "afterAuto", aa);
         return o;
     }
 }
