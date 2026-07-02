@@ -43,6 +43,15 @@ function measureContext(): MeasureContext {
 }
 
 export function charStyleToFont(s: CharStyle): string {
+  // Memoized per (active registry, style object) — this runs per fragment on
+  // every layout, paint, and hit-test pass, and the family resolution (registry
+  // lookup + normalize + clone map) dominates it. Object identity is a sound key:
+  // model CharStyles are immutable (edits mint new objects — the same contract
+  // the engine's revision-keyed line caches rely on). The registry keys the cache
+  // because a registered custom font shadows a built-in clone of the same name.
+  const cache = activeFontRegistry().charFontCache;
+  const hit = cache.get(s);
+  if (hit !== undefined) return hit;
   const italic = s.italic ? "italic " : "";
   const weight = s.bold ? "700" : "400";
   // Sub/superscript runs are MEASURED at the scaled size (paint shifts the
@@ -52,7 +61,9 @@ export function charStyleToFont(s: CharStyle): string {
   // the editor, the browser export, and the Node backend all lay out identically
   // — no dependency on system fonts. The model keeps the original family.
   const family = cloneFamilyFor(firstFamilyToken(s.fontFamily)).clone;
-  return `${italic}${weight} ${size}px ${family}`;
+  const font = `${italic}${weight} ${size}px ${family}`;
+  cache.set(s, font);
+  return font;
 }
 
 /** One-off text width at a font — LAYOUT-time only (paint never measures).

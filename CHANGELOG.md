@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+- **Keystroke / repaint hot path — structural page diffing + font-string memoization.** `setTree`'s
+  per-page change detection no longer `JSON.stringify`s every mounted page on every relayout (typing
+  re-serialized 2–4 full pages per keystroke, and per frame during IME composition / column drags);
+  it now compares pages structurally with identity short-circuits, so unchanged pages compare in
+  O(blocks) via the engine's cache-shared line/table/band objects without descending into fragments —
+  same over-inclusive "any difference repaints" safety. `charStyleToFont` — called per fragment on
+  every layout, paint, and hit-test pass — is now memoized per (font registry, CharStyle object), and
+  the canvas painter memoizes each run's `RunPaint` decision per style and skips redundant `ctx.font`
+  assignments across same-styled fragments.
+- **Pointer hot path — page-local hit-testing + one probe pass per frame.** Geometry queries
+  (`hitTest`, `linkAt`, `pointOnText`, `inlineEquationAt`) scanned every line in the document per
+  call; the line index is page-ordered, so they now binary-search the target page's contiguous span
+  and touch only its lines — a click/hover on page 90 of a long report no longer walks pages 0–89
+  (and the table-cell pin no longer walks the whole document even in table-free docs). Both hover
+  `mousemove` handlers (resize/link/object affordances; content-control adornments + inspector) are
+  coalesced to at most one probe pass per animation frame on the latest pointer position, so
+  high-polling mice no longer run 6–8 geometry probes several times per frame. `locateParagraph` —
+  probed per hover pass and per command dispatch — is now an O(1) lookup against a per-document
+  location index (same WeakMap-on-identity contract as the paragraph index) instead of a full
+  body + bands + notes walk.
+
 ### Added
 - **C# `WordCanvasEnginePool` — safe engine reuse for multi-threaded hosts (ClearScript bindings).** A thread-safe,
   concurrency-bounded pool of `WordCanvasEngine` instances for ASP.NET Core / worker hosts, where the single-isolate

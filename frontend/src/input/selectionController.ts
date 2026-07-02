@@ -13,6 +13,7 @@ import type { DocPosition, DocSelection } from "@cw/shared";
 import { isCollapsed } from "@cw/shared";
 import {
   words,
+  blockById,
   navigableBandParagraphs,
   navigableParagraphs,
   prevGrapheme,
@@ -578,11 +579,12 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
   /** Is the point over a TOC-entry paragraph (Ctrl-clickable to its heading)? */
   const isTocEntryAt = (pt: { pageIndex: number; x: number; y: number }): boolean => {
     const pos = hitTest(deps.getTree(), pt.pageIndex, pt.x, pt.y, scope());
-    return !!(pos && paragraphs().find((p) => p.id === pos.blockId)?.style.tocEntry);
+    return !!(pos && blockById(deps.getDoc(), pos.blockId)?.style.tocEntry);
   };
 
   // Pointer left the editor: drop any column/row-resize guide so it doesn't linger.
   const onHoverLeave = (): void => {
+    hoverEvent = null; // a queued rAF must not re-apply hover state after leave
     if (!drag) {
       deps.setColumnGuide(null);
       deps.setRowGuide(null);
@@ -590,8 +592,20 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
   };
 
   // Hover affordances: col-resize over column grips, row-resize over row grips,
-  // pointer + tooltip over links.
+  // pointer + tooltip over links. mousemove can fire several times per frame
+  // (high-polling mice), and each pass runs a chain of geometry probes — coalesce
+  // to at most one probe pass per animation frame, on the latest pointer position.
+  let hoverRaf: number | null = null;
+  let hoverEvent: MouseEvent | null = null;
   const onHoverMove = (ev: MouseEvent): void => {
+    hoverEvent = ev;
+    if (hoverRaf !== null) return;
+    hoverRaf = requestAnimationFrame(() => {
+      hoverRaf = null;
+      if (hoverEvent) processHoverMove(hoverEvent);
+    });
+  };
+  const processHoverMove = (ev: MouseEvent): void => {
     if (drag) return;
     if (container.dataset["painter"]) {
       container.style.cursor = "copy"; // format painter armed
@@ -781,6 +795,10 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
   return {
     destroy(): void {
       stopAutoScroll();
+      if (hoverRaf !== null) {
+        cancelAnimationFrame(hoverRaf);
+        hoverRaf = null;
+      }
       container.removeEventListener("mousedown", onMouseDown);
       container.removeEventListener("pointerdown", onTouchDown);
       container.removeEventListener("pointerup", onTouchUp);

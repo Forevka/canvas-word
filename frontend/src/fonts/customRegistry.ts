@@ -164,6 +164,12 @@ export class CustomFontRegistry {
    *  instances with the same family string but different sizing never share a cache
    *  entry. */
   readonly metricsCache = new Map<string, { ascent: number; descent: number }>();
+  /** layout/metrics.ts memoizes the canvas font string per CharStyle object here —
+   *  per registry, because a registered custom font shadows a built-in clone of the
+   *  same family name. Keyed by object identity (model styles are immutable; edits
+   *  mint new objects). Replaced wholesale whenever the family set changes, since
+   *  adding a family can re-route tokens that previously fell back to a clone. */
+  charFontCache = new WeakMap<object, string>();
 
   constructor(faceKeyPrefix = "") {
     this.faceKeyPrefix = faceKeyPrefix;
@@ -175,6 +181,7 @@ export class CustomFontRegistry {
    *  line heights can't survive a re-register. */
   register(cfg?: { fonts?: CustomFontDef[] } | undefined): void {
     if (!cfg?.fonts) return;
+    let familiesChanged = false;
     for (const def of cfg.fonts) {
       if (!isRegistrableFontDef(def, true)) continue;
       const key = normalizeFamily(def.family);
@@ -183,8 +190,13 @@ export class CustomFontRegistry {
         console.warn(`[wordcanvas] custom font "${def.family}" redefined with different faces/sizing; using the latest`);
         this.metricsCache.clear();
       }
+      if (!existing) familiesChanged = true;
       this.fonts.set(key, def);
     }
+    // A new family can shadow a clone that cached font strings already resolved
+    // to — drop the memo so affected styles re-resolve. (Redefining an EXISTING
+    // family keeps the same render name, so the font strings stay valid.)
+    if (familiesChanged) this.charFontCache = new WeakMap();
   }
 
   fontFor(family: string): CustomFontDef | undefined {
@@ -208,6 +220,7 @@ export class CustomFontRegistry {
   clear(): void {
     this.fonts.clear();
     this.metricsCache.clear();
+    this.charFontCache = new WeakMap();
   }
 }
 
