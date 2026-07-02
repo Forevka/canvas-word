@@ -247,6 +247,11 @@ export interface IRParaProps {
   align?: "left" | "center" | "right" | "justify";
   spaceBeforeTwips?: number;
   spaceAfterTwips?: number;
+  /** w:spacing/@w:beforeAutospacing / @w:afterAutospacing (issue #160) — Word's
+   *  "automatic" paragraph spacing (the HTML-<p> behavior); when set, Word ignores
+   *  the explicit w:before/@w:after and computes the spacing itself. */
+  spaceBeforeAuto?: boolean;
+  spaceAfterAuto?: boolean;
   /** Multiplier — only set when lineRule is "auto" (or absent). */
   lineHeight?: number;
   /** w:lineRule. "auto" pairs with `lineHeight` (a 240ths multiplier);

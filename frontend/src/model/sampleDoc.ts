@@ -520,6 +520,12 @@ export function sampleDoc(): Document {
     para([run("violets are blue,")], { contextualSpacing: true, spaceAfterPx: 12 }),
     para([run("contextual spacing keeps these lines tight,")], { contextualSpacing: true, spaceAfterPx: 12 }),
     para([run("the way Word's list paragraphs do.")], { contextualSpacing: true, spaceAfterPx: 12 }),
+    // Automatic paragraph spacing (issue #160): Word's w:beforeAutospacing/afterAutospacing
+    // (the HTML-<p> behavior). The spacing is baked to an approximate auto value and the
+    // attributes round-trip, so a web-sourced doc's paragraphs don't collapse together.
+    para([run("This paragraph uses Word's automatic before/after spacing (w:beforeAutospacing / w:afterAutospacing) rather than an explicit value — common in documents converted from HTML.")], {
+      spaceBeforeAuto: true, spaceAfterAuto: true, spaceBeforePx: 14, spaceAfterPx: 14,
+    }),
 
     // --- Minor paragraph properties (issue #62) -------------------------------
     heading("Minor paragraph properties", 1),
