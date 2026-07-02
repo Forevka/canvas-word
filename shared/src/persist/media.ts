@@ -53,6 +53,10 @@ export class MemoryMediaStore implements MediaStore {
   put(blob: MediaBlob): void {
     this.map.set(blob.mediaId, blob);
   }
+  /** Drop one entry (media eviction — see the frontend store's retention). */
+  delete(mediaId: string): void {
+    this.map.delete(mediaId);
+  }
   /** Every stored id — used to bundle a doc's media for transport. */
   ids(): string[] {
     return [...this.map.keys()];

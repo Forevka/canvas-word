@@ -365,8 +365,11 @@ export function createChildDocument(deps: ChildDeps): ChildDocument {
 
     // Measure content, then build a page that fills the available preview box (so a
     // short control still gets a comfortably large editing area) yet grows to hold
-    // taller content; the outer container provides the single scrollbar.
-    const measured = contentBounds(createLayoutEngine().layout(buildDoc(ctx, blocks, widthPx, padding, MEASURE_H)));
+    // taller content; the outer container provides the single scrollbar. Reuse the
+    // shared measuring engine (reset like render() does) instead of allocating a
+    // throwaway engine + caches per mount.
+    engine.reset();
+    const measured = contentBounds(engine.layout(buildDoc(ctx, blocks, widthPx, padding, MEASURE_H)));
     const contentH = Math.max(measured.height + padding, opts.maxHeightPx ?? availH, 200);
 
     const ed = deps.makeEditor(host, buildDoc(ctx, blocks, widthPx, padding, contentH), {
