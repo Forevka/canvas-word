@@ -82,6 +82,7 @@ export type QueryPublicSurfaceParity = [
   Assert<AssignableTo<Rt.MergeOptions, Pub.MergeOptions>>,
   Assert<AssignableTo<Rt.MergeResult, Pub.MergeResult>>,
   Assert<AssignableTo<Rt.MergeIdMap, Pub.MergeIdMap>>,
+  Assert<AssignableTo<Rt.BandContainer, Pub.BandContainer>>,
   Assert<AssignableTo<typeof Rt.getPages, typeof Pub.getPages>>,
   Assert<AssignableTo<typeof Rt.pageOfBlock, typeof Pub.pageOfBlock>>,
   Assert<AssignableTo<typeof Rt.indexOnPage, typeof Pub.indexOnPage>>,

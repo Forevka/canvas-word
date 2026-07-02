@@ -28,7 +28,8 @@ import { generateTocInDocx } from "../recalc/generateTocDocx";
 import { patchTocFromLayout } from "../recalc/patchTocDocx";
 import { recalcToc } from "../recalc/recalcToc";
 import { DocumentEditor, generateTocIntoDoc } from "@cw/shared";
-import type { Document, TocOptions } from "@cw/shared";
+import type { Block, Document, TocOptions } from "@cw/shared";
+import type { StoryBuilder } from "../builder/storyBuilder";
 import { getPages } from "../layout/pages";
 import {
   findText,
@@ -334,6 +335,15 @@ const api = {
     srcImages: ImageBytes | undefined,
     opts?: MergeOptions,
   ) => mergeBridge(destDoc, destImages, srcDoc, srcImages, opts),
+  // Build a standalone story (Block[]) from a StoryBuilder callback — lets the C#
+  // WordDocumentEditor.SetSectionFooter/Header author a band's content and hand the
+  // resulting blocks to the editor's setSectionBand. Built via a throwaway builder's
+  // footer band; the blocks bake concrete formatting, so they are self-contained.
+  buildStory: (build: (s: StoryBuilder) => void): Block[] => {
+    const b = DocumentBuilder.create();
+    b.footer(build);
+    return b.build().section.footer ?? [];
+  },
   // Construct a real JS RegExp from a host (C#) source+flags — lets the C#
   // ReplaceAllText expose the JS `pattern: string | RegExp` overload. The pattern
   // is TRUSTED developer input (a .NET binding caller, not an end user); a modest

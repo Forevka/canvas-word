@@ -50,7 +50,7 @@ describe("C#↔JS bridge parity", () => {
     // Bridge mappers are exported from queryBridge.ts; a few helpers live directly
     // on the entry `api`. Every name must have a JS impl AND be wired onto the api.
     const bridgeExports = new Set(Object.keys(bridge));
-    const entryLocal = new Set(["layoutPages", "newRegExp", "mergeDocuments", "openEditor"]);
+    const entryLocal = new Set(["layoutPages", "newRegExp", "mergeDocuments", "openEditor", "buildStory"]);
     const entrySrc = readSrc("./entry.ts");
 
     expect(names.length).toBeGreaterThan(0);

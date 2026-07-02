@@ -509,9 +509,52 @@ Console.WriteLine($"  parts         : showcase({doc.BlockCount}) + appendix({app
 Console.WriteLine($"  merged        : {mergedReport.BlockCount} blocks, {mergedReport.MediaCount} images → showcase-merged.docx ({mergedDocx.Length / 1024} KB)");
 Console.WriteLine($"  round-trip    : re-imported to {mergedBack.BlockCount} blocks, sections={mergedBack.GetSections().Count}, appendix found={mergedBack.FindText("Appendix A").Count > 0}, glossary found={mergedBack.FindText("Glossary").Count > 0}");
 
+// ---- Per-section footer via SetSectionFooter (table + logo + PAGE field) ----
+// Author a branded content footer (borderless 2-col table: logo | right-aligned
+// address, then a centered "Page X of Y") and apply it to the merged report's body
+// section. The page number is a live field resolved at layout — no placeholder.
+var footerLogo = SolidPng(64, 24, 0x1a, 0x73, 0xe8);
+var footerEditor = mergedReport.Edit();
+var lastSection = mergedReport.GetSections().Count - 1;
+footerEditor.SetSectionFooter(lastSection, f => BuildContentFooter(f, footerLogo));
+var footerDocx = footerEditor.ToDocument().ExportDocx();
+File.WriteAllBytes(Path.Combine(outDir, "showcase-footer.docx"), footerDocx);
+Console.WriteLine("Section footer:");
+Console.WriteLine($"  applied        : content footer (table + logo + PAGE) to body section {lastSection} → showcase-footer.docx ({footerDocx.Length / 1024} KB)");
+
 Console.WriteLine($"Output written to: {outDir}");
 
 static string Trunc(string s) => s.Length <= 60 ? s : s[..57] + "...";
+
+// A reusable branded content footer: a borderless [ logo | address ] table over a
+// centered "Page X of Y". The address wraps on its own (no manual line-splitting)
+// and PageField/NumPagesField resolve at layout (no "update fields" step).
+static void BuildContentFooter(StoryBuilder f, byte[] logoPng)
+{
+    const string Font = "Times New Roman";
+    const double SizePx = 16; // ~12pt
+    var flush = new SpacingOptions { Before = 0, After = 0 };
+    var borderless = new CellBorders();       // present, no edges ⇒ no lines
+    var tightPad = new CellMargin(0, 2, 0, 2);
+
+    f.Paragraph(p => p.Spacing(flush));       // leading spacer
+    f.Table(t =>
+    {
+        t.ColFractions(0.28, 0.72);
+        t.Row(r =>
+        {
+            r.Cell(c => c.Image(logoPng, "image/png", new ImageOptions { WidthPx = 64, HeightPx = 24, Align = TextAlign.Left }),
+                new CellOptions { Borders = borderless, Margin = tightPad, VAlign = CellVAlign.Center, PreferredWidth = new PreferredWidth(28, WidthType.Pct) });
+            r.Cell(c => c
+                    .Paragraph("APR-2026-00042", p => p.Align(TextAlign.Right).Font(Font).FontSize(SizePx).Spacing(flush))
+                    .Paragraph("123 Main St, Springfield, IL 62704", p => p.Align(TextAlign.Right).Font(Font).FontSize(SizePx).Spacing(flush)),
+                new CellOptions { Borders = borderless, Margin = tightPad, VAlign = CellVAlign.Center, PreferredWidth = new PreferredWidth(72, WidthType.Pct) });
+        });
+    }, new TableOptions { WidthMode = TableWidthMode.AutofitWindow, Borders = new TableBorders() });
+    f.Paragraph(p => p
+        .Align(TextAlign.Center).Font(Font).FontSize(SizePx).Spacing(new SpacingOptions { Before = 7, After = 0 })
+        .Text("Page ").PageField().Text(" of ").NumPagesField());
+}
 return;
 
 static CellOptions Bold() => new() { Style = new CharStyle { Bold = true } };

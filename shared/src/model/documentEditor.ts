@@ -8,7 +8,8 @@
 // machinery (that lives in the frontend and is UI-coupled). It is a plain data
 // facade usable from Node, the browser, and — later — the C# bindings.
 
-import type { Block, CharStyle, Document, Paragraph, ParaStyle, Run, SdtProps, TableCell, TableRow } from "./document";
+import type { BandContainer, Block, CharStyle, Document, Paragraph, ParaStyle, Run, SdtProps, TableCell, TableRow } from "./document";
+import { resolveSections } from "./sections";
 import { applyOp, applyStylePatchToRuns, containerOf, gridColumnCount, type Op } from "./ops";
 import { findParagraphs, getBlockById, getParagraphById, getSdt, getSdtBlocks, getTableById, textOfCell, walk, type ParagraphMatch } from "./query";
 import { ancestryThrough, removeSdt as stripSdtFromPath } from "./sdt";
@@ -426,6 +427,42 @@ export class DocumentEditor {
     const result = mergeDocuments(this._doc, source, options);
     this.commit([{ type: "setDocument", doc: result.doc }]);
     return result;
+  }
+
+  /** Set (or clear, with `null`) a header/footer band on a specific section by its
+   *  index (see resolveSections / getSections). The final/body section stores its
+   *  bands on the document; a mid-document section stores them on its break
+   *  paragraph. Pairs with `append` for a post-merge per-section footer pass. One
+   *  undoable step. Throws if `sectionIndex` is out of range. */
+  setSectionBand(sectionIndex: number, band: BandContainer, blocks: Block[] | null): this {
+    const sections = resolveSections(this._doc);
+    if (sectionIndex < 0 || sectionIndex >= sections.length) {
+      throw new Error(`section ${sectionIndex} out of range (0..${sections.length - 1})`);
+    }
+    // The last resolved section is the body section (its bands live on the document).
+    if (sectionIndex === sections.length - 1) {
+      return this.commit([{ type: "setSectionBand", band, blocks }]);
+    }
+    // A mid-document section: its bands live on the break paragraph that ends it.
+    const endBlock = this._doc.blocks[sections[sectionIndex]!.endBlock];
+    if (!endBlock || endBlock.kind !== "paragraph" || !endBlock.style.sectionBreak) {
+      throw new Error(`section ${sectionIndex} has no section-break paragraph to carry a band`);
+    }
+    const sb = endBlock.style.sectionBreak;
+    const props = { ...sb.props };
+    if (blocks) props[band] = blocks;
+    else delete props[band];
+    return this.commit([{ type: "setParaStyle", blockId: endBlock.id, patch: { sectionBreak: { type: sb.type, props } } }]);
+  }
+
+  /** Set (or clear) a section's default footer band. See `setSectionBand`. */
+  setSectionFooter(sectionIndex: number, blocks: Block[] | null): this {
+    return this.setSectionBand(sectionIndex, "footer", blocks);
+  }
+
+  /** Set (or clear) a section's default header band. See `setSectionBand`. */
+  setSectionHeader(sectionIndex: number, blocks: Block[] | null): this {
+    return this.setSectionBand(sectionIndex, "header", blocks);
   }
 
   // --- convenience queries ----------------------------------------------------

@@ -201,6 +201,39 @@ public sealed class WordDocumentEditor
         return this;
     }
 
+    /// <summary>Set a section's default FOOTER band by section index (see GetSections):
+    /// build the footer content with a <see cref="Builder.StoryBuilder"/> callback — the
+    /// same surface used for builder bands (paragraphs, tables, images, PAGE fields). The
+    /// final/body section stores its band on the document; a mid-document section on its
+    /// break paragraph. Pairs with <see cref="WordDocument.Append"/> for a post-merge
+    /// per-section footer pass. Throws JS-side if the index is out of range.</summary>
+    public WordDocumentEditor SetSectionFooter(int sectionIndex, Action<Builder.StoryBuilder> build)
+        => SetSectionBand(sectionIndex, "footer", build);
+
+    /// <summary>Set a section's default HEADER band by section index. See
+    /// <see cref="SetSectionFooter"/>.</summary>
+    public WordDocumentEditor SetSectionHeader(int sectionIndex, Action<Builder.StoryBuilder> build)
+        => SetSectionBand(sectionIndex, "header", build);
+
+    private WordDocumentEditor SetSectionBand(int sectionIndex, string band, Action<Builder.StoryBuilder> build)
+    {
+        ArgumentNullException.ThrowIfNull(build);
+        // Author the band's content via a throwaway builder, then hand the resulting
+        // Block[] to the editor's setSectionBand (which targets the body section or the
+        // right break paragraph by index).
+        Action<object> cb = s => build(new Builder.StoryBuilder(_engine, (ScriptObject)s));
+        var blocks = _engine.Api.InvokeMethod("buildStory", cb);
+        _editor.InvokeMethod("setSectionBand", sectionIndex, band, blocks);
+        return this;
+    }
+
+    /// <summary>Clear a section's default footer band (see <see cref="SetSectionFooter"/>).</summary>
+    public WordDocumentEditor ClearSectionFooter(int sectionIndex)
+    {
+        _editor.InvokeMethod("setSectionBand", sectionIndex, "footer", null);
+        return this;
+    }
+
     /// <summary>Undo the most recent edit. Returns false when there's nothing to undo.</summary>
     public bool Undo() => Convert.ToBoolean(_editor.InvokeMethod("undo"));
 

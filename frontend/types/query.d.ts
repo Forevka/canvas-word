@@ -26,6 +26,7 @@ import type {
 } from "./model";
 
 export type {
+  BandContainer,
   Block,
   BookmarkRange,
   CharStyle,
@@ -355,6 +356,15 @@ export declare class DocumentEditor {
    *  end"), reconciling every id space (see mergeDocuments) as ONE undoable step.
    *  Returns the merge's id map + warnings; the merged document becomes `doc`. */
   append(source: Document, options?: MergeOptions): MergeResult;
+
+  /** Set (or clear, with `null`) a header/footer band on a specific section by index
+   *  (see getSections). The final/body section stores bands on the document; a
+   *  mid-document section on its break paragraph. Throws if the index is out of range. */
+  setSectionBand(sectionIndex: number, band: BandContainer, blocks: Block[] | null): this;
+  /** Set (or clear) a section's default footer band. See setSectionBand. */
+  setSectionFooter(sectionIndex: number, blocks: Block[] | null): this;
+  /** Set (or clear) a section's default header band. See setSectionBand. */
+  setSectionHeader(sectionIndex: number, blocks: Block[] | null): this;
 
   undo(): boolean;
   redo(): boolean;

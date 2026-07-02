@@ -89,6 +89,7 @@ export type {
 
 // Re-export the core model types consumers need to name when using the API.
 export type {
+  BandContainer,
   Block,
   BookmarkRange,
   CharStyle,

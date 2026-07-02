@@ -271,6 +271,34 @@ describe("mergeAll", () => {
   });
 });
 
+describe("DocumentEditor.setSectionBand / setSectionFooter", () => {
+  it("sets the body (final) section's footer on the document", () => {
+    const editor = new DocumentEditor(doc([para("b1", "Body")]));
+    editor.setSectionFooter(0, [para("f1", "Footer")]);
+    expect(editor.doc.section.footer?.[0]).toBeDefined();
+    expect((editor.doc.section.footer![0] as Paragraph).runs[0]!.text).toBe("Footer");
+    editor.undo();
+    expect(editor.doc.section.footer).toBeUndefined();
+  });
+
+  it("sets a mid-document section's footer on its break paragraph", () => {
+    const brk = para("b1", "", { sectionBreak: { type: "nextPage", props: {} } });
+    const editor = new DocumentEditor(doc([brk, para("b2", "Body 2")]));
+    expect(editor.doc.section.footer).toBeUndefined();
+
+    editor.setSectionFooter(0, [para("f1", "First footer")]); // section 0 ends at the break paragraph
+
+    const updated = editor.doc.blocks[0] as Paragraph;
+    expect(updated.style.sectionBreak?.props.footer?.[0]).toBeDefined();
+    expect(editor.doc.section.footer).toBeUndefined(); // the body section is untouched
+  });
+
+  it("throws when the section index is out of range", () => {
+    const editor = new DocumentEditor(doc([para("b1", "Body")]));
+    expect(() => editor.setSectionFooter(3, null)).toThrow();
+  });
+});
+
 describe("DocumentEditor.append", () => {
   it("appends as one undoable step and reports the id map", () => {
     const editor = new DocumentEditor(doc([para("d1", "Dest")]));
