@@ -76,6 +76,12 @@ export type QueryPublicSurfaceParity = [
   // Range / text addressing.
   Assert<AssignableTo<typeof Rt.rangeText, typeof Pub.rangeText>>,
   Assert<AssignableTo<typeof Rt.positionOfText, typeof Pub.positionOfText>>,
+  // Merge / append documents.
+  Assert<AssignableTo<typeof Rt.mergeDocuments, typeof Pub.mergeDocuments>>,
+  Assert<AssignableTo<typeof Rt.mergeAll, typeof Pub.mergeAll>>,
+  Assert<AssignableTo<Rt.MergeOptions, Pub.MergeOptions>>,
+  Assert<AssignableTo<Rt.MergeResult, Pub.MergeResult>>,
+  Assert<AssignableTo<Rt.MergeIdMap, Pub.MergeIdMap>>,
   Assert<AssignableTo<typeof Rt.getPages, typeof Pub.getPages>>,
   Assert<AssignableTo<typeof Rt.pageOfBlock, typeof Pub.pageOfBlock>>,
   Assert<AssignableTo<typeof Rt.indexOnPage, typeof Pub.indexOnPage>>,

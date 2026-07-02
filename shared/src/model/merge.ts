@@ -36,7 +36,6 @@ import type {
 import { DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE } from "./defaults";
 import type { DocPosition } from "./position";
 import type { NamedStyle, Stylesheet } from "./stylesheet";
-import type { ListDefinition } from "./lists";
 import type { TableStyle } from "./tableStyles";
 import { normSdtPath } from "./sdt";
 import { freshId } from "../ids";

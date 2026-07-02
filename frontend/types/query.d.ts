@@ -256,6 +256,51 @@ export interface InsertParagraphOptions {
   runStyle?: CharStyle;
 }
 
+// ---------------------------------------------------------------------------
+// Merge / append documents
+
+/** How colliding named / table styles reconcile with the destination. */
+export type StyleMergeMode = "useDestination" | "keepSource";
+/** The section seam inserted between the destination and the appended source. */
+export type MergeSectionBreak = "nextPage" | "evenPage" | "oddPage" | "continuous" | "none";
+
+export interface MergeOptions {
+  styles?: StyleMergeMode;
+  sectionBreak?: MergeSectionBreak;
+  renameBookmarksOnCollision?: boolean;
+}
+
+/** old→new id per space, for every source id that changed or was repointed. */
+export interface MergeIdMap {
+  blocks: Record<string, string>;
+  styles: Record<string, string>;
+  lists: Record<string, string>;
+  tableStyles: Record<string, string>;
+  sdts: Record<string, string>;
+  fields: Record<string, string>;
+  footnotes: Record<string, string>;
+  endnotes: Record<string, string>;
+  bookmarks: Record<string, string>;
+}
+
+export interface MergeWarning {
+  code: string;
+  detail?: string;
+}
+
+export interface MergeResult {
+  doc: Document;
+  idMap: MergeIdMap;
+  warnings: MergeWarning[];
+}
+
+/** Append `source` after `dest`, reconciling every id space. Pure — returns a new
+ *  document; the inputs are not mutated. */
+export declare function mergeDocuments(dest: Document, source: Document, opts?: MergeOptions): MergeResult;
+
+/** Fold N documents left-to-right: mergeAll([a, b, c]) ≡ merge(merge(a, b), c). */
+export declare function mergeAll(docs: Document[], opts?: MergeOptions): MergeResult;
+
 /** Ergonomic, headless editing facade over the operation engine, with undo/redo.
  *  Every edit swaps `doc` for a new immutable value (structural sharing). */
 export declare class DocumentEditor {
@@ -305,6 +350,11 @@ export declare class DocumentEditor {
   /** Delete the column whose first-row cell text equals `headerText`. Throws if the
    *  table or a matching header is not found. */
   deleteColumnByHeader(tableId: string, headerText: string): this;
+
+  /** Append another document's content after this one (Word's "insert file at
+   *  end"), reconciling every id space (see mergeDocuments) as ONE undoable step.
+   *  Returns the merge's id map + warnings; the merged document becomes `doc`. */
+  append(source: Document, options?: MergeOptions): MergeResult;
 
   undo(): boolean;
   redo(): boolean;

@@ -57,6 +57,9 @@ export {
   positionOfText,
   // edit facade
   DocumentEditor,
+  // merge / append documents
+  mergeDocuments,
+  mergeAll,
 } from "@cw/shared";
 
 export type {
@@ -76,6 +79,12 @@ export type {
   NoteStory,
   ListItem,
   DocSelection,
+  MergeOptions,
+  MergeResult,
+  MergeIdMap,
+  MergeWarning,
+  StyleMergeMode,
+  MergeSectionBreak,
 } from "@cw/shared";
 
 // Re-export the core model types consumers need to name when using the API.

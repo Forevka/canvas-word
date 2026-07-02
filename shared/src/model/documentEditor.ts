@@ -12,6 +12,7 @@ import type { Block, CharStyle, Document, Paragraph, ParaStyle, Run, SdtProps, T
 import { applyOp, applyStylePatchToRuns, containerOf, gridColumnCount, type Op } from "./ops";
 import { findParagraphs, getBlockById, getParagraphById, getSdt, getSdtBlocks, getTableById, textOfCell, walk, type ParagraphMatch } from "./query";
 import { ancestryThrough, removeSdt as stripSdtFromPath } from "./sdt";
+import { mergeDocuments, type MergeOptions, type MergeResult } from "./merge";
 import { resolveStyle } from "./stylesheet";
 import { DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE } from "./defaults";
 import { freshId } from "../ids";
@@ -415,6 +416,16 @@ export class DocumentEditor {
     this._doc = doc;
     this.undoStack.push(commit);
     return true;
+  }
+
+  /** Append another document's content after this one — the headless equivalent of
+   *  Word's "insert file at end". Reconciles every id space (see mergeDocuments) and
+   *  lands as ONE undoable step. Returns the merge's id map + warnings; the merged
+   *  document becomes `this.doc`. */
+  append(source: Document, options: MergeOptions = {}): MergeResult {
+    const result = mergeDocuments(this._doc, source, options);
+    this.commit([{ type: "setDocument", doc: result.doc }]);
+    return result;
   }
 
   // --- convenience queries ----------------------------------------------------

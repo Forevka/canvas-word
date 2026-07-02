@@ -3,6 +3,7 @@ import type { Block, Document, Paragraph, ParaStyle, Run, SectionProps, TableBlo
 import { DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE } from "./defaults";
 import type { Stylesheet } from "./stylesheet";
 import { mergeAll, mergeDocuments } from "./merge";
+import { DocumentEditor } from "./documentEditor";
 
 // ---- tiny concrete-model builders -----------------------------------------
 
@@ -267,5 +268,25 @@ describe("mergeAll", () => {
 
   it("throws on an empty list", () => {
     expect(() => mergeAll([])).toThrow();
+  });
+});
+
+describe("DocumentEditor.append", () => {
+  it("appends as one undoable step and reports the id map", () => {
+    const editor = new DocumentEditor(doc([para("d1", "Dest")]));
+    const before = editor.doc.blocks.length;
+
+    const result = editor.append(doc([para("s1", "Src")]), { sectionBreak: "none" });
+
+    expect(editor.doc.blocks).toHaveLength(before + 1);
+    expect(result.idMap.blocks["s1"]).toBeDefined();
+    expect(editor.canUndo).toBe(true);
+
+    editor.undo();
+    expect(editor.doc.blocks).toHaveLength(before);
+    expect(editor.doc.blocks[0]!.id).toBe("d1");
+
+    editor.redo();
+    expect(editor.doc.blocks).toHaveLength(before + 1);
   });
 });
