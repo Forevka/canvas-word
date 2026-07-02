@@ -17,7 +17,7 @@ each consuming the package by name the way a third-party integrator would.
 Run locally from the repo root (see each folder's README). Most import the built
 `dist-lib` bundle, so build the library first: `npm run build:lib`.
 
-### Open in StackBlitz
+## Open in StackBlitz
 
 Each **Open in StackBlitz** button boots the example in the browser against the
 **published** `@forevka/wordcanvas` from npm. Caveats:

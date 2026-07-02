@@ -142,9 +142,9 @@ for (const a of actions) {
     } catch (e) {
       note(`${a.label}: ${(e as Error).message}`);
     }
-    void render();
+    render().catch((e) => note(`render: ${(e as Error).message}`));
   });
   bar.appendChild(btn);
 }
 
-void render();
+render().catch((e) => note(`render: ${(e as Error).message}`));
