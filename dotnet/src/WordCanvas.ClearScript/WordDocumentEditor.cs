@@ -234,6 +234,13 @@ public sealed class WordDocumentEditor
         return this;
     }
 
+    /// <summary>Clear a section's default header band (see <see cref="SetSectionHeader"/>).</summary>
+    public WordDocumentEditor ClearSectionHeader(int sectionIndex)
+    {
+        _editor.InvokeMethod("setSectionBand", sectionIndex, "header", null);
+        return this;
+    }
+
     /// <summary>Undo the most recent edit. Returns false when there's nothing to undo.</summary>
     public bool Undo() => Convert.ToBoolean(_editor.InvokeMethod("undo"));
 

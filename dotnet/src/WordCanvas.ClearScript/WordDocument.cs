@@ -69,6 +69,8 @@ public sealed partial class WordDocument
     public WordDocument Append(WordDocument other, MergeOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(other);
+        if (!ReferenceEquals(other._engine, _engine))
+            throw new WordCanvasException("Append requires both documents to belong to the same WordCanvasEngine.");
         var res = (ScriptObject)_engine.Api.InvokeMethod(
             "mergeDocuments",
             Doc, Images ?? (object)Undefined.Value,
@@ -90,6 +92,8 @@ public sealed partial class WordDocument
     {
         ArgumentNullException.ThrowIfNull(sdtId);
         ArgumentNullException.ThrowIfNull(source);
+        if (!ReferenceEquals(source._engine, _engine))
+            throw new WordCanvasException("ReplaceSdtContent requires both documents to belong to the same WordCanvasEngine.");
         var res = (ScriptObject)_engine.Api.InvokeMethod(
             "replaceSdtContent",
             Doc, Images ?? (object)Undefined.Value,

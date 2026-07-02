@@ -231,7 +231,7 @@ export declare class ParagraphBuilder<P extends StoryBuilder> {
   /** A custom (host-resolved) field: verbatim instruction + cached result text. */
   customField(instruction: string, resultText: string): this;
   /** A conditional (IF) field — branch text by comparing two operands. */
-  ifField(operandA: string, op: string, operandB: string, ifTrue: string, ifFalse: string): this;
+  ifField(operandA: string, op: "=" | "<>" | "<" | "<=" | ">" | ">=", operandB: string, ifTrue: string, ifFalse: string): this;
   /** A cross-reference to a bookmark (REF, or PAGEREF when `pageRef`). */
   crossReference(bookmarkName: string, opts?: { kind?: "ref" | "pageRef" }): this;
   // ---- bookmarks + notes ----

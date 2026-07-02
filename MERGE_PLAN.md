@@ -119,18 +119,22 @@ extended". A caller who wants a fresh TOC uses the builder's `tableOfContents()`
 
 ## 4. Edit-facade + op surface
 
-- **`DocumentEditor.append(source: Document, opts?: MergeOptions): void`** — runs `mergeDocuments`
-  against `this.doc` and replaces it as ONE undo step (snapshot inverse; too broad for a granular
-  op, so it uses a `setDocument`-style replace op or a coarse snapshot inverse — decide in Phase 3).
-- **`DocumentEditor.setSectionBand(sectionIndex, band, blocks): void`** — set a header/footer band
+- **`DocumentEditor.append(source: Document, opts?: MergeOptions): MergeResult`** — runs
+  `mergeDocuments` against `this.doc` and replaces it as ONE undo step, returning the merge's
+  `{ doc, idMap, warnings }`. The whole-document swap rides a new coarse **`setDocument`** op
+  (inverse = the prior document), since the change is too broad for a granular op.
+- **`DocumentEditor.replaceSdtContent(sdtId, source, opts?): MergeResult`** — reconcile `source`
+  into the document and splice its blocks in as the content of block-level control `sdtId`
+  (ancestry preserved), also via `setDocument`.
+- **`DocumentEditor.setSectionBand(sectionIndex, band, blocks): this`** — set a header/footer band
   on a specific section (by section index). Built on the EXISTING ops: `setSectionBand` for the
   final/body section, and `setParaStyle` patching `sectionBreak.props.<band>` for a mid-document
   section's break paragraph. This is what powers a **post-merge** footer pass (map
   bookmarks/markers → section index → assign a footer). Convenience wrappers
   `setSectionFooter` / `setSectionHeader`.
 
-No NEW low-level op is strictly required for §3 (append rebuilds the block list + registries and
-can ride a snapshot/replace op); the section-band setter reuses `setSectionBand` + `setParaStyle`.
+A single new low-level op — **`setDocument`** (whole-document replace, LWW under transform) — backs
+`append` / `replaceSdtContent`; the section-band setter reuses `setSectionBand` + `setParaStyle`.
 
 ---
 
@@ -373,4 +377,3 @@ const pdf = await exportPdf(doc);
 Key simplifications vs a raw-OpenXML footer builder: no relationship-id / `Drawing` / EMU plumbing
 (`.image(bytes, …)` handles it), no manual address line-wrap heuristic (layout wraps), and no
 `PAGE` field placeholder + `UpdateFields` dance (`pageField()`/`numPagesField()` resolve at layout).
-```

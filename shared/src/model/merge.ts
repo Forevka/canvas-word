@@ -270,6 +270,52 @@ function seamParagraph(destSection: SectionProps, type: SectionBreakType): Parag
 
 // ---- registry reconciliation (pass A) --------------------------------------
 
+/** A named, id-keyed, optionally basedOn-chained registry entry (NamedStyle / TableStyle). */
+interface NamedEntity {
+  id: string;
+  name: string;
+  basedOn?: string;
+}
+
+/** Reconcile named, id-keyed entities from `source` into `dest`: in "useDestination"
+ *  a same-NAMED source entity is dropped and repointed at the destination's; otherwise
+ *  it's added, renaming its id on collision. Populates `map` (source id → resulting id)
+ *  and remaps each added entity's `basedOn`. Returns the merged list (destination
+ *  entities first, then the added source ones). Shared by styles + table styles. */
+function mergeNamedEntities<T extends NamedEntity>(
+  dest: readonly T[],
+  source: readonly T[],
+  mode: StyleMergeMode,
+  map: Map<string, string>,
+  warnings: MergeWarning[],
+  warnCode: string,
+): T[] {
+  const out: T[] = dest.map((e) => ({ ...e }));
+  const taken = new Set(out.map((e) => e.id));
+  const destIdByName = new Map(out.map((e) => [e.name, e.id] as const));
+  const added: T[] = [];
+  for (const e of source) {
+    if (mode === "useDestination") {
+      const destId = destIdByName.get(e.name);
+      if (destId !== undefined) {
+        map.set(e.id, destId);
+        continue;
+      }
+    }
+    let newId = e.id;
+    if (taken.has(newId)) {
+      newId = uniqueKey(e.id, taken);
+      warnings.push({ code: warnCode, detail: `${e.id} → ${newId}` });
+    }
+    taken.add(newId);
+    map.set(e.id, newId);
+    added.push({ ...e, id: newId });
+  }
+  for (const e of added) if (e.basedOn !== undefined) e.basedOn = remap(map, e.basedOn);
+  out.push(...added);
+  return out;
+}
+
 function mergeStylesheets(
   dest: Stylesheet | undefined,
   source: Stylesheet | undefined,
@@ -278,37 +324,8 @@ function mergeStylesheets(
   warnings: MergeWarning[],
 ): Stylesheet | undefined {
   if (!source) return dest;
-  const styles: NamedStyle[] = (dest?.styles ?? []).map((s) => ({ ...s }));
-  if (!dest) {
-    // No destination styles: adopt the source wholesale (ids preserved).
-    for (const s of source.styles) styles.push({ ...s });
-    return { styles, defaultStyleId: source.defaultStyleId };
-  }
-  const taken = new Set(styles.map((s) => s.id));
-  const destIdByName = new Map(styles.map((s) => [s.name, s.id] as const));
-  const added: NamedStyle[] = [];
-  for (const s of source.styles) {
-    if (mode === "useDestination") {
-      const destId = destIdByName.get(s.name);
-      if (destId !== undefined) {
-        styleIdMap.set(s.id, destId);
-        continue;
-      }
-    }
-    let newId = s.id;
-    if (taken.has(newId)) {
-      newId = uniqueKey(s.id, taken);
-      warnings.push({ code: "style-id-renamed", detail: `${s.id} → ${newId}` });
-    }
-    taken.add(newId);
-    styleIdMap.set(s.id, newId);
-    added.push({ ...s, id: newId });
-  }
-  for (const s of added) {
-    if (s.basedOn !== undefined) s.basedOn = remap(styleIdMap, s.basedOn);
-  }
-  styles.push(...added);
-  return { styles, defaultStyleId: dest.defaultStyleId };
+  const styles = mergeNamedEntities<NamedStyle>(dest?.styles ?? [], source.styles, mode, styleIdMap, warnings, "style-id-renamed");
+  return { styles, defaultStyleId: dest?.defaultStyleId ?? source.defaultStyleId };
 }
 
 function mergeTableStyles(
@@ -318,32 +335,9 @@ function mergeTableStyles(
   map: Map<string, string>,
   warnings: MergeWarning[],
 ): Record<string, TableStyle> {
-  const out: Record<string, TableStyle> = { ...(dest ?? {}) };
-  const taken = new Set(Object.keys(out));
-  const destIdByName = new Map(Object.values(out).map((t) => [t.name, t.id] as const));
-  const added: string[] = [];
-  for (const [id, t] of Object.entries(source ?? {})) {
-    if (mode === "useDestination") {
-      const destId = destIdByName.get(t.name);
-      if (destId !== undefined) {
-        map.set(id, destId);
-        continue;
-      }
-    }
-    let newId = id;
-    if (taken.has(newId)) {
-      newId = uniqueKey(id, taken);
-      warnings.push({ code: "table-style-id-renamed", detail: `${id} → ${newId}` });
-    }
-    taken.add(newId);
-    map.set(id, newId);
-    out[newId] = { ...t, id: newId };
-    added.push(newId);
-  }
-  for (const newId of added) {
-    const t = out[newId];
-    if (t?.basedOn !== undefined) out[newId] = { ...t, basedOn: remap(map, t.basedOn) };
-  }
+  const merged = mergeNamedEntities<TableStyle>(Object.values(dest ?? {}), Object.values(source ?? {}), mode, map, warnings, "table-style-id-renamed");
+  const out: Record<string, TableStyle> = {};
+  for (const t of merged) out[t.id] = t;
   return out;
 }
 
