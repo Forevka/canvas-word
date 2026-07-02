@@ -9,7 +9,7 @@
 // Works in the browser (live preview via WordCanvas.setDocument) and in Node
 // (server-side DOCX/PDF generation via the export subpath).
 
-import type { CellBorders, CellMargin, CharStyle, Document, NamedStyle, ParaBorders, ParaStyle, SdtProps, Stylesheet, TableCondOverrides, TableStyle, TabStop } from "./model";
+import type { CellBorders, CellMargin, CharStyle, Document, NamedStyle, PageNumFmt, ParaBorders, ParaStyle, SdtProps, Stylesheet, TableCondOverrides, TableStyle, TabStop } from "./model";
 
 export type { Block, CharStyle, Document, NamedStyle, ParaStyle, Stylesheet, TableCondOverrides, TableStyle, TabStop } from "./model";
 
@@ -219,6 +219,33 @@ export declare class ParagraphBuilder<P extends StoryBuilder> {
   comboBox(selected: string, items: { display: string; value: string }[], opts?: { alias?: string; tag?: string }): this;
   /** A date-picker content control. */
   dateControl(text: string, dateFormat?: string, opts?: { alias?: string; tag?: string }): this;
+  // ---- inline fields (OOXML complex fields) ----
+  /** The current page number (PAGE field), resolved at layout. */
+  pageField(numFmt?: PageNumFmt): this;
+  /** The total page count (NUMPAGES field), resolved at layout. */
+  numPagesField(numFmt?: PageNumFmt): this;
+  /** A DATE field with a Word/.NET-style format (default "M/d/yyyy"). */
+  dateField(format?: string): this;
+  /** A TIME field with a Word/.NET-style format (default "h:mm AM/PM"). */
+  timeField(format?: string): this;
+  /** A custom (host-resolved) field: verbatim instruction + cached result text. */
+  customField(instruction: string, resultText: string): this;
+  /** A conditional (IF) field — branch text by comparing two operands. */
+  ifField(operandA: string, op: string, operandB: string, ifTrue: string, ifFalse: string): this;
+  /** A cross-reference to a bookmark (REF, or PAGEREF when `pageRef`). */
+  crossReference(bookmarkName: string, opts?: { kind?: "ref" | "pageRef" }): this;
+  // ---- bookmarks + notes ----
+  /** Append text and bookmark exactly that run's range. */
+  bookmark(name: string, text: string, style?: Partial<CharStyle>): this;
+  /** Append an auto-numbered footnote (single-paragraph body, or built via callback). */
+  footnote(text: string): this;
+  footnote(build: (s: StoryBuilder) => void): this;
+  /** Append an auto-numbered endnote (collected at the document end). */
+  endnote(text: string): this;
+  endnote(build: (s: StoryBuilder) => void): this;
+  /** Sub/superscript (measured smaller, baseline-shifted). */
+  superscript(on?: boolean): this;
+  subscript(on?: boolean): this;
   align(align: ParaStyle["align"]): this;
   spacing(opts: SpacingOptions): this;
   indent(opts: IndentOptions): this;
@@ -267,8 +294,11 @@ export declare class TableBuilder {
 }
 
 export declare class RowBuilder {
-  cell(content: CellContent, opts?: CellOptions): this;
+  // The build (callback) overload is listed FIRST so a `(s) => …` arrow binds to it
+  // and `s` types as StoryBuilder — CellSpec's fields are all optional, so a function
+  // would otherwise match the `content: CellContent` overload and shadow the callback.
   cell(build: (s: StoryBuilder) => void, opts?: CellOptions): this;
+  cell(content: CellContent, opts?: CellOptions): this;
 }
 
 /** Root of the fluent builder. Produces the same plain-data Document the

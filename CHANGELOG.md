@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Merge / append documents — across TS/npm and C# (a Syncfusion `ImportContent` replacement).** A pure model
+  `mergeDocuments(dest, source, opts)` / `mergeAll(docs, opts)` (shared) folds one document after another,
+  reconciling every id space (blocks/cells, named + table styles, list definitions, content controls, fields,
+  footnotes/endnotes, bookmarks) so the parts can't collide or alias; media dedupes by content hash. Style
+  reconciliation has two modes (`useDestination` / `keepSource`); a section seam (`nextPage`/`evenPage`/`oddPage`
+  keeps each part's own geometry + bands, `continuous`/`none` flow inline). Exposed on `@forevka/wordcanvas/query`
+  (`mergeDocuments`/`mergeAll` + `DocumentEditor.append`, one undoable step via a new coarse `setDocument` op) and
+  in C# (`WordDocument.Append(other, MergeOptions)`, `WordCanvasEngine.Merge(params…)`, unioning the embedded-image
+  maps). Also `DocumentEditor.setSectionFooter`/`setSectionHeader`/`setSectionBand` (and C#
+  `WordDocumentEditor.SetSectionFooter`/`SetSectionHeader` via a `StoryBuilder` callback) for a post-merge
+  per-section footer pass. New `examples/merge-docs` demo + a table+logo footer recipe in the showcase; published
+  `query.d.ts` (+ parity guard) and `builder.d.ts` (inline fields / bookmarks / footnotes on `ParagraphBuilder`)
+  extended. See `MERGE_PLAN.md`.
 - **C# `WordDocumentEditor.SetParagraphStyle(blockId, ParaStylePatch)` (ClearScript bindings).** Closes the last
   C#↔TS edit-parity gap — patch a paragraph's style (alignment, indents, spacing, breaks, outline level, direction,
   tab stops) from .NET, reusing the builder's existing `ParaStylePatch` record. Thin wrapper over the JS

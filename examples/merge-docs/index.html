@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WordCanvas — merge documents</title>
+
+    <!--
+      Resolves the bare imports in the PRODUCTION build, where the library is
+      external (not re-bundled). `npm run build` copies the library's dist-lib
+      next to the app as ./wordcanvas. In `vite dev` this map is inert (the dev
+      server resolves the editor from node_modules and the /builder + /query
+      subpaths from the frontend source — see vite.config.ts).
+    -->
+    <script type="importmap">
+      {
+        "imports": {
+          "@forevka/wordcanvas": "./wordcanvas/wordcanvas.js",
+          "@forevka/wordcanvas/builder": "./wordcanvas/builder.js",
+          "@forevka/wordcanvas/query": "./wordcanvas/query.js"
+        }
+      }
+    </script>
+    <style>
+      html, body { margin: 0; height: 100%; font: 13px/1.5 system-ui, sans-serif; color: #202124; }
+      #root { display: flex; height: 100%; }
+      #left { display: flex; flex-direction: column; width: 46%; min-width: 400px; max-width: 760px;
+        border-right: 1px solid #d0d4da; background: #fafbfc; }
+      #right { flex: 1 1 auto; min-width: 0; }
+      #editor { height: 100%; }
+      header { padding: 12px 16px; border-bottom: 1px solid #e6e8eb; }
+      header h1 { margin: 0 0 2px; font-size: 15px; }
+      header p { margin: 0; color: #5f6368; }
+      #actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 16px; border-bottom: 1px solid #e6e8eb; }
+      button { font: inherit; padding: 5px 10px; border: 1px solid #cdd2d8; border-radius: 6px; background: #fff; cursor: pointer; }
+      button:hover { background: #f1f3f4; }
+      button.primary { border-color: #1a73e8; background: #1a73e8; color: #fff; }
+      button.primary:hover { background: #1864cc; }
+      #report { flex: 1 1 auto; overflow: auto; margin: 0; padding: 12px 16px;
+        font: 12px/1.55 ui-monospace, Consolas, monospace; white-space: pre-wrap; }
+      .note { padding: 8px 16px; color: #8a6d00; background: #fff8e1; border-bottom: 1px solid #f0e2a8; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div id="left">
+        <header>
+          <h1>Merge documents</h1>
+          <p>Fold parts into one report with <code>DocumentEditor.append</code> / <code>mergeAll</code>, then apply a per-section footer.</p>
+        </header>
+        <div id="actions"></div>
+        <div class="note" id="note" hidden></div>
+        <pre id="report">loading…</pre>
+      </div>
+      <div id="right"><div id="editor"></div></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
