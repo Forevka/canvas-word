@@ -181,6 +181,15 @@ export interface Mapper {
   tocField(): { blockId: string; instruction: string } | undefined;
 }
 
+/** Cell/table/table-style shading cascade pick (issue #150): return the first
+ *  layer that DEFINES shading — a fill string OR an explicit clear (`null`) — so a
+ *  clear at a more-specific layer suppresses a fill inherited from a less-specific
+ *  one. `undefined` means "this layer didn't touch shading" and is skipped. */
+function firstDefinedShd(...layers: (string | null | undefined)[]): string | null | undefined {
+  for (const l of layers) if (l !== undefined) return l;
+  return undefined;
+}
+
 export function createMapper(
   warnings: WarningSink,
   resolver: StyleResolver,
@@ -826,8 +835,13 @@ export function createMapper(
       left: p.startCol === 0,
       right: p.startCol + p.colSpan - 1 === width - 1,
     };
-    const shd = p.ir?.shd ?? ir.shd ?? styled.shd; // cell over table over style
-    if (shd) p.cell.shading = shd;
+    // cell over table over table-style — but tri-state (issue #150): the most
+    // specific layer that DEFINES shading wins, and an explicit clear (null) at
+    // that layer suppresses the inherited fill instead of falling through. `??`
+    // would skip a null, so pick the first DEFINED (non-undefined) layer.
+    const shd = firstDefinedShd(p.ir?.shd, ir.shd, styled.shd);
+    if (shd === null) p.cell.shadingCleared = true;
+    else if (shd) p.cell.shading = shd;
     if (hasBorderInfo) {
       const src: BorderSources = { cell: p.ir?.borders, table: ir.borders, style: styled.borders };
       p.cell.borders = resolveCellBorders(src, pos);

@@ -19,6 +19,11 @@ export interface CellSpec {
   rowSpan?: number;
   /** Background fill (CSS color). */
   shading?: string;
+  /** Explicitly clear shading (OOXML `<w:shd w:val="clear" w:fill="auto"/>`,
+   *  Word's "No Color") — overrides a fill the cell would inherit from the table's
+   *  default shading or its table style, so the clear survives round-trips (issue
+   *  #150). Ignored if `shading` is set. */
+  shadingCleared?: boolean;
   /** Per-edge borders; absent = the renderer's default light grid. */
   borders?: CellBorders;
   /** Inner padding override, px per side. */
@@ -182,7 +187,7 @@ export class TableBuilder {
             if (block.kind === "paragraph") for (const run of block.runs) Object.assign(run.style, hc);
           }
         }
-        if (cell.shading === undefined) {
+        if (cell.shading === undefined && !cell.shadingCleared) {
           const sh = isHeader
             ? preset?.headerShading
             : (ri % 2 === 1 ? preset?.stripeShading : undefined) ?? preset?.shading;
@@ -224,7 +229,7 @@ export class TableBuilder {
     if (!borders && shading === undefined && !cellMargin) return;
     for (const row of table.rows) {
       for (const cell of row.cells) {
-        if (shading !== undefined && cell.shading === undefined) cell.shading = shading;
+        if (shading !== undefined && cell.shading === undefined && !cell.shadingCleared) cell.shading = shading;
         if (cellMargin && cell.margin === undefined) cell.margin = { ...cellMargin };
       }
     }
@@ -330,6 +335,7 @@ export class RowBuilder {
     if (spec.colSpan !== undefined && spec.colSpan > 1) cell.colSpan = spec.colSpan;
     if (spec.rowSpan !== undefined && spec.rowSpan > 1) cell.rowSpan = spec.rowSpan;
     if (spec.shading !== undefined) cell.shading = spec.shading;
+    else if (spec.shadingCleared) cell.shadingCleared = true; // issue #150: explicit "No Color"
     if (spec.borders !== undefined) cell.borders = spec.borders;
     if (spec.margin !== undefined) cell.margin = spec.margin;
     if (spec.preferredWidth !== undefined) cell.preferredWidth = spec.preferredWidth;

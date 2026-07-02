@@ -449,6 +449,13 @@ export interface TableCell {
   rowSpan?: number;
   /** Resolved background fill (CSS color) from w:shd. Absent = no fill. */
   shading?: string;
+  /** Explicit "No Color" override (OOXML `<w:shd w:val="clear" w:fill="auto"/>`):
+   *  the cell clears a fill it would otherwise inherit from the table-level w:shd
+   *  or the table style (issue #150). Distinct from absent `shading` (never set /
+   *  inherit) so the clear re-emits on export instead of the inherited fill
+   *  returning. Painted as no fill; ignored when `shading` is set. A table-style
+   *  (re-)apply replaces it, like any direct cell shading (Word). */
+  shadingCleared?: boolean;
   /** Resolved per-edge borders. Absent = renderer's default light grid (so
    *  native/unstyled tables keep a visible grid); present = draw exactly these
    *  edges, where an omitted edge means "no border on that side". */

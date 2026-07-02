@@ -413,7 +413,10 @@ function cellXml(cell: TableCell, ctx: PartCtx, vMergeRestart = false): string {
   // vMerge restart opens a vertical merge whose continue cells are synthesized in
   // the rows below (see tableXml). gridSpan precedes vMerge per CT_TcPr.
   if (vMergeRestart) pr.push(el("w:vMerge", { "w:val": "restart" }));
+  // A concrete fill wins; else an explicit clear (issue #150) re-emits the empty
+  // w:shd so a cell "No Color" over a shaded table/table-style survives round-trip.
   if (cell.shading) pr.push(shdFillXml(cell.shading));
+  else if (cell.shadingCleared) pr.push(shdClearXml());
   if (cell.borders) pr.push(bordersXml("w:tcBorders", cell.borders));
   // w:noWrap (CT_OnOff) precedes w:tcMar per CT_TcPr.
   if (cell.noWrap) pr.push(el("w:noWrap"));

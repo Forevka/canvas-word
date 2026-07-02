@@ -100,7 +100,7 @@ const COND_ORDER: TableCond[] = [
 export function effectiveCellProps(
   resolved: Partial<Record<TableCond, TableCondProps>>,
   flags: CellCondFlags,
-  direct?: { shading?: string; borders?: CellBorders; margin?: CellMargin },
+  direct?: { shading?: string; shadingCleared?: boolean; borders?: CellBorders; margin?: CellMargin },
 ): TableCondProps {
   const active = (cond: TableCond): boolean => {
     switch (cond) {
@@ -124,7 +124,10 @@ export function effectiveCellProps(
     if (active(cond) && resolved[cond]) out = mergeCond(out, resolved[cond]!);
   }
   if (direct) {
-    if (direct.shading !== undefined) out.shading = direct.shading;
+    // A direct cell fill wins over the bands; a direct clear (issue #150) beats a
+    // band fill too, resolving to no shading.
+    if (direct.shadingCleared) delete out.shading;
+    else if (direct.shading !== undefined) out.shading = direct.shading;
     if (direct.borders) out.borders = { ...out.borders, ...direct.borders };
     if (direct.margin) out.margin = direct.margin;
   }
@@ -221,6 +224,9 @@ export function bakeTableStyleRows(
     });
     const props = effectiveCellProps(resolved, flags);
     const next: TableCell = { ...cell };
+    // Applying a table style replaces direct cell shading (Word) — including a
+    // prior explicit clear (issue #150), so drop the marker as well.
+    delete next.shadingCleared;
     if (props.shading !== undefined) next.shading = props.shading;
     else delete next.shading;
     if (props.borders && Object.keys(props.borders).length > 0) next.borders = props.borders;

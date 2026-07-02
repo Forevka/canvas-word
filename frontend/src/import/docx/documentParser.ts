@@ -843,8 +843,10 @@ function parseTable(tbl: XmlNode, ctx: ParseCtx): IRTable {
     if (el(tblPr, "w:tblBorders")) table.bordersSpecified = true;
     const borders = decodeBorders(el(tblPr, "w:tblBorders"));
     if (borders) table.borders = borders;
+    // Tri-state (issue #150): keep an explicit clear (null) so a table-level
+    // "No Color" can override the table style's fill through the cascade.
     const shd = decodeShdFill(el(tblPr, "w:shd"));
-    if (shd) table.shd = shd;
+    if (shd !== undefined) table.shd = shd;
     const cellMar = decodeCellMargin(el(tblPr, "w:tblCellMar"));
     if (cellMar) table.cellMarginTwips = cellMar;
     // Column-sizing strategy (w:tblLayout + w:tblW). Conservative mapping: a table
@@ -919,8 +921,10 @@ function parseCell(tc: XmlNode, ctx: ParseCtx): IRTableCell {
     if (el(tcPr, "w:tcBorders")) cell.bordersSpecified = true;
     const borders = decodeBorders(el(tcPr, "w:tcBorders"));
     if (borders) cell.borders = borders;
+    // Tri-state (issue #150): keep an explicit clear (null) so a cell "No Color"
+    // overrides the table / table-style fill instead of falling through to it.
     const shd = decodeShdFill(el(tcPr, "w:shd"));
-    if (shd) cell.shd = shd;
+    if (shd !== undefined) cell.shd = shd;
     const cellMar = decodeCellMargin(el(tcPr, "w:tcMar"));
     if (cellMar) cell.marginTwips = cellMar;
     // w:tcW preferred cell width — abs (dxa twips) or pct (fiftieths of a percent).
