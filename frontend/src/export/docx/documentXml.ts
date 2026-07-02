@@ -26,10 +26,10 @@ import type {
 } from "@cw/shared";
 import { inRange, parseTocInstruction } from "@cw/shared";
 import { pxToEighthPoints, pxToEmu, pxToTwips } from "../units";
-import { hexColor as hex } from "./mappings";
+import { borderEdgeXml, hexColor as hex } from "./mappings";
 import { MediaManager } from "./mediaPack";
 import { REL, RelManager } from "./relationships";
-import { paraCoreXml, runPropsXml as rPrXml } from "./styleProps";
+import { paraBordersXml, paraCoreXml, runPropsXml as rPrXml, shdFillXml } from "./styleProps";
 import { el, escapeText, textEl, WML_NS, XML_DECL } from "./xmlWrite";
 import { mathmlToOmml } from "../../mathml/toOmml";
 export interface ExportBookmarkMark {
@@ -280,7 +280,7 @@ function pPrXml(style: ParaStyle, ctx: PartCtx, markRun?: CharStyle): string {
   if (style.textAlignment) c.push(el("w:textAlignment", { "w:val": style.textAlignment }));
   // w:pBdr / w:shd precede spacing/ind/jc in the CT_PPr schema sequence.
   if (style.borders) c.push(paraBordersXml(style.borders));
-  if (style.shading) c.push(el("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": hex(style.shading) }));
+  if (style.shading) c.push(shdFillXml(style.shading));
   // Explicit "ltr" emits w:bidi="0" (round-trips an imported w:bidi="0", clearing
   // an inherited RTL style); undefined stays absent.
   if (style.direction === "rtl") c.push(el("w:bidi"));
@@ -381,36 +381,17 @@ function paragraphXml(p: Paragraph, ctx: PartCtx): string {
 // Tables
 
 function bordersXml(tag: string, b: CellBorders | TableBorders): string {
-  const edge = (name: string, spec: { color: string; widthPx: number; style?: string } | undefined): string => {
-    if (!spec) return "";
-    const val = spec.style === "double" ? "double" : spec.style === "dashed" ? "dashed" : spec.style === "dotted" ? "dotted" : "single";
-    return el("w:" + name, { "w:val": val, "w:sz": pxToEighthPoints(spec.widthPx), "w:space": 0, "w:color": hex(spec.color) });
-  };
   // CT_TblBorders / CT_TcBorders share the top/left/bottom/right prefix; the two
   // interior edges (insideH/insideV) follow and exist only on table-level borders.
   const inside = b as TableBorders;
   const inner =
-    edge("top", b.top) + edge("left", b.left) + edge("bottom", b.bottom) + edge("right", b.right) +
-    edge("insideH", inside.insideH) + edge("insideV", inside.insideV);
+    borderEdgeXml("top", b.top) + borderEdgeXml("left", b.left) + borderEdgeXml("bottom", b.bottom) + borderEdgeXml("right", b.right) +
+    borderEdgeXml("insideH", inside.insideH) + borderEdgeXml("insideV", inside.insideV);
   // Always emit the element when a borders object is present, even with no edges:
   // an empty <w:tcBorders/> is the author's explicit "no borders", which the
   // importer keys on (bordersSpecified) to suppress the renderer's gray default
   // grid. Dropping it reverts a borderless table to that grid on reopen.
   return el(tag, undefined, inner);
-}
-
-// w:pBdr — paragraph borders. Same per-edge encoding as table borders, but the
-// element holds an inter-paragraph `between` edge and only edges that are set are
-// written (no "explicit empty" semantics — a paragraph with no borders omits w:pBdr).
-function paraBordersXml(b: NonNullable<ParaStyle["borders"]>): string {
-  const edge = (name: string, spec: { color: string; widthPx: number; style?: string } | undefined): string => {
-    if (!spec) return "";
-    const val = spec.style === "double" ? "double" : spec.style === "dashed" ? "dashed" : spec.style === "dotted" ? "dotted" : "single";
-    return el("w:" + name, { "w:val": val, "w:sz": pxToEighthPoints(spec.widthPx), "w:space": 0, "w:color": hex(spec.color) });
-  };
-  const inner =
-    edge("top", b.top) + edge("left", b.left) + edge("bottom", b.bottom) + edge("right", b.right) + edge("between", b.between);
-  return inner ? el("w:pBdr", undefined, inner) : "";
 }
 
 function cellXml(cell: TableCell, ctx: PartCtx, vMergeRestart = false): string {
@@ -429,7 +410,7 @@ function cellXml(cell: TableCell, ctx: PartCtx, vMergeRestart = false): string {
   // vMerge restart opens a vertical merge whose continue cells are synthesized in
   // the rows below (see tableXml). gridSpan precedes vMerge per CT_TcPr.
   if (vMergeRestart) pr.push(el("w:vMerge", { "w:val": "restart" }));
-  if (cell.shading) pr.push(el("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": hex(cell.shading) }));
+  if (cell.shading) pr.push(shdFillXml(cell.shading));
   if (cell.borders) pr.push(bordersXml("w:tcBorders", cell.borders));
   // w:noWrap (CT_OnOff) precedes w:tcMar per CT_TcPr.
   if (cell.noWrap) pr.push(el("w:noWrap"));
@@ -586,9 +567,7 @@ function tableXml(table: TableBlock, ctx: PartCtx): string {
   // them at tblPr level round-trips the table-wide defaults (cells keep their own
   // overrides) instead of losing them to the resolved per-cell copies.
   const bordersEl = table.defaultBorders ? bordersXml("w:tblBorders", table.defaultBorders) : "";
-  const shdEl = table.defaultShading
-    ? el("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": hex(table.defaultShading) })
-    : "";
+  const shdEl = table.defaultShading ? shdFillXml(table.defaultShading) : "";
   const cellMarEl = table.defaultCellMargin ? tblCellMarXml(table.defaultCellMargin) : "";
   // Minor & advanced props (issue #61). Per CT_TblPrBase ordering: w:tblOverlap and
   // w:bidiVisual sit right after w:tblStyle (before w:tblW); w:tblInd follows w:jc

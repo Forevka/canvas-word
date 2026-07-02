@@ -3,14 +3,13 @@
 // these in one place prevents the maps from drifting apart (they already had).
 
 import type { ParaStyle } from "@cw/shared";
+import { pxToEighthPoints } from "../units";
+import { el } from "./xmlWrite";
 
-/** highlight hex → Word highlight color name (w:highlight w:val). */
-export const HIGHLIGHT_NAME: Record<string, string> = {
-  "#ffff00": "yellow", "#00ff00": "green", "#00ffff": "cyan", "#ff00ff": "magenta",
-  "#0000ff": "blue", "#ff0000": "red", "#000080": "darkBlue", "#008080": "darkCyan",
-  "#008000": "darkGreen", "#800080": "darkMagenta", "#800000": "darkRed", "#808000": "darkYellow",
-  "#808080": "darkGray", "#c0c0c0": "lightGray", "#000000": "black", "#ffffff": "white",
-};
+/** highlight hex → Word highlight color name (w:highlight w:val). Single-sourced
+ *  in shared (model/highlight.ts) with the importer's name → hex map, so the two
+ *  can't drift apart. */
+export { HIGHLIGHT_NAME } from "@cw/shared";
 
 /** paragraph align → w:jc w:val. */
 export const JC: Record<ParaStyle["align"], string> = { left: "left", center: "center", right: "right", justify: "both" };
@@ -23,3 +22,21 @@ export const TAB_LEADER: Record<string, string> = { dot: "dot", dash: "hyphen", 
 
 /** strip a leading "#" and lowercase a hex color for OOXML w:val attributes. */
 export const hexColor = (c: string): string => c.replace(/^#/, "").toLowerCase();
+
+/** A border edge in model terms — shared by cell, table, paragraph, and run
+ *  borders (CellBorder and friends are all structurally this). */
+export interface BorderEdgeSpec {
+  color: string;
+  widthPx: number;
+  style?: string | undefined;
+}
+
+/** One border edge element (`w:top`, `w:bottom`, `w:bdr`, …): the ONE encoding of
+ *  a model border edge as WordprocessingML, used by every border emitter in
+ *  documentXml and styleProps. This exact mapping was previously copy-pasted five
+ *  times and is precisely the kind of duplication this module exists to prevent. */
+export function borderEdgeXml(name: string, spec: BorderEdgeSpec | undefined): string {
+  if (!spec) return "";
+  const val = spec.style === "double" ? "double" : spec.style === "dashed" ? "dashed" : spec.style === "dotted" ? "dotted" : "single";
+  return el("w:" + name, { "w:val": val, "w:sz": pxToEighthPoints(spec.widthPx), "w:space": 0, "w:color": hexColor(spec.color) });
+}

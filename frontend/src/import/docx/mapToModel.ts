@@ -38,7 +38,7 @@ import type {
 import type { NamedStyle, Stylesheet } from "@cw/shared";
 import type { ListDefinition, ListLevel, ListNumberFormat } from "@cw/shared";
 import type { TableCond, TableCondProps, TableStyle } from "@cw/shared";
-import { normalizeRuns } from "@cw/shared";
+import { HIGHLIGHT_HEX, normalizeRuns } from "@cw/shared";
 import { cellBordersFromIR, paraBordersFromIR, resolveCellBorders, runBorderFromIR, tableBordersFromIR, type BorderSources, type CellPosition } from "./borders";
 import type { MediaStore } from "./media";
 import type { NumberingData } from "./numbering";
@@ -1123,7 +1123,10 @@ function mapTabStops(raw: NonNullable<IRParaProps["tabStops"]>): TabStop[] {
 function columnFractions(widthsTwips: number[] | undefined, width: number): number[] {
   const fractions =
     widthsTwips && widthsTwips.length === width && widthsTwips.reduce((s, w) => s + w, 0) > 0
-      ? widthsTwips.map((w) => Math.round((w / widthsTwips.reduce((s, x) => s + x, 0)) * 10000) / 10000)
+      ? (() => {
+          const total = widthsTwips.reduce((s, x) => s + x, 0);
+          return widthsTwips.map((w) => Math.round((w / total) * 10000) / 10000);
+        })()
       : Array.from({ length: width }, () => Math.round((1 / width) * 10000) / 10000);
   fractions[fractions.length - 1] =
     Math.round((1 - fractions.slice(0, -1).reduce((s, f) => s + f, 0)) * 10000) / 10000;
@@ -1132,14 +1135,6 @@ function columnFractions(widthsTwips: number[] | undefined, width: number): numb
 
 // ---------------------------------------------------------------------------
 // Style mapping (pure)
-
-/** Word's 16 named highlight colors → hex. */
-const HIGHLIGHT_HEX: Record<string, string> = {
-  yellow: "#ffff00", green: "#00ff00", cyan: "#00ffff", magenta: "#ff00ff",
-  blue: "#0000ff", red: "#ff0000", darkBlue: "#000080", darkCyan: "#008080",
-  darkGreen: "#008000", darkMagenta: "#800080", darkRed: "#800000", darkYellow: "#808000",
-  darkGray: "#808080", lightGray: "#c0c0c0", black: "#000000", white: "#ffffff",
-};
 
 function mapCharStyle(props: IRRunProps): CharStyle {
   const style: CharStyle = { ...DEFAULT_CHAR };
@@ -1271,6 +1266,14 @@ function mapCharPatch(props: IRRunProps): Partial<CharStyle> {
 
 function mapParaPatch(props: IRParaProps): Partial<ParaStyle> {
   const out: Partial<ParaStyle> = {};
+  applyParaProps(out, props);
+  return out;
+}
+
+/** Shared paragraph-property mapping for full ParaStyle and partial style-gallery
+ *  patches — mirrors applyRunProps for w:rPr. The full mapper layers defaults +
+ *  its three extra fields (pageBreakBefore/outlineLevel/namedStyle) on top. */
+function applyParaProps(out: Partial<ParaStyle>, props: IRParaProps): void {
   if (props.align) out.align = props.align;
   if (props.direction) out.direction = props.direction;
   if (props.lineHeight !== undefined) out.lineHeight = round2(props.lineHeight);
@@ -1287,15 +1290,14 @@ function mapParaPatch(props: IRParaProps): Partial<ParaStyle> {
     out.indentFirstLinePx = round2(twipsToPx(props.indentFirstLineTwips));
   if (props.keepWithNext) out.keepWithNext = true;
   if (props.keepLinesTogether) out.keepLinesTogether = true;
-  // Keep explicit false (w:contextualSpacing w:val="0") so a style can clear an
-  // inherited `true` through the cascade.
+  // Keep explicit false (w:contextualSpacing w:val="0") so a paragraph/style can
+  // clear an inherited `true` through the cascade.
   if (props.contextualSpacing !== undefined) out.contextualSpacing = props.contextualSpacing;
   if (props.tabStops) out.tabStops = mapTabStops(props.tabStops);
   const pb = paraBordersFromIR(props.borders);
   if (pb) out.borders = pb;
   if (props.shd !== undefined) out.shading = props.shd;
   mapMinorParaProps(props, out);
-  return out;
 }
 
 /** Minor w:pPr props (issue #62) shared by the full-paragraph and style-patch
@@ -1386,32 +1388,9 @@ export function buildTableStyles(data: StylesData): Record<string, TableStyle> |
 
 function mapParaStyle(props: IRParaProps): ParaStyle {
   const style: ParaStyle = { ...DEFAULT_PARA };
-  if (props.align) style.align = props.align;
-  if (props.direction) style.direction = props.direction;
-  if (props.lineHeight !== undefined) style.lineHeight = round2(props.lineHeight);
-  // Fixed point spacing (exact/atLeast) overrides the multiplier; "auto" leaves
-  // the concrete style on its (already-set) lineHeight with no fixed rule.
-  if (props.lineRule === "exact" || props.lineRule === "atLeast") {
-    style.lineRule = props.lineRule;
-    if (props.lineExactTwips !== undefined) style.lineHeightPx = round2(twipsToPx(props.lineExactTwips));
-  }
-  if (props.spaceBeforeTwips !== undefined) style.spaceBeforePx = round2(twipsToPx(props.spaceBeforeTwips));
-  if (props.spaceAfterTwips !== undefined) style.spaceAfterPx = round2(twipsToPx(props.spaceAfterTwips));
-  if (props.indentLeftTwips !== undefined) style.indentLeftPx = round2(twipsToPx(props.indentLeftTwips));
-  if (props.indentRightTwips !== undefined) style.indentRightPx = round2(twipsToPx(props.indentRightTwips));
-  if (props.indentFirstLineTwips !== undefined)
-    style.indentFirstLinePx = round2(twipsToPx(props.indentFirstLineTwips));
-  if (props.keepWithNext) style.keepWithNext = true;
-  if (props.keepLinesTogether) style.keepLinesTogether = true;
-  // Keep explicit false so a paragraph can override an inherited style's suppression.
-  if (props.contextualSpacing !== undefined) style.contextualSpacing = props.contextualSpacing;
-  if (props.tabStops) style.tabStops = mapTabStops(props.tabStops);
+  applyParaProps(style, props);
   if (props.pageBreakBefore) style.pageBreakBefore = true;
   if (props.outlineLevel !== undefined) style.outlineLevel = props.outlineLevel;
-  const pb = paraBordersFromIR(props.borders);
-  if (pb) style.borders = pb;
-  if (props.shd !== undefined) style.shading = props.shd;
-  mapMinorParaProps(props, style);
   if (props.styleId) style.namedStyle = props.styleId;
   return style;
 }

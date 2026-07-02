@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Single-sourced OOXML mappings (no behavior change).** The border-edge → WordprocessingML
+  encoding — previously copy-pasted five times across the docx exporter (cell/table borders,
+  paragraph borders twice, run border, conditional table-style borders) — is one shared
+  `borderEdgeXml` in the exporter's mappings module (the file that exists to prevent exactly this
+  drift, which had already happened once). Word's 16 highlight colors were hand-maintained as two
+  separate literal maps that had to stay mutual inverses (importer name→hex, exporter hex→name);
+  the canonical map now lives in shared (`HIGHLIGHT_HEX`) with the inverse derived. The `w:shd`
+  fill element and the `w:pBdr` emitter are shared instead of open-coded per site, and the
+  paragraph-property import mapping is one `applyParaProps` core backing both the full-style and
+  style-patch mappers (mirroring `applyRunProps`), so a new `w:pPr` field can no longer land in one
+  and drift from the other.
+
 ### Added
 - **C# `WordCanvasEnginePool` — safe engine reuse for multi-threaded hosts (ClearScript bindings).** A thread-safe,
   concurrency-bounded pool of `WordCanvasEngine` instances for ASP.NET Core / worker hosts, where the single-isolate
