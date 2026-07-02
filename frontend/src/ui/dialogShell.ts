@@ -59,15 +59,23 @@ export function createDialogShell(o: DialogShellOptions): DialogShell {
   };
   const backdrop = div(`${o.prefix}-backdrop`);
   const modal = div(`${o.prefix}-modal`);
+  // role="dialog" + a title reference for assistive tech. Deliberately NO
+  // aria-modal: these are non-blocking floating panels (the page under them
+  // stays visible and interactive — see makeFloatingDialog), so claiming
+  // modality would tell screen readers the rest of the page is inert.
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-labelledby", `${o.prefix}-title`);
   // Prevent clicks inside the panel from reaching the page under the (click-
   // through) backdrop — every dialog did this.
   modal.addEventListener("mousedown", (e) => e.stopPropagation());
 
   const head = div(`${o.prefix}-head`);
   const titleEl = document.createElement("h2");
+  titleEl.id = `${o.prefix}-title`;
   titleEl.textContent = o.title;
   const xBtn = document.createElement("button");
   xBtn.className = `${o.prefix}-x`;
+  xBtn.setAttribute("aria-label", "Close");
   xBtn.textContent = "×";
   head.append(titleEl, ...(o.headExtras ?? []), xBtn);
 
