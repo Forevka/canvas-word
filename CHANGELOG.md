@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+<<<<<<< HEAD
+- **Single-sourced OOXML mappings (no behavior change).** The border-edge → WordprocessingML
+  encoding — previously copy-pasted five times across the docx exporter (cell/table borders,
+  paragraph borders twice, run border, conditional table-style borders) — is one shared
+  `borderEdgeXml` in the exporter's mappings module (the file that exists to prevent exactly this
+  drift, which had already happened once). Word's 16 highlight colors were hand-maintained as two
+  separate literal maps that had to stay mutual inverses (importer name→hex, exporter hex→name);
+  the canonical map now lives in shared (`HIGHLIGHT_HEX`) with the inverse derived. The `w:shd`
+  fill element and the `w:pBdr` emitter are shared instead of open-coded per site, and the
+  paragraph-property import mapping is one `applyParaProps` core backing both the full-style and
+  style-patch mappers (mirroring `applyRunProps`), so a new `w:pPr` field can no longer land in one
+  and drift from the other.
 - **DocumentBuilder: uniform warn-and-continue for invalid input.** `.effects({ widthScalePct })` /
   `.effects({ fitTextPx })` out of range and `.image()` without positive dimensions no longer THROW
   mid-chain — they record a warning (`effects-width-scale-invalid`, `effects-fit-text-invalid`,

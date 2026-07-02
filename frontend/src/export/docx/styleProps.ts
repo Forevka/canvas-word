@@ -3,8 +3,8 @@
 // each w:* element into a patch field, so absent elements stay absent.
 
 import type { CellBorders, CharStyle, ParaStyle, TableCond, TableCondProps, TableStyle } from "@cw/shared";
-import { multiplierToLine, pxToEighthPoints, pxToHalfPoints, pxToTwips } from "../units";
-import { HIGHLIGHT_NAME, hexColor as hex, JC, TAB_LEADER, TAB_VAL } from "./mappings";
+import { multiplierToLine, pxToHalfPoints, pxToTwips } from "../units";
+import { borderEdgeXml, HIGHLIGHT_NAME, hexColor as hex, JC, TAB_LEADER, TAB_VAL } from "./mappings";
 import { el } from "./xmlWrite";
 
 /** w:u attributes for a run: the line style (w:val) + optional color. underline
@@ -16,11 +16,8 @@ function underlineAttrs(c: Pick<CharStyle, "underline" | "underlineStyle" | "und
   return attrs;
 }
 
-/** w:bdr element for a run border (mirrors the cell/paragraph edge emitters). */
-function runBorderXml(b: NonNullable<CharStyle["runBorder"]>): string {
-  const val = b.style === "double" ? "double" : b.style === "dashed" ? "dashed" : b.style === "dotted" ? "dotted" : "single";
-  return el("w:bdr", { "w:val": val, "w:sz": pxToEighthPoints(b.widthPx), "w:space": 0, "w:color": hex(b.color) });
-}
+/** w:bdr element for a run border (the shared border-edge encoding). */
+const runBorderXml = (b: NonNullable<CharStyle["runBorder"]>): string => borderEdgeXml("bdr", b);
 
 /** Minor run typography & effects (OOXML w:rPr extras) common to the full and
  *  partial rPr serializers: double strike, the boolean text effects, character
@@ -182,15 +179,16 @@ export function partialRPrXml(c: Partial<CharStyle>): string {
   return out.length > 0 ? el("w:rPr", undefined, out.join("")) : "";
 }
 
-// w:pBdr for a paragraph-style patch (mirrors documentXml.paraBordersXml).
-function paraBordersXml(b: NonNullable<ParaStyle["borders"]>): string {
-  const edge = (name: string, spec: CellBorders["top"]): string => {
-    if (!spec) return "";
-    const val = spec.style === "double" ? "double" : spec.style === "dashed" ? "dashed" : spec.style === "dotted" ? "dotted" : "single";
-    return el("w:" + name, { "w:val": val, "w:sz": pxToEighthPoints(spec.widthPx), "w:space": 0, "w:color": hex(spec.color) });
-  };
+// w:pBdr — paragraph borders. Only edges that are set are written (no "explicit
+// empty" semantics — a paragraph with no borders omits w:pBdr). Shared by the
+// full pPr emitter (documentXml) and the style-patch emitter below.
+export function paraBordersXml(b: NonNullable<ParaStyle["borders"]>): string {
   const inner =
-    edge("top", b.top) + edge("left", b.left) + edge("bottom", b.bottom) + edge("right", b.right) + edge("between", b.between);
+    borderEdgeXml("top", b.top) +
+    borderEdgeXml("left", b.left) +
+    borderEdgeXml("bottom", b.bottom) +
+    borderEdgeXml("right", b.right) +
+    borderEdgeXml("between", b.between);
   return inner ? el("w:pBdr", undefined, inner) : "";
 }
 
@@ -251,15 +249,16 @@ export function partialPPrXml(p: Partial<ParaStyle>): string {
 // Table styles → w:style[@w:type="table"] with conditional formatting.
 
 function condBordersXml(tag: string, b: CellBorders): string {
-  const edge = (name: string, spec: CellBorders["top"]): string => {
-    if (!spec) return "";
-    const val = spec.style === "double" ? "double" : spec.style === "dashed" ? "dashed" : spec.style === "dotted" ? "dotted" : "single";
-    return el("w:" + name, { "w:val": val, "w:sz": pxToEighthPoints(spec.widthPx), "w:space": 0, "w:color": hex(spec.color) });
-  };
-  return el(tag, undefined, edge("top", b.top) + edge("left", b.left) + edge("bottom", b.bottom) + edge("right", b.right));
+  return el(
+    tag,
+    undefined,
+    borderEdgeXml("top", b.top) + borderEdgeXml("left", b.left) + borderEdgeXml("bottom", b.bottom) + borderEdgeXml("right", b.right),
+  );
 }
 
-const shdFillXml = (fill: string): string => el("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": hex(fill) });
+/** The w:shd fill element (clear pattern + explicit fill) — the one encoding of a
+ *  model shading color, shared with documentXml's paragraph/cell/table emitters. */
+export const shdFillXml = (fill: string): string => el("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": hex(fill) });
 
 function tblStylePrXml(cond: TableCond, props: TableCondProps): string {
   const tc: string[] = [];
