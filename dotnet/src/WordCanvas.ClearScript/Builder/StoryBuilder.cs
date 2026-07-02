@@ -286,6 +286,11 @@ public sealed class ParagraphBuilder
     /// clear survives export/re-import instead of the style's fill silently returning (issue #147).</summary>
     public ParagraphBuilder ClearShading() { _js.InvokeMethod("clearShading"); return this; }
 
+    /// <summary>Explicitly remove list membership (OOXML &lt;w:numPr&gt;&lt;w:numId w:val="0"/&gt;,
+    /// Word's "opt out of the list") — overrides a list the paragraph's named style carries, so the
+    /// opt-out survives export/re-import instead of the style's list silently returning (issue #152).</summary>
+    public ParagraphBuilder ClearList() { _js.InvokeMethod("clearList"); return this; }
+
     /// <summary>Widow/orphan control (OOXML w:widowControl). Word's default is ON;
     /// pass false to let a lone first/last line break across a page boundary.</summary>
     public ParagraphBuilder WidowControl(bool on = true) { _js.InvokeMethod("widowControl", on); return this; }

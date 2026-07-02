@@ -254,6 +254,11 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
         new ListItem("markers are paint-only"),
         new ListItem("so caches survive renumbering", Level: 1),
     }, new ListOptions { Kind = ListKind.Bullet })
+    // Explicit list opt-out (issue #152): a paragraph whose style would apply a list can
+    // remove it with w:numId=0 (Word's "opt out"), so the opt-out round-trips instead of
+    // the style's list silently returning on the next save.
+    .Paragraph("This paragraph explicitly opts out of any list its style would apply (w:numId=0).",
+        p => p.ClearList())
     .Paragraph("A fully justified, multi-page paragraph exercises line-level pagination. " + Repeat(Lorem, 12),
         p => p.Align(TextAlign.Justify))
 
