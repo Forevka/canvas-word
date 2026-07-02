@@ -81,6 +81,11 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     if (!resolved) return this; // unknown style → warning already recorded
     this.para.style.namedStyle = id;
     Object.assign(this.para.style, resolved.para);
+    // shading and the explicit-clear marker are mutually exclusive (issue #147):
+    // whichever the applied style provides wins, so drop the stale counterpart a
+    // prior .shading()/.clearShading() may have left — else export emits both.
+    if (resolved.para.shading !== undefined) delete this.para.style.shadingCleared;
+    else if (resolved.para.shadingCleared) delete this.para.style.shading;
     const charKeys = Object.keys(resolved.char);
     for (const r of this.para.runs) {
       Object.assign(r.style, resolved.char);

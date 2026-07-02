@@ -77,4 +77,19 @@ describe("builder feature round-trip (.docx)", () => {
     expect(paras[1]!.style.shading).toBeUndefined(); // clear survived — the fill did NOT return
     expect(paras[1]!.style.shadingCleared).toBe(true);
   });
+
+  it("keeps shading and the clear marker mutually exclusive across builder order (issue #147)", () => {
+    const doc = DocumentBuilder.create({ idSeed: "shd2" })
+      .style({ id: "Callout", name: "Callout", type: "paragraph", char: {}, para: { shading: "#d9ead3" } })
+      // clearShading THEN withStyle: the later style's fill wins, the stale marker is dropped.
+      .paragraph("a").clearShading().withStyle("Callout")
+      // withStyle THEN clearShading: the later clear wins, the style fill is dropped.
+      .paragraph("b").withStyle("Callout").clearShading()
+      .build();
+    const p = doc.blocks.filter((b): b is Extract<Block, { kind: "paragraph" }> => b.kind === "paragraph");
+    expect(p[0]!.style.shading).toBe("#d9ead3");
+    expect(p[0]!.style.shadingCleared).toBeUndefined();
+    expect(p[1]!.style.shading).toBeUndefined();
+    expect(p[1]!.style.shadingCleared).toBe(true);
+  });
 });
