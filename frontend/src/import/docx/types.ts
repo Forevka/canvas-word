@@ -132,8 +132,11 @@ export interface IRRunProps {
   colorThemeTint?: string;
   /** w:color w:themeShade — hex byte ("00".."FF"); darkens the theme color toward black. */
   colorThemeShade?: string;
-  /** w:highlight w:val — named highlight color ("yellow", "green", …). */
-  highlight?: string;
+  /** w:highlight w:val — named highlight color ("yellow", "green", …), tri-state
+   *  (issue #155): a color name, `null` for an explicit `w:val="none"` (clears a
+   *  highlight inherited from a character style), or absent (inherit). The `null`
+   *  flows through mergeRun/mergeProps to override an inherited color. */
+  highlight?: string | null;
   /** w:vertAlign w:val — "superscript" | "subscript" | "baseline". */
   vertAlign?: string;
   /** w:vanish — hidden text (Word shows it only with ¶ marks on). */

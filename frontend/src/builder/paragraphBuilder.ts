@@ -236,7 +236,14 @@ export class ParagraphBuilder<P extends StoryBuilder> {
   }
 
   highlight(cssColor: string): this {
-    return this.applyChar({ highlightColor: cssColor });
+    return this.applyChar({ highlightColor: cssColor, highlightCleared: undefined });
+  }
+
+  /** Explicitly clear the run highlight (OOXML `<w:highlight w:val="none"/>`) —
+   *  overrides a highlight the run's character style carries, so the clear survives
+   *  export/re-import instead of the style's highlight silently returning (issue #155). */
+  clearHighlight(): this {
+    return this.applyChar({ highlightColor: undefined, highlightCleared: true });
   }
 
   fontSize(px: number): this {

@@ -239,6 +239,10 @@ public sealed record CharStyle
     public bool? Strikethrough { get; init; }
     public string? Color { get; init; }
     public string? HighlightColor { get; init; }
+    /// <summary>Explicitly clear the run highlight (OOXML &lt;w:highlight w:val="none"/&gt;) — overrides
+    /// a highlight the run's character style carries so the clear survives round-trips (issue #155).
+    /// Ignored if HighlightColor is set.</summary>
+    public bool? HighlightCleared { get; init; }
     public string? FontFamily { get; init; }
     /// <summary>Complex-script (bidi) font (OOXML w:rFonts/@w:cs); preserved through round-trip.</summary>
     public string? FontFamilyComplexScript { get; init; }
@@ -271,6 +275,7 @@ public sealed record CharStyle
         if (Strikethrough is { } s) Js.Set(o, "strikethrough", s);
         if (Color is { } c) Js.Set(o, "color", c);
         if (HighlightColor is { } h) Js.Set(o, "highlightColor", h);
+        if (HighlightCleared is { } hc) Js.Set(o, "highlightCleared", hc);
         if (FontFamily is { } f) Js.Set(o, "fontFamily", f);
         if (FontFamilyComplexScript is { } fcs) Js.Set(o, "fontFamilyComplexScript", fcs);
         if (FontFamilyEastAsia is { } fea) Js.Set(o, "fontFamilyEastAsia", fea);

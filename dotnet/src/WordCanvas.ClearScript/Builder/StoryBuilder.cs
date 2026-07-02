@@ -206,6 +206,11 @@ public sealed class ParagraphBuilder
     public ParagraphBuilder Effects(RunEffectsOptions opts) { _js.InvokeMethod("effects", opts.ToJs(_engine)); return this; }
     public ParagraphBuilder Color(string cssColor) { _js.InvokeMethod("color", cssColor); return this; }
     public ParagraphBuilder Highlight(string cssColor) { _js.InvokeMethod("highlight", cssColor); return this; }
+
+    /// <summary>Explicitly clear the run highlight (OOXML &lt;w:highlight w:val="none"/&gt;) — overrides
+    /// a highlight the run's character style carries, so the clear survives export/re-import instead
+    /// of the style's highlight silently returning (issue #155).</summary>
+    public ParagraphBuilder ClearHighlight() { _js.InvokeMethod("clearHighlight"); return this; }
     public ParagraphBuilder FontSize(double px) { _js.InvokeMethod("fontSize", px); return this; }
     public ParagraphBuilder Font(string family) { _js.InvokeMethod("font", family); return this; }
     /// <summary>Complex-script (bidi) font — OOXML w:rFonts/@w:cs; preserved through the .docx round-trip.</summary>

@@ -348,6 +348,12 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
         .Text(" (w:cs) font slots independently of the Latin face — ")
         .Text("日本語", new CharStyle { FontFamilyEastAsia = "Yu Mincho, serif" })
         .Text(" carries its CJK typeface through the round-trip."))
+    // Explicit highlight clear (issue #155): a highlighted run, then a run that CLEARS the
+    // highlight (w:highlight=none) so it overrides an inherited character-style highlight.
+    .Paragraph(p => p
+        .Text("A highlighted run ", new CharStyle { HighlightColor = "#ffff00" })
+        .Text("and a run that explicitly clears highlight", new CharStyle { HighlightCleared = true })
+        .Text(" — the clear round-trips as w:highlight=none."))
 
     // ---- Equations (LaTeX + MathML, typeset on canvas, round-tripped to OMML) ----
     .Paragraph("Equations", p => p.WithStyle("Heading1"))

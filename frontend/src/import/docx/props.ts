@@ -75,8 +75,11 @@ export function decodeRunProps(rPr: XmlNode): IRRunProps {
     const eastAsiaTheme = attr(rFonts, "w:eastAsiaTheme");
     if (eastAsiaTheme) props.fontThemeEastAsia = eastAsiaTheme;
   }
+  // Tri-state (issue #155): "none" is an explicit clear (overrides a character
+  // style's highlight), kept as null so mergeProps propagates it; absent = inherit.
   const highlight = bagVal(bag, "w:highlight");
-  if (highlight && highlight !== "none") props.highlight = highlight;
+  if (highlight === "none") props.highlight = null;
+  else if (highlight) props.highlight = highlight;
   const vertAlign = bagVal(bag, "w:vertAlign");
   if (vertAlign) props.vertAlign = vertAlign;
   const vanish = onOff(bag.get("w:vanish"));
