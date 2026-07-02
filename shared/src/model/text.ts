@@ -228,52 +228,59 @@ export type ParaLocation =
 export const containerListOf = (doc: Document, where: "body" | BandContainer): Block[] =>
   where === "body" ? doc.blocks : (doc.section[where] ?? []);
 
-function locateInBlocks(
-  blocks: Block[],
-  where: "body" | BandContainer,
-  blockId: string,
-): ParaLocation | null {
-  for (let bi = 0; bi < blocks.length; bi++) {
-    const b = blocks[bi]!;
-    if (b.kind === "paragraph") {
-      if (b.id === blockId) {
-        return where === "body" ? { kind: "top", bi } : { kind: "band", band: where, bi };
-      }
-    } else if (b.kind === "table") {
-      for (let ri = 0; ri < b.rows.length; ri++) {
-        const row = b.rows[ri]!;
-        for (let ci = 0; ci < row.cells.length; ci++) {
-          const cell = row.cells[ci]!;
-          for (let pi = 0; pi < cell.blocks.length; pi++) {
-            const cb = cell.blocks[pi]!;
-            // One level deep: paragraphs of nested tables stay read-only.
-            if (cb.kind === "paragraph" && cb.id === blockId) {
-              return { kind: "cell", where, bi, ri, ci, pi };
+/** id → ParaLocation for every locatable paragraph, memoized per document
+ *  identity (same WeakMap contract as the para index above: the model is
+ *  immutable, so any structural edit mints a new Document object and the stale
+ *  index falls away). Built in ONE walk over body + bands + notes, so callers
+ *  that used to pay a full-document scan per lookup (the hover adornment probes
+ *  it per mousemove; commands per dispatch) get an O(1) hit instead. Insertion
+ *  order mirrors the original scan order (body, bands, footnotes, endnotes;
+ *  first occurrence wins for a duplicate id). */
+const locIndexCache = new WeakMap<Document, Map<string, ParaLocation>>();
+
+function buildLocIndex(doc: Document): Map<string, ParaLocation> {
+  const map = new Map<string, ParaLocation>();
+  const set = (id: string, loc: ParaLocation): void => {
+    if (!map.has(id)) map.set(id, loc);
+  };
+  const walk = (blocks: Block[], where: "body" | BandContainer): void => {
+    for (let bi = 0; bi < blocks.length; bi++) {
+      const b = blocks[bi]!;
+      if (b.kind === "paragraph") {
+        set(b.id, where === "body" ? { kind: "top", bi } : { kind: "band", band: where, bi });
+      } else if (b.kind === "table") {
+        for (let ri = 0; ri < b.rows.length; ri++) {
+          const row = b.rows[ri]!;
+          for (let ci = 0; ci < row.cells.length; ci++) {
+            const cell = row.cells[ci]!;
+            for (let pi = 0; pi < cell.blocks.length; pi++) {
+              const cb = cell.blocks[pi]!;
+              // One level deep: paragraphs of nested tables stay read-only.
+              if (cb.kind === "paragraph") set(cb.id, { kind: "cell", where, bi, ri, ci, pi });
             }
           }
         }
       }
     }
+  };
+  walk(doc.blocks, "body");
+  for (const band of BAND_CONTAINERS) walk(doc.section[band] ?? [], band);
+  for (const [noteId, paras] of Object.entries(doc.footnotes ?? {})) {
+    for (let pi = 0; pi < paras.length; pi++) set(paras[pi]!.id, { kind: "footnote", noteId, pi });
   }
-  return null;
+  for (const [noteId, paras] of Object.entries(doc.endnotes ?? {})) {
+    for (let pi = 0; pi < paras.length; pi++) set(paras[pi]!.id, { kind: "endnote", noteId, pi });
+  }
+  return map;
 }
 
 export function locateParagraph(doc: Document, blockId: string): ParaLocation | null {
-  const body = locateInBlocks(doc.blocks, "body", blockId);
-  if (body) return body;
-  for (const band of BAND_CONTAINERS) {
-    const hit = locateInBlocks(doc.section[band] ?? [], band, blockId);
-    if (hit) return hit;
+  let idx = locIndexCache.get(doc);
+  if (!idx) {
+    idx = buildLocIndex(doc);
+    locIndexCache.set(doc, idx);
   }
-  for (const [noteId, paras] of Object.entries(doc.footnotes ?? {})) {
-    const pi = paras.findIndex((p) => p.id === blockId);
-    if (pi >= 0) return { kind: "footnote", noteId, pi };
-  }
-  for (const [noteId, paras] of Object.entries(doc.endnotes ?? {})) {
-    const pi = paras.findIndex((p) => p.id === blockId);
-    if (pi >= 0) return { kind: "endnote", noteId, pi };
-  }
-  return null;
+  return idx.get(blockId) ?? null;
 }
 
 export function paragraphAt(doc: Document, loc: ParaLocation): Paragraph {

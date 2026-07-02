@@ -3151,12 +3151,25 @@ export function createEditor(
   container.addEventListener("keydown", onCropKeyCapture, true);
 
   // Hover highlighting for content controls (incl. nested) — point at any control
-  // to see its frame(s) and breadcrumb, without moving the caret.
+  // to see its frame(s) and breadcrumb, without moving the caret. Coalesced to at
+  // most one probe pass per animation frame (mousemove can outpace the frame
+  // rate), on the latest pointer position — mirrors the selection controller's
+  // hover throttle.
+  let sdtHoverRaf: number | null = null;
+  let sdtHoverEvent: MouseEvent | null = null;
   const onSdtHoverMove = (ev: MouseEvent): void => {
-    updateHoverAdornment(ev.clientX, ev.clientY, ev.buttons);
-    updateInspectorHover(ev.clientX, ev.clientY, ev.buttons);
+    sdtHoverEvent = ev;
+    if (sdtHoverRaf !== null) return;
+    sdtHoverRaf = requestAnimationFrame(() => {
+      sdtHoverRaf = null;
+      const e = sdtHoverEvent;
+      if (!e) return;
+      updateHoverAdornment(e.clientX, e.clientY, e.buttons);
+      updateInspectorHover(e.clientX, e.clientY, e.buttons);
+    });
   };
   const onSdtHoverLeave = (): void => {
+    sdtHoverEvent = null; // a queued rAF must not re-apply hover after leave
     if (inspectorActive && lastInspectorHover !== null) {
       lastInspectorHover = null;
       options.onInspectorHover?.(null);
@@ -3557,6 +3570,10 @@ export function createEditor(
       container.removeEventListener("contextmenu", onContextMenu);
       container.removeEventListener("mousemove", onSdtHoverMove);
       container.removeEventListener("mouseleave", onSdtHoverLeave);
+      if (sdtHoverRaf !== null) {
+        cancelAnimationFrame(sdtHoverRaf);
+        sdtHoverRaf = null;
+      }
       if (vv) {
         vv.removeEventListener("resize", onViewportChange);
         vv.removeEventListener("scroll", onViewportChange);
