@@ -1,7 +1,7 @@
 import { bakeReview, colorForId, configureIds, deserializeDocument, freshId, reconstruct, serializeDocument, DEFAULT_CHAR_STYLE, DOCX_MIME, PDF_MIME, PX_PER_INCH, ptToPx as sharedPtToPx, pxToPt as sharedPxToPt, type Change, type DocSelection, type Document, type Fragment, type ParaStyle, type ReviewLayer } from "@cw/shared";
 import { resolveConfig } from "./config";
 import { emptyParagraphFor } from "./builder/blockFactory";
-import { mediaStore, mediaUrl, registerMediaBytes, rehydrateDocMedia } from "./media/store";
+import { mediaIdsOf, mediaStore, mediaUrl, pruneOrphanMedia, registerMediaBytes, registerMediaRetention, rehydrateDocMedia } from "./media/store";
 import { SyncClient } from "./sync/SyncClient";
 import { createEditor, type CurrentFormat, type EditMode, type InspectorProbe, type ReviewOpEnvelope } from "./index";
 import type { Command } from "./editor/state";
@@ -23,8 +23,12 @@ import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
 import { showDevPanel, type DevPanelHandle } from "./ui/devPanel";
 import { showPageLayout, type PageLayoutHandle } from "./ui/pageLayout";
 import { showParagraphDialog, type ParagraphDialogHandle } from "./ui/paragraphDialog";
-import { showEquationEditor } from "./ui/equationEditor";
-import { showSymbolPicker, type SymbolPickerHandle } from "./ui/symbolPicker";
+// The equation editor pulls in the whole LaTeX toolchain (parser + serializer +
+// symbol tables, several hundred KB of source) and the symbol picker — both are
+// click-driven dialogs, so they load lazily (same pattern as the WebMCP polyfill
+// and agent chat) and stay out of the initial editor chunk. Types are erased at
+// runtime, so the type-only import below costs nothing.
+import type { SymbolPickerHandle } from "./ui/symbolPicker";
 import { showFontDialog } from "./ui/fontDialog";
 import { loadCollabDocument, loadCollabReview, publishDocument } from "./sync/collab";
 import { attachMentionAutocomplete } from "./review/mentions";
@@ -335,6 +339,11 @@ const editorOpts = {
 };
 let editor = createEditor(app, doc, editorOpts);
 
+// Media retention: declare which mediaIds this mount's CURRENT document
+// references (read live at prune time — `doc` is reassigned on replacement).
+// pruneOrphanMedia() (called on document replacement) evicts the rest.
+const unregisterMediaRetention = registerMediaRetention(() => mediaIdsOf(doc));
+
 // When the bundled CJK fallback is active, load it lazily (it's multi-MB; blocking
 // first paint on it would penalize Latin-only documents) and re-lay-out once it
 // arrives so CJK widths re-measure against the bundled face instead of the browser's
@@ -517,6 +526,11 @@ const replaceDocument = (next: typeof doc): void => {
   // the two merged unless we clear first.
   engine.reset();
   doc = next;
+  // The outgoing document's media (bytes + blob: URLs) would otherwise stay
+  // resident for the rest of the session — the editor was just rebuilt (fresh
+  // undo history), so this is the undo-safe moment to evict what the incoming
+  // document doesn't reference.
+  pruneOrphanMedia();
   editor = createEditor(app, doc, editorOpts);
   applyGridView(); // re-seed grid state onto the fresh paint layer
   refreshOutline();
@@ -1676,27 +1690,45 @@ if (toolbar) {
     "select an image first",
   );
   group(insert, "Equation");
+  let equationEditorLoading = false; // debounce double-clicks while the chunk loads
   txtBtn("√x", "Insert equation (MathML)", () => {
-    showEquationEditor({
-      onApply: (eq) => {
-        editor.dispatch(eq.display ? insertEquation(eq) : insertInlineEquation(eq));
-        editor.focus();
-      },
-    });
+    if (equationEditorLoading) return;
+    equationEditorLoading = true;
+    import("./ui/equationEditor")
+      .then(({ showEquationEditor }) => {
+        if (teardown.signal.aborted) return;
+        showEquationEditor({
+          onApply: (eq) => {
+            editor.dispatch(eq.display ? insertEquation(eq) : insertInlineEquation(eq));
+            editor.focus();
+          },
+        });
+      })
+      .catch((e: unknown) => console.warn("[wordcanvas] failed to load the equation editor:", e))
+      .finally(() => { equationEditorLoading = false; });
   }, "font-family:Georgia,serif;font-style:italic;");
 
   group(insert, "Symbols");
   // Single floating picker (toggle on re-click); closed on teardown so its
   // backdrop + document-level Escape listener never leak. Mirrors pageLayoutDlg.
+  let symbolPickerLoading = false; // debounce double-clicks while the chunk loads
   btn(ICONS.symbol, "Insert symbol or special character", () => {
     if (symbolPicker) { symbolPicker.close(); return; }
-    symbolPicker = showSymbolPicker({
-      onPick: (font, char) => {
-        editor.dispatch(insertSymbolCmd(font, char));
-        editor.focus();
-      },
-      onClose: () => { symbolPicker = null; },
-    });
+    if (symbolPickerLoading) return;
+    symbolPickerLoading = true;
+    import("./ui/symbolPicker")
+      .then(({ showSymbolPicker }) => {
+        if (teardown.signal.aborted || symbolPicker) return;
+        symbolPicker = showSymbolPicker({
+          onPick: (font, char) => {
+            editor.dispatch(insertSymbolCmd(font, char));
+            editor.focus();
+          },
+          onClose: () => { symbolPicker = null; },
+        });
+      })
+      .catch((e: unknown) => console.warn("[wordcanvas] failed to load the symbol picker:", e))
+      .finally(() => { symbolPickerLoading = false; });
   });
   teardown.signal.addEventListener("abort", () => symbolPicker?.close(), { once: true });
 
@@ -3307,6 +3339,7 @@ const handle: EditorHandle = {
   destroy: () => {
     disposeAgentTools?.(); // unregister WebMCP tools before tearing the editor down
     closeDevPanel(); // remove the floating inspector (body-level) if it's open
+    unregisterMediaRetention(); // deliberately no eviction — see registerMediaRetention
     teardown.abort(); // drop every global window/document listener this instance added
     compactRO?.disconnect(); // ResizeObserver isn't signal-aware — stop it explicitly
     for (const el of detachables) el.remove(); // body-level floats (find bar, image bar, …)
