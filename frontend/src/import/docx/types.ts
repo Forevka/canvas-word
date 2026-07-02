@@ -309,8 +309,15 @@ export interface IRParaProps {
   direction?: "ltr" | "rtl";
   /** w:pPr/w:pBdr — paragraph border edges (raw, mapped downstream). */
   borders?: IRParaBorders;
-  /** w:pPr/w:shd → CSS fill (paragraph-level shading). */
-  shd?: string;
+  /** w:pPr/w:shd → paragraph-level shading, tri-state (issue #147):
+   *  a CSS fill string when the element carries a real fill, `null` when the
+   *  element is PRESENT but empty (`<w:shd w:val="clear" w:fill="auto"/>` /
+   *  `w:val="nil"` — Word's "Shading → No Color": an explicit override that
+   *  CLEARS shading inherited from a named style), and absent when there's no
+   *  w:shd at all (inherit from the cascade). The `null` flows through
+   *  `mergeProps` (which copies non-`undefined` values) and so overrides an
+   *  inherited fill, unlike an absent prop. */
+  shd?: string | null;
   /** w:widowControl — widow/orphan control (Word default ON; explicit "0" = off). */
   widowControl?: boolean;
   /** w:suppressLineNumbers — exclude this paragraph from line numbering. */

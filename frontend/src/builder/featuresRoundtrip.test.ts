@@ -5,6 +5,7 @@
 // importer reshapes it — e.g. a TOC field flattens then re-marks).
 
 import { beforeAll, describe, expect, it } from "vitest";
+import type { Block } from "@cw/shared";
 import { runImport } from "../import/docx/pipeline";
 import { runExport } from "../export/pipeline";
 import { installMeasureHost } from "../export/shared/measureHost";
@@ -55,5 +56,25 @@ describe("builder feature round-trip (.docx)", () => {
     // The TOC entries re-import as marked tocEntry paragraphs.
     const tocEntries = back.blocks.filter((b) => b.kind === "paragraph" && b.style.tocEntry);
     expect(tocEntries.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("preserves an explicit shading clear against a shaded named style (issue #147)", async () => {
+    const doc = DocumentBuilder.create({ idSeed: "shd" })
+      .style({ id: "Callout", name: "Callout", type: "paragraph", char: {}, para: { shading: "#d9ead3" } })
+      .paragraph("inherits the callout fill").withStyle("Callout")
+      .paragraph("clears the callout fill").withStyle("Callout").clearShading()
+      .build();
+
+    // The builder bakes the style fill onto the first paragraph and marks the second cleared.
+    const built = doc.blocks.filter((b): b is Extract<Block, { kind: "paragraph" }> => b.kind === "paragraph");
+    expect(built[0]!.style.shading).toBe("#d9ead3");
+    expect(built[1]!.style.shading).toBeUndefined();
+    expect(built[1]!.style.shadingCleared).toBe(true);
+
+    const back = runImport((await runExport(doc, "docx")).bytes).doc;
+    const paras = back.blocks.filter((b): b is Extract<Block, { kind: "paragraph" }> => b.kind === "paragraph");
+    expect(paras[0]!.style.shading).toBe("#d9ead3"); // still inherits the fill
+    expect(paras[1]!.style.shading).toBeUndefined(); // clear survived — the fill did NOT return
+    expect(paras[1]!.style.shadingCleared).toBe(true);
   });
 });

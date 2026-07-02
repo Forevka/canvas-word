@@ -495,6 +495,16 @@ export function sampleDoc(): Document {
       shading: "#fff3e0",
       borders: { left: { color: "#e8710a", widthPx: 3, style: "double" } },
     }),
+    // Explicit "No Color" over a shaded named style (issue #147). The "Callout" style
+    // carries a green fill; the first paragraph inherits it, the second CLEARS it with
+    // Word's "Shading → No Color" (w:shd w:val="clear" w:fill="auto") so the fill can't
+    // silently return on the next save.
+    para([run("This paragraph uses the Callout style and inherits its green shading fill.")], {
+      spaceBeforePx: 6, namedStyle: "Callout", shading: "#d9ead3",
+    }),
+    para([run("This paragraph also uses Callout but explicitly clears the shading (No Color) — the style's fill is overridden and stays cleared through a .docx round-trip.")], {
+      spaceBeforePx: 6, namedStyle: "Callout", shadingCleared: true,
+    }),
     // --- Contextual spacing: same-style runs sit tight (w:contextualSpacing) ---
     para([run("Contextual spacing — each verse line below carries 12px after-spacing, yet w:contextualSpacing collapses the gaps between adjacent same-style paragraphs (Word's list-style default); only the run's outer edges keep their space:")], { spaceBeforePx: 10, spaceAfterPx: 4 }),
     para([run("Roses are red,")], { contextualSpacing: true, spaceAfterPx: 12 }),
@@ -714,8 +724,16 @@ export function sampleDoc(): Document {
     ...bodyBlocks,
   ];
 
+  // Extend the starter gallery with a shaded "Callout" paragraph style so the
+  // paragraph-shading section can demonstrate an explicit clear against it (#147).
+  const stylesheet = defaultStylesheet();
+  stylesheet.styles.push({
+    id: "Callout", name: "Callout", type: "paragraph", basedOn: "Normal",
+    char: {}, para: { shading: "#d9ead3", spaceBeforePx: 8, spaceAfterPx: 8 },
+  });
+
   const doc: Document = {
-    stylesheet: defaultStylesheet(),
+    stylesheet,
     lists: { [DEFAULT_BULLET_LIST_ID]: defaultListDefinition("bullet"), [DEFAULT_NUMBER_LIST_ID]: defaultListDefinition("decimal") },
     section: {
       pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 },

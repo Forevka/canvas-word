@@ -29,7 +29,7 @@ import { pxToEighthPoints, pxToEmu, pxToTwips } from "../units";
 import { borderEdgeXml, hexColor as hex } from "./mappings";
 import { MediaManager } from "./mediaPack";
 import { REL, RelManager } from "./relationships";
-import { paraBordersXml, paraCoreXml, runPropsXml as rPrXml, shdFillXml } from "./styleProps";
+import { paraBordersXml, paraCoreXml, runPropsXml as rPrXml, shdClearXml, shdFillXml } from "./styleProps";
 import { el, escapeText, textEl, WML_NS, XML_DECL } from "./xmlWrite";
 import { mathmlToOmml } from "../../mathml/toOmml";
 export interface ExportBookmarkMark {
@@ -280,7 +280,10 @@ function pPrXml(style: ParaStyle, ctx: PartCtx, markRun?: CharStyle): string {
   if (style.textAlignment) c.push(el("w:textAlignment", { "w:val": style.textAlignment }));
   // w:pBdr / w:shd precede spacing/ind/jc in the CT_PPr schema sequence.
   if (style.borders) c.push(paraBordersXml(style.borders));
+  // A concrete fill wins; else an explicit clear (issue #147) re-emits the empty
+  // w:shd so a "No Color" over a shaded named style survives the round-trip.
   if (style.shading) c.push(shdFillXml(style.shading));
+  else if (style.shadingCleared) c.push(shdClearXml());
   // Explicit "ltr" emits w:bidi="0" (round-trips an imported w:bidi="0", clearing
   // an inherited RTL style); undefined stays absent.
   if (style.direction === "rtl") c.push(el("w:bidi"));

@@ -587,6 +587,17 @@ export class ParagraphBuilder<P extends StoryBuilder> {
   /** Paragraph shading — a CSS fill painted behind the paragraph (OOXML w:shd). */
   shading(cssColor: string): this {
     this.para.style.shading = cssColor;
+    delete this.para.style.shadingCleared; // a concrete fill supersedes an explicit clear
+    return this;
+  }
+
+  /** Explicitly clear paragraph shading (OOXML `<w:shd w:val="clear" w:fill="auto"/>`,
+   *  Word's "Shading → No Color") — overrides a fill the paragraph's named style
+   *  carries, so the clear survives export/re-import instead of the style's fill
+   *  silently returning (issue #147). Distinct from simply not setting shading. */
+  clearShading(): this {
+    delete this.para.style.shading;
+    this.para.style.shadingCleared = true;
     return this;
   }
 

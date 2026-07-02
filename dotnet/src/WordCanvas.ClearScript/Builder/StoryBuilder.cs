@@ -281,6 +281,11 @@ public sealed class ParagraphBuilder
     /// <summary>Paragraph shading — a CSS fill painted behind the paragraph (OOXML w:shd).</summary>
     public ParagraphBuilder Shading(string cssColor) { _js.InvokeMethod("shading", cssColor); return this; }
 
+    /// <summary>Explicitly clear paragraph shading (OOXML &lt;w:shd w:val="clear" w:fill="auto"/&gt;,
+    /// Word's "Shading → No Color") — overrides a fill the paragraph's named style carries, so the
+    /// clear survives export/re-import instead of the style's fill silently returning (issue #147).</summary>
+    public ParagraphBuilder ClearShading() { _js.InvokeMethod("clearShading"); return this; }
+
     /// <summary>Widow/orphan control (OOXML w:widowControl). Word's default is ON;
     /// pass false to let a lone first/last line break across a page boundary.</summary>
     public ParagraphBuilder WidowControl(bool on = true) { _js.InvokeMethod("widowControl", on); return this; }
