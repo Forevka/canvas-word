@@ -803,6 +803,12 @@ public sealed record ParaStylePatch
     public bool? ColumnBreakBefore { get; init; }
     /// <summary>Explicit tab stops (docx w:tabs).</summary>
     public IReadOnlyList<TabStop>? TabStops { get; init; }
+    /// <summary>Paragraph shading fill (OOXML w:shd) — a CSS color painted behind the paragraph.</summary>
+    public string? Shading { get; init; }
+    /// <summary>Explicitly clear paragraph shading (OOXML &lt;w:shd w:val="clear" w:fill="auto"/&gt;,
+    /// Word's "No Color") — overrides a fill an inherited style carries so the clear survives
+    /// export/re-import instead of the style's fill silently returning (issue #147).</summary>
+    public bool? ShadingCleared { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -822,6 +828,8 @@ public sealed record ParaStylePatch
         if (PageBreakBefore is { } pbb) Js.Set(o, "pageBreakBefore", pbb);
         if (ColumnBreakBefore is { } cbb) Js.Set(o, "columnBreakBefore", cbb);
         if (TabStops is { } ts) Js.Set(o, "tabStops", Js.ToArray(e, ts.Select(t => (object?)t.ToJs(e))));
+        if (Shading is { } shd) Js.Set(o, "shading", shd);
+        if (ShadingCleared is { } shc) Js.Set(o, "shadingCleared", shc);
         return o;
     }
 }

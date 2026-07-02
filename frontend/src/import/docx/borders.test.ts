@@ -54,7 +54,7 @@ describe("decodeBorders", () => {
 });
 
 describe("decodeShdFill", () => {
-  it("returns undefined for missing shd", () => {
+  it("returns undefined for missing shd (absent → inherit)", () => {
     expect(decodeShdFill(undefined)).toBeUndefined();
   });
 
@@ -62,17 +62,19 @@ describe("decodeShdFill", () => {
     expect(decodeShdFill(elem(`<w:shd w:fill="FFFF00"/>`))).toBe("#ffff00");
   });
 
-  it("treats w:fill='auto' as no fill", () => {
-    expect(decodeShdFill(elem(`<w:shd w:fill="auto"/>`))).toBeUndefined();
+  it("treats a present w:fill='auto' as an explicit clear (null, issue #147)", () => {
+    // Element PRESENT but no effective fill → null (distinct from absent's
+    // undefined) so a paragraph clear can override an inherited style fill.
+    expect(decodeShdFill(elem(`<w:shd w:fill="auto"/>`))).toBeNull();
   });
 
   it("approximates a pattern fill with the foreground color", () => {
     expect(decodeShdFill(elem(`<w:shd w:val="pct50" w:fill="auto" w:color="00FF00"/>`))).toBe("#00ff00");
   });
 
-  it("returns undefined for clear/nil patterns or auto color", () => {
-    expect(decodeShdFill(elem(`<w:shd w:val="clear" w:fill="auto" w:color="00FF00"/>`))).toBeUndefined();
-    expect(decodeShdFill(elem(`<w:shd w:val="pct50" w:fill="auto" w:color="auto"/>`))).toBeUndefined();
+  it("returns null (explicit clear) for clear/nil patterns or auto color", () => {
+    expect(decodeShdFill(elem(`<w:shd w:val="clear" w:fill="auto" w:color="00FF00"/>`))).toBeNull();
+    expect(decodeShdFill(elem(`<w:shd w:val="pct50" w:fill="auto" w:color="auto"/>`))).toBeNull();
   });
 });
 

@@ -81,6 +81,11 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     if (!resolved) return this; // unknown style → warning already recorded
     this.para.style.namedStyle = id;
     Object.assign(this.para.style, resolved.para);
+    // shading and the explicit-clear marker are mutually exclusive (issue #147):
+    // whichever the applied style provides wins, so drop the stale counterpart a
+    // prior .shading()/.clearShading() may have left — else export emits both.
+    if (resolved.para.shading !== undefined) delete this.para.style.shadingCleared;
+    else if (resolved.para.shadingCleared) delete this.para.style.shading;
     const charKeys = Object.keys(resolved.char);
     for (const r of this.para.runs) {
       Object.assign(r.style, resolved.char);
@@ -587,6 +592,17 @@ export class ParagraphBuilder<P extends StoryBuilder> {
   /** Paragraph shading — a CSS fill painted behind the paragraph (OOXML w:shd). */
   shading(cssColor: string): this {
     this.para.style.shading = cssColor;
+    delete this.para.style.shadingCleared; // a concrete fill supersedes an explicit clear
+    return this;
+  }
+
+  /** Explicitly clear paragraph shading (OOXML `<w:shd w:val="clear" w:fill="auto"/>`,
+   *  Word's "Shading → No Color") — overrides a fill the paragraph's named style
+   *  carries, so the clear survives export/re-import instead of the style's fill
+   *  silently returning (issue #147). Distinct from simply not setting shading. */
+  clearShading(): this {
+    delete this.para.style.shading;
+    this.para.style.shadingCleared = true;
     return this;
   }
 

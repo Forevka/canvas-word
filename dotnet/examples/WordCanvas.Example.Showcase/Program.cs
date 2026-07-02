@@ -28,6 +28,8 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
     // Heading styles so withStyle() resolves AND the TOC detects them by name.
     .Style(new NamedStyle { Id = "Heading1", Name = "Heading 1", Char = new CharStyle { Bold = true, FontSizePx = 24, Color = Ink }, Para = new ParaStylePatch { SpaceBeforePx = 18, SpaceAfterPx = 8 } })
     .Style(new NamedStyle { Id = "Heading2", Name = "Heading 2", Char = new CharStyle { Bold = true, FontSizePx = 19, Color = Ink }, Para = new ParaStylePatch { SpaceBeforePx = 14, SpaceAfterPx = 6 } })
+    // A shaded paragraph style — used below to demonstrate an explicit "No Color" clear (issue #147).
+    .Style(new NamedStyle { Id = "Callout", Name = "Callout", BasedOn = "Normal", Para = new ParaStylePatch { Shading = "#d9ead3", SpaceBeforePx = 8, SpaceAfterPx = 8 } })
 
     // A REAL table style (conditional bands) — registered once, referenced by id,
     // baked onto the cells AND emitted as w:tblStyle so it survives the docx round-trip.
@@ -263,6 +265,13 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
               .Indent(new IndentOptions { Left = 24, Right = 24 })
               .Shading("#fff3e0")
               .Borders(new ParaBorders { Left = new CellBorder { Color = "#e8710a", WidthPx = 3, Style = BorderStyle.Double } }))
+    // Explicit "No Color" over a shaded named style (issue #147): the first paragraph inherits
+    // the Callout style's green fill; the second uses the same style but CLEARS it, so the fill
+    // is overridden and stays cleared through a .docx round-trip instead of silently returning.
+    .Paragraph("This paragraph uses the Callout style and inherits its green shading fill.",
+        p => p.WithStyle("Callout"))
+    .Paragraph("This paragraph also uses Callout but explicitly clears the shading (No Color).",
+        p => p.WithStyle("Callout").ClearShading())
     // ---- Contextual spacing: same-style runs sit tight (w:contextualSpacing) ----
     .Paragraph("Contextual spacing — each verse line below carries 12px after-spacing, yet w:contextualSpacing collapses the gaps between adjacent same-style paragraphs (Word's list-style default); only the run's outer edges keep their space:",
         p => p.Spacing(new SpacingOptions { Before = 10, After = 4 }))

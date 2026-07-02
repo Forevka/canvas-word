@@ -39,8 +39,17 @@ export function decodeBorders(bordersEl: XmlNode | undefined): IRBorders | undef
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-/** w:shd → CSS fill, or undefined when there's no real fill. */
-export function decodeShdFill(shd: XmlNode | undefined): string | undefined {
+/** w:shd → paragraph/cell shading, tri-state (issue #147):
+ *  - a CSS fill string when the element carries a real fill (or a pattern with a
+ *    concrete foreground color),
+ *  - `null` when the element is PRESENT but resolves to no fill
+ *    (`w:val="clear"/"nil"` with `w:fill="auto"` — Word's "Shading → No Color",
+ *    an explicit override that clears an inherited style fill),
+ *  - `undefined` when the element is absent (inherit from the cascade).
+ *  Cell/table callers use a truthiness check and so still treat `null` as "no
+ *  shading here" (unchanged); only the paragraph path keeps the `null` (via a
+ *  `!== undefined` check) so an explicit clear can override an inherited fill. */
+export function decodeShdFill(shd: XmlNode | undefined): string | null | undefined {
   if (!shd) return undefined;
   const fill = attr(shd, "w:fill");
   if (fill && fill !== "auto") return `#${fill.toLowerCase()}`;
@@ -51,7 +60,7 @@ export function decodeShdFill(shd: XmlNode | undefined): string | undefined {
   if (val && val !== "clear" && val !== "nil" && color && color !== "auto") {
     return `#${color.toLowerCase()}`;
   }
-  return undefined;
+  return null; // element present but no effective fill → explicit clear
 }
 
 /** Merge two border sets edge-by-edge (child overrides parent) — for resolving

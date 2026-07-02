@@ -1296,7 +1296,12 @@ function applyParaProps(out: Partial<ParaStyle>, props: IRParaProps): void {
   if (props.tabStops) out.tabStops = mapTabStops(props.tabStops);
   const pb = paraBordersFromIR(props.borders);
   if (pb) out.borders = pb;
-  if (props.shd !== undefined) out.shading = props.shd;
+  // w:shd tri-state (issue #147): a `null` resolved fill is an explicit clear —
+  // record the marker and omit `shading` (which stays a concrete-fill-only field)
+  // so the export can re-emit `<w:shd w:val="clear" w:fill="auto"/>` against a
+  // named style that carries a fill. A concrete fill maps to `shading` as before.
+  if (props.shd === null) out.shadingCleared = true;
+  else if (props.shd !== undefined) out.shading = props.shd;
   mapMinorParaProps(props, out);
 }
 

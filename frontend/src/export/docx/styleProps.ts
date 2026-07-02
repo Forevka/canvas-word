@@ -230,6 +230,7 @@ export function partialPPrXml(p: Partial<ParaStyle>): string {
   if (p.textAlignment) out.push(el("w:textAlignment", { "w:val": p.textAlignment }));
   if (p.borders) out.push(paraBordersXml(p.borders));
   if (p.shading) out.push(shdFillXml(p.shading));
+  else if (p.shadingCleared) out.push(shdClearXml()); // issue #147: explicit "No Color" delta
   if (p.tabStops && p.tabStops.length > 0) {
     const tabs = p.tabStops
       .map((t) =>
@@ -259,6 +260,11 @@ function condBordersXml(tag: string, b: CellBorders): string {
 /** The w:shd fill element (clear pattern + explicit fill) — the one encoding of a
  *  model shading color, shared with documentXml's paragraph/cell/table emitters. */
 export const shdFillXml = (fill: string): string => el("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": hex(fill) });
+
+/** The empty w:shd element (issue #147) — Word's "Shading → No Color". Emitted for
+ *  a `shadingCleared` paragraph/style so an explicit clear survives re-import
+ *  instead of the named style's inherited fill silently returning. */
+export const shdClearXml = (): string => el("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": "auto" });
 
 function tblStylePrXml(cond: TableCond, props: TableCondProps): string {
   const tc: string[] = [];

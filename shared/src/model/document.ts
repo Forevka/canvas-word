@@ -258,6 +258,14 @@ export interface ParaStyle {
    *  behind the paragraph's box. Mirrors the table cell `shading` value type.
    *  Absent = no fill. `| undefined` so a patch can remove it. */
   shading?: string | undefined;
+  /** Explicit "no shading" override (OOXML `<w:shd w:val="clear" w:fill="auto"/>`
+   *  — Word's "Shading → No Color"): the paragraph's named style carries a fill
+   *  and this paragraph CLEARS it (issue #147). Distinct from absent `shading`
+   *  (never set / inherit): a cleared paragraph re-emits the empty w:shd so the
+   *  clear survives a round-trip instead of the style's fill silently returning.
+   *  Painted as no fill (like absent `shading`); ignored when `shading` is set (a
+   *  concrete fill wins). `| undefined` so a patch can drop the marker. */
+  shadingCleared?: boolean | undefined;
   /** Widow/orphan control (OOXML w:widowControl). Word's default is ON — keep
    *  ≥2 lines together at a page boundary rather than stranding a lone first/last
    *  line. Explicit `false` (w:widowControl w:val="0") lets a single line break
