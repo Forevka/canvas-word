@@ -260,6 +260,13 @@ export interface ParaStyle {
    *  share identical borders. Absent edges draw no line. `| undefined` so a
    *  setParaStyle patch can remove the borders. */
   borders?: ParaBorders | undefined;
+  /** Explicit "no border box" override (OOXML empty `<w:pBdr/>` / all-nil edges):
+   *  the paragraph's named style carries a border box and this paragraph CLEARS it
+   *  (issue #153). Distinct from absent `borders` (never set / inherit) so the clear
+   *  re-emits an empty w:pBdr on export instead of the style's box returning. Draws
+   *  nothing (like absent); ignored when `borders` has edges. Mirrors the cell/table
+   *  "explicit no borders" handling (bordersSpecified). */
+  bordersCleared?: boolean | undefined;
   /** Paragraph shading fill (OOXML paragraph-level w:shd), a CSS color painted
    *  behind the paragraph's box. Mirrors the table cell `shading` value type.
    *  Absent = no fill. `| undefined` so a patch can remove it. */

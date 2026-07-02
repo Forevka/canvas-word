@@ -229,6 +229,7 @@ export function partialPPrXml(p: Partial<ParaStyle>): string {
   if (p.adjustRightInd !== undefined) out.push(el("w:adjustRightInd", p.adjustRightInd ? undefined : { "w:val": "0" }));
   if (p.textAlignment) out.push(el("w:textAlignment", { "w:val": p.textAlignment }));
   if (p.borders) out.push(paraBordersXml(p.borders));
+  else if (p.bordersCleared) out.push(el("w:pBdr")); // issue #153: explicit "no box" delta
   if (p.shading) out.push(shdFillXml(p.shading));
   else if (p.shadingCleared) out.push(shdClearXml()); // issue #147: explicit "No Color" delta
   if (p.tabStops && p.tabStops.length > 0) {

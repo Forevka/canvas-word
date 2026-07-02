@@ -86,6 +86,8 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     // prior .shading()/.clearShading() may have left — else export emits both.
     if (resolved.para.shading !== undefined) delete this.para.style.shadingCleared;
     else if (resolved.para.shadingCleared) delete this.para.style.shading;
+    if (resolved.para.borders !== undefined) delete this.para.style.bordersCleared;
+    else if (resolved.para.bordersCleared) delete this.para.style.borders;
     const charKeys = Object.keys(resolved.char);
     for (const r of this.para.runs) {
       Object.assign(r.style, resolved.char);
@@ -586,6 +588,16 @@ export class ParagraphBuilder<P extends StoryBuilder> {
    *  for a standalone paragraph. */
   borders(borders: ParaBorders): this {
     this.para.style.borders = borders;
+    delete this.para.style.bordersCleared; // a concrete box supersedes an explicit clear
+    return this;
+  }
+
+  /** Explicitly clear the paragraph border box (OOXML empty `<w:pBdr/>`) — overrides a
+   *  box the paragraph's named style carries, so the clear survives export/re-import
+   *  instead of the style's box silently returning (issue #153). */
+  clearBorders(): this {
+    delete this.para.style.borders;
+    this.para.style.bordersCleared = true;
     return this;
   }
 

@@ -283,7 +283,10 @@ function pPrXml(style: ParaStyle, ctx: PartCtx, markRun?: CharStyle): string {
   if (style.adjustRightInd !== undefined) c.push(el("w:adjustRightInd", style.adjustRightInd ? undefined : { "w:val": "0" }));
   if (style.textAlignment) c.push(el("w:textAlignment", { "w:val": style.textAlignment }));
   // w:pBdr / w:shd precede spacing/ind/jc in the CT_PPr schema sequence.
+  // Real edges win; else an explicit clear (issue #153) re-emits an empty w:pBdr so a
+  // "no box" over a bordered named style survives the round-trip.
   if (style.borders) c.push(paraBordersXml(style.borders));
+  else if (style.bordersCleared) c.push(el("w:pBdr"));
   // A concrete fill wins; else an explicit clear (issue #147) re-emits the empty
   // w:shd so a "No Color" over a shaded named style survives the round-trip.
   if (style.shading) c.push(shdFillXml(style.shading));

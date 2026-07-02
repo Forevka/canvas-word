@@ -280,6 +280,10 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
         p => p.WithStyle("Callout"))
     .Paragraph("This paragraph also uses Callout but explicitly clears the shading (No Color).",
         p => p.WithStyle("Callout").ClearShading())
+    // Explicit border-box clear (issue #153): a paragraph whose style carries a w:pBdr box can
+    // remove it with an empty w:pBdr, so the "no box" round-trips instead of the style's box returning.
+    .Paragraph("This paragraph explicitly clears any border box its style would apply (empty w:pBdr).",
+        p => p.ClearBorders())
     // ---- Contextual spacing: same-style runs sit tight (w:contextualSpacing) ----
     .Paragraph("Contextual spacing — each verse line below carries 12px after-spacing, yet w:contextualSpacing collapses the gaps between adjacent same-style paragraphs (Word's list-style default); only the run's outer edges keep their space:",
         p => p.Spacing(new SpacingOptions { Before = 10, After = 4 }))

@@ -256,9 +256,12 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
     edge("bottom", "w:bottom");
     edge("right", "w:right");
     edge("between", "w:between");
-    if (borders.top || borders.left || borders.bottom || borders.right || borders.between) {
-      props.borders = borders;
-    }
+    // Tri-state (issue #153): a w:pBdr element is present, so record `bordersSpecified`
+    // and ALWAYS store the (possibly empty / all-nil) edge set. That defined-but-empty
+    // object overrides an inherited style's borders through mergeProps — an empty w:pBdr
+    // clears the style's box — where leaving `borders` undefined would let the style win.
+    props.borders = borders;
+    props.bordersSpecified = true;
   }
 
   // Paragraph-level w:shd (distinct from a run's or cell's shading).
