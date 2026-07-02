@@ -26,6 +26,7 @@ import type {
 } from "./model";
 
 export type {
+  BandContainer,
   Block,
   BookmarkRange,
   CharStyle,
@@ -256,6 +257,51 @@ export interface InsertParagraphOptions {
   runStyle?: CharStyle;
 }
 
+// ---------------------------------------------------------------------------
+// Merge / append documents
+
+/** How colliding named / table styles reconcile with the destination. */
+export type StyleMergeMode = "useDestination" | "keepSource";
+/** The section seam inserted between the destination and the appended source. */
+export type MergeSectionBreak = "nextPage" | "evenPage" | "oddPage" | "continuous" | "none";
+
+export interface MergeOptions {
+  styles?: StyleMergeMode;
+  sectionBreak?: MergeSectionBreak;
+  renameBookmarksOnCollision?: boolean;
+}
+
+/** old→new id per space, for every source id that changed or was repointed. */
+export interface MergeIdMap {
+  blocks: Record<string, string>;
+  styles: Record<string, string>;
+  lists: Record<string, string>;
+  tableStyles: Record<string, string>;
+  sdts: Record<string, string>;
+  fields: Record<string, string>;
+  footnotes: Record<string, string>;
+  endnotes: Record<string, string>;
+  bookmarks: Record<string, string>;
+}
+
+export interface MergeWarning {
+  code: string;
+  detail?: string;
+}
+
+export interface MergeResult {
+  doc: Document;
+  idMap: MergeIdMap;
+  warnings: MergeWarning[];
+}
+
+/** Append `source` after `dest`, reconciling every id space. Pure — returns a new
+ *  document; the inputs are not mutated. */
+export declare function mergeDocuments(dest: Document, source: Document, opts?: MergeOptions): MergeResult;
+
+/** Fold N documents left-to-right: mergeAll([a, b, c]) ≡ merge(merge(a, b), c). */
+export declare function mergeAll(docs: Document[], opts?: MergeOptions): MergeResult;
+
 /** Ergonomic, headless editing facade over the operation engine, with undo/redo.
  *  Every edit swaps `doc` for a new immutable value (structural sharing). */
 export declare class DocumentEditor {
@@ -305,6 +351,27 @@ export declare class DocumentEditor {
   /** Delete the column whose first-row cell text equals `headerText`. Throws if the
    *  table or a matching header is not found. */
   deleteColumnByHeader(tableId: string, headerText: string): this;
+
+  /** Append another document's content after this one (Word's "insert file at
+   *  end"), reconciling every id space (see mergeDocuments) as ONE undoable step.
+   *  Returns the merge's id map + warnings; the merged document becomes `doc`. */
+  append(source: Document, options?: MergeOptions): MergeResult;
+
+  /** Replace a block-level content control's entire content with another document
+   *  (the templating primitive): reconciles every id space and preserves the control's
+   *  ancestry (the source's own nested controls survive inside it). One undoable step.
+   *  The control must be block-level at the top level of the body — an inline control,
+   *  or one in a table cell / band / note, throws (use setSdtText for inline). */
+  replaceSdtContent(sdtId: string, source: Document, options?: MergeOptions): MergeResult;
+
+  /** Set (or clear, with `null`) a header/footer band on a specific section by index
+   *  (see getSections). The final/body section stores bands on the document; a
+   *  mid-document section on its break paragraph. Throws if the index is out of range. */
+  setSectionBand(sectionIndex: number, band: BandContainer, blocks: Block[] | null): this;
+  /** Set (or clear) a section's default footer band. See setSectionBand. */
+  setSectionFooter(sectionIndex: number, blocks: Block[] | null): this;
+  /** Set (or clear) a section's default header band. See setSectionBand. */
+  setSectionHeader(sectionIndex: number, blocks: Block[] | null): this;
 
   undo(): boolean;
   redo(): boolean;

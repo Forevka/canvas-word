@@ -115,7 +115,8 @@ export type Op =
   | { type: "setSdtProps"; id: string; props: SdtProps | null }
   | { type: "setField"; id: string; def: FieldDef | null }
   | { type: "setTocInstruction"; instruction: string | null }
-  | { type: "setBookmark"; name: string; range: BookmarkRange | null };
+  | { type: "setBookmark"; name: string; range: BookmarkRange | null }
+  | { type: "setDocument"; doc: Document };
 
 /** Page-setup fields of the final section (`doc.section`). Bands are NOT here —
  *  they change through container ops; mid-document sections change through
@@ -1233,6 +1234,20 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       return {
         doc: { ...doc, bookmarks },
         inverse: { type: "setBookmark", name: op.name, range: old },
+        mapPosition: identity,
+        dirtyBlockIds: [],
+      };
+    }
+
+    case "setDocument": {
+      // A coarse, whole-document replace — the inverse is the prior document, so it
+      // undoes/redoes as one step. Used by DocumentEditor.append (merge) where a
+      // granular op sequence can't express the change. Treated as LWW by transform;
+      // positions can't be mapped across a wholesale swap (identity), and layout must
+      // fully re-derive (no dirty subset).
+      return {
+        doc: op.doc,
+        inverse: { type: "setDocument", doc },
         mapPosition: identity,
         dirtyBlockIds: [],
       };

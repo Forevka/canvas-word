@@ -148,6 +148,22 @@ public sealed partial class WordDocument
         return (sdts ?? GetSdts()).Where(s => s.ParentId == id).ToList();
     }
 
+    /// <summary>Controls whose machine-readable tag (w:tag) equals <paramref name="tag"/>
+    /// — the usual way to locate a template's content controls. Pure over the flattened list.</summary>
+    public IReadOnlyList<SdtInfo> GetSdtsByTag(string tag, IReadOnlyList<SdtInfo>? sdts = null)
+    {
+        ArgumentNullException.ThrowIfNull(tag);
+        return (sdts ?? GetSdts()).Where(s => s.Tag == tag).ToList();
+    }
+
+    /// <summary>Controls whose title (w:alias) equals <paramref name="alias"/>. Pure over
+    /// the flattened list.</summary>
+    public IReadOnlyList<SdtInfo> GetSdtsByAlias(string alias, IReadOnlyList<SdtInfo>? sdts = null)
+    {
+        ArgumentNullException.ThrowIfNull(alias);
+        return (sdts ?? GetSdts()).Where(s => s.Alias == alias).ToList();
+    }
+
     /// <summary>The controls wrapping <paramref name="id"/>, outermost→innermost
     /// (excluding <paramref name="id"/> itself). Pure over the flattened list.</summary>
     public IReadOnlyList<SdtInfo> GetSdtAncestors(string id, IReadOnlyList<SdtInfo>? sdts = null)

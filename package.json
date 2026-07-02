@@ -18,6 +18,7 @@
     "dev:example": "npm run dev --workspace @cw/example-embed-live",
     "dev:playground": "npm run dev --workspace @cw/example-playground",
     "dev:query-edit": "npm run dev --workspace @cw/example-query-edit",
+    "dev:merge-docs": "npm run dev --workspace @cw/example-merge-docs",
     "dev:multi": "npm run dev --workspace @cw/example-embed-multi",
     "dev:constructor": "npm run dev --workspace @cw/example-editor-constructor",
     "desktop:dev": "npm run tauri:dev --workspace @cw/desktop",

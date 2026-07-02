@@ -60,6 +60,58 @@ public sealed partial class WordDocument
     public WordDocumentEditor Edit() =>
         new(_engine, this, (ScriptObject)_engine.Api.InvokeMethod("openEditor", Doc));
 
+    /// <summary>Append another document's content after this one — the headless
+    /// equivalent of Word's "insert file at end". Reconciles every id space (styles, lists, table styles,
+    /// content controls, fields, notes, bookmarks) so the two cannot collide, unions the
+    /// embedded-image maps, and inserts a section seam per <paramref name="options"/>.
+    /// Returns a NEW handle; both inputs are unchanged. <paramref name="other"/> MUST
+    /// belong to the SAME engine (they live in one V8 isolate).</summary>
+    public WordDocument Append(WordDocument other, MergeOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        if (!ReferenceEquals(other._engine, _engine))
+            throw new WordCanvasException("Append requires both documents to belong to the same WordCanvasEngine.");
+        var res = (ScriptObject)_engine.Api.InvokeMethod(
+            "mergeDocuments",
+            Doc, Images ?? (object)Undefined.Value,
+            other.Doc, other.Images ?? (object)Undefined.Value,
+            options?.ToJs(_engine) ?? (object)Undefined.Value);
+        return FromMerge(_engine, res);
+    }
+
+    /// <summary>Replace a block-level content control's entire content with another
+    /// document — the templating primitive: find control <paramref name="sdtId"/> (e.g.
+    /// via <see cref="GetSdtsByTag"/>), drop what's inside it, and splice in
+    /// <paramref name="source"/>'s content, reconciling every id space and unioning the
+    /// embedded-image maps. The control's ancestry is preserved (the source's own nested
+    /// controls survive inside it). Returns a NEW handle; both inputs are unchanged.
+    /// The control must be block-level at the top level of the body (an inline control,
+    /// or one in a table cell / band / note, throws JS-side). <paramref name="source"/>
+    /// MUST belong to the SAME engine.</summary>
+    public WordDocument ReplaceSdtContent(string sdtId, WordDocument source, MergeOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(sdtId);
+        ArgumentNullException.ThrowIfNull(source);
+        if (!ReferenceEquals(source._engine, _engine))
+            throw new WordCanvasException("ReplaceSdtContent requires both documents to belong to the same WordCanvasEngine.");
+        var res = (ScriptObject)_engine.Api.InvokeMethod(
+            "replaceSdtContent",
+            Doc, Images ?? (object)Undefined.Value,
+            sdtId,
+            source.Doc, source.Images ?? (object)Undefined.Value,
+            options?.ToJs(_engine) ?? (object)Undefined.Value);
+        return FromMerge(_engine, res);
+    }
+
+    internal static WordDocument FromMerge(WordCanvasEngine engine, ScriptObject handle)
+    {
+        var doc = handle.GetProperty("doc");
+        var images = handle.GetProperty("images");
+        var mediaCount = Convert.ToInt32(handle.GetProperty("mediaCount"));
+        var warnings = ReadWarnings(handle.GetProperty("warnings") as ScriptObject);
+        return new WordDocument(engine, doc, images, engine.CountBlocks(doc), mediaCount, warnings);
+    }
+
     private static IReadOnlyList<WordWarning> ReadWarnings(ScriptObject? arr)
     {
         if (arr is null) return Array.Empty<WordWarning>();

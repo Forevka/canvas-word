@@ -4,6 +4,7 @@
   </Folder>
   <Folder Name="/examples/">
     <Project Path="examples/WordCanvas.Example.Showcase/WordCanvas.Example.Showcase.csproj" />
+    <Project Path="examples/WordCanvas.Example.MergeReport/WordCanvas.Example.MergeReport.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/WordCanvas.ClearScript/WordCanvas.ClearScript.csproj" />
