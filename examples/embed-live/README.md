@@ -1,5 +1,7 @@
 # Live collaboration embed (Vite)
 
+[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/embed-live)
+
 The online variant of the embed, migrated from the old frontend `/live` page. It's
 an ordinary **Vite** app that depends on `@forevka/wordcanvas` and consumes it by
 package name — the realistic way an app integrates the editor. With a `backendUrl`

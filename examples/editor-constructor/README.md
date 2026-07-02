@@ -1,5 +1,7 @@
 # Editor constructor / config builder
 
+[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/editor-constructor)
+
 An interactive builder for the **`new WordCanvas({…})`** constructor. Toggle any
 option in the form on the left, click **Apply** to preview it live, and copy the
 generated snippet — the fastest way to discover what the editor can do and wire it

@@ -1,5 +1,7 @@
 # Ribbon customization
 
+[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/ribbon-customization)
+
 Customize the editor's ribbon toolbar through the **`customizeRibbon`** constructor
 option: reorder/remove the built-in tabs, groups, and buttons, and add your own —
 for **macros**, **config popups**, and **informational popups**. A static,

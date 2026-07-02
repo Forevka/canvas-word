@@ -1,5 +1,7 @@
 # embed-multi
 
+[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/embed-multi)
+
 Mounts **several `WordCanvas` editors on a single page**, each fully independent
 (own document, undo history, ribbon, ruler, and selection). Use the header buttons
 to add or remove editors at runtime — removing one calls `destroy()`, which tears
