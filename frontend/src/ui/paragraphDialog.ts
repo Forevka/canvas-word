@@ -5,8 +5,7 @@
 // per-edge toggles) mirrors tableProperties.ts.
 
 import type { CellBorder, ParaBorders, ParaStyle } from "@cw/shared";
-import { injectCssOnce } from "./styles";
-import { makeFloatingDialog } from "./floatingDialog";
+import { createDialogShell } from "./dialogShell";
 
 export type ParaBorderStyle = NonNullable<CellBorder["style"]>;
 export type LineSpacingRule = "auto" | "exact" | "atLeast";
@@ -102,22 +101,9 @@ function checkRow(labelText: string, checked: boolean): { row: HTMLLabelElement;
 }
 
 export function showParagraphDialog(init: ParagraphDialogInit, cb: ParagraphDialogCallbacks): ParagraphDialogHandle {
-  injectCssOnce("cw-pdlg-styles", PDLG_CSS);
-
-  const backdrop = el("div", "cw-pdlg-backdrop");
-  const modal = el("div", "cw-pdlg-modal");
-  modal.addEventListener("mousedown", (e) => e.stopPropagation());
-
-  // Header
-  const head = el("div", "cw-pdlg-head");
-  const h2 = el("h2");
-  h2.textContent = "Paragraph";
-  const xBtn = el("button", "cw-pdlg-x");
-  xBtn.textContent = "×";
-  xBtn.title = "Close (Esc)";
-  head.append(h2, xBtn);
-
-  const body = el("div", "cw-pdlg-body");
+  const shell = createDialogShell({ prefix: "cw-pdlg", cssId: "cw-pdlg-styles", css: PDLG_CSS, title: "Paragraph" });
+  shell.closeBtn.title = "Close (Esc)";
+  const { body, foot } = shell;
 
   // ---- Borders ------------------------------------------------------------
   // Seed the spec from whichever edge already exists, else a 1px black single line.
@@ -271,39 +257,14 @@ export function showParagraphDialog(init: ParagraphDialogInit, cb: ParagraphDial
   body.append(bSection, sSection, oSection);
 
   // Footer
-  const foot = el("div", "cw-pdlg-foot");
   const cancelBtn = el("button", "cw-pdlg-btn");
   cancelBtn.textContent = "Cancel";
   const okBtn = el("button", "cw-pdlg-btn primary");
   okBtn.textContent = "OK";
   foot.append(cancelBtn, okBtn);
 
-  modal.append(head, body, foot);
-  backdrop.appendChild(modal);
-  document.body.appendChild(backdrop);
-
-  const ac = new AbortController();
-  const handle: ParagraphDialogHandle = {
-    close(): void {
-      backdrop.remove();
-      ac.abort();
-    },
-  };
-  makeFloatingDialog({ backdrop, modal, handle: head, signal: ac.signal, noDrag: ".cw-pdlg-x" });
-
-  window.addEventListener(
-    "keydown",
-    (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") {
-        ev.preventDefault();
-        ev.stopPropagation();
-        handle.close();
-      }
-    },
-    { capture: true, signal: ac.signal },
-  );
-  xBtn.addEventListener("click", () => handle.close());
-  cancelBtn.addEventListener("click", () => handle.close());
+  const handle: ParagraphDialogHandle = { close: shell.close };
+  cancelBtn.addEventListener("click", shell.close);
 
   okBtn.addEventListener("click", () => {
     const edge = (): CellBorder => ({ color, widthPx, ...(styleName !== "single" ? { style: styleName } : {}) });

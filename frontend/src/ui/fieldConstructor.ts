@@ -5,8 +5,7 @@
 
 import type { CharStyle, FieldSpec, IfOp, PageNumFmt, Run } from "@cw/shared";
 import { evaluateIf, formatFieldDate } from "@cw/shared";
-import { injectCssOnce } from "./styles";
-import { makeFloatingDialog } from "./floatingDialog";
+import { createDialogShell } from "./dialogShell";
 
 export interface FieldConstructorOptions {
   /** Pre-fill for editing an existing field; omit to insert a new one. */
@@ -96,20 +95,17 @@ const option = (value: string, label: string): HTMLOptionElement => {
 };
 
 export function showFieldConstructor(opts: FieldConstructorOptions): FieldConstructorHandle {
-  injectCssOnce("cw-fc-styles", CSS);
   const now = opts.now ?? new Date();
   const editing = opts.initial !== undefined;
 
-  const backdrop = el("div", "cw-fc-backdrop");
-  const modal = el("div", "cw-fc-modal");
-  modal.addEventListener("mousedown", (e) => e.stopPropagation());
-
-  const head = el("div", "cw-fc-head");
-  const h2 = el("h2", undefined, editing ? "Edit field" : "Insert field");
-  const xBtn = el("button", "cw-fc-x", "×");
-  head.append(h2, xBtn);
-
-  const body = el("div", "cw-fc-body");
+  const shell = createDialogShell({
+    prefix: "cw-fc",
+    cssId: "cw-fc-styles",
+    css: CSS,
+    title: editing ? "Edit field" : "Insert field",
+    ...(opts.onClose ? { onClose: opts.onClose } : {}), // tear down the child document
+  });
+  const { body, foot } = shell;
   const left = el("div", "cw-fc-left");
   const right = el("div", "cw-fc-right");
 
@@ -225,32 +221,16 @@ export function showFieldConstructor(opts: FieldConstructorOptions): FieldConstr
   typeSel.addEventListener("change", rebuildForm);
   typeSel.disabled = editing; // editing keeps the field's type
 
-  const foot = el("div", "cw-fc-foot");
   const spacer = el("div", "spacer");
   const cancel = el("button", "cw-fc-btn", "Cancel");
   const apply = el("button", "cw-fc-btn primary", editing ? "Apply" : "Insert");
   foot.append(spacer, cancel, apply);
 
   body.append(left, right);
-  modal.append(head, body, foot);
-  backdrop.append(modal);
-  document.body.append(backdrop);
 
-  const ac = new AbortController();
-  const handle: FieldConstructorHandle = {
-    close(): void {
-      backdrop.remove();
-      ac.abort();
-      opts.onClose?.(); // tear down the child document
-    },
-  };
-  window.addEventListener("keydown", (ev: KeyboardEvent) => {
-    if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); handle.close(); }
-  }, { capture: true, signal: ac.signal });
-  makeFloatingDialog({ backdrop, modal, handle: head, signal: ac.signal, noDrag: ".cw-fc-x" });
-  xBtn.addEventListener("click", () => handle.close());
-  cancel.addEventListener("click", () => handle.close());
-  apply.addEventListener("click", () => { opts.onApply(readSpec()); handle.close(); });
+  const handle: FieldConstructorHandle = { close: shell.close };
+  cancel.addEventListener("click", shell.close);
+  apply.addEventListener("click", () => { opts.onApply(readSpec()); shell.close(); });
 
   rebuildForm();
   return handle;

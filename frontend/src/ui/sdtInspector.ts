@@ -7,8 +7,7 @@
 // the control's content) and handles persistence.
 
 import type { Block, SdtProps } from "@cw/shared";
-import { injectCssOnce } from "./styles";
-import { makeFloatingDialog } from "./floatingDialog";
+import { createDialogShell } from "./dialogShell";
 
 export interface SdtInspectorData {
   id: string;
@@ -104,36 +103,28 @@ export function showSdtInspector(
   data: SdtInspectorData,
   opts: SdtInspectorOptions = {},
 ): SdtInspectorHandle {
-  injectCssOnce("cw-sdt-styles", SDT_CSS);
   const { props } = data;
   const editable =
     opts.editable === true && typeof opts.onSave === "function" && typeof opts.mountEditor === "function";
   let childEditor: SdtInspectorEditor | null = null;
   const title = props.alias?.trim() || SDT_TYPE_LABEL[props.type];
 
-  const backdrop = document.createElement("div");
-  backdrop.className = "cw-sdt-backdrop";
-  const modal = document.createElement("div");
-  modal.className = "cw-sdt-modal";
-  modal.addEventListener("mousedown", (e) => e.stopPropagation());
-
-  // Header
-  const head = document.createElement("div");
-  head.className = "cw-sdt-head";
-  const h2 = document.createElement("h2");
-  h2.textContent = title;
   const badge = document.createElement("span");
   badge.className = "cw-sdt-badge";
   badge.textContent = SDT_TYPE_LABEL[props.type];
-  const xBtn = document.createElement("button");
-  xBtn.className = "cw-sdt-x";
-  xBtn.textContent = "×";
-  xBtn.title = "Close (Esc)";
-  head.append(h2, badge, xBtn);
+  const shell = createDialogShell({
+    prefix: "cw-sdt",
+    cssId: "cw-sdt-styles",
+    css: SDT_CSS,
+    title,
+    headExtras: [badge],
+    ...(opts.onClose ? { onClose: opts.onClose } : {}), // tear down the child document
+  });
+  shell.closeBtn.title = "Close (Esc)";
+  const { body, foot } = shell;
+  const handle: SdtInspectorHandle = { close: shell.close };
 
   // Body: two columns — properties (left) and content (right).
-  const body = document.createElement("div");
-  body.className = "cw-sdt-body";
   const left = document.createElement("div");
   left.className = "cw-sdt-left";
   const right = document.createElement("div");
@@ -200,8 +191,6 @@ export function showSdtInspector(
   body.append(left, right);
 
   // Footer
-  const foot = document.createElement("div");
-  foot.className = "cw-sdt-foot";
   const copyBtn = mkBtn("Copy Text", false);
   copyBtn.addEventListener("click", () => {
     void navigator.clipboard?.writeText(data.text).then(
@@ -250,12 +239,9 @@ export function showSdtInspector(
     foot.append(closeBtn);
   }
 
-  modal.append(head, body, foot);
-  backdrop.appendChild(modal);
-  document.body.appendChild(backdrop);
-
-  // Now that the preview host has a measurable width, paint the content (read-only)
-  // or mount the canvas-native editor (editable).
+  // The shell mounted the dialog at creation, so the preview host has a
+  // measurable width here — paint the content (read-only) or mount the
+  // canvas-native editor (editable).
   if (data.text.trim() === "" && !editable) {
     preview.innerHTML = `<span class="cw-sdt-empty">(empty)</span>`;
   } else if (editable && opts.mountEditor) {
@@ -264,27 +250,6 @@ export function showSdtInspector(
     opts.renderPreview?.(preview);
   }
 
-  const ac = new AbortController();
-  const handle: SdtInspectorHandle = {
-    close(): void {
-      backdrop.remove();
-      ac.abort(); // detaches every listener registered with ac.signal
-      opts.onClose?.(); // tear down the child document
-    },
-  };
-  window.addEventListener(
-    "keydown",
-    (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") {
-        ev.preventDefault();
-        ev.stopPropagation();
-        handle.close();
-      }
-    },
-    { capture: true, signal: ac.signal },
-  );
-  makeFloatingDialog({ backdrop, modal, handle: head, signal: ac.signal, noDrag: ".cw-sdt-x" });
-  xBtn.addEventListener("click", () => handle.close());
   return handle;
 }
 

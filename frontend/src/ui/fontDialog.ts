@@ -10,8 +10,7 @@
 // other editing dialogs (Borders & Shading, TOC options, field constructor).
 
 import type { CharStyle, EmphasisMark, UnderlineStyle } from "@cw/shared";
-import { injectCssOnce } from "./styles";
-import { makeFloatingDialog } from "./floatingDialog";
+import { createDialogShell } from "./dialogShell";
 
 /** The selection's effective run style, read from `editor.currentFormat()`. */
 export interface FontDialogInitial {
@@ -131,18 +130,10 @@ const numOrUndef = (raw: string, min?: number, max?: number): number | undefined
 };
 
 export function showFontDialog(opts: FontDialogOptions): FontDialogHandle {
-  injectCssOnce("cw-font-styles", CSS);
   const init = opts.initial;
 
-  const backdrop = el("div", "cw-font-backdrop");
-  const modal = el("div", "cw-font-modal");
-  modal.addEventListener("mousedown", (e) => e.stopPropagation());
-
-  const head = el("div", "cw-font-head");
-  const xBtn = el("button", "cw-font-x", "×");
-  head.append(el("h2", undefined, "Font"), xBtn);
-
-  const body = el("div", "cw-font-body");
+  const shell = createDialogShell({ prefix: "cw-font", cssId: "cw-font-styles", css: CSS, title: "Font" });
+  const { body, foot } = shell;
 
   // ---- Effects (caps / small-caps / double-strike / outline / shadow / …) ----
   const effects = el("div", "cw-font-section");
@@ -215,14 +206,9 @@ export function showFontDialog(opts: FontDialogOptions): FontDialogHandle {
   emphasis.append(el("label", "head", "Emphasis mark"), row("Mark", emSel));
   body.append(emphasis);
 
-  const foot = el("div", "cw-font-foot");
   const cancel = el("button", "cw-font-btn", "Cancel");
   const apply = el("button", "cw-font-btn primary", "Apply");
   foot.append(el("div", "spacer"), cancel, apply);
-
-  modal.append(head, body, foot);
-  backdrop.append(modal);
-  document.body.append(backdrop);
 
   const refresh = (): void => {
     const noUnderline = uStyleSel.value === "none";
@@ -266,17 +252,9 @@ export function showFontDialog(opts: FontDialogOptions): FontDialogHandle {
     return patch;
   };
 
-  const ac = new AbortController();
-  const handle: FontDialogHandle = {
-    close(): void { backdrop.remove(); ac.abort(); },
-  };
-  window.addEventListener("keydown", (ev: KeyboardEvent) => {
-    if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); handle.close(); }
-  }, { capture: true, signal: ac.signal });
-  makeFloatingDialog({ backdrop, modal, handle: head, signal: ac.signal, noDrag: ".cw-font-x" });
-  xBtn.addEventListener("click", () => handle.close());
-  cancel.addEventListener("click", () => handle.close());
-  apply.addEventListener("click", () => { opts.onApply(read()); handle.close(); });
+  const handle: FontDialogHandle = { close: shell.close };
+  cancel.addEventListener("click", shell.close);
+  apply.addEventListener("click", () => { opts.onApply(read()); shell.close(); });
 
   refresh();
   return handle;
