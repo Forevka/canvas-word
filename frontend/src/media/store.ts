@@ -46,6 +46,59 @@ export function mediaUrl(mediaId: string): string | undefined {
   return url;
 }
 
+// ---- retention / eviction ---------------------------------------------------
+// The store is process-global (content addressing dedupes identical bytes across
+// mounts), which historically meant it could only GROW: every image ever loaded
+// kept its bytes AND a live blob: URL until page unload. Mounts now register a
+// retention provider (the mediaIds their CURRENT document references, read live
+// at prune time); pruning evicts everything else. Pruning runs only on the
+// undo-safe transition — document replacement rebuilds the editor and drops its
+// history, so an evicted id can't resurface via undo — and only when exactly ONE
+// mount is registered: with several concurrent mounts, another mount's undo
+// history may reference ids outside its current document, so the store keeps
+// everything (the pre-eviction behavior). Callers that never register (tests,
+// headless jobs) are unaffected.
+
+type MediaIdProvider = () => Iterable<string>;
+const retainProviders = new Set<MediaIdProvider>();
+
+/** Every mediaId referenced by a document's images. */
+export function mediaIdsOf(doc: Document): Set<string> {
+  const ids = new Set<string>();
+  forEachImage(doc, (b) => {
+    if (b.mediaId) ids.add(b.mediaId);
+  });
+  return ids;
+}
+
+/** Register a mount's retention provider. Returns the unregister function (call
+ *  on mount destroy). Unregistering does NOT evict — a destroyed mount's media
+ *  may still back a remount rehydrating the same document (React strict-mode
+ *  double mounts); the next mount's own prune reclaims it. */
+export function registerMediaRetention(provider: MediaIdProvider): () => void {
+  retainProviders.add(provider);
+  return () => {
+    retainProviders.delete(provider);
+  };
+}
+
+/** Evict stored bytes and revoke blob: URLs for every mediaId no registered
+ *  mount retains. Call on document replacement (see retention notes above). */
+export function pruneOrphanMedia(): void {
+  if (retainProviders.size !== 1) return;
+  const keep = new Set<string>();
+  for (const provider of retainProviders) for (const id of provider()) keep.add(id);
+  for (const id of store.ids()) {
+    if (!keep.has(id)) store.delete(id);
+  }
+  for (const [id, url] of [...urlCache]) {
+    if (!keep.has(id)) {
+      URL.revokeObjectURL(url);
+      urlCache.delete(id);
+    }
+  }
+}
+
 /** Rehydrate every image in a freshly-deserialized document: fill blank srcs
  *  from the store via each image's mediaId. Mutates in place. Returns the ids
  *  it could NOT resolve (their bytes must be fetched before they'll paint). */

@@ -7,7 +7,7 @@
 // module only registers tools, so it stays trivially testable with a fake context.
 
 import type { CharStyle, Document, DocSelection, Fragment, ParaStyle } from "@cw/shared";
-import { blockById, DEFAULT_CHAR_STYLE, paragraphsOf, textOfBlock, textOfRuns } from "@cw/shared";
+import { blockById, blockIndexOf, DEFAULT_CHAR_STYLE, paragraphsOf, textOfBlock, textOfRuns } from "@cw/shared";
 import type { Editor } from "../index";
 import { dumpLayout, type LayoutDumpOptions } from "./layoutDump";
 
@@ -86,18 +86,18 @@ function documentText(doc: Document): string {
 /** Best-effort plain text of the current selection. */
 function selectionText(doc: Document, sel: DocSelection): string {
   const paras = paragraphsOf(doc);
-  const idxOf = (id: string): number => paras.findIndex((p) => p.id === id);
   let a = sel.anchor;
   let f = sel.focus;
-  let aIdx = idxOf(a.blockId);
-  let fIdx = idxOf(f.blockId);
+  // O(1) against the shared per-document index — same index space as `paras`.
+  let aIdx = blockIndexOf(doc, a.blockId);
+  let fIdx = blockIndexOf(doc, f.blockId);
   if (aIdx > fIdx || (aIdx === fIdx && a.offset > f.offset)) {
     [a, f] = [f, a];
     [aIdx, fIdx] = [fIdx, aIdx];
   }
   if (aIdx < 0 || fIdx < 0) {
     if (sel.anchor.blockId === sel.focus.blockId) {
-      const p = paras.find((pp) => pp.id === sel.anchor.blockId);
+      const p = blockById(doc, sel.anchor.blockId);
       if (p) {
         const t = textOfRuns(p.runs);
         return t.slice(Math.min(sel.anchor.offset, sel.focus.offset), Math.max(sel.anchor.offset, sel.focus.offset));

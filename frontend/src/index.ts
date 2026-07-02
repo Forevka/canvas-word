@@ -47,7 +47,19 @@ import { importDocx } from "./import/docx/importDocx";
 import { showContextMenu, type ContextMenuHandle, type MenuEntry } from "./ui/contextMenu";
 import { showSdtInspector, type SdtInspectorData, type SdtInspectorHandle } from "./ui/sdtInspector";
 import { showFieldConstructor } from "./ui/fieldConstructor";
-import { showEquationEditor, equationToMathmlString } from "./ui/equationEditor";
+// Lazy: the equation editor carries the LaTeX toolchain — load it on the
+// context-menu click, not in the core editor chunk (see editorApp.ts). Guarded
+// against double-invocation while the chunk loads (two fast clicks must not open
+// two dialogs) and against a failed chunk load (offline embedder).
+let equationEditorLoading = false;
+const withEquationEditor = (use: (mod: typeof import("./ui/equationEditor")) => void): void => {
+  if (equationEditorLoading) return;
+  equationEditorLoading = true;
+  import("./ui/equationEditor")
+    .then(use)
+    .catch((e: unknown) => console.warn("[wordcanvas] failed to load the equation editor:", e))
+    .finally(() => { equationEditorLoading = false; });
+};
 import { showTocProperties } from "./ui/tocProperties";
 import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
 import { showTableProperties, type BorderStyleName, type CellTextDir, type TablePropertiesHandle } from "./ui/tableProperties";
@@ -2748,12 +2760,14 @@ export function createEditor(
         entries.push(
           sep,
           item("Edit Equation…", () =>
-            showEquationEditor({
-              editing: true,
-              initialDisplay: true, // a display-equation block
-              initialMathml: equationToMathmlString(blk.equation),
-              onApply: (eq) => dispatch(editEquationCmd(blk.id, eq)),
-            }),
+            withEquationEditor(({ showEquationEditor, equationToMathmlString }) =>
+              showEquationEditor({
+                editing: true,
+                initialDisplay: true, // a display-equation block
+                initialMathml: equationToMathmlString(blk.equation),
+                onApply: (eq) => dispatch(editEquationCmd(blk.id, eq)),
+              }),
+            ),
           ),
           {
             kind: "submenu",
@@ -2782,12 +2796,14 @@ export function createEditor(
         entries.push(
           sep,
           item("Edit Equation…", () =>
-            showEquationEditor({
-              editing: true,
-              initialDisplay: false, // an inline equation — don't flip it to display
-              initialMathml: equationToMathmlString(equation),
-              onApply: (eq) => dispatch(editInlineEquationCmd(blockId, off, eq)),
-            }),
+            withEquationEditor(({ showEquationEditor, equationToMathmlString }) =>
+              showEquationEditor({
+                editing: true,
+                initialDisplay: false, // an inline equation — don't flip it to display
+                initialMathml: equationToMathmlString(equation),
+                onApply: (eq) => dispatch(editInlineEquationCmd(blockId, off, eq)),
+              }),
+            ),
           ),
           item("Delete Equation", () => dispatch(removeInlineEquationCmd(blockId, off)), { danger: true }),
         );
@@ -3151,12 +3167,25 @@ export function createEditor(
   container.addEventListener("keydown", onCropKeyCapture, true);
 
   // Hover highlighting for content controls (incl. nested) — point at any control
-  // to see its frame(s) and breadcrumb, without moving the caret.
+  // to see its frame(s) and breadcrumb, without moving the caret. Coalesced to at
+  // most one probe pass per animation frame (mousemove can outpace the frame
+  // rate), on the latest pointer position — mirrors the selection controller's
+  // hover throttle.
+  let sdtHoverRaf: number | null = null;
+  let sdtHoverEvent: MouseEvent | null = null;
   const onSdtHoverMove = (ev: MouseEvent): void => {
-    updateHoverAdornment(ev.clientX, ev.clientY, ev.buttons);
-    updateInspectorHover(ev.clientX, ev.clientY, ev.buttons);
+    sdtHoverEvent = ev;
+    if (sdtHoverRaf !== null) return;
+    sdtHoverRaf = requestAnimationFrame(() => {
+      sdtHoverRaf = null;
+      const e = sdtHoverEvent;
+      if (!e) return;
+      updateHoverAdornment(e.clientX, e.clientY, e.buttons);
+      updateInspectorHover(e.clientX, e.clientY, e.buttons);
+    });
   };
   const onSdtHoverLeave = (): void => {
+    sdtHoverEvent = null; // a queued rAF must not re-apply hover after leave
     if (inspectorActive && lastInspectorHover !== null) {
       lastInspectorHover = null;
       options.onInspectorHover?.(null);
@@ -3557,6 +3586,10 @@ export function createEditor(
       container.removeEventListener("contextmenu", onContextMenu);
       container.removeEventListener("mousemove", onSdtHoverMove);
       container.removeEventListener("mouseleave", onSdtHoverLeave);
+      if (sdtHoverRaf !== null) {
+        cancelAnimationFrame(sdtHoverRaf);
+        sdtHoverRaf = null;
+      }
       if (vv) {
         vv.removeEventListener("resize", onViewportChange);
         vv.removeEventListener("scroll", onViewportChange);

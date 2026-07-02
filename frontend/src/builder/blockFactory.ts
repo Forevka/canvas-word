@@ -52,12 +52,16 @@ export class BuilderContext {
    *  table-style baking preserve an explicit value even when it equals the
    *  resolved default (issue #30). Keyed by object identity, which survives the
    *  grid rebuild in bakeTableStyleRows. */
-  readonly explicitCharKeys = new WeakMap<object, ReadonlySet<string>>();
-  readonly explicitParaKeys = new WeakMap<object, ReadonlySet<string>>();
+  readonly explicitCharKeys = new WeakMap<object, Set<string>>();
+  readonly explicitParaKeys = new WeakMap<object, Set<string>>();
 
   constructor(doc: Document, idSeed?: string) {
     this.doc = doc;
-    this.ids = createIdGenerator(idSeed ?? `bld${Math.random().toString(36).slice(2, 6)}`);
+    // 10 random base36 chars (~52 bits) — two independently-built documents must
+    // not share an id space, because mergeDocuments/mergeAll fold builder outputs
+    // together. The previous 4-char seed (~1.7M values) hit birthday-bound
+    // collision odds at a few thousand documents.
+    this.ids = createIdGenerator(idSeed ?? `bld${Math.random().toString(36).slice(2, 12).padEnd(10, "0")}`);
     const resolved = doc.stylesheet ? resolveStyle(doc.stylesheet, doc.stylesheet.defaultStyleId) : { char: {}, para: {} };
     this.charDefault = { ...BASE_CHAR, ...resolved.char };
     this.paraDefault = { ...BASE_PARA, ...resolved.para };
