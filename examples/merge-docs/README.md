@@ -2,8 +2,8 @@
 
 [![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/merge-docs)
 
-Worked example of the headless **merge / append** API — the drop-in replacement
-for Syncfusion `ImportContent` + hand-rolled `ImportStyles`. It builds a few
+Worked example of the headless **merge / append** API — the programmatic equivalent
+of Word's "insert file at end", including its style import. It builds a few
 independently-authored **parts** with the `DocumentBuilder`, folds them into one
 report with `@forevka/wordcanvas/query`, shows the result in a live editor on the
 right, and applies a per-section **content footer** (a table with a logo).

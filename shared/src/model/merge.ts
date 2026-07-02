@@ -1,7 +1,7 @@
 // Merge / append documents — concatenate a SOURCE document's content after a
 // DESTINATION's, in the pure model, reconciling every id space so the two can't
-// collide or alias. This is the headless replacement for Syncfusion
-// `ImportContent` + hand-rolled `ImportStyles`. See MERGE_PLAN.md.
+// collide or alias — the headless equivalent of Word's "insert file at end",
+// including its style import. See MERGE_PLAN.md.
 //
 // The model is CONCRETE (formatting baked on runs) but has many keyed registries
 // (stylesheet, lists, tableStyles, sdts, fields, footnotes/endnotes, bookmarks)

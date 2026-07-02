@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Merge / append documents — across TS/npm and C# (a Syncfusion `ImportContent` replacement).** A pure model
+- **Merge / append documents — across TS/npm and C#.** A pure model
   `mergeDocuments(dest, source, opts)` / `mergeAll(docs, opts)` (shared) folds one document after another,
   reconciling every id space (blocks/cells, named + table styles, list definitions, content controls, fields,
   footnotes/endnotes, bookmarks) so the parts can't collide or alias; media dedupes by content hash. Style

@@ -2,27 +2,25 @@
 
 Status: **PLAN** (not yet started). Goal: a first-class **merge / append** operation that
 concatenates two (or N) WordCanvas documents into one — fully in the model — so headless
-assembly pipelines can drop `Syncfusion.DocIO.ImportContent` + hand-rolled `ImportStyles`.
-It lands on all three surfaces: pure `@cw/shared` core → `@forevka/wordcanvas` (npm) →
-C# ClearScript bindings (`WordDocument.Append` / `engine.Merge`).
+assembly pipelines can fold rendered parts together without a round-trip through a
+word-processor library. It lands on all three surfaces: pure `@cw/shared` core →
+`@forevka/wordcanvas` (npm) → C# ClearScript bindings (`WordDocument.Append` / `engine.Merge`).
 
-Related: [query-edit-api], `builder-mutator-additions.md` (backlog), the README's Syncfusion
-comparison (this is the feature that makes the "no save→reopen→UpdateFields" claim true for
-assembly, not just single-doc export).
+Related: [query-edit-api], `builder-mutator-additions.md` (backlog).
 
 ---
 
 ## 1. Why
 
-`MergeReportParts` (AppraiSys) opens a destination doc, imports each rendered section into it
-with `ImportOptions.UseDestinationStyles`, controls the section break per part, attaches a TOC,
-then `UpdateDocumentFields` / `UpdateTableOfContents`. WordCanvas already has: import, export,
-builder, TOC (layout-resolved page numbers — no reopen), header/footer bands, and a 37-op
-`applyOp` engine. **The only missing primitive is "append document B's content into document A"**
-with correct id-space reconciliation. That is this plan.
+A common headless pipeline renders sections separately, then assembles a destination
+document: import each part, bring its content in under the destination's styles, control the
+section break between parts, attach a TOC, and update fields. WordCanvas already has: import,
+export, builder, TOC (layout-resolved page numbers — no reopen), header/footer bands, and a
+37-op `applyOp` engine. **The only missing primitive is "append document B's content into
+document A"** with correct id-space reconciliation. That is this plan.
 
-Wins vs the Syncfusion path: order-of-magnitude less allocation, layout-resolved TOC/PAGE with
-no field-update round-trip, and one pure function that is trivially unit-testable.
+Wins: order-of-magnitude less allocation, layout-resolved TOC/PAGE with no field-update
+round-trip, and one pure function that is trivially unit-testable.
 
 ---
 
@@ -48,9 +46,9 @@ Notes:
 - **Media dedupes for free** — `mediaId` is `sha256(bytes)`, so identical logos/images across
   parts collapse to one id. Only the C#-side `cw-media:N → Uint8Array` map needs a union.
 - **Bookmarks key by name** — collisions get renamed (`_Part_1` → `_Part_1__2`) unless the caller
-  opts out; positions still need their block ids rebased. This subsumes AppraiSys's
-  `FixDuplicateBookmarkIds`.
-- **Style reconciliation has two modes** (mirroring Syncfusion `ImportOptions`), see §3.
+  opts out; positions still need their block ids rebased. This handles duplicate bookmark
+  ids/names across parts.
+- **Style reconciliation has two modes** (use-destination vs keep-source), see §3.
 
 ---
 
@@ -108,8 +106,8 @@ export function mergeAll(docs: Document[], opts?: MergeOptions): MergeResult;
 3. The source's own `Document.section` becomes the merged doc's new `Document.section` (its bands
    and geometry govern everything after the seam) — unless `"continuous"`, which keeps dest's.
 
-This maps 1:1 onto AppraiSys's `MergeSectionStrategyCode` (NewPage / NewSectionInSamePage /
-ContinuedSection) and replaces `EnsureSectionEndsWithParagraph`.
+This covers the common new-page vs continuous section strategies and removes the need for
+callers to hand-manage a trailing section-boundary paragraph.
 
 ### Document-level scalars
 
@@ -127,8 +125,8 @@ extended". A caller who wants a fresh TOC uses the builder's `tableOfContents()`
 - **`DocumentEditor.setSectionBand(sectionIndex, band, blocks): void`** — set a header/footer band
   on a specific section (by section index). Built on the EXISTING ops: `setSectionBand` for the
   final/body section, and `setParaStyle` patching `sectionBreak.props.<band>` for a mid-document
-  section's break paragraph. This is what powers a **post-merge** footer pass (AppraiSys "Approach
-  B": scan `_Part_` bookmarks → section index → assign footer). Convenience wrappers
+  section's break paragraph. This is what powers a **post-merge** footer pass (map
+  bookmarks/markers → section index → assign a footer). Convenience wrappers
   `setSectionFooter` / `setSectionHeader`.
 
 No NEW low-level op is strictly required for §3 (append rebuilds the block list + registries and
@@ -227,7 +225,7 @@ WordDocument details = engine.ImportDocx(File.ReadAllBytes("details.docx"));
 // One shot:
 WordDocument report = engine.Merge(cover, summary, details);
 
-// Or explicit, per-seam control (mirrors Syncfusion's MergeSectionStrategy):
+// Or explicit, per-seam control:
 report = cover
     .Append(summary, new MergeOptions { SectionBreak = SectionBreakKind.NewPage,
                                         Styles = StyleMergeMode.UseDestination })
@@ -240,7 +238,7 @@ byte[] docx = report.ExportDocx();   // or report.ExportPdf();
 
 ## 8. Standalone example — `BuildContentFooter` (table + image inside a footer)
 
-**Not tied to AppraiSys.** A reusable branded footer: a borderless 2-column table
+**Standalone.** A reusable branded footer: a borderless 2-column table
 `[ logo | address (right-aligned) ]` followed by a centered `Page X of Y` line. The address
 paragraph **wraps automatically** — no manual line-splitting — and the page number is a live
 `PAGE`/`NUMPAGES` field resolved at layout (no placeholder, no "update fields" step).

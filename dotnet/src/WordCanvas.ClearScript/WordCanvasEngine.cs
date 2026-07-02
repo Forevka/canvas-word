@@ -337,9 +337,9 @@ public sealed class WordCanvasEngine : IDisposable
     public Builder.DocumentBuilder NewBuilderFromTemplate(byte[] templateDocx, Builder.TemplateOptions? options = null)
         => Builder.DocumentBuilder.FromTemplate(this, templateDocx, options);
 
-    /// <summary>Merge (append) documents left-to-right into one — a headless replacement
-    /// for Syncfusion <c>ImportContent</c>. Each is folded via <see cref="WordDocument.Append"/>,
-    /// reconciling id spaces + unioning media. All documents must belong to THIS engine.</summary>
+    /// <summary>Merge (append) documents left-to-right into one. Each is folded via
+    /// <see cref="WordDocument.Append"/>, reconciling id spaces + unioning media. All
+    /// documents must belong to THIS engine.</summary>
     public WordDocument Merge(params WordDocument[] docs) => Merge(docs, null);
 
     /// <summary>Merge (append) documents left-to-right into one, with explicit options.</summary>

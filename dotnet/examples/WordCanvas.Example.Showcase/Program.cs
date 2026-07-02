@@ -487,7 +487,7 @@ var styled = re.Edit();
 styled.SetParagraphStyle(firstBlock, new ParaStylePatch { Align = TextAlign.Center, OutlineLevel = 0, SpaceBeforePx = 12 });
 Console.WriteLine($"  setParaStyle  : first block outlineLevel now = {styled.ToDocument().GetParagraphs()[0].OutlineLevel}");
 
-// ---- Merge / append documents (Syncfusion ImportContent replacement) -------
+// ---- Merge / append documents ----------------------------------------------
 // Build two small extra parts and fold them after the showcase document, then
 // export the combined report. Each seam starts a new page; every id space
 // (styles, lists, controls, bookmarks, notes) is reconciled automatically.

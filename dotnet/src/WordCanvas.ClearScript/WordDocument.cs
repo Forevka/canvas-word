@@ -61,8 +61,7 @@ public sealed partial class WordDocument
         new(_engine, this, (ScriptObject)_engine.Api.InvokeMethod("openEditor", Doc));
 
     /// <summary>Append another document's content after this one — the headless
-    /// equivalent of Word's "insert file at end" (a drop-in for Syncfusion
-    /// <c>ImportContent</c>). Reconciles every id space (styles, lists, table styles,
+    /// equivalent of Word's "insert file at end". Reconciles every id space (styles, lists, table styles,
     /// content controls, fields, notes, bookmarks) so the two cannot collide, unions the
     /// embedded-image maps, and inserts a section seam per <paramref name="options"/>.
     /// Returns a NEW handle; both inputs are unchanged. <paramref name="other"/> MUST
