@@ -93,6 +93,9 @@ public sealed class WordCanvasEnginePool : IDisposable
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            // The pool may have been disposed while we waited on the gate — re-check
+            // before renting/creating an engine so work never runs on a disposed pool.
+            ThrowIfDisposed();
             return await Task.Run(() =>
             {
                 var engine = Rent();
@@ -111,7 +114,7 @@ public sealed class WordCanvasEnginePool : IDisposable
         }
         finally
         {
-            _gate.Release();
+            ReleaseGate();
         }
     }
 
@@ -137,6 +140,8 @@ public sealed class WordCanvasEnginePool : IDisposable
         _gate.Wait(ct);
         try
         {
+            // Re-check after acquiring the permit (Dispose may have run while we waited).
+            ThrowIfDisposed();
             var engine = Rent();
             var ok = false;
             try
@@ -152,7 +157,7 @@ public sealed class WordCanvasEnginePool : IDisposable
         }
         finally
         {
-            _gate.Release();
+            ReleaseGate();
         }
     }
 
@@ -167,30 +172,61 @@ public sealed class WordCanvasEnginePool : IDisposable
     /// Eagerly construct up to <paramref name="count"/> engines (capped at
     /// <see cref="MaxConcurrency"/>) so the first requests don't pay the bundle-load +
     /// font-install cost. Construction runs on thread-pool threads. Optional.
+    /// <para>Prewarming holds one gate permit per engine while it builds, so it obeys the
+    /// same bounded-lease invariant as <see cref="UseAsync{T}"/> — engines are only ever
+    /// created while a permit is held, so concurrent leases or repeated/concurrent prewarm
+    /// calls can never leave more than <see cref="MaxConcurrency"/> live engines. Already-idle
+    /// engines are reused, so repeated calls don't over-create.</para>
     /// </summary>
     public async Task PrewarmAsync(int count, CancellationToken ct = default)
     {
         ThrowIfDisposed();
         var target = Math.Min(count, MaxConcurrency);
-        var warmed = new List<WordCanvasEngine>(Math.Max(0, target));
+        if (target <= 0) return;
+
+        var acquired = 0;
+        var warmed = new List<WordCanvasEngine>(target);
         try
         {
+            // Hold `target` permits for the whole warm-up so total live engines
+            // (idle + leased + warming) can't exceed MaxConcurrency.
+            for (var i = 0; i < target; i++)
+            {
+                await _gate.WaitAsync(ct).ConfigureAwait(false);
+                acquired++;
+            }
+            ThrowIfDisposed();
             for (var i = 0; i < target; i++)
             {
                 ct.ThrowIfCancellationRequested();
-                warmed.Add(await Task.Run(() => new WordCanvasEngine(_options), ct).ConfigureAwait(false));
+                // Reuse an already-idle engine so repeated prewarm calls don't over-create.
+                warmed.Add(_idle.TryTake(out var existing)
+                    ? existing
+                    : await Task.Run(() => new WordCanvasEngine(_options), ct).ConfigureAwait(false));
             }
+            // Only publish once every requested engine is ready.
+            foreach (var e in warmed) _idle.Add(e);
         }
         catch
         {
             foreach (var e in warmed) e.Dispose();
             throw;
         }
-        // Only publish once all requested engines built successfully.
-        foreach (var e in warmed) _idle.Add(e);
+        finally
+        {
+            if (acquired > 0) ReleaseGate(acquired);
+        }
     }
 
     private WordCanvasEngine Rent() => _idle.TryTake(out var engine) ? engine : new WordCanvasEngine(_options);
+
+    /// <summary>Release gate permits, tolerating a pool disposed mid-lease (Dispose disposes
+    /// the semaphore to fail-fast pending waiters, which can race an in-flight release).</summary>
+    private void ReleaseGate(int count = 1)
+    {
+        try { _gate.Release(count); }
+        catch (ObjectDisposedException) { /* pool disposed while a lease was in flight */ }
+    }
 
     private void Return(WordCanvasEngine engine, bool healthy)
     {
