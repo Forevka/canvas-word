@@ -1,9 +1,9 @@
 # Customizing the ribbon
 
-The `@forevka/wordcanvas` ribbon toolbar is customizable per editor instance via
-the `customizeRibbon` constructor option. You can reorder or remove the built-in
-tabs/groups/buttons, and add your own — for **macros** (automate document edits),
-**config popups**, and **informational popups**.
+The `@forevka/wordcanvas` ribbon toolbar is customizable per editor instance via the
+`customizeRibbon` constructor option. Reorder or remove the built-in tabs/groups/
+buttons, and add your own for **macros** (automate document edits), **config popups**,
+and **informational popups**.
 
 ```ts
 import { WordCanvas } from "@forevka/wordcanvas";
@@ -16,14 +16,14 @@ new WordCanvas({
 });
 ```
 
-`customizeRibbon(api)` runs once at mount, before the ribbon is shown. It is a
-no-op when the ribbon is hidden (`view.toolbar: false` or `readonly`).
+`customizeRibbon(api)` runs once at mount, before the ribbon shows. It is a no-op when
+the ribbon is hidden (`view.toolbar: false` or `readonly`).
 
 ## The `RibbonApi`
 
-Everything is addressed by **id**. An unknown id is ignored with a console warning
-(so your config survives editor upgrades). Discover the current ids — built-in and
-custom — at runtime:
+Everything is addressed by **id**. An unknown id is ignored with a console warning, so
+your config survives editor upgrades. Discover current ids — built-in and custom — at
+runtime:
 
 ```ts
 api.tabs();            // ["file","home","insert","layout","table","view", …]
@@ -45,11 +45,11 @@ Anchors are `{ before: id }` or `{ after: id }`; omit them to append at the end.
 
 ### Built-in id scheme
 
-Ids are namespaced `tab`, `tab.group`, `tab.group.item`, where the `group`/`item`
-segments are slugged from each control's label/tooltip (shortcuts in parentheses
-are dropped), de-duped within a group with a `-2`, `-3`, … suffix. The tab ids are
-the stable set above. Because item ids derive from tooltips, **discover them with
-`api.items(groupId)`** rather than hard-coding — that list is the source of truth.
+Ids are namespaced `tab`, `tab.group`, `tab.group.item`. The `group`/`item` segments
+are slugged from each control's label/tooltip (shortcuts in parentheses dropped),
+de-duped within a group with a `-2`, `-3`, … suffix. The tab ids are the stable set
+above. Because item ids derive from tooltips, **discover them with `api.items(groupId)`**
+rather than hard-coding — that list is the source of truth.
 
 ## Adding your own tabs, groups, and buttons
 
@@ -92,8 +92,8 @@ customizeRibbon(api) {
 - `insertText(text)` — insert plain text at the caret.
 - `emit(name, payload?)` — fire a `custom` event the embedder can listen for:
   `wc.on("custom", ({ name, payload }) => …)`.
-- `registerCleanup(node | fn)` — tie a popup element (removed) or a callback (run)
-  to the editor's `destroy()`.
+- `registerCleanup(node | fn)` — tie a popup element (removed) or a callback (run) to
+  the editor's `destroy()`.
 
 ### Optional toggle / enabled state
 

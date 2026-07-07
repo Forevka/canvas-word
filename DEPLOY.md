@@ -40,14 +40,14 @@ policy so a new deployment is picked up **without a hard reload**:
 - **Content-hashed bundles under `assets/` → `Cache-Control: public, max-age=31536000, immutable`.**
   Safe because Vite fingerprints every JS/CSS/**worker** chunk — the filename
   changes on every rebuild — so old chunks (including the export/import web workers)
-  are simply never requested again, and the multi-MB worker bundle isn't re-fetched
-  on repeat visits.
+  are never requested again, and the multi-MB worker bundle isn't re-fetched on
+  repeat visits.
 - Backend paths (`/docs`, `/media`, `/ws`, `/admin`, `/upload`, `/openapi.json`,
   `/swagger`) are left to the backend's own headers.
 
 Without this, `file_server` sent no `Cache-Control`, browsers heuristically cached
 `index.html`, and after a deploy they kept loading the old hashed chunks + worker
-from cache (running stale worker code) until a manual hard reload.
+from cache (running stale worker code) until a hard reload.
 
 **One-time caveat:** clients that cached the old `index.html` *before* this policy
 shipped may need one more load (until their heuristic-freshness window lapses) to

@@ -1,10 +1,10 @@
 # Document Builder — programmatic composition + live preview
 
 `@forevka/wordcanvas/builder` is a fluent API for generating documents in
-JS/TS — the use case that traditionally forces a C#/Java backend with an OOXML
-SDK. Describe the document in code, bind a JSON data model, preview it live in
-the embedded editor, and export DOCX/PDF. The same code runs in the browser and
-in Node.
+JS/TS, the use case that usually forces a C#/Java backend with an OOXML SDK.
+Describe the document in code, bind a JSON data model, preview it live in the
+embedded editor, and export DOCX/PDF. The same code runs in the browser and in
+Node.
 
 ```ts
 import { DocumentBuilder } from "@forevka/wordcanvas/builder";
@@ -35,20 +35,19 @@ Try it interactively: `npm run dev:playground` (see `examples/playground`).
 The editor's document model is plain data (`Document` → `Block[]` → `Paragraph`
 → `Run[]`, see `shared/src/model/document.ts`), so the builder is a thin fluent
 layer that mints model objects — no editor coupling, no hidden state. `build()`
-returns a deep-cloned `Document`; the same object the editor renders, the
+returns a deep-cloned `Document`: the same object the editor renders, the
 collaboration layer replicates, and the exporters write.
 
 It lives at `frontend/src/builder/` (published as the `./builder` subpath)
-because `fromTemplate` reuses the docx import pipeline — which is pure,
-DOM-free TypeScript, so the whole builder works in Node for server-side
-generation, following the same precedent as the `./import` subpath the backend
-consumes.
+because `fromTemplate` reuses the docx import pipeline, which is pure, DOM-free
+TypeScript. So the whole builder works in Node for server-side generation,
+following the same precedent as the `./import` subpath the backend consumes.
 
 ### Chaining semantics
 
 `paragraph()` eagerly appends a paragraph and returns a paragraph scope. The
 scope's styling methods mutate that paragraph; any block-starting call
-(`paragraph`, `table`, `image`, `list`, …) delegates back to the parent scope —
+(`paragraph`, `table`, `image`, `list`, …) delegates back to the parent scope,
 so the chain "pops" automatically with no seal/end step (`end()` exists for
 explicitness but is never required).
 
@@ -60,7 +59,7 @@ b.paragraph("Title").withStyle("Heading1")   // paragraph scope
 
 Character formatting in a paragraph scope (`bold()`, `color()`, `font()`,
 `fontSize()`, `link()`, …) patches **every run already in the paragraph** and
-becomes the default for runs added later by `text()` — "make this paragraph
+becomes the default for runs added later by `text()`. "Make this paragraph
 bold" is the dominant authoring intent. Mixed formatting uses explicit run
 patches: `.paragraph("see ").text("docs", { link: url })`.
 
@@ -84,8 +83,8 @@ reference (`para.style.namedStyle`) **and** patches exactly the fields the
 style defines (resolved through the `basedOn` chain) onto the paragraph and its
 runs. Call order is precedence — direct formatting applied *after* `withStyle`
 wins; fields the style doesn't define survive. Unknown style ids are a warning
-(`builder.warnings`), not an error, and register new styles with
-`b.style({ id, name, basedOn, char, para })` **before** applying them —
+(`builder.warnings`), not an error. Register new styles with
+`b.style({ id, name, basedOn, char, para })` **before** applying them:
 resolution happens at call time, not at `build()`.
 
 ### Templates
@@ -101,13 +100,13 @@ template is *for*:
 | header/footer bands, incl. first/even variants | |
 
 Embedded images in kept stories are inlined as `data:` URLs (never `blob:`),
-so the resulting document is portable across the editor, browser workers, and
-Node. Import warnings surface on `builder.warnings`.
+so the document is portable across the editor, browser workers, and Node.
+Import warnings surface on `builder.warnings`.
 
 ### Data binding: declarative rebuild
 
 There is no merge-field/placeholder engine: the *code is the template*. Write a
-function `(data) => Document` and re-run it when data changes —
+function `(data) => Document` and re-run it when data changes.
 `WordCanvas.setDocument` swaps the result into the live editor, preserving zoom
 and scroll position so the preview is stable. Rebuilds discard the undo stack
 and any manual edits (by design — the document is a projection of the data),
@@ -184,7 +183,7 @@ b.paragraph("Page ").pageField().text(" of ").numPagesField()    // {page} / {pa
 ```
 
 `pageField`/`numPagesField` emit a live `{page}`/`{pages}` token the layout engine
-re-resolves per page (in the body **and** in bands — no more body/footer split);
+re-resolves per page (in the body **and** in bands);
 `dateField`/`timeField`/`ifField` materialize their result once (pass `{ now }` for
 a deterministic date in tests). `customField(instruction, resultText)` is the escape
 hatch for any other field (`SEQ`, `STYLEREF`, …); `crossReference(name)` is sugar over
@@ -198,8 +197,8 @@ b.paragraph("Choose: ").dropDown("One", [{ display: "One", value: "1" }], { alia
 ```
 
 `contentControl(props, text)` takes raw `SdtProps`; `richTextControl`/`plainTextControl`/
-`checkbox`/`dropDown`/`comboBox`/`dateControl` are per-kind sugar. (Authoring only —
-in-place data rebinding that preserves user edits across rebuilds is still out of scope.)
+`checkbox`/`dropDown`/`comboBox`/`dateControl` are per-kind sugar. Authoring only —
+in-place data rebinding that preserves user edits across rebuilds is out of scope.
 
 ### Footnotes & bookmarks
 
@@ -213,7 +212,7 @@ per data-driven rebuild (the documented rebuild model) so numbers don't accumula
 
 `tableOfContents(opts)` is **deferred**: it drops a placeholder anchor and sets the doc's
 `TOC` field instruction now, then `build()` generates the entries from the document's
-headings — so headings added *after* the call are still included. Mark headings with
+headings, so headings added *after* the call are still included. Mark headings with
 `.withStyle("Heading1")` (or an outline level). The entries are live (page numbers resolve
 at layout) and round-trip to `.docx` as a real `TOC` field.
 
@@ -259,7 +258,7 @@ const { bytes } = await runExport(doc, "docx", {});             // or "pdf"
 These pipeline subpaths (`./import`, `./export`, `./export/measure`,
 `./recalc-docx`, `./generate-toc`) are published as **conditional exports**: the
 `node` condition resolves a self-contained, Node-targeted bundle (bundled pdfkit +
-fonts on disk, zero runtime deps) for server/headless rendering, and the `default`
+fonts on disk, zero runtime deps) for server/headless rendering; the `default`
 condition resolves a browser variant. The same import works in both environments;
 browser embedders can still export via the editor toolbar or `exportDocument`.
 
@@ -277,8 +276,8 @@ browser embedders can still export via the editor toolbar or `exportDocument`.
 
 ## Not supported (yet)
 
-Intentionally out of scope — the model supports several of these already; the
-builder just doesn't author them:
+Out of scope. The model supports several of these already; the builder just
+doesn't author them:
 
 - Content-control (SDT) **data rebinding** — controls are authored, but in-place
   partial rebinding that preserves user edits across data changes is not.

@@ -3,7 +3,7 @@
 The editor exports the document model to **PDF** (page-accurate) and **DOCX**
 (hand-rolled OOXML). Both run **isomorphically**: the same pure pipeline executes
 in a browser Web Worker *and* on a Node backend (no DOM), tested under vitest.
-The whole feature is additive under `frontend/src/export/`, plus one small seam in
+The feature is additive under `frontend/src/export/`, plus one small seam in
 `frontend/src/layout/metrics.ts`.
 
 ```
@@ -18,11 +18,12 @@ exportDocument(doc, "pdf"|"docx")   main thread: resolve image bytes, post to wo
 PDF is **not** a reflow. `renderPdf` runs the editor's own
 `createLayoutEngine().layout(doc)` to get the `LayoutTree` (absolute page
 geometry), then `pdf/paintBlock.ts` draws each page with pdfkit — a
-constant-for-constant inverse of `frontend/src/paint/renderer.ts` (same baseline formula,
-sub/super shifts, underline/strike offsets, default grid color, footnote-rule
-width, leader dashes). So a PDF page matches the canvas pixel-for-pixel (modulo
-metric-clone glyph shapes). The model is CSS px (96dpi); each PDF page is sized in
-points and scaled by 72/96, so the painter keeps drawing in document px.
+constant-for-constant inverse of `frontend/src/paint/renderer.ts` (same baseline
+formula, sub/super shifts, underline/strike offsets, default grid color,
+footnote-rule width, leader dashes). A PDF page matches the canvas
+pixel-for-pixel (modulo metric-clone glyph shapes). The model is CSS px (96dpi);
+each PDF page is sized in points and scaled by 72/96, so the painter keeps
+drawing in document px.
 
 ### Running the layout engine without a DOM (the crux)
 
@@ -36,7 +37,7 @@ loads the bundled faces for pdfkit to embed.
 The editor renders the **same bundled fonts** (`charStyleToFont` maps families to
 clones, `shared/editorFonts.ts` loads them as `FontFace`s), and **`fontMetrics`
 computes line heights from baked per-font ratios** rather than the live
-canvas/fontkit context — so the editor, the browser export, and the Node export all
+canvas/fontkit context, so the editor, the browser export, and the Node export all
 paginate identically. See `FONTS.md` ("Pagination parity") for the why and how.
 
 ### pdfkit JPEG colorspace fix
@@ -78,7 +79,7 @@ import ~220ms · PDF ~1.2s (9.5MB, 81pp) · DOCX ~0.4s (9.1MB) · docx re-import
 ## Saving from an embedder (route exports to your own pipeline)
 
 An embedder who wants a **Save** button that ships the file to their own backend
-has two entry points on the `WordCanvas` package API — both reuse the in-worker
+has two entry points on the `WordCanvas` package API. Both reuse the in-worker
 pipeline above (no extra bundle, no `installMeasureHost()` dance), and both bake
 the track-changes overlay to the original baseline like the toolbar's Export:
 

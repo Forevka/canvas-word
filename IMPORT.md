@@ -1,23 +1,23 @@
 # canvas-word — .docx Import Design
 
-A TypeScript docx importer running in a Web Worker. No Rust/WASM: docx import is
-data-dense and compute-light — the cost of marshaling a large object graph across the
-WASM boundary would eat any parsing win, and the hard part (OOXML semantics → our model)
-iterates fastest in TS next to `shared/src/model/document.ts`. The worker makes import
-perceptually free regardless of duration; the real cost of opening a 70-page document is
-our own cold layout pass, not XML parsing.
+A TypeScript docx importer running in a Web Worker. No Rust/WASM: docx import is data-dense
+and compute-light, so marshaling a large object graph across the WASM boundary would eat any
+parsing win, and the hard part (OOXML semantics → our model) iterates fastest in TS next to
+`shared/src/model/document.ts`. The worker keeps import perceptually free regardless of
+duration; opening a 70-page document is dominated by our own cold layout pass, not XML
+parsing.
 
-> **Note:** `DOMParser` is *not* available in Web Workers (it's a window-only DOM API).
-> We use a pure-JS XML parser instead — which also means the entire importer is DOM-free
-> and runs under vitest in Node with zero browser setup.
+`DOMParser` is unavailable in Web Workers (window-only DOM API), so we use a pure-JS XML
+parser. That also keeps the importer DOM-free and runnable under vitest in Node with zero
+browser setup.
 
 ## Dependencies
 
 - **`fflate`** — zip inflation (tiny, zero-dep, fast).
-- **`txml`** — XML → ordered node tree (`{tagName, attributes, children}`), ~5KB, very
-  fast. Order preservation is non-negotiable for `document.xml` (run order *is* the
-  text). Avoid `fast-xml-parser`'s default mode — it groups children by tag name and
-  destroys ordering; its `preserveOrder` mode works but produces a clumsier shape.
+- **`txml`** — XML → ordered node tree (`{tagName, attributes, children}`), ~5KB, fast.
+  Order preservation is non-negotiable for `document.xml` (run order *is* the text). Avoid
+  `fast-xml-parser`'s default mode — it groups children by tag name and destroys ordering;
+  its `preserveOrder` mode works but produces a clumsier shape.
 
 ## Module structure
 
@@ -39,8 +39,8 @@ frontend/src/import/docx/
   types.ts            ← IR types, ImportWarning, ImportResult
 ```
 
-Everything except `importDocx.ts`/`worker.ts` is pure functions over
-`Uint8Array`/parsed XML — fully testable headless, same philosophy as the command layer.
+Everything except `importDocx.ts`/`worker.ts` is pure functions over `Uint8Array`/parsed
+XML — testable headless, same philosophy as the command layer.
 
 ## Main-thread API
 
@@ -58,15 +58,14 @@ export async function importDocx(
 ): Promise<ImportResult>;
 ```
 
-- Worker created Vite-natively:
-  `new Worker(new URL("./worker.ts", import.meta.url), { type: "module" })` — no build
-  config needed.
+- Worker created Vite-natively: `new Worker(new URL("./worker.ts", import.meta.url), { type:
+  "module" })` — no build config needed.
 - The file's `ArrayBuffer` is **transferred** (zero-copy), not cloned.
 - Lazy singleton worker, terminated after ~30s idle. Concurrent imports queue (rare; not
   worth a pool).
-- `URL.createObjectURL` *is* available in workers, and the URLs are valid on the main
-  thread (same origin) — images become blob URLs worker-side and arrive in
-  `ImageBlock.src` as plain strings. Caller revokes via `mediaUrls` on document close.
+- `URL.createObjectURL` is available in workers and the URLs are valid on the main thread
+  (same origin), so images become blob URLs worker-side and arrive in `ImageBlock.src` as
+  plain strings. Caller revokes via `mediaUrls` on document close.
 
 ### Worker protocol
 
@@ -80,9 +79,9 @@ type FromWorker =
 type ImportErrorCode = "NOT_ZIP" | "ENCRYPTED" | "NO_DOCUMENT_PART" | "MALFORMED_XML";
 ```
 
-`ENCRYPTED` detection: password-protected docx is an OLE compound file, not a zip —
-sniff the `D0 CF 11 E0` magic and report "password-protected files not supported"
-instead of "invalid zip".
+`ENCRYPTED` detection: a password-protected docx is an OLE compound file, not a zip — sniff
+the `D0 CF 11 E0` magic and report "password-protected files not supported" instead of
+"invalid zip".
 
 ## Pipeline stages
 
@@ -94,46 +93,43 @@ buf ─► unzip ─► contentTypes ─► rels ─► styles+theme ─► pars
                                               mapToModel ─► Document + warnings
 ```
 
-1. **Unzip** (`fflate.unzipSync` — sync is correct, we're in a worker). Skip inflating
+1. **Unzip** (`fflate.unzipSync` — sync is correct in a worker). Skip inflating
    `word/media/*` until referenced — wrap entries lazily.
 2. **Locate parts**: `[Content_Types].xml` → main document part (don't hardcode
    `word/document.xml`); `word/_rels/document.xml.rels` → styles, numbering, theme,
    headers/footers, images.
-3. **StyleResolver** (the heart — this is where docx fidelity lives or dies):
+3. **StyleResolver** — where docx fidelity lives or dies:
 
    ```ts
    resolveRun(pStyleId, rStyleId, directRpr): CharStyle
    resolvePara(pStyleId, directPpr): ParaStyle
    ```
 
-   Resolution order per spec, simplified to what our model can express:
-   `docDefaults` → paragraph-style `basedOn` chain (root-first) → character-style chain
-   → direct formatting. Toggle properties (bold/italic) use **XOR semantics** across
-   style layers — implement that correctly; it's the #1 source of "everything is bold"
-   bugs. Theme indirections resolved here:
-   `w:rFonts w:asciiTheme="minorHAnsi"` → theme minor latin font; `w:themeColor` →
-   color-scheme hex. Memoize by `(pStyleId, rStyleId)` — 70 pages reuse a handful of
-   styles.
-4. **Body walk** (`documentParser.ts`) — recursive over body children:
-   - `w:p` → paragraph IR: `pPr` (style ref, `jc`, `spacing`, `ind`, numbering ref) +
-     inline walk: `w:r` (rPr + `w:t`/`w:tab`/`w:br`/`w:drawing`), `w:hyperlink`
-     (unwrap, apply `Hyperlink` char style), `w:fldSimple`/field codes (take cached
-     result text), `w:sdt` inline (mapped to a first-class content control — `sdtPr`
-     captured into a shared sdt registry, see below), `w:bookmarkStart/End` (recorded
-     as character-range bookmarks)
+   Resolution order per spec, simplified to what our model can express: `docDefaults` →
+   paragraph-style `basedOn` chain (root-first) → character-style chain → direct formatting.
+   Toggle properties (bold/italic) use **XOR semantics** across style layers — the #1 source
+   of "everything is bold" bugs, so get it right. Theme indirections resolve here: `w:rFonts
+   w:asciiTheme="minorHAnsi"` → theme minor latin font; `w:themeColor` → color-scheme hex.
+   Memoize by `(pStyleId, rStyleId)` — 70 pages reuse a handful of styles.
+4. **Body walk** (`documentParser.ts`), recursive over body children:
+   - `w:p` → paragraph IR: `pPr` (style ref, `jc`, `spacing`, `ind`, numbering ref) + inline
+     walk: `w:r` (rPr + `w:t`/`w:tab`/`w:br`/`w:drawing`), `w:hyperlink` (unwrap, apply
+     `Hyperlink` char style), `w:fldSimple`/field codes (take cached result text), `w:sdt`
+     inline (mapped to a first-class content control — `sdtPr` captured into a shared sdt
+     registry, see below), `w:bookmarkStart/End` (recorded as character-range bookmarks)
    - `w:tbl` → rows → `w:tc` → nested block walk (cells hold paragraphs — matches
      `TableCell.blocks: Block[]`); `gridSpan` → `TableCell.colSpan` and `vMerge` →
-     `TableCell.rowSpan` (the span-aware table grid holds both now)
+     `TableCell.rowSpan` (the span-aware table grid holds both)
    - `w:sdt` block-level → unwrap to its content (block-level content controls aren't
      modelled; a warning is emitted)
    - body-level `w:sectPr` → page size/margins/header-footer refs
-5. **Media**: `w:drawing` → `a:blip r:embed` rId → media part → `Blob` → object URL.
-   Size from `wp:extent` (EMUs); if absent, `createImageBitmap` (worker-available) for
-   intrinsic size.
-6. **mapToModel**: IR → our `Document`. Fresh ids with an import-distinct prefix
-   (`i0`, `i1`… — `freshBlockId` in commands.ts uses `n…`, `sampleDoc` uses `b…`; no
-   collisions). Run normalization (merge adjacent equal-styled runs) — same invariant
-   the ops maintain, applied once at the end. `revision: 0` everywhere.
+5. **Media**: `w:drawing` → `a:blip r:embed` rId → media part → `Blob` → object URL. Size
+   from `wp:extent` (EMUs); if absent, `createImageBitmap` (worker-available) for intrinsic
+   size.
+6. **mapToModel**: IR → our `Document`. Fresh ids with an import-distinct prefix (`i0`,
+   `i1`… — `freshBlockId` in commands.ts uses `n…`, `sampleDoc` uses `b…`; no collisions).
+   Run normalization (merge adjacent equal-styled runs), the same invariant the ops
+   maintain, applied once at the end. `revision: 0` everywhere.
 
 ## Unit conversions (`units.ts`, all pure, all unit-tested)
 
@@ -147,8 +143,8 @@ buf ─► unzip ─► contentTypes ─► rels ─► styles+theme ─► pars
 
 ## Lossy mappings — explicit decisions, all emitting `ImportWarning`
 
-The model can't hold everything in a rich docx. Each gap gets a deliberate policy rather
-than a silent drop:
+The model can't hold everything in a rich docx. Each gap gets a deliberate policy, never a
+silent drop:
 
 | docx feature | Model gap | Policy (phase 1) |
 |---|---|---|
@@ -178,8 +174,8 @@ than a silent drop:
 | Bookmarks (`w:bookmarkStart/End`) | `Document.bookmarks` | Faithful: name → character range (body, cell, or band); zero-width anchors kept (`start === end`). Powers TOC/cross-reference targets and the Bookmarks panel |
 | Hidden text (`w:vanish`) | `CharStyle.hidden` | Faithful: preserved through round-trips but never laid out or painted (matches Word's bookmark-anchor paragraphs that generated reports hide) |
 
-This table doubles as the **model-evolution backlog** — when the model later gains lists
-or rich headers, the importer seam already collects the data (the IR keeps it; only
+This table doubles as the **model-evolution backlog**: when the model later gains lists or
+rich headers, the importer seam already collects the data (the IR keeps it; only
 `mapToModel` discards).
 
 ## Testing
@@ -187,44 +183,44 @@ or rich headers, the importer seam already collects the data (the IR keeps it; o
 - All stages are DOM-free → plain **vitest in Node**. Fixtures: a handful of small real
   `.docx` files in `frontend/src/import/docx/__fixtures__/` (Word-generated, covering styles
   cascade, tables, images, sdt, headers).
-- Unit level: `units.test.ts` (pure math), `styles.test.ts` (cascade + toggle-XOR
-  against minimal `styles.xml` snippets), `relationships.test.ts`.
+- Unit level: `units.test.ts` (pure math), `styles.test.ts` (cascade + toggle-XOR against
+  minimal `styles.xml` snippets), `relationships.test.ts`.
 - Golden level: fixture → full pipeline → snapshot of the resulting `Document` JSON +
   warnings list.
 - Perf probe: extend the existing `?stress=` pattern — a `?docx=` URL param in `main.ts`
-  that imports a file and logs phase timings, to confirm on a real 70-pager that
-  parse ≪ layout.
+  that imports a file and logs phase timings, confirming on a real 70-pager that parse ≪
+  layout.
 
 ## Build order
 
 1. ✅ **Skeleton + happy path** — zip → document.xml → paragraphs/runs, worker wiring,
-   `?docx=` dev hook + 📂 toolbar button. Tables, sectPr, hyperlink/field unwrapping,
-   hidden text (`w:vanish`) landed here too. 8.9 MB real report: ~160ms.
-2. ✅ **StyleResolver + theme** — docDefaults, `basedOn` chains (cycle-guarded),
-   toggle-XOR (§17.7.3), `w:default` paragraph style, theme fonts (`asciiTheme`) and
-   colors (`themeColor`), memoized per (pStyle, rStyle). Parts located via real
-   relationship parsing (`relationships.ts`), conventional names as fallback.
+   `?docx=` dev hook + 📂 toolbar button. Tables, sectPr, hyperlink/field unwrapping, hidden
+   text (`w:vanish`) landed here too. 8.9 MB real report: ~160ms.
+2. ✅ **StyleResolver + theme** — docDefaults, `basedOn` chains (cycle-guarded), toggle-XOR
+   (§17.7.3), `w:default` paragraph style, theme fonts (`asciiTheme`) and colors
+   (`themeColor`), memoized per (pStyle, rStyle). Parts located via real relationship parsing
+   (`relationships.ts`), conventional names as fallback.
 3. ✅ **Images + headers/footers** — DrawingML (`wp:inline`/`wp:anchor` via
    `mc:AlternateContent` unwrapping — how Word actually ships drawings) and legacy VML
-   (`w:pict`); media parts → Blob URLs created lazily (media zip entries aren't even
-   inflated unless referenced); external (`TargetMode="External"`) rels kept — linked
-   http(s) images pass through by URL. Header/footer parts → `Block[]` stories with
-   their own rels; complex/simple `PAGE`/`NUMPAGES` fields → `{page}`/`{pages}` tokens
-   (header/footer only — body fields keep their cached result text).
+   (`w:pict`); media parts → Blob URLs created lazily (media zip entries aren't inflated
+   unless referenced); external (`TargetMode="External"`) rels kept — linked http(s) images
+   pass through by URL. Header/footer parts → `Block[]` stories with their own rels;
+   complex/simple `PAGE`/`NUMPAGES` fields → `{page}`/`{pages}` tokens (header/footer only —
+   body fields keep their cached result text).
 4. ✅ **Numbering, hyperlinks, highlight, super/subscript** — `numbering.xml` →
    `Document.lists` + `ParaStyle.list` (real list model, paint-only markers, indent
    de-duplication, Symbol/Wingdings bullet normalization); external/anchor hyperlinks →
-   `CharStyle.link` (resolved through each part's rels); `w:highlight` →
-   `highlightColor`; `w:vertAlign` → `verticalAlign`.
+   `CharStyle.link` (resolved through each part's rels); `w:highlight` → `highlightColor`;
+   `w:vertAlign` → `verticalAlign`.
 5. ✅ **Footnotes, keepLines, columns, page-number restart, table borders & shading** —
    `footnotes.xml` → `Document.footnotes` + `footnoteRef`; `w:keepLines` →
-   `keepLinesTogether`; `w:cols` → `SectionProps.columns`; `w:pgNumType` →
-   `pageNumberStart`; table border/shading cascade → `TableCell.borders`/`shading`.
+   `keepLinesTogether`; `w:cols` → `SectionProps.columns`; `w:pgNumType` → `pageNumberStart`;
+   table border/shading cascade → `TableCell.borders`/`shading`.
 6. ✅ **Content controls, bookmarks, vertical cell merge** — inline `w:sdt` →
    `CharStyle.sdtId` + `Document.sdts` (full `sdtPr`); `w:bookmarkStart/End` →
-   `Document.bookmarks` (character ranges); `vMerge` → `TableCell.rowSpan` on the
-   span-aware grid.
+   `Document.bookmarks` (character ranges); `vMerge` → `TableCell.rowSpan` on the span-aware
+   grid.
 
 Still on the backlog: table-style *conditional* formatting (firstRow/banding via
-`w:tblStylePr`), per-section header/footer **bands** on geometry-preserving flowed
-section breaks, east-asian/complex-script fonts, OMML math, a warnings-summary UI toast.
+`w:tblStylePr`), per-section header/footer **bands** on geometry-preserving flowed section
+breaks, east-asian/complex-script fonts, OMML math, a warnings-summary UI toast.

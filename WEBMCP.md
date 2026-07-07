@@ -1,21 +1,18 @@
 # WebMCP — AI agent tools
 
-The editor can expose itself to AI agents over **[WebMCP](https://webmcp.dev)** —
-the standard `navigator.modelContext` browser API for the Model Context Protocol.
-With one option, a live editor instance publishes a set of **tools** an agent can
-call to read, inspect, comment on, suggest changes to, and directly edit the open
-document — in the same tab the user is looking at.
+The editor can expose itself to AI agents over **[WebMCP](https://webmcp.dev)**, the
+standard `navigator.modelContext` browser API for the Model Context Protocol. One
+option publishes a set of **tools** an agent can call to read, inspect, comment on,
+suggest changes to, and directly edit the open document, in the same tab the user is
+looking at.
 
-Two use cases drove this:
+Two use cases:
 
-1. **Debug a document that "renders weirdly."** A user reports a document that
-   looks wrong (overlapping text, bad page breaks, mis-placed table). Open the
-   `.docx` locally and let an agent call `inspect_layout` to read the actual laid-out
-   geometry (page → line → text-fragment positions, in CSS px) and pinpoint the
-   problem.
-2. **Connect an agent as a reviewer/editor.** Attach any MCP-capable agent to a
-   specific document to read it, leave comments, propose tracked changes, or edit
-   it directly.
+1. **Debug a document that "renders weirdly."** Open the reported `.docx` locally and
+   let an agent call `inspect_layout` to read the laid-out geometry (page → line →
+   text-fragment positions, in CSS px) and pinpoint the problem.
+2. **Connect an agent as reviewer/editor.** Attach any MCP-capable agent to a document
+   to read it, leave comments, propose tracked changes, or edit it directly.
 
 ---
 
@@ -30,9 +27,9 @@ new WordCanvas({
 });
 ```
 
-That's it. When `agentTools` is set, the editor lazy-loads the WebMCP polyfill,
-installs `navigator.modelContext`, and registers the tool set against the live
-editor. Then **connect an agent** (see [Connecting an agent](#connecting-an-agent)).
+When `agentTools` is set, the editor lazy-loads the WebMCP polyfill, installs
+`navigator.modelContext`, and registers the tool set against the live editor. Then
+**connect an agent** (see [Connecting an agent](#connecting-an-agent)).
 
 Restrict what agents can do with the object form:
 
@@ -55,25 +52,24 @@ new WordCanvas({ container, agentTools: { capabilities: ["read", "suggest"] } })
 ## What WebMCP is (and which one this uses)
 
 WebMCP lets a web page offer MCP tools directly to a browser-side agent, instead of
-the agent driving the UI by screen-scraping/clicking. There are two ecosystems that
-both go by "WebMCP":
+the agent screen-scraping and clicking the UI. Two ecosystems share the name "WebMCP":
 
 - **The standards-track `navigator.modelContext` API** — the W3C Web Model Context
-  surface. The **WebMCP browser extension** and **Chrome DevTools MCP** speak it,
-  and it is the direction the platform is standardizing on.
+  surface. The **WebMCP browser extension** and **Chrome DevTools MCP** speak it, and
+  the platform is standardizing on it.
 - **The webmcp.dev `<script>` widget** (`@jason.today/webmcp`) — a simpler library
   with its own connect widget.
 
-**This integration targets the standards `navigator.modelContext` API**, polyfilled
-by [`@mcp-b/global`](https://www.npmjs.com/package/@mcp-b/global). Agents connect
-through the WebMCP extension / Chrome DevTools MCP — **not** the webmcp.dev widget.
+This integration targets the standards `navigator.modelContext` API, polyfilled by
+[`@mcp-b/global`](https://www.npmjs.com/package/@mcp-b/global). Agents connect through
+the WebMCP extension / Chrome DevTools MCP, **not** the webmcp.dev widget.
 
 ---
 
 ## Connecting an agent
 
-1. Open a page running an editor with `agentTools` enabled (any of the bundled
-   `examples/` work — see [Trying it in the examples](#trying-it-in-the-examples)).
+1. Open a page running an editor with `agentTools` enabled (any bundled `examples/`
+   works — see [Trying it in the examples](#trying-it-in-the-examples)).
 2. Connect a WebMCP-capable client to that tab, either:
    - the **WebMCP browser extension** — it discovers the page's
      `navigator.modelContext` tools and bridges them to your MCP client (e.g. Claude
@@ -83,14 +79,14 @@ through the WebMCP extension / Chrome DevTools MCP — **not** the webmcp.dev wi
    `replace_text`, …) and can call them. Changes appear live in the editor.
 
 The polyfill also sets up the page-side transport the extension connects through, so
-no extra wiring is required beyond `agentTools`.
+`agentTools` is the only wiring needed.
 
 ---
 
 ## Tool reference
 
-Tools are grouped into three capability buckets. `read` is always registered; the
-others depend on `capabilities`.
+Tools group into three capability buckets. `read` is always registered; the others
+depend on `capabilities`.
 
 ### Read & inspect (`read` — always on)
 
@@ -98,7 +94,7 @@ others depend on `capabilities`.
 |---|---|---|
 | `get_document` | `format?: "text" \| "json"` (default `text`) | Plain text (one line per paragraph) or the full document model as JSON. |
 | `get_selection` | — | The current `{ anchor, focus }` selection and its selected text (`null` if no selection). |
-| `search_document` | `query` (required), `matchCase?`, `wholeWord?` | `{ total, current }`. Highlights matches and moves the selection to the first one. |
+| `search_document` | `query` (required), `matchCase?`, `wholeWord?` | `{ total, current }`. Highlights matches and moves the selection to the first. |
 | `inspect_layout` | `page?` (0-based), `blockId?`, `includeText?` (default `true`), `maxFragmentsPerLine?` | The laid-out geometry as JSON — see [Debugging rendering issues](#debugging-rendering-issues-inspect_layout). |
 | `get_document_stats` | — | `{ pageCount, currentPage, blockCount, paragraphCount, mode, docId }`. |
 
@@ -108,7 +104,7 @@ others depend on `capabilities`.
 |---|---|---|
 | `set_mode` | `mode: "edit" \| "suggest" \| "view"` (required) | Switch editor mode. In `suggest` mode, subsequent edits become tracked changes. Returns `{ ok, mode }` (`ok:false` if the mode isn't allowed). |
 | `get_review` | — | The review overlay: tracked-change suggestions + comment threads. |
-| `add_comment` | `body` (required), `find?` | Anchors a comment to a range. With `find`, it locates+selects that text first; otherwise comments on the current selection. Returns `{ threadId }`. |
+| `add_comment` | `body` (required), `find?` | Anchors a comment to a range. With `find`, locates+selects that text first; otherwise comments on the current selection. Returns `{ threadId }`. |
 | `reply_to_comment` | `threadId` (required), `body` (required) | Reply to an existing thread. |
 | `resolve_thread` | `threadId` (required), `resolved?` (default `true`) | Resolve or reopen a thread. |
 | `accept_suggestion` | `id?` | Accept one suggestion, or all when `id` is omitted. |
@@ -121,17 +117,17 @@ To produce a **tracked change**: `set_mode("suggest")`, then run an edit tool.
 | Tool | Arguments | Notes |
 |---|---|---|
 | `replace_text` | `find` (required), `replaceWith` (required), `all?`, `matchCase?`, `wholeWord?` | Find and replace. `all:true` replaces every match (returns `{ replaced }`); otherwise the first. Errors if not found. |
-| `insert_text` | `text` (required), `find?` | Inserts at the current selection (replacing it if it's a range). With `find`, selects that text first — note this **replaces** the found text; use `replace_text` for plain replacement. |
+| `insert_text` | `text` (required), `find?` | Inserts at the current selection (replacing it if it's a range). With `find`, selects that text first — this **replaces** the found text; use `replace_text` for plain replacement. |
 | `format_text` | `find?`, `bold?`, `italic?`, `underline?`, `strikethrough?`, `color?`, `fontFamily?`, `fontSizePx?`, `highlightColor?`, `clear?` | Applies a character-style patch to the found/selected range. `clear:true` resets bold/italic/underline/strikethrough/highlight. |
 | `set_alignment` | `align: "left" \| "center" \| "right" \| "justify"` (required) | Paragraph alignment of the selection. |
-| `select_range` | `anchorBlockId`, `anchorOffset`, `focusBlockId`, `focusOffset` (all required) | Sets an explicit selection by model position. Discover block ids via `get_document(json)` / `inspect_layout`. Unknown block ids are rejected (`isError`); offsets are clamped to the block's text length, so a slightly-too-large offset still lands at the end rather than corrupting the selection. |
+| `select_range` | `anchorBlockId`, `anchorOffset`, `focusBlockId`, `focusOffset` (all required) | Sets an explicit selection by model position. Discover block ids via `get_document(json)` / `inspect_layout`. Unknown block ids are rejected (`isError`); offsets are clamped to the block's text length, so a slightly-too-large offset lands at the end rather than corrupting the selection. |
 | `undo` / `redo` | — | Undo / redo the last edit. |
 | `set_document` | `json` (required) | Replace the whole document with a JSON model (same shape as `get_document(json)`). Drops undo history — use sparingly. |
 
 **Addressing model.** Most edit tools are **text-anchored** (`find`) rather than
 position-based: they reuse the editor's find/replace engine to locate ranges, so an
-agent never has to reason about opaque block ids or UTF-16 offsets. For precise
-control, `select_range` + the position-addressed tools are available.
+agent never reasons about opaque block ids or UTF-16 offsets. For precise control,
+`select_range` plus the position-addressed tools are available.
 
 **Result shape.** Every tool returns the MCP content shape
 `{ content: [{ type: "text", text }], isError? }`. Failures (text not found, no
@@ -144,14 +140,14 @@ throwing.
 
 `inspect_layout` is the workhorse for "this document renders weirdly" reports. It
 serializes the live **layout tree** — the absolutely-positioned geometry the paint
-layer draws — into compact JSON. Coordinates are page-local CSS px (the same frame
-the canvas draws in), rounded to 2 decimals.
+layer draws — into compact JSON. Coordinates are page-local CSS px (the frame the
+canvas draws in), rounded to 2 decimals.
 
 Scope the output to keep it small:
 
 - `inspect_layout()` — every page.
 - `inspect_layout({ page: 1 })` — just page index 1 (0-based).
-- `inspect_layout({ blockId: "p_3f2a" })` — just one block, searched on every page
+- `inspect_layout({ blockId: "p_3f2a" })` — one block, searched on every page
   (including inside table cells).
 - `inspect_layout({ includeText: false })` — geometry only, no rendered text.
 
@@ -196,29 +192,29 @@ Shape (abridged):
 }
 ```
 
-What to look for when diagnosing a report:
+What to check when diagnosing a report:
 
 - **Overlap / wrong stacking** — compare each `LineBox.y` (relative to its block's
-  `y`) and `height`; compare block `x/y` against the page `marginPx`,
+  `y`) and `height`; compare block `x/y` against page `marginPx`,
   `contentTopPx`/`contentBottomPx`, and table cell rects.
 - **Spacing / "backspace deleted the wrong char"** — `whitespaceCollapsed: true`
   marks fragments where pretext collapsed whitespace (rendered text shorter than the
   model range). A frequent culprit in placement bugs.
-- **Wrong font / size** — read each fragment's `style.font` / `style.sizePx`.
+- **Wrong font / size** — each fragment's `style.font` / `style.sizePx`.
 - **Bad page breaks** — which block lands on which page `index`, and `firstLineIndex`
   for paragraphs that split across pages.
 - **Justification** — `wordSpacingPx` on fragments of justified lines.
 
-A typical session: `get_document_stats` → `inspect_layout({ page: N })` → narrow to
-a `blockId` → fix with `replace_text` / `format_text`, or report the structural bug.
+Typical session: `get_document_stats` → `inspect_layout({ page: N })` → narrow to a
+`blockId` → fix with `replace_text` / `format_text`, or report the structural bug.
 
 ---
 
 ## Multiple editors on one page
 
 Each `WordCanvas` registers tools under the same global `navigator.modelContext`, so
-several editors on one page would collide on tool names. Use **`name`** to namespace
-each instance:
+several editors on one page collide on tool names. Use **`name`** to namespace each
+instance:
 
 ```ts
 const a = new WordCanvas({ container: paneA, agentTools: { name: "editor0" } });
@@ -227,7 +223,7 @@ const b = new WordCanvas({ container: paneB, agentTools: { name: "editor1" } });
 ```
 
 `destroy()` unregisters that instance's tools (via the shared `AbortSignal`), so ids
-never need to be reused. See `examples/embed-multi`.
+never need reuse. See `examples/embed-multi`.
 
 ---
 
@@ -242,7 +238,7 @@ All bundled examples enable `agentTools` so they're testable after a deploy:
 | `embed-multi` | `agentTools: { name: "editor<N>" }` | Targeting one editor among several (namespacing). |
 | `playground` | `agentTools: true` | Inspecting the builder's output geometry while iterating (read & inspect). |
 
-Run any of them (from the repo root), then connect an agent:
+Run any of them from the repo root, then connect an agent:
 
 ```sh
 npm install
@@ -266,14 +262,14 @@ Example prompts once an agent is connected:
 
 - **Tool module** — `frontend/src/agent/webmcp.ts`. `registerAgentTools(editor, ctx,
   config)` registers the tools against the rich internal `Editor` and returns a
-  disposer. The model-context object is injectable (`config.modelContext`) so the
+  disposer. The model-context object is injectable (`config.modelContext`), so the
   module is testable without a browser.
-- **Layout serializer** — `frontend/src/agent/layoutDump.ts`. Pure
-  `LayoutTree → JSON` used by `inspect_layout`.
-- **Registration site** — `frontend/src/editorApp.ts`, right after the editor
-  `handle` is built (where the full internal `Editor` is in scope). The public
-  `EditorHandle` / `WordCanvas` API is **not** widened.
-- **Editor accessors** — two read methods were added to the `Editor` interface in
+- **Layout serializer** — `frontend/src/agent/layoutDump.ts`. Pure `LayoutTree → JSON`
+  used by `inspect_layout`.
+- **Registration site** — `frontend/src/editorApp.ts`, right after the editor `handle`
+  is built (where the full internal `Editor` is in scope). The public `EditorHandle` /
+  `WordCanvas` API is **not** widened.
+- **Editor accessors** — two read methods added to the `Editor` interface in
   `frontend/src/index.ts` for the tools: `getLayoutTree()` and `setSelection()`.
 - **Option plumbing** — `agentTools` flows `WordCanvasOptions` (`wordcanvas.ts`) →
   `WordCanvasRuntime` (`app/runtime.ts`) → registration in `editorApp.ts`. Public
@@ -293,8 +289,8 @@ Example prompts once an agent is connected:
 
 ### Tests
 
-`frontend/src/agent/webmcp.test.ts` (vitest, Node — no DOM) covers tool wiring with
-a stub `Editor` + fake model context: capability gating, name namespacing, text/json
+`frontend/src/agent/webmcp.test.ts` (vitest, Node — no DOM) covers tool wiring with a
+stub `Editor` + fake model context: capability gating, name namespacing, text/json
 reads, the `inspect_layout` dump (incl. block scoping), find-anchored
 replace/format/insert, comment anchoring, the `set_document` host hook, and the
 `AbortSignal` disposer.
@@ -303,18 +299,17 @@ replace/format/insert, comment anchoring, the `set_document` host hook, and the
 
 ## Security & operational notes
 
-- **Tools act with the user's authority.** A connected agent can read the document
-  and (with `edit`/`suggest`) modify it. Only enable `agentTools` where you intend an
-  agent to have that access, and prefer the narrowest `capabilities` for the use case
-  (e.g. `["read"]` for read-only inspection, `["read", "suggest"]` for a reviewer
-  that proposes but never commits).
-- **An agent still has to connect.** Tools are only reachable by a WebMCP client
-  (extension / DevTools MCP) attached to that tab — they are not exposed to arbitrary
+- **Tools act with the user's authority.** A connected agent can read the document and
+  (with `edit`/`suggest`) modify it. Enable `agentTools` only where you intend an agent
+  to have that access, and prefer the narrowest `capabilities` for the use case (e.g.
+  `["read"]` for read-only inspection, `["read", "suggest"]` for a reviewer that
+  proposes but never commits).
+- **An agent still has to connect.** Tools are reachable only by a WebMCP client
+  (extension / DevTools MCP) attached to that tab; they are not exposed to arbitrary
   page scripts beyond the standard `navigator.modelContext` surface.
-- **`get_document(json)` can be large** — documents with embedded images carry
-  `data:` URLs. Prefer `format:"text"` or `inspect_layout` scoping when you don't
-  need the raw bytes. `inspect_layout` never emits image bytes (only `srcKind` +
-  `srcLength`).
-- **The document is the source of truth, not the agent.** In `examples/playground`
-  the rebuild loop owns the document, so an agent's direct edits are replaced on the
-  next code/data change — read & inspect tools are the natural fit there.
+- **`get_document(json)` can be large** — documents with embedded images carry `data:`
+  URLs. Prefer `format:"text"` or `inspect_layout` scoping when you don't need the raw
+  bytes. `inspect_layout` never emits image bytes (only `srcKind` + `srcLength`).
+- **The document is the source of truth, not the agent.** In `examples/playground` the
+  rebuild loop owns the document, so an agent's direct edits are replaced on the next
+  code/data change — read & inspect tools are the natural fit there.
