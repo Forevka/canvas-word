@@ -476,7 +476,7 @@ td.mtx-scorecell{background:#fff; border-left:1px solid var(--line)}
         </tbody>
       </table>
     </div>
-    <p class="cmp-note">Right-to-left, bidi, CJK editing, and mathematical equations (MathML, typeset with STIX Two Math, round-tripped to <code>.docx</code> as OMML) now work out of the box. Where the commercial editors still win today: charts, a CJK font bundled in the box, and an enterprise support contract. We tell you that up front.</p>
+    <p class="cmp-note">Right-to-left, bidi, CJK editing, and mathematical equations (MathML, typeset with STIX Two Math, round-tripped to <code>.docx</code> as OMML) now work out of the box — with bundled CJK, Arabic, and Hebrew font fallbacks so complex-script text exports without tofu. Where the commercial editors still win today: charts and an enterprise support contract. We tell you that up front.</p>
   </div>
 </section>
 
@@ -678,7 +678,7 @@ editor.<span class="c-fn">on</span>(<span class="c-str">"ready"</span>, () =&gt;
       </details>
       <details class="qa">
         <summary>What does it <em>not</em> do well yet? <span class="plus"></span></summary>
-        <div class="ans">We're upfront about the gaps. Right-to-left, bidirectional, and CJK editing now work out of the box — you only register a CJK font when you need it embedded in exports. Mathematical equations are supported too (MathML, STIX typesetting, OMML round-trip, visual editor). What's still missing: charts, a CJK font bundled in the box, and an enterprise support contract. If those are hard requirements, evaluate carefully — and read our <a href="https://github.com/Forevka/canvas-word#readme" target="_blank" rel="noopener">full comparison</a>.</div>
+        <div class="ans">We're upfront about the gaps. Right-to-left, bidirectional, and CJK editing work out of the box, and CJK, Arabic, and Hebrew font fallbacks are bundled so complex-script text exports without tofu (the CJK fallback covers common Chinese — supply your own font for full CJK coverage). Mathematical equations are supported too (MathML, STIX typesetting, OMML round-trip, visual editor). What's still missing: charts and an enterprise support contract. If those are hard requirements, evaluate carefully — and read our <a href="https://github.com/Forevka/canvas-word#readme" target="_blank" rel="noopener">full comparison</a>.</div>
       </details>
       <details class="qa">
         <summary>Can I generate documents on the server? <span class="plus"></span></summary>
@@ -834,7 +834,7 @@ wireCopy('copy-npm'); wireCopy('copy-npm-2');
       hdr:["y","Per-section first / even / odd headers & footers"],
       fnp:["y","Footnotes placed on their reference page and painted into the exported PDF"],
       fld:["y","PAGE/NUMPAGES/DATE/TIME/IF + custom fields; live TOC build/update with PAGEREF"],
-      rtl:["y","Full UAX#9 bidi with multi-run caret/selection, RTL .docx round-trip, and out-of-the-box CJK kinsoku line-breaking — register a CJK font for export embedding"],
+      rtl:["y","Full UAX#9 bidi with multi-run caret/selection, RTL .docx round-trip, out-of-the-box CJK kinsoku line-breaking, and bundled CJK/Arabic/Hebrew font fallbacks for export embedding"],
       eqn:["y","MathML equations typeset with STIX Two Math (growing delimiters, big operators, matrices); inline + display OMML round-trip; visual editor accepts MathML or LaTeX"],
       emb:["y","Zero runtime deps; import/edit/export in Web Workers; no server required"],
       lic:["y","MIT, fully client-side, no per-connection cap"]
