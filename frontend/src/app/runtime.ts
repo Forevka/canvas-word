@@ -199,6 +199,8 @@ export interface WordCanvasRuntime {
   behavior?: EditorBehavior | undefined;
   /** Develop mode: reveal the "Developer" ribbon tab + Document-tree inspector. */
   develop?: boolean | undefined;
+  /** Show the "Organize Pages" reorder-overlay button (Layout tab). Default true. */
+  organizePages?: boolean | undefined;
   /** Custom fonts (URL-loaded faces + sizing) and toolbar disables. */
   fonts?: FontsConfig | undefined;
   /** CJK locale + fallback font tuning. */

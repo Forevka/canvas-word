@@ -28,6 +28,7 @@ import {
   words,
 } from "@cw/shared";
 import type { DocFragment } from "../input/clipboard";
+import { deletePageGroupOps, pinPageBreakBeforeOps, reorderPageGroupsOps } from "../layout/pageGroups";
 import type { Command, EditorState, Transaction, TransactionOrigin } from "./state";
 
 const caret = (blockId: string, offset: number): DocSelection => ({
@@ -3314,5 +3315,40 @@ export function setDirection(direction: "ltr" | "rtl"): Command {
       ops.push({ type: "setParaStyle", blockId: blocks[i]!.id, patch: { direction } });
     }
     return tr(ops, sel, "command");
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Page groups (visual "Organize Pages" reorder). A page group is a contiguous
+// range of body blocks delimited by a hard break (page break / section break);
+// see ../layout/pageGroups. These wrap the pure ops into undoable transactions.
+
+/** Move the movable unit [firstId…lastId] so it lands immediately before
+ *  `anchorId` (or the document end when null). No-op transaction for an in-place
+ *  or invalid move. */
+export function reorderPageGroupCmd(firstId: string, lastId: string, anchorId: string | null): Command {
+  return (state) => {
+    const ops = reorderPageGroupsOps(state.doc, firstId, lastId, anchorId);
+    return ops.length ? tr(ops, state.selection, "command") : null;
+  };
+}
+
+/** Delete the movable unit [firstId…lastId] (its whole block range). No-op when
+ *  that would empty the document. Clears the selection since it may have pointed
+ *  into the removed blocks. */
+export function deletePageGroupCmd(firstId: string, lastId: string): Command {
+  return (state) => {
+    const ops = deletePageGroupOps(state.doc, firstId, lastId);
+    return ops.length ? tr(ops, null, "command") : null;
+  };
+}
+
+/** Pin a page break before a paragraph — the "Organize Pages" repair pass uses
+ *  this on a group that merged onto the previous page after a reorder. No-op if
+ *  the block isn't a paragraph or already breaks. */
+export function pinPageBreakBeforeCmd(blockId: string): Command {
+  return (state) => {
+    const ops = pinPageBreakBeforeOps(state.doc, blockId);
+    return ops.length ? tr(ops, state.selection, "command") : null;
   };
 }

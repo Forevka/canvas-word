@@ -102,6 +102,11 @@ export interface WordCanvasOptions {
    *  Purely a debugging aid — it adds no chrome and runs nothing until the
    *  developer opens it from that tab. Leave off for production embeds. */
   develop?: boolean;
+  /** Show the "Organize Pages" button (Layout tab) that opens the visual
+   *  page-reorder overlay — drag page thumbnails to re-sequence sections. It
+   *  reorders whole page-break/section-delimited groups, so content is never
+   *  split. Default true; set false to hide it. */
+  organizePages?: boolean;
   /** Supply your OWN fonts, loaded from URLs at runtime. Each custom font needs a
    *  `family` (stored in the model + shown in the toolbar), per-style face URLs
    *  (`regular` required; bold/italic/boldItalic optional, falling back to regular),
@@ -175,6 +180,7 @@ export class WordCanvas {
         overrideDefaultStyles: opts.overrideDefaultStyles,
         behavior: opts.behavior,
         develop: opts.develop,
+        organizePages: opts.organizePages,
         fonts: opts.fonts,
         cjk: opts.cjk,
         customizeRibbon: opts.customizeRibbon,
