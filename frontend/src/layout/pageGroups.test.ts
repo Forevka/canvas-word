@@ -8,6 +8,7 @@ import {
   pinPageBreakBeforeOps,
   reorderPageGroupsOps,
 } from "./pageGroups";
+import type { LayoutTree } from "./layoutTree";
 
 const SECTION: SectionProps = { pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } };
 
@@ -62,6 +63,40 @@ describe("computePageGroups — boundaries", () => {
     const doc = docOf(para("A"), para("B", { sectionBreak: true }), para("C"), para("D", { pageBreak: true }));
     expect(groupStartIndices(doc)).toEqual([0, 2, 3]);
     expect(computePageGroups(doc).map((g) => g.blockIds)).toEqual([["A", "B"], ["C"], ["D"]]);
+  });
+});
+
+describe("computePageGroups — visual-page units (tree-aware)", () => {
+  // Minimal LayoutTree — computePageGroups only reads page.index and each page's
+  // first placed block id (page.blocks[0].blockId).
+  const fakeTree = (pages: string[][]): LayoutTree =>
+    ({ pages: pages.map((blockIds, i) => ({ index: i, blocks: blockIds.map((id) => ({ blockId: id })) })) }) as unknown as LayoutTree;
+
+  it("maps each group to the page it starts", () => {
+    const doc = docOf(para("A"), para("B", { pageBreak: true }), para("C", { pageBreak: true }));
+    const units = computePageGroups(doc, fakeTree([["A"], ["B"], ["C"]]));
+    expect(units.map((u) => u.blockIds)).toEqual([["A"], ["B"], ["C"]]);
+    expect(units.map((u) => u.pageIndices)).toEqual([[0], [1], [2]]);
+  });
+
+  it("merges a group that doesn't begin a fresh page into the unit before it", () => {
+    // B's page break is swallowed (e.g. a hidden separator), so A and B render on
+    // the same page — they must be one movable unit.
+    const doc = docOf(para("A"), para("B", { pageBreak: true }));
+    const units = computePageGroups(doc, fakeTree([["A", "B"]]));
+    expect(units).toHaveLength(1);
+    expect(units[0]!.blockIds).toEqual(["A", "B"]);
+    expect(units[0]!.pageIndices).toEqual([0]);
+    // The merge absorbs the would-be zero-page group, so no unit is left with
+    // empty pageIndices (the state repairPagination would otherwise flag).
+    expect(units.every((u) => u.pageIndices.length > 0)).toBe(true);
+  });
+
+  it("keeps a group that spans multiple pages as one unit", () => {
+    const doc = docOf(para("A"), para("B", { pageBreak: true }));
+    // A begins page 0 and continues onto page 1; B begins page 2.
+    const units = computePageGroups(doc, fakeTree([["A"], ["A"], ["B"]]));
+    expect(units.map((u) => u.pageIndices)).toEqual([[0, 1], [2]]);
   });
 });
 

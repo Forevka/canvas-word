@@ -61,6 +61,8 @@ const CSS = `
 .cw-orgpg-group{position:relative;display:flex;flex-wrap:wrap;gap:6px;max-width:100%;padding:8px;border:1px solid #e1dfdd;
   border-radius:8px;background:#faf9f8;cursor:grab;touch-action:none;transition:box-shadow .12s,border-color .12s,opacity .12s;}
 .cw-orgpg-group:hover{border-color:#c7c5c3;box-shadow:0 2px 8px rgba(0,0,0,.08);}
+.cw-orgpg-group:focus{outline:none;}
+.cw-orgpg-group:focus-visible{outline:2px solid #6b3fa0;outline-offset:2px;box-shadow:0 2px 8px rgba(0,0,0,.08);}
 .cw-orgpg-group.linked{border-color:#c7b8e6;background:#f7f3fc;}
 .cw-orgpg-group.dragging{opacity:.45;cursor:grabbing;box-shadow:0 6px 18px rgba(0,0,0,.22);}
 .cw-orgpg-tile{display:flex;flex-direction:column;align-items:center;gap:4px;}
@@ -72,8 +74,9 @@ const CSS = `
 .cw-orgpg-del{position:absolute;top:-9px;right:-9px;width:20px;height:20px;border-radius:50%;border:1px solid #d0cfce;
   background:#fff;color:#a4262c;font-size:13px;line-height:1;cursor:pointer;display:none;align-items:center;justify-content:center;
   box-shadow:0 1px 3px rgba(0,0,0,.2);z-index:2;}
-.cw-orgpg-group:hover .cw-orgpg-del{display:flex;}
+.cw-orgpg-group:hover .cw-orgpg-del,.cw-orgpg-group:focus-within .cw-orgpg-del{display:flex;}
 .cw-orgpg-del:hover{background:#fde7e9;}
+.cw-orgpg-del:focus-visible{outline:2px solid #6b3fa0;outline-offset:1px;}
 .cw-orgpg-badge{position:absolute;left:8px;bottom:-9px;background:#6b3fa0;color:#fff;font-size:10px;font-weight:600;
   padding:1px 6px;border-radius:8px;white-space:nowrap;}
 .cw-orgpg-marker{position:absolute;width:3px;background:#6b3fa0;border-radius:2px;pointer-events:none;display:none;z-index:5;}
@@ -99,11 +102,14 @@ export function showOrganizePages(opts: OrganizePagesOptions): OrganizePagesHand
 
   const hint = document.createElement("div");
   hint.className = "cw-orgpg-hint";
-  hint.textContent = "Drag a page to reorder. Linked pages (no break between them) move together. Double-click a page to jump to it.";
+  hint.textContent =
+    "Drag a page to reorder, or focus one and press Ctrl+Arrow keys to move it. Linked pages (no break between them) move together. Double-click a page to jump to it.";
   shell.modal.insertBefore(hint, shell.body);
 
   const grid = document.createElement("div");
   grid.className = "cw-orgpg-grid";
+  grid.setAttribute("role", "list");
+  grid.setAttribute("aria-label", "Document pages");
   shell.body.appendChild(grid);
 
   const marker = document.createElement("div");
@@ -191,10 +197,45 @@ export function showOrganizePages(opts: OrganizePagesOptions): OrganizePagesHand
     for (const g of groups) buildGroup(g, tree, groups.length);
   };
 
+  /** Move the unit at `fromIndex` to insertion slot `toSlot`, then rebuild. With
+   *  `refocus` (a keyboard move), restore focus to the moved unit's new position
+   *  so keyboard users keep their place. */
+  const moveUnit = (fromIndex: number, toSlot: number, refocus: boolean): void => {
+    const moved = units[fromIndex];
+    if (!moved) return;
+    const anchor = toSlot >= 0 && toSlot < units.length ? units[toSlot] : undefined;
+    const anchorId = anchor ? anchor.blockIds[0]! : null;
+    const movedFirst = moved.blockIds[0]!;
+    editor.dispatch(reorderPageGroupCmd(movedFirst, moved.blockIds[moved.blockIds.length - 1]!, anchorId));
+    repairPagination();
+    rebuild();
+    if (refocus) {
+      const ni = units.findIndex((u) => u.blockIds[0] === movedFirst);
+      if (ni >= 0) groupEls()[ni]?.focus();
+    }
+  };
+
   const buildGroup = (g: PageGroup, tree: LayoutTree, groupCount: number): void => {
     const groupEl = document.createElement("div");
     groupEl.className = "cw-orgpg-group" + (g.pageIndices.length > 1 ? " linked" : "");
     groupEl.dataset["group"] = String(g.index);
+    // Keyboard reorder: focus a unit and press Ctrl+Arrow to move it (a keyboard
+    // equivalent for the pointer drag). Delete/jump already use real controls.
+    const pageNums = g.pageIndices.map((pi) => tree.pages[pi]!.number);
+    const label = pageNums.length > 1 ? `Pages ${pageNums[0]}–${pageNums[pageNums.length - 1]}` : pageNums.length === 1 ? `Page ${pageNums[0]}` : "Page";
+    groupEl.tabIndex = 0;
+    groupEl.setAttribute("role", "listitem");
+    groupEl.setAttribute("aria-label", `${label}. Use Ctrl plus arrow keys to move it.`);
+    groupEl.addEventListener("keydown", (e) => {
+      if (e.target !== groupEl || !(e.ctrlKey || e.metaKey)) return;
+      if ((e.key === "ArrowUp" || e.key === "ArrowLeft") && g.index > 0) {
+        e.preventDefault();
+        moveUnit(g.index, g.index - 1, true);
+      } else if ((e.key === "ArrowDown" || e.key === "ArrowRight") && g.index < units.length - 1) {
+        e.preventDefault();
+        moveUnit(g.index, g.index + 2, true);
+      }
+    });
 
     // Delete (whole group). Hidden when it is the only group — never empty the doc.
     if (groupCount > 1) {
@@ -336,16 +377,7 @@ export function showOrganizePages(opts: OrganizePagesOptions): OrganizePagesHand
     marker.style.display = "none";
     grid.style.userSelect = "";
     d.el.classList.remove("dragging");
-    if (d.started && pendingSlot !== null) {
-      const moved = units[d.groupIndex];
-      if (moved) {
-        const anchor = pendingSlot < units.length ? units[pendingSlot] : undefined;
-        const anchorId = anchor ? anchor.blockIds[0]! : null;
-        editor.dispatch(reorderPageGroupCmd(moved.blockIds[0]!, moved.blockIds[moved.blockIds.length - 1]!, anchorId));
-        repairPagination();
-        rebuild();
-      }
-    }
+    if (d.started && pendingSlot !== null) moveUnit(d.groupIndex, pendingSlot, false);
     pendingSlot = null;
   };
 
