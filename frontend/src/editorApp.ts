@@ -22,6 +22,7 @@ import { showContextMenu, type MenuEntry } from "./ui/contextMenu";
 import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
 import { showDevPanel, type DevPanelHandle } from "./ui/devPanel";
 import { showPageLayout, type PageLayoutHandle } from "./ui/pageLayout";
+import { showOrganizePages, type OrganizePagesHandle } from "./ui/organizePages";
 import { showParagraphDialog, type ParagraphDialogHandle } from "./ui/paragraphDialog";
 // The equation editor pulls in the whole LaTeX toolchain (parser + serializer +
 // symbol tables, several hundred KB of source) and the symbol picker — both are
@@ -122,6 +123,7 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
     ...(runtime.fonts ? { fonts: runtime.fonts } : {}),
     ...(runtime.cjk ? { cjk: runtime.cjk } : {}),
     ...(runtime.develop !== undefined ? { develop: runtime.develop } : {}),
+    ...(runtime.organizePages !== undefined ? { organizePages: runtime.organizePages } : {}),
   });
   // This editor instance's own font registry — threaded into its layout engine and
   // paint layer (below) so its custom fonts can't be clobbered by another WordCanvas
@@ -1527,6 +1529,7 @@ if (toolbar) {
   let styleMgr: StyleManagerHandle | null = null;
   let devPanel: DevPanelHandle | null = null;
   let pageLayoutDlg: PageLayoutHandle | null = null;
+  let organizeDlg: OrganizePagesHandle | null = null;
   let symbolPicker: SymbolPickerHandle | null = null;
   // "Show only styles in use" filter. Since import now keeps every defined style
   // (so authored styles round-trip), a heavy imported doc can crowd the gallery —
@@ -1810,6 +1813,18 @@ if (toolbar) {
     if (pageLayoutDlg) { pageLayoutDlg.close(); pageLayoutDlg = null; return; }
     pageLayoutDlg = showPageLayout({ editor, onClose: () => { pageLayoutDlg = null; } });
   });
+  if (config.organizePages) {
+    group(layout, "Pages");
+    btn(ICONS.organizePages, "Organize pages — drag page thumbnails to reorder whole sections (never splits content)", () => {
+      if (organizeDlg) { organizeDlg.close(); organizeDlg = null; return; }
+      organizeDlg = showOrganizePages({
+        editor,
+        fontRegistry,
+        theme: config.theme,
+        onClose: () => { organizeDlg = null; },
+      });
+    });
+  }
 
   // ===== Table tab (acts on the cell containing the caret) =================
   const tableTab = tab("table", "Table");

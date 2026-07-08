@@ -68,6 +68,9 @@ export const ICONS = {
   toc: filled(
     `<rect x="2" y="3" width="7" height="1.2" rx=".6"/><rect x="11.5" y="3" width="2.5" height="1.2" rx=".6"/><rect x="3.5" y="7" width="5.5" height="1.2" rx=".6"/><rect x="11.5" y="7" width="2.5" height="1.2" rx=".6"/><rect x="2" y="11" width="7" height="1.2" rx=".6"/><rect x="11.5" y="11" width="2.5" height="1.2" rx=".6"/>`,
   ),
+  organizePages: svg(
+    `<rect x="1.5" y="3" width="6" height="10" rx="1"/><rect x="8.5" y="3" width="6" height="10" rx="1"/><path d="M6 8h4"/><path d="M8.5 6.5 10 8 8.5 9.5"/>`,
+  ),
   pageSetup: svg(
     `<rect x="3" y="2" width="10" height="12" rx="1"/><path d="M3 5h10"/><path d="M5.5 8h5M5.5 10.5h5"/>`,
   ),

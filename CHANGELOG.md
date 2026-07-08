@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **"Organize Pages" — visual page reordering.** A new Layout → Pages button opens a slide-sorter
+  overlay of live page thumbnails: drag a page to reorder, delete a page, double-click to jump to it,
+  or focus a page and press `Ctrl`+Arrow to move it by keyboard (units are focusable, expose an
+  `aria-label`, and get a focus ring; the delete button is reachable on focus). Enabled by default;
+  hide it with the new `organizePages: false` WordCanvas option. Because pages are computed by layout
+  (not stored like a PDF's), the movable unit is a page-break/section-delimited group, so reordering
+  only re-sequences whole blocks — it never splits a paragraph or corrupts a section. Groups that
+  render on the same page-run (e.g. a section whose tables spill onto the next group because a
+  section break is swallowed by a hidden separator paragraph) merge into one unit and move together;
+  a trailing section-break paragraph is left in place so other sections don't reflow; and a
+  layout-verified pass pins a break only where a group actually merged, so no stray blank pages
+  appear. Verified on a 43-page multi-section report: reordering keeps the page count stable, moves
+  grouped content together, and doesn't split the Table of Contents.
+
 ### Changed
 - **One dialog shell for the editor's floating dialogs (no visual change).** The Font, Paragraph,
   Borders & Shading, Page Layout, Field Constructor, Content-Control Inspector, Style Manager, and

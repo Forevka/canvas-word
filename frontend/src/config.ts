@@ -237,6 +237,9 @@ export interface ResolvedConfig {
    *  inspector lets a developer browse the parsed model. Off by default; even when
    *  on, nothing dev-related runs until the inspector is opened from that tab. */
   develop: boolean;
+  /** Show the "Organize Pages" ribbon button (Layout tab) that opens the visual
+   *  page-reorder overlay. Default true; set false to hide it for an embed. */
+  organizePages: boolean;
 }
 
 export interface EditorConfigInput {
@@ -248,6 +251,8 @@ export interface EditorConfigInput {
   cjk?: CjkConfig | undefined;
   /** Reveal the "Developer" ribbon tab + Document-tree inspector. Default false. */
   develop?: boolean | undefined;
+  /** Show the "Organize Pages" reorder overlay button. Default true. */
+  organizePages?: boolean | undefined;
 }
 
 /** Resolve the public partial options into the fully-populated internal config. */
@@ -261,6 +266,7 @@ export function resolveConfig(input: EditorConfigInput = {}): ResolvedConfig {
     fonts: resolveFonts(input.fonts),
     cjk: resolveCjk(input.cjk),
     develop: input.develop ?? false,
+    organizePages: input.organizePages ?? true,
   };
 }
 
