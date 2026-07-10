@@ -118,6 +118,8 @@ export function decodeRunProps(rPr: XmlNode): IRRunProps {
   if (emboss !== undefined) props.emboss = emboss;
   const imprint = onOff(bag.get("w:imprint"));
   if (imprint !== undefined) props.imprint = imprint;
+  const snapToGrid = onOff(bag.get("w:snapToGrid"));
+  if (snapToGrid !== undefined) props.snapToGrid = snapToGrid;
   const bdr = bag.get("w:bdr");
   if (bdr) {
     const raw: IRRawBorder = { val: attr(bdr, "w:val") ?? "single" };
@@ -294,6 +296,16 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
   if (mirror !== undefined) props.mirrorIndents = mirror;
   const adjustRight = onOff(bag.get("w:adjustRightInd"));
   if (adjustRight !== undefined) props.adjustRightInd = adjustRight;
+  // Unmodeled low-frequency CJK / hyphenation toggles (issue #161): round-trip-only,
+  // no layout behavior. Each keeps an explicit w:val="0" so an OFF override survives.
+  const snapToGrid = onOff(bag.get("w:snapToGrid"));
+  if (snapToGrid !== undefined) props.snapToGrid = snapToGrid;
+  const suppressAutoHyphens = onOff(bag.get("w:suppressAutoHyphens"));
+  if (suppressAutoHyphens !== undefined) props.suppressAutoHyphens = suppressAutoHyphens;
+  const kinsoku = onOff(bag.get("w:kinsoku"));
+  if (kinsoku !== undefined) props.kinsoku = kinsoku;
+  const overflowPunct = onOff(bag.get("w:overflowPunct"));
+  if (overflowPunct !== undefined) props.overflowPunct = overflowPunct;
 
   const rPr = bag.get("w:rPr");
   if (rPr) props.markRunProps = decodeRunProps(rPr);

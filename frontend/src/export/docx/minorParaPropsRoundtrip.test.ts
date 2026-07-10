@@ -1,7 +1,9 @@
 // Minor paragraph properties (issue #62): w:widowControl, w:suppressLineNumbers,
-// w:textAlignment, w:mirrorIndents, w:adjustRightInd must survive a full .docx
-// round-trip and be parsed from a hand-written w:pPr. The importer is the oracle:
-// a model → writeDocx → re-import that drops any of them would surface here.
+// w:textAlignment, w:mirrorIndents, w:adjustRightInd — plus the unmodeled CJK /
+// hyphenation toggles w:snapToGrid, w:suppressAutoHyphens, w:kinsoku, w:overflowPunct
+// (issue #161) — must survive a full .docx round-trip and be parsed from a
+// hand-written w:pPr. The importer is the oracle: a model → writeDocx → re-import
+// that drops any of them would surface here.
 import { describe, expect, it } from "vitest";
 import { strFromU8, unzipSync } from "fflate";
 import type { CharStyle, Document, Paragraph, ParaStyle, SectionProps } from "@cw/shared";
@@ -27,7 +29,7 @@ describe("minor paragraph properties — w:widowControl / w:suppressLineNumbers 
     const xml = exportedXml({
       section: SECTION,
       blocks: [
-        para("off", { widowControl: false, suppressLineNumbers: true, mirrorIndents: true, adjustRightInd: true, textAlignment: "bottom" }),
+        para("off", { widowControl: false, suppressLineNumbers: true, mirrorIndents: true, adjustRightInd: true, textAlignment: "bottom", snapToGrid: false, suppressAutoHyphens: true, kinsoku: false, overflowPunct: true }),
         para("on", { widowControl: true }),
         para("plain"),
       ],
@@ -39,13 +41,18 @@ describe("minor paragraph properties — w:widowControl / w:suppressLineNumbers 
     expect(xml).toContain("<w:mirrorIndents/>");
     expect(xml).toContain("<w:adjustRightInd/>");
     expect(xml).toContain('<w:textAlignment w:val="bottom"/>');
+    // issue #161 toggles: OFF ones carry w:val="0"; ON ones are bare elements.
+    expect(xml).toContain('<w:snapToGrid w:val="0"/>');
+    expect(xml).toContain("<w:suppressAutoHyphens/>");
+    expect(xml).toContain('<w:kinsoku w:val="0"/>');
+    expect(xml).toContain("<w:overflowPunct/>");
   });
 
   it("preserves every minor prop through a full export → re-import round-trip", () => {
     const out = roundTrip({
       section: SECTION,
       blocks: [
-        para("a", { widowControl: false, suppressLineNumbers: true, textAlignment: "top", mirrorIndents: true, adjustRightInd: true }),
+        para("a", { widowControl: false, suppressLineNumbers: true, textAlignment: "top", mirrorIndents: true, adjustRightInd: true, snapToGrid: false, suppressAutoHyphens: true, kinsoku: false, overflowPunct: true }),
         para("b", { widowControl: true, textAlignment: "center" }),
         para("c"),
       ],
@@ -56,6 +63,10 @@ describe("minor paragraph properties — w:widowControl / w:suppressLineNumbers 
     expect(a!.style.textAlignment).toBe("top");
     expect(a!.style.mirrorIndents).toBe(true);
     expect(a!.style.adjustRightInd).toBe(true);
+    expect(a!.style.snapToGrid).toBe(false);
+    expect(a!.style.suppressAutoHyphens).toBe(true);
+    expect(a!.style.kinsoku).toBe(false);
+    expect(a!.style.overflowPunct).toBe(true);
     expect(b!.style.widowControl).toBe(true);
     expect(b!.style.textAlignment).toBe("center");
     // A plain paragraph keeps the defaults absent (no spurious round-trip values).
@@ -64,6 +75,10 @@ describe("minor paragraph properties — w:widowControl / w:suppressLineNumbers 
     expect(c!.style.textAlignment).toBeUndefined();
     expect(c!.style.mirrorIndents).toBeUndefined();
     expect(c!.style.adjustRightInd).toBeUndefined();
+    expect(c!.style.snapToGrid).toBeUndefined();
+    expect(c!.style.suppressAutoHyphens).toBeUndefined();
+    expect(c!.style.kinsoku).toBeUndefined();
+    expect(c!.style.overflowPunct).toBeUndefined();
   });
 
   it("preserves an explicit OFF (false) so it can override an inherited true", () => {
@@ -83,6 +98,7 @@ describe("minor paragraph properties — w:widowControl / w:suppressLineNumbers 
     const body =
       `<w:p><w:pPr>` +
       `<w:widowControl w:val="0"/><w:suppressLineNumbers/><w:mirrorIndents/><w:adjustRightInd/>` +
+      `<w:snapToGrid w:val="0"/><w:suppressAutoHyphens/><w:kinsoku w:val="0"/><w:overflowPunct/>` +
       `<w:textAlignment w:val="center"/>` +
       `</w:pPr><w:r><w:t>hand</w:t></w:r></w:p>`;
     const p = paras(runImport(simpleDocx(body)).doc)[0]!;
@@ -90,6 +106,10 @@ describe("minor paragraph properties — w:widowControl / w:suppressLineNumbers 
     expect(p.style.suppressLineNumbers).toBe(true);
     expect(p.style.mirrorIndents).toBe(true);
     expect(p.style.adjustRightInd).toBe(true);
+    expect(p.style.snapToGrid).toBe(false);
+    expect(p.style.suppressAutoHyphens).toBe(true);
+    expect(p.style.kinsoku).toBe(false);
+    expect(p.style.overflowPunct).toBe(true);
     expect(p.style.textAlignment).toBe("center");
   });
 

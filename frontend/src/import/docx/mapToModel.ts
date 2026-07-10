@@ -1239,6 +1239,7 @@ function applyRunProps(style: Partial<CharStyle>, props: IRRunProps): void {
   if (props.shadow !== undefined) style.shadow = props.shadow;
   if (props.emboss !== undefined) style.emboss = props.emboss;
   if (props.imprint !== undefined) style.imprint = props.imprint;
+  if (props.snapToGrid !== undefined) style.snapToGrid = props.snapToGrid;
   if (props.runBorder) {
     const b = runBorderFromIR(props.runBorder);
     if (b) style.runBorder = b;
@@ -1354,6 +1355,11 @@ function mapMinorParaProps(props: IRParaProps, out: Partial<ParaStyle>): void {
   if (props.textAlignment !== undefined) out.textAlignment = props.textAlignment;
   if (props.mirrorIndents !== undefined) out.mirrorIndents = props.mirrorIndents;
   if (props.adjustRightInd !== undefined) out.adjustRightInd = props.adjustRightInd;
+  // Unmodeled CJK / hyphenation toggles (issue #161) — round-trip-only, no layout effect.
+  if (props.snapToGrid !== undefined) out.snapToGrid = props.snapToGrid;
+  if (props.suppressAutoHyphens !== undefined) out.suppressAutoHyphens = props.suppressAutoHyphens;
+  if (props.kinsoku !== undefined) out.kinsoku = props.kinsoku;
+  if (props.overflowPunct !== undefined) out.overflowPunct = props.overflowPunct;
 }
 
 /** styles.xml → editor Stylesheet. ALL defined paragraph and character styles

@@ -165,6 +165,8 @@ export interface IRRunProps {
   emboss?: boolean;
   /** w:imprint — imprinted/engraved text effect. */
   imprint?: boolean;
+  /** w:snapToGrid — snap glyph advances to the document grid (Word default ON; explicit "0" = off). */
+  snapToGrid?: boolean;
   /** w:bdr — raw run border (mapped to a CellBorder in mapToModel). */
   runBorder?: IRRawBorder;
   /** w:fitText/@w:val — fit-text target width in twips. */
@@ -342,6 +344,14 @@ export interface IRParaProps {
   mirrorIndents?: boolean;
   /** w:adjustRightInd — auto-adjust the right indent to the document grid. */
   adjustRightInd?: boolean;
+  /** w:snapToGrid — snap glyphs to the document grid (Word default ON; explicit "0" = off). */
+  snapToGrid?: boolean;
+  /** w:suppressAutoHyphens — disable automatic hyphenation. */
+  suppressAutoHyphens?: boolean;
+  /** w:kinsoku — East-Asian line-break (kinsoku shori) on/off toggle (Word default ON). */
+  kinsoku?: boolean;
+  /** w:overflowPunct — allow punctuation to hang past the margin (Word default ON). */
+  overflowPunct?: boolean;
 }
 
 /** Raw paragraph border edges (w:pBdr children). Mirrors IRBorders but carries

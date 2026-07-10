@@ -202,6 +202,9 @@ export function styleEq(a: CharStyle, b: CharStyle): boolean {
     !!a.shadow === !!b.shadow &&
     !!a.emboss === !!b.emboss &&
     !!a.imprint === !!b.imprint &&
+    // w:snapToGrid defaults ON, so compare with a true default — an explicit OFF
+    // run must not merge with a plain (default-on) neighbour (issue #161).
+    (a.snapToGrid ?? true) === (b.snapToGrid ?? true) &&
     (a.fitTextPx ?? 0) === (b.fitTextPx ?? 0) &&
     runBorderEq(a.runBorder, b.runBorder) &&
     symbolEq(a.symbol, b.symbol) // symbol glyphs (w:sym) carry font+codepoint — never merge with text

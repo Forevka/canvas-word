@@ -281,6 +281,12 @@ function pPrXml(style: ParaStyle, ctx: PartCtx, markRun?: CharStyle): string {
   if (style.suppressLineNumbers !== undefined) c.push(el("w:suppressLineNumbers", style.suppressLineNumbers ? undefined : { "w:val": "0" }));
   if (style.mirrorIndents !== undefined) c.push(el("w:mirrorIndents", style.mirrorIndents ? undefined : { "w:val": "0" }));
   if (style.adjustRightInd !== undefined) c.push(el("w:adjustRightInd", style.adjustRightInd ? undefined : { "w:val": "0" }));
+  // Unmodeled low-frequency CJK / hyphenation toggles (issue #161) — round-trip-only,
+  // same DEFINED-emits-explicit-on/off encoding as the issue-#62 minor props above.
+  if (style.snapToGrid !== undefined) c.push(el("w:snapToGrid", style.snapToGrid ? undefined : { "w:val": "0" }));
+  if (style.suppressAutoHyphens !== undefined) c.push(el("w:suppressAutoHyphens", style.suppressAutoHyphens ? undefined : { "w:val": "0" }));
+  if (style.kinsoku !== undefined) c.push(el("w:kinsoku", style.kinsoku ? undefined : { "w:val": "0" }));
+  if (style.overflowPunct !== undefined) c.push(el("w:overflowPunct", style.overflowPunct ? undefined : { "w:val": "0" }));
   if (style.textAlignment) c.push(el("w:textAlignment", { "w:val": style.textAlignment }));
   // w:pBdr / w:shd precede spacing/ind/jc in the CT_PPr schema sequence.
   // Real edges win; else an explicit clear (issue #153) re-emits an empty w:pBdr so a

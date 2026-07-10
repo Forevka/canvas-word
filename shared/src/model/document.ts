@@ -152,6 +152,14 @@ export interface CharStyle {
    *  offset-transparent. Takes precedence over `caps` when both are set. `| undefined`
    *  so a patch can clear it. */
   smallCaps?: boolean | undefined;
+  /** Snap this run's glyph advances to the section's document grid (OOXML
+   *  run-level w:snapToGrid) — per-character grid adherence (inter-character
+   *  layout), an East-Asian typesetting aid. The paragraph-level
+   *  `ParaStyle.snapToGrid` instead governs inter-line layout. Word's default is
+   *  ON; an explicit `false` (w:val="0") opts a run out. Round-trips; no layout
+   *  effect in our grid-less model (and unrelated to the editor's canvas "snap to
+   *  grid" view aid). Absent = default (ON). `| undefined` so a patch can strip it. */
+  snapToGrid?: boolean | undefined;
   /** Symbol-font glyph (OOXML w:sym): `font` is the symbol font (e.g. "Wingdings")
    *  and `char` is the UPPER-CASE hex code point Word stores (usually a Private-Use
    *  value like "F0E0"). The run's `text` is the decoded character (so layout/paint
@@ -313,6 +321,28 @@ export interface ParaStyle {
    *  w:adjustRightInd). Round-trips; no layout effect in our grid-less model.
    *  Absent = off. */
   adjustRightInd?: boolean;
+  /** Snap this paragraph's LINES to the section's document grid (OOXML
+   *  paragraph-level w:snapToGrid) — whether the paragraph adheres to the grid's
+   *  lines-per-page pitch (inter-line layout), an East-Asian typesetting aid. The
+   *  run-level `CharStyle.snapToGrid` instead governs per-character advances
+   *  (inter-character layout). Word's default is ON; explicit `false` (w:val="0")
+   *  opts the paragraph out. Round-trips; no layout effect in our grid-less model
+   *  (and unrelated to the editor's canvas "snap to grid" view aid). Absent =
+   *  default (ON). */
+  snapToGrid?: boolean;
+  /** Disable automatic hyphenation for this paragraph (OOXML w:suppressAutoHyphens).
+   *  Round-trips; no layout effect here (we don't auto-hyphenate). Absent = off. */
+  suppressAutoHyphens?: boolean;
+  /** East-Asian line-breaking (kinsoku shori) on/off TOGGLE (OOXML w:kinsoku).
+   *  Word's default is ON; explicit `false` (w:val="0") disables the rules that
+   *  keep forbidden characters (e.g. closing punctuation) off line edges. The
+   *  engine performs kinsoku breaking regardless — this flag only round-trips the
+   *  explicit override. Absent = default (ON). */
+  kinsoku?: boolean;
+  /** Allow punctuation to hang past the right margin (OOXML w:overflowPunct), an
+   *  East-Asian typesetting feature. Round-trips; no layout effect here. Word's
+   *  default is ON; absent = default. */
+  overflowPunct?: boolean;
 }
 
 /** Resolved per-edge paragraph borders (OOXML w:pBdr). Reuses the table
