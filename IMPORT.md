@@ -141,6 +141,9 @@ buf ─► unzip ─► contentTypes ─► rels ─► styles+theme ─► pars
 | `w:line` @ `lineRule="auto"` | line height | multiplier = `line / 240` |
 | `w:line` @ `exact`/`atLeast` | line height | twips → px, kept as fixed spacing (`ParaStyle.lineRule` + `lineHeightPx`) |
 
+> For an element-by-element inventory of what the pipeline covers vs drops, see
+> [OOXML_COVERAGE.md](OOXML_COVERAGE.md) — the tree that this table's policies summarize.
+
 ## Lossy mappings — explicit decisions, all emitting `ImportWarning`
 
 The model can't hold everything in a rich docx. Each gap gets a deliberate policy, never a
