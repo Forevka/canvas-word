@@ -115,12 +115,13 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
         .Text("W I D E   character width scaling (w:w) stretches each glyph horizontally.")
         .Effects(new RunEffectsOptions { WidthScalePct = 150 }))
     .Paragraph(p => p
-        .Text("Kerning, emphasis marks, outline & a run border (w:kern/w:em/w:outline/w:bdr).")
+        .Text("Kerning, emphasis marks, outline, grid snapping & a run border (w:kern/w:em/w:outline/w:snapToGrid/w:bdr).")
         .Effects(new RunEffectsOptions
         {
             KerningMinPx = 12,
             EmphasisMark = EmphasisMark.Dot,
             Outline = true,
+            SnapToGrid = false,
             Border = new CellBorder { Color = "#1a73e8", WidthPx = 1 },
         }))
 
@@ -298,12 +299,16 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
 
     // ---- Minor paragraph properties (w:widowControl / w:suppressLineNumbers / w:mirrorIndents / w:adjustRightInd / w:textAlignment) ----
     .Paragraph("Minor paragraph properties", p => p.WithStyle("Heading1"))
-    .Paragraph("Lower-frequency w:pPr settings round-trip too: this paragraph disables widow/orphan control (w:widowControl), is excluded from line numbering (w:suppressLineNumbers), and carries mirrored indents (w:mirrorIndents) with right-indent adjustment (w:adjustRightInd) — each preserved through .docx.",
+    .Paragraph("Lower-frequency w:pPr settings round-trip too: this paragraph disables widow/orphan control (w:widowControl), is excluded from line numbering (w:suppressLineNumbers), and carries mirrored indents (w:mirrorIndents) with right-indent adjustment (w:adjustRightInd) — each preserved through .docx. It also carries the unmodeled CJK / hyphenation toggles (w:snapToGrid, w:suppressAutoHyphens, w:kinsoku, w:overflowPunct), round-tripped with no layout behavior.",
         p => p.Spacing(new SpacingOptions { Before = 6 })
               .WidowControl(false)
               .SuppressLineNumbers()
               .MirrorIndents()
-              .AdjustRightInd())
+              .AdjustRightInd()
+              .SnapToGrid(false)
+              .SuppressAutoHyphens()
+              .Kinsoku(false)
+              .OverflowPunct())
     .Paragraph("With extra line spacing, bottom vertical line alignment (w:textAlignment) drops the text onto the lower edge of each tall line box.",
         p => p.Spacing(new SpacingOptions { Before = 6, LineHeight = 2 })
               .TextAlignment(LineVAlign.Bottom))

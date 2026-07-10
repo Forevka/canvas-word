@@ -191,8 +191,9 @@ export class ParagraphBuilder<P extends StoryBuilder> {
    *  (w:dstrike), baseline raise/lower in px (w:position; +up/−down), character
    *  width scaling as a percentage (w:w; 100 = normal), a kerning threshold in px
    *  (w:kern), emphasis marks (w:em), the outline/shadow/emboss/imprint text
-   *  effects, a run border (w:bdr), and a fitText target width in px (w:fitText).
-   *  Additive — only the provided fields are applied. */
+   *  effects, document-grid snapping (w:snapToGrid), a run border (w:bdr), and a
+   *  fitText target width in px (w:fitText). Additive — only the provided fields
+   *  are applied. */
   effects(opts: {
     doubleStrikethrough?: boolean;
     positionPx?: number;
@@ -203,6 +204,9 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     shadow?: boolean;
     emboss?: boolean;
     imprint?: boolean;
+    /** Snap glyph advances to the document grid (OOXML w:snapToGrid). Round-trip
+     *  only; `false` opts a run out of Word's default-on grid snapping. */
+    snapToGrid?: boolean;
     border?: CellBorder;
     fitTextPx?: number;
   }): this {
@@ -227,6 +231,7 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     if (opts.shadow !== undefined) patch.shadow = opts.shadow;
     if (opts.emboss !== undefined) patch.emboss = opts.emboss;
     if (opts.imprint !== undefined) patch.imprint = opts.imprint;
+    if (opts.snapToGrid !== undefined) patch.snapToGrid = opts.snapToGrid;
     if (opts.border !== undefined) patch.runBorder = opts.border;
     if (opts.fitTextPx !== undefined) {
       // w:fitText is a positive width; a non-positive value would not round-trip.
@@ -678,6 +683,32 @@ export class ParagraphBuilder<P extends StoryBuilder> {
   /** Auto-adjust the right indent to the document grid (OOXML w:adjustRightInd). */
   adjustRightInd(on = true): this {
     this.para.style.adjustRightInd = on;
+    return this;
+  }
+
+  /** Snap this paragraph's glyphs to the section's document grid (OOXML
+   *  w:snapToGrid). Word's default is ON; pass `false` to opt out. Round-trip only. */
+  snapToGrid(on = true): this {
+    this.para.style.snapToGrid = on;
+    return this;
+  }
+
+  /** Disable automatic hyphenation for this paragraph (OOXML w:suppressAutoHyphens). */
+  suppressAutoHyphens(on = true): this {
+    this.para.style.suppressAutoHyphens = on;
+    return this;
+  }
+
+  /** East-Asian line-breaking (kinsoku shori) on/off toggle (OOXML w:kinsoku).
+   *  Word's default is ON; pass `false` to disable the line-break rules. */
+  kinsoku(on = true): this {
+    this.para.style.kinsoku = on;
+    return this;
+  }
+
+  /** Allow punctuation to hang past the margin (OOXML w:overflowPunct, East-Asian). */
+  overflowPunct(on = true): this {
+    this.para.style.overflowPunct = on;
     return this;
   }
 

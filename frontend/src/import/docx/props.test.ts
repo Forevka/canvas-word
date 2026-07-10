@@ -115,6 +115,12 @@ describe("decodeRunProps", () => {
     expect(p.imprint).toBe(true);
   });
 
+  it("decodes run snap-to-grid, keeping an explicit off (w:snapToGrid, issue #161)", () => {
+    expect(decodeRunProps(rPr(`<w:snapToGrid/>`)).snapToGrid).toBe(true);
+    expect(decodeRunProps(rPr(`<w:snapToGrid w:val="0"/>`)).snapToGrid).toBe(false);
+    expect(decodeRunProps(rPr(``)).snapToGrid).toBeUndefined();
+  });
+
   it("decodes signed baseline position and kerning in half-points", () => {
     expect(decodeRunProps(rPr(`<w:position w:val="6"/>`)).positionHalfPoints).toBe(6);
     expect(decodeRunProps(rPr(`<w:position w:val="-6"/>`)).positionHalfPoints).toBe(-6);
@@ -155,6 +161,22 @@ describe("decodeParaProps", () => {
 
   it("ignores an unknown jc value", () => {
     expect(decode(`<w:jc w:val="bogus"/>`).props.align).toBeUndefined();
+  });
+
+  it("decodes the CJK / hyphenation toggles, keeping explicit offs (issue #161)", () => {
+    const on = decode(`<w:snapToGrid/><w:suppressAutoHyphens/><w:kinsoku/><w:overflowPunct/>`).props;
+    expect(on.snapToGrid).toBe(true);
+    expect(on.suppressAutoHyphens).toBe(true);
+    expect(on.kinsoku).toBe(true);
+    expect(on.overflowPunct).toBe(true);
+    const off = decode(`<w:snapToGrid w:val="0"/><w:kinsoku w:val="0"/>`).props;
+    expect(off.snapToGrid).toBe(false);
+    expect(off.kinsoku).toBe(false);
+    const absent = decode(``).props;
+    expect(absent.snapToGrid).toBeUndefined();
+    expect(absent.suppressAutoHyphens).toBeUndefined();
+    expect(absent.kinsoku).toBeUndefined();
+    expect(absent.overflowPunct).toBeUndefined();
   });
 
   it("decodes auto line spacing to a multiplier", () => {

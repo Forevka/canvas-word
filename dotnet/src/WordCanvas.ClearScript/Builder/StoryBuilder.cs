@@ -312,6 +312,16 @@ public sealed class ParagraphBuilder
     public ParagraphBuilder MirrorIndents(bool on = true) { _js.InvokeMethod("mirrorIndents", on); return this; }
     /// <summary>Auto-adjust the right indent to the document grid (OOXML w:adjustRightInd).</summary>
     public ParagraphBuilder AdjustRightInd(bool on = true) { _js.InvokeMethod("adjustRightInd", on); return this; }
+    /// <summary>Snap this paragraph's glyphs to the section's document grid (OOXML w:snapToGrid).
+    /// Word's default is ON; pass false to opt out. Round-trip only.</summary>
+    public ParagraphBuilder SnapToGrid(bool on = true) { _js.InvokeMethod("snapToGrid", on); return this; }
+    /// <summary>Disable automatic hyphenation for this paragraph (OOXML w:suppressAutoHyphens).</summary>
+    public ParagraphBuilder SuppressAutoHyphens(bool on = true) { _js.InvokeMethod("suppressAutoHyphens", on); return this; }
+    /// <summary>East-Asian line-breaking (kinsoku shori) on/off toggle (OOXML w:kinsoku).
+    /// Word's default is ON; pass false to disable the line-break rules.</summary>
+    public ParagraphBuilder Kinsoku(bool on = true) { _js.InvokeMethod("kinsoku", on); return this; }
+    /// <summary>Allow punctuation to hang past the margin (OOXML w:overflowPunct, East-Asian).</summary>
+    public ParagraphBuilder OverflowPunct(bool on = true) { _js.InvokeMethod("overflowPunct", on); return this; }
 
     // ---- inline fields ----
     public ParagraphBuilder PageField() { _js.InvokeMethod("pageField"); return this; }

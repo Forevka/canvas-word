@@ -65,6 +65,14 @@ describe("minor run effects .docx round-trip", () => {
     expect(p.runs.find((r) => r.text === "imprint")!.style.imprint).toBe(true);
   });
 
+  it("preserves an explicit snap-to-grid OFF (w:snapToGrid, issue #161)", () => {
+    // Word's default is ON, so the meaningful override is the explicit `false`
+    // (w:val="0"); a plain run must not gain the field.
+    const p = roundTrip([styledRun("gridOff", { snapToGrid: false }), styledRun("plain", {})]);
+    expect(p.runs.find((r) => r.text === "gridOff")!.style.snapToGrid).toBe(false);
+    expect(p.runs.find((r) => r.text === "plain")!.style.snapToGrid).toBeUndefined();
+  });
+
   it("preserves a run border (w:bdr), including its line style", () => {
     const p = roundTrip([styledRun("bordered", { runBorder: { color: "#1a73e8", widthPx: 1.5, style: "dashed" } })]);
     const b = p.runs[0]!.style.runBorder;
@@ -83,6 +91,7 @@ describe("minor run effects .docx round-trip", () => {
     expect(s.positionPx).toBeUndefined();
     expect(s.widthScalePct).toBeUndefined();
     expect(s.emphasisMark).toBeUndefined();
+    expect(s.snapToGrid).toBeUndefined();
     expect(s.runBorder).toBeUndefined();
     expect(s.fitTextPx).toBeUndefined();
   });

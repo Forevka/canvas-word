@@ -294,8 +294,8 @@ public sealed record CharStyle
 /// <summary>Minor run typography &amp; effects (OOXML w:rPr extras) for
 /// ParagraphBuilder.Effects(): double strikethrough, baseline raise/lower,
 /// character width scaling, kerning threshold, emphasis marks, the
-/// outline/shadow/emboss/imprint text effects, a run border, and fitText.
-/// Only the set fields are applied (additive).</summary>
+/// outline/shadow/emboss/imprint text effects, document-grid snapping, a run
+/// border, and fitText. Only the set fields are applied (additive).</summary>
 public sealed record RunEffectsOptions
 {
     /// <summary>Double strikethrough (w:dstrike).</summary>
@@ -316,6 +316,9 @@ public sealed record RunEffectsOptions
     public bool? Emboss { get; init; }
     /// <summary>Imprinted/engraved text effect (w:imprint).</summary>
     public bool? Imprint { get; init; }
+    /// <summary>Snap glyph advances to the document grid (w:snapToGrid; Word default ON).
+    /// Round-trip only — pass false to opt a run out.</summary>
+    public bool? SnapToGrid { get; init; }
     /// <summary>A box drawn around the run (w:bdr).</summary>
     public CellBorder? Border { get; init; }
     /// <summary>Fit-text target width in px (w:fitText).</summary>
@@ -339,6 +342,7 @@ public sealed record RunEffectsOptions
         if (Shadow is { } sh) Js.Set(o, "shadow", sh);
         if (Emboss is { } eb) Js.Set(o, "emboss", eb);
         if (Imprint is { } im) Js.Set(o, "imprint", im);
+        if (SnapToGrid is { } sg) Js.Set(o, "snapToGrid", sg);
         if (Border is { } bd) Js.Set(o, "border", bd.ToJs(e));
         if (FitTextPx is { } ft)
         {

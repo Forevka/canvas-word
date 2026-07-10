@@ -34,6 +34,7 @@ function runEffectsXml(s: Partial<CharStyle>): string {
   if (s.shadow !== undefined) out.push(el("w:shadow", { "w:val": s.shadow ? "1" : "0" }));
   if (s.emboss !== undefined) out.push(el("w:emboss", { "w:val": s.emboss ? "1" : "0" }));
   if (s.imprint !== undefined) out.push(el("w:imprint", { "w:val": s.imprint ? "1" : "0" }));
+  if (s.snapToGrid !== undefined) out.push(el("w:snapToGrid", { "w:val": s.snapToGrid ? "1" : "0" }));
   if (s.widthScalePct !== undefined) out.push(el("w:w", { "w:val": s.widthScalePct }));
   if (s.kerningMinPx !== undefined) out.push(el("w:kern", { "w:val": pxToHalfPoints(s.kerningMinPx) }));
   if (s.positionPx !== undefined) out.push(el("w:position", { "w:val": pxToHalfPoints(s.positionPx) }));
@@ -243,6 +244,11 @@ export function partialPPrXml(p: Partial<ParaStyle>): string {
   if (p.suppressLineNumbers !== undefined) out.push(el("w:suppressLineNumbers", p.suppressLineNumbers ? undefined : { "w:val": "0" }));
   if (p.mirrorIndents !== undefined) out.push(el("w:mirrorIndents", p.mirrorIndents ? undefined : { "w:val": "0" }));
   if (p.adjustRightInd !== undefined) out.push(el("w:adjustRightInd", p.adjustRightInd ? undefined : { "w:val": "0" }));
+  // Unmodeled CJK / hyphenation toggles (issue #161) — round-trip-only, same on/off encoding.
+  if (p.snapToGrid !== undefined) out.push(el("w:snapToGrid", p.snapToGrid ? undefined : { "w:val": "0" }));
+  if (p.suppressAutoHyphens !== undefined) out.push(el("w:suppressAutoHyphens", p.suppressAutoHyphens ? undefined : { "w:val": "0" }));
+  if (p.kinsoku !== undefined) out.push(el("w:kinsoku", p.kinsoku ? undefined : { "w:val": "0" }));
+  if (p.overflowPunct !== undefined) out.push(el("w:overflowPunct", p.overflowPunct ? undefined : { "w:val": "0" }));
   if (p.textAlignment) out.push(el("w:textAlignment", { "w:val": p.textAlignment }));
   if (p.borders) out.push(paraBordersXml(p.borders));
   else if (p.bordersCleared) out.push(el("w:pBdr")); // issue #153: explicit "no box" delta

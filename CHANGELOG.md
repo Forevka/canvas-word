@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Round-trip fidelity for four low-frequency CJK / hyphenation toggles (issue #161).** `w:snapToGrid`
+  (run + paragraph), `w:suppressAutoHyphens`, `w:kinsoku`, and `w:overflowPunct` (paragraph) were
+  previously unmodeled — silently dropped on import and never re-emitted. They now round-trip as
+  optional booleans on `ParaStyle` (and `CharStyle.snapToGrid` for runs), decoded via the shared
+  on/off path (an explicit `w:val="0"` survives as `false` so it can override an inherited `true`) and
+  re-emitted whenever defined. This is pure byte-fidelity preservation with no layout behavior —
+  matching the issue-#62 minor-props pattern (`w:mirrorIndents`, `w:adjustRightInd`,
+  `w:suppressLineNumbers`); the engine's existing kinsoku line-breaking is unchanged and unrelated to
+  the editor's canvas "snap to grid" view aid. Exposed on the `DocumentBuilder`
+  (`.snapToGrid()`/`.suppressAutoHyphens()`/`.kinsoku()`/`.overflowPunct()` on a paragraph, and
+  `.effects({ snapToGrid })` on a run) with C# binding mirrors and showcase coverage.
 - **"Organize Pages" — visual page reordering.** A new Layout → Pages button opens a slide-sorter
   overlay of live page thumbnails: drag a page to reorder, delete a page, double-click to jump to it,
   or focus a page and press `Ctrl`+Arrow to move it by keyboard (units are focusable, expose an
