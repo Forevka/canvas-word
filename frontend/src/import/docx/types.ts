@@ -352,6 +352,14 @@ export interface IRParaProps {
   kinsoku?: boolean;
   /** w:overflowPunct — allow punctuation to hang past the margin (Word default ON). */
   overflowPunct?: boolean;
+  /** w:wordWrap — allow mid-word Latin breaks (Word default ON; explicit "0" = break anywhere). */
+  wordWrap?: boolean;
+  /** w:topLinePunct — compress punctuation at line start (East-Asian). */
+  topLinePunct?: boolean;
+  /** w:autoSpaceDE — auto-space between East-Asian and Latin text (Word default ON). */
+  autoSpaceDE?: boolean;
+  /** w:autoSpaceDN — auto-space between East-Asian text and numbers (Word default ON). */
+  autoSpaceDN?: boolean;
 }
 
 /** Raw paragraph border edges (w:pBdr children). Mirrors IRBorders but carries

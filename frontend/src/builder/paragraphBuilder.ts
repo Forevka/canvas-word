@@ -712,6 +712,31 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     return this;
   }
 
+  /** Allow a Latin word to break at any character (OOXML w:wordWrap). Word's default
+   *  is ON; pass `false` to permit mid-word breaks. Round-trip only. */
+  wordWrap(on = true): this {
+    this.para.style.wordWrap = on;
+    return this;
+  }
+
+  /** Compress punctuation at the start of a line (OOXML w:topLinePunct, East-Asian). */
+  topLinePunct(on = true): this {
+    this.para.style.topLinePunct = on;
+    return this;
+  }
+
+  /** Auto-space between East-Asian and Latin text (OOXML w:autoSpaceDE). Default ON. */
+  autoSpaceDE(on = true): this {
+    this.para.style.autoSpaceDE = on;
+    return this;
+  }
+
+  /** Auto-space between East-Asian text and numbers (OOXML w:autoSpaceDN). Default ON. */
+  autoSpaceDN(on = true): this {
+    this.para.style.autoSpaceDN = on;
+    return this;
+  }
+
   /** Escape the paragraph scope explicitly (rarely needed — any block-starting
    *  call below does it implicitly). */
   end(): P {

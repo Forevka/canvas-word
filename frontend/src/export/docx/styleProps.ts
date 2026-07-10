@@ -249,6 +249,10 @@ export function partialPPrXml(p: Partial<ParaStyle>): string {
   if (p.suppressAutoHyphens !== undefined) out.push(el("w:suppressAutoHyphens", p.suppressAutoHyphens ? undefined : { "w:val": "0" }));
   if (p.kinsoku !== undefined) out.push(el("w:kinsoku", p.kinsoku ? undefined : { "w:val": "0" }));
   if (p.overflowPunct !== undefined) out.push(el("w:overflowPunct", p.overflowPunct ? undefined : { "w:val": "0" }));
+  if (p.wordWrap !== undefined) out.push(el("w:wordWrap", p.wordWrap ? undefined : { "w:val": "0" }));
+  if (p.topLinePunct !== undefined) out.push(el("w:topLinePunct", p.topLinePunct ? undefined : { "w:val": "0" }));
+  if (p.autoSpaceDE !== undefined) out.push(el("w:autoSpaceDE", p.autoSpaceDE ? undefined : { "w:val": "0" }));
+  if (p.autoSpaceDN !== undefined) out.push(el("w:autoSpaceDN", p.autoSpaceDN ? undefined : { "w:val": "0" }));
   if (p.textAlignment) out.push(el("w:textAlignment", { "w:val": p.textAlignment }));
   if (p.borders) out.push(paraBordersXml(p.borders));
   else if (p.bordersCleared) out.push(el("w:pBdr")); // issue #153: explicit "no box" delta

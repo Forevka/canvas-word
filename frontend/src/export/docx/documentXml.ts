@@ -287,6 +287,10 @@ function pPrXml(style: ParaStyle, ctx: PartCtx, markRun?: CharStyle): string {
   if (style.suppressAutoHyphens !== undefined) c.push(el("w:suppressAutoHyphens", style.suppressAutoHyphens ? undefined : { "w:val": "0" }));
   if (style.kinsoku !== undefined) c.push(el("w:kinsoku", style.kinsoku ? undefined : { "w:val": "0" }));
   if (style.overflowPunct !== undefined) c.push(el("w:overflowPunct", style.overflowPunct ? undefined : { "w:val": "0" }));
+  if (style.wordWrap !== undefined) c.push(el("w:wordWrap", style.wordWrap ? undefined : { "w:val": "0" }));
+  if (style.topLinePunct !== undefined) c.push(el("w:topLinePunct", style.topLinePunct ? undefined : { "w:val": "0" }));
+  if (style.autoSpaceDE !== undefined) c.push(el("w:autoSpaceDE", style.autoSpaceDE ? undefined : { "w:val": "0" }));
+  if (style.autoSpaceDN !== undefined) c.push(el("w:autoSpaceDN", style.autoSpaceDN ? undefined : { "w:val": "0" }));
   if (style.textAlignment) c.push(el("w:textAlignment", { "w:val": style.textAlignment }));
   // w:pBdr / w:shd precede spacing/ind/jc in the CT_PPr schema sequence.
   // Real edges win; else an explicit clear (issue #153) re-emits an empty w:pBdr so a

@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Round-trip fidelity for the remaining East-Asian `w:pPr` toggles (issue #167).** `w:wordWrap`,
+  `w:topLinePunct`, `w:autoSpaceDE`, and `w:autoSpaceDN` — the East-Asian paragraph toggles that sit
+  beside `w:kinsoku`/`w:overflowPunct` in the schema and that #161 left out — were unmodeled (dropped
+  on import, never re-emitted). They now round-trip as optional `ParaStyle` booleans via the same
+  on/off seam (explicit `w:val="0"` preserved so an OFF can override an inherited `true`), with
+  `DocumentBuilder` methods (`.wordWrap()`/`.topLinePunct()`/`.autoSpaceDE()`/`.autoSpaceDN()`), C#
+  binding mirrors, showcase, and round-trip/decode tests. Round-trip-only — no layout behavior. Also
+  adds `OOXML_COVERAGE.md`, a living tree of which WordprocessingML elements/attributes the
+  import/export pipeline covers.
 - **Round-trip fidelity for four low-frequency CJK / hyphenation toggles (issue #161).** `w:snapToGrid`
   (run + paragraph), `w:suppressAutoHyphens`, `w:kinsoku`, and `w:overflowPunct` (paragraph) were
   previously unmodeled — silently dropped on import and never re-emitted. They now round-trip as

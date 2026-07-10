@@ -179,6 +179,23 @@ describe("decodeParaProps", () => {
     expect(absent.overflowPunct).toBeUndefined();
   });
 
+  it("decodes the remaining East-Asian pPr toggles, keeping explicit offs (issue #167)", () => {
+    const on = decode(`<w:wordWrap/><w:topLinePunct/><w:autoSpaceDE/><w:autoSpaceDN/>`).props;
+    expect(on.wordWrap).toBe(true);
+    expect(on.topLinePunct).toBe(true);
+    expect(on.autoSpaceDE).toBe(true);
+    expect(on.autoSpaceDN).toBe(true);
+    const off = decode(`<w:wordWrap w:val="0"/><w:autoSpaceDE w:val="0"/><w:autoSpaceDN w:val="0"/>`).props;
+    expect(off.wordWrap).toBe(false);
+    expect(off.autoSpaceDE).toBe(false);
+    expect(off.autoSpaceDN).toBe(false);
+    const absent = decode(``).props;
+    expect(absent.wordWrap).toBeUndefined();
+    expect(absent.topLinePunct).toBeUndefined();
+    expect(absent.autoSpaceDE).toBeUndefined();
+    expect(absent.autoSpaceDN).toBeUndefined();
+  });
+
   it("decodes auto line spacing to a multiplier", () => {
     expect(decode(`<w:spacing w:line="360" w:lineRule="auto"/>`).props.lineHeight).toBe(1.5);
   });

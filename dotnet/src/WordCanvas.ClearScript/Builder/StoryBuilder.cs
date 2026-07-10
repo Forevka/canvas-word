@@ -322,6 +322,15 @@ public sealed class ParagraphBuilder
     public ParagraphBuilder Kinsoku(bool on = true) { _js.InvokeMethod("kinsoku", on); return this; }
     /// <summary>Allow punctuation to hang past the margin (OOXML w:overflowPunct, East-Asian).</summary>
     public ParagraphBuilder OverflowPunct(bool on = true) { _js.InvokeMethod("overflowPunct", on); return this; }
+    /// <summary>Allow a Latin word to break at any character (OOXML w:wordWrap). Word's default is
+    /// ON; pass false to permit mid-word breaks. Round-trip only.</summary>
+    public ParagraphBuilder WordWrap(bool on = true) { _js.InvokeMethod("wordWrap", on); return this; }
+    /// <summary>Compress punctuation at the start of a line (OOXML w:topLinePunct, East-Asian).</summary>
+    public ParagraphBuilder TopLinePunct(bool on = true) { _js.InvokeMethod("topLinePunct", on); return this; }
+    /// <summary>Auto-space between East-Asian and Latin text (OOXML w:autoSpaceDE). Default ON.</summary>
+    public ParagraphBuilder AutoSpaceDE(bool on = true) { _js.InvokeMethod("autoSpaceDE", on); return this; }
+    /// <summary>Auto-space between East-Asian text and numbers (OOXML w:autoSpaceDN). Default ON.</summary>
+    public ParagraphBuilder AutoSpaceDN(bool on = true) { _js.InvokeMethod("autoSpaceDN", on); return this; }
 
     // ---- inline fields ----
     public ParagraphBuilder PageField() { _js.InvokeMethod("pageField"); return this; }

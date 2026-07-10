@@ -1360,6 +1360,10 @@ function mapMinorParaProps(props: IRParaProps, out: Partial<ParaStyle>): void {
   if (props.suppressAutoHyphens !== undefined) out.suppressAutoHyphens = props.suppressAutoHyphens;
   if (props.kinsoku !== undefined) out.kinsoku = props.kinsoku;
   if (props.overflowPunct !== undefined) out.overflowPunct = props.overflowPunct;
+  if (props.wordWrap !== undefined) out.wordWrap = props.wordWrap;
+  if (props.topLinePunct !== undefined) out.topLinePunct = props.topLinePunct;
+  if (props.autoSpaceDE !== undefined) out.autoSpaceDE = props.autoSpaceDE;
+  if (props.autoSpaceDN !== undefined) out.autoSpaceDN = props.autoSpaceDN;
 }
 
 /** styles.xml → editor Stylesheet. ALL defined paragraph and character styles

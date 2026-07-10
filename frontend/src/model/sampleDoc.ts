@@ -530,7 +530,7 @@ export function sampleDoc(): Document {
 
     // --- Minor paragraph properties (issue #62) -------------------------------
     heading("Minor paragraph properties", 1),
-    para([run("Lower-frequency w:pPr settings round-trip too. This paragraph turns OFF widow/orphan control (w:widowControl), is excluded from line numbering (w:suppressLineNumbers), and carries mirrored indents (w:mirrorIndents) plus right-indent adjustment (w:adjustRightInd) — each preserved through a .docx save and reopen. It also carries the unmodeled CJK / hyphenation toggles (w:snapToGrid, w:suppressAutoHyphens, w:kinsoku, w:overflowPunct), which survive the round-trip without any layout behavior.")], {
+    para([run("Lower-frequency w:pPr settings round-trip too. This paragraph turns OFF widow/orphan control (w:widowControl), is excluded from line numbering (w:suppressLineNumbers), and carries mirrored indents (w:mirrorIndents) plus right-indent adjustment (w:adjustRightInd) — each preserved through a .docx save and reopen. It also carries the unmodeled East-Asian / hyphenation toggles (w:snapToGrid, w:suppressAutoHyphens, w:kinsoku, w:overflowPunct, w:wordWrap, w:topLinePunct, w:autoSpaceDE, w:autoSpaceDN), which survive the round-trip without any layout behavior.")], {
       spaceBeforePx: 6,
       widowControl: false,
       suppressLineNumbers: true,
@@ -540,6 +540,10 @@ export function sampleDoc(): Document {
       suppressAutoHyphens: true,
       kinsoku: false,
       overflowPunct: true,
+      wordWrap: false,
+      topLinePunct: true,
+      autoSpaceDE: false,
+      autoSpaceDN: false,
     }),
     para([run("And with extra line spacing, "), run("bottom", { bold: true }), run(" vertical line alignment (w:textAlignment) drops the text onto the lower edge of each tall line box — set it to top, center or baseline to move where the glyphs ride.")], {
       spaceBeforePx: 6,
