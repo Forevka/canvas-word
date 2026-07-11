@@ -24,6 +24,7 @@ import { showDevPanel, type DevPanelHandle } from "./ui/devPanel";
 import { showPageLayout, type PageLayoutHandle } from "./ui/pageLayout";
 import { showOrganizePages, type OrganizePagesHandle } from "./ui/organizePages";
 import { showCompareView } from "./ui/compareView";
+import { showMerge3View } from "./ui/merge3View";
 import { showParagraphDialog, type ParagraphDialogHandle } from "./ui/paragraphDialog";
 // The equation editor pulls in the whole LaTeX toolchain (parser + serializer +
 // symbol tables, several hundred KB of source) and the symbol picker — both are
@@ -630,6 +631,18 @@ const openCompareFile = async (file: File): Promise<void> => {
     console.error("[docx-compare]", e);
     alert(`Could not compare "${file.name}": ${e instanceof Error ? e.message : String(e)}`);
   }
+};
+
+// 3-way (git-style) merge: the open document is MINE; the merge editor collects
+// a common BASE and the other version (THEIRS), auto-merges non-conflicting
+// changes, and lets the user resolve each conflict before applying the result.
+const openMerge3 = (): void => {
+  showMerge3View({
+    mine: editor.getDocument(),
+    fontRegistry,
+    theme: config.theme,
+    onApply: (doc) => setDocumentFromApi(doc),
+  });
 };
 
 // Bake the review overlay into a clean doc (default: reject-all = original
@@ -1255,6 +1268,7 @@ if (toolbar) {
     });
     input.click();
   });
+  bigBtn(ICONS.merge, "Merge<br>3-way", "Three-way merge: reconcile this document with two other versions", () => openMerge3());
 
   // Share (online only): publish the current doc and surface a join link. Also
   // used by openDocx auto-publish via showShareDialog below.

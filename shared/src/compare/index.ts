@@ -3,6 +3,7 @@
 // diffDocuments.ts and REVIEW.md. 3-way (git-style) merge is a later phase.
 
 export * from "./diffDocuments";
+export * from "./merge3";
 export * from "./lcs";
 export * from "./tokenize";
 export * from "./blockKey";
