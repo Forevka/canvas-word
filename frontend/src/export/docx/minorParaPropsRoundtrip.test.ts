@@ -29,7 +29,7 @@ describe("minor paragraph properties — w:widowControl / w:suppressLineNumbers 
     const xml = exportedXml({
       section: SECTION,
       blocks: [
-        para("off", { widowControl: false, suppressLineNumbers: true, mirrorIndents: true, adjustRightInd: true, textAlignment: "bottom", snapToGrid: false, suppressAutoHyphens: true, kinsoku: false, overflowPunct: true }),
+        para("off", { widowControl: false, suppressLineNumbers: true, mirrorIndents: true, adjustRightInd: true, textAlignment: "bottom", snapToGrid: false, suppressAutoHyphens: true, kinsoku: false, overflowPunct: true, wordWrap: false, topLinePunct: true, autoSpaceDE: false, autoSpaceDN: false }),
         para("on", { widowControl: true }),
         para("plain"),
       ],
@@ -46,13 +46,18 @@ describe("minor paragraph properties — w:widowControl / w:suppressLineNumbers 
     expect(xml).toContain("<w:suppressAutoHyphens/>");
     expect(xml).toContain('<w:kinsoku w:val="0"/>');
     expect(xml).toContain("<w:overflowPunct/>");
+    // issue #167 East-Asian pPr toggles: same on/off encoding.
+    expect(xml).toContain('<w:wordWrap w:val="0"/>');
+    expect(xml).toContain("<w:topLinePunct/>");
+    expect(xml).toContain('<w:autoSpaceDE w:val="0"/>');
+    expect(xml).toContain('<w:autoSpaceDN w:val="0"/>');
   });
 
   it("preserves every minor prop through a full export → re-import round-trip", () => {
     const out = roundTrip({
       section: SECTION,
       blocks: [
-        para("a", { widowControl: false, suppressLineNumbers: true, textAlignment: "top", mirrorIndents: true, adjustRightInd: true, snapToGrid: false, suppressAutoHyphens: true, kinsoku: false, overflowPunct: true }),
+        para("a", { widowControl: false, suppressLineNumbers: true, textAlignment: "top", mirrorIndents: true, adjustRightInd: true, snapToGrid: false, suppressAutoHyphens: true, kinsoku: false, overflowPunct: true, wordWrap: false, topLinePunct: true, autoSpaceDE: false, autoSpaceDN: false }),
         para("b", { widowControl: true, textAlignment: "center" }),
         para("c"),
       ],
@@ -67,6 +72,10 @@ describe("minor paragraph properties — w:widowControl / w:suppressLineNumbers 
     expect(a!.style.suppressAutoHyphens).toBe(true);
     expect(a!.style.kinsoku).toBe(false);
     expect(a!.style.overflowPunct).toBe(true);
+    expect(a!.style.wordWrap).toBe(false);
+    expect(a!.style.topLinePunct).toBe(true);
+    expect(a!.style.autoSpaceDE).toBe(false);
+    expect(a!.style.autoSpaceDN).toBe(false);
     expect(b!.style.widowControl).toBe(true);
     expect(b!.style.textAlignment).toBe("center");
     // A plain paragraph keeps the defaults absent (no spurious round-trip values).
@@ -79,6 +88,10 @@ describe("minor paragraph properties — w:widowControl / w:suppressLineNumbers 
     expect(c!.style.suppressAutoHyphens).toBeUndefined();
     expect(c!.style.kinsoku).toBeUndefined();
     expect(c!.style.overflowPunct).toBeUndefined();
+    expect(c!.style.wordWrap).toBeUndefined();
+    expect(c!.style.topLinePunct).toBeUndefined();
+    expect(c!.style.autoSpaceDE).toBeUndefined();
+    expect(c!.style.autoSpaceDN).toBeUndefined();
   });
 
   it("preserves an explicit OFF (false) so it can override an inherited true", () => {
@@ -99,6 +112,7 @@ describe("minor paragraph properties — w:widowControl / w:suppressLineNumbers 
       `<w:p><w:pPr>` +
       `<w:widowControl w:val="0"/><w:suppressLineNumbers/><w:mirrorIndents/><w:adjustRightInd/>` +
       `<w:snapToGrid w:val="0"/><w:suppressAutoHyphens/><w:kinsoku w:val="0"/><w:overflowPunct/>` +
+      `<w:wordWrap w:val="0"/><w:topLinePunct/><w:autoSpaceDE w:val="0"/><w:autoSpaceDN w:val="0"/>` +
       `<w:textAlignment w:val="center"/>` +
       `</w:pPr><w:r><w:t>hand</w:t></w:r></w:p>`;
     const p = paras(runImport(simpleDocx(body)).doc)[0]!;
@@ -110,6 +124,10 @@ describe("minor paragraph properties — w:widowControl / w:suppressLineNumbers 
     expect(p.style.suppressAutoHyphens).toBe(true);
     expect(p.style.kinsoku).toBe(false);
     expect(p.style.overflowPunct).toBe(true);
+    expect(p.style.wordWrap).toBe(false);
+    expect(p.style.topLinePunct).toBe(true);
+    expect(p.style.autoSpaceDE).toBe(false);
+    expect(p.style.autoSpaceDN).toBe(false);
     expect(p.style.textAlignment).toBe("center");
   });
 

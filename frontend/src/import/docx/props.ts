@@ -306,6 +306,14 @@ export function decodeParaProps(pPr: XmlNode, warnings: WarningSink): IRParaProp
   if (kinsoku !== undefined) props.kinsoku = kinsoku;
   const overflowPunct = onOff(bag.get("w:overflowPunct"));
   if (overflowPunct !== undefined) props.overflowPunct = overflowPunct;
+  const wordWrap = onOff(bag.get("w:wordWrap"));
+  if (wordWrap !== undefined) props.wordWrap = wordWrap;
+  const topLinePunct = onOff(bag.get("w:topLinePunct"));
+  if (topLinePunct !== undefined) props.topLinePunct = topLinePunct;
+  const autoSpaceDE = onOff(bag.get("w:autoSpaceDE"));
+  if (autoSpaceDE !== undefined) props.autoSpaceDE = autoSpaceDE;
+  const autoSpaceDN = onOff(bag.get("w:autoSpaceDN"));
+  if (autoSpaceDN !== undefined) props.autoSpaceDN = autoSpaceDN;
 
   const rPr = bag.get("w:rPr");
   if (rPr) props.markRunProps = decodeRunProps(rPr);

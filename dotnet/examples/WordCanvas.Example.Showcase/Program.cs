@@ -299,7 +299,7 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
 
     // ---- Minor paragraph properties (w:widowControl / w:suppressLineNumbers / w:mirrorIndents / w:adjustRightInd / w:textAlignment) ----
     .Paragraph("Minor paragraph properties", p => p.WithStyle("Heading1"))
-    .Paragraph("Lower-frequency w:pPr settings round-trip too: this paragraph disables widow/orphan control (w:widowControl), is excluded from line numbering (w:suppressLineNumbers), and carries mirrored indents (w:mirrorIndents) with right-indent adjustment (w:adjustRightInd) — each preserved through .docx. It also carries the unmodeled CJK / hyphenation toggles (w:snapToGrid, w:suppressAutoHyphens, w:kinsoku, w:overflowPunct), round-tripped with no layout behavior.",
+    .Paragraph("Lower-frequency w:pPr settings round-trip too: this paragraph disables widow/orphan control (w:widowControl), is excluded from line numbering (w:suppressLineNumbers), and carries mirrored indents (w:mirrorIndents) with right-indent adjustment (w:adjustRightInd) — each preserved through .docx. It also carries the unmodeled East-Asian / hyphenation toggles (w:snapToGrid, w:suppressAutoHyphens, w:kinsoku, w:overflowPunct, w:wordWrap, w:topLinePunct, w:autoSpaceDE, w:autoSpaceDN), round-tripped with no layout behavior.",
         p => p.Spacing(new SpacingOptions { Before = 6 })
               .WidowControl(false)
               .SuppressLineNumbers()
@@ -308,7 +308,11 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
               .SnapToGrid(false)
               .SuppressAutoHyphens()
               .Kinsoku(false)
-              .OverflowPunct())
+              .OverflowPunct()
+              .WordWrap(false)
+              .TopLinePunct()
+              .AutoSpaceDE(false)
+              .AutoSpaceDN(false))
     .Paragraph("With extra line spacing, bottom vertical line alignment (w:textAlignment) drops the text onto the lower edge of each tall line box.",
         p => p.Spacing(new SpacingOptions { Before = 6, LineHeight = 2 })
               .TextAlignment(LineVAlign.Bottom))

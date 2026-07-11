@@ -343,6 +343,23 @@ export interface ParaStyle {
    *  East-Asian typesetting feature. Round-trips; no layout effect here. Word's
    *  default is ON; absent = default. */
   overflowPunct?: boolean;
+  /** Allow a Latin word to break at ANY character rather than wrapping whole
+   *  (OOXML w:wordWrap), an East-Asian line-breaking option. Word's default is ON;
+   *  explicit `false` (w:val="0") permits mid-word breaks. Round-trips; no layout
+   *  effect here. Absent = default (ON). */
+  wordWrap?: boolean;
+  /** Compress punctuation that falls at the start of a line (OOXML w:topLinePunct),
+   *  an East-Asian typesetting feature. Round-trips; no layout effect here.
+   *  Absent = off. */
+  topLinePunct?: boolean;
+  /** Automatically add spacing between East-Asian and Latin text (OOXML
+   *  w:autoSpaceDE). Word's default is ON; explicit `false` (w:val="0") disables it.
+   *  Round-trips; no layout effect here. Absent = default (ON). */
+  autoSpaceDE?: boolean;
+  /** Automatically add spacing between East-Asian text and numbers (OOXML
+   *  w:autoSpaceDN). Word's default is ON; explicit `false` (w:val="0") disables it.
+   *  Round-trips; no layout effect here. Absent = default (ON). */
+  autoSpaceDN?: boolean;
 }
 
 /** Resolved per-edge paragraph borders (OOXML w:pBdr). Reuses the table
