@@ -40,3 +40,7 @@ export * from "./transform";
 // sibling of ./model, never imported by it, so the OOXML-faithful core stays
 // unaware of review. See shared/src/review and REVIEW.md.
 export * from "./review";
+
+// Document compare — 2-way diff producing a merged document + a review layer of
+// suggestions, resolved through the review resolvers. See shared/src/compare.
+export * from "./compare";

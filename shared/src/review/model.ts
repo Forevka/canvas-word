@@ -44,6 +44,12 @@ export interface StructuralChange {
   /** Block whose disappearance kills the record (created/merged/removed block,
    *  or the host table for table ops). */
   blockId: string;
+  /** Whether the forward `op` has ALREADY been applied to the live core document.
+   *  Absent/true (the suggestion-mode default): the edit is live, so accept just
+   *  drops the record and reject re-applies `inverse`. Explicit `false`: the edit
+   *  is NOT yet live (the document compare uses this for "remove this block on
+   *  accept") — accept applies the forward `op` and reject drops the record. */
+  applied?: boolean;
 }
 
 export interface Suggestion {

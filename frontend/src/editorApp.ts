@@ -23,6 +23,7 @@ import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
 import { showDevPanel, type DevPanelHandle } from "./ui/devPanel";
 import { showPageLayout, type PageLayoutHandle } from "./ui/pageLayout";
 import { showOrganizePages, type OrganizePagesHandle } from "./ui/organizePages";
+import { showCompareView } from "./ui/compareView";
 import { showParagraphDialog, type ParagraphDialogHandle } from "./ui/paragraphDialog";
 // The equation editor pulls in the whole LaTeX toolchain (parser + serializer +
 // symbol tables, several hundred KB of source) and the symbol picker — both are
@@ -598,6 +599,36 @@ const openDocxFile = async (file: File | ArrayBuffer): Promise<void> => {
     alert(`Could not open "${name}": ${e instanceof Error ? e.message : String(e)}`);
   } finally {
     busy.done();
+  }
+};
+
+// Open a second .docx and compare it against the currently-open document. The
+// current doc is the ORIGINAL/baseline; the picked file is the REVISED version.
+// The compare view produces a merged redline the user resolves change-by-change,
+// then applies back to the editor (as tracked changes, or as the resolved result).
+const openCompareFile = async (file: File): Promise<void> => {
+  const busy = showBusy("Reading document to compare…");
+  try {
+    const result = await importDocx(file, {
+      onProgress: (phase, pct) => busy.update(`${IMPORT_PHASE_LABEL[phase]}…`, pct),
+    });
+    busy.done();
+    showCompareView({
+      original: editor.getDocument(),
+      revised: result.doc,
+      revisedName: file.name,
+      fontRegistry,
+      theme: config.theme,
+      onApply: (doc, review, mode) => {
+        setDocumentFromApi(doc); // rebuilds `editor`
+        editor.seedReview(review); // seed remaining suggestions (or clear)
+        if (mode === "tracked") editor.setMode("suggest");
+      },
+    });
+  } catch (e) {
+    busy.done();
+    console.error("[docx-compare]", e);
+    alert(`Could not compare "${file.name}": ${e instanceof Error ? e.message : String(e)}`);
   }
 };
 
@@ -1211,6 +1242,16 @@ if (toolbar) {
     input.addEventListener("change", () => {
       const file = input.files?.[0];
       if (file) void openDocxFile(file);
+    });
+    input.click();
+  });
+  bigBtn(ICONS.compare, "Compare<br>.docx", "Compare the open document with another Word file", () => {
+    const input = el("input");
+    input.type = "file";
+    input.accept = `.docx,${DOCX_MIME}`;
+    input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      if (file) void openCompareFile(file);
     });
     input.click();
   });

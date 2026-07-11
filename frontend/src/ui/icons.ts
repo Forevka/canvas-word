@@ -17,6 +17,7 @@ export const ICONS = {
     `<path d="M3 2.5h8v3H3z"/><path d="M11 4h2.5v3.5H7V10"/><path d="M6 10h2v4H6z"/>`,
   ),
   open: svg(`<path d="M1.5 4.5v8h11l2-5H4l-1.5 5"/><path d="M1.5 4.5l1-2h4l1 2h5v2"/>`),
+  compare: svg(`<rect x="1.5" y="2.5" width="5.5" height="11" rx="1"/><rect x="9" y="2.5" width="5.5" height="11" rx="1"/><path d="M4.25 5.5v5"/><path d="M11.75 5.5v5"/>`),
   save: svg(`<path d="M2.5 2.5h9l2 2v9h-11z"/><path d="M5 2.5v3.5h5V2.5"/><path d="M4.5 13.5V9h7v4.5"/>`),
   link: svg(
     `<path d="M6.5 9.5 9.5 6.5"/><path d="M7.5 4.5 9 3a2.8 2.8 0 0 1 4 4l-1.5 1.5"/><path d="M8.5 11.5 7 13a2.8 2.8 0 0 1-4-4l1.5-1.5"/>`,
