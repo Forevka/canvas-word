@@ -1240,6 +1240,7 @@ function applyRunProps(style: Partial<CharStyle>, props: IRRunProps): void {
   if (props.emboss !== undefined) style.emboss = props.emboss;
   if (props.imprint !== undefined) style.imprint = props.imprint;
   if (props.snapToGrid !== undefined) style.snapToGrid = props.snapToGrid;
+  if (props.lang) style.lang = props.lang;
   if (props.runBorder) {
     const b = runBorderFromIR(props.runBorder);
     if (b) style.runBorder = b;

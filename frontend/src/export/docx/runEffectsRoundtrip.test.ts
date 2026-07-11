@@ -73,6 +73,26 @@ describe("minor run effects .docx round-trip", () => {
     expect(p.runs.find((r) => r.text === "plain")!.style.snapToGrid).toBeUndefined();
   });
 
+  it("preserves the proofing language on a run (w:lang, issue #168)", () => {
+    const p = roundTrip([
+      styledRun("full", { lang: { val: "fr-FR", eastAsia: "ja-JP", bidi: "ar-SA" } }),
+      styledRun("valonly", { lang: { val: "de-DE" } }),
+      styledRun("plain", {}),
+    ]);
+    expect(p.runs.find((r) => r.text === "full")!.style.lang).toEqual({ val: "fr-FR", eastAsia: "ja-JP", bidi: "ar-SA" });
+    expect(p.runs.find((r) => r.text === "valonly")!.style.lang).toEqual({ val: "de-DE" });
+    expect(p.runs.find((r) => r.text === "plain")!.style.lang).toBeUndefined();
+  });
+
+  it("keeps runs with different languages from merging (w:lang, issue #168)", () => {
+    // Two otherwise-identical adjacent runs with distinct w:lang must survive as
+    // separate runs (a plain run-merge would drop one language).
+    const p = roundTrip([styledRun("bonjour", { lang: { val: "fr-FR" } }), styledRun("hello", { lang: { val: "en-US" } })]);
+    expect(p.runs.map((r) => r.text)).toEqual(["bonjour", "hello"]);
+    expect(p.runs[0]!.style.lang).toEqual({ val: "fr-FR" });
+    expect(p.runs[1]!.style.lang).toEqual({ val: "en-US" });
+  });
+
   it("preserves a run border (w:bdr), including its line style", () => {
     const p = roundTrip([styledRun("bordered", { runBorder: { color: "#1a73e8", widthPx: 1.5, style: "dashed" } })]);
     const b = p.runs[0]!.style.runBorder;
@@ -92,6 +112,7 @@ describe("minor run effects .docx round-trip", () => {
     expect(s.widthScalePct).toBeUndefined();
     expect(s.emphasisMark).toBeUndefined();
     expect(s.snapToGrid).toBeUndefined();
+    expect(s.lang).toBeUndefined();
     expect(s.runBorder).toBeUndefined();
     expect(s.fitTextPx).toBeUndefined();
   });

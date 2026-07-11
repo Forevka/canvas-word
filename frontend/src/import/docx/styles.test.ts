@@ -295,3 +295,24 @@ describe("StyleResolver — fixed line spacing cascade (w:lineRule)", () => {
 });
 
 const round = (v: number): number => Math.round(v * 100) / 100;
+
+describe("StyleResolver — w:lang cascade (issue #168)", () => {
+  const LANG_STYLES = stylesPartXml(
+    `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
+     <w:style w:type="character" w:styleId="French"><w:rPr><w:lang w:val="fr-FR"/></w:rPr></w:style>`,
+    `<w:docDefaults>
+       <w:rPrDefault><w:rPr><w:lang w:val="en-US" w:eastAsia="zh-CN"/></w:rPr></w:rPrDefault>
+     </w:docDefaults>`,
+  );
+  const run0 = (body: string): Paragraph => para(runImport(styledDocx(body, LANG_STYLES)).doc.blocks[0]);
+
+  it("bakes docDefaults w:lang onto a plain run", () => {
+    const run = run0(`<w:p><w:r><w:t>plain</w:t></w:r></w:p>`).runs[0]!;
+    expect(run.style.lang).toEqual({ val: "en-US", eastAsia: "zh-CN" });
+  });
+
+  it("a character style's w:lang overrides the docDefault", () => {
+    const run = run0(`<w:p><w:r><w:rPr><w:rStyle w:val="French"/></w:rPr><w:t>bonjour</w:t></w:r></w:p>`).runs[0]!;
+    expect(run.style.lang?.val).toBe("fr-FR");
+  });
+});

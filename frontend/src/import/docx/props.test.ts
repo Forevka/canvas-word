@@ -121,6 +121,15 @@ describe("decodeRunProps", () => {
     expect(decodeRunProps(rPr(``)).snapToGrid).toBeUndefined();
   });
 
+  it("decodes the proofing language, keeping only present attrs (w:lang, issue #168)", () => {
+    expect(decodeRunProps(rPr(`<w:lang w:val="fr-FR" w:eastAsia="ja-JP" w:bidi="ar-SA"/>`)).lang).toEqual({ val: "fr-FR", eastAsia: "ja-JP", bidi: "ar-SA" });
+    expect(decodeRunProps(rPr(`<w:lang w:val="de-DE"/>`)).lang).toEqual({ val: "de-DE" });
+    expect(decodeRunProps(rPr(`<w:lang w:eastAsia="zh-CN"/>`)).lang).toEqual({ eastAsia: "zh-CN" });
+    expect(decodeRunProps(rPr(``)).lang).toBeUndefined();
+    // An empty w:lang (no attrs) contributes nothing.
+    expect(decodeRunProps(rPr(`<w:lang/>`)).lang).toBeUndefined();
+  });
+
   it("decodes signed baseline position and kerning in half-points", () => {
     expect(decodeRunProps(rPr(`<w:position w:val="6"/>`)).positionHalfPoints).toBe(6);
     expect(decodeRunProps(rPr(`<w:position w:val="-6"/>`)).positionHalfPoints).toBe(-6);

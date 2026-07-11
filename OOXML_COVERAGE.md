@@ -66,7 +66,7 @@ w:rPr
 ├─ w:rFonts .............................. ✅ @w:ascii/@w:hAnsi/@w:cs/@w:eastAsia + *Theme
 ├─ w:vertAlign (super/sub) ................ ✅ verticalAlign
 ├─ w:rtl .................................. ✅ rtl (explicit w:rtl="0" kept)
-├─ w:lang (@val/@eastAsia/@bidi) .......... ❌  proofing language — dropped everywhere (issue #168)
+├─ w:lang (@val/@eastAsia/@bidi) .......... ✅ CharStyle.lang (run + style + docDefaults; #168)
 ├─ w:effect (text animation) .............. ❌  (legacy blink/shimmer)
 ├─ w:fitText .............................. 🔷 fitTextPx
 ├─ w:eastAsianLayout (combine/vert) ....... ❌
@@ -398,7 +398,6 @@ webSettings.xml / fontTable.xml ......... ❌
 
 Same class as #161/#167 — candidates for future small PRs:
 
-- **`w:lang`** (run + style + docDefaults) — highest real-world frequency; tracked in **#168**.
 - Run complex-script pairs: `w:bCs`, `w:iCs`, divergent `w:szCs`; run `w:shd` (character shading); `w:noProof`.
 - Border `@w:space` / `@w:themeColor`; `w:pgNumType/@w:fmt`; `w:trPr/w:jc`; `w:tblCellSpacing`.
 - Numbering `w:lvlJc` / `w:suff` / `w:pStyle`; style `w:link` / `w:qFormat` / `w:uiPriority`.

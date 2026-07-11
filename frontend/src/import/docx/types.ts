@@ -167,6 +167,8 @@ export interface IRRunProps {
   imprint?: boolean;
   /** w:snapToGrid — snap glyph advances to the document grid (Word default ON; explicit "0" = off). */
   snapToGrid?: boolean;
+  /** w:lang — proofing language (@w:val/@w:eastAsia/@w:bidi); at least one attr present. */
+  lang?: { val?: string; eastAsia?: string; bidi?: string };
   /** w:bdr — raw run border (mapped to a CellBorder in mapToModel). */
   runBorder?: IRRawBorder;
   /** w:fitText/@w:val — fit-text target width in twips. */

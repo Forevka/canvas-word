@@ -35,6 +35,16 @@ function runEffectsXml(s: Partial<CharStyle>): string {
   if (s.emboss !== undefined) out.push(el("w:emboss", { "w:val": s.emboss ? "1" : "0" }));
   if (s.imprint !== undefined) out.push(el("w:imprint", { "w:val": s.imprint ? "1" : "0" }));
   if (s.snapToGrid !== undefined) out.push(el("w:snapToGrid", { "w:val": s.snapToGrid ? "1" : "0" }));
+  // w:lang (issue #168) — emit whichever proofing-language attrs are set. Shared by
+  // concrete runs and style/docDefaults rPr patches, so a run's/style's language
+  // round-trips. Absent when the lang object has no attributes.
+  if (s.lang) {
+    const langAttrs: Record<string, string> = {};
+    if (s.lang.val) langAttrs["w:val"] = s.lang.val;
+    if (s.lang.eastAsia) langAttrs["w:eastAsia"] = s.lang.eastAsia;
+    if (s.lang.bidi) langAttrs["w:bidi"] = s.lang.bidi;
+    if (Object.keys(langAttrs).length > 0) out.push(el("w:lang", langAttrs));
+  }
   if (s.widthScalePct !== undefined) out.push(el("w:w", { "w:val": s.widthScalePct }));
   if (s.kerningMinPx !== undefined) out.push(el("w:kern", { "w:val": pxToHalfPoints(s.kerningMinPx) }));
   if (s.positionPx !== undefined) out.push(el("w:position", { "w:val": pxToHalfPoints(s.positionPx) }));

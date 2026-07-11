@@ -120,6 +120,20 @@ export function decodeRunProps(rPr: XmlNode): IRRunProps {
   if (imprint !== undefined) props.imprint = imprint;
   const snapToGrid = onOff(bag.get("w:snapToGrid"));
   if (snapToGrid !== undefined) props.snapToGrid = snapToGrid;
+  // w:lang — proofing language (issue #168). Round-trip only; keep whichever of the
+  // three attrs are present (Word emits w:val nearly everywhere, eastAsia/bidi for
+  // CJK / complex-script documents).
+  const langEl = bag.get("w:lang");
+  if (langEl) {
+    const lang: NonNullable<IRRunProps["lang"]> = {};
+    const langVal = attr(langEl, "w:val");
+    if (langVal) lang.val = langVal;
+    const langEA = attr(langEl, "w:eastAsia");
+    if (langEA) lang.eastAsia = langEA;
+    const langBidi = attr(langEl, "w:bidi");
+    if (langBidi) lang.bidi = langBidi;
+    if (lang.val !== undefined || lang.eastAsia !== undefined || lang.bidi !== undefined) props.lang = lang;
+  }
   const bdr = bag.get("w:bdr");
   if (bdr) {
     const raw: IRRawBorder = { val: attr(bdr, "w:val") ?? "single" };

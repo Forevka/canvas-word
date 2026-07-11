@@ -248,6 +248,8 @@ public sealed record CharStyle
     public string? FontFamilyComplexScript { get; init; }
     /// <summary>East-Asian (CJK) font (OOXML w:rFonts/@w:eastAsia); preserved through round-trip.</summary>
     public string? FontFamilyEastAsia { get; init; }
+    /// <summary>Proofing/typographic language (OOXML w:lang); round-trip only.</summary>
+    public RunLangOptions? Lang { get; init; }
     public double? FontSizePx { get; init; }
     public string? Link { get; init; }
     public double? LetterSpacingPx { get; init; }
@@ -279,6 +281,7 @@ public sealed record CharStyle
         if (FontFamily is { } f) Js.Set(o, "fontFamily", f);
         if (FontFamilyComplexScript is { } fcs) Js.Set(o, "fontFamilyComplexScript", fcs);
         if (FontFamilyEastAsia is { } fea) Js.Set(o, "fontFamilyEastAsia", fea);
+        if (Lang is { } lang) Js.Set(o, "lang", lang.ToJs(e));
         if (FontSizePx is { } fs) Js.Set(o, "fontSizePx", fs);
         if (Link is { } lk) Js.Set(o, "link", lk);
         if (LetterSpacingPx is { } ls) Js.Set(o, "letterSpacingPx", ls);
@@ -350,6 +353,27 @@ public sealed record RunEffectsOptions
             if (ft <= 0) throw new ArgumentOutOfRangeException(nameof(FitTextPx), ft, "fitTextPx must be greater than 0");
             Js.Set(o, "fitTextPx", ft);
         }
+        return o;
+    }
+}
+
+/// <summary>Proofing/typographic language (OOXML w:lang). Each field is a BCP-47 tag
+/// (e.g. "en-US"); only the set fields are emitted. Round-trip only — no layout effect.</summary>
+public sealed record RunLangOptions
+{
+    /// <summary>w:lang/@w:val — Latin/Western language.</summary>
+    public string? Val { get; init; }
+    /// <summary>w:lang/@w:eastAsia — East-Asian language.</summary>
+    public string? EastAsia { get; init; }
+    /// <summary>w:lang/@w:bidi — complex-script (bidi) language.</summary>
+    public string? Bidi { get; init; }
+
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        if (Val is { } v) Js.Set(o, "val", v);
+        if (EastAsia is { } ea) Js.Set(o, "eastAsia", ea);
+        if (Bidi is { } bd) Js.Set(o, "bidi", bd);
         return o;
     }
 }
