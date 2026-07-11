@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Round-trip fidelity for run proofing language `w:lang` (issue #168).** `w:lang`
+  (`@w:val`/`@w:eastAsia`/`@w:bidi`) — which Word emits on nearly every run and in
+  `docDefaults`/styles, making it the highest-frequency previously-dropped property — now
+  round-trips as `CharStyle.lang` (a `RunLang` value object). Decoded on runs, character
+  styles, and `w:rPrDefault`, cascaded through the style resolver (docDefaults bake onto each
+  run), and re-emitted via the shared run serializer; runs with different language tags no
+  longer merge. Round-trip-only — no layout/paint effect (in Word it drives spell-check,
+  hyphenation, and CJK font resolution). Exposed on the `DocumentBuilder` (`.lang({ val,
+  eastAsia, bidi })`) with a C# binding mirror, sampleDoc, showcase, and round-trip/decode/
+  cascade tests. `OOXML_COVERAGE.md` updated.
 - **Round-trip fidelity for the remaining East-Asian `w:pPr` toggles (issue #167).** `w:wordWrap`,
   `w:topLinePunct`, `w:autoSpaceDE`, and `w:autoSpaceDN` — the East-Asian paragraph toggles that sit
   beside `w:kinsoku`/`w:overflowPunct` in the schema and that #161 left out — were unmodeled (dropped

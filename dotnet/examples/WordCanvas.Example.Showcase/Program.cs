@@ -124,6 +124,9 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
             SnapToGrid = false,
             Border = new CellBorder { Color = "#1a73e8", WidthPx = 1 },
         }))
+    .Paragraph(p => p
+        .Text("This run carries a French proofing language tag (w:lang) — round-tripped with no layout effect.")
+        .Lang(new RunLangOptions { Val = "fr-FR" }))
 
     // ---- Content controls ----
     .Paragraph("Content controls", p => p.WithStyle("Heading1"))

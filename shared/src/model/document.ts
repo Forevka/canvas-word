@@ -13,6 +13,22 @@ export type UnderlineStyle = "single" | "double" | "thick" | "dotted" | "dash" |
  *  (OOXML w:em). Round-tripped; painting is optional (degrades to no mark). */
 export type EmphasisMark = "dot" | "comma" | "circle" | "underDot";
 
+/** Proofing / typographic language tags (OOXML w:lang). Round-trip only — no
+ *  layout or paint effect in our model; in Word these drive spell-check, the
+ *  hyphenation dictionary, and CJK font resolution. Each field is a BCP-47 tag
+ *  (e.g. "en-US"); absent fields are omitted from the w:lang element on export.
+ *  Appears on nearly every run and in docDefaults/styles in real documents, so
+ *  preserving it keeps a Word → WordCanvas → Word round-trip from stripping the
+ *  document's language tags. */
+export interface RunLang {
+  /** w:lang/@w:val — Latin/Western language. */
+  val?: string;
+  /** w:lang/@w:eastAsia — East-Asian language. */
+  eastAsia?: string;
+  /** w:lang/@w:bidi — complex-script (bidi) language. */
+  bidi?: string;
+}
+
 export interface CharStyle {
   fontFamily: string;
   /** OOXML `w:rFonts/@w:cs` — complex-script (bidi) typeface, used by Word for
@@ -24,6 +40,10 @@ export interface CharStyle {
    *  the `.docx` round-trip; layout/paint use `fontFamily`. A CSS font stack like
    *  `fontFamily`. `| undefined` so a patch can strip it. */
   fontFamilyEastAsia?: string | undefined;
+  /** Proofing/typographic language (OOXML w:lang — @w:val/@w:eastAsia/@w:bidi).
+   *  Round-trip only; no layout/paint effect. Absent = inherit. `| undefined` so a
+   *  patch can strip it. See {@link RunLang}. */
+  lang?: RunLang | undefined;
   fontSizePx: number;
   bold: boolean;
   italic: boolean;

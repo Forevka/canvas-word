@@ -8,7 +8,7 @@
 // text() in this scope — "make this paragraph bold" is the dominant authoring
 // intent. Mixed formatting within a paragraph uses text(t, { …patch }).
 
-import type { Block, CellBorder, CharStyle, Document, EmphasisMark, FieldSpec, IfOp, NamedStyle, PageNumFmt, ParaBorders, ParaStyle, Paragraph, Run, SdtProps, TableStyle, TabStop, UnderlineStyle } from "@cw/shared";
+import type { Block, CellBorder, CharStyle, Document, EmphasisMark, FieldSpec, IfOp, NamedStyle, PageNumFmt, ParaBorders, ParaStyle, Paragraph, Run, RunLang, SdtProps, TableStyle, TabStop, UnderlineStyle } from "@cw/shared";
 import { AUTO_PARA_SPACING_PX, buildInstruction, evaluateField, resolveStyle, styleById, textOfRuns } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import type { BandOptions, DocumentBuilder, ListDefinitionSpec, PageSetup, SectionBreakOptions } from "./documentBuilder";
@@ -274,6 +274,17 @@ export class ParagraphBuilder<P extends StoryBuilder> {
    *  the .docx round-trip; layout/paint still use the main font(). */
   fontEastAsia(family: string): this {
     return this.applyChar({ fontFamilyEastAsia: family });
+  }
+
+  /** Set the run's proofing language (OOXML w:lang — @w:val/@w:eastAsia/@w:bidi),
+   *  each a BCP-47 tag (e.g. "en-US"). Round-trip only; no layout/paint effect.
+   *  Replaces any existing lang on the run; omitted fields are cleared. */
+  lang(opts: { val?: string; eastAsia?: string; bidi?: string }): this {
+    const lang: RunLang = {};
+    if (opts.val !== undefined) lang.val = opts.val;
+    if (opts.eastAsia !== undefined) lang.eastAsia = opts.eastAsia;
+    if (opts.bidi !== undefined) lang.bidi = opts.bidi;
+    return this.applyChar({ lang });
   }
 
   /** Make the paragraph's text a hyperlink (painted blue+underlined, Ctrl+click). */

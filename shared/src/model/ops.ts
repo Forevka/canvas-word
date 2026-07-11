@@ -206,9 +206,18 @@ export function styleEq(a: CharStyle, b: CharStyle): boolean {
     // run must not merge with a plain (default-on) neighbour (issue #161).
     (a.snapToGrid ?? true) === (b.snapToGrid ?? true) &&
     (a.fitTextPx ?? 0) === (b.fitTextPx ?? 0) &&
+    langEq(a.lang, b.lang) && // proofing language (w:lang) — runs with different tags must not merge
     runBorderEq(a.runBorder, b.runBorder) &&
     symbolEq(a.symbol, b.symbol) // symbol glyphs (w:sym) carry font+codepoint — never merge with text
   );
+}
+
+/** Structural equality for proofing language (w:lang) — runs with different
+ *  val/eastAsia/bidi tags must not merge; absent === absent. */
+function langEq(a: CharStyle["lang"], b: CharStyle["lang"]): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.val === b.val && a.eastAsia === b.eastAsia && a.bidi === b.bidi;
 }
 
 /** Structural equality for a run border (w:bdr) — runs with differently-styled

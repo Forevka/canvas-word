@@ -217,6 +217,9 @@ public sealed class ParagraphBuilder
     public ParagraphBuilder FontComplexScript(string family) { _js.InvokeMethod("fontComplexScript", family); return this; }
     /// <summary>East-Asian (CJK) font — OOXML w:rFonts/@w:eastAsia; preserved through the .docx round-trip.</summary>
     public ParagraphBuilder FontEastAsia(string family) { _js.InvokeMethod("fontEastAsia", family); return this; }
+    /// <summary>Proofing/typographic language (OOXML w:lang — @w:val/@w:eastAsia/@w:bidi), each a
+    /// BCP-47 tag. Round-trip only; no layout/paint effect.</summary>
+    public ParagraphBuilder Lang(RunLangOptions opts) { _js.InvokeMethod("lang", opts.ToJs(_engine)); return this; }
     public ParagraphBuilder Link(string url) { _js.InvokeMethod("link", url); return this; }
     public ParagraphBuilder Superscript(bool on = true) { _js.InvokeMethod("superscript", on); return this; }
     public ParagraphBuilder Subscript(bool on = true) { _js.InvokeMethod("subscript", on); return this; }
