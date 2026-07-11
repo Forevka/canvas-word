@@ -87,8 +87,36 @@ export interface WordCanvasViewOptions {
    *  embedder ships its own export/save pipeline (e.g. via `onSave` or the
    *  `exportDocx()` handle method) and doesn't want the built-in button. */
   exportDocx?: boolean;
+  /** Show the File ▸ **Compare** button. Default true. Set false for embeds that
+   *  drive comparison only programmatically (via `compare()` / `compareOnLoad`). */
+  compare?: boolean;
+  /** Show the File ▸ **Merge 3-way** button. Default true. Set false for embeds
+   *  that drive merging only programmatically (via `merge3()` / `mergeOnLoad`). */
+  merge?: boolean;
   /** Initial presentational zoom (1 = 100%, clamped to [0.25, 5]). Default 1. */
   zoom?: number;
+}
+
+/** A document supplied to compare/merge: a parsed `Document`, or raw `.docx`
+ *  bytes (a File or ArrayBuffer) which the editor imports for you. */
+export type DocInput = Document | File | ArrayBuffer;
+
+/** Arguments for the Compare view (2-way). The document currently open is the
+ *  Original; `revised` is the version to compare it against. */
+export interface CompareRequest {
+  revised: DocInput;
+  /** Label for the revised side, shown in the compare header. */
+  revisedName?: string;
+}
+
+/** Arguments for the 3-way Merge editor. `mine` defaults to the open document. */
+export interface Merge3Request {
+  /** Common ancestor. */
+  base: DocInput;
+  /** The other version to reconcile against. */
+  theirs: DocInput;
+  /** "Mine" — defaults to the document currently open. */
+  mine?: DocInput;
 }
 
 /** One other collaborator currently in the document. */
@@ -147,6 +175,13 @@ export interface EditorHandle {
   addComment(body: Fragment, mentions?: UserInfo[]): string | null;
   replyToComment(threadId: string, body: Fragment, mentions?: UserInfo[]): void;
   resolveThread(threadId: string, resolved?: boolean): void;
+  /** Open the Compare view: diff the open document (Original) against
+   *  `request.revised` (a Document or `.docx` bytes) and let the user resolve each
+   *  change, then apply it as tracked changes or a resolved document. */
+  compare(request: CompareRequest): Promise<void>;
+  /** Open the 3-way Merge editor for base / mine / theirs (Documents or `.docx`
+   *  bytes); `mine` defaults to the open document. */
+  merge3(request: Merge3Request): Promise<void>;
   destroy(): void;
 }
 
@@ -156,6 +191,15 @@ export interface WordCanvasRuntime {
   backendUrl?: string | undefined;
   /** Join an existing collaboration session on load (online only). */
   collabId?: string | undefined;
+  /** Offline initial document to open on load. Ignored online (use `collabId`).
+   *  Cloned on load. */
+  document?: Document | undefined;
+  /** On load, open the Compare view against this revised version (Original = the
+   *  loaded document), so the user resolves differences immediately. */
+  compareOnLoad?: CompareRequest | undefined;
+  /** On load, open the 3-way Merge editor (Mine = the loaded document unless
+   *  `mine` is set), so the user resolves conflicts immediately. */
+  mergeOnLoad?: Merge3Request | undefined;
   /** Caller-supplied identity — stamped on changes/presence (attribution). */
   user?: UserInfo | undefined;
   /** Override how a share link is surfaced; default shows a built-in dialog. */

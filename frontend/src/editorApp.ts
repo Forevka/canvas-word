@@ -230,7 +230,9 @@ if (collabId !== null && BACKEND_HTTP) {
     busy.done();
   }
 } else {
-  doc = sampleDoc();
+  // Offline: open the embedder-supplied initial document if given, else the demo
+  // sample. Cloned so later caller-side mutations can't alias editor state.
+  doc = runtime.document ? structuredClone(runtime.document) : sampleDoc();
 }
 
 // A document with no stylesheet of its own adopts the configured default styles
@@ -603,10 +605,34 @@ const openDocxFile = async (file: File | ArrayBuffer): Promise<void> => {
   }
 };
 
-// Open a second .docx and compare it against the currently-open document. The
-// current doc is the ORIGINAL/baseline; the picked file is the REVISED version.
-// The compare view produces a merged redline the user resolves change-by-change,
-// then applies back to the editor (as tracked changes, or as the resolved result).
+// Resolve a compare/merge document input — a parsed Document (cloned) or raw
+// .docx bytes (imported) — to a Document.
+const resolveDocInput = async (src: Document | File | ArrayBuffer): Promise<Document> => {
+  if (src instanceof ArrayBuffer || (typeof File !== "undefined" && src instanceof File)) {
+    return (await importDocx(src)).doc;
+  }
+  return structuredClone(src as Document);
+};
+
+// Open the Compare view: diff the ORIGINAL (currently-open doc) against a REVISED
+// document. The user resolves change-by-change, then applies back to the editor
+// (as tracked changes, or as the resolved result).
+const runCompare = (original: Document, revised: Document, revisedName?: string): void => {
+  showCompareView({
+    original,
+    revised,
+    ...(revisedName ? { revisedName } : {}),
+    fontRegistry,
+    theme: config.theme,
+    onApply: (d, review, mode) => {
+      setDocumentFromApi(d); // rebuilds `editor`
+      editor.seedReview(review); // seed remaining suggestions (or clear)
+      if (mode === "tracked") editor.setMode("suggest");
+    },
+  });
+};
+
+// Ribbon "Compare" button: pick a .docx and compare it against the open doc.
 const openCompareFile = async (file: File): Promise<void> => {
   const busy = showBusy("Reading document to compare…");
   try {
@@ -614,18 +640,7 @@ const openCompareFile = async (file: File): Promise<void> => {
       onProgress: (phase, pct) => busy.update(`${IMPORT_PHASE_LABEL[phase]}…`, pct),
     });
     busy.done();
-    showCompareView({
-      original: editor.getDocument(),
-      revised: result.doc,
-      revisedName: file.name,
-      fontRegistry,
-      theme: config.theme,
-      onApply: (doc, review, mode) => {
-        setDocumentFromApi(doc); // rebuilds `editor`
-        editor.seedReview(review); // seed remaining suggestions (or clear)
-        if (mode === "tracked") editor.setMode("suggest");
-      },
-    });
+    runCompare(editor.getDocument(), result.doc, file.name);
   } catch (e) {
     busy.done();
     console.error("[docx-compare]", e);
@@ -633,17 +648,20 @@ const openCompareFile = async (file: File): Promise<void> => {
   }
 };
 
-// 3-way (git-style) merge: the open document is MINE; the merge editor collects
-// a common BASE and the other version (THEIRS), auto-merges non-conflicting
-// changes, and lets the user resolve each conflict before applying the result.
-const openMerge3 = (): void => {
+// 3-way (git-style) merge: MINE is the open document (or `mine` arg); the merge
+// editor takes BASE + THEIRS (preset when supplied, else picked in its setup
+// panel), auto-merges non-conflicting changes, and lets the user resolve each
+// conflict before applying the result.
+const runMerge3 = (mine: Document, preset?: { base: Document; theirs: Document }): void => {
   showMerge3View({
-    mine: editor.getDocument(),
+    mine,
+    ...(preset ? { base: preset.base, theirs: preset.theirs } : {}),
     fontRegistry,
     theme: config.theme,
-    onApply: (doc) => setDocumentFromApi(doc),
+    onApply: (d) => setDocumentFromApi(d),
   });
 };
+const openMerge3 = (): void => runMerge3(editor.getDocument());
 
 // Bake the review overlay into a clean doc (default: reject-all = original
 // baseline) so the review-blind writer emits a plain file, then export it.
@@ -1258,17 +1276,21 @@ if (toolbar) {
     });
     input.click();
   });
-  bigBtn(ICONS.compare, "Compare<br>.docx", "Compare the open document with another Word file", () => {
-    const input = el("input");
-    input.type = "file";
-    input.accept = `.docx,${DOCX_MIME}`;
-    input.addEventListener("change", () => {
-      const file = input.files?.[0];
-      if (file) void openCompareFile(file);
+  if (runtime.view?.compare !== false) {
+    bigBtn(ICONS.compare, "Compare<br>.docx", "Compare the open document with another Word file", () => {
+      const input = el("input");
+      input.type = "file";
+      input.accept = `.docx,${DOCX_MIME}`;
+      input.addEventListener("change", () => {
+        const file = input.files?.[0];
+        if (file) void openCompareFile(file);
+      });
+      input.click();
     });
-    input.click();
-  });
-  bigBtn(ICONS.merge, "Merge<br>3-way", "Three-way merge: reconcile this document with two other versions", () => openMerge3());
+  }
+  if (runtime.view?.merge !== false) {
+    bigBtn(ICONS.merge, "Merge<br>3-way", "Three-way merge: reconcile this document with two other versions", () => openMerge3());
+  }
 
   // Share (online only): publish the current doc and surface a join link. Also
   // used by openDocx auto-publish via showShareDialog below.
@@ -3406,6 +3428,12 @@ const handle: EditorHandle = {
   addComment: (body, mentions) => editor.addComment(body, mentions),
   replyToComment: (threadId, body, mentions) => editor.replyToComment(threadId, body, mentions),
   resolveThread: (threadId, resolved) => editor.resolveThread(threadId, resolved),
+  compare: async (req) => runCompare(editor.getDocument(), await resolveDocInput(req.revised), req.revisedName),
+  merge3: async (req) =>
+    runMerge3(req.mine ? await resolveDocInput(req.mine) : editor.getDocument(), {
+      base: await resolveDocInput(req.base),
+      theirs: await resolveDocInput(req.theirs),
+    }),
   destroy: () => {
     disposeAgentTools?.(); // unregister WebMCP tools before tearing the editor down
     closeDevPanel(); // remove the floating inspector (body-level) if it's open
@@ -3432,6 +3460,11 @@ ribbonCtx = {
 runtime.onLoadProgress?.({ phase: "ready", percent: 1, loaded: 0, total: 0 });
 runtime.onReady?.(handle);
 runtime.onEvent?.({ type: "ready" });
+
+// On-load resolution flows: if the embedder asked to compare/merge on open, launch
+// it now against the loaded document. Errors surface via the flow's own UI/alert.
+if (runtime.compareOnLoad) void handle.compare(runtime.compareOnLoad);
+else if (runtime.mergeOnLoad) void handle.merge3(runtime.mergeOnLoad);
 
 // WebMCP agent tooling (opt-in). Lazy-load the polyfill + bridge so non-agent
 // embedders never pull them into their bundle; initialize navigator.modelContext,

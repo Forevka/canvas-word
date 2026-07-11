@@ -31,6 +31,11 @@ export interface Merge3ViewOptions {
   /** The document open in the editor — MINE. */
   mine: Document;
   mineName?: string;
+  /** Preset the common ancestor. When both `base` and `theirs` are supplied the
+   *  setup panel is skipped and the merge editor opens straight away. */
+  base?: Document;
+  /** Preset the other version (see `base`). */
+  theirs?: Document;
   fontRegistry?: CustomFontRegistry;
   theme?: ResolvedTheme;
   /** Apply the assembled merge result back to the editor. */
@@ -305,6 +310,15 @@ export function showMerge3View(opts: Merge3ViewOptions): Merge3ViewHandle {
     return b;
   }
 
-  renderSetup();
+  // Presets supplied (programmatic launch) → straight to the merge editor;
+  // otherwise show the file-picking setup panel.
+  if (opts.base && opts.theirs) {
+    base = opts.base;
+    theirs = opts.theirs;
+    res = merge3(base, opts.mine, theirs, { docId: "merge" });
+    renderMerge();
+  } else {
+    renderSetup();
+  }
   return { close: () => shell.close() };
 }
