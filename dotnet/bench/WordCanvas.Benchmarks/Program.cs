@@ -142,6 +142,60 @@ if (args.Length > 0 && args[0].Equals("builddump", StringComparison.OrdinalIgnor
     return 0;
 }
 
+// Linked ("Link to File") image PDF-export path: enumerate external URLs, and embed
+// them through a host-owned resolver (no network — synthetic bytes).  Usage: linkedimg
+if (args.Length > 0 && args[0].Equals("linkedimg", StringComparison.OrdinalIgnoreCase))
+{
+    // 1x1 PNG (the same bytes the export tests embed — known to round-trip through
+    // pdfkit) so the resolver hands the exporter a real, embeddable image.
+    var png = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==");
+    const string url = "https://example.invalid/linked-photo.png";
+    using var eng = new WordCanvasEngine();
+    var built = eng.NewBuilder()
+        .Paragraph("Linked image below:")
+        .Image(url, new WordCanvas.ClearScript.Builder.ImageOptions { WidthPx = 64, HeightPx = 64, Linked = true })
+        .Build();
+
+    var urls = built.LinkedImageUrls();
+    var urlsOk = urls.Count == 1 && urls[0] == url;
+    Console.WriteLine($"LinkedImageUrls: [{string.Join(", ", urls)}] (expected 1) => {(urlsOk ? "OK" : "FAIL")}");
+
+    var noResolver = built.ExportPdf();                       // linked image → placeholder box
+    var called = new List<string>();
+    var withResolver = built.ExportPdf(reqUrls =>             // host resolver embeds it
+    {
+        called.AddRange(reqUrls);
+        return reqUrls.ToDictionary(u => u, _ => png);
+    });
+    var withResolverAsync = built.ExportPdfAsync(reqUrls =>   // async overload parity
+        Task.FromResult((IReadOnlyDictionary<string, byte[]>)reqUrls.ToDictionary(u => u, _ => png))).GetAwaiter().GetResult();
+
+    // CONTROL: the SAME image embedded as data-URL bytes — the shipped, known-good embed
+    // path. When the resolver feeds bytes through, the linked PDF must render like this
+    // (image in place of the placeholder box), NOT like the no-resolver placeholder PDF.
+    var control = eng.NewBuilder()
+        .Paragraph("Linked image below:")
+        .Image(png, "image/png", new WordCanvas.ClearScript.Builder.ImageOptions { WidthPx = 64, HeightPx = 64 })
+        .Build().ExportPdf();
+
+    bool Pdf(byte[] b) => b.Length > 5 && b[0] == '%' && b[1] == 'P' && b[2] == 'D' && b[3] == 'F';
+    var resolverCalled = called.Count == 1 && called[0] == url;
+    // Bytes consumed: resolver output diverges from the placeholder-only PDF...
+    var changedVsPlaceholder = withResolver.Length != noResolver.Length && withResolverAsync.Length != noResolver.Length;
+    // ...and converges on the embedded-image control (same image, same box; only the
+    // externalSrc field differs, a handful of bytes) — proof it embeds, not just differs.
+    var matchesEmbedded = Math.Abs(withResolver.Length - control.Length) < 256 && Math.Abs(withResolverAsync.Length - control.Length) < 256;
+    Console.WriteLine($"LinkedImageUrls => {(urlsOk ? "OK" : "FAIL")}; resolver invoked with url => {(resolverCalled ? "OK" : "FAIL")}");
+    Console.WriteLine($"pdf bytes: placeholder={noResolver.Length} resolver={withResolver.Length} async={withResolverAsync.Length} embeddedControl={control.Length}");
+    Console.WriteLine($"bytes consumed (≠ placeholder) => {(changedVsPlaceholder ? "OK" : "FAIL")}; embeds like control (≈) => {(matchesEmbedded ? "OK" : "FAIL")}");
+
+    var ok = urlsOk && resolverCalled && Pdf(noResolver) && Pdf(withResolver) && Pdf(withResolverAsync)
+             && changedVsPlaceholder && matchesEmbedded;
+    Console.WriteLine(ok ? "LINKEDIMG OK" : "LINKEDIMG FAIL");
+    return ok ? 0 : 1;
+}
+
 BenchmarkSwitcher.FromAssembly(typeof(Smoke).Assembly).Run(args);
 return 0;
 

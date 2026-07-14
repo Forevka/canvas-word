@@ -228,6 +228,40 @@ function withDataUrlImages(doc: Document, images?: ImageBytes): ImageBytes {
   return out;
 }
 
+/** Every distinct external ("Link to File") image URL the document references
+ *  (ImageBlock.externalSrc — a:blip r:link → TargetMode="External"). The host
+ *  fetches these (its own HttpClient / proxy / concurrency policy) and hands the
+ *  bytes back keyed by URL, which is the linked image's `src`, so the export
+ *  resolves them exactly like embedded media. Bare V8 has no fetch, so this can
+ *  only enumerate — it never downloads. */
+function linkedImageUrls(doc: Document): string[] {
+  const urls = new Set<string>();
+  const walk = (blocks: Document["blocks"]): void => {
+    for (const b of blocks) {
+      if (b.kind === "image") {
+        if (b.externalSrc) urls.add(b.externalSrc);
+      } else if (b.kind === "table") {
+        for (const r of b.rows) for (const c of r.cells) walk(c.blocks);
+      }
+    }
+  };
+  walk(doc.blocks);
+  const s = doc.section as unknown as Record<string, Document["blocks"] | undefined>;
+  for (const band of ["header", "footer", "headerFirst", "footerFirst", "headerEven", "footerEven"]) {
+    const story = s[band];
+    if (story) walk(story);
+  }
+  return [...urls];
+}
+
+/** Merge host-resolved image bytes (extra, keyed by src/URL) over a base image
+ *  map, returning a NEW map — so a document's embedded `cw-media:N` entries and
+ *  host-fetched linked-image URLs coexist for one export without mutating either
+ *  input. Extra wins on key collision. */
+function mergeImages(base: ImageBytes | undefined, extra: ImageBytes | undefined): ImageBytes {
+  return { ...(base ?? {}), ...(extra ?? {}) };
+}
+
 async function exportPdf(
   doc: Document,
   images?: ImageBytes,
@@ -301,6 +335,10 @@ const api = {
   importDocx,
   exportPdf,
   exportDocx,
+  // Linked ("Link to File") image support: enumerate external URLs a doc references,
+  // and merge host-fetched bytes into an export image map (the host owns the fetch).
+  linkedImageUrls,
+  mergeImages,
   // TOC / field recalculation (layout-driven; the Syncfusion replacement).
   generateToc,
   recalcTocPageNumbers,
