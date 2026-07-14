@@ -99,20 +99,35 @@ function collectImageSrcs(doc: Document): Set<string> {
   return out;
 }
 
-async function resolveImages(doc: Document): Promise<ImageBytes> {
+/** True for an external (http/https) image URL — a linked ("Link to File") image
+ *  whose bytes live on another host, subject to that host's CORS policy. */
+const EXTERNAL_SRC = /^https?:\/\//i;
+
+/** Exported for tests. Fetches every image src's bytes (main thread only) and
+ *  reports external (http/https) srcs whose read the browser refused — almost
+ *  always CORS. */
+export async function resolveImages(doc: Document): Promise<{ images: ImageBytes; failedExternal: string[] }> {
   const srcs = [...collectImageSrcs(doc)];
-  const out: ImageBytes = {};
+  const images: ImageBytes = {};
+  const failedExternal: string[] = [];
   await Promise.all(
     srcs.map(async (src) => {
       try {
         const res = await fetch(src);
-        out[src] = new Uint8Array(await res.arrayBuffer());
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        images[src] = new Uint8Array(await res.arrayBuffer());
       } catch {
-        // Leave unresolved — the writer/renderer warns and emits a placeholder.
+        // A cross-origin (http/https) image the browser refused to let us READ —
+        // almost always CORS: the host must send Access-Control-Allow-Origin for
+        // this page's origin. Such an image still DISPLAYS in the editor (drawing
+        // needs no CORS) but its bytes can't be embedded, so it exports as a
+        // placeholder box. Record it so the caller can warn (see exportDocument).
+        if (EXTERNAL_SRC.test(src)) failedExternal.push(src);
+        // Non-external failures fall through: the writer/renderer emits a placeholder.
       }
     }),
   );
-  return out;
+  return { images, failedExternal };
 }
 
 /** Fetch every custom face's bytes on the main thread (deduped by URL). Missing
@@ -174,15 +189,34 @@ export async function exportDocument(
   fontConfig?: ResolvedFontsConfig,
   cjk?: { locale?: string; fallbackFont?: string },
 ): Promise<ExportResult> {
-  const [images, fonts] = await Promise.all([resolveImages(doc), resolveFonts(fontConfig)]);
-  const w = ensureWorker();
-  const id = nextId++;
-  return new Promise<ExportResult>((resolve, reject) => {
+  const [{ images, failedExternal }, fonts] = await Promise.all([resolveImages(doc), resolveFonts(fontConfig)]);
+  const result = await new Promise<ExportResult>((resolve, reject) => {
+    const w = ensureWorker();
+    const id = nextId++;
     pending.set(id, { resolve, reject });
     const hasCjk = cjk && (cjk.locale !== undefined || cjk.fallbackFont !== undefined);
     const msg: ToExportWorker = { id, doc, format, images, ...(fonts ? { fonts } : {}), ...(hasCjk ? { cjk } : {}) };
     w.postMessage(msg);
   });
+  // Linked (external) images the browser wouldn't let us READ never reached the
+  // worker, so surface a main-thread warning the worker's sink can't see: they
+  // export as placeholder boxes even though they render fine in the editor. Almost
+  // always a CORS restriction on the image host — the fix is on the host, not here.
+  if (failedExternal.length > 0) {
+    result.warnings = [
+      {
+        code: "image-external-unfetchable",
+        detail:
+          `${failedExternal.length} linked image${failedExternal.length === 1 ? "" : "s"} could not be fetched for embedding ` +
+          `(the image host did not allow this site's origin to read them — a CORS restriction). ` +
+          `They display in the editor but export as placeholder boxes; the image host must send ` +
+          `Access-Control-Allow-Origin for this origin.`,
+        count: failedExternal.length,
+      },
+      ...result.warnings,
+    ];
+  }
+  return result;
 }
 
 export const exportPdf = (doc: Document, fontConfig?: ResolvedFontsConfig, cjk?: { locale?: string; fallbackFont?: string }): Promise<ExportResult> =>

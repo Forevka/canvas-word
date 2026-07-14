@@ -34,6 +34,7 @@ import { showFontDialog } from "./ui/fontDialog";
 import { loadCollabDocument, loadCollabReview, publishDocument } from "./sync/collab";
 import { attachMentionAutocomplete } from "./review/mentions";
 import { showBusy } from "./app/busyOverlay";
+import { showNotice } from "./app/notice";
 // Ribbon/toolbar command set + style helpers + icons — the chrome, not the core.
 // (Hoisted here from the toolbar block; ES imports must be top-level, and the
 // toolbar code now lives inside mountEditorApp.)
@@ -1179,6 +1180,18 @@ if (toolbar) {
       const { bytes, warnings } = await exportBaked(format);
       busy.done();
       if (warnings.length > 0) console.warn(`[export-${format}] warnings`, warnings);
+      // Linked images blocked by the host's CORS policy embed as gray placeholder
+      // boxes — raise a visible notice so it isn't a silent surprise (the editor
+      // shows the images fine; only reading their bytes for export is CORS-gated).
+      const extImg = warnings.find((w) => w.code === "image-external-unfetchable");
+      if (extImg) {
+        const n = extImg.count;
+        showNotice(
+          `${n} linked image${n === 1 ? "" : "s"} couldn't be embedded in the ${format.toUpperCase()} — the image host didn't ` +
+            `allow this site to read them (a CORS restriction), so they appear as gray boxes. They still show in the editor.`,
+          "warning",
+        );
+      }
       const blob = blobFor(format, bytes);
       // With an embedder onSave hook, hand off the file instead of downloading;
       // the host routes it to its own pipeline (upload, persist, custom download).

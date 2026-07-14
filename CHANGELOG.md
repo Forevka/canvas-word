@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Linked ("Link to File") images — `a:blip r:link` (#172).** Images whose bytes live
+  OUTSIDE the document (a `TargetMode="External"` relationship targeting a URL) were dropped on
+  import: the DrawingML parser only read `r:embed`, so a document whose images are all external
+  (e.g. S3 URLs) loaded with no images at all. `parseDrawing` now falls back to `r:link` and stamps
+  the URL onto a new `ImageBlock.externalSrc`; the editor displays it (the canvas loads the URL
+  directly), export re-emits `a:blip r:link` + an External relationship instead of packing bytes,
+  and `externalSrc` survives serialize (which blanks the runtime `src`) so it rehydrates on reload.
+  Authorable via the builder (`.image(url, { linked: true })`) and C# (`ImageOptions.Linked`), with
+  round-trip/serialize tests, showcase coverage, and `OOXML_COVERAGE.md` updated.
+- **Host-owned resolver to embed linked images in headless PDF (C# ClearScript).** The bare-V8 host
+  has no `fetch`, so linked images render as placeholder boxes in headless PDF. `WordDocument`
+  gains `LinkedImageUrls()` and `ExportPdf(LinkedImageResolver)` / async / `Stream` overloads: the
+  host supplies the bytes for each external URL with its own `HttpClient` (proxy / headers / TLS /
+  timeout) and its own concurrency cap — the engine never fetches. DOCX export is unaffected (it
+  re-emits `r:link`). A `linkedimg` benchmark verifies the resolver-fed PDF is byte-identical to the
+  same image embedded directly.
+- **Export warning when a linked image can't be embedded due to CORS.** The browser lets the editor
+  *display* a cross-origin image (drawing needs no CORS) but blocks *reading* its bytes for export
+  unless the host sends `Access-Control-Allow-Origin`. Client-side PDF/DOCX export now reports an
+  `image-external-unfetchable` warning (in `ExportResult.warnings`, so embedders and the `onSave`
+  hook see it) listing how many linked images couldn't be fetched, and the editor raises a visible
+  toast — so an image that shows on screen but exports as a gray box is no longer a silent surprise.
+  The fix is on the image host (add the origin to its CORS allowlist), not the library.
 - **Round-trip fidelity for run proofing language `w:lang` (issue #168).** `w:lang`
   (`@w:val`/`@w:eastAsia`/`@w:bidi`) — which Word emits on nearly every run and in
   `docDefaults`/styles, making it the highest-frequency previously-dropped property — now
