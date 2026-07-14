@@ -44,8 +44,13 @@ const drop = (id: string): ReviewOp => ({ type: "removeSuggestion", id });
 export function acceptSuggestion(doc: Document, review: ReviewLayer, id: string): Resolution | null {
   const s = review.suggestions.find((x) => x.id === id);
   if (!s) return null;
-  // structural + format + insert are already applied to the live doc → accept is
-  // a pure record drop. Only a tracked DELETE still needs its destructive op.
+  // A not-yet-applied structural record (compare's "remove block on accept") runs
+  // its forward op on accept; the common case (already-live edit) just drops it.
+  if (s.kind === "structural" && s.structural && s.structural.applied === false) {
+    return { ops: [s.structural.op], reviewOps: [drop(id)] };
+  }
+  // structural (already-applied) + format + insert are already applied to the live
+  // doc → accept is a pure record drop. Only a tracked DELETE needs its destructive op.
   return s.kind === "delete" ? { ops: deleteAnchorOp(s), reviewOps: [drop(id)] } : { ops: [], reviewOps: [drop(id)] };
 }
 
@@ -54,8 +59,13 @@ export function rejectSuggestion(doc: Document, review: ReviewLayer, id: string)
   if (!s) return null;
   if (s.kind === "insert") return { ops: deleteAnchorOp(s), reviewOps: [drop(id)] };
   if (s.kind === "format") return { ops: formatRejectOp(doc, s), reviewOps: [drop(id)] };
-  // structural reject re-applies the exact inverse captured at intercept time.
-  if (s.kind === "structural") return { ops: s.structural ? [s.structural.inverse] : [], reviewOps: [drop(id)] };
+  // structural reject re-applies the exact inverse captured at intercept time —
+  // UNLESS the forward op was never applied (compare's "remove on accept"), where
+  // reject means "keep the original", i.e. a pure record drop.
+  if (s.kind === "structural") {
+    if (!s.structural || s.structural.applied === false) return { ops: [], reviewOps: [drop(id)] };
+    return { ops: [s.structural.inverse], reviewOps: [drop(id)] };
+  }
   return { ops: [], reviewOps: [drop(id)] }; // delete → keep text, drop record
 }
 

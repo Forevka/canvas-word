@@ -80,6 +80,28 @@ describe("resolve — structural suggestions", () => {
     expect(bodyText(restored)).toEqual(["a", "b"]);
   });
 
+  it("accept a not-yet-applied removeBlock removes the block (compare's delete-on-accept)", () => {
+    // The block is STILL LIVE in the merged doc; accept runs the forward removeBlock.
+    const live = docOf(para("p", "keep"), para("q", "gone"), para("r", "tail"));
+    const structural: StructuralChange = {
+      op: { type: "removeBlock", blockId: "q" },
+      inverse: { type: "insertBlock", index: 1, block: para("q", "gone"), where: "body" },
+      blockId: "q",
+      applied: false,
+    };
+    const review: ReviewLayer = {
+      ...emptyReview("d"),
+      suggestions: [{ id: "s1", kind: "structural", anchor: { start: { blockId: "q", offset: 0 }, end: { blockId: "q", offset: 0 } }, author: alice, createdAt: 1, structural }],
+    };
+    const acc = acceptSuggestion(live, review, "s1")!;
+    expect(acc.ops).toEqual([{ type: "removeBlock", blockId: "q" }]);
+    expect(bodyText(applyAll(live, acc.ops))).toEqual(["keep", "tail"]);
+    // Reject keeps the original block and just drops the record — no core op.
+    const rej = rejectSuggestion(live, review, "s1")!;
+    expect(rej.ops).toEqual([]);
+    expect(bodyText(applyAll(live, rej.ops))).toEqual(["keep", "gone", "tail"]);
+  });
+
   it("rejectAll reverses a split+insert paste newest-first, restoring the baseline", () => {
     // Simulate a 2-block paste decomposed into: split at the caret, then insert a
     // block between the halves. rejectAll must undo the insert THEN the split.

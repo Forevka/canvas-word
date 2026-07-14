@@ -232,6 +232,16 @@ time and rehydrates on join. It's an **overlay extension** — the OOXML core an
 the writers never see it; default export bakes the overlay into a clean document
 (reject-all = the original baseline). See [REVIEW.md](./REVIEW.md).
 
+**Compare & merge** — Word-style **Compare** (2-way) diffs an original against a
+revised `.docx` into a redline you accept/reject change-by-change, reusing the
+track-changes overlay; **3-way Merge** reconciles a common base + two versions
+(git-style: non-conflicting edits auto-merge, conflicts are resolved by picking a
+side). Both are in the File tab, and embedders can drive them programmatically —
+`wc.compare({ revised })` / `wc.merge3({ base, theirs, mine? })` (each accepts a
+`Document` or `.docx` bytes), or auto-launch on load via the `compareOnLoad` /
+`mergeOnLoad` constructor options for a "resolve differences the moment the page
+loads" flow. The diff core is isomorphic (`@cw/shared/compare`).
+
 **Agent tools (WebMCP)** — opt-in (`agentTools: true`), the editor exposes
 itself to AI agents over [WebMCP](https://webmcp.dev)
 (`navigator.modelContext`): read/inspect (`get_document`, `search_document`,

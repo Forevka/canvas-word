@@ -9,7 +9,7 @@
 // events fire; when omitted, the editor runs fully offline. Multiple WordCanvas
 // instances can coexist on one page (class-scoped chrome, per-instance runtime).
 
-import type { AgentToolsOptions, EditMode, EditorHandle, FieldResolver, Participant, SaveEvent, SaveFormat, SaveHandler, WordCanvasEvent, WordCanvasRuntime, WordCanvasViewOptions } from "./app/runtime";
+import type { AgentToolsOptions, CompareRequest, DocInput, EditMode, EditorHandle, FieldResolver, Merge3Request, Participant, SaveEvent, SaveFormat, SaveHandler, WordCanvasEvent, WordCanvasRuntime, WordCanvasViewOptions } from "./app/runtime";
 import type { ChildContent, ChildDocument, ChildEditorHandle, ChildRenderOptions, FieldResolveRequest, FieldResult } from "./index";
 import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
 import type { CjkConfig, CustomFontDef, CustomFontFaces, DefaultStyleOverrides, EditorBehavior, EditorTheme, FontsConfig } from "./config";
@@ -20,6 +20,7 @@ import type { DocSelection } from "@cw/shared";
 import { BUNDLE_SHARE, type LoadProgress } from "./app/loadProgress";
 
 export type { Document, UserInfo, Participant, EditMode, ReviewLayer, Fragment, FieldResolver, FieldResolveRequest, FieldResult, AgentToolsOptions, LoadProgress, WordCanvasViewOptions, SaveEvent, SaveFormat, SaveHandler };
+export type { DocInput, CompareRequest, Merge3Request };
 export type { ChildDocument, ChildContent, ChildRenderOptions, ChildEditorHandle };
 export type { EditorTheme, DefaultStyleOverrides, EditorBehavior, FontsConfig, CjkConfig, CustomFontDef, CustomFontFaces };
 export type { CustomizeRibbon, RibbonApi, RibbonButtonSpec, RibbonActionContext, DocSelection };
@@ -35,6 +36,17 @@ export interface WordCanvasOptions {
   docId?: string;
   /** @deprecated Use `docId`. Join an existing collaboration session on load. */
   collabId?: string;
+  /** Offline: open this document on load (the Original for compare / Mine for
+   *  merge). Ignored online — use `docId`. Cloned on load. */
+  document?: Document;
+  /** On load, immediately open the **Compare** view: diff the loaded document
+   *  (Original) against `revised` (a Document or `.docx` bytes) so the user is
+   *  prompted to resolve differences right away. */
+  compareOnLoad?: CompareRequest;
+  /** On load, immediately open the **3-way Merge** editor for base / mine / theirs
+   *  (Mine defaults to the loaded document) so the user resolves conflicts right
+   *  away. */
+  mergeOnLoad?: Merge3Request;
   /** Caller-supplied identity (attribution + presence). The embedder owns auth. */
   user?: UserInfo;
   /** Override how a share link is surfaced (default: a built-in dialog). */
@@ -166,6 +178,9 @@ export class WordCanvas {
         backendUrl: opts.backendUrl,
         // `docId` is the canonical name; fall back to the deprecated `collabId`.
         collabId: opts.docId ?? opts.collabId,
+        document: opts.document,
+        compareOnLoad: opts.compareOnLoad,
+        mergeOnLoad: opts.mergeOnLoad,
         user: opts.user,
         onShareLink: opts.onShareLink,
         onSave: opts.onSave,
@@ -292,6 +307,21 @@ export class WordCanvas {
   /** Publish the current document and resolve its shareable link (online only). */
   async share(): Promise<string> {
     return (await this.ready).share();
+  }
+
+  /** Open the **Compare** view: diff the open document (Original) against
+   *  `request.revised` (a Document or `.docx` bytes) and let the user resolve each
+   *  change, then apply it as tracked changes or a resolved document. Resolves
+   *  once the view is open. */
+  async compare(request: CompareRequest): Promise<void> {
+    return (await this.ready).compare(request);
+  }
+
+  /** Open the **3-way Merge** editor for `request.base` / `request.theirs` (and
+   *  `request.mine`, defaulting to the open document) — Documents or `.docx`
+   *  bytes. Auto-merges non-conflicting changes and prompts for each conflict. */
+  async merge3(request: Merge3Request): Promise<void> {
+    return (await this.ready).merge3(request);
   }
 
   // ---- review layer (track changes + comments) ----------------------------
