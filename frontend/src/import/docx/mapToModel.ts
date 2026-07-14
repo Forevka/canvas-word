@@ -740,6 +740,10 @@ export function createMapper(
       heightPx: round2(emuToPx(inline.heightEmu)),
       align: inline.anchorAlign ?? (paraAlign === "justify" ? "left" : paraAlign),
     };
+    // Linked ("Link to File") image: keep the external URL as the portable handle
+    // (src is a live-but-non-portable copy of it). Export re-emits r:link.
+    const externalUrl = media.externalUrl(inline.relId);
+    if (externalUrl) image.externalSrc = externalUrl;
     // a:srcRect crop insets (fractions), rounded for a stable round-trip.
     if (inline.crop) {
       image.crop = {

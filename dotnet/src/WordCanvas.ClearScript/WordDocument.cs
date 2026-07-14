@@ -3,6 +3,25 @@ using Microsoft.ClearScript;
 namespace WordCanvas.ClearScript;
 
 /// <summary>
+/// Resolves external ("Link to File") image URLs to their bytes for PDF export.
+/// Given every distinct linked-image URL the document references (a:blip r:link →
+/// TargetMode="External"), return the bytes for the ones you fetched — omit any URL
+/// you couldn't resolve (that image renders as a placeholder box, exactly as with no
+/// resolver at all).
+/// <para>The HOST owns the fetch: wire your own <c>HttpClient</c> with the proxy,
+/// headers, TLS, auth and timeout policy you need, and cap concurrency + downscale to
+/// bound memory (120 full-res photos decoded at once is easily hundreds of MB).</para>
+/// <para>Only PDF export uses this — DOCX export re-emits linked images as r:link and
+/// needs no bytes.</para>
+/// </summary>
+public delegate IReadOnlyDictionary<string, byte[]> LinkedImageResolver(IReadOnlyList<string> urls);
+
+/// <summary>Async variant of <see cref="LinkedImageResolver"/> for HttpClient-first
+/// backends: awaited before the (synchronous) render, so you can fan out downloads
+/// with <c>Task.WhenAll</c> under your own <c>SemaphoreSlim</c> cap.</summary>
+public delegate Task<IReadOnlyDictionary<string, byte[]>> LinkedImageResolverAsync(IReadOnlyList<string> urls);
+
+/// <summary>
 /// An opaque handle to a document living inside the V8 engine (imported from a
 /// .docx or produced by <see cref="Builder.DocumentBuilder"/>). The model data
 /// never leaves V8; only export blobs cross the boundary.
@@ -129,8 +148,73 @@ public sealed partial class WordDocument
 
     // ---- export -------------------------------------------------------------
 
-    /// <summary>Render to a page-accurate PDF (reuses the layout engine).</summary>
+    /// <summary>Render to a page-accurate PDF (reuses the layout engine). External
+    /// ("Link to File") images are NOT fetched here — they render as placeholder boxes;
+    /// pass a <see cref="LinkedImageResolver"/> overload to embed them.</summary>
     public byte[] ExportPdf() => _engine.ExportBytes(pdf: true, Doc, Images);
+
+    /// <summary>Every distinct external ("Link to File") image URL this document
+    /// references (ImageBlock.externalSrc). Inspect or pre-fetch them yourself, or let
+    /// an <see cref="ExportPdf(LinkedImageResolver)"/> overload drive your resolver.</summary>
+    public IReadOnlyList<string> LinkedImageUrls() => _engine.LinkedImageUrls(Doc);
+
+    /// <summary>Render to PDF, resolving external ("linked") images through a host-owned
+    /// <paramref name="imagesResolver"/> — your own HttpClient / proxy / concurrency
+    /// policy. Any linked URL the resolver omits still renders as a placeholder box.
+    /// With no linked images (or an empty result) this behaves like <see cref="ExportPdf()"/>.</summary>
+    public byte[] ExportPdf(LinkedImageResolver imagesResolver)
+    {
+        ArgumentNullException.ThrowIfNull(imagesResolver);
+        return _engine.ExportBytes(pdf: true, Doc, ResolveExportImages(imagesResolver));
+    }
+
+    /// <summary>Stream overload of <see cref="ExportPdf(LinkedImageResolver)"/> (pooled
+    /// buffer, no large output byte[]).</summary>
+    public long ExportPdf(Stream destination, LinkedImageResolver imagesResolver)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        ArgumentNullException.ThrowIfNull(imagesResolver);
+        return _engine.ExportToStream(pdf: true, Doc, ResolveExportImages(imagesResolver), destination);
+    }
+
+    /// <summary>Async overload of <see cref="ExportPdf(LinkedImageResolver)"/>: the
+    /// resolver is awaited (fan out your downloads with <c>Task.WhenAll</c>) before the
+    /// synchronous render.</summary>
+    public async Task<byte[]> ExportPdfAsync(LinkedImageResolverAsync imagesResolver)
+    {
+        ArgumentNullException.ThrowIfNull(imagesResolver);
+        var images = await ResolveExportImagesAsync(imagesResolver).ConfigureAwait(false);
+        return _engine.ExportBytes(pdf: true, Doc, images);
+    }
+
+    /// <summary>Async + stream overload — awaits the resolver, then renders into
+    /// <paramref name="destination"/> via a pooled buffer.</summary>
+    public async Task<long> ExportPdfAsync(Stream destination, LinkedImageResolverAsync imagesResolver)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        ArgumentNullException.ThrowIfNull(imagesResolver);
+        var images = await ResolveExportImagesAsync(imagesResolver).ConfigureAwait(false);
+        return _engine.ExportToStream(pdf: true, Doc, images, destination);
+    }
+
+    /// <summary>Enumerate the doc's linked-image URLs, drive the resolver, and marshal
+    /// the fetched bytes into the export image map. Falls back to the embedded-media map
+    /// when there are no linked images or the resolver returns nothing.</summary>
+    private object? ResolveExportImages(LinkedImageResolver resolver)
+    {
+        var urls = _engine.LinkedImageUrls(Doc);
+        if (urls.Count == 0) return Images;
+        var resolved = resolver(urls);
+        return resolved is { Count: > 0 } ? _engine.BuildExportImages(Images, resolved) : Images;
+    }
+
+    private async Task<object?> ResolveExportImagesAsync(LinkedImageResolverAsync resolver)
+    {
+        var urls = _engine.LinkedImageUrls(Doc);
+        if (urls.Count == 0) return Images;
+        var resolved = await resolver(urls).ConfigureAwait(false);
+        return resolved is { Count: > 0 } ? _engine.BuildExportImages(Images, resolved) : Images;
+    }
 
     /// <summary>Write to DOCX (hand-rolled OOXML, the inverse of the importer).</summary>
     public byte[] ExportDocx() => _engine.ExportBytes(pdf: false, Doc, Images);

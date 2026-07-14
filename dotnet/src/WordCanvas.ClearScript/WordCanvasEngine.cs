@@ -235,6 +235,36 @@ public sealed class WordCanvasEngine : IDisposable
 
     internal byte[] ExportBytes(bool pdf, object doc, object? images) => ReadBytes(ExportValue(pdf, doc, images));
 
+    /// <summary>Every distinct external ("Link to File") image URL a document references
+    /// (ImageBlock.externalSrc → a:blip r:link). Bare V8 can only enumerate — it never
+    /// fetches; the host resolves these to bytes for PDF export.</summary>
+    internal IReadOnlyList<string> LinkedImageUrls(object doc)
+    {
+        ThrowIfDisposed();
+        if (_api.InvokeMethod("linkedImageUrls", doc) is not ScriptObject arr) return Array.Empty<string>();
+        var len = Convert.ToInt32(arr.GetProperty("length"));
+        var list = new List<string>(len);
+        for (var i = 0; i < len; i++)
+        {
+            var v = arr.GetProperty(i)?.ToString();
+            if (!string.IsNullOrEmpty(v)) list.Add(v);
+        }
+        return list;
+    }
+
+    /// <summary>Marshal host-fetched linked-image bytes (url→bytes) into a fresh V8
+    /// image map merged over the document's embedded-media map, for PDF export. The
+    /// URL is the linked image's <c>src</c>, so the exporter resolves it like any other
+    /// image. Entries with null/empty bytes are skipped (they stay placeholder boxes).</summary>
+    internal object BuildExportImages(object? baseImages, IReadOnlyDictionary<string, byte[]> resolved)
+    {
+        ThrowIfDisposed();
+        var extra = (ScriptObject)NewObject();
+        foreach (var kv in resolved)
+            if (kv.Value is { Length: > 0 }) extra.SetProperty(kv.Key, AllocBytes(kv.Value));
+        return _api.InvokeMethod("mergeImages", baseImages ?? (object)Undefined.Value, extra);
+    }
+
     /// <summary>
     /// Export straight into a caller-owned stream, copying the V8 result in chunks
     /// through a pooled buffer — so the (often large-object-heap) output byte[] is

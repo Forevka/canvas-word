@@ -122,10 +122,12 @@ export class BuilderContext {
     };
   }
 
-  image(src: string, widthPx: number, heightPx: number, align: ImageBlock["align"], wrap?: ImageBlock["wrap"], crop?: ImageBlock["crop"]): ImageBlock {
+  image(src: string, widthPx: number, heightPx: number, align: ImageBlock["align"], wrap?: ImageBlock["wrap"], crop?: ImageBlock["crop"], externalSrc?: string): ImageBlock {
     const img: ImageBlock = { kind: "image", id: this.ids.next(), revision: 0, src, widthPx, heightPx, align };
     if (wrap) img.wrap = wrap;
     if (crop) img.crop = crop;
+    // Linked ("Link to File") image: bytes live outside the document at this URL.
+    if (externalSrc) img.externalSrc = externalSrc;
     return img;
   }
 

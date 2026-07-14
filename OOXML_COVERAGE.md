@@ -320,6 +320,7 @@ Decoded in `documentParser.ts` (`parseDrawing`, `parseVmlPict`).
 
 ```
 w:drawing → wp:inline / wp:anchor → a:blip @r:embed ✅
+├─ a:blip @r:link (linked / "Link to File") ✅ (external URL → ImageBlock.externalSrc; export re-emits r:link + TargetMode="External"; local file: paths skipped)
 ├─ wp:extent (@cx/@cy) ................. ✅
 ├─ a:srcRect (crop l/t/r/b) ............ ✅
 ├─ wrap: square/tight/through → square . ✅

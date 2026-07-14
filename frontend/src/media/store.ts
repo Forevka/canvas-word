@@ -106,7 +106,14 @@ export function rehydrateDocMedia(doc: Document): string[] {
   const missing: string[] = [];
   forEachImage(doc, (b) => {
     // Only fill blanks (a snapshot's stripped src); leave live/data: srcs.
-    if (!b.mediaId || b.src !== "") return;
+    if (b.src !== "") return;
+    // Linked ("Link to File") image: no bytes/mediaId — its portable URL rehydrates
+    // the src directly (the browser loads it like any other image source).
+    if (b.externalSrc) {
+      b.src = b.externalSrc;
+      return;
+    }
+    if (!b.mediaId) return;
     const url = mediaUrl(b.mediaId);
     if (url) b.src = url;
     else if (!missing.includes(b.mediaId)) missing.push(b.mediaId);

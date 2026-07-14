@@ -22,6 +22,11 @@ export interface ImageOptions {
   /** Crop insets (OOXML a:srcRect), each a 0..1 fraction trimmed off that edge —
    *  so widthPx/heightPx describe the cropped box. Absent = no crop. */
   crop?: { left: number; top: number; right: number; bottom: number };
+  /** Linked ("Link to File") image: `src` must be an http(s) URL whose bytes stay
+   *  OUTSIDE the document. Export re-emits it as `a:blip r:link` + an External
+   *  relationship rather than packing bytes into word/media. Ignored for raw-byte
+   *  sources (those are always embedded as data:). */
+  linked?: boolean;
 }
 
 export interface ListItem {
@@ -105,7 +110,9 @@ export class StoryBuilder {
       return this;
     }
     const url = typeof src === "string" ? src : bytesToDataUrl(src.data, src.mime);
-    this.push(this.ctx.image(url, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.wrap, opts.crop));
+    // Linked only makes sense for an external URL source (raw bytes are embedded).
+    const externalSrc = opts.linked && typeof src === "string" ? url : undefined;
+    this.push(this.ctx.image(url, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.wrap, opts.crop, externalSrc));
     return this;
   }
 
