@@ -179,3 +179,32 @@ describe("settings.xml — w:defaultTabStop + w:compat", () => {
     expect(out.compatSettings).toEqual([{ name: "compatibilityMode", uri: "http://schemas.microsoft.com/office/word", val: "15" }]);
   });
 });
+
+// ── linked ("Link to File") images — a:blip r:link + External rel ─────────────
+const exportedRelsXml = (doc: Document): string =>
+  strFromU8(unzipSync(writeDocx(doc).bytes)["word/_rels/document.xml.rels"]!);
+
+describe("linked (external) images — r:link round-trip", () => {
+  const URL = "https://example.com/linked.png";
+  const linkedImg: ImageBlock = {
+    kind: "image", id: "lnk0", revision: 0, src: URL, externalSrc: URL, widthPx: 120, heightPx: 90, align: "left",
+  };
+
+  it("emits a:blip r:link + a TargetMode=External rel (no packed bytes)", () => {
+    const doc: Document = { section: SECTION, blocks: [linkedImg] };
+    // No images map entry needed — a linked image carries no bytes.
+    const xml = exportedDocXml(doc);
+    expect(xml).toContain("r:link=");
+    expect(xml).not.toContain("r:embed=");
+    const rels = exportedRelsXml(doc);
+    expect(rels).toContain(`Target="${URL}"`);
+    expect(rels).toContain('TargetMode="External"');
+  });
+
+  it("round-trips the external URL through export → re-import", () => {
+    const doc: Document = { section: SECTION, blocks: [linkedImg] };
+    const back = firstImage(roundTrip(doc));
+    expect(back.src).toBe(URL);
+    expect(back.externalSrc).toBe(URL);
+  });
+});

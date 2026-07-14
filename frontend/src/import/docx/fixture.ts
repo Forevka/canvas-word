@@ -67,12 +67,21 @@ export function relsXml(rels: Array<{ id: string; type: string; target: string; 
 }
 
 /** Minimal DrawingML inline/anchored image (namespaces left undeclared — txml
- *  matches qualified names directly, same as Word output parsing). */
-export function drawingXml(relId: string, cxEmu: number, cyEmu: number, anchored = false): string {
+ *  matches qualified names directly, same as Word output parsing). `blipRef`
+ *  selects r:embed (embedded bytes, default) or r:link ("Link to File" images
+ *  whose bytes live outside the package, via a TargetMode="External" rel). */
+export function drawingXml(
+  relId: string,
+  cxEmu: number,
+  cyEmu: number,
+  anchored = false,
+  blipRef: "embed" | "link" = "embed",
+): string {
   const tag = anchored ? "wp:anchor" : "wp:inline";
+  const blipAttr = blipRef === "link" ? "r:link" : "r:embed";
   return (
     `<w:drawing><${tag}><wp:extent cx="${cxEmu}" cy="${cyEmu}"/>` +
-    `<a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed="${relId}"/></pic:blipFill></pic:pic></a:graphicData></a:graphic>` +
+    `<a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip ${blipAttr}="${relId}"/></pic:blipFill></pic:pic></a:graphicData></a:graphic>` +
     `</${tag}></w:drawing>`
   );
 }

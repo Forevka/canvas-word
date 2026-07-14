@@ -60,6 +60,15 @@ describe("serializeDocument / deserializeDocument", () => {
     expect((snap.doc.blocks[0] as ImageBlock).src).toBe("data:image/png;base64,AAAA");
   });
 
+  it("keeps externalSrc for a linked image (blanked src rehydrates from it)", () => {
+    const url = "https://example.com/linked.png";
+    const linked: ImageBlock = { ...img("i1", undefined, url), externalSrc: url };
+    const snap = serializeDocument({ section: section(), blocks: [linked] });
+    const stored = snap.doc.blocks[0] as ImageBlock;
+    expect(stored.src).toBe(""); // runtime http src blanked like any non-data: src
+    expect(stored.externalSrc).toBe(url); // portable handle survives — rehydrate refills src
+  });
+
   it("collects mediaIds across body, table cells, and bands", () => {
     const doc: Document = {
       section: { ...section(), header: [img("h1", "hashHeader", "blob:1")] },

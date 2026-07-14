@@ -659,7 +659,11 @@ function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
   const container = el(drawing, "wp:inline") ?? anchor;
   if (!container) return undefined;
   const blip = findDeep(container, "a:blip");
-  const relId = blip && attr(blip, "r:embed");
+  // r:embed = image bytes packaged inside the docx; r:link = a "Link to File"
+  // image whose bytes live outside the package (an http(s) URL or local path,
+  // via a TargetMode="External" relationship). Accept either — the media store
+  // resolves an external rel to its URL.
+  const relId = blip && (attr(blip, "r:embed") ?? attr(blip, "r:link"));
   if (!relId) {
     ctx.warnings.add("images-skipped", "A drawing without an embedded image reference was skipped.");
     return undefined;

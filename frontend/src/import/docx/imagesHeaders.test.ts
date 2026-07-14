@@ -195,9 +195,29 @@ describe("images — external (TargetMode=External)", () => {
       ]),
     });
     const r = runImport(bytes);
-    expect(image(r.doc.blocks[0]).src).toBe("https://example.com/pic.png");
+    const img = image(r.doc.blocks[0]);
+    expect(img.src).toBe("https://example.com/pic.png");
+    // Portable handle for a linked image — survives serialize (which blanks src)
+    // and drives export's r:link re-emission.
+    expect(img.externalSrc).toBe("https://example.com/pic.png");
     expect(r.mediaUrls).toHaveLength(0); // nothing to revoke
     expect(codes(r)).toContain("media-external");
+  });
+
+  it("resolves a:blip r:link ('Link to File'), the markup Word emits for linked images", () => {
+    const bytes = makeDocx({
+      "[Content_Types].xml": CONTENT_TYPES_XML,
+      // Real linked images reference the rel via r:link, not r:embed.
+      "word/document.xml": documentXml(`<w:p><w:r>${drawingXml("rId10", 914400, 914400, false, "link")}</w:r></w:p>`),
+      "word/_rels/document.xml.rels": relsXml([
+        { id: "rId10", type: REL_TYPES.image, target: "https://example.com/linked.jpg", external: true },
+      ]),
+    });
+    const r = runImport(bytes);
+    const img = image(r.doc.blocks[0]);
+    expect(img.src).toBe("https://example.com/linked.jpg");
+    expect(img.externalSrc).toBe("https://example.com/linked.jpg");
+    expect(codes(r)).not.toContain("images-skipped"); // was dropped before r:link support
   });
 
   it("skips linked images pointing at local files", () => {

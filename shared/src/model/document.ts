@@ -459,6 +459,12 @@ export interface ImageBlock {
    *  not yet registered in a MediaStore (then `src` may carry an inline data:
    *  URL as a fallback). */
   mediaId?: string;
+  /** Linked ("Link to File") image: the bytes live OUTSIDE the document, at this
+   *  URL (OOXML `a:blip r:link` → a `TargetMode="External"` relationship). Unlike
+   *  an embedded image there is no `mediaId` and no packed bytes; `src` is set to
+   *  this URL for display, but `externalSrc` is the portable handle that survives
+   *  serialize (which blanks the runtime `src`). Export re-emits it as `r:link`. */
+  externalSrc?: string;
   widthPx: number;
   heightPx: number;
   /** Crop insets (OOXML DrawingML a:srcRect), each a 0..1 fraction of the source

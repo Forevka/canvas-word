@@ -521,6 +521,10 @@ public sealed record ImageOptions
     /// <summary>Crop insets (OOXML a:srcRect), each a 0..1 fraction trimmed off that
     /// edge — so WidthPx/HeightPx describe the cropped box. Null = no crop.</summary>
     public ImageCrop? Crop { get; init; }
+    /// <summary>Linked ("Link to File") image: <c>src</c> must be an http(s) URL whose
+    /// bytes stay OUTSIDE the document. Export re-emits it as <c>a:blip r:link</c> + an
+    /// External relationship rather than packing bytes. Ignored for raw-byte sources.</summary>
+    public bool? Linked { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -535,6 +539,7 @@ public sealed record ImageOptions
         }
         if (Wrap is { } w) Js.Set(o, "wrap", EnumJs.Wrap(w));
         if (Crop is { } cr) Js.Set(o, "crop", cr.ToJs(e));
+        if (Linked is { } lk) Js.Set(o, "linked", lk);
         return o;
     }
 }

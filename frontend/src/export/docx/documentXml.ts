@@ -808,12 +808,20 @@ function fieldRegionXml(blocks: Block[], ctx: PartCtx): string {
 }
 
 function imageParagraphXml(img: Extract<Block, { kind: "image" }>, ctx: PartCtx): string {
-  const target = ctx.media.resolve(img.src);
-  if (!target) {
-    ctx.warn("image-unresolved", img.src);
-    return el("w:p");
+  // Linked ("Link to File") image: no packed bytes — re-emit the external URL as
+  // a TargetMode="External" rel referenced by a:blip r:link (see r:embed below).
+  let relId: string;
+  if (img.externalSrc) {
+    relId = ctx.rels.add(REL.image, img.externalSrc, /* external */ true);
+  } else {
+    const target = ctx.media.resolve(img.src);
+    if (!target) {
+      ctx.warn("image-unresolved", img.src);
+      return el("w:p");
+    }
+    relId = ctx.rels.add(REL.image, target);
   }
-  const relId = ctx.rels.add(REL.image, target);
+  const blipAttr = img.externalSrc ? { "r:link": relId } : { "r:embed": relId };
   const cx = pxToEmu(img.widthPx);
   const cy = pxToEmu(img.heightPx);
   // a:srcRect crop (insets as 1/1000 of a percent); omitted when there's no crop.
@@ -835,7 +843,7 @@ function imageParagraphXml(img: Extract<Block, { kind: "image" }>, ctx: PartCtx)
           undefined,
           el("pic:cNvPr", { id: 0, name: "image" }) + el("pic:cNvPicPr"),
         ) +
-          el("pic:blipFill", undefined, el("a:blip", { "r:embed": relId }) + srcRect + el("a:stretch", undefined, el("a:fillRect"))) +
+          el("pic:blipFill", undefined, el("a:blip", blipAttr) + srcRect + el("a:stretch", undefined, el("a:fillRect"))) +
           el(
             "pic:spPr",
             undefined,

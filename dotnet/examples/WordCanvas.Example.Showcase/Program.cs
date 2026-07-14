@@ -244,6 +244,9 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
     .Image(blue, "image/png", new ImageOptions { WidthPx = 360, HeightPx = 110, Align = TextAlign.Center, Wrap = ImageWrap.Block })
     .Paragraph("A square-wrapped image floats and text flows around it. " + Repeat(Lorem, 3))
     .Image(purple, "image/png", new ImageOptions { WidthPx = 150, HeightPx = 110, Align = TextAlign.Left, Wrap = ImageWrap.Square })
+    .Paragraph("A linked (\"Link to File\") image: its bytes stay OUTSIDE the document — export re-emits an a:blip r:link + a TargetMode=\"External\" relationship instead of packing bytes:")
+    .Image("https://raw.githubusercontent.com/git/git-scm.com/main/public/images/logos/downloads/Git-Icon-1788C.png",
+        new ImageOptions { WidthPx = 96, HeightPx = 96, Align = TextAlign.Left, Linked = true })
     .Paragraph("Multilevel numbered list:")
     .List(new[]
     {

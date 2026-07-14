@@ -12,6 +12,10 @@ import type { Archive } from "./zip";
 export interface MediaStore {
   /** blob: URL for an image relationship, or undefined if missing/unsupported. */
   resolve(relId: string): string | undefined;
+  /** The external URL of a linked ("Link to File") image (r:link → a
+   *  TargetMode="External", http(s) rel), or undefined for embedded/local/missing
+   *  rels. The portable handle the model keeps in ImageBlock.externalSrc. */
+  externalUrl(relId: string): string | undefined;
   /** Every URL this store created — for ImportResult.mediaUrls (caller revokes). */
   urls(): string[];
 }
@@ -93,9 +97,16 @@ export function createMediaStore(
       byTarget.set(rel.target, url);
       return url;
     },
+    externalUrl(relId) {
+      const rel = rels.get(relId);
+      // Only http(s) linked images are loadable in a page (and re-emittable as a
+      // live link); local file: targets are unreachable, so resolve() skipped
+      // them and there is no URL to carry.
+      return rel?.external && /^https?:\/\//i.test(rel.target) ? rel.target : undefined;
+    },
     urls: () => [...created],
   };
 }
 
 /** No-op store for parts without rels. */
-export const EMPTY_MEDIA: MediaStore = { resolve: () => undefined, urls: () => [] };
+export const EMPTY_MEDIA: MediaStore = { resolve: () => undefined, externalUrl: () => undefined, urls: () => [] };
