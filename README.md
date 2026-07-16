@@ -9,6 +9,13 @@ same architecture Google Docs moved to in 2021.
 **▶ Live demo: [doc-editor.forevka.dev](https://doc-editor.forevka.dev/)** ·
 minimal embed: [/examples/offline/](https://doc-editor.forevka.dev/examples/offline/)
 
+## Related projects
+
+- [**dom-docx**](https://github.com/floodtide/dom-docx) — converts semantic HTML
+  fragments into native, editable Word documents (OOXML). Complementary to
+  canvas-word: generate a `.docx` from HTML with dom-docx, then open and edit it
+  here.
+
 ## Why canvas instead of contenteditable
 
 Browsers flow text into elastic containers well and handle paged documents
