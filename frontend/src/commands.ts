@@ -32,9 +32,10 @@ export interface EditorCommand {
    *  case-insensitively against `KeyboardEvent.key` (e.g. "k", "Enter", "F2",
    *  "ArrowUp", "/"). */
   keybinding?: string | string[];
-  /** Invoked with the editor handle + macro helpers. Thrown errors are caught
-   *  and logged by the wiring so one bad command can't break the keymap. */
-  run: (ctx: CommandContext) => void;
+  /** Invoked with the editor handle + macro helpers. May be async. Synchronous
+   *  throws AND rejected promises are caught and logged by the wiring, so one bad
+   *  command can't break the keymap. */
+  run: (ctx: CommandContext) => void | Promise<void>;
 }
 
 /** A parsed keybinding chord. `mod` is the platform-agnostic Ctrl/Cmd modifier;
@@ -83,31 +84,39 @@ export interface KeyEventLike {
   metaKey: boolean;
 }
 
-/** Does an event satisfy a parsed chord? `mod` matches when Ctrl OR Meta is held
- *  (whichever the OS uses); explicit `ctrl`/`meta` require that exact modifier. */
-export function chordMatches(chord: ParsedChord, ev: KeyEventLike): boolean {
+/** Resolve `mod` to the concrete modifier the active platform uses: Meta (⌘) on
+ *  macOS, Ctrl elsewhere. Returns the effective {ctrl, meta} a chord requires. */
+function effectiveModifiers(chord: ParsedChord, mac: boolean): { ctrl: boolean; meta: boolean } {
+  return {
+    ctrl: chord.ctrl || (chord.mod && !mac),
+    meta: chord.meta || (chord.mod && mac),
+  };
+}
+
+/** Does an event satisfy a parsed chord? `mod` resolves to Ctrl on Windows/Linux
+ *  and Meta (⌘) on macOS (via `mac`), and the OPPOSITE modifier must be absent —
+ *  so a Windows "Mod+S" fires on Ctrl+S but not on the Windows/Meta key. Explicit
+ *  `ctrl`/`meta` still require that exact modifier. All four modifiers are matched
+ *  exactly, so an extra held modifier never counts as a match. */
+export function chordMatches(chord: ParsedChord, ev: KeyEventLike, mac = false): boolean {
   if (ev.key.toLowerCase() !== chord.key) return false;
   if (chord.shift !== ev.shiftKey) return false;
   if (chord.alt !== ev.altKey) return false;
-  if (chord.mod) {
-    // Platform-agnostic: accept Ctrl (win/linux) or Meta (mac).
-    if (!(ev.ctrlKey || ev.metaKey)) return false;
-  } else {
-    if (chord.ctrl !== ev.ctrlKey) return false;
-    if (chord.meta !== ev.metaKey) return false;
-  }
-  return true;
+  const { ctrl, meta } = effectiveModifiers(chord, mac);
+  return ev.ctrlKey === ctrl && ev.metaKey === meta;
 }
 
 /** A canonical, order-independent string for a chord — used to detect two
- *  commands claiming the same shortcut. */
-export function normalizeChord(chord: ParsedChord): string {
+ *  commands claiming the same shortcut. `mac` resolves `mod` to its concrete
+ *  modifier so, e.g., "Mod+K" and "Ctrl+K" are detected as the same chord on
+ *  Windows/Linux (and "Mod+K" and "Meta+K" on macOS). */
+export function normalizeChord(chord: ParsedChord, mac = false): string {
+  const { ctrl, meta } = effectiveModifiers(chord, mac);
   const mods: string[] = [];
-  if (chord.mod) mods.push("mod");
-  if (chord.ctrl) mods.push("ctrl");
+  if (ctrl) mods.push("ctrl");
+  if (meta) mods.push("meta");
   if (chord.alt) mods.push("alt");
   if (chord.shift) mods.push("shift");
-  if (chord.meta) mods.push("meta");
   mods.sort();
   return [...mods, chord.key].join("+");
 }
@@ -127,7 +136,10 @@ export interface CommandBinding {
  *    `conflicts` so the wiring can warn — first-registered shortcut wins, which
  *    keeps behavior deterministic regardless of registration timing.
  *  Pure — no DOM, no console; the caller decides how to surface `conflicts`. */
-export function resolveCommandBindings(commands: readonly EditorCommand[]): {
+export function resolveCommandBindings(
+  commands: readonly EditorCommand[],
+  mac = false,
+): {
   bindings: CommandBinding[];
   conflicts: { raw: string; commandId: string; heldBy: string }[];
   duplicateIds: string[];
@@ -148,7 +160,7 @@ export function resolveCommandBindings(commands: readonly EditorCommand[]): {
     for (const raw of raws) {
       const chord = parseChord(raw);
       if (!chord) continue;
-      const norm = normalizeChord(chord);
+      const norm = normalizeChord(chord, mac);
       const heldBy = claimed.get(norm);
       if (heldBy !== undefined) {
         conflicts.push({ raw, commandId: cmd.id, heldBy });

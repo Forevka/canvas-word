@@ -40,11 +40,17 @@ describe("chordMatches", () => {
     expect(chordMatches(c, ev("j", { ctrlKey: true, shiftKey: true }))).toBe(false); // wrong key
   });
 
-  it("Mod matches Ctrl (win/linux) OR Meta (mac)", () => {
+  it("Mod resolves to Ctrl on win/linux (mac=false) and rejects Meta", () => {
     const c = parseChord("Mod+S")!;
-    expect(chordMatches(c, ev("s", { ctrlKey: true }))).toBe(true);
-    expect(chordMatches(c, ev("s", { metaKey: true }))).toBe(true);
-    expect(chordMatches(c, ev("s"))).toBe(false);
+    expect(chordMatches(c, ev("s", { ctrlKey: true }), false)).toBe(true);
+    expect(chordMatches(c, ev("s", { metaKey: true }), false)).toBe(false); // Meta is NOT Mod on windows
+    expect(chordMatches(c, ev("s"), false)).toBe(false);
+  });
+
+  it("Mod resolves to Meta on macOS (mac=true) and rejects Ctrl", () => {
+    const c = parseChord("Mod+S")!;
+    expect(chordMatches(c, ev("s", { metaKey: true }), true)).toBe(true);
+    expect(chordMatches(c, ev("s", { ctrlKey: true }), true)).toBe(false); // Ctrl is NOT Mod on mac
   });
 
   it("explicit Ctrl does not match a bare Meta press", () => {
@@ -55,13 +61,20 @@ describe("chordMatches", () => {
 
   it("rejects when an unwanted modifier is held", () => {
     const c = parseChord("Mod+K")!;
-    expect(chordMatches(c, ev("k", { ctrlKey: true, altKey: true }))).toBe(false);
+    expect(chordMatches(c, ev("k", { ctrlKey: true, altKey: true }), false)).toBe(false);
   });
 });
 
 describe("normalizeChord", () => {
   it("is order-independent", () => {
     expect(normalizeChord(parseChord("Shift+Ctrl+K")!)).toBe(normalizeChord(parseChord("Ctrl+Shift+K")!));
+  });
+
+  it("resolves Mod to Ctrl on win/linux and Meta on mac", () => {
+    expect(normalizeChord(parseChord("Mod+K")!, false)).toBe(normalizeChord(parseChord("Ctrl+K")!, false));
+    expect(normalizeChord(parseChord("Mod+K")!, true)).toBe(normalizeChord(parseChord("Meta+K")!, true));
+    // ...and NOT the opposite modifier
+    expect(normalizeChord(parseChord("Mod+K")!, false)).not.toBe(normalizeChord(parseChord("Meta+K")!, false));
   });
 });
 
@@ -90,5 +103,16 @@ describe("resolveCommandBindings", () => {
   it("ignores commands with no keybinding", () => {
     const { bindings } = resolveCommandBindings([cmd("a"), cmd("b", "Mod+B")]);
     expect(bindings.map((b) => b.commandId)).toEqual(["b"]);
+  });
+
+  it("detects Mod-vs-explicit conflicts per platform", () => {
+    // On win/linux, Mod == Ctrl, so "Mod+K" and "Ctrl+K" collide (but "Meta+K" doesn't).
+    const win = resolveCommandBindings([cmd("a", "Mod+K"), cmd("b", "Ctrl+K"), cmd("c", "Meta+K")], false);
+    expect(win.conflicts.map((c) => c.commandId)).toEqual(["b"]);
+    expect(win.bindings.map((b) => b.commandId)).toEqual(["a", "c"]);
+    // On macOS, Mod == Meta, so "Mod+K" collides with "Meta+K" instead.
+    const mac = resolveCommandBindings([cmd("a", "Mod+K"), cmd("b", "Ctrl+K"), cmd("c", "Meta+K")], true);
+    expect(mac.conflicts.map((c) => c.commandId)).toEqual(["c"]);
+    expect(mac.bindings.map((b) => b.commandId)).toEqual(["a", "b"]);
   });
 });

@@ -296,7 +296,12 @@ const runRegisteredCommand = (id: string): boolean => {
   const cmd = commandRegistry.get(id);
   if (!cmd || !ribbonCtx) return false;
   try {
-    cmd.run(ribbonCtx);
+    // Commands may be async: catch a synchronous throw here AND a rejected
+    // promise below, so neither becomes an unhandled rejection.
+    const r = cmd.run(ribbonCtx);
+    if (r && typeof (r as Promise<void>).then === "function") {
+      void (r as Promise<void>).catch((err) => console.error(`[canvas-word] command "${id}" run() rejected`, err));
+    }
   } catch (err) {
     console.error(`[canvas-word] command "${id}" run() threw`, err);
   }
@@ -3418,7 +3423,10 @@ if (runtime.commands?.length) {
     }
     commandRegistry.set(cmd.id, cmd);
   }
-  const { bindings, conflicts, duplicateIds } = resolveCommandBindings(runtime.commands);
+  // Resolve "Mod" to the concrete platform modifier (⌘ on macOS, Ctrl elsewhere)
+  // for both conflict detection and matching.
+  const isMac = typeof navigator !== "undefined" && /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent || "");
+  const { bindings, conflicts, duplicateIds } = resolveCommandBindings(runtime.commands, isMac);
   for (const c of conflicts)
     console.warn(`[canvas-word] commands: keybinding "${c.raw}" for "${c.commandId}" is already bound to "${c.heldBy}" — ignored`);
   for (const id of duplicateIds)
@@ -3429,7 +3437,7 @@ if (runtime.commands?.length) {
       (ev) => {
         if (ev.defaultPrevented) return; // built-in chords win
         for (const b of bindings) {
-          if (chordMatches(b.chord, ev)) {
+          if (chordMatches(b.chord, ev, isMac)) {
             ev.preventDefault();
             runRegisteredCommand(b.commandId);
             return;
