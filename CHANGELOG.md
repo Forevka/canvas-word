@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Public command + keymap registry — the `commands` option (#174).** An embedder can now
+  register named commands and bind keyboard shortcuts to them without forking the core — the
+  additive counterpart to `customizeRibbon`. Each `EditorCommand` is `{ id, label?, keybinding?,
+  run(ctx) }`; the handler `ctx` is the *same* `CommandContext` (== `RibbonActionContext`) a custom
+  ribbon button gets, so a macro is interchangeable between a keystroke, a button, and the new
+  `handle.runCommand(id)`. Keybindings use `Mod+Shift+K` syntax (`Mod` = Ctrl on Windows/Linux, ⌘ on
+  macOS, so one binding is cross-platform); the built-in editing chords (Ctrl+B/I/U/Z/Y, Ctrl+Enter)
+  always take precedence, and duplicate ids / conflicting chords are dropped with a `console.warn`
+  (first registration wins). Pure chord parsing/matching/conflict logic lives in the DOM-free
+  `commands.ts` (unit-tested like `ribbon.ts`); wiring is one `keydown` listener on the editor
+  container, tied to teardown. New `examples/command-registry/` demonstrates it end-to-end.
 - **Linked ("Link to File") images — `a:blip r:link` (#172).** Images whose bytes live
   OUTSIDE the document (a `TargetMode="External"` relationship targeting a URL) were dropped on
   import: the DrawingML parser only read `r:embed`, so a document whose images are all external

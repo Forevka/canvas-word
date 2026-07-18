@@ -1,0 +1,7 @@
+{
+  "name": "@cw/example-command-registry",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Register custom commands + keyboard shortcuts (the command/keymap registry) via the `commands` option — no build step, browser import map."
+}

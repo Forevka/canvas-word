@@ -39,6 +39,7 @@ import { showNotice } from "./app/notice";
 // (Hoisted here from the toolbar block; ES imports must be top-level, and the
 // toolbar code now lives inside mountEditorApp.)
 import { anchorBeforeId, type RibbonActionContext, type RibbonApi, type RibbonButtonSpec } from "./ribbon";
+import { chordMatches, resolveCommandBindings, type EditorCommand } from "./commands";
 import {
   insertText as insertTextCmd,
   insertImage,
@@ -287,6 +288,25 @@ let onLocalReviewOp: (env: ReviewOpEnvelope) => void = () => {};
 // helpers). Assigned once the editor handle is built; custom buttons can't fire
 // before mount completes, so it's always set by click time.
 let ribbonCtx: RibbonActionContext | null = null;
+// Registered custom commands (the `commands` option), by id. Populated once the
+// editor handle + ribbonCtx are built; used by handle.runCommand and the custom
+// keybinding listener.
+const commandRegistry = new Map<string, EditorCommand>();
+const runRegisteredCommand = (id: string): boolean => {
+  const cmd = commandRegistry.get(id);
+  if (!cmd || !ribbonCtx) return false;
+  try {
+    // Commands may be async: catch a synchronous throw here AND a rejected
+    // promise below, so neither becomes an unhandled rejection.
+    const r = cmd.run(ribbonCtx);
+    if (r && typeof (r as Promise<void>).then === "function") {
+      void (r as Promise<void>).catch((err) => console.error(`[canvas-word] command "${id}" run() rejected`, err));
+    }
+  } catch (err) {
+    console.error(`[canvas-word] command "${id}" run() threw`, err);
+  }
+  return true;
+};
 const editorOpts = {
   engine,
   paintOptions: { fontRegistry },
@@ -3364,6 +3384,7 @@ const handle: EditorHandle = {
   addComment: (body, mentions) => editor.addComment(body, mentions),
   replyToComment: (threadId, body, mentions) => editor.replyToComment(threadId, body, mentions),
   resolveThread: (threadId, resolved) => editor.resolveThread(threadId, resolved),
+  runCommand: (id) => runRegisteredCommand(id),
   destroy: () => {
     disposeAgentTools?.(); // unregister WebMCP tools before tearing the editor down
     closeDevPanel(); // remove the floating inspector (body-level) if it's open
@@ -3386,6 +3407,47 @@ ribbonCtx = {
     else detachables.push(target);
   },
 };
+
+// ===== commands + keymap registry (opt-in via the `commands` option) =========
+// Register the embedder's commands, then wire their keybindings to one keydown
+// listener on the editor container. The built-in editing keymap (input/keymap.ts)
+// is bound on the SAME element earlier (during createEditor), so it fires first
+// and calls preventDefault for its chords; we skip anything already handled
+// (ev.defaultPrevented) so custom bindings can never clobber Ctrl+B/I/U/Z/Y or
+// Ctrl+Enter. Listener is tied to teardown.signal, so destroy() removes it.
+if (runtime.commands?.length) {
+  for (const cmd of runtime.commands) {
+    if (commandRegistry.has(cmd.id)) {
+      console.warn(`[canvas-word] commands: duplicate command id "${cmd.id}" ignored`);
+      continue;
+    }
+    commandRegistry.set(cmd.id, cmd);
+  }
+  // Resolve "Mod" to the concrete platform modifier (⌘ on macOS, Ctrl elsewhere)
+  // for both conflict detection and matching.
+  const isMac = typeof navigator !== "undefined" && /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent || "");
+  const { bindings, conflicts, duplicateIds } = resolveCommandBindings(runtime.commands, isMac);
+  for (const c of conflicts)
+    console.warn(`[canvas-word] commands: keybinding "${c.raw}" for "${c.commandId}" is already bound to "${c.heldBy}" — ignored`);
+  for (const id of duplicateIds)
+    console.warn(`[canvas-word] commands: duplicate command id "${id}" ignored`);
+  if (bindings.length) {
+    app.addEventListener(
+      "keydown",
+      (ev) => {
+        if (ev.defaultPrevented) return; // built-in chords win
+        for (const b of bindings) {
+          if (chordMatches(b.chord, ev, isMac)) {
+            ev.preventDefault();
+            runRegisteredCommand(b.commandId);
+            return;
+          }
+        }
+      },
+      { signal: teardown.signal },
+    );
+  }
+}
 
 runtime.onLoadProgress?.({ phase: "ready", percent: 1, loaded: 0, total: 0 });
 runtime.onReady?.(handle);

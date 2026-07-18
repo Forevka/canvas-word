@@ -8,6 +8,7 @@ import type { ChildDocument, EditMode, FieldResolver } from "../index";
 import type { ExportWarning } from "../export/exportDocument";
 import type { CjkConfig, DefaultStyleOverrides, EditorBehavior, EditorTheme, FontsConfig } from "../config";
 import type { CustomizeRibbon } from "../ribbon";
+import type { EditorCommand } from "../commands";
 import type { LoadProgress } from "./loadProgress";
 
 export type { EditMode, FieldResolver };
@@ -147,6 +148,9 @@ export interface EditorHandle {
   addComment(body: Fragment, mentions?: UserInfo[]): string | null;
   replyToComment(threadId: string, body: Fragment, mentions?: UserInfo[]): void;
   resolveThread(threadId: string, resolved?: boolean): void;
+  /** Run a registered custom command by id (see the `commands` option). Returns
+   *  false if no command with that id was registered. */
+  runCommand(id: string): boolean;
   destroy(): void;
 }
 
@@ -208,4 +212,6 @@ export interface WordCanvasRuntime {
   /** Customize the ribbon: reorder/remove built-ins by id and add custom tabs,
    *  groups, and buttons. Called once at mount with a mutation API. */
   customizeRibbon?: CustomizeRibbon | undefined;
+  /** Custom commands + optional keybindings (the command/keymap registry). */
+  commands?: EditorCommand[] | undefined;
 }
