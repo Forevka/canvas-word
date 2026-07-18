@@ -15,6 +15,7 @@ import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
 import type { CjkConfig, CustomFontDef, CustomFontFaces, DefaultStyleOverrides, EditorBehavior, EditorTheme, FontsConfig } from "./config";
 import { darkCanvasTheme } from "./config";
 import type { CustomizeRibbon, RibbonActionContext, RibbonApi, RibbonButtonSpec } from "./ribbon";
+import type { CommandContext, EditorCommand } from "./commands";
 import { makeFloatingDialog } from "./ui/floatingDialog";
 import type { DocSelection } from "@cw/shared";
 import { BUNDLE_SHARE, type LoadProgress } from "./app/loadProgress";
@@ -23,6 +24,7 @@ export type { Document, UserInfo, Participant, EditMode, ReviewLayer, Fragment, 
 export type { ChildDocument, ChildContent, ChildRenderOptions, ChildEditorHandle };
 export type { EditorTheme, DefaultStyleOverrides, EditorBehavior, FontsConfig, CjkConfig, CustomFontDef, CustomFontFaces };
 export type { CustomizeRibbon, RibbonApi, RibbonButtonSpec, RibbonActionContext, DocSelection };
+export type { EditorCommand, CommandContext };
 export { darkCanvasTheme, makeFloatingDialog };
 
 export interface WordCanvasOptions {
@@ -128,6 +130,14 @@ export interface WordCanvasOptions {
    *  handle + `getSelection`/`insertText`/`emit`/`registerCleanup`) — for macros,
    *  config popups, and informational popups. */
   customizeRibbon?: CustomizeRibbon;
+  /** Register custom commands and (optionally) bind keyboard shortcuts to them —
+   *  the additive, fork-free way to add editor behavior. Each command's `run`
+   *  receives the same `CommandContext` (== `RibbonActionContext`) a custom
+   *  ribbon button gets, so a macro is interchangeable between a keystroke, a
+   *  button, and `handle.runCommand(id)`. Bindings use "Mod+Shift+K" syntax
+   *  (`Mod` = Ctrl on Windows/Linux, Cmd on macOS); the built-in editing chords
+   *  (Ctrl+B/I/U/Z/Y, Ctrl+Enter) always take precedence. */
+  commands?: EditorCommand[];
   /** Track first-load progress so you can show a loader while the big chunks
    *  stream. Fires for the editor JS chunk download (`phase: "bundle"`,
    *  indeterminate) and the bundled font fetch (`phase: "fonts"`, the dominant
@@ -184,6 +194,7 @@ export class WordCanvas {
         fonts: opts.fonts,
         cjk: opts.cjk,
         customizeRibbon: opts.customizeRibbon,
+        commands: opts.commands,
         onLoadProgress: opts.onLoadProgress,
         onReady: (h) => {
           this.handle = h;
