@@ -13,6 +13,7 @@
 import type { LayoutTree, LineBox, Page, PlacedBlock, PlacedTableCell } from "../layout/layoutTree";
 import type { CaretRect, Rect } from "../layout/geometry";
 import { spaceMarkXs } from "../layout/geometry";
+import { EMPTY_DECORATIONS, type ResolvedDecorations } from "../decorations";
 import type { CellBorder, CharStyle } from "@cw/shared";
 import { DEFAULT_CHAR_STYLE } from "@cw/shared";
 import { charStyleToFont } from "../layout/metrics";
@@ -164,6 +165,9 @@ export interface PaintScheduler {
   /** Track-changes + comment overlays (insertion underline, deletion strike,
    *  comment highlight + margin pins, change bars). Replaces the whole set. */
   setReviewDecorations(decos: ReviewDecorations): void;
+  /** Embedder-supplied custom decorations (highlight/underline/box/badge),
+   *  already resolved to page-local geometry. Replaces the whole set. */
+  setDecorations(decos: ResolvedDecorations): void;
   /** The comment thread whose margin pin is at a client point, or null. */
   reviewPinAt(clientX: number, clientY: number): string | null;
   /** Content-control adornment as an ordered OUTER→INNER stack of layers, so
@@ -385,6 +389,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
   let selectionRects: Rect[] = [];
   let searchRects: Rect[] = [];
   let reviewDecos: ReviewDecorations = EMPTY_REVIEW_DECOS;
+  let decorations: ResolvedDecorations = EMPTY_DECORATIONS;
   let sdtAdorn: { rects: Rect[]; label: string }[] | null = null;
   let fieldAdorn: { rects: Rect[]; label: string } | null = null;
   let inspectorAdorn: { rects: Rect[]; label: string } | null = null;
@@ -681,6 +686,16 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     }
     ctx.globalAlpha = 1;
 
+    // 2c'. embedder custom highlights (under text) — see the decorations API.
+    for (const r of decorations.highlights) {
+      if (r.pageIndex !== page.index) continue;
+      ctx.save();
+      ctx.globalAlpha = r.opacity ?? 0.4;
+      ctx.fillStyle = r.color;
+      ctx.fillRect(r.x, r.y, r.width, r.height);
+      ctx.restore();
+    }
+
     // 2c. content-control adornment: gray frame + title tab (Word's active
     // control chrome). The tab text is UI chrome, not document text — measuring
     // it here doesn't violate the paint-never-measures-layout invariant.
@@ -841,6 +856,44 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       ctx.lineWidth = 1;
       ctx.strokeStyle = theme.reviewPinStroke;
       ctx.stroke();
+    }
+
+    // 4c. embedder custom decorations (over text): underlines, stroked boxes,
+    //     and anchored badges. See the decorations API.
+    for (const r of decorations.underlines) {
+      if (r.pageIndex !== page.index) continue;
+      const t = r.thickness ?? 1.6;
+      ctx.fillStyle = r.color;
+      ctx.fillRect(r.x, r.y + r.height - t, r.width, t);
+    }
+    for (const r of decorations.boxes) {
+      if (r.pageIndex !== page.index) continue;
+      ctx.strokeStyle = r.color;
+      ctx.lineWidth = r.thickness ?? 1;
+      ctx.strokeRect(r.x, r.y, r.width, r.height);
+    }
+    for (const badge of decorations.badges) {
+      if (badge.pageIndex !== page.index) continue;
+      if (badge.label !== undefined && badge.label !== "") {
+        // A rounded pill sized to the label, anchored just above the position.
+        ctx.font = ADORNMENT_LABEL_FONT;
+        const w = ctx.measureText(badge.label).width + 8;
+        const h = 14;
+        const bx = badge.x;
+        const by = badge.y - h - 1;
+        ctx.fillStyle = badge.color;
+        ctx.beginPath();
+        ctx.roundRect(bx, by, w, h, 3);
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(badge.label, bx + 4, by + h - 4);
+      } else {
+        // A plain dot at the position.
+        ctx.beginPath();
+        ctx.arc(badge.x, badge.y, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = badge.color;
+        ctx.fill();
+      }
     }
 
     // 5. story-edit affordance: dim the body, dash the band boundary.
@@ -1400,6 +1453,19 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       ];
       const affected = new Set([...all(reviewDecos), ...all(decos)]);
       reviewDecos = decos;
+      for (const i of affected) if (liveCanvases.has(i)) dirty.add(i);
+      schedule();
+    },
+
+    setDecorations(decos: ResolvedDecorations): void {
+      const all = (d: ResolvedDecorations): number[] => [
+        ...d.highlights.map((r) => r.pageIndex),
+        ...d.underlines.map((r) => r.pageIndex),
+        ...d.boxes.map((r) => r.pageIndex),
+        ...d.badges.map((b) => b.pageIndex),
+      ];
+      const affected = new Set([...all(decorations), ...all(decos)]);
+      decorations = decos;
       for (const i of affected) if (liveCanvases.has(i)) dirty.add(i);
       schedule();
     },

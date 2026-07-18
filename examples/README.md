@@ -13,6 +13,7 @@ each consuming the package by name the way a third-party integrator would.
 | [`embed-multi`](./embed-multi) | Multiple independent editors on one page; add/remove instances at runtime | Vite | [![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/embed-multi) |
 | [`ribbon-customization`](./ribbon-customization) | Customize the ribbon (`customizeRibbon`) — reorder/remove built-ins, add tabs/buttons, macros + popups | None (static HTML) | [![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/ribbon-customization) |
 | [`command-registry`](./command-registry) | Register custom commands + keyboard shortcuts (`commands`) — cross-platform `Mod+…` bindings, `handle.runCommand`, built-ins always win | None (static HTML) | [![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/command-registry) |
+| [`decorations`](./decorations) | Draw custom overlays at document coordinates (`setDecorations`) — highlight/underline/box a range, badge a position; anchored across edits | None (static HTML) | [![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/decorations) |
 | [`custom-fonts`](./custom-fonts) | Supply your own fonts (`fonts`) — a self-hosted PT Serif (4 faces + sizing), hide a built-in, export with the font embedded | None (static HTML) | [![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/custom-fonts) |
 | [`editor-constructor`](./editor-constructor) | Interactive config builder — toggle every constructor option, live preview, copy a `new WordCanvas({...})` snippet | Vite | [![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/editor-constructor) |
 
@@ -27,7 +28,7 @@ Each **Open in StackBlitz** button boots the example in the browser against the
 - The **Vite** examples (`embed-live`, `playground`, `query-edit`, `merge-docs`,
   `embed-multi`, `editor-constructor`) install the package and run under Vite.
 - The **static** examples (`embed-offline`, `ribbon-customization`,
-  `command-registry`, `custom-fonts`)
+  `command-registry`, `decorations`, `custom-fonts`)
   use an import map pointing at a local `dist-lib` and are primarily meant to run
   locally; on StackBlitz they may need a package.json / CDN import-map tweak.
 - `query-edit` and `merge-docs` need the **`./query` subpath** (the latter also

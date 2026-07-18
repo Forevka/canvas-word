@@ -5,6 +5,7 @@
 
 import type { DocSelection, Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
 import type { ChildDocument, EditMode, FieldResolver } from "../index";
+import type { DecorationSpec } from "../decorations";
 import type { ExportWarning } from "../export/exportDocument";
 import type { CjkConfig, DefaultStyleOverrides, EditorBehavior, EditorTheme, FontsConfig } from "../config";
 import type { CustomizeRibbon } from "../ribbon";
@@ -151,6 +152,15 @@ export interface EditorHandle {
   /** Run a registered custom command by id (see the `commands` option). Returns
    *  false if no command with that id was registered. */
   runCommand(id: string): boolean;
+  /** Draw custom paint-only overlays at document coordinates (highlight a range,
+   *  underline/box it, or badge a position). Replaces the whole set; the editor
+   *  re-resolves them against the layout after every edit so they never go stale. */
+  setDecorations(specs: DecorationSpec[]): void;
+  /** Remove all custom decorations (sugar for `setDecorations([])`). */
+  clearDecorations(): void;
+  /** Force a re-resolve + repaint of the current decorations — call it if you
+   *  mutated a decoration spec object in place instead of passing a fresh array. */
+  invalidateDecorations(): void;
   destroy(): void;
 }
 

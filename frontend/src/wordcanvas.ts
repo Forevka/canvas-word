@@ -16,6 +16,7 @@ import type { CjkConfig, CustomFontDef, CustomFontFaces, DefaultStyleOverrides, 
 import { darkCanvasTheme } from "./config";
 import type { CustomizeRibbon, RibbonActionContext, RibbonApi, RibbonButtonSpec } from "./ribbon";
 import type { CommandContext, EditorCommand } from "./commands";
+import type { BadgeDecoration, DecorationSpec, RangeDecoration } from "./decorations";
 import { makeFloatingDialog } from "./ui/floatingDialog";
 import type { DocSelection } from "@cw/shared";
 import { BUNDLE_SHARE, type LoadProgress } from "./app/loadProgress";
@@ -25,6 +26,7 @@ export type { ChildDocument, ChildContent, ChildRenderOptions, ChildEditorHandle
 export type { EditorTheme, DefaultStyleOverrides, EditorBehavior, FontsConfig, CjkConfig, CustomFontDef, CustomFontFaces };
 export type { CustomizeRibbon, RibbonApi, RibbonButtonSpec, RibbonActionContext, DocSelection };
 export type { EditorCommand, CommandContext };
+export type { DecorationSpec, RangeDecoration, BadgeDecoration };
 export { darkCanvasTheme, makeFloatingDialog };
 
 export interface WordCanvasOptions {

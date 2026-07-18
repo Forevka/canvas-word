@@ -3385,6 +3385,9 @@ const handle: EditorHandle = {
   replyToComment: (threadId, body, mentions) => editor.replyToComment(threadId, body, mentions),
   resolveThread: (threadId, resolved) => editor.resolveThread(threadId, resolved),
   runCommand: (id) => runRegisteredCommand(id),
+  setDecorations: (specs) => editor.setDecorations(specs),
+  clearDecorations: () => editor.setDecorations([]),
+  invalidateDecorations: () => editor.invalidateDecorations(),
   destroy: () => {
     disposeAgentTools?.(); // unregister WebMCP tools before tearing the editor down
     closeDevPanel(); // remove the floating inspector (body-level) if it's open

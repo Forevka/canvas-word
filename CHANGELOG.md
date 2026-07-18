@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Public decoration/overlay API at document coordinates (#175).** New `EditorHandle`
+  methods — `setDecorations(specs)`, `clearDecorations()`, `invalidateDecorations()` — let an
+  embedder draw custom paint-only overlays anchored to document positions: `highlight` (fill under
+  text), `underline`, `box`, and `badge` (a marker at a `DocPosition`). Specs are described in
+  document space (a `DocSelection` range or a `DocPosition`); the editor resolves them against the
+  live layout via `geometry.selectionRects`/`caretRect` and re-resolves after every edit, so they
+  stay anchored and follow reflow — and, like the track-changes overlays, it never measures text or
+  re-breaks lines (paint-never-measures preserved). The resolver lives in the DOM-free
+  `decorations.ts` with injectable geometry (unit-tested); the renderer gains one `setDecorations`
+  scheduler method + two paint passes (under-text fills, over-text lines/boxes/badges) mirroring the
+  review overlay feed. New `examples/decorations/` demonstrates it. v1 is non-interactive (no
+  click/hit-testing — a deliberate follow-up).
 - **Public command + keymap registry — the `commands` option (#174).** An embedder can now
   register named commands and bind keyboard shortcuts to them without forking the core — the
   additive counterpart to `customizeRibbon`. Each `EditorCommand` is `{ id, label?, keybinding?,

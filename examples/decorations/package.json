@@ -1,0 +1,7 @@
+{
+  "name": "@cw/example-decorations",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Draw custom overlays at document coordinates (highlight / underline / box / badge) via the decorations API — no build step, browser import map."
+}
