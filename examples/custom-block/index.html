@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WordCanvas — custom block type</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      #editor {
+        position: fixed;
+        inset: 0;
+      }
+      #panel {
+        position: fixed;
+        z-index: 15;
+        top: 90px;
+        right: 12px;
+        width: 250px;
+        padding: 12px 14px;
+        background: rgba(255, 255, 255, 0.97);
+        border: 1px solid #d0d4d9;
+        border-radius: 8px;
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+        font: 13px/1.5 system-ui, sans-serif;
+        color: #333;
+      }
+      #panel h2 {
+        margin: 0 0 8px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #80868b;
+      }
+      #panel button {
+        display: block;
+        width: 100%;
+        margin: 5px 0;
+        padding: 7px 10px;
+        border: 1px solid #c8c6c4;
+        border-radius: 6px;
+        background: #f7f7f8;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      #panel button:hover {
+        background: #eef0f2;
+      }
+      #panel .hint {
+        margin-top: 8px;
+        font-size: 11px;
+        color: #80868b;
+      }
+      #loader {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: #fafafa;
+        font: 14px/1.4 system-ui, sans-serif;
+        color: #444;
+        transition: opacity 0.3s ease;
+      }
+      #loader.done {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #loader .track {
+        width: 280px;
+        height: 6px;
+        border-radius: 3px;
+        background: #e4e4e4;
+        overflow: hidden;
+      }
+      #loader .bar {
+        height: 100%;
+        width: 0;
+        border-radius: 3px;
+        background: #2563eb;
+        transition: width 0.15s ease;
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "@forevka/wordcanvas": "/node_modules/@forevka/wordcanvas/dist-lib/wordcanvas.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="loader">
+      <div class="label">Loading editor…</div>
+      <div class="track"><div class="bar"></div></div>
+    </div>
+    <div id="editor"></div>
+    <aside id="panel">
+      <h2>Custom block</h2>
+      <button id="add">Insert a bar chart at the caret</button>
+      <button id="export">Export .docx (see the lossy warning)</button>
+      <div class="hint">
+        A <code>barchart</code> block type is registered with
+        <code>registerBlockType</code> and drawn straight on the page canvas. It
+        paginates like an image; on <code>.docx</code> export it degrades to a
+        placeholder paragraph (it has no native OOXML).
+      </div>
+    </aside>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

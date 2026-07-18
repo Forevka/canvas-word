@@ -719,7 +719,29 @@ export interface EquationBlock {
   sdtPath?: string[] | undefined;
 }
 
-export type Block = Paragraph | ImageBlock | TableBlock | EquationBlock;
+/** An embedder-defined custom block, drawn on canvas by a registered block type
+ *  (see `registerBlockType` in the frontend package). Deliberately minimal and
+ *  atomic — like an image/equation it measures to a single box and places whole,
+ *  carries NO caret (non-editable; skipped by geometry indexing), and holds only
+ *  a JSON-serializable `data` payload (so snapshot serialize is free). Its
+ *  `customType` selects the registered renderer. Has no native OOXML: `.docx`
+ *  export is lossy by default (a placeholder paragraph + a warning) unless the
+ *  registered type supplies `toOOXML`. */
+export interface CustomBlock {
+  kind: "custom";
+  id: string;
+  revision: number;
+  /** The registered block-type key (see `registerBlockType({ type })`). */
+  customType: string;
+  /** Arbitrary JSON-serializable payload the type's measure/paint consume. */
+  data: unknown;
+  /** Field result membership — see Paragraph.fieldId. */
+  fieldId?: string | undefined;
+  /** Block-level content-control ancestry — see Paragraph.sdtPath. */
+  sdtPath?: string[] | undefined;
+}
+
+export type Block = Paragraph | ImageBlock | TableBlock | EquationBlock | CustomBlock;
 
 /** OOXML page-number / list format (the field `\* <fmt>` switch). */
 export type PageNumFmt = "arabic" | "roman" | "Roman" | "alpha" | "Alpha";

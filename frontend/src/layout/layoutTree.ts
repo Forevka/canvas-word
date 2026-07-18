@@ -85,6 +85,15 @@ export interface PlacedEquation {
   baseline: number;
 }
 
+/** A placed embedder custom block (see registerBlockType). Non-editable + atomic:
+ *  painted by the registered type's paint() within its box; carries no lines. */
+export interface PlacedCustom {
+  customType: string;
+  data: unknown;
+  width: number;
+  height: number;
+}
+
 export interface PlacedTableCell {
   x: number; // absolute page coords for everything in tables
   y: number;
@@ -151,10 +160,12 @@ export interface PlacedBlock {
    *  an engine post-pass from the final page map, so it is never stale.
    *  `targetId` is the heading block this entry points at (PDF emits a GoTo link). */
   toc?: { numText: string; numX: number; lineIndex: number; style: CharStyle; targetId: string };
-  /** Present when this placed block is an image / table / equation (lines stays empty). */
+  /** Present when this placed block is an image / table / equation / custom block
+   *  (lines stays empty). */
   image?: PlacedImage;
   table?: PlacedTable;
   equation?: PlacedEquation;
+  custom?: PlacedCustom;
   /** Paragraph shading fill + border box (OOXML w:shd / w:pBdr), painted behind
    *  the text. `width`/`height` are the box extent for THIS placed chunk (a
    *  paragraph split across pages decorates each chunk); `x`/`y` come from the

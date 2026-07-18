@@ -17,6 +17,8 @@ import { darkCanvasTheme } from "./config";
 import type { CustomizeRibbon, RibbonActionContext, RibbonApi, RibbonButtonSpec } from "./ribbon";
 import type { CommandContext, EditorCommand } from "./commands";
 import type { BadgeDecoration, DecorationSpec, RangeDecoration } from "./decorations";
+import { registerBlockType } from "./blockRegistry";
+import type { CustomBlockType, CustomBlockBox, CustomBlockMeasureCtx, CustomBlockSize } from "./blockRegistry";
 import { makeFloatingDialog } from "./ui/floatingDialog";
 import type { DocSelection } from "@cw/shared";
 import { BUNDLE_SHARE, type LoadProgress } from "./app/loadProgress";
@@ -27,7 +29,8 @@ export type { EditorTheme, DefaultStyleOverrides, EditorBehavior, FontsConfig, C
 export type { CustomizeRibbon, RibbonApi, RibbonButtonSpec, RibbonActionContext, DocSelection };
 export type { EditorCommand, CommandContext };
 export type { DecorationSpec, RangeDecoration, BadgeDecoration };
-export { darkCanvasTheme, makeFloatingDialog };
+export type { CustomBlockType, CustomBlockBox, CustomBlockMeasureCtx, CustomBlockSize };
+export { darkCanvasTheme, makeFloatingDialog, registerBlockType };
 
 export interface WordCanvasOptions {
   /** Element to mount the editor into. */

@@ -208,6 +208,18 @@ function blockNode(doc: Document, block: Block): TreeNode {
       children: block.equation.root.children.map((n, i) => mathNode(n, `${block.id}#m${i}`, { kind: "block", blockId: block.id })),
     };
   }
+  if (block.kind === "custom") {
+    return {
+      key: block.id, kind: "block",
+      label: "▨ custom",
+      preview: block.customType,
+      badges: [block.customType],
+      blockId: block.id,
+      target: { kind: "block", blockId: block.id },
+      data: block,
+      children: [],
+    };
+  }
   // table → rows → cells → (grouped) blocks
   const rows: TreeNode[] = block.rows.map((row, ri) => ({
     key: `${block.id}#r${ri}`, kind: "tag",

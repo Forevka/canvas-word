@@ -233,7 +233,20 @@ export interface EquationBlock {
   sdtPath?: string[] | undefined;
 }
 
-export type Block = Paragraph | ImageBlock | TableBlock | EquationBlock;
+/** An embedder-defined custom block, drawn on canvas by a registered block type
+ *  (see `registerBlockType`). Atomic + non-editable; holds only JSON-serializable
+ *  `data`. Has no native OOXML (export is lossy by default). */
+export interface CustomBlock {
+  kind: "custom";
+  id: string;
+  revision: number;
+  customType: string;
+  data: unknown;
+  fieldId?: string | undefined;
+  sdtPath?: string[] | undefined;
+}
+
+export type Block = Paragraph | ImageBlock | TableBlock | EquationBlock | CustomBlock;
 
 /** Conditional-format slots of a table style (OOXML w:tblStylePr types). */
 export type TableCond =

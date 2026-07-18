@@ -19,6 +19,7 @@ import { BAND_CONTAINERS } from "./document";
 import type {
   Block,
   CharStyle,
+  CustomBlock,
   Document,
   EquationBlock,
   FieldDef,
@@ -206,6 +207,14 @@ function cloneBlock(block: Block, ctx: Ctx): Block {
     }
     case "equation": {
       const out: EquationBlock = { ...block, id }; // equation AST is immutable — shared
+      if (out.fieldId) out.fieldId = remap(ctx.fields, out.fieldId);
+      out.sdtPath = clonePath(block.sdtPath, ctx.sdts);
+      return out;
+    }
+    case "custom": {
+      // data is JSON-serializable by contract — deep-clone it so the copy never
+      // aliases the original block's payload.
+      const out: CustomBlock = { ...block, id, data: block.data === undefined ? undefined : structuredClone(block.data) };
       if (out.fieldId) out.fieldId = remap(ctx.fields, out.fieldId);
       out.sdtPath = clonePath(block.sdtPath, ctx.sdts);
       return out;

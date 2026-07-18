@@ -20,6 +20,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scheduler method + two paint passes (under-text fills, over-text lines/boxes/badges) mirroring the
   review overlay feed. New `examples/decorations/` demonstrates it. v1 is non-interactive (no
   click/hit-testing — a deliberate follow-up).
+- **Public block-type registry — `registerBlockType` (#176).** Add a NEW document block type via a
+  single `{ measure, paint, toOOXML? }` registration instead of hand-editing the ~8 dispatch sites
+  that enumerate the built-in block union. v1 scope is a **canvas-drawn, atomic, non-editable,
+  JSON-serializable** block: it measures to one box and paginates like an image/equation, carries no
+  caret (skipped by geometry indexing; selected/deleted as a whole block), and its `data` is plain
+  JSON so snapshot serialize/paste is free (deep-cloned on paste). A block in the model is
+  `{ kind: "custom", customType, data, id, revision }` (new `CustomBlock`); the registered
+  `paint(ctx, box, data)` gets a canvas context translated + clipped to the block's box. Wired
+  through the engine (body + table-cell + band measure/placement, atomic gap logic), the layout tree
+  (`PlacedBlock.custom`), the canvas painter, and both exporters. **Export is lossy by default** —
+  a custom block has no native OOXML, so `.docx` emits a placeholder paragraph with a
+  `custom-block-dropped` warning (PDF reserves the height and warns `custom-block-not-rendered`);
+  supply `toOOXML(data)` to control the DOCX output. An unregistered `customType` paints a visible
+  dashed placeholder. New `examples/custom-block/` (a bar-chart block). Not in v1: editable custom
+  blocks, resize handles, and OOXML *import* round-trip.
 - **Public command + keymap registry — the `commands` option (#174).** An embedder can now
   register named commands and bind keyboard shortcuts to them without forking the core — the
   additive counterpart to `customizeRibbon`. Each `EditorCommand` is `{ id, label?, keybinding?,
