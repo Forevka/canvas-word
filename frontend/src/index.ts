@@ -152,6 +152,7 @@ import {
 } from "@cw/shared";
 import { intercept } from "./review/intercept";
 import { decorate } from "./review/decorate";
+import { resolveDecorations, type DecorationSpec } from "./decorations";
 import { acceptSuggestion, rejectSuggestion, acceptAllSuggestions, rejectAllSuggestions, type Resolution } from "@cw/shared";
 
 /** Editor mode: edit (normal), suggest (edits become tracked-change records), or
@@ -372,6 +373,13 @@ export interface Editor {
   getMode(): EditMode;
   /** Switch mode. Returns false if `mode` isn't in `allowedModes`. */
   setMode(mode: EditMode): boolean;
+  /** Replace the embedder's custom decorations (paint-only overlays at document
+   *  coordinates). Resolved against the current layout and re-resolved after each
+   *  edit. Pass [] to clear. */
+  setDecorations(specs: DecorationSpec[]): void;
+  /** Force a re-resolve + repaint of the current decorations (e.g. after the
+   *  embedder mutated a spec object in place). */
+  invalidateDecorations(): void;
   /** Read-only snapshot of the review overlay. */
   getReview(): ReviewLayer;
   /** Replace the review overlay (e.g. a rehydrated snapshot loaded on join) and
@@ -570,6 +578,7 @@ export function createEditor(
   let pendingStyle: Partial<CharStyle> | null = null;
   let activeStory: GeoScope | null = null; // header/footer story-edit scope
   let savedBodySelection: DocSelection | null = null; // restored on story exit
+  let decorationSpecs: DecorationSpec[] = []; // embedder custom decorations (paint-only)
   paint.setTree(tree);
 
   const state = (): EditorState => ({ doc, selection, cellSelection, pendingStyle });
@@ -1432,6 +1441,12 @@ export function createEditor(
     paint.setReviewDecorations(decorate(review, tree, scope()));
   };
 
+  /** Recompute + repaint embedder custom decorations against the current layout
+   *  tree (paint-only, never relayout — mirrors refreshReviewDecorations). */
+  const refreshDecorations = (): void => {
+    paint.setDecorations(resolveDecorations(decorationSpecs, tree, scope(), { selectionRects, caretRect }));
+  };
+
   const runOps = (ops: Op[]): Op[] => {
     const inverses: Op[] = [];
     for (const op of ops) {
@@ -1480,6 +1495,7 @@ export function createEditor(
     if (!transient) {
       paintRemoteCarets(); // peers' carets re-measured against the new layout
       refreshReviewDecorations(); // suggestion/comment overlays re-measured too
+      refreshDecorations(); // embedder custom decorations re-measured too
     }
     mirror.sync(state());
     notifyChange();
@@ -3350,6 +3366,13 @@ export function createEditor(
     isReadonly: (): boolean => mode === "view",
     getMode: (): EditMode => mode,
     setMode,
+    setDecorations: (specs: DecorationSpec[]): void => {
+      decorationSpecs = specs;
+      refreshDecorations();
+    },
+    invalidateDecorations: (): void => {
+      refreshDecorations();
+    },
     getReview: (): ReviewLayer => review,
     seedReview,
     // The effective roster: configured base + live editors (presence-merged).
@@ -3467,6 +3490,7 @@ export function createEditor(
       }
       paintRemoteCarets();
       refreshReviewDecorations();
+      refreshDecorations(); // embedder custom decorations re-measured too
       mirror.sync(state());
     },
     setZoom: (z: number): void => applyZoom(z),
