@@ -3490,6 +3490,7 @@ export function createEditor(
       }
       paintRemoteCarets();
       refreshReviewDecorations();
+      refreshDecorations(); // embedder custom decorations re-measured too
       mirror.sync(state());
     },
     setZoom: (z: number): void => applyZoom(z),

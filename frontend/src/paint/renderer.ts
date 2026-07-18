@@ -689,12 +689,11 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     // 2c'. embedder custom highlights (under text) — see the decorations API.
     for (const r of decorations.highlights) {
       if (r.pageIndex !== page.index) continue;
-      ctx.save();
       ctx.globalAlpha = r.opacity ?? 0.4;
       ctx.fillStyle = r.color;
       ctx.fillRect(r.x, r.y, r.width, r.height);
-      ctx.restore();
     }
+    ctx.globalAlpha = 1;
 
     // 2c. content-control adornment: gray frame + title tab (Word's active
     // control chrome). The tab text is UI chrome, not document text — measuring
