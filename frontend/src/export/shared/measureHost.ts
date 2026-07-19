@@ -75,8 +75,11 @@ export function installMeasureHost(): Promise<void> {
       }
     }
     // Route pretext + metrics through the fontkit shim over the bundled clones.
-    // Override the globals unconditionally — this host runs only off the main
-    // thread (export worker / Node), never where it could clobber the editor.
+    // pretext reads widths from globalThis.OffscreenCanvas; metrics.ts reads from
+    // setMeasureContext. This host normally runs off the main thread (export
+    // worker / Node), but the PDF export of a REGISTERED custom block runs the
+    // pipeline inline on the main thread (see exportDocument → runExportInline),
+    // so it can also run on `window`.
     const g = globalThis as unknown as { OffscreenCanvas?: unknown; document?: unknown };
     g.OffscreenCanvas = class {
       constructor(_w?: number, _h?: number) {}
@@ -84,9 +87,21 @@ export function installMeasureHost(): Promise<void> {
         return new FontkitMeasureContext();
       }
     };
-    // body:null disables pretext's emoji DOM-correction probe; createElement
-    // covers pretext's DOM fallback.
-    g.document = { createElement: () => ({ getContext: () => new FontkitMeasureContext() }), body: null };
+    // Point `document` at the DOM-free stub too (pretext reads it for an emoji
+    // DOM-probe / createElement fallback). body:null disables that probe;
+    // createElement covers pretext's DOM fallback. TOLERATE a read-only document:
+    // on the browser main thread — the inline path taken for PDF export of a
+    // REGISTERED custom block (exportDocument → runExportInline) — and in the
+    // StackBlitz WebContainer worker, `document` is a native read-only accessor
+    // with no setter, so assigning throws "Cannot set property document of
+    // #<Window> which has only a getter". There we leave the real document in
+    // place; pretext still gets correct widths from the fontkit OffscreenCanvas
+    // shim above and its probe falls back to the real DOM, which is harmless.
+    try {
+      g.document = { createElement: () => ({ getContext: () => new FontkitMeasureContext() }), body: null };
+    } catch {
+      // read-only `document` (browser main thread / StackBlitz worker) — keep it
+    }
     setMeasureContext(new FontkitMeasureContext());
   })();
   return installPromise;

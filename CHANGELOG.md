@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-07-19
+
+### Fixed
+- **PDF export no longer crashes on the browser main thread / StackBlitz.** Exporting a document to
+  PDF failed with `TypeError: Cannot set property document of #<Window> which has only a getter`
+  whenever the measure host ran on a thread with a real `document`: the inline main-thread path taken
+  for PDF export of a **registered custom block** (see 0.10.0), and the StackBlitz WebContainer
+  worker (whose export-worker global is `Window`-like). `installMeasureHost` assigned its DOM-free
+  stub to `globalThis.document` unconditionally, but `window.document` is a read-only accessor with no
+  setter. It now tolerates a read-only `document` (keeping the real one) while still routing pretext's
+  width measurement through the fontkit `OffscreenCanvas` shim, so exported metrics are unchanged.
+  Regression test simulates the getter-only `document`.
+
 ## [0.10.0] — 2026-07-19
 
 ### Added
