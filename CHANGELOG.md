@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-07-19
+
 ### Added
 - **Custom blocks render in PDF — a Canvas2D→pdfkit vector shim.** A registered custom block's
   `paint(ctx, box, data)` now renders into PDF (previously it reserved space + warned). The SAME
@@ -1662,6 +1664,7 @@ implementation history in [README.md](./README.md)):
   docId, integration tokens for third-party `/upload`, and session webhooks.
 - Mobile/touch input and a responsive ribbon.
 
+[0.10.0]: https://github.com/Forevka/canvas-word/releases/tag/v0.10.0
 [0.8.0]: https://github.com/Forevka/canvas-word/releases/tag/v0.8.0
 [0.7.5]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.5
 [0.7.4]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.4
