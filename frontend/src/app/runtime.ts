@@ -152,6 +152,12 @@ export interface EditorHandle {
   /** Run a registered custom command by id (see the `commands` option). Returns
    *  false if no command with that id was registered. */
   runCommand(id: string): boolean;
+  /** Replace a registered custom block's `data` and re-render it — an undoable
+   *  edit that bumps only that block's revision (no full-document rebuild). Use it
+   *  to feed asynchronously-fetched data into a block: insert it in a loading
+   *  state, then call this when the data arrives. `data` must be JSON-serializable
+   *  (like the block itself). No-op if `id` isn't a custom block. */
+  setCustomBlockData(id: string, data: unknown): void;
   /** Draw custom paint-only overlays at document coordinates (highlight a range,
    *  underline/box it, or badge a position). Replaces the whole set; the editor
    *  re-resolves them against the layout after every edit so they never go stale. */

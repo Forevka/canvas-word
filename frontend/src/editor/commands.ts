@@ -2326,6 +2326,19 @@ export function deleteTableStyle(styleId: string): Command {
 // ---------------------------------------------------------------------------
 // Image commands (target = the SELECTED object, passed in by the wiring layer)
 
+/** Replace a registered custom block's `data` (undoable). Bumps the block's
+ *  revision so only it re-lays-out/repaints. Powers async data (fetch → update). */
+export function setCustomBlockData(
+  blockId: string,
+  data: unknown,
+  origin: TransactionOrigin = "command",
+): Command {
+  return (state) => {
+    if (!locateBlock(state.doc, blockId, "custom")) return null;
+    return tr([{ type: "setCustomBlockData", blockId, data }], state.selection, origin);
+  };
+}
+
 export function setImageProps(
   blockId: string,
   patch: ImagePropsPatch,

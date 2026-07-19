@@ -45,6 +45,29 @@ A custom block in the model is just:
 Insert it wherever blocks go (the demo splices it into `doc.blocks` and calls
 `handle.setDocument`).
 
+## Async data (fetch from a backend → render)
+
+`measure`/`paint` are **synchronous** — layout and paint run once per frame, so you
+can't `await` inside them. Do the async work in *your* code and feed the result
+into the block's `data`, rendering a **loading state** first:
+
+```js
+// 1) insert the block in a loading state — paint() draws a "Loading…" placeholder
+const block = { kind: "custom", id, customType: "barchart", data: { state: "loading" } };
+insertInto(doc, block); handle.setDocument(doc);
+
+// 2) fetch in your own async code
+const values = await fetch("/api/revenue").then((r) => r.json());
+
+// 3) swap in the data — an UNDOABLE edit that re-renders just this block
+handle.setCustomBlockData(block.id, { state: "ready", values });
+```
+
+`handle.setCustomBlockData(id, data)` replaces the block's `data`, bumps its
+revision (so only that block re-lays-out), and is a normal undo step — unlike
+`setDocument`, which resets the whole document. The **“Insert async chart”** button
+demonstrates the full loading→data flow.
+
 ## The block contract
 
 - **Atomic** — measures to a single box and places whole, like an image or
