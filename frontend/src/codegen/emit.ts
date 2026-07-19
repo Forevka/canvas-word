@@ -27,6 +27,7 @@ import type {
   Run,
   SectionPatch,
   SectionProps,
+  Stylesheet,
   TableBlock,
   TableCell,
 } from "@cw/shared";
@@ -157,12 +158,16 @@ function runPatch(
 class Emitter {
   readonly writer = new LineWriter();
   readonly uncovered: UncoveredField[] = [];
+  /** The stylesheet the GENERATED code will resolve baselines against — the doc's
+   *  own, or the default gallery `DocumentBuilder.create()` installs when the doc
+   *  carries none (so our deltas match what the rebuilt document resolves). */
+  private readonly sheet: Stylesheet;
   private readonly charDefault: Record<string, unknown>;
   private readonly paraDefault: Record<string, unknown>;
 
   constructor(private readonly doc: Document) {
-    const sheet = doc.stylesheet;
-    const rd = sheet ? resolveStyle(sheet, sheet.defaultStyleId) : { char: {}, para: {} };
+    this.sheet = doc.stylesheet ?? defaultStylesheet();
+    const rd = resolveStyle(this.sheet, this.sheet.defaultStyleId);
     this.charDefault = { ...DEFAULT_CHAR_STYLE, ...rd.char };
     this.paraDefault = { ...DEFAULT_PARA_STYLE, ...rd.para };
   }
@@ -177,8 +182,7 @@ class Emitter {
   /** Resolved char/para baseline for a paragraph — the exact state the builder
    *  reaches after `.paragraph()` + optional `.withStyle(namedStyle)`. */
   private baselineFor(namedStyle: string | undefined): { char: Record<string, unknown>; para: Record<string, unknown> } {
-    const sheet = this.doc.stylesheet;
-    const rs = namedStyle && sheet ? resolveStyle(sheet, namedStyle) : { char: {}, para: {} };
+    const rs = namedStyle ? resolveStyle(this.sheet, namedStyle) : { char: {}, para: {} };
     return {
       char: { ...this.charDefault, ...rs.char },
       para: { ...this.paraDefault, ...rs.para },
@@ -197,6 +201,12 @@ class Emitter {
     this.emitCreate();
     this.emitDocLevel();
     for (const block of this.doc.blocks) this.emitBlock("b", block, "blocks");
+    // Deferred: the body section's line numbering (see emitPageSetup) — applied
+    // only after every section-break paragraph has been compiled, so it stays on
+    // the final section instead of being carried backward onto earlier ones.
+    if (this.doc.section.lineNumbering !== undefined) {
+      w.line(`b.pageSetup({ lineNumbering: ${lit(this.doc.section.lineNumbering, "  ")} });`);
+    }
     w.line("return b.build();");
     w.dedent();
     w.line("}");
@@ -228,8 +238,10 @@ class Emitter {
     if (section.headerDistancePx !== undefined) setup.headerDistancePx = section.headerDistancePx;
     if (section.footerDistancePx !== undefined) setup.footerDistancePx = section.footerDistancePx;
     if (section.pageNumberStart !== undefined) setup.pageNumberStart = section.pageNumberStart;
-    if (section.lineNumbering !== undefined) setup.lineNumbering = section.lineNumbering;
     if (section.breakType !== undefined) setup.breakType = section.breakType;
+    // NB: the body section's `lineNumbering` is emitted LAST (see emit()), not here —
+    // set early it would leak onto every earlier \sectionBreak section, which
+    // compileSectionPatch carries the current section value forward into.
     w.line(`b.pageSetup(${lit(setup, "  ")});`);
     if (section.pageColorHex !== undefined) this.report("section", "pageColorHex", section.pageColorHex, "page background color; no builder method");
     if (section.pageBorders !== undefined) this.report("section", "pageBorders", section.pageBorders, "page border box; no builder method");
@@ -337,22 +349,29 @@ class Emitter {
     if (changed.has("align")) chain.push(`align(${lit(style.align)})`);
     changed.delete("align");
 
-    // spacing()
+    // spacing() — auto-spacing (w:beforeAutospacing) and the explicit px value are
+    // independent: `beforeAuto:true` bakes an approximate value, but `beforeAuto:false`
+    // (Word's w:beforeAutospacing="0") keeps the REAL w:before, so both must be emitted.
     const spacing: Record<string, unknown> = {};
-    if (changed.has("spaceBeforeAuto") || style.spaceBeforeAuto) {
-      if (style.spaceBeforeAuto !== undefined) spacing.beforeAuto = style.spaceBeforeAuto;
-    } else if (changed.has("spaceBeforePx")) spacing.before = style.spaceBeforePx;
-    if (changed.has("spaceAfterAuto") || style.spaceAfterAuto) {
-      if (style.spaceAfterAuto !== undefined) spacing.afterAuto = style.spaceAfterAuto;
-    } else if (changed.has("spaceAfterPx")) spacing.after = style.spaceAfterPx;
-    if (changed.has("lineRule") && style.lineRule !== undefined) {
+    if (style.spaceBeforeAuto) {
+      spacing.beforeAuto = true;
+    } else {
+      if (changed.has("spaceBeforeAuto") && style.spaceBeforeAuto === false) spacing.beforeAuto = false;
+      if (changed.has("spaceBeforePx")) spacing.before = style.spaceBeforePx;
+    }
+    if (style.spaceAfterAuto) {
+      spacing.afterAuto = true;
+    } else {
+      if (changed.has("spaceAfterAuto") && style.spaceAfterAuto === false) spacing.afterAuto = false;
+      if (changed.has("spaceAfterPx")) spacing.after = style.spaceAfterPx;
+    }
+    // Line spacing: a fixed rule (lineRule + lineHeightPx) OR the multiplier
+    // (lineHeight). `lineHeightPx` is only meaningful alongside a rule.
+    if (style.lineRule !== undefined && (changed.has("lineRule") || changed.has("lineHeightPx"))) {
       spacing.lineRule = style.lineRule;
       spacing.lineHeightPx = style.lineHeightPx;
-    } else if (changed.has("lineHeight")) spacing.lineHeight = style.lineHeight;
-    else if (changed.has("lineHeightPx") && style.lineHeightPx !== undefined) {
-      // lineHeightPx changed without a rule — only meaningful with lineRule.
-      spacing.lineRule = style.lineRule;
-      spacing.lineHeightPx = style.lineHeightPx;
+    } else if (changed.has("lineHeight")) {
+      spacing.lineHeight = style.lineHeight;
     }
     for (const k of ["spaceBeforePx", "spaceAfterPx", "spaceBeforeAuto", "spaceAfterAuto", "lineHeight", "lineRule", "lineHeightPx"]) changed.delete(k);
     if (!isEmptyRecord(spacing)) chain.push(`spacing(${lit(spacing, "  ")})`);

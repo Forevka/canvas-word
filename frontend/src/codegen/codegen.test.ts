@@ -151,6 +151,37 @@ describe("reverse builder — round-trip fidelity", () => {
     expect(uncovered).toEqual([]);
   });
 
+  it("keeps explicit before/after spacing when auto-spacing is off (beforeAuto:false)", () => {
+    const { uncovered } = roundTrip((b) =>
+      b
+        .paragraph("Real spacing, autospacing explicitly off")
+        .spacing({ before: 150, beforeAuto: false, after: 40, afterAuto: false })
+        .build(),
+    );
+    expect(uncovered).toEqual([]);
+  });
+
+  it("bakes auto-spacing without leaking the baked px as an explicit value", () => {
+    const { uncovered } = roundTrip((b) =>
+      b.paragraph("Auto spaced").spacing({ beforeAuto: true, afterAuto: true }).build(),
+    );
+    expect(uncovered).toEqual([]);
+  });
+
+  it("multi-section line numbering stays on the section that declared it", () => {
+    // Section one has NO line numbering; the body section turns it on. The body
+    // value must not leak backward onto section one via the builder's carry-forward.
+    const { uncovered } = roundTrip((b) =>
+      b
+        .paragraph("Section one — no line numbers")
+        .sectionBreak()
+        .paragraph("Section two — line numbers on")
+        .pageSetup({ lineNumbering: { countBy: 1, start: 1, restart: "newPage" } })
+        .build(),
+    );
+    expect(uncovered).toEqual([]);
+  });
+
   it("page break and column break before a block", () => {
     const { uncovered } = roundTrip((b) =>
       b
