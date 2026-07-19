@@ -202,6 +202,7 @@ export function runImport(
   // and compat triples round-tripped verbatim.
   if (settings.defaultTabStopPx !== undefined) doc.defaultTabStopPx = settings.defaultTabStopPx;
   if (settings.compatSettings) doc.compatSettings = settings.compatSettings;
+  if (settings.docId) doc.docId = settings.docId;
 
   return {
     doc,
@@ -267,6 +268,8 @@ interface ParsedSettings {
   defaultTabStopPx?: number;
   /** w:compat/w:compatSetting triples, round-tripped verbatim. */
   compatSettings?: { name: string; uri: string; val: string }[];
+  /** w15:docId — the document's persistent identity GUID, preserved verbatim. */
+  docId?: string;
 }
 
 /** Decode the document-level settings.xml bits the model cares about. */
@@ -285,6 +288,12 @@ function parseSettings(settingsXml: string): ParsedSettings {
       .filter((c) => c.name !== "");
     if (settings.length > 0) out.compatSettings = settings;
   }
+  // w15:docId (Office 2013+) — a GUID Word keeps stable across edits. Parsers see it
+  // under either the w15 or (older) w14 namespace; accept both, prefer w15.
+  const docId15 = el(root, "w15:docId");
+  const docId14 = el(root, "w14:docId");
+  const docId = (docId15 && attr(docId15, "w15:val")) ?? (docId14 && attr(docId14, "w14:val"));
+  if (docId) out.docId = docId;
   return out;
 }
 

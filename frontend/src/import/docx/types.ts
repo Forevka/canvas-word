@@ -200,6 +200,10 @@ export interface IRSdtProps {
   listItems?: { display: string; value: string }[];
   dateFormat?: string;
   checked?: boolean;
+  /** w14:checkedState / w14:uncheckedState — the checked/unchecked glyph (font +
+   *  UPPER-CASE hex code point). Preserved so the checkbox round-trips its marks. */
+  checkedSymbol?: { font: string; val: string };
+  uncheckedSymbol?: { font: string; val: string };
   lockContent?: boolean;
   lockControl?: boolean;
 }
@@ -407,6 +411,10 @@ export interface IRParagraph {
    *  headless render anchor a freshly-built TOC at this exact block (mapToModel
    *  records the resulting block id), instead of fragile ordinal counting. */
   tocField?: string;
+  /** w14:paraId / w14:textId — Word's persistent paragraph ids, preserved verbatim.
+   *  mapToModel puts them on the FIRST model block this paragraph produces. */
+  paraId?: string;
+  textId?: string;
 }
 
 /** One raw border edge (w:top/w:left/… inside w:tblBorders or w:tcBorders).

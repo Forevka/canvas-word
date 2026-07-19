@@ -682,6 +682,12 @@ export function createMapper(
         p.style.indentLeftPx = round2(p.style.indentLeftPx + listLevelIndentPx);
       }
     });
+    // w14:paraId/textId belong to the source <w:p> — give them to its FIRST model
+    // paragraph; a soft-break split leaves continuation pieces without an id.
+    if (paragraphs[0]) {
+      if (ir.paraId) paragraphs[0].paraId = ir.paraId;
+      if (ir.textId) paragraphs[0].textId = ir.textId;
+    }
     // Resolve this paragraph's bookmark markers to model positions. The home is
     // the first emitted block; offsets clamp to its text (exact for the common
     // single-block paragraph; a soft-break split anchors into the first block).
@@ -1280,6 +1286,8 @@ export function mapSdts(ir: Record<string, IRSdtProps>): Record<string, SdtProps
     if (p.listItems !== undefined) props.listItems = p.listItems;
     if (p.dateFormat !== undefined) props.dateFormat = p.dateFormat;
     if (p.checked !== undefined) props.checked = p.checked;
+    if (p.checkedSymbol !== undefined) props.checkedSymbol = p.checkedSymbol;
+    if (p.uncheckedSymbol !== undefined) props.uncheckedSymbol = p.uncheckedSymbol;
     if (p.lockContent) props.lockContent = true;
     if (p.lockControl) props.lockControl = true;
     out[id] = props;

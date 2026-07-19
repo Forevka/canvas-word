@@ -54,6 +54,10 @@ export interface PartCtx {
   bookmarksByBlock: Map<string, ExportBookmarkMark[]>;
   /** model list id -> Word-valid integer numId (shared with numbering.xml). */
   listIdMap: Map<string, number>;
+  /** Doc-wide set of already-emitted w14:paraId values. paraIds must be unique per
+   *  document, so a paragraph whose id was already written (a copy/paste clone)
+   *  emits none. Shared across body + header/footer parts. */
+  seenParaIds: Set<string>;
   /** Header/footer parts: {page}/{pages} run text becomes live PAGE/NUMPAGES
    *  fields (the inverse of the importer's header/footer fieldTokens mode). In the
    *  body those tokens stay literal text — symmetric with import, which only
@@ -246,7 +250,10 @@ function sdtPrXml(props: SdtProps | undefined): string {
   } else if (props.type === "date") {
     c.push(el("w:date", undefined, props.dateFormat ? el("w:dateFormat", { "w:val": props.dateFormat }) : ""));
   } else if (props.type === "checkbox") {
-    c.push(el("w14:checkbox", undefined, el("w14:checked", { "w14:val": props.checked ? "1" : "0" })));
+    const box = [el("w14:checked", { "w14:val": props.checked ? "1" : "0" })];
+    if (props.checkedSymbol) box.push(el("w14:checkedState", { "w14:font": props.checkedSymbol.font, "w14:val": props.checkedSymbol.val }));
+    if (props.uncheckedSymbol) box.push(el("w14:uncheckedState", { "w14:font": props.uncheckedSymbol.font, "w14:val": props.uncheckedSymbol.val }));
+    c.push(el("w14:checkbox", undefined, box.join("")));
   }
   if (props.lockContent || props.lockControl) {
     const v =
@@ -331,9 +338,10 @@ function paragraphXml(p: Paragraph, ctx: PartCtx): string {
   const pPr = pPrXml(p.style, ctx, markRun);
   const runs = isEmpty ? [] : p.runs;
   const marks = ctx.bookmarksByBlock.get(p.id);
+  const pAttrs = paraIdAttrs(p, ctx);
 
   if (!marks || marks.length === 0) {
-    return el("w:p", undefined, pPr + runsXml(runs, ctx));
+    return el("w:p", pAttrs, pPr + runsXml(runs, ctx));
   }
   // A paragraph whose runs join an sdt content control can't have markers spliced
   // between its runs without breaking the w:sdt grouping — bracket the whole
@@ -341,7 +349,7 @@ function paragraphXml(p: Paragraph, ctx: PartCtx): string {
   if (runs.some((r) => r.style.sdtPath?.length)) {
     const pre = marks.filter((m) => m.kind === "start").map(bookmarkEl).join("");
     const post = marks.filter((m) => m.kind === "end").map(bookmarkEl).join("");
-    return pre + el("w:p", undefined, pPr + runsXml(runs, ctx)) + post;
+    return pre + el("w:p", pAttrs, pPr + runsXml(runs, ctx)) + post;
   }
   // Offset-aware: emit each run, inserting markers at run boundaries (ends before
   // starts at a shared offset so a point bookmark nests correctly).
@@ -396,7 +404,18 @@ function paragraphXml(p: Paragraph, ctx: PartCtx): string {
   }
   flush(cum);
   while (mi < sorted.length) body += bookmarkEl(sorted[mi++]!); // trailing markers past text end
-  return el("w:p", undefined, body);
+  return el("w:p", pAttrs, body);
+}
+
+/** w14:paraId/textId attributes for a paragraph's `<w:p>`, or undefined when the
+ *  paragraph has no id or its id was already emitted (paraIds are doc-unique, so a
+ *  copy/paste clone must not re-emit a colliding id). Marks the id as seen. */
+function paraIdAttrs(p: Paragraph, ctx: PartCtx): Record<string, string> | undefined {
+  if (!p.paraId || ctx.seenParaIds.has(p.paraId)) return undefined;
+  ctx.seenParaIds.add(p.paraId);
+  const a: Record<string, string> = { "w14:paraId": p.paraId };
+  if (p.textId) a["w14:textId"] = p.textId;
+  return a;
 }
 
 // ---------------------------------------------------------------------------

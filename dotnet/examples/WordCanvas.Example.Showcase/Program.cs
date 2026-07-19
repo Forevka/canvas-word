@@ -137,7 +137,9 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
         .DropDown("One", new[] { new SdtListItem("One", "1"), new SdtListItem("Two", "2") }, new SdtOptions { Alias = "Choice" }).Text(", a combo box ")
         .ComboBox("Alpha", new[] { new SdtListItem("Alpha", "a"), new SdtListItem("Beta", "b"), new SdtListItem("Gamma", "g") }, new SdtOptions { Alias = "Combo" }).Text(", a date picker ")
         .DateControl("6/16/2026", "M/d/yyyy", new SdtOptions { Alias = "Pick a date" }).Text(", and a checkbox ")
-        .Checkbox(true).Text("."))
+        .Checkbox(true).Text(", plus one with custom glyphs ")
+        // w14:checkedState/uncheckedState — pin the exact checked/unchecked marks.
+        .Checkbox(true, checkedSymbol: new CheckboxSymbol("MS Gothic", "2612"), uncheckedSymbol: new CheckboxSymbol("MS Gothic", "2610")).Text("."))
 
     // ---- Tables ----
     .Paragraph("Tables", p => p.WithStyle("Heading1"))

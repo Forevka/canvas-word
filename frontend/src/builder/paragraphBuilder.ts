@@ -468,7 +468,21 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     return this.emitSdt({ type: "plainText", ...opts }, text);
   }
 
-  checkbox(checked: boolean, opts?: { alias?: string; tag?: string }): this {
+  /** Insert a checkbox content control in the given `checked` state (the visible
+   *  glyph is ☒/☐). `opts.checkedSymbol`/`uncheckedSymbol` pin the exact
+   *  checked/unchecked marks Word stores (w14:checkedState/uncheckedState); omit
+   *  them to keep the default glyphs. */
+  checkbox(
+    checked: boolean,
+    opts?: {
+      alias?: string;
+      tag?: string;
+      /** Glyph shown when checked/unchecked (w14:checkedState/uncheckedState) —
+       *  `font` is the symbol font and `val` the UPPER-CASE hex code point. */
+      checkedSymbol?: { font: string; val: string };
+      uncheckedSymbol?: { font: string; val: string };
+    },
+  ): this {
     return this.emitSdt({ type: "checkbox", checked, ...opts }, checked ? "☒" : "☐");
   }
 

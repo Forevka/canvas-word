@@ -12,6 +12,8 @@ export interface SettingsXmlOptions {
   defaultTabStopPx?: number;
   /** w:compat/w:compatSetting triples to re-emit verbatim. */
   compatSettings?: { name: string; uri: string; val: string }[];
+  /** w15:docId GUID to re-emit verbatim (declares the w15 namespace). */
+  docId?: string;
 }
 
 export function settingsXml(opts: SettingsXmlOptions): string {
@@ -34,10 +36,19 @@ export function settingsXml(opts: SettingsXmlOptions): string {
             .join(""),
         )
       : "";
+  const docId = opts.docId && opts.docId.length > 0 ? opts.docId : undefined;
   const body =
     (opts.displayBackgroundShape ? el("w:displayBackgroundShape") : "") +
     (opts.evenAndOdd ? el("w:evenAndOddHeadersAndFooters") : "") +
     (defaultTabStopPx !== undefined ? el("w:defaultTabStop", { "w:val": Math.round(pxToTwips(defaultTabStopPx)) }) : "") +
-    compat;
-  return XML_DECL + el("w:settings", WML_NS, body);
+    compat +
+    // w15:docId (Office 2013+) rides at the end of the settings sequence via the w15
+    // extension; the namespace + mc:Ignorable are declared on the root below.
+    (docId !== undefined ? el("w15:docId", { "w15:val": docId }) : "");
+  const ns = {
+    ...WML_NS,
+    "xmlns:w15": "http://schemas.microsoft.com/office/word/2012/wordml",
+    "mc:Ignorable": "w14 w15",
+  };
+  return XML_DECL + el("w:settings", ns, body);
 }

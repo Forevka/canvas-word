@@ -270,6 +270,11 @@ function parseParagraph(p: XmlNode, ctx: ParseCtx): IRParagraph {
   if (bookmarks.length > 0) para.bookmarks = bookmarks;
   if (markers.length > 0) para.bookmarkMarkers = markers;
   if (field.tocInstr !== undefined) para.tocField = field.tocInstr;
+  // w14:paraId/textId — Word's persistent paragraph ids, preserved verbatim.
+  const paraId = attr(p, "w14:paraId");
+  if (paraId) para.paraId = paraId;
+  const textId = attr(p, "w14:textId");
+  if (textId) para.textId = textId;
   return para;
 }
 
@@ -993,6 +998,16 @@ function parseSdtPr(pr: XmlNode | undefined): IRSdtProps | null {
     const checked = el(checkbox, "w14:checked");
     const v = checked && attr(checked, "w14:val");
     props.checked = v === "1" || v === "true";
+    const stateSym = (name: string): { font: string; val: string } | undefined => {
+      const s = el(checkbox, name);
+      const font = s && attr(s, "w14:font");
+      const val = s && attr(s, "w14:val");
+      return font && val ? { font, val: val.toUpperCase() } : undefined;
+    };
+    const checkedSym = stateSym("w14:checkedState");
+    if (checkedSym) props.checkedSymbol = checkedSym;
+    const uncheckedSym = stateSym("w14:uncheckedState");
+    if (uncheckedSym) props.uncheckedSymbol = uncheckedSym;
   }
   if (el(pr, "w:showingPlcHdr")) props.placeholder = true;
   const lock = el(pr, "w:lock");
