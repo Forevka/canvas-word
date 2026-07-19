@@ -1511,8 +1511,11 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       if (!pt) return null;
       const inBox = (r: { pageIndex: number; x: number; y: number; width: number; height: number }): boolean =>
         r.pageIndex === pt.pageIndex && pt.x >= r.x && pt.x <= r.x + r.width && pt.y >= r.y && pt.y <= r.y + r.height;
-      // Topmost first: badges + boxes sit over text; underlines/highlights under it.
-      for (const b of decorations.badges) {
+      // Each array paints in order, so the LAST item of each is on top — iterate
+      // BACKWARD so an overlapping click resolves to the topmost decoration.
+      // Between passes: badges + boxes sit over text; underlines/highlights under.
+      for (let i = decorations.badges.length - 1; i >= 0; i--) {
+        const b = decorations.badges[i]!;
         if (!b.interactive || b.pageIndex !== pt.pageIndex) continue;
         if (b.label !== undefined && b.label !== "") {
           // A labelled pill drawn just above the anchor (see the badge paint pass).
@@ -1525,9 +1528,18 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
           if (dx * dx + dy * dy <= (BADGE_DOT_RADIUS + 2) * (BADGE_DOT_RADIUS + 2)) return b.specIndex;
         }
       }
-      for (const r of decorations.boxes) if (r.interactive && inBox(r)) return r.specIndex;
-      for (const r of decorations.underlines) if (r.interactive && inBox(r)) return r.specIndex;
-      for (const r of decorations.highlights) if (r.interactive && inBox(r)) return r.specIndex;
+      for (let i = decorations.boxes.length - 1; i >= 0; i--) {
+        const r = decorations.boxes[i]!;
+        if (r.interactive && inBox(r)) return r.specIndex;
+      }
+      for (let i = decorations.underlines.length - 1; i >= 0; i--) {
+        const r = decorations.underlines[i]!;
+        if (r.interactive && inBox(r)) return r.specIndex;
+      }
+      for (let i = decorations.highlights.length - 1; i >= 0; i--) {
+        const r = decorations.highlights[i]!;
+        if (r.interactive && inBox(r)) return r.specIndex;
+      }
       return null;
     },
 
