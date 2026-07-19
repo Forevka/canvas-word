@@ -8,6 +8,7 @@ import type {
   Block,
   BookmarkRange,
   CharStyle,
+  CustomBlock,
   Document,
   EquationBlock,
   FieldDef,
@@ -92,6 +93,7 @@ export type Op =
   | { type: "setImageProps"; blockId: string; patch: ImagePropsPatch }
   | { type: "setEquation"; blockId: string; equation: MathEquation }
   | { type: "setEquationAlign"; blockId: string; align: "left" | "center" | "right" }
+  | { type: "setCustomBlockData"; blockId: string; data: unknown }
   | { type: "setTableRow"; tableId: string; rowIndex: number; row: TableRow }
   | { type: "setTableStructure"; tableId: string; rows: TableRow[]; colFractions?: number[] }
   | { type: "setTableStyleRef"; tableId: string; styleId: string | null; condOverrides?: import("./document").TableCondOverrides | null }
@@ -819,6 +821,22 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       return {
         doc: replaceLocatedBlock(doc, loc, updated),
         inverse: { type: "setEquation", blockId: op.blockId, equation: old },
+        mapPosition: identity,
+        dirtyBlockIds: [op.blockId],
+      };
+    }
+
+    case "setCustomBlockData": {
+      // Replace a registered custom block's JSON `data` and bump its revision so
+      // only this block re-lays-out. Powers "fetch from the backend → update the
+      // block → re-render" (incl. a loading→ready transition). Container-aware.
+      const loc = locateBlock(doc, op.blockId, "custom");
+      if (!loc) throw new Error(`custom block ${op.blockId} not found`);
+      const old = loc.block.data;
+      const updated: CustomBlock = { ...loc.block, revision: loc.block.revision + 1, data: op.data };
+      return {
+        doc: replaceLocatedBlock(doc, loc, updated),
+        inverse: { type: "setCustomBlockData", blockId: op.blockId, data: old },
         mapPosition: identity,
         dirtyBlockIds: [op.blockId],
       };

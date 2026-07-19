@@ -6,7 +6,8 @@ import type { Block, CustomBlock, Document, Paragraph, SectionProps } from "@cw/
 import { registerBlockType, getBlockType, hasBlockType, _clearBlockTypes } from "./blockRegistry";
 import { createLayoutEngine, CUSTOM_BLOCK_PLACEHOLDER_H } from "./layout/engine";
 import { hitTestCustom, hitTestSelectableObject, objectRect } from "./layout/geometry";
-import { removeBlockObject } from "./editor/commands";
+import { removeBlockObject, setCustomBlockData } from "./editor/commands";
+import { applyOp } from "@cw/shared";
 import type { PlacedBlock } from "./layout/layoutTree";
 
 const SECTION: SectionProps = {
@@ -112,6 +113,25 @@ describe("block registry (layout integration)", () => {
     // objectRect (drives the selection frame) returns the block's box.
     const r = objectRect(tree, cb.id)!;
     expect(r).toMatchObject({ pageIndex: 0, x: placed.x, y: placed.y, width: placed.custom!.width, height: 100 });
+  });
+
+  it("setCustomBlockData command emits the op (null for a non-custom id)", () => {
+    const cb = customBlock("box", { v: 1 });
+    const state = { doc: doc([cb]), selection: null, cellSelection: null, pendingStyle: null };
+    const trn = setCustomBlockData(cb.id, { v: 2 })(state);
+    expect(trn!.ops).toContainEqual({ type: "setCustomBlockData", blockId: cb.id, data: { v: 2 } });
+    expect(setCustomBlockData("nope", { v: 2 })(state)).toBeNull();
+  });
+
+  it("setCustomBlockData op replaces data, bumps revision, and its inverse restores it", () => {
+    const cb = customBlock("box", { v: 1 });
+    const res = applyOp(doc([cb]), { type: "setCustomBlockData", blockId: cb.id, data: { v: 2 } });
+    const updated = res.doc.blocks[0] as CustomBlock;
+    expect(updated.data).toEqual({ v: 2 });
+    expect(updated.revision).toBe(cb.revision + 1); // revision bump → re-layout of just this block
+    const back = applyOp(res.doc, res.inverse).doc.blocks[0] as CustomBlock;
+    expect(back.data).toEqual({ v: 1 });
+    expect(back.revision).toBe(cb.revision + 2);
   });
 
   it("removeBlockObject deletes a custom block (drives object Delete)", () => {

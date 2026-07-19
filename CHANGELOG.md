@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] — 2026-07-19
+
+### Added
+- **`handle.setCustomBlockData(id, data)` — update a custom block's data + re-render.** An undoable
+  op that replaces a registered custom block's JSON `data` and bumps only that block's revision (no
+  full-document rebuild). It's the ergonomic primitive for **asynchronous data** — `measure`/`paint`
+  are synchronous (layout/paint run once per frame), so you fetch in your own async code and feed the
+  result into the block: insert it in a loading state, then `setCustomBlockData(id, { state: "ready",
+  … })` when the data arrives. Previously this required `setDocument`, which resets the whole document
+  (drops undo/scroll). Backed by a new `setCustomBlockData` op/command (mirrors `setEquation`, with an
+  inverse for undo). `examples/custom-block/` gains an “Insert async chart (loading → data)” button
+  demonstrating the flow.
+
 ## [0.10.1] — 2026-07-19
 
 ### Fixed
@@ -1677,6 +1690,7 @@ implementation history in [README.md](./README.md)):
   docId, integration tokens for third-party `/upload`, and session webhooks.
 - Mobile/touch input and a responsive ribbon.
 
+[0.10.2]: https://github.com/Forevka/canvas-word/releases/tag/v0.10.2
 [0.10.0]: https://github.com/Forevka/canvas-word/releases/tag/v0.10.0
 [0.8.0]: https://github.com/Forevka/canvas-word/releases/tag/v0.8.0
 [0.7.5]: https://github.com/Forevka/canvas-word/releases/tag/v0.7.5

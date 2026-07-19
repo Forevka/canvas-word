@@ -42,6 +42,7 @@ import { anchorBeforeId, type RibbonActionContext, type RibbonApi, type RibbonBu
 import { chordMatches, resolveCommandBindings, type EditorCommand } from "./commands";
 import {
   insertText as insertTextCmd,
+  setCustomBlockData as setCustomBlockDataCmd,
   insertImage,
   insertImageInCell,
   insertEquation,
@@ -3385,6 +3386,7 @@ const handle: EditorHandle = {
   replyToComment: (threadId, body, mentions) => editor.replyToComment(threadId, body, mentions),
   resolveThread: (threadId, resolved) => editor.resolveThread(threadId, resolved),
   runCommand: (id) => runRegisteredCommand(id),
+  setCustomBlockData: (id, data) => editor.dispatch(setCustomBlockDataCmd(id, data)),
   setDecorations: (specs) => editor.setDecorations(specs),
   clearDecorations: () => editor.setDecorations([]),
   invalidateDecorations: () => editor.invalidateDecorations(),

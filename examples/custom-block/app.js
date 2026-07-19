@@ -29,6 +29,17 @@ registerBlockType({
     ctx.fillStyle = "#0f172a";
     ctx.font = "600 14px system-ui, sans-serif";
     ctx.fillText(title, padX, 20);
+    // Loading state — drawn until the (async) data arrives. The block paints this
+    // synchronously; the FETCH happens outside, then `handle.setCustomBlockData`
+    // swaps in the ready data and the editor re-renders (see the async button).
+    if (data?.state === "loading") {
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "13px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("Loading…", width / 2, height / 2 + 6);
+      ctx.textAlign = "start";
+      return;
+    }
     // bars
     const max = Math.max(1, ...values.map((v) => v.value));
     const n = values.length || 1;
@@ -61,6 +72,15 @@ const chartBlock = (title, values) => ({
   revision: 0,
   customType: "barchart",
   data: { title, values },
+});
+
+// A chart block that starts in a LOADING state (its `data` has no values yet).
+const loadingChartBlock = (title) => ({
+  kind: "custom",
+  id: `chart-${seq++}-${Math.round(performance.now())}`,
+  revision: 0,
+  customType: "barchart",
+  data: { title, state: "loading" },
 });
 
 const SAMPLE = [
@@ -109,6 +129,25 @@ editor.whenReady().then((handle) => {
     const d = handle.getDocument();
     insertAfterCaret(d, chartBlock("Chart " + (seq + 1), SAMPLE.map((v) => ({ ...v, value: Math.round(20 + Math.random() * 80) }))));
     handle.setDocument(d);
+  };
+
+  // Async pattern: insert a LOADING block, fetch data in your own async code, then
+  // `handle.setCustomBlockData(id, …)` swaps it in and re-renders — an undoable
+  // edit that bumps only this block (no full-document rebuild). paint()/measure()
+  // stay synchronous; the async lives entirely in YOUR code, out here.
+  document.getElementById("async").onclick = async () => {
+    const block = loadingChartBlock("Revenue (live)");
+    const d = handle.getDocument();
+    insertAfterCaret(d, block);
+    handle.setDocument(d); // shows "Loading…" immediately
+
+    // …fetch from your backend (simulated here with a 1.2s delay) …
+    const values = await new Promise((res) =>
+      setTimeout(() => res(SAMPLE.map((v) => ({ ...v, value: Math.round(20 + Math.random() * 80) }))), 1200),
+    );
+
+    handle.setCustomBlockData(block.id, { title: "Revenue (live)", state: "ready", values });
+    console.log("Data arrived → setCustomBlockData re-rendered the block (Ctrl/Cmd+Z to undo just this update)");
   };
 
   document.getElementById("export").onclick = async () => {
