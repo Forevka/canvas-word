@@ -519,6 +519,13 @@ export interface ImageBlock {
   fieldId?: string | undefined;
   /** Block-level content-control ancestry — see Paragraph.sdtPath. */
   sdtPath?: string[] | undefined;
+  /** Word's persistent drawing identity (OOXML wp14:anchorId / wp14:editId on the
+   *  wp:inline|wp:anchor container) — the drawing-world analog of Paragraph.paraId.
+   *  Word maintains these 8-hex-digit ids for change-tracking of the drawing.
+   *  Preserved verbatim from import and re-emitted; export de-dups so a copy/pasted
+   *  image never repeats an id. Absent = the drawing had none / a new image.
+   *  Invisible marker — no layout effect. */
+  drawingId?: { anchorId?: string; editId?: string };
 }
 
 /** Cells hold Blocks: paragraphs (first-class editing targets, located through

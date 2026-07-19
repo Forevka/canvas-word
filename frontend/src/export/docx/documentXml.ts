@@ -58,6 +58,9 @@ export interface PartCtx {
    *  document, so a paragraph whose id was already written (a copy/paste clone)
    *  emits none. Shared across body + header/footer parts. */
   seenParaIds: Set<string>;
+  /** Same, for wp14:anchorId (drawing identity) — an image cloned by copy/paste
+   *  must not repeat its id. Shared across body + header/footer parts. */
+  seenDrawingIds: Set<string>;
   /** Header/footer parts: {page}/{pages} run text becomes live PAGE/NUMPAGES
    *  fields (the inverse of the importer's header/footer fieldTokens mode). In the
    *  body those tokens stay literal text — symmetric with import, which only
@@ -415,6 +418,19 @@ function paraIdAttrs(p: Paragraph, ctx: PartCtx): Record<string, string> | undef
   ctx.seenParaIds.add(p.paraId);
   const a: Record<string, string> = { "w14:paraId": p.paraId };
   if (p.textId) a["w14:textId"] = p.textId;
+  return a;
+}
+
+/** wp14:anchorId/editId attributes for an image's wp:inline|wp:anchor, or `{}` when
+ *  the image has no id or its anchorId was already emitted (drawing ids are
+ *  doc-unique, so a copy/pasted image must not re-emit a colliding id). Marks it
+ *  seen. Returns `{}` (not undefined) so it spreads cleanly into an attr literal. */
+function drawingIdAttrs(img: Extract<Block, { kind: "image" }>, ctx: PartCtx): Record<string, string> {
+  const anchorId = img.drawingId?.anchorId;
+  if (!anchorId || ctx.seenDrawingIds.has(anchorId)) return {};
+  ctx.seenDrawingIds.add(anchorId);
+  const a: Record<string, string> = { "wp14:anchorId": anchorId };
+  if (img.drawingId?.editId) a["wp14:editId"] = img.drawingId.editId;
   return a;
 }
 
@@ -862,6 +878,9 @@ function imageParagraphXml(img: Extract<Block, { kind: "image" }>, ctx: PartCtx)
     relId = ctx.rels.add(REL.image, target);
   }
   const blipAttr = img.externalSrc ? { "r:link": relId } : { "r:embed": relId };
+  // wp14:anchorId/editId go on the wp:anchor|wp:inline container; only one of the two
+  // paths below runs per image, so computing (and de-dup-marking) once is correct.
+  const idAttrs = drawingIdAttrs(img, ctx);
   const cx = pxToEmu(img.widthPx);
   const cy = pxToEmu(img.heightPx);
   // a:srcRect crop (insets as 1/1000 of a percent); omitted when there's no crop.
@@ -901,6 +920,7 @@ function imageParagraphXml(img: Extract<Block, { kind: "image" }>, ctx: PartCtx)
     const anchor = el(
       "wp:anchor",
       {
+        ...idAttrs,
         distT: 0, distB: 0, distL: 0, distR: 0, simplePos: 0,
         // relativeHeight is an unsigned int in OOXML; clamp the (possibly
         // negative, from repeated "send to back") z into the valid range.
@@ -923,7 +943,7 @@ function imageParagraphXml(img: Extract<Block, { kind: "image" }>, ctx: PartCtx)
     undefined,
     el(
       "wp:inline",
-      { distT: 0, distB: 0, distL: 0, distR: 0 },
+      { ...idAttrs, distT: 0, distB: 0, distL: 0, distR: 0 },
       el("wp:extent", { cx, cy }) + el("wp:docPr", { id: ctx.nextId(), name: "image" }) + graphic,
     ),
   );

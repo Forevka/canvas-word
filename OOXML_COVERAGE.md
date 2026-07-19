@@ -331,8 +331,11 @@ w:drawing → wp:inline / wp:anchor → a:blip @r:embed ✅
 ├─ a:srcRect (crop l/t/r/b) ............ ✅
 ├─ wrap: square/tight/through → square . ✅
 ├─ wrap: none (floating) + positionH/V . ✅ (@relativeFrom, align/posOffset, behindDoc, decorative)
+│   └─ wp14 pct position (pctPosH/VOffset) ⚠️ percentage dropped; mc:Fallback wp:posOffset recovered (#188)
+├─ wp14:anchorId / wp14:editId (drawing id) ✅ ImageBlock.drawingId (preserved verbatim; export de-dups) (#188)
+├─ wp14 relative size (sizeRelH/V, pctWidth/Height) ❌ (absolute wp:extent kept)
 ├─ wrap: topAndBottom / overlapping ..... ⚠️ demoted to inline flow (warning)
-├─ mc:AlternateContent (Choice/Fallback) ✅
+├─ mc:AlternateContent (Choice/Fallback) ✅ (run-level: Choice preferred; inside positionH/V: Fallback recovered)
 └─ VML w:pict → v:shape/v:imagedata @r:id ✅ (image only)
 w:object (OLE) .......................... 🚫 skipped (warning)
 Charts (c:chart) ........................ ❌

@@ -22,6 +22,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **`w15:docId`** — the document's persistent identity GUID (`settings.xml`) is preserved on
     `Document.docId` and re-emitted (declaring the `w15` namespace); the older `w14:docId` variant is
     also accepted on import.
+- **Round-trip fidelity for Word's `wp14` drawing identity.** `wp14:anchorId` / `wp14:editId` on a
+  floating/inline image's `wp:anchor`/`wp:inline` (the drawing-world analog of `w14:paraId`) are
+  preserved on `ImageBlock.drawingId` and re-emitted (declaring the `wp14` namespace); export
+  **de-dups** so a copy/pasted image never repeats an id.
+
+### Fixed
+- **`wp14` percentage-positioned floating images no longer snap to the top-left corner on import.**
+  Word wraps a floating object's percentage position (`wp14:pctPosHOffset`/`pctPosVOffset`) in an
+  `mc:AlternateContent`, pushing the absolute `wp:posOffset` down into the `mc:Fallback` — so it is no
+  longer a direct child of `wp:positionH`/`positionV`. The offset reader only looked at direct
+  children, read nothing, and defaulted the position to `0`. It now recovers the `mc:Fallback`
+  absolute offset (the percentage itself is not yet modeled), so a behind/in-front-of-text float lands
+  where Word placed it.
 
 ## [0.10.2] — 2026-07-19
 
