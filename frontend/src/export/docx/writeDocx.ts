@@ -82,8 +82,9 @@ export function writeDocx(
   const sdts = doc.sdts ?? {};
   const bodyRels = new RelManager();
   const bodyMedia = new MediaManager(images);
-  // Shared across body + all header/footer parts — paraIds are unique per document.
+  // Shared across body + all header/footer parts — paraIds/drawing ids are unique per document.
   const seenParaIds = new Set<string>();
+  const seenDrawingIds = new Set<string>();
   const bodyCtx: PartCtx = {
     rels: bodyRels,
     media: bodyMedia,
@@ -93,6 +94,7 @@ export function writeDocx(
     bookmarksByBlock,
     listIdMap,
     seenParaIds,
+    seenDrawingIds,
     ...(tocPages ? { tocPages } : {}),
     ...(doc.tocInstruction ? { tocInstruction: doc.tocInstruction } : {}),
     ...(doc.fields ? { fields: doc.fields } : {}),
@@ -115,6 +117,7 @@ export function writeDocx(
       bookmarksByBlock, // same map — band block ids resolve here, so band bookmarks export
       listIdMap,
       seenParaIds, // same set — paraIds are unique across body + bands
+      seenDrawingIds, // same set — drawing ids are unique across body + bands
       fieldTokens: true, // {page}/{pages} -> live PAGE/NUMPAGES fields in bands
     };
     parts[`word/${file}`] = headerFooterXml(blocks, kind, bandCtx);

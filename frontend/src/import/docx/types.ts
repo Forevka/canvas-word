@@ -234,6 +234,10 @@ export type IRInline =
       anchorWrap?: "square" | "block";
       /** wp:positionH/wp:align when present. */
       anchorAlign?: "left" | "right" | "center";
+      /** wp14:anchorId / wp14:editId on the wp:inline|wp:anchor container — Word's
+       *  persistent drawing ids, preserved verbatim → ImageBlock.drawingId. */
+      anchorId?: string;
+      editId?: string;
       /** Set for wrapNone anchors (image sits behind/in-front of text, not in
        *  the flow). Maps to ImageBlock.anchor — positioned absolutely, no flow
        *  height, no text reflow. */

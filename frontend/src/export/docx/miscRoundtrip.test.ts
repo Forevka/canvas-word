@@ -275,3 +275,57 @@ describe("linked (external) images — r:link round-trip", () => {
     expect(back.externalSrc).toBe(URL);
   });
 });
+
+// ── wp14 anchored-drawing fidelity (issue #188) ──────────────────────────────
+// (1) wp14 percentage positioning wraps the absolute offset in mc:AlternateContent,
+//     so the importer must recover the mc:Fallback wp:posOffset (was read as 0).
+// (2) wp14:anchorId/editId (drawing identity) round-trip, with export de-dup.
+const wp14PositionedDrawing =
+  `<w:drawing><wp:anchor behindDoc="0" relativeHeight="5">` +
+  `<wp:positionH relativeFrom="page"><mc:AlternateContent>` +
+  `<mc:Choice Requires="wp14"><wp14:pctPosHOffset>25000</wp14:pctPosHOffset></mc:Choice>` +
+  `<mc:Fallback><wp:posOffset>1905000</wp:posOffset></mc:Fallback></mc:AlternateContent></wp:positionH>` +
+  `<wp:positionV relativeFrom="paragraph"><mc:AlternateContent>` +
+  `<mc:Choice Requires="wp14"><wp14:pctPosVOffset>10000</wp14:pctPosVOffset></mc:Choice>` +
+  `<mc:Fallback><wp:posOffset>914400</wp:posOffset></mc:Fallback></mc:AlternateContent></wp:positionV>` +
+  `<wp:extent cx="914400" cy="457200"/><wp:wrapNone/>` +
+  `<a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic></a:graphicData></a:graphic>` +
+  `</wp:anchor></w:drawing>`;
+
+describe("wp14 anchored-drawing fidelity", () => {
+  it("recovers the mc:Fallback wp:posOffset for a wp14 percent-positioned float (was 0)", () => {
+    const img = firstImage(runImport(docxWithImage(`<w:p><w:r>${wp14PositionedDrawing}</w:r></w:p>`)).doc);
+    expect(img.anchor).toBeTruthy();
+    // 1905000 EMU = 200px, 914400 EMU = 96px — both read as 0 before the fix.
+    expect(img.anchor!.offsetXPx).toBeCloseTo(200, 0);
+    expect(img.anchor!.offsetYPx).toBeCloseTo(96, 0);
+  });
+
+  it("parses wp14:anchorId/editId off an inline image", () => {
+    const drawing = `<w:drawing><wp:inline wp14:anchorId="12AB34CD" wp14:editId="55667788">` +
+      `<wp:extent cx="914400" cy="914400"/>` +
+      `<a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic></a:graphicData></a:graphic>` +
+      `</wp:inline></w:drawing>`;
+    const r = runImport(docxWithImage(`<w:p><w:r>${drawing}</w:r></w:p>`)).doc;
+    expect(firstImage(r).drawingId).toEqual({ anchorId: "12AB34CD", editId: "55667788" });
+  });
+
+  const idImg: ImageBlock = {
+    kind: "image", id: "di0", revision: 0, src: "img1", widthPx: 96, heightPx: 96, align: "left",
+    drawingId: { anchorId: "12AB34CD", editId: "55667788" },
+  };
+
+  it("emits wp14:anchorId/editId (+ namespace) and round-trips them", () => {
+    const doc: Document = { section: SECTION, blocks: [idImg] };
+    const xml = exportedDocXml(doc, { img1: PNG_1PX });
+    expect(xml).toContain('xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing"');
+    expect(xml).toContain('wp14:anchorId="12AB34CD"');
+    expect(xml).toContain('wp14:editId="55667788"');
+    expect(firstImage(roundTrip(doc, { img1: PNG_1PX })).drawingId).toEqual({ anchorId: "12AB34CD", editId: "55667788" });
+  });
+
+  it("de-dups a drawing anchorId shared by two images (copy/paste clone) — emits it once", () => {
+    const xml = exportedDocXml({ section: SECTION, blocks: [{ ...idImg, id: "a" }, { ...idImg, id: "b" }] }, { img1: PNG_1PX });
+    expect(xml.match(/wp14:anchorId="12AB34CD"/g)?.length).toBe(1);
+  });
+});

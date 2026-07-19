@@ -675,6 +675,11 @@ function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
   }
   const extent = el(container, "wp:extent");
   const image: IRInline = { kind: "image", relId, anchored: !!anchor };
+  // wp14:anchorId/editId — Word's persistent drawing ids, on the inline|anchor container.
+  const anchorId = attr(container, "wp14:anchorId");
+  if (anchorId) image.anchorId = anchorId;
+  const editId = attr(container, "wp14:editId");
+  if (editId) image.editId = editId;
   const cx = numAttr(extent, "cx");
   if (cx !== undefined) image.widthEmu = cx;
   const cy = numAttr(extent, "cy");
@@ -726,9 +731,16 @@ function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
   return image;
 }
 
-/** wp:positionH|V → wp:posOffset (EMU, signed). Absent/non-numeric → 0. */
+/** wp:positionH|V → wp:posOffset (EMU, signed). Absent/non-numeric → 0.
+ *  Word wraps wp14 *percentage* positioning in `mc:AlternateContent`, which pushes
+ *  the absolute `wp:posOffset` down into `mc:Fallback` — no longer a direct child.
+ *  We don't model the percentage (the mc:Choice), so recover the fallback absolute
+ *  by descending; within a `wp:positionH|V` the only nested posOffset IS the
+ *  fallback, so the deep search is unambiguous. Without this the offset read as 0
+ *  and a percent-positioned float snapped to the top-left of its reference. */
 function posOffsetEmu(pos: XmlNode | undefined): number {
-  const off = pos && el(pos, "wp:posOffset");
+  if (!pos) return 0;
+  const off = el(pos, "wp:posOffset") ?? findDeep(pos, "wp:posOffset");
   const n = off ? Number(textOf(off).trim()) : NaN;
   return Number.isFinite(n) ? n : 0;
 }

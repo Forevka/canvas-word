@@ -774,6 +774,13 @@ export function createMapper(
         ...(a.z !== undefined ? { z: a.z } : {}),
       };
     }
+    // wp14:anchorId/editId — persistent drawing identity, preserved verbatim.
+    if (inline.anchorId || inline.editId) {
+      image.drawingId = {
+        ...(inline.anchorId ? { anchorId: inline.anchorId } : {}),
+        ...(inline.editId ? { editId: inline.editId } : {}),
+      };
+    }
     return image;
   }
 
