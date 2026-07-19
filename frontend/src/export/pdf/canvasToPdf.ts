@@ -41,6 +41,16 @@ class PdfGradient {
 
 type Style = string | PdfGradient;
 
+/** One buffered path command (replayed into pdfkit at fill/stroke/clip time). */
+type PathSeg =
+  | { c: "M"; a: [number, number] }
+  | { c: "L"; a: [number, number] }
+  | { c: "C"; a: [number, number, number, number, number, number] }
+  | { c: "Q"; a: [number, number, number, number] }
+  | { c: "R"; a: [number, number, number, number] }
+  | { c: "RR"; a: [number, number, number, number, number] }
+  | { c: "Z"; a: [] };
+
 const DEFAULT_FONT = { sizePx: 10, family: "sans-serif", bold: false, italic: false };
 
 /** Parse a CSS `font` shorthand ("bold italic 14px Arial, sans-serif"). Only the
@@ -83,6 +93,14 @@ export class CanvasToPdfContext {
 
   private dash: number[] = [];
   private saveDepth = 0;
+  // Buffered current path. pdfkit writes path ops straight to the content stream
+  // and consumes them on fill/stroke, so it has no clearable "current path" — we
+  // keep our own so Canvas2D semantics hold: beginPath() truly resets, arc()
+  // implicit-moveTo works, a path can be both filled AND stroked, and fillRect()
+  // never picks up stray segments. The buffer is replayed into pdfkit fresh on
+  // each fill/stroke/clip (and kept across them, like canvas — beginPath clears).
+  private path: PathSeg[] = [];
+  private hasPoint = false;
 
   constructor(
     private readonly doc: PDFKit.PDFDocument,
@@ -128,51 +146,65 @@ export class CanvasToPdfContext {
     return this.dash.slice();
   }
 
-  // ---- path building (forwarded straight to pdfkit) ------------------------
+  // ---- path building (buffered — replayed at paint time) -------------------
   beginPath(): void {
-    // pdfkit writes path ops directly to the content stream and flushes them on
-    // fill()/stroke(), so there is no retained path to reset here.
+    this.path = [];
+    this.hasPoint = false;
   }
   closePath(): void {
-    this.doc.closePath();
+    this.path.push({ c: "Z", a: [] });
   }
   moveTo(x: number, y: number): void {
-    this.doc.moveTo(x, y);
+    this.path.push({ c: "M", a: [x, y] });
+    this.hasPoint = true;
   }
   lineTo(x: number, y: number): void {
-    this.doc.lineTo(x, y);
+    // Canvas: lineTo with no current subpath acts as moveTo.
+    this.path.push({ c: this.hasPoint ? "L" : "M", a: [x, y] });
+    this.hasPoint = true;
   }
   bezierCurveTo(cp1x: number, cp1y: number, cp2x: number, cp2y: number, x: number, y: number): void {
-    this.doc.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y);
+    if (!this.hasPoint) this.moveTo(cp1x, cp1y);
+    this.path.push({ c: "C", a: [cp1x, cp1y, cp2x, cp2y, x, y] });
+    this.hasPoint = true;
   }
   quadraticCurveTo(cpx: number, cpy: number, x: number, y: number): void {
-    this.doc.quadraticCurveTo(cpx, cpy, x, y);
+    if (!this.hasPoint) this.moveTo(cpx, cpy);
+    this.path.push({ c: "Q", a: [cpx, cpy, x, y] });
+    this.hasPoint = true;
   }
   rect(x: number, y: number, w: number, h: number): void {
-    this.doc.rect(x, y, w, h);
+    // A self-contained subpath; a following op starts fresh (canvas leaves the
+    // current point at the rect's start).
+    this.path.push({ c: "R", a: [x, y, w, h] });
+    this.hasPoint = false;
   }
   roundRect(x: number, y: number, w: number, h: number, radius: number | number[] = 0): void {
     const r = Math.min(Array.isArray(radius) ? (radius[0] ?? 0) : radius, w / 2, h / 2);
-    this.doc.roundedRect(x, y, w, h, r);
+    this.path.push({ c: "RR", a: [x, y, w, h, r] });
+    this.hasPoint = false;
   }
   arc(cx: number, cy: number, r: number, start: number, end: number, ccw = false): void {
-    this.appendArc(cx, cy, r, r, start, end, ccw, false);
+    this.appendArc(cx, cy, r, r, start, end, ccw);
   }
   ellipse(cx: number, cy: number, rx: number, ry: number, rotation: number, start: number, end: number, ccw = false): void {
     if (rotation) {
       // Rare — approximate by ignoring rotation (documented limitation).
     }
-    this.appendArc(cx, cy, rx, ry, start, end, ccw, false);
+    this.appendArc(cx, cy, rx, ry, start, end, ccw);
   }
   arcTo(x1: number, y1: number, x2: number, y2: number, _r: number): void {
     // Approximate with straight segments (radius corner-rounding is rarely used
     // in block chrome; roundRect covers the common case).
-    this.doc.lineTo(x1, y1).lineTo(x2, y2);
+    this.lineTo(x1, y1);
+    this.lineTo(x2, y2);
   }
 
-  /** Append an (elliptical) arc as cubic-bezier segments. A full circle uses
-   *  pdfkit's `circle` when start/end span 2π and no prior subpath is open. */
-  private appendArc(cx: number, cy: number, rx: number, ry: number, start: number, end: number, ccw: boolean, _moveFirst: boolean): void {
+  /** Append an (elliptical) arc as cubic-bezier segments into the path buffer.
+   *  Canvas connects with a straight line from the current point to the arc's
+   *  start when a subpath is open; on an EMPTY subpath the first point is a
+   *  moveTo (no spurious connecting line). */
+  private appendArc(cx: number, cy: number, rx: number, ry: number, start: number, end: number, ccw: boolean): void {
     let a0 = start;
     let a1 = end;
     if (!ccw && a1 - a0 >= Math.PI * 2) a1 = a0 + Math.PI * 2;
@@ -185,7 +217,10 @@ export class CanvasToPdfContext {
     let ang = a0;
     let px = cx + rx * Math.cos(ang);
     let py = cy + ry * Math.sin(ang);
-    this.doc.lineTo(px, py); // connect from the current point (canvas arc implicitly lines to the start)
+    // moveTo the arc's start on an empty subpath; lineTo it when one is open.
+    if (this.hasPoint) this.path.push({ c: "L", a: [px, py] });
+    else this.path.push({ c: "M", a: [px, py] });
+    this.hasPoint = true;
     for (let i = 0; i < segs; i++) {
       const ang2 = ang + da;
       const x2 = cx + rx * Math.cos(ang2);
@@ -194,7 +229,7 @@ export class CanvasToPdfContext {
       const c1y = py + k * ry * Math.cos(ang);
       const c2x = x2 + k * rx * Math.sin(ang2);
       const c2y = y2 - k * ry * Math.cos(ang2);
-      this.doc.bezierCurveTo(c1x, c1y, c2x, c2y, x2, y2);
+      this.path.push({ c: "C", a: [c1x, c1y, c2x, c2y, x2, y2] });
       ang = ang2;
       px = x2;
       py = y2;
@@ -202,6 +237,19 @@ export class CanvasToPdfContext {
   }
 
   // ---- paint ---------------------------------------------------------------
+  /** Replay the buffered path into pdfkit (a fresh, self-contained path each
+   *  time, so pdfkit's stream never carries stray segments between paints). */
+  private replayPath(): void {
+    for (const s of this.path) {
+      if (s.c === "M") this.doc.moveTo(s.a[0], s.a[1]);
+      else if (s.c === "L") this.doc.lineTo(s.a[0], s.a[1]);
+      else if (s.c === "C") this.doc.bezierCurveTo(s.a[0], s.a[1], s.a[2], s.a[3], s.a[4], s.a[5]);
+      else if (s.c === "Q") this.doc.quadraticCurveTo(s.a[0], s.a[1], s.a[2], s.a[3]);
+      else if (s.c === "R") this.doc.rect(s.a[0], s.a[1], s.a[2], s.a[3]);
+      else if (s.c === "RR") this.doc.roundedRect(s.a[0], s.a[1], s.a[2], s.a[3], s.a[4]);
+      else this.doc.closePath();
+    }
+  }
   private applyDash(): void {
     if (this.dash.length) this.doc.dash(this.dash[0]!, { space: this.dash[1] ?? this.dash[0]! });
     else this.doc.undash();
@@ -218,6 +266,7 @@ export class CanvasToPdfContext {
   fill(): void {
     this.doc.save();
     this.doc.fillOpacity(this.globalAlpha);
+    this.replayPath();
     this.doc.fill(this.fillArg(this.fillStyle));
     this.doc.restore();
   }
@@ -226,8 +275,8 @@ export class CanvasToPdfContext {
     this.doc.strokeOpacity(this.globalAlpha);
     this.doc.lineWidth(this.lineWidth).lineCap(this.lineCap).lineJoin(this.lineJoin);
     this.applyDash();
-    const s = this.strokeStyle;
-    this.doc.stroke(typeof s === "string" ? s : this.fillArg(s));
+    this.replayPath();
+    this.doc.stroke(this.fillArg(this.strokeStyle));
     this.doc.restore();
   }
   fillRect(x: number, y: number, w: number, h: number): void {
@@ -240,13 +289,14 @@ export class CanvasToPdfContext {
     this.doc.save();
     this.doc.strokeOpacity(this.globalAlpha).lineWidth(this.lineWidth);
     this.applyDash();
-    this.doc.rect(x, y, w, h).stroke(typeof this.strokeStyle === "string" ? this.strokeStyle : this.fillArg(this.strokeStyle));
+    this.doc.rect(x, y, w, h).stroke(this.fillArg(this.strokeStyle));
     this.doc.restore();
   }
   clearRect(): void {
     // No "clear" in PDF; a block should paint its own background. No-op.
   }
   clip(): void {
+    this.replayPath();
     this.doc.clip();
   }
 
@@ -278,7 +328,7 @@ export class CanvasToPdfContext {
     }
     this.doc.save();
     this.doc.fillOpacity(this.globalAlpha);
-    if (typeof this.fillStyle === "string") this.doc.fillColor(this.fillStyle);
+    this.doc.fillColor(this.fillArg(this.fillStyle)); // honors a gradient fillStyle too
     // pdfkit's `baseline` option maps canvas textBaseline; default alphabetic.
     this.doc.text(text, tx, y, { lineBreak: false, baseline: this.textBaseline as PDFKit.Mixins.TextOptions["baseline"] });
     this.doc.restore();

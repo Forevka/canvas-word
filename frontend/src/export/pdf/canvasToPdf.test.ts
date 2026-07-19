@@ -76,6 +76,39 @@ describe("renderCustomBlockPdf (Canvas2D → pdfkit shim)", () => {
     expect(calls.filter((c) => c.m === "stop")).toHaveLength(2);
   });
 
+  it("a bare beginPath()+arc()+fill() starts the subpath with moveTo (no stray line)", () => {
+    const { calls } = render({
+      type: "t", measure: () => ({ height: 80 }),
+      paint: (ctx) => { ctx.beginPath(); ctx.arc(30, 30, 10, 0, Math.PI * 2); ctx.fill(); },
+    });
+    // The replayed path must OPEN with moveTo, and a full circle carries no lineTo.
+    const firstPathOp = calls.find((c) => c.m === "moveTo" || c.m === "lineTo");
+    expect(firstPathOp?.m).toBe("moveTo");
+    expect(calls.find((c) => c.m === "lineTo")).toBeFalsy();
+  });
+
+  it("fillRect after an unpainted open path is isolated (no stray segments filled)", () => {
+    const { calls } = render({
+      type: "t", measure: () => ({ height: 80 }),
+      paint: (ctx) => { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(50, 50); ctx.fillRect(1, 2, 3, 4); },
+    });
+    // The open path was never filled/stroked, so it's never replayed into pdfkit.
+    expect(calls.find((c) => c.m === "lineTo")).toBeFalsy();
+    expect(calls.find((c) => c.m === "rect" && c.args[2] === 3)).toBeTruthy();
+  });
+
+  it("the same buffered path can be BOTH filled and stroked (canvas keeps the path)", () => {
+    const { calls } = render({
+      type: "t", measure: () => ({ height: 80 }),
+      paint: (ctx) => { ctx.beginPath(); ctx.rect(0, 0, 10, 10); ctx.fill(); ctx.stroke(); },
+    });
+    expect(calls.filter((c) => c.m === "fill")).toHaveLength(1);
+    expect(calls.filter((c) => c.m === "stroke")).toHaveLength(1);
+    // The block's 10×10 rect is replayed for BOTH paints (the 300-wide box-clip
+    // rect from the render wrapper is separate).
+    expect(calls.filter((c) => c.m === "rect" && c.args[2] === 10)).toHaveLength(2);
+  });
+
   it("unwinds a save() the block left open (no state leak)", () => {
     const { calls } = render({
       type: "t", measure: () => ({ height: 80 }),
