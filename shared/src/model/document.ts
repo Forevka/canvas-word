@@ -208,6 +208,14 @@ export interface SdtProps {
   dateFormat?: string;
   /** Checkbox state (w14:checkbox). */
   checked?: boolean;
+  /** Checkbox glyph shown when checked (w14:checkedState) — `font` is the symbol
+   *  font (e.g. "MS Gothic"/"Wingdings") and `val` the UPPER-CASE hex code point
+   *  Word stores (e.g. "2612" ballot-box-with-X, "F0FE" Wingdings). Absent = the
+   *  producer's default glyph. Preserved so a checkbox round-trips its exact marks. */
+  checkedSymbol?: { font: string; val: string };
+  /** Checkbox glyph shown when unchecked (w14:uncheckedState). See `checkedSymbol`
+   *  (e.g. "2610" empty ballot box, "F0A8" Wingdings). Absent = producer default. */
+  uncheckedSymbol?: { font: string; val: string };
   /** w:lock="sdtContentLocked" — contents cannot be edited. */
   lockContent?: boolean;
   /** w:lock="sdtLocked" — the control cannot be deleted. */
@@ -443,6 +451,18 @@ export interface Paragraph {
    *  `CharStyle.sdtPath` instead. Mirrors `fieldId`; invisible marker. Treat as
    *  IMMUTABLE. `| undefined` (never `[]`). */
   sdtPath?: string[] | undefined;
+  /** Word's persistent paragraph identity (OOXML w14:paraId) — an 8-hex-digit id
+   *  Word assigns and maintains across saves (comment/thread anchoring keys off it).
+   *  Preserved verbatim from import and re-emitted so a Word→edit→Word cycle keeps
+   *  it. Only ONE model block per source `<w:p>` carries it (a paragraph that splits
+   *  on a soft break gives the id to its first piece); export de-dups so a
+   *  copy/pasted clone never emits a colliding id. New paragraphs leave it absent
+   *  (Word assigns one on its next save). Invisible marker — no layout effect. */
+  paraId?: string | undefined;
+  /** Companion to `paraId` (OOXML w14:textId) — a paired persistent id for the
+   *  paragraph's text. Preserved/re-emitted verbatim; same first-piece + de-dup
+   *  rules as `paraId`. `| undefined` so an op can clear it. */
+  textId?: string | undefined;
 }
 
 export interface ImageBlock {
@@ -977,6 +997,12 @@ export interface Document {
    *  (the modern `name`/`uri`/`val` triples Word emits, e.g. compatibilityMode).
    *  Preserved verbatim so a Word→edit→Word cycle keeps them. Absent = none. */
   compatSettings?: { name: string; uri: string; val: string }[];
+  /** Persistent document identity GUID (OOXML settings.xml w15:docId, e.g.
+   *  "{2E7A3C41-...}"). Word writes it once and keeps it stable across edits; some
+   *  co-authoring/merge features key off it. Preserved verbatim from import and
+   *  re-emitted (declaring the w15 namespace) so a Word→edit→Word cycle keeps it.
+   *  Absent = the document had none (we don't mint one). */
+  docId?: string;
 }
 
 export interface BookmarkRange {

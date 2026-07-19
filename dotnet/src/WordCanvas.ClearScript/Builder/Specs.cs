@@ -756,6 +756,19 @@ public sealed record SdtOptions
     }
 }
 
+/// <summary>Custom checkbox glyph (w14:checkedState / w14:uncheckedState): a symbol
+/// font plus the UPPER-CASE hex code point Word stores (e.g. "MS Gothic" + "2612").</summary>
+public sealed record CheckboxSymbol(string Font, string Val)
+{
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        Js.Set(o, "font", Font);
+        Js.Set(o, "val", Val);
+        return o;
+    }
+}
+
 /// <summary>A drop-down / combo-box list item (display text + stored value).</summary>
 public sealed record SdtListItem(string Display, string Value)
 {

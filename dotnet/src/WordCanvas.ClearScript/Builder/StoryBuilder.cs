@@ -370,11 +370,24 @@ public sealed class ParagraphBuilder
     public ParagraphBuilder RichTextControl(string text, SdtOptions? opts = null) => Sdt("richTextControl", text, opts);
     public ParagraphBuilder PlainTextControl(string text, SdtOptions? opts = null) => Sdt("plainTextControl", text, opts);
 
-    /// <summary>A checkbox content control (☒ / ☐).</summary>
-    public ParagraphBuilder Checkbox(bool isChecked, SdtOptions? opts = null)
+    /// <summary>A checkbox content control (☒ / ☐). Optional
+    /// <paramref name="checkedSymbol"/>/<paramref name="uncheckedSymbol"/> set the exact
+    /// glyph Word stores (w14:checkedState / w14:uncheckedState).</summary>
+    public ParagraphBuilder Checkbox(
+        bool isChecked,
+        SdtOptions? opts = null,
+        CheckboxSymbol? checkedSymbol = null,
+        CheckboxSymbol? uncheckedSymbol = null)
     {
-        if (opts is not null) _js.InvokeMethod("checkbox", isChecked, opts.ToJs(_engine));
-        else _js.InvokeMethod("checkbox", isChecked);
+        if (opts is null && checkedSymbol is null && uncheckedSymbol is null)
+        {
+            _js.InvokeMethod("checkbox", isChecked);
+            return this;
+        }
+        var o = opts?.ToJs(_engine) ?? Js.Obj(_engine);
+        if (checkedSymbol is { } cs) Js.Set(o, "checkedSymbol", cs.ToJs(_engine));
+        if (uncheckedSymbol is { } us) Js.Set(o, "uncheckedSymbol", us.ToJs(_engine));
+        _js.InvokeMethod("checkbox", isChecked, o);
         return this;
     }
 

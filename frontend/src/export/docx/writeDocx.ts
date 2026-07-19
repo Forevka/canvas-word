@@ -82,6 +82,8 @@ export function writeDocx(
   const sdts = doc.sdts ?? {};
   const bodyRels = new RelManager();
   const bodyMedia = new MediaManager(images);
+  // Shared across body + all header/footer parts — paraIds are unique per document.
+  const seenParaIds = new Set<string>();
   const bodyCtx: PartCtx = {
     rels: bodyRels,
     media: bodyMedia,
@@ -90,6 +92,7 @@ export function writeDocx(
     nextId,
     bookmarksByBlock,
     listIdMap,
+    seenParaIds,
     ...(tocPages ? { tocPages } : {}),
     ...(doc.tocInstruction ? { tocInstruction: doc.tocInstruction } : {}),
     ...(doc.fields ? { fields: doc.fields } : {}),
@@ -111,6 +114,7 @@ export function writeDocx(
       nextId,
       bookmarksByBlock, // same map — band block ids resolve here, so band bookmarks export
       listIdMap,
+      seenParaIds, // same set — paraIds are unique across body + bands
       fieldTokens: true, // {page}/{pages} -> live PAGE/NUMPAGES fields in bands
     };
     parts[`word/${file}`] = headerFooterXml(blocks, kind, bandCtx);
@@ -161,6 +165,7 @@ export function writeDocx(
     displayBackgroundShape: doc.section.pageColorHex !== undefined,
     ...(doc.defaultTabStopPx !== undefined ? { defaultTabStopPx: doc.defaultTabStopPx } : {}),
     ...(doc.compatSettings ? { compatSettings: doc.compatSettings } : {}),
+    ...(doc.docId ? { docId: doc.docId } : {}),
   });
   overrides.push(["/word/settings.xml", CT.settings]);
   bodyRels.add(REL.settings, "settings.xml");

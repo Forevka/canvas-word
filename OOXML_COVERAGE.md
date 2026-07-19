@@ -136,6 +136,11 @@ w:pPr
 └─ w:suppressOverlap ...................... ❌
 ```
 
+`w:p` attributes: `@w14:paraId` / `@w14:textId` (Word's persistent paragraph ids) are
+preserved verbatim → `Paragraph.paraId`/`.textId` and re-emitted (export de-dups so a
+copy/paste clone never repeats an id; new paragraphs emit none). `@w:rsidR`/`@w:rsidP`/…
+(revision-save ids) are dropped 🚫.
+
 ---
 
 ## Tables — `w:tbl`
@@ -302,6 +307,7 @@ w:sdtPr
 ├─ w:dropDownList / w:comboBox (+listItem) ✅
 ├─ w:date (+ w:dateFormat) ............. ✅
 ├─ w14:checkbox (+ w14:checked) ........ ✅
+│   └─ w14:checkedState / w14:uncheckedState ✅ (glyph font + code point preserved)
 ├─ w:showingPlcHdr ..................... ✅
 ├─ w:lock (@w:val) ..................... ✅
 ├─ w:id ................................ ⚠️ fresh internal id minted (original not kept)
@@ -371,6 +377,7 @@ settings.xml
 ├─ w:evenAndOddHeadersAndFooters ........ ✅
 ├─ w:defaultTabStop .................... ✅ (non-default only)
 ├─ w:compat/w:compatSetting ............ ✅ (round-tripped verbatim)
+├─ w15:docId (accepts w14:docId too) ... ✅ (document identity GUID, round-tripped verbatim)
 └─ w:proofState/w:zoom/w:trackChanges/w:documentProtection/w:mailMerge … ❌
 w:document/w:background @w:color ........ ✅ page fill (VML/gradient/image fill dropped)
 theme1.xml (font/color scheme) .......... ✅ (resolution only)

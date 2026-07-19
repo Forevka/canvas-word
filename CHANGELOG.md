@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Round-trip fidelity for Word's `w14`/`w15` identity metadata.** Five OOXML members that were
+  previously dropped on import now survive a Word → edit → Word cycle:
+  - **`w14:paraId` / `w14:textId`** — Word's persistent per-paragraph ids (what comment threads and
+    co-authoring anchor to) are preserved on `Paragraph.paraId`/`.textId` and re-emitted. A source
+    `<w:p>` that splits on a soft break gives its id to the first piece only, and export **de-dups**
+    so a copy/pasted paragraph never emits a colliding id; new paragraphs emit none (Word assigns one
+    on its next save).
+  - **`w14:checkedState` / `w14:uncheckedState`** — a checkbox content control's exact checked/
+    unchecked **glyph** (symbol font + code point) is preserved on `SdtProps.checkedSymbol`/
+    `.uncheckedSymbol` instead of falling back to a default mark. Authorable via the builder
+    (`.checkbox(true, { checkedSymbol, uncheckedSymbol })` / C# `Checkbox(…, checkedSymbol:, uncheckedSymbol:)`).
+  - **`w15:docId`** — the document's persistent identity GUID (`settings.xml`) is preserved on
+    `Document.docId` and re-emitted (declaring the `w15` namespace); the older `w14:docId` variant is
+    also accepted on import.
+
 ## [0.10.2] — 2026-07-19
 
 ### Added

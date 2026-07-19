@@ -178,6 +178,73 @@ describe("settings.xml — w:defaultTabStop + w:compat", () => {
     expect(out.defaultTabStopPx).toBeCloseTo(72, 1);
     expect(out.compatSettings).toEqual([{ name: "compatibilityMode", uri: "http://schemas.microsoft.com/office/word", val: "15" }]);
   });
+
+  it("preserves w15:docId (accepting the w14 variant too)", () => {
+    const guid = "{2E7A3C41-9B0D-4F1E-8A2B-1C3D4E5F6071}";
+    const r15 = runImport(docxWithSettings(`<w15:docId w15:val="${guid}"/>`)).doc;
+    expect(r15.docId).toBe(guid);
+    // Older producers emit it under w14 — still accepted.
+    const r14 = runImport(docxWithSettings(`<w14:docId w14:val="${guid}"/>`)).doc;
+    expect(r14.docId).toBe(guid);
+    // Export re-emits it (declaring the w15 namespace) and it round-trips.
+    const xml = exportedSettingsXml({ section: SECTION, blocks: [para([run("hi")])], docId: guid });
+    expect(xml).toContain('xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml"');
+    expect(xml).toContain(`<w15:docId w15:val="${guid}"/>`);
+    expect(roundTrip({ section: SECTION, blocks: [para([run("hi")])], docId: guid }).docId).toBe(guid);
+  });
+});
+
+// ── w14:paraId / w14:textId — persistent paragraph identity ───────────────────
+describe("paragraph ids — w14:paraId / w14:textId", () => {
+  it("parses w14:paraId/textId onto the paragraph and re-emits them", () => {
+    const r = runImport(simpleDocx(`<w:p w14:paraId="12AB34CD" w14:textId="77777777"><w:r><w:t>hi</w:t></w:r></w:p>`)).doc;
+    const p = firstPara(r);
+    expect(p.paraId).toBe("12AB34CD");
+    expect(p.textId).toBe("77777777");
+    const xml = exportedDocXml(r);
+    expect(xml).toContain('w14:paraId="12AB34CD"');
+    expect(xml).toContain('w14:textId="77777777"');
+    expect(firstPara(roundTrip(r)).paraId).toBe("12AB34CD");
+  });
+
+  it("a paragraph without an id emits no w14:paraId", () => {
+    const doc: Document = { section: SECTION, blocks: [para([run("plain")])] };
+    expect(exportedDocXml(doc)).not.toContain("w14:paraId");
+  });
+
+  it("de-dups a paraId shared by two blocks (copy/paste clone) — emits it once", () => {
+    const a: Paragraph = { ...para([run("first")]), paraId: "AAAA0001" };
+    const b: Paragraph = { ...para([run("clone")]), paraId: "AAAA0001" };
+    const xml = exportedDocXml({ section: SECTION, blocks: [a, b] });
+    expect(xml.match(/w14:paraId="AAAA0001"/g)?.length).toBe(1);
+  });
+});
+
+// ── w14:checkedState / w14:uncheckedState — checkbox glyph fidelity ───────────
+describe("checkbox glyphs — w14:checkedState / w14:uncheckedState", () => {
+  const cbDoc = (): Document => ({
+    section: SECTION,
+    sdts: { cb: { type: "checkbox", checked: true, checkedSymbol: { font: "MS Gothic", val: "2612" }, uncheckedSymbol: { font: "MS Gothic", val: "2610" } } },
+    blocks: [para([run("☒", { sdtPath: ["cb"] })])],
+  });
+
+  it("emits both states inside w14:checkbox and round-trips them", () => {
+    const xml = exportedDocXml(cbDoc());
+    expect(xml).toContain('<w14:checkedState w14:font="MS Gothic" w14:val="2612"/>');
+    expect(xml).toContain('<w14:uncheckedState w14:font="MS Gothic" w14:val="2610"/>');
+    const back = roundTrip(cbDoc());
+    const props = Object.values(back.sdts!).find((s) => s.type === "checkbox")!;
+    expect(props.checkedSymbol).toEqual({ font: "MS Gothic", val: "2612" });
+    expect(props.uncheckedSymbol).toEqual({ font: "MS Gothic", val: "2610" });
+  });
+
+  it("upper-cases a lowercase hex code point on import", () => {
+    const cb = `<w14:checkbox><w14:checked w14:val="1"/><w14:checkedState w14:font="Wingdings" w14:val="f0fe"/></w14:checkbox>`;
+    const body = `<w:p><w:sdt><w:sdtPr><w:tag w:val="c"/>${cb}</w:sdtPr><w:sdtContent><w:r><w:t>☒</w:t></w:r></w:sdtContent></w:sdt></w:p>`;
+    const doc = runImport(simpleDocx(body)).doc;
+    const props = Object.values(doc.sdts!).find((s) => s.type === "checkbox")!;
+    expect(props.checkedSymbol).toEqual({ font: "Wingdings", val: "F0FE" });
+  });
 });
 
 // ── linked ("Link to File") images — a:blip r:link + External rel ─────────────
