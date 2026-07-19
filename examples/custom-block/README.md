@@ -57,11 +57,13 @@ Insert it wherever blocks go (the demo splices it into `doc.blocks` and calls
   deep-cloned on paste).
 - **Canvas-drawn** — `paint` receives a `CanvasRenderingContext2D` already
   translated + clipped to the block's box; it draws only (never measures text).
-- **Export is lossy unless you provide `toOOXML`** — a custom block has no native
+- **PDF renders your block** — the same `paint` is replayed through a
+  Canvas2D→pdfkit vector shim, so the block appears in the PDF (crisp vectors),
+  headlessly. No extra wiring.
+- **`.docx` is lossy unless you provide `toOOXML`** — a custom block has no native
   OOXML, so by default `.docx` export emits a placeholder paragraph and reports a
-  `custom-block-dropped` warning (PDF reserves the space, with a
-  `custom-block-not-rendered` warning). Try the **Export** button and watch the
-  console.
+  `custom-block-dropped` warning. Supply `toOOXML(data)` to control the DOCX
+  output. Try the **Export** button and watch the console.
 
 If a block's `customType` isn't registered, the editor paints a visible dashed
 placeholder (so a missing `registerBlockType` is obvious, not an invisible gap).

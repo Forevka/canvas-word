@@ -11,7 +11,16 @@
 // first-class OBJECT in the editor: click to select (a plain, non-resizable frame,
 // like an equation), Delete / right-click ▸ Delete to remove, undo/redo like any
 // edit. The registry is a module singleton, shared by the layout engine (measure),
-// the painter (paint), and the .docx exporter (toOOXML).
+// the on-screen painter, the PDF exporter, and the .docx exporter.
+//
+// PDF export renders the SAME `paint(ctx, box, data)` — it's replayed through a
+// Canvas2D→pdfkit vector shim (see export/pdf/canvasToPdf.ts), so a block renders
+// crisply in PDF with no extra wiring and no browser: it works headlessly on the
+// Node backend and in the bare-V8 ClearScript host. The one caveat is the browser
+// EDITOR's own PDF export, which normally runs in a worker with no registry — for
+// a document containing a registered custom block it runs the export inline on the
+// main thread instead (see export/exportDocument.ts). A block whose paint uses ops
+// the vector shim can't translate can set `pdf: "raster"` (a reserved seam).
 //
 // By design a custom block carries no internal caret — its content is drawn, not
 // text-edited (that is what paragraphs and content controls are for), and its size
@@ -56,6 +65,14 @@ export interface CustomBlockType {
    *  export is lossy — a placeholder empty paragraph is emitted and a warning is
    *  reported. */
   toOOXML?(data: unknown): string;
+  /** How to render this block into PDF. Default `"vector"`: `paint()` is replayed
+   *  through a Canvas2D→pdfkit shim as crisp vector ops (works headlessly — Node /
+   *  ClearScript — with no native canvas). `"raster"` is a reserved escape hatch
+   *  for blocks whose `paint()` uses ops the vector shim can't translate (shadows,
+   *  filters, pattern fills, image compositing); it will rasterize via a headless
+   *  canvas. Until the raster path ships, a `"raster"` block reserves its space in
+   *  PDF and reports a warning. */
+  pdf?: "vector" | "raster";
 }
 
 const registry = new Map<string, CustomBlockType>();

@@ -393,10 +393,11 @@ webSettings.xml / fontTable.xml ......... ❌
   objects, non-image VML shapes / textboxes / drawing canvas, charts, glossary document, custom XML,
   `docProps` metadata, footnote/endnote numbering properties.
 - **Custom blocks** (`registerBlockType`, `CustomBlock`) have no native OOXML: `.docx` export is
-  lossy by default — an empty placeholder `w:p` plus a `custom-block-dropped` warning (PDF reserves
-  the height and warns `custom-block-not-rendered`). A registered type may supply `toOOXML(data)` to
-  control its DOCX output. There is no import round-trip (a custom block never originates from a
-  `.docx`).
+  lossy by default — an empty placeholder `w:p` plus a `custom-block-dropped` warning; a registered
+  type may supply `toOOXML(data)` to control its DOCX output. There is no import round-trip (a custom
+  block never originates from a `.docx`). **PDF export DOES render them** — the block's `paint` is
+  replayed through a Canvas2D→pdfkit vector shim, headlessly (only an unregistered type, or a
+  `pdf: "raster"` block, still reserves space + warns `custom-block-not-rendered`).
 
 ---
 

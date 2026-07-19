@@ -25,6 +25,16 @@ pixel-for-pixel (modulo metric-clone glyph shapes). The model is CSS px (96dpi);
 each PDF page is sized in points and scaled by 72/96, so the painter keeps
 drawing in document px.
 
+**Custom blocks** (`registerBlockType`) render too: their `paint(ctx, box, data)`
+is replayed through a **Canvas2D→pdfkit vector shim** (`pdf/canvasToPdf.ts`) that
+implements the common Canvas2D surface and forwards each call to pdfkit as vector
+ops — pure JS, so it runs headlessly (Node backend, ClearScript) with no native
+canvas. It needs the block type registered in the export context: true for the
+headless hosts (they register in-process); the browser editor's worker export has
+no registry, so a doc with a registered custom block is exported **inline on the
+main thread** instead (`exportDocument.ts`). `paint` runs clipped to the box and
+save/restore-balanced, so a plugin bug can't leak state onto the page.
+
 ### Running the layout engine without a DOM (the crux)
 
 The engine measures text through a 2D canvas in two spots: `metrics.ts` and
