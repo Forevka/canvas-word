@@ -173,6 +173,14 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
     return;
   }
 
+  if (block.custom) {
+    // Custom blocks paint via a CanvasRenderingContext2D routine that can't run on
+    // pdfkit; PDF export reserves the block's height but draws nothing. Warn so the
+    // blank gap isn't a silent surprise. (A future PDF paint hook could fix this.)
+    ctx.warn("custom-block-not-rendered", block.custom.customType);
+    return;
+  }
+
   if (block.table) {
     const rows = block.table.rows;
     // 1) fills, 2) contents, 3) borders — so a neighbour's fill never clips a

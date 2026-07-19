@@ -14,6 +14,7 @@ import type { LayoutTree, LineBox, Page, PlacedBlock, PlacedTableCell } from "..
 import type { CaretRect, Rect } from "../layout/geometry";
 import { spaceMarkXs } from "../layout/geometry";
 import { EMPTY_DECORATIONS, type ResolvedDecorations } from "../decorations";
+import { getBlockType } from "../blockRegistry";
 import type { CellBorder, CharStyle } from "@cw/shared";
 import { DEFAULT_CHAR_STYLE } from "@cw/shared";
 import { charStyleToFont } from "../layout/metrics";
@@ -1137,6 +1138,39 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
         MATH_FONT_FAMILY,
         DEFAULT_CHAR_STYLE.color,
       );
+      return;
+    }
+    if (block.custom) {
+      const { customType, data, width, height } = block.custom;
+      const type = getBlockType(customType);
+      ctx.save();
+      // Clip to the box and translate to its top-left so the type paints in local
+      // [0,width]×[0,height] coordinates (page-local document px, zoom/DPR folded
+      // into ctx by the caller — paint-never-measures still holds).
+      ctx.beginPath();
+      ctx.rect(block.x, block.y, width, height);
+      ctx.clip();
+      ctx.beginPath(); // clip() keeps the rect in the current path — reset it so a plugin's fill()/stroke() can't paint the clip box
+      ctx.translate(block.x, block.y);
+      if (type) {
+        try {
+          type.paint(ctx, { width, height }, data);
+        } catch (err) {
+          console.error(`[canvas-word] custom block "${customType}" paint() threw`, err);
+        }
+      } else {
+        // Unregistered type: a visible dashed placeholder so a missing
+        // registerBlockType is obvious rather than an invisible gap.
+        ctx.strokeStyle = "#c0392b";
+        ctx.setLineDash([4, 3]);
+        ctx.lineWidth = 1;
+        ctx.strokeRect(0.5, 0.5, Math.max(1, width - 1), Math.max(1, height - 1));
+        ctx.setLineDash([]);
+        ctx.fillStyle = "#c0392b";
+        ctx.font = "12px sans-serif";
+        ctx.fillText(`Unregistered block: ${customType}`, 6, Math.min(height - 6, 18));
+      }
+      ctx.restore();
       return;
     }
     if (block.table) {

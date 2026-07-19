@@ -9,7 +9,8 @@ import {
   materializeRichInlineLineRange,
   type RichInlineCursor,
 } from "@chenglou/pretext/rich-inline";
-import type { Block, CharStyle, Document, EquationBlock, ImageBlock, LineNumbering, Paragraph, ParaStyle, Run, SectionBreakType, SectionProps, TableBlock, TableCell, TabStop } from "@cw/shared";
+import type { Block, CharStyle, CustomBlock, Document, EquationBlock, ImageBlock, LineNumbering, Paragraph, ParaStyle, Run, SectionBreakType, SectionProps, TableBlock, TableCell, TabStop } from "@cw/shared";
+import { getBlockType } from "../blockRegistry";
 import { effectiveFractions, isHiddenParagraph, resolveSections } from "@cw/shared";
 // Section resolution moved to the shared model core; re-export so existing
 // importers of these from "./engine" (and the layout tests) keep working.
@@ -27,6 +28,26 @@ import { MATH_FONT_FAMILY } from "../fonts/clones";
 
 /** Display equations are typeset with the bundled math font (STIX Two Math). */
 const eqBox = (b: EquationBlock): MathBox => equationBox(b.equation, MATH_FONT_FAMILY, EQUATION_DISPLAY_PX);
+
+/** Fallback box height for a custom block whose type isn't registered (a visible
+ *  placeholder is painted so a missing `registerBlockType` is obvious). */
+export const CUSTOM_BLOCK_PLACEHOLDER_H = 28;
+
+/** Measure a custom block: the registered type's height for the content width,
+ *  or a placeholder height when the type isn't registered. */
+const measureCustom = (b: CustomBlock, width: number): number => {
+  const type = getBlockType(b.customType);
+  if (!type) return CUSTOM_BLOCK_PLACEHOLDER_H;
+  try {
+    const h = type.measure(b.data, { width }).height;
+    return Number.isFinite(h) && h > 0 ? h : 0;
+  } catch (err) {
+    // A bug in an embedder's measure() must not crash the layout engine (blank
+    // document) — fall back to the placeholder height, like paint()/toOOXML().
+    console.error(`[canvas-word] custom block "${b.customType}" measure() threw`, err);
+    return CUSTOM_BLOCK_PLACEHOLDER_H;
+  }
+};
 
 /** Word's default tab interval when a `\t` runs past the last explicit stop
  *  (0.5 inch at 96 dpi). */
@@ -1184,6 +1205,7 @@ function layoutDocument(
     | { kind: "para"; block: Paragraph; lines: LineBox[] }
     | { kind: "image"; block: ImageBlock; height: number }
     | { kind: "equation"; block: EquationBlock; box: MathBox; height: number }
+    | { kind: "custom"; block: CustomBlock; height: number }
     | { kind: "table"; block: TableBlock; rows: MeasuredRow[]; colWidths: number[]; height: number; tableWidth: number; xOffset: number };
 
   // Measured at each block's OWN section width (the section pointer advances
@@ -1210,6 +1232,8 @@ function layoutDocument(
     } else if (block.kind === "equation") {
       const box = eqBox(block);
       measured.push({ kind: "equation", block, box, height: box.ascent + box.descent });
+    } else if (block.kind === "custom") {
+      measured.push({ kind: "custom", block, height: measureCustom(block, colWidth) });
     } else {
       const t = measureTableCached(block, colWidth, getLines, cellListCtx);
       measured.push({ kind: "table", block, ...t });
@@ -1646,6 +1670,21 @@ function layoutDocument(
     y += h;
   };
 
+  /** Place a custom block: atomic + full content width (like an image spanning
+   *  the column). Breaks to the next page if it doesn't fit. */
+  const placeCustom = (cb: CustomBlock, h: number): void => {
+    if (y + h > bottomY() && colHasContent()) newPage();
+    page.blocks.push({
+      blockId: cb.id,
+      x: colX(),
+      y,
+      firstLineIndex: 0,
+      lines: [],
+      custom: { customType: cb.customType, data: cb.data, width: colWidth, height: h },
+    });
+    y += h;
+  };
+
   /** Float-affected paragraphs: re-break per line with the float-shrunk width
    *  at the line's own y (pretext's per-line maxWidth makes this cheap). A line
    *  that doesn't fit the page is ROLLED BACK (runCursors snapshot) and
@@ -1884,7 +1923,7 @@ function layoutDocument(
     // Anchored (behind/in-front) images are out of flow — transparent to the
     // gap logic so they neither take a gap nor suppress one between neighbours.
     const atomicKind = (x: Measured | undefined): boolean =>
-      x?.kind === "table" || x?.kind === "equation" || (x?.kind === "image" && x.block.anchor === undefined);
+      x?.kind === "table" || x?.kind === "equation" || x?.kind === "custom" || (x?.kind === "image" && x.block.anchor === undefined);
     const prevAtomic = atomicKind(measured[bi - 1]);
     const nextAtomic = atomicKind(measured[bi + 1]);
 
@@ -1900,6 +1939,13 @@ function layoutDocument(
       if (!prevAtomic) y += ATOMIC_GAP;
       for (const f of floats) if (f.bottom > y) y = f.bottom;
       placeEquation(m.block, m.box);
+      if (!nextAtomic) y += ATOMIC_GAP;
+      continue;
+    }
+    if (m.kind === "custom") {
+      if (!prevAtomic) y += ATOMIC_GAP;
+      for (const f of floats) if (f.bottom > y) y = f.bottom;
+      placeCustom(m.block, m.height);
       if (!nextAtomic) y += ATOMIC_GAP;
       continue;
     }
@@ -2491,6 +2537,10 @@ function layoutBand(
       const x = originX + (align === "center" ? slack / 2 : align === "right" ? slack : 0);
       placed.push({ blockId: b.id, x, y, firstLineIndex: 0, lines: [], equation: { box, width: box.width, height: box.ascent + box.descent, baseline: box.ascent } });
       y += box.ascent + box.descent;
+    } else if (b.kind === "custom") {
+      const h = measureCustom(b, width);
+      placed.push({ blockId: b.id, x: originX, y, firstLineIndex: 0, lines: [], custom: { customType: b.customType, data: b.data, width, height: h } });
+      y += h;
     } else {
       const m = measureTable(b, width, getBandLines, EMPTY_LIST_CTX);
       placed.push(placeTable(b, m.rows, m.colWidths, originX + m.xOffset, y, m.tableWidth, 0, EMPTY_LIST_CTX));
@@ -2600,6 +2650,9 @@ function blockMinMax(
     const w = eqBox(b).width;
     return { min: w, max: w };
   }
+  // A custom block is atomic and flexes to the content width — it exerts no
+  // column-width demand (like an anchored image).
+  if (b.kind === "custom") return { min: 0, max: 0 };
   const cols = autofitColMinMax(b, listCtx, getLines, available);
   return {
     min: cols.reduce((s, c) => s + c.min, 0),
@@ -2631,6 +2684,8 @@ function cellMinMax(
       } else if (b.kind === "equation") {
         const box = eqBox(b);
         cross += box.ascent + box.descent + CELL_BLOCK_GAP;
+      } else if (b.kind === "custom") {
+        cross += measureCustom(b, available) + CELL_BLOCK_GAP;
       } else {
         cross += measureTable(b, available, getLines, listCtx).height + CELL_BLOCK_GAP;
       }
@@ -2757,6 +2812,7 @@ type MeasuredCellItem =
   | { kind: "para"; block: Paragraph; lines: LineBox[] }
   | { kind: "image"; block: ImageBlock; width: number; height: number } // scaled to fit the cell
   | { kind: "equation"; block: EquationBlock; box: MathBox; width: number; height: number }
+  | { kind: "custom"; block: CustomBlock; width: number; height: number }
   | { kind: "table"; block: TableBlock; rows: MeasuredRow[]; colWidths: number[]; height: number; tableWidth: number; xOffset: number };
 
 interface MeasuredCell {
@@ -2881,6 +2937,11 @@ function measureTable(
             flow = Math.max(flow, box.width + CELL_BLOCK_GAP);
             return { kind: "equation", block: b, box, width: box.width, height: box.ascent + box.descent };
           }
+          if (b.kind === "custom") {
+            const ch = measureCustom(b, innerWidth);
+            flow = Math.max(flow, innerWidth + CELL_BLOCK_GAP);
+            return { kind: "custom", block: b, width: innerWidth, height: ch };
+          }
           const m = measureTable(b, innerWidth, getLines, listCtx);
           flow = Math.max(flow, m.tableWidth + CELL_BLOCK_GAP);
           return { kind: "table", block: b, ...m };
@@ -2919,6 +2980,11 @@ function measureTable(
           const hh = box.ascent + box.descent;
           h += hh + CELL_BLOCK_GAP;
           return { kind: "equation", block: b, box, width: box.width, height: hh };
+        }
+        if (b.kind === "custom") {
+          const ch = measureCustom(b, innerWidth);
+          h += ch + CELL_BLOCK_GAP;
+          return { kind: "custom", block: b, width: innerWidth, height: ch };
         }
         const m = measureTable(b, innerWidth, getLines, listCtx); // nested table
         h += m.height + CELL_BLOCK_GAP;
@@ -3077,6 +3143,9 @@ function placeTable(
           } else if (it.kind === "equation") {
             blocks.push({ blockId: it.block.id, x: 0, y: ly, firstLineIndex: 0, lines: [], equation: { box: it.box, width: it.width, height: it.height, baseline: it.box.ascent } });
             ly += it.height + CELL_BLOCK_GAP;
+          } else if (it.kind === "custom") {
+            blocks.push({ blockId: it.block.id, x: 0, y: ly, firstLineIndex: 0, lines: [], custom: { customType: it.block.customType, data: it.block.data, width: it.width, height: it.height } });
+            ly += it.height + CELL_BLOCK_GAP;
           } else {
             blocks.push(placeTable(it.block, it.rows, it.colWidths, it.xOffset, ly, it.tableWidth, 0, listCtx));
             ly += it.height + CELL_BLOCK_GAP;
@@ -3202,6 +3271,16 @@ function placeTable(
             firstLineIndex: 0,
             lines: [],
             equation: { box: it.box, width: it.width, height: it.height, baseline: it.box.ascent },
+          });
+          py += it.height + CELL_BLOCK_GAP;
+        } else if (it.kind === "custom") {
+          blocks.push({
+            blockId: it.block.id,
+            x: cx + mgn.left,
+            y: py,
+            firstLineIndex: 0,
+            lines: [],
+            custom: { customType: it.block.customType, data: it.block.data, width: it.width, height: it.height },
           });
           py += it.height + CELL_BLOCK_GAP;
         } else {

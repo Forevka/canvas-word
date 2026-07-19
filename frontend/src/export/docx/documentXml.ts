@@ -10,6 +10,7 @@ import type {
   Block,
   CellBorders,
   CharStyle,
+  CustomBlock,
   EquationBlock,
   FieldDef,
   Paragraph,
@@ -30,6 +31,7 @@ import { borderEdgeXml, hexColor as hex } from "./mappings";
 import { MediaManager } from "./mediaPack";
 import { REL, RelManager } from "./relationships";
 import { paraBordersXml, paraCoreXml, runPropsXml as rPrXml, shdClearXml, shdFillXml } from "./styleProps";
+import { getBlockType } from "../../blockRegistry";
 import { el, escapeText, textEl, WML_NS, XML_DECL } from "./xmlWrite";
 import { mathmlToOmml } from "../../mathml/toOmml";
 export interface ExportBookmarkMark {
@@ -635,7 +637,26 @@ export function blockXml(block: Block, ctx: PartCtx): string {
   if (block.kind === "paragraph") return paragraphXml(block, ctx);
   if (block.kind === "table") return tableXml(block, ctx);
   if (block.kind === "equation") return equationParagraphXml(block, ctx);
+  if (block.kind === "custom") return customBlockXml(block, ctx);
   return imageParagraphXml(block, ctx);
+}
+
+/** A registered custom block has no native OOXML. If its type supplies `toOOXML`
+ *  (and the type is registered in THIS export context — note client-side export
+ *  runs in a worker with its own registry), use it; otherwise export is lossy: an
+ *  empty placeholder paragraph plus a `custom-block-dropped` warning so the loss
+ *  is explicit rather than silent. */
+function customBlockXml(block: CustomBlock, ctx: PartCtx): string {
+  const type = getBlockType(block.customType);
+  if (type?.toOOXML) {
+    try {
+      return type.toOOXML(block.data);
+    } catch (err) {
+      console.error(`[canvas-word] custom block "${block.customType}" toOOXML() threw`, err);
+    }
+  }
+  ctx.warn("custom-block-dropped", block.customType);
+  return el("w:p"); // placeholder so surrounding block indices/anchoring stay sane
 }
 
 /** Display equation -> a block-level `m:oMathPara` (Word's block math is a sibling
