@@ -294,6 +294,12 @@ public sealed class ParagraphBuilder
     /// clear survives export/re-import instead of the style's fill silently returning (issue #147).</summary>
     public ParagraphBuilder ClearShading() { _js.InvokeMethod("clearShading"); return this; }
 
+    /// <summary>Make THIS paragraph a list member (OOXML w:numPr) at <paramref name="level"/> (0..8)
+    /// — the single-paragraph counterpart to the story-level List(), for items that carry formatting
+    /// List() cannot express (rich runs, a named style, spacing). <paramref name="listId"/> should
+    /// reference a definition registered via DocumentBuilder.ListDefinition().</summary>
+    public ParagraphBuilder ListItem(string listId, int level = 0) { _js.InvokeMethod("listItem", listId, level); return this; }
+
     /// <summary>Explicitly remove list membership (OOXML &lt;w:numPr&gt;&lt;w:numId w:val="0"/&gt;,
     /// Word's "opt out of the list") — overrides a list the paragraph's named style carries, so the
     /// opt-out survives export/re-import instead of the style's list silently returning (issue #152).</summary>

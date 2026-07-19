@@ -263,6 +263,11 @@ export declare class ParagraphBuilder<P extends StoryBuilder> {
   borders(borders: ParaBorders): this;
   /** Paragraph shading — a CSS fill painted behind the paragraph (OOXML w:shd). */
   shading(cssColor: string): this;
+  /** Make THIS paragraph a list member (OOXML w:numPr) at `level` (0..8) — the
+   *  single-paragraph counterpart to the story-level `.list()`, for items that
+   *  carry formatting `.list()` cannot express (rich runs, a named style, spacing).
+   *  `listId` should reference a definition registered via `.listDefinition()`. */
+  listItem(listId: string, level?: number): this;
   /** Escape the paragraph scope explicitly (block-starting calls do it implicitly). */
   end(): P;
 

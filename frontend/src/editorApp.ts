@@ -35,6 +35,7 @@ import { loadCollabDocument, loadCollabReview, publishDocument } from "./sync/co
 import { attachMentionAutocomplete } from "./review/mentions";
 import { showBusy } from "./app/busyOverlay";
 import { showNotice } from "./app/notice";
+import { emitBuilderCode } from "./codegen/emit";
 // Ribbon/toolbar command set + style helpers + icons — the chrome, not the core.
 // (Hoisted here from the toolbar block; ES imports must be top-level, and the
 // toolbar code now lives inside mountEditorApp.)
@@ -1985,6 +1986,35 @@ if (toolbar) {
       toggleDevPanel,
     );
     devBtn.style.cssText = "width:100%;justify-content:flex-start;gap:4px;";
+
+    // Reverse builder: emit DocumentBuilder TypeScript that reconstructs the
+    // current document, so a visually-authored doc becomes an editable code
+    // template. Develop-mode only — a developer-facing tool.
+    const codeBtn = btn(
+      ICONS.devtools + "<span>Export builder code</span>",
+      "Generate DocumentBuilder TypeScript that reconstructs this document and download it as a .ts template",
+      () => {
+        try {
+          const { code, uncovered } = emitBuilderCode(editor.getDocument());
+          const url = URL.createObjectURL(new Blob([code], { type: "text/plain;charset=utf-8" }));
+          const a = el("a");
+          a.href = url;
+          a.download = "template.ts";
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          if (uncovered.length > 0) {
+            console.warn("[export-builder-code] fields not expressible via the fluent API:", uncovered);
+            showNotice(`Builder code exported. ${uncovered.length} field(s) couldn't be reproduced through the builder API — see the console for the list.`, "warning");
+          } else {
+            showNotice("Builder code exported to template.ts.", "info");
+          }
+        } catch (err) {
+          console.error("[export-builder-code] failed", err);
+          showNotice("Couldn't export builder code — see the console.", "warning");
+        }
+      },
+    );
+    codeBtn.style.cssText = "width:100%;justify-content:flex-start;gap:4px;";
   }
 
   // ---- Review controls live in the ribbon HEADER (right of the tab strip,

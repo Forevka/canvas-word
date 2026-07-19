@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Reverse builder — `.docx` → DocumentBuilder code (`@forevka/wordcanvas/codegen`).** The inverse
+  of `./builder`: `docxToBuilderCode(bytes)` (and the pure `emitBuilderCode(doc)`) generate editable
+  TypeScript that calls the fluent `DocumentBuilder` API to reconstruct a document, so a doc authored
+  visually becomes a **code template** a developer maintains and parameterizes. Runs reproduce exactly
+  through the generic `.text(text, patch)` delta (same `resolveStyle` baseline the builder resolves),
+  and stylesheet / list definitions / table styles reproduce verbatim. Fields the fluent API cannot
+  yet express are **reported** in a structured `uncovered` list (node path + field + note) rather than
+  dropped silently — the backlog for growing the builder. In the editor, develop mode adds an
+  **Export builder code** button to the Developer ribbon tab. See [CODEGEN.md](./CODEGEN.md).
+- **`ParagraphBuilder.listItem(listId, level)` — per-paragraph list membership.** The single-paragraph
+  counterpart to the story-level `.list()`, for a list item that carries formatting `.list()` can't
+  express (rich multi-run text, a named style, its own spacing/indent). Bridged in C#
+  (`ParagraphBuilder.ListItem`). The first "frequently-used patch" the reverse builder's coverage
+  report drove into the builder API.
 - **Round-trip fidelity for Word's `w14`/`w15` identity metadata.** Five OOXML members that were
   previously dropped on import now survive a Word → edit → Word cycle:
   - **`w14:paraId` / `w14:textId`** — Word's persistent per-paragraph ids (what comment threads and

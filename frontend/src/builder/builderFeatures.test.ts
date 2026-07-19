@@ -207,6 +207,24 @@ describe("custom styles and list definitions", () => {
     expect(doc.lists!.rom!.levels[0]!.format).toBe("upperRoman");
     expect(b.warnings.some((w) => w.code.startsWith("list-missing"))).toBe(false);
   });
+
+  it("listItem sets per-paragraph list membership on a rich paragraph", () => {
+    const b = DocumentBuilder.create().listDefinition("todo", { kind: "bullet", char: "☐" });
+    b.paragraph().listItem("todo", 1).text("do ", { italic: true }).text("this", { bold: true });
+    const doc = b.build();
+    expect(para(doc.blocks[0]).style.list).toEqual({ listId: "todo", level: 1 });
+    expect(para(doc.blocks[0]).runs[1]!.style.bold).toBe(true); // rich formatting preserved
+    expect(b.warnings.some((w) => w.code.startsWith("list-missing"))).toBe(false);
+  });
+
+  it("listItem clamps the level to 0..8 and warns on an unknown list id", () => {
+    const b = DocumentBuilder.create();
+    b.paragraph("x").listItem("ghost", 42);
+    const doc = b.build();
+    expect(para(doc.blocks[0]).style.list).toEqual({ listId: "ghost", level: 8 });
+    expect(doc.lists!.ghost).toBeDefined(); // default definition registered under the id
+    expect(b.warnings.some((w) => w.code === "list-missing:ghost")).toBe(true);
+  });
 });
 
 describe("table-style presets", () => {

@@ -9,7 +9,7 @@
 // intent. Mixed formatting within a paragraph uses text(t, { …patch }).
 
 import type { Block, CellBorder, CharStyle, Document, EmphasisMark, FieldSpec, IfOp, NamedStyle, PageNumFmt, ParaBorders, ParaStyle, Paragraph, Run, RunLang, SdtProps, TableStyle, TabStop, UnderlineStyle } from "@cw/shared";
-import { AUTO_PARA_SPACING_PX, buildInstruction, evaluateField, resolveStyle, styleById, textOfRuns } from "@cw/shared";
+import { AUTO_PARA_SPACING_PX, buildInstruction, defaultListDefinition, evaluateField, resolveStyle, styleById, textOfRuns } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import type { BandOptions, DocumentBuilder, ListDefinitionSpec, PageSetup, SectionBreakOptions } from "./documentBuilder";
 import { equationFromLatex, equationFromMathml } from "./mathInput";
@@ -666,6 +666,27 @@ export class ParagraphBuilder<P extends StoryBuilder> {
   clearShading(): this {
     delete this.para.style.shading;
     this.para.style.shadingCleared = true;
+    return this;
+  }
+
+  /** Make THIS paragraph a member of a list (OOXML w:numPr) at `level` (0..8).
+   *  The single-paragraph counterpart to the story-level `.list()` (which mints a
+   *  fresh paragraph per item): use it when a list item carries formatting `.list()`
+   *  cannot express — rich multi-run text, a named style, its own spacing/indent, a
+   *  page break. `listId` must reference a definition already registered via
+   *  DocumentBuilder.listDefinition() (or one carried by a template); an unknown id
+   *  registers a default bullet definition under it and warns, mirroring `.list()`. */
+  listItem(listId: string, level = 0): this {
+    const lists = (this.ctx.doc.lists ??= {});
+    if (!lists[listId]) {
+      this.ctx.warn(
+        `list-missing:${listId}`,
+        `List definition "${listId}" is not in the document — a default bullet definition was registered under that id.`,
+      );
+      lists[listId] = { ...defaultListDefinition("bullet"), id: listId };
+    }
+    this.para.style.list = { listId, level: Math.max(0, Math.min(8, Math.floor(level))) };
+    delete this.para.style.listCleared; // concrete membership supersedes an opt-out
     return this;
   }
 

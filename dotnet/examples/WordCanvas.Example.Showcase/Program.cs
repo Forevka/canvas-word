@@ -268,6 +268,11 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
     // the style's list silently returning on the next save.
     .Paragraph("This paragraph explicitly opts out of any list its style would apply (w:numId=0).",
         p => p.ClearList())
+    // Per-paragraph list membership (ParagraphBuilder.ListItem): a single paragraph joins a
+    // list at a given level — the counterpart to List() for an item that carries its own
+    // paragraph formatting.
+    .Paragraph("A standalone paragraph joined to the bullet list via ListItem.",
+        p => p.ListItem("bullets"))
     .Paragraph("A fully justified, multi-page paragraph exercises line-level pagination. " + Repeat(Lorem, 12),
         p => p.Align(TextAlign.Justify))
 

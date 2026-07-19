@@ -51,6 +51,7 @@ export default defineConfig(({ mode }) => {
             entry: {
               wordcanvas: fileURLToPath(new URL("src/wordcanvas.ts", import.meta.url)),
               builder: fileURLToPath(new URL("src/builder/index.ts", import.meta.url)),
+              codegen: fileURLToPath(new URL("src/codegen/index.ts", import.meta.url)),
               query: fileURLToPath(new URL("src/query.ts", import.meta.url)),
               import: fileURLToPath(new URL("src/import/docx/pipeline.ts", import.meta.url)),
               export: fileURLToPath(new URL("src/export/pipeline.ts", import.meta.url)),
