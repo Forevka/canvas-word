@@ -2770,8 +2770,9 @@ export function createEditor(
     // offer Delete (blocks are atomic objects, like an equation).
     const customHit = hitTestCustom(tree, pt.pageIndex, pt.x, pt.y);
     if (customHit) {
+      // The block is already object-selected by the right-click handler (via
+      // hitTestSelectableObject) before the menu is built — this is just the entry.
       const cid = customHit.blockId;
-      selectObject(cid);
       entries.push(sep, item("Delete", () => { selectObject(null); dispatch(removeBlockObject(cid)); }, { danger: true }));
     }
 
