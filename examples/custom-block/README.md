@@ -45,24 +45,27 @@ A custom block in the model is just:
 Insert it wherever blocks go (the demo splices it into `doc.blocks` and calls
 `handle.setDocument`).
 
-## The v1 contract
+## The block contract
 
 - **Atomic** — measures to a single box and places whole, like an image or
-  equation. It stays out of line-breaking.
-- **Non-editable** — no caret; it's selected/deleted as a whole block.
+  equation. It stays out of line-breaking and lays out anywhere blocks go (body,
+  table cells, header/footer bands).
+- **A first-class object** — **click to select** (a plain selection frame),
+  **Delete** or **right-click ▸ Delete** to remove, with full **undo/redo**. Try
+  it: click the chart, then press Delete, then Ctrl/Cmd+Z.
 - **JSON-serializable `data`** — so snapshot serialize/paste is free (the data is
   deep-cloned on paste).
 - **Canvas-drawn** — `paint` receives a `CanvasRenderingContext2D` already
   translated + clipped to the block's box; it draws only (never measures text).
-- **Export is lossy by default** — a custom block has no native OOXML, so `.docx`
-  export emits a placeholder paragraph and reports a `custom-block-dropped`
-  warning (PDF reserves the space but draws nothing, with a
-  `custom-block-not-rendered` warning). Supply `toOOXML` to control the DOCX
-  output. Try the **Export** button and watch the console.
+- **Export is lossy unless you provide `toOOXML`** — a custom block has no native
+  OOXML, so by default `.docx` export emits a placeholder paragraph and reports a
+  `custom-block-dropped` warning (PDF reserves the space, with a
+  `custom-block-not-rendered` warning). Try the **Export** button and watch the
+  console.
 
 If a block's `customType` isn't registered, the editor paints a visible dashed
 placeholder (so a missing `registerBlockType` is obvious, not an invisible gap).
 
-**Not in v1:** editable custom blocks (internal caret), table-cell-only features,
-resize handles, and OOXML *import* round-trip. Custom blocks inside table cells do
-lay out and paint, but the focus is body-level use.
+**By design**, a custom block's content is *drawn*, not text-edited — it has no
+internal caret (that's what paragraphs and content controls are for), and its size
+is owned by `measure()` rather than interactive resize.

@@ -2,16 +2,22 @@
 // with a { measure, paint, toOOXML? } contract, instead of hand-editing the ~8
 // dispatch sites that enumerate the built-in Block union.
 //
-// Scope (v1): canvas-drawn, ATOMIC (measures to a single box, places whole like
-// an image/equation), NON-EDITABLE (no caret — skipped by geometry indexing,
-// selected/deleted as a whole block), and JSON-serializable (snapshot serialize
-// is free). A custom block in the model is `{ kind: "custom", customType, data,
-// id, revision }` (see shared CustomBlock); `customType` selects the renderer
-// registered here. The registry is a module singleton, shared by the layout
-// engine (measure), the painter (paint), and the .docx exporter (toOOXML).
+// The block contract: a custom block is a canvas-drawn ATOMIC object — it measures
+// to a single box and places whole (like an image/equation), and holds only a
+// JSON-serializable `data` payload (so snapshot serialize/paste is free). In the
+// model it is `{ kind: "custom", customType, data, id, revision }` (see shared
+// CustomBlock); `customType` selects the renderer registered here. It lays out and
+// paints anywhere blocks go (body, table cells, header/footer bands), and is a
+// first-class OBJECT in the editor: click to select (a plain, non-resizable frame,
+// like an equation), Delete / right-click ▸ Delete to remove, undo/redo like any
+// edit. The registry is a module singleton, shared by the layout engine (measure),
+// the painter (paint), and the .docx exporter (toOOXML).
 //
-// NOT in v1: editable custom blocks (internal caret), table-cell nesting
-// (body-level only), resize handles, and OOXML import round-trip.
+// By design a custom block carries no internal caret — its content is drawn, not
+// text-edited (that is what paragraphs and content controls are for), and its size
+// is owned by `measure()` rather than interactive resize. It has no native OOXML,
+// so `.docx` export is lossy unless the type supplies `toOOXML` (see below), and a
+// custom block never originates from an imported `.docx`.
 
 /** Measurement context passed to a custom block's `measure`. */
 export interface CustomBlockMeasureCtx {

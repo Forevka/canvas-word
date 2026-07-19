@@ -5,6 +5,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 import type { Block, CustomBlock, Document, Paragraph, SectionProps } from "@cw/shared";
 import { registerBlockType, getBlockType, hasBlockType, _clearBlockTypes } from "./blockRegistry";
 import { createLayoutEngine, CUSTOM_BLOCK_PLACEHOLDER_H } from "./layout/engine";
+import { hitTestCustom, hitTestSelectableObject, objectRect } from "./layout/geometry";
+import { removeBlockObject } from "./editor/commands";
 import type { PlacedBlock } from "./layout/layoutTree";
 
 const SECTION: SectionProps = {
@@ -93,6 +95,31 @@ describe("block registry (layout integration)", () => {
     // Must not throw — the engine catches it.
     const tree = createLayoutEngine().layout(doc([cb]));
     expect(find(tree, cb.id)!.custom!.height).toBe(CUSTOM_BLOCK_PLACEHOLDER_H);
+  });
+
+  it("is object-selectable: hit-test + objectRect resolve its box", () => {
+    registerBlockType({ type: "box", measure: () => ({ height: 100 }), paint: () => {} });
+    const cb = customBlock("box");
+    const tree = createLayoutEngine().layout(doc([cb]));
+    const placed = find(tree, cb.id)!;
+    const cx = placed.x + 5;
+    const cy = placed.y + 5;
+    // hitTestCustom + the generic selectable-object hit-test both find it.
+    expect(hitTestCustom(tree, 0, cx, cy)?.blockId).toBe(cb.id);
+    expect(hitTestSelectableObject(tree, 0, cx, cy)?.blockId).toBe(cb.id);
+    // A click clearly outside the box misses.
+    expect(hitTestCustom(tree, 0, placed.x + placed.custom!.width + 50, cy)).toBeNull();
+    // objectRect (drives the selection frame) returns the block's box.
+    const r = objectRect(tree, cb.id)!;
+    expect(r).toMatchObject({ pageIndex: 0, x: placed.x, y: placed.y, width: placed.custom!.width, height: 100 });
+  });
+
+  it("removeBlockObject deletes a custom block (drives object Delete)", () => {
+    const cb = customBlock("box");
+    const state = { doc: doc([cb]), selection: null, cellSelection: null, pendingStyle: null };
+    const trn = removeBlockObject(cb.id)(state);
+    expect(trn).not.toBeNull();
+    expect(trn!.ops).toContainEqual({ type: "removeBlock", blockId: cb.id });
   });
 
   it("a following paragraph is pushed below the custom block", () => {
