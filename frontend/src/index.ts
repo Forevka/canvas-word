@@ -1448,6 +1448,21 @@ export function createEditor(
     paint.setDecorations(resolveDecorations(decorationSpecs, tree, scope(), { selectionRects, caretRect }));
   };
 
+  /** Fire the `onClick` of the interactive decoration at a client point (if any);
+   *  returns true when one handled the click so caret placement is skipped. */
+  const dispatchDecorationClick = (clientX: number, clientY: number): boolean => {
+    const idx = paint.decorationAt(clientX, clientY);
+    if (idx === null) return false;
+    const spec = decorationSpecs[idx];
+    if (!spec?.onClick) return false;
+    try {
+      spec.onClick({ clientX, clientY });
+    } catch (err) {
+      console.error("[canvas-word] decoration onClick threw", err);
+    }
+    return true;
+  };
+
   const runOps = (ops: Op[]): Op[] => {
     const inverses: Op[] = [];
     for (const op of ops) {
@@ -2105,6 +2120,8 @@ export function createEditor(
     onDeleteSelection: () => dispatch(deleteBackward()),
     getStory: () => activeStory,
     setStory,
+    decorationAt: (x, y) => paint.decorationAt(x, y),
+    onDecorationClick: (x, y) => dispatchDecorationClick(x, y),
     selectObject,
     hasSelectedObject: () => selectedObject !== null,
     deleteSelectedObject: deleteSelectedObjectInternal,

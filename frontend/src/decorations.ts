@@ -21,6 +21,11 @@ import type { GeoScope, Rect } from "./layout/geometry";
 export interface DecorationBase {
   id?: string;
   color: string;
+  /** Make the decoration interactive: clicking it invokes this instead of placing
+   *  a caret, and the pointer shows a `pointer` cursor while hovering it (like a
+   *  comment pin). Omit for a purely visual decoration that never intercepts
+   *  clicks. `event` carries the click's viewport coordinates. */
+  onClick?: (event: { clientX: number; clientY: number }) => void;
 }
 
 /** A decoration spanning a document range. `highlight` fills under the text;
@@ -49,11 +54,15 @@ export type DecorationSpec = RangeDecoration | BadgeDecoration;
 
 // ---- resolved (page-local) forms consumed by the paint layer ----------------
 
-/** A page-local colored rect (a resolved highlight/underline/box). */
+/** A page-local colored rect (a resolved highlight/underline/box). `specIndex`
+ *  points back at the source spec (for click dispatch); `interactive` is true when
+ *  that spec has an `onClick`. */
 export interface ResolvedDecoBox extends Rect {
   color: string;
   thickness?: number;
   opacity?: number;
+  specIndex: number;
+  interactive: boolean;
 }
 
 /** A page-local resolved badge. */
@@ -63,6 +72,8 @@ export interface ResolvedBadge {
   y: number;
   color: string;
   label?: string;
+  specIndex: number;
+  interactive: boolean;
 }
 
 /** Everything the renderer needs, bucketed by paint pass (under-text fills vs.
@@ -97,26 +108,34 @@ export function resolveDecorations(
   geo: DecorationGeometry,
 ): ResolvedDecorations {
   const out: ResolvedDecorations = { highlights: [], underlines: [], boxes: [], badges: [] };
-  for (const spec of specs) {
+  for (let specIndex = 0; specIndex < specs.length; specIndex++) {
+    const spec = specs[specIndex]!;
     if (!spec.color) continue;
+    const interactive = typeof spec.onClick === "function";
     if (isRange(spec)) {
       const rects = geo.selectionRects(tree, spec.range, scope);
       if (rects.length === 0) continue;
       if (spec.type === "highlight") {
         const opacity = spec.opacity ?? 0.4;
-        for (const r of rects) out.highlights.push({ ...r, color: spec.color, opacity });
+        for (const r of rects) out.highlights.push({ ...r, color: spec.color, opacity, specIndex, interactive });
       } else if (spec.type === "underline") {
         const thickness = spec.thickness ?? 1.6;
-        for (const r of rects) out.underlines.push({ ...r, color: spec.color, thickness });
+        for (const r of rects) out.underlines.push({ ...r, color: spec.color, thickness, specIndex, interactive });
       } else {
         const thickness = spec.thickness ?? 1;
-        for (const r of rects) out.boxes.push({ ...r, color: spec.color, thickness });
+        for (const r of rects) out.boxes.push({ ...r, color: spec.color, thickness, specIndex, interactive });
       }
     } else {
       const c = geo.caretRect(tree, spec.at, scope);
       if (!c) continue;
-      out.badges.push({ pageIndex: c.pageIndex, x: c.x, y: c.y, color: spec.color, ...(spec.label !== undefined ? { label: spec.label } : {}) });
+      out.badges.push({ pageIndex: c.pageIndex, x: c.x, y: c.y, color: spec.color, specIndex, interactive, ...(spec.label !== undefined ? { label: spec.label } : {}) });
     }
   }
   return out;
 }
+
+/** Badge geometry for hit-testing: a labelled badge is a pill of this height sized
+ *  to its label; a plain dot is a small disc. The paint layer uses the same
+ *  numbers (see renderer's custom-decoration pass). */
+export const BADGE_HEIGHT = 14;
+export const BADGE_DOT_RADIUS = 3.5;

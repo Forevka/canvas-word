@@ -13,7 +13,7 @@
 import type { LayoutTree, LineBox, Page, PlacedBlock, PlacedTableCell } from "../layout/layoutTree";
 import type { CaretRect, Rect } from "../layout/geometry";
 import { spaceMarkXs } from "../layout/geometry";
-import { EMPTY_DECORATIONS, type ResolvedDecorations } from "../decorations";
+import { BADGE_DOT_RADIUS, BADGE_HEIGHT, EMPTY_DECORATIONS, type ResolvedDecorations } from "../decorations";
 import { getBlockType } from "../blockRegistry";
 import type { CellBorder, CharStyle } from "@cw/shared";
 import { DEFAULT_CHAR_STYLE } from "@cw/shared";
@@ -169,6 +169,9 @@ export interface PaintScheduler {
   /** Embedder-supplied custom decorations (highlight/underline/box/badge),
    *  already resolved to page-local geometry. Replaces the whole set. */
   setDecorations(decos: ResolvedDecorations): void;
+  /** The source-spec index of the topmost INTERACTIVE decoration at a client
+   *  point, or null. Drives click dispatch + the hover cursor. */
+  decorationAt(clientX: number, clientY: number): number | null;
   /** The comment thread whose margin pin is at a client point, or null. */
   reviewPinAt(clientX: number, clientY: number): string | null;
   /** Content-control adornment as an ordered OUTER→INNER stack of layers, so
@@ -878,7 +881,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
         // A rounded pill sized to the label, anchored just above the position.
         ctx.font = ADORNMENT_LABEL_FONT;
         const w = ctx.measureText(badge.label).width + 8;
-        const h = 14;
+        const h = BADGE_HEIGHT;
         const bx = badge.x;
         const by = badge.y - h - 1;
         ctx.fillStyle = badge.color;
@@ -890,7 +893,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       } else {
         // A plain dot at the position.
         ctx.beginPath();
-        ctx.arc(badge.x, badge.y, 3.5, 0, Math.PI * 2);
+        ctx.arc(badge.x, badge.y, BADGE_DOT_RADIUS, 0, Math.PI * 2);
         ctx.fillStyle = badge.color;
         ctx.fill();
       }
@@ -1501,6 +1504,31 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       decorations = decos;
       for (const i of affected) if (liveCanvases.has(i)) dirty.add(i);
       schedule();
+    },
+
+    decorationAt(clientX: number, clientY: number): number | null {
+      const pt = this.clientToPage(clientX, clientY);
+      if (!pt) return null;
+      const inBox = (r: { pageIndex: number; x: number; y: number; width: number; height: number }): boolean =>
+        r.pageIndex === pt.pageIndex && pt.x >= r.x && pt.x <= r.x + r.width && pt.y >= r.y && pt.y <= r.y + r.height;
+      // Topmost first: badges + boxes sit over text; underlines/highlights under it.
+      for (const b of decorations.badges) {
+        if (!b.interactive || b.pageIndex !== pt.pageIndex) continue;
+        if (b.label !== undefined && b.label !== "") {
+          // A labelled pill drawn just above the anchor (see the badge paint pass).
+          // Approximate its width from the label so hit-testing needs no measure.
+          const w = Math.max(BADGE_HEIGHT, b.label.length * 7 + 8);
+          if (pt.x >= b.x && pt.x <= b.x + w && pt.y >= b.y - BADGE_HEIGHT - 1 && pt.y <= b.y - 1) return b.specIndex;
+        } else {
+          const dx = pt.x - b.x;
+          const dy = pt.y - b.y;
+          if (dx * dx + dy * dy <= (BADGE_DOT_RADIUS + 2) * (BADGE_DOT_RADIUS + 2)) return b.specIndex;
+        }
+      }
+      for (const r of decorations.boxes) if (r.interactive && inBox(r)) return r.specIndex;
+      for (const r of decorations.underlines) if (r.interactive && inBox(r)) return r.specIndex;
+      for (const r of decorations.highlights) if (r.interactive && inBox(r)) return r.specIndex;
+      return null;
     },
 
     reviewPinAt(clientX: number, clientY: number): string | null {
