@@ -38,8 +38,15 @@ export const CUSTOM_BLOCK_PLACEHOLDER_H = 28;
 const measureCustom = (b: CustomBlock, width: number): number => {
   const type = getBlockType(b.customType);
   if (!type) return CUSTOM_BLOCK_PLACEHOLDER_H;
-  const h = type.measure(b.data, { width }).height;
-  return Number.isFinite(h) && h > 0 ? h : 0;
+  try {
+    const h = type.measure(b.data, { width }).height;
+    return Number.isFinite(h) && h > 0 ? h : 0;
+  } catch (err) {
+    // A bug in an embedder's measure() must not crash the layout engine (blank
+    // document) — fall back to the placeholder height, like paint()/toOOXML().
+    console.error(`[canvas-word] custom block "${b.customType}" measure() threw`, err);
+    return CUSTOM_BLOCK_PLACEHOLDER_H;
+  }
 };
 
 /** Word's default tab interval when a `\t` runs past the last explicit stop

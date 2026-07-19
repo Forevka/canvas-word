@@ -87,6 +87,14 @@ describe("block registry (layout integration)", () => {
     expect(placed!.custom!.height).toBe(CUSTOM_BLOCK_PLACEHOLDER_H);
   });
 
+  it("a throwing measure() falls back to the placeholder height (never crashes layout)", () => {
+    registerBlockType({ type: "boom", measure: () => { throw new Error("bad measure"); }, paint: () => {} });
+    const cb = customBlock("boom");
+    // Must not throw — the engine catches it.
+    const tree = createLayoutEngine().layout(doc([cb]));
+    expect(find(tree, cb.id)!.custom!.height).toBe(CUSTOM_BLOCK_PLACEHOLDER_H);
+  });
+
   it("a following paragraph is pushed below the custom block", () => {
     registerBlockType({ type: "tall", measure: () => ({ height: 300 }), paint: () => {} });
     const cb = customBlock("tall");

@@ -1150,6 +1150,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       ctx.beginPath();
       ctx.rect(block.x, block.y, width, height);
       ctx.clip();
+      ctx.beginPath(); // clip() keeps the rect in the current path — reset it so a plugin's fill()/stroke() can't paint the clip box
       ctx.translate(block.x, block.y);
       if (type) {
         try {
