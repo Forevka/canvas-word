@@ -815,6 +815,27 @@ export function hitTestEquation(tree: LayoutTree, pageIndex: number, x: number, 
   return hit;
 }
 
+/** Custom block under a page point (incl. custom blocks inside table cells).
+ *  Object-selectable like an equation — a plain, non-resizable selection box. */
+export function hitTestCustom(tree: LayoutTree, pageIndex: number, x: number, y: number): ObjectHit | null {
+  const page = tree.pages[pageIndex];
+  if (!page) return null;
+  let hit: ObjectHit | null = null;
+  const scan = (blocks: PlacedBlock[]): void => {
+    for (const block of blocks) {
+      if (block.custom) {
+        const { width, height } = block.custom;
+        if (x >= block.x && x <= block.x + width && y >= block.y && y <= block.y + height) {
+          hit = { blockId: block.blockId, rect: { pageIndex, x: block.x, y: block.y, width, height } };
+        }
+      }
+      if (block.table) for (const row of block.table.rows) for (const cell of row.cells) scan(cell.blocks);
+    }
+  };
+  scan(page.blocks);
+  return hit;
+}
+
 /** Object to select for a click/right-click at a page point: a foreground image
  *  wins anywhere it's hit; a behind-text image is selectable only where no text
  *  covers it (so text on top stays clickable). */
@@ -829,6 +850,8 @@ export function hitTestSelectableObject(
   if (fg) return fg;
   const eq = hitTestEquation(tree, pageIndex, x, y);
   if (eq) return eq;
+  const cu = hitTestCustom(tree, pageIndex, x, y);
+  if (cu) return cu;
   if (pointOnText(tree, pageIndex, x, y, scope)) return null;
   return hitTestBehindObject(tree, pageIndex, x, y);
 }
@@ -855,6 +878,21 @@ export function objectRect(tree: LayoutTree, blockId: string): Rect | null {
   for (const page of tree.pages) {
     const found = scanEquationRect(page.blocks, blockId, page.index);
     if (found) return found;
+  }
+  // Custom blocks likewise carry their box on the `custom` payload.
+  for (const page of tree.pages) {
+    let rect: Rect | null = null;
+    const scan = (blocks: PlacedBlock[]): void => {
+      for (const block of blocks) {
+        if (block.custom && block.blockId === blockId) {
+          rect = { pageIndex: page.index, x: block.x, y: block.y, width: block.custom.width, height: block.custom.height };
+          return;
+        }
+        if (block.table) for (const row of block.table.rows) for (const cell of row.cells) scan(cell.blocks);
+      }
+    };
+    scan(page.blocks);
+    if (rect) return rect;
   }
   return null;
 }

@@ -7,7 +7,7 @@ import { buildTocParagraphs, buildTocInstruction, buildInstruction, evaluateFiel
 import type { BookmarkRange, DocPosition, DocSelection, GridRect } from "@cw/shared";
 import { isCollapsed, BAND_CONTAINERS } from "@cw/shared";
 import type { ImagePropsPatch, Op, SectionGeometry, TablePropsPatch } from "@cw/shared";
-import { sliceRuns, applyStylePatchToRuns, mapTextInRuns, splitRunsAt, normalizeRuns, containerOf, containerBlocks, containerListOf, locateImage, locateEquation, freshId } from "@cw/shared";
+import { sliceRuns, applyStylePatchToRuns, mapTextInRuns, splitRunsAt, normalizeRuns, containerOf, containerBlocks, containerListOf, locateImage, locateEquation, locateBlock, freshId } from "@cw/shared";
 import { inSdt, innermostSdtId, pushSdt, removeSdt, ancestryThrough } from "@cw/shared";
 import { buildTableGrid, cellsInRect, gridOriginOfCell, mergeRows, normalizeRect, rebuildRows, unmergeRows } from "@cw/shared";
 import type { CellSelection } from "./state";
@@ -2438,7 +2438,10 @@ export function moveAnchoredImage(
  *  deleteImage (it also handles in-cell images). */
 export function removeBlockObject(blockId: string): Command {
   return (state) => {
-    const loc = locateEquation(state.doc, blockId);
+    // Object-selectable non-image blocks: display equations and registered custom
+    // blocks. Both remove identically (top-level removeBlock, or a row rewrite in
+    // a cell) — only the location matters, not the block type.
+    const loc = locateEquation(state.doc, blockId) ?? locateBlock(state.doc, blockId, "custom");
     if (!loc) return null;
     if (loc.kind === "cell") {
       // In-cell equations can't go through removeBlock (it scans top-level only);

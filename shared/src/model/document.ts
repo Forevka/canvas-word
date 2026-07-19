@@ -720,13 +720,14 @@ export interface EquationBlock {
 }
 
 /** An embedder-defined custom block, drawn on canvas by a registered block type
- *  (see `registerBlockType` in the frontend package). Deliberately minimal and
- *  atomic — like an image/equation it measures to a single box and places whole,
- *  carries NO caret (non-editable; skipped by geometry indexing), and holds only
- *  a JSON-serializable `data` payload (so snapshot serialize is free). Its
- *  `customType` selects the registered renderer. Has no native OOXML: `.docx`
- *  export is lossy by default (a placeholder paragraph + a warning) unless the
- *  registered type supplies `toOOXML`. */
+ *  (see `registerBlockType` in the frontend package). An atomic object — like an
+ *  image/equation it measures to a single box and places whole, and holds only a
+ *  JSON-serializable `data` payload (so snapshot serialize is free). It is a
+ *  first-class object in the editor: click-selectable and deletable. Its
+ *  `customType` selects the registered renderer. Content is drawn (not
+ *  text-editable), so it carries no caret and is skipped by geometry indexing. Has
+ *  no native OOXML: `.docx` export is lossy (a placeholder paragraph + a warning)
+ *  unless the registered type supplies `toOOXML`. */
 export interface CustomBlock {
   kind: "custom";
   id: string;

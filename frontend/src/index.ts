@@ -19,6 +19,7 @@ import {
   hitTest,
   hitTestCell,
   hitTestEquation,
+  hitTestCustom,
   inlineEquationAt,
   hitTestSelectableObject,
   linkAt,
@@ -2763,6 +2764,15 @@ export function createEditor(
       entries.push(sep, item("Insert Field…", () =>
         openFieldConstructor({ baseStyle: caretStyle(focus), onApply: (s) => dispatch(insertFieldCmd(s)) }),
       ));
+    }
+
+    // Custom block under the pointer — a registered block type. Select it and
+    // offer Delete (blocks are atomic objects, like an equation).
+    const customHit = hitTestCustom(tree, pt.pageIndex, pt.x, pt.y);
+    if (customHit) {
+      const cid = customHit.blockId;
+      selectObject(cid);
+      entries.push(sep, item("Delete", () => { selectObject(null); dispatch(removeBlockObject(cid)); }, { danger: true }));
     }
 
     // Display equation under the pointer — edit its MathML in the equation editor.
