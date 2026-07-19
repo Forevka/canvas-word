@@ -29,9 +29,12 @@ Each **Open in StackBlitz** button boots the example in the browser against the
 - The **Vite** examples (`embed-live`, `playground`, `query-edit`, `merge-docs`,
   `embed-multi`, `editor-constructor`) install the package and run under Vite.
 - The **static** examples (`embed-offline`, `ribbon-customization`,
-  `command-registry`, `decorations`, `custom-block`, `custom-fonts`)
-  use an import map pointing at a local `dist-lib` and are primarily meant to run
-  locally; on StackBlitz they may need a package.json / CDN import-map tweak.
+  `command-registry`, `decorations`, `custom-block`, `custom-fonts`) keep their
+  no-build browser import map but each declares `@forevka/wordcanvas` as a
+  dependency plus a `serve` static server (`npm start`), so StackBlitz installs
+  the published package into the example's own `node_modules` and the import map's
+  `/node_modules/@forevka/wordcanvas/...` path resolves same-origin. You can run
+  them the same way locally from the example folder: `npm install && npm start`.
 - `query-edit` and `merge-docs` need the **`./query` subpath** (the latter also
   uses `mergeDocuments` / `mergeAll`), which must be present in the published
   version (`npm view @forevka/wordcanvas exports`) — publish a current version if

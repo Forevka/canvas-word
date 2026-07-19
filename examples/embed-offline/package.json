@@ -3,5 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Minimal, no-build offline embed of @forevka/wordcanvas via a browser import map."
+  "description": "Minimal, no-build offline embed of @forevka/wordcanvas via a browser import map.",
+  "scripts": {
+    "start": "serve ."
+  },
+  "dependencies": {
+    "@forevka/wordcanvas": "*"
+  },
+  "devDependencies": {
+    "serve": "^14.2.5"
+  }
 }

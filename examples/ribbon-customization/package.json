@@ -3,5 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Customize the ribbon (reorder/remove built-ins, add tabs/buttons, macros + popups) via the customizeRibbon option — no build step, browser import map."
+  "description": "Customize the ribbon (reorder/remove built-ins, add tabs/buttons, macros + popups) via the customizeRibbon option — no build step, browser import map.",
+  "scripts": {
+    "start": "serve ."
+  },
+  "dependencies": {
+    "@forevka/wordcanvas": "*"
+  },
+  "devDependencies": {
+    "serve": "^14.2.5"
+  }
 }

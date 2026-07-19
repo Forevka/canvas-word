@@ -3,5 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Register custom commands + keyboard shortcuts (the command/keymap registry) via the `commands` option — no build step, browser import map."
+  "description": "Register custom commands + keyboard shortcuts (the command/keymap registry) via the `commands` option — no build step, browser import map.",
+  "scripts": {
+    "start": "serve ."
+  },
+  "dependencies": {
+    "@forevka/wordcanvas": "*"
+  },
+  "devDependencies": {
+    "serve": "^14.2.5"
+  }
 }

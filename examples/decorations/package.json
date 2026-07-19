@@ -3,5 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Draw custom overlays at document coordinates (highlight / underline / box / badge) via the decorations API — no build step, browser import map."
+  "description": "Draw custom overlays at document coordinates (highlight / underline / box / badge) via the decorations API — no build step, browser import map.",
+  "scripts": {
+    "start": "serve ."
+  },
+  "dependencies": {
+    "@forevka/wordcanvas": "*"
+  },
+  "devDependencies": {
+    "serve": "^14.2.5"
+  }
 }

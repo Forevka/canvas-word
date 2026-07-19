@@ -3,5 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Add a new canvas-drawn document block type (a bar chart) via the block-type registry (registerBlockType) — no build step, browser import map."
+  "description": "Add a new canvas-drawn document block type (a bar chart) via the block-type registry (registerBlockType) — no build step, browser import map.",
+  "scripts": {
+    "start": "serve ."
+  },
+  "dependencies": {
+    "@forevka/wordcanvas": "*"
+  },
+  "devDependencies": {
+    "serve": "^14.2.5"
+  }
 }
