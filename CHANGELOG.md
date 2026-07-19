@@ -18,8 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-breaks lines (paint-never-measures preserved). The resolver lives in the DOM-free
   `decorations.ts` with injectable geometry (unit-tested); the renderer gains one `setDecorations`
   scheduler method + two paint passes (under-text fills, over-text lines/boxes/badges) mirroring the
-  review overlay feed. New `examples/decorations/` demonstrates it. v1 is non-interactive (no
-  click/hit-testing — a deliberate follow-up).
+  review overlay feed. Decorations can be **interactive**: a spec with an `onClick` intercepts the
+  click (instead of placing a caret) and shows a pointer cursor on hover, like a comment pin — the
+  renderer hit-tests them via `decorationAt` and the input layer dispatches to the source spec. New
+  `examples/decorations/` demonstrates it.
 - **Public block-type registry — `registerBlockType` (#176).** Add a NEW document block type via a
   single `{ measure, paint, toOOXML? }` registration instead of hand-editing the ~8 dispatch sites
   that enumerate the built-in block union. A custom block is **canvas-drawn** and **atomic**: it

@@ -18,6 +18,13 @@ let decos = [];
 let handle = null;
 const apply = () => handle?.setDecorations(decos);
 
+// A tiny status line so clicking an interactive decoration shows a visible effect.
+const logEl = () => document.getElementById("evlog");
+const log = (msg) => {
+  const el = logEl();
+  if (el) el.textContent = `• ${msg}`;
+};
+
 // --- mount ---------------------------------------------------------------------
 const editor = new WordCanvas({
   container: document.getElementById("editor"),
@@ -59,7 +66,15 @@ editor.whenReady().then((h) => {
       color: "#ffe082",
       range: { anchor: { blockId: firstPara.id, offset: 0 }, focus: { blockId: firstPara.id, offset: Math.min(14, textLen) } },
     });
-    decos.push({ type: "badge", at: { blockId: firstPara.id, offset: 0 }, color: "#1e88e5", label: "1" });
+    // An INTERACTIVE badge: `onClick` makes it clickable (pointer cursor on hover,
+    // and a click fires this instead of placing a caret) — like a comment pin.
+    decos.push({
+      type: "badge",
+      at: { blockId: firstPara.id, offset: 0 },
+      color: "#1e88e5",
+      label: "1",
+      onClick: () => log("Clicked badge 1 — decorations can be interactive"),
+    });
     apply();
   }
 
@@ -70,7 +85,8 @@ editor.whenReady().then((h) => {
   document.getElementById("badge").onclick = () => {
     const sel = handle.getSelection();
     if (!sel) return alert("Place the caret somewhere first.");
-    decos.push({ type: "badge", at: sel.focus, color: "#8e24aa", label: String(decos.filter((d) => d.type === "badge").length + 1) });
+    const n = String(decos.filter((d) => d.type === "badge").length + 1);
+    decos.push({ type: "badge", at: sel.focus, color: "#8e24aa", label: n, onClick: () => log(`Clicked badge ${n}`) });
     apply();
   };
   document.getElementById("clear").onclick = () => {

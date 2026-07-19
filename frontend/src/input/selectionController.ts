@@ -70,6 +70,12 @@ export interface SelectionControllerDeps {
   getStory(): GeoScope | null;
   /** Enter (band+page) or exit (null) story mode; triggers relayout + dimming. */
   setStory(scope: GeoScope | null): void;
+  /** An interactive embedder decoration is at this client point (its source-spec
+   *  index), or null. Drives the hover cursor. */
+  decorationAt(clientX: number, clientY: number): number | null;
+  /** Fire the click handler of an interactive decoration at this client point.
+   *  Returns true when one handled it (the click is then consumed). */
+  onDecorationClick(clientX: number, clientY: number): boolean;
   /** Select an image object (null clears). */
   selectObject(blockId: string | null): void;
   /** True when an object is selected (Delete/Backspace/Escape route to it). */
@@ -307,6 +313,13 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
   const onMouseDown = (ev: MouseEvent): void => {
     if (ev.button !== 0) return;
     deps.focusProxy();
+
+    // An interactive embedder decoration (a badge/box/… with an onClick) is the
+    // topmost overlay — a click on one is a UI action, not caret placement.
+    if (deps.onDecorationClick(ev.clientX, ev.clientY)) {
+      ev.preventDefault();
+      return;
+    }
 
     // ---- story-mode routing (Word semantics) ------------------------------
     const pt = deps.clientToPage(ev.clientX, ev.clientY);
@@ -609,6 +622,13 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
     if (drag) return;
     if (container.dataset["painter"]) {
       container.style.cursor = "copy"; // format painter armed
+      return;
+    }
+    // An interactive decoration is the topmost overlay — a pointer cursor over one.
+    if (deps.decorationAt(ev.clientX, ev.clientY) != null) {
+      deps.setColumnGuide(null);
+      deps.setRowGuide(null);
+      container.style.cursor = "pointer";
       return;
     }
     const pt = deps.clientToPage(ev.clientX, ev.clientY);

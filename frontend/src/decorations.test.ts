@@ -27,7 +27,18 @@ describe("resolveDecorations", () => {
     expect(out.highlights).toHaveLength(1);
     expect(out.underlines).toHaveLength(1);
     expect(out.boxes).toHaveLength(1);
-    expect(out.badges).toEqual([{ pageIndex: 0, x: 5, y: 6, color: "green", label: "1" }]);
+    expect(out.badges).toEqual([{ pageIndex: 0, x: 5, y: 6, color: "green", label: "1", specIndex: 3, interactive: false }]);
+  });
+
+  it("tags interactive (onClick present) + the source spec index", () => {
+    const out = resolve([
+      { type: "highlight", range: range(), color: "yellow" }, // 0
+      { type: "badge", at: { blockId: "b", offset: 0 }, color: "green", onClick: () => {} }, // 1
+      { type: "box", range: range(), color: "blue", onClick: () => {} }, // 2
+    ]);
+    expect(out.highlights[0]).toMatchObject({ specIndex: 0, interactive: false });
+    expect(out.badges[0]).toMatchObject({ specIndex: 1, interactive: true });
+    expect(out.boxes[0]).toMatchObject({ specIndex: 2, interactive: true });
   });
 
   it("applies default opacity/thickness and honors overrides", () => {
@@ -62,7 +73,7 @@ describe("resolveDecorations", () => {
 
   it("omits label when not provided (plain dot)", () => {
     const out = resolve([{ type: "badge", at: { blockId: "b", offset: 0 }, color: "green" }]);
-    expect(out.badges[0]).toEqual({ pageIndex: 0, x: 5, y: 6, color: "green" });
+    expect(out.badges[0]).toEqual({ pageIndex: 0, x: 5, y: 6, color: "green", specIndex: 0, interactive: false });
     expect("label" in out.badges[0]!).toBe(false);
   });
 });

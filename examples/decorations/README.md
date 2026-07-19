@@ -54,10 +54,23 @@ handle.invalidateDecorations();   // re-resolve + repaint (if you mutated a spec
 - **Anchored across edits.** Decorations are re-resolved after every mutation, so
   a highlight follows its text as you type/delete above it — try it: highlight a
   word, then add a paragraph before it.
+- **Interactive (optional).** Give any spec an `onClick` and it becomes clickable —
+  hovering shows a pointer cursor and a click fires the handler *instead of*
+  placing a caret (like a comment pin). Plain decorations without `onClick` stay
+  purely visual and never intercept clicks.
+
+  ```js
+  handle.setDecorations([
+    { type: "badge", at: pos, color: "#1e88e5", label: "1",
+      onClick: (ev) => openAnnotation(ev.clientX, ev.clientY) },
+  ]);
+  ```
 
 ## Try it
 
-The demo draws an initial highlight + badge on load (built straight from the
-document model), plus a control panel: select some text and click **Highlight**,
-**Underline**, or **Box**; place the caret and click **Badge at caret**; **Clear
-all** removes them. `window.__handle` is exposed for console poking.
+The demo draws an initial **interactive** badge + a highlight on load (built
+straight from the document model), plus a control panel: select some text and
+click **Highlight**, **Underline**, or **Box**; place the caret and click **Badge
+at caret** (its badges are clickable too); **Clear all** removes them. Click the
+blue “1” badge to see its `onClick` fire in the panel. `window.__handle` is
+exposed for console poking.
