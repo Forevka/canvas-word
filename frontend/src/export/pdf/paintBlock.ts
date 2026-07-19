@@ -36,6 +36,8 @@ import {
   paraDecorBox,
 } from "../../paint/paintStyle";
 import type { RunPaint, BulletShape } from "../../paint/paintStyle";
+import { getBlockType } from "../../blockRegistry";
+import { renderCustomBlockPdf } from "./canvasToPdf";
 
 /** Stroke a run's underline into the PDF. "single" keeps the historical filled
  *  rect; richer styles stroke per the shared plan (dashed/dotted approximated with
@@ -174,9 +176,27 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
   }
 
   if (block.custom) {
-    // Custom blocks paint via a CanvasRenderingContext2D routine that can't run on
-    // pdfkit; PDF export reserves the block's height but draws nothing. Warn so the
-    // blank gap isn't a silent surprise. (A future PDF paint hook could fix this.)
+    // Render the registered block's paint() into the PDF via the Canvas2D→pdfkit
+    // vector shim — the SAME paint used on screen. Requires the type to be
+    // registered in THIS export context (true on the Node backend / ClearScript
+    // host, and in the browser inline-export path). A `pdf: "raster"` type opts
+    // out (a future CanvasKit fallback); until that exists it reserves + warns.
+    const type = getBlockType(block.custom.customType);
+    if (type && type.pdf !== "raster") {
+      renderCustomBlockPdf(
+        ctx.doc,
+        block.x,
+        block.y,
+        { width: block.custom.width, height: block.custom.height },
+        type,
+        block.custom.data,
+        (family, bold, italic) => ctx.font(family, bold, italic),
+        ctx.warn,
+      );
+      return;
+    }
+    // Unregistered here (e.g. a browser worker with no registry) or raster-only:
+    // reserve the height and warn so the blank gap isn't a silent surprise.
     ctx.warn("custom-block-not-rendered", block.custom.customType);
     return;
   }

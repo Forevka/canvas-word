@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Custom blocks render in PDF — a Canvas2D→pdfkit vector shim.** A registered custom block's
+  `paint(ctx, box, data)` now renders into PDF (previously it reserved space + warned). The SAME
+  `paint` is replayed through a pure-JS shim (`export/pdf/canvasToPdf.ts`) that implements the common
+  Canvas2D surface — paths, `fillRect`/`strokeRect`, `arc`/`roundRect`/beziers, `fill`/`stroke`/
+  `clip`, `fillText`/`measureText`, gradients, transforms, `globalAlpha` — and forwards each call to
+  pdfkit as **crisp vector** ops. Being pure JS (no native canvas, no WASM) it runs **headlessly**:
+  the Node backend and the bare-V8 ClearScript host render custom blocks with no extra wiring. In the
+  browser editor, whose PDF export runs in a worker with no registry, a document containing a
+  registered custom block is exported **inline on the main thread** so the block can paint. A block
+  whose `paint` needs ops the shim can't translate (shadows, filters, pattern fills) can set
+  `pdf: "raster"` — a reserved seam for a future headless-canvas (CanvasKit) rasterizer; until it
+  ships, a `"raster"` block reserves its space and warns. Embedder `paint()` is sandboxed (clipped to
+  the box, save/restore-balanced, errors caught) so a plugin bug can't corrupt the page. Real-pdfkit
+  integration tests + shim unit tests.
 - **Public decoration/overlay API at document coordinates (#175).** New `EditorHandle`
   methods — `setDecorations(specs)`, `clearDecorations()`, `invalidateDecorations()` — let an
   embedder draw custom paint-only overlays anchored to document positions: `highlight` (fill under

@@ -9,6 +9,7 @@
 
 import type { Block, Document } from "@cw/shared";
 import type { ExportFormat, ExportResult, FromExportWorker, ImageBytes, ToExportWorker } from "./types";
+import { hasBlockType } from "../blockRegistry";
 import {
   CUSTOM_FONT_STYLES,
   faceUrlForStyle,
@@ -97,6 +98,36 @@ function collectImageSrcs(doc: Document): Set<string> {
   walk(s.header); walk(s.footer); walk(s.headerFirst);
   walk(s.headerEven); walk(s.footerFirst); walk(s.footerEven);
   return out;
+}
+
+/** Whether the doc has a custom block whose type is REGISTERED here — the only
+ *  case where inline (main-thread) export renders more than the worker would.
+ *  (An unregistered custom block paints a placeholder either way, so it stays on
+ *  the worker.) Walks the body, table cells, and section-break bands. */
+function hasRenderableCustomBlock(doc: Document): boolean {
+  let found = false;
+  const walk = (blocks: Block[] | undefined): void => {
+    if (!blocks || found) return;
+    for (const b of blocks) {
+      if (found) return;
+      if (b.kind === "custom") {
+        if (hasBlockType(b.customType)) found = true;
+      } else if (b.kind === "table") {
+        for (const row of b.rows) for (const cell of row.cells) walk(cell.blocks);
+      } else if (b.kind === "paragraph" && b.style.sectionBreak) {
+        const p = b.style.sectionBreak.props;
+        walk(p.header); walk(p.footer); walk(p.headerFirst);
+        walk(p.headerEven); walk(p.footerFirst); walk(p.footerEven);
+      }
+    }
+  };
+  walk(doc.blocks);
+  if (!found) {
+    const s = doc.section;
+    walk(s.header); walk(s.footer); walk(s.headerFirst);
+    walk(s.headerEven); walk(s.footerFirst); walk(s.footerEven);
+  }
+  return found;
 }
 
 /** True for an external (http/https) image URL — a linked ("Link to File") image
@@ -190,14 +221,24 @@ export async function exportDocument(
   cjk?: { locale?: string; fallbackFont?: string },
 ): Promise<ExportResult> {
   const [{ images, failedExternal }, fonts] = await Promise.all([resolveImages(doc), resolveFonts(fontConfig)]);
-  const result = await new Promise<ExportResult>((resolve, reject) => {
-    const w = ensureWorker();
-    const id = nextId++;
-    pending.set(id, { resolve, reject });
-    const hasCjk = cjk && (cjk.locale !== undefined || cjk.fallbackFont !== undefined);
-    const msg: ToExportWorker = { id, doc, format, images, ...(fonts ? { fonts } : {}), ...(hasCjk ? { cjk } : {}) };
-    w.postMessage(msg);
-  });
+  let result: ExportResult;
+  if (format === "pdf" && hasRenderableCustomBlock(doc)) {
+    // A registered custom block's paint() lives in the main-thread block registry,
+    // which the worker can't see — run the pipeline inline so it renders into the
+    // PDF via the Canvas2D→pdfkit shim. Lazy-imported so non-custom-block exports
+    // never pull pdfkit onto the main thread.
+    const { runExportInline } = await import("./inlineExport");
+    result = await runExportInline(doc, format, images, fonts, cjk);
+  } else {
+    result = await new Promise<ExportResult>((resolve, reject) => {
+      const w = ensureWorker();
+      const id = nextId++;
+      pending.set(id, { resolve, reject });
+      const hasCjk = cjk && (cjk.locale !== undefined || cjk.fallbackFont !== undefined);
+      const msg: ToExportWorker = { id, doc, format, images, ...(fonts ? { fonts } : {}), ...(hasCjk ? { cjk } : {}) };
+      w.postMessage(msg);
+    });
+  }
   // Linked (external) images the browser wouldn't let us READ never reached the
   // worker, so surface a main-thread warning the worker's sink can't see: they
   // export as placeholder boxes even though they render fine in the editor. Almost
