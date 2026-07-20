@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Floating format toolbar (Word's selection mini-toolbar).** Selecting text now pops a compact
+  toolbar just above the selection with the most-used character formatting — font family, font size
+  (grow/shrink + presets), **Bold / Italic / Underline / Strikethrough**, text colour, highlight, and
+  clear-formatting — so common edits don't require a trip to the ribbon. It anchors to the selection's
+  start line, flips below when there's no room above, clamps to the viewport, tracks scroll/zoom, and
+  hides on Escape, when the selection collapses, or when the selection scrolls out of view. Pressed
+  state and the font/size readout mirror the ribbon. Edit-only (never shown in view-only mode) and
+  mutually exclusive with the image mini-toolbar. Opt out with the `floatingToolbar: false` constructor
+  option.
 - **Reverse builder — `.docx` → DocumentBuilder code (`@forevka/wordcanvas/codegen`).** The inverse
   of `./builder`: `docxToBuilderCode(bytes)` (and the pure `emitBuilderCode(doc)`) generate editable
   TypeScript that calls the fluent `DocumentBuilder` API to reconstruct a document, so a doc authored

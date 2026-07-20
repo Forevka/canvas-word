@@ -326,6 +326,11 @@ export interface Editor {
   getLayoutInfo(): { pageCount: number; currentPage: number };
   /** Viewport rect of the selected image (anchor for a floating toolbar), or null. */
   getSelectedObjectRect(): { left: number; top: number; width: number; height: number } | null;
+  /** Viewport rect anchoring a floating selection toolbar: the box of the current
+   *  text selection's START line, or the caret box when collapsed. null when there
+   *  is no selection. Coordinates are zoom-scaled client px (like
+   *  getSelectedObjectRect), so a `position:fixed` overlay can sit against it. */
+  getSelectionAnchorRect(): { left: number; top: number; width: number; height: number } | null;
   /** Delete the selected image and clear the object selection. */
   deleteSelectedObject(): void;
   // ---- develop-mode Document-tree inspector --------------------------------
@@ -3599,6 +3604,32 @@ export function createEditor(
       const z = paint.getZoom();
       const pr = ph.getBoundingClientRect();
       return { left: pr.left + r.x * z, top: pr.top + r.y * z, width: r.width * z, height: r.height * z };
+    },
+    getSelectionAnchorRect: (): { left: number; top: number; width: number; height: number } | null => {
+      if (!selection) return null;
+      const z = paint.getZoom();
+      // Map a page-local rect to zoom-scaled client coords via its page element.
+      const toClient = (
+        pageIndex: number,
+        x: number,
+        y: number,
+        width: number,
+        height: number,
+      ): { left: number; top: number; width: number; height: number } | null => {
+        const ph = paint.getPageElement(pageIndex);
+        if (!ph) return null;
+        const pr = ph.getBoundingClientRect();
+        return { left: pr.left + x * z, top: pr.top + y * z, width: width * z, height: height * z };
+      };
+      if (isCollapsed(selection)) {
+        const c = caretRect(tree, selection.focus, scope());
+        return c ? toClient(c.pageIndex, c.x, c.y, 0, c.height) : null;
+      }
+      // selectionRects walks entries in document order, so the first rect is the
+      // selection's start line — where Word anchors the mini-toolbar.
+      const rects = selectionRects(tree, selection, scope());
+      const first = rects[0];
+      return first ? toClient(first.pageIndex, first.x, first.y, first.width, first.height) : null;
     },
     deleteSelectedObject: deleteSelectedObjectInternal,
     setInspectorHighlight: (target: InspectorTarget | null): void => {

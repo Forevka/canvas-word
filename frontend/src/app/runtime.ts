@@ -221,6 +221,8 @@ export interface WordCanvasRuntime {
   develop?: boolean | undefined;
   /** Show the "Organize Pages" reorder-overlay button (Layout tab). Default true. */
   organizePages?: boolean | undefined;
+  /** Show the floating mini-toolbar above a text selection. Default true. */
+  floatingToolbar?: boolean | undefined;
   /** Custom fonts (URL-loaded faces + sizing) and toolbar disables. */
   fonts?: FontsConfig | undefined;
   /** CJK locale + fallback font tuning. */

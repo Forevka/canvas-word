@@ -114,6 +114,12 @@ export interface WordCanvasOptions {
    *  reorders whole page-break/section-delimited groups, so content is never
    *  split. Default true; set false to hide it. */
   organizePages?: boolean;
+  /** Show the floating mini-toolbar above a text selection (Word's selection
+   *  toolbar): quick Bold/Italic/Underline/Strikethrough, font family & size,
+   *  text colour, highlight, and clear-formatting, positioned at the selection so
+   *  common formatting is one click away without moving to the ribbon. Default
+   *  true; set false to hide it. Never shown in view-only mode. */
+  floatingToolbar?: boolean;
   /** Supply your OWN fonts, loaded from URLs at runtime. Each custom font needs a
    *  `family` (stored in the model + shown in the toolbar), per-style face URLs
    *  (`regular` required; bold/italic/boldItalic optional, falling back to regular),
@@ -196,6 +202,7 @@ export class WordCanvas {
         behavior: opts.behavior,
         develop: opts.develop,
         organizePages: opts.organizePages,
+        floatingToolbar: opts.floatingToolbar,
         fonts: opts.fonts,
         cjk: opts.cjk,
         customizeRibbon: opts.customizeRibbon,
