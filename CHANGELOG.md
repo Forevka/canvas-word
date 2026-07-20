@@ -15,8 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   start line, flips below when there's no room above, clamps to the viewport, tracks scroll/zoom, and
   hides on Escape, when the selection collapses, or when the selection scrolls out of view. Pressed
   state and the font/size readout mirror the ribbon. Edit-only (never shown in view-only mode) and
-  mutually exclusive with the image mini-toolbar. Opt out with the `floatingToolbar: false` constructor
-  option.
+  mutually exclusive with the image mini-toolbar. **Fully configurable** via the `floatingToolbar`
+  constructor option: pass `false` to hide it, or an object to set `enabled`, `onCaret` (also show at a
+  bare caret, not only over a range), and `buttons` — pick and reorder the built-in controls (`"font"`,
+  `"fontSize"`, `"bold"`, `"italic"`, `"underline"`, `"strikethrough"`, `"color"`, `"highlight"`,
+  `"clearFormat"`, `"|"` separators) and add your own custom buttons (same `{ id, icon|label, tooltip,
+  onClick, active }` shape and `RibbonActionContext` as a custom ribbon button). See the
+  [`floating-toolbar`](./examples/floating-toolbar) example.
 - **Reverse builder — `.docx` → DocumentBuilder code (`@forevka/wordcanvas/codegen`).** The inverse
   of `./builder`: `docxToBuilderCode(bytes)` (and the pure `emitBuilderCode(doc)`) generate editable
   TypeScript that calls the fluent `DocumentBuilder` API to reconstruct a document, so a doc authored

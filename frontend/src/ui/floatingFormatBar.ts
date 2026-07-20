@@ -1,18 +1,24 @@
 // Floating format mini-toolbar — Word's selection toolbar. Appears just above a
-// text selection with quick character formatting (font, size, B/I/U/S, colour,
-// highlight, clear) so common edits don't require a trip to the ribbon.
+// text selection with quick character formatting so common edits don't require a
+// trip to the ribbon.
 //
-// Pure presentation + wiring: the host (editorApp.ts) injects how to read the live
-// selection geometry / current format and how to apply each edit. It mirrors the
-// inline image mini-toolbar's lifecycle (a body-level `position:fixed` bar,
-// refreshed on change / scroll / resize) but for a text selection.
+// Its controls, order, and caret behavior are driven by the resolved
+// `floatingToolbar` config (built-in ids + "|" separators + custom buttons), so an
+// embedder can trim it to a couple of buttons or bolt on their own macros. Pure
+// presentation + wiring: the host (editorApp.ts) injects how to read the live
+// selection geometry / current format and how to apply each edit.
 
 import type { CurrentFormat } from "../index";
+import type {
+  FloatingToolbarButtonSpec,
+  FloatingToolbarItem,
+  ResolvedFloatingToolbar,
+} from "../config";
 import { injectCssOnce } from "./styles";
 import { showContextMenu, type MenuEntry } from "./contextMenu";
 import { placeSelectionBar, anchorInView, type AnchorRect } from "./floatingBarPosition";
 
-/** The edits a bar button performs — each keeps the current selection intact. */
+/** The edits a built-in bar button performs — each keeps the current selection. */
 export interface FloatingFormatBarActions {
   toggle(key: "bold" | "italic" | "underline" | "strikethrough"): void;
   setFontFamily(value: string): void;
@@ -28,8 +34,8 @@ export interface FloatingFormatBarDeps {
   anchorRect(): AnchorRect | null;
   /** Live character format at the selection — pressed state + current font/size. */
   format(): CurrentFormat;
-  /** True only when a non-empty (range) selection exists — the bar shows on ranges,
-   *  like Word (a bare caret shows nothing). */
+  /** True when a non-empty (range) selection exists. Combined with `config.onCaret`
+   *  to decide whether the bar shows. */
   hasRangeSelection(): boolean;
   /** Font family choices for the picker ({ value, label }). */
   fonts(): { value: string; label: string }[];
@@ -38,9 +44,14 @@ export interface FloatingFormatBarDeps {
   suppressed(): boolean;
   /** px→pt for the size readout (Word shows points). */
   pxToPt(px: number): number;
-  /** Return caret focus to the editor after an action. */
+  /** Return caret focus to the editor after a built-in action. */
   focus(): void;
+  /** Resolved config: enabled flag, caret behavior, and the button list. */
+  config: ResolvedFloatingToolbar;
+  /** Built-in edits. */
   actions: FloatingFormatBarActions;
+  /** Invoke a custom button (host wires it to the ribbon action context). */
+  runCustomButton(button: FloatingToolbarButtonSpec): void;
 }
 
 export interface FloatingFormatBar {
@@ -113,6 +124,9 @@ export function createFloatingFormatBar(deps: FloatingFormatBarDeps): FloatingFo
   document.body.appendChild(colorInput);
   let lastColor = "#e00000";
 
+  // Per-button state updaters, run on every refresh with the current format.
+  const refreshers: ((f: CurrentFormat) => void)[] = [];
+
   const button = (cls: string, title: string, onClick: () => void): HTMLButtonElement => {
     const b = document.createElement("button");
     b.type = "button";
@@ -149,95 +163,158 @@ export function createFloatingFormatBar(deps: FloatingFormatBarDeps): FloatingFo
     b.setAttribute("aria-pressed", "false");
     return b;
   };
-
-  // --- Font family -----------------------------------------------------------
-  const fontBtn = button("cw-fmtbar-font", "Font", () => {
-    const cur = deps.format().fontFamily?.toLowerCase();
-    const entries: MenuEntry[] = deps.fonts().map(
-      (f): MenuEntry => ({
-        kind: "item",
-        label: f.label,
-        ...(f.value.toLowerCase() === cur ? { shortcut: "✓" } : {}),
-        onClick: () => act(() => deps.actions.setFontFamily(f.value)),
-      }),
-    );
-    const r = fontBtn.getBoundingClientRect();
+  const openMenu = (anchor: HTMLElement, entries: MenuEntry[]): void => {
+    const r = anchor.getBoundingClientRect();
     showContextMenu(r.left, r.bottom + 2, entries);
-  });
-  const fontLbl = document.createElement("span");
-  fontLbl.className = "lbl";
-  fontLbl.textContent = "Font";
-  fontBtn.append(fontLbl, caret());
-
-  sep();
-
-  // --- Font size -------------------------------------------------------------
-  const curPt = (): number => {
-    const px = deps.format().fontSizePx;
-    return px !== null ? deps.pxToPt(px) : 11;
   };
-  button("", "Shrink font", () => act(() => deps.actions.setFontSizePt(curPt() - 1))).textContent = "A−";
-  const sizeBtn = button("cw-fmtbar-size", "Font size", () => {
-    const entries: MenuEntry[] = SIZE_PRESETS.map((p) => ({
-      kind: "item",
-      label: String(p),
-      onClick: () => act(() => deps.actions.setFontSizePt(p)),
-    }));
-    const r = sizeBtn.getBoundingClientRect();
-    showContextMenu(r.left, r.bottom + 2, entries);
-  });
-  button("", "Grow font", () => act(() => deps.actions.setFontSizePt(curPt() + 1))).textContent = "A+";
 
-  sep();
+  // ---- built-in control builders -------------------------------------------
+  const buildFont = (): void => {
+    const b = button("cw-fmtbar-font", "Font", () => {
+      const cur = deps.format().fontFamily?.toLowerCase();
+      openMenu(
+        b,
+        deps.fonts().map(
+          (f): MenuEntry => ({
+            kind: "item",
+            label: f.label,
+            ...(f.value.toLowerCase() === cur ? { shortcut: "✓" } : {}),
+            onClick: () => act(() => deps.actions.setFontFamily(f.value)),
+          }),
+        ),
+      );
+    });
+    const lbl = document.createElement("span");
+    lbl.className = "lbl";
+    lbl.textContent = "Font";
+    b.append(lbl, caret());
+    refreshers.push((f) => {
+      if (f.fontFamily) {
+        const match = deps.fonts().find((x) => x.value.toLowerCase() === f.fontFamily!.toLowerCase());
+        lbl.textContent = match ? match.label : f.fontFamily;
+      } else {
+        lbl.textContent = "Font";
+      }
+    });
+  };
 
-  // --- Bold / Italic / Underline / Strikethrough -----------------------------
-  const bBtn = toggleButton("cw-fmtbar-b", "Bold (Ctrl+B)", () => act(() => deps.actions.toggle("bold")));
-  bBtn.textContent = "B";
-  const iBtn = toggleButton("cw-fmtbar-i", "Italic (Ctrl+I)", () => act(() => deps.actions.toggle("italic")));
-  iBtn.textContent = "I";
-  const uBtn = toggleButton("cw-fmtbar-u", "Underline (Ctrl+U)", () => act(() => deps.actions.toggle("underline")));
-  uBtn.textContent = "U";
-  const sBtn = toggleButton("cw-fmtbar-s", "Strikethrough", () => act(() => deps.actions.toggle("strikethrough")));
-  sBtn.textContent = "S";
-
-  sep();
-
-  // --- Text colour + Highlight ----------------------------------------------
-  const colorBtn = button("cw-fmtbar-color", "Font colour", () => {
-    colorInput.value = lastColor;
-    colorInput.onchange = () =>
-      act(() => {
-        lastColor = colorInput.value;
-        colorBtn.style.borderBottomColor = lastColor;
-        deps.actions.setColor(lastColor);
-      });
-    colorInput.click();
-  });
-  colorBtn.textContent = "A";
-
-  const hlBtn = toggleButton("cw-fmtbar-hl", "Text highlight colour", () => {
-    const entries: MenuEntry[] = [
-      ...HIGHLIGHT_COLORS.map(
-        (c): MenuEntry => ({
-          kind: "item",
-          label: c.label,
-          icon: `<span style="display:inline-block;width:12px;height:12px;border:1px solid #999;background:${c.value}"></span>`,
-          onClick: () => act(() => deps.actions.setHighlight(c.value)),
-        }),
+  const buildFontSize = (): void => {
+    const curPt = (): number => {
+      const px = deps.format().fontSizePx;
+      return px !== null ? deps.pxToPt(px) : 11;
+    };
+    button("", "Shrink font", () => act(() => deps.actions.setFontSizePt(curPt() - 1))).textContent = "A−";
+    const sizeBtn = button("cw-fmtbar-size", "Font size", () =>
+      openMenu(
+        sizeBtn,
+        SIZE_PRESETS.map(
+          (p): MenuEntry => ({
+            kind: "item",
+            label: String(p),
+            onClick: () => act(() => deps.actions.setFontSizePt(p)),
+          }),
+        ),
       ),
-      { kind: "sep" },
-      { kind: "item", label: "No colour", onClick: () => act(() => deps.actions.clearHighlight()) },
-    ];
-    const r = hlBtn.getBoundingClientRect();
-    showContextMenu(r.left, r.bottom + 2, entries);
-  });
-  hlBtn.append(document.createTextNode("H"), caret());
+    );
+    button("", "Grow font", () => act(() => deps.actions.setFontSizePt(curPt() + 1))).textContent = "A+";
+    refreshers.push((f) => {
+      sizeBtn.textContent = f.fontSizePx !== null ? String(deps.pxToPt(f.fontSizePx)) : "";
+    });
+  };
 
-  sep();
+  const buildToggle = (
+    cls: string,
+    title: string,
+    glyph: string,
+    key: "bold" | "italic" | "underline" | "strikethrough",
+    read: (f: CurrentFormat) => boolean,
+  ): void => {
+    const b = toggleButton(cls, title, () => act(() => deps.actions.toggle(key)));
+    b.textContent = glyph;
+    refreshers.push((f) => setPressed(b, read(f)));
+  };
 
-  button("", "Clear all formatting", () => act(() => deps.actions.clearFormatting())).textContent = "⌫";
+  const buildColor = (): void => {
+    const b = button("cw-fmtbar-color", "Font colour", () => {
+      colorInput.value = lastColor;
+      colorInput.onchange = () =>
+        act(() => {
+          lastColor = colorInput.value;
+          b.style.borderBottomColor = lastColor;
+          deps.actions.setColor(lastColor);
+        });
+      colorInput.click();
+    });
+    b.textContent = "A";
+  };
 
-  // --- Visibility / positioning ---------------------------------------------
+  const buildHighlight = (): void => {
+    const b = toggleButton("cw-fmtbar-hl", "Text highlight colour", () =>
+      openMenu(b, [
+        ...HIGHLIGHT_COLORS.map(
+          (c): MenuEntry => ({
+            kind: "item",
+            label: c.label,
+            icon: `<span style="display:inline-block;width:12px;height:12px;border:1px solid #999;background:${c.value}"></span>`,
+            onClick: () => act(() => deps.actions.setHighlight(c.value)),
+          }),
+        ),
+        { kind: "sep" },
+        { kind: "item", label: "No colour", onClick: () => act(() => deps.actions.clearHighlight()) },
+      ]),
+    );
+    b.append(document.createTextNode("H"), caret());
+    refreshers.push((f) => setPressed(b, f.highlight));
+  };
+
+  const buildClear = (): void => {
+    button("", "Clear all formatting", () => act(() => deps.actions.clearFormatting())).textContent = "⌫";
+  };
+
+  const buildCustom = (spec: FloatingToolbarButtonSpec): void => {
+    const title = spec.tooltip ?? spec.label ?? spec.id;
+    // Custom buttons drive the editor via the ribbon action context; the context
+    // itself keeps the selection, so (unlike built-ins) they don't re-focus and can
+    // safely open their own dialogs.
+    const b = spec.active
+      ? toggleButton("cw-fmtbar-custom", title, () => deps.runCustomButton(spec))
+      : button("cw-fmtbar-custom", title, () => deps.runCustomButton(spec));
+    if (spec.icon) b.innerHTML = spec.icon;
+    else b.textContent = spec.label ?? spec.id;
+    const { active } = spec;
+    if (active) refreshers.push((f) => setPressed(b, active(f)));
+  };
+
+  const buildItem = (item: FloatingToolbarItem): void => {
+    if (item === "|") return sep();
+    if (typeof item !== "string") return buildCustom(item);
+    switch (item) {
+      case "font":
+        return buildFont();
+      case "fontSize":
+        return buildFontSize();
+      case "bold":
+        return buildToggle("cw-fmtbar-b", "Bold (Ctrl+B)", "B", "bold", (f) => f.bold);
+      case "italic":
+        return buildToggle("cw-fmtbar-i", "Italic (Ctrl+I)", "I", "italic", (f) => f.italic);
+      case "underline":
+        return buildToggle("cw-fmtbar-u", "Underline (Ctrl+U)", "U", "underline", (f) => f.underline);
+      case "strikethrough":
+        return buildToggle("cw-fmtbar-s", "Strikethrough", "S", "strikethrough", (f) => f.strikethrough);
+      case "color":
+        return buildColor();
+      case "highlight":
+        return buildHighlight();
+      case "clearFormat":
+        return buildClear();
+      default:
+        console.warn(`[wordcanvas] unknown floatingToolbar button: ${String(item)}`);
+    }
+  };
+
+  for (const item of deps.config.buttons) buildItem(item);
+
+  // ---- visibility / positioning --------------------------------------------
   let visible = false;
   const hide = (): void => {
     if (!visible) return;
@@ -246,25 +323,16 @@ export function createFloatingFormatBar(deps: FloatingFormatBarDeps): FloatingFo
   };
 
   const refresh = (): void => {
-    if (deps.suppressed() || !deps.hasRangeSelection()) return hide();
+    // `onCaret` shows the bar at a bare caret too; otherwise only over a range.
+    const wantShow = deps.config.enabled && (deps.config.onCaret || deps.hasRangeSelection());
+    if (!wantShow || deps.suppressed()) return hide();
     const anchor = deps.anchorRect();
     const viewport = { width: window.innerWidth, height: window.innerHeight };
     if (!anchor || !anchorInView(anchor, viewport)) return hide();
 
     // Sync pressed state + labels BEFORE measuring (label widths affect layout).
     const f = deps.format();
-    setPressed(bBtn, f.bold);
-    setPressed(iBtn, f.italic);
-    setPressed(uBtn, f.underline);
-    setPressed(sBtn, f.strikethrough);
-    setPressed(hlBtn, f.highlight);
-    if (f.fontFamily) {
-      const match = deps.fonts().find((x) => x.value.toLowerCase() === f.fontFamily!.toLowerCase());
-      fontLbl.textContent = match ? match.label : f.fontFamily;
-    } else {
-      fontLbl.textContent = "Font";
-    }
-    sizeBtn.textContent = f.fontSizePx !== null ? String(deps.pxToPt(f.fontSizePx)) : "";
+    for (const update of refreshers) update(f);
 
     bar.style.display = "flex";
     visible = true;
