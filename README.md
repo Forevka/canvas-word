@@ -100,6 +100,7 @@ Node `backend` can reuse them.
 | `import/docx/` | .docx import (see [IMPORT.md](./IMPORT.md)) | `importDocx.ts` `pipeline.ts` |
 | `export/` | .docx + PDF export, DOM-free measure host (see [EXPORT.md](./EXPORT.md)) | `exportDocument.ts` `docx/` `pdf/` |
 | `builder/` | Fluent document composition + .docx templates (see [BUILDER.md](./BUILDER.md)) | `documentBuilder.ts` `template.ts` |
+| `codegen/` | Reverse builder: `.docx` → DocumentBuilder code (see [CODEGEN.md](./CODEGEN.md)) | `emit.ts` `index.ts` |
 | `sync/` | Collaboration client: change recorder, OT sync, presence | `SyncClient.ts` `changeRecorder.ts` |
 | `media/` | Image/media store (blobs, backend upload bridge) | `store.ts` |
 | `fonts/` | Metric-clone family map + baked metrics (see [FONTS.md](./FONTS.md)) | `clones.ts` |
@@ -221,6 +222,12 @@ compose documents in JS/TS instead of a C#/OOXML backend.
 setup/bands; feed a JSON data model and live-preview via
 `WordCanvas.setDocument(doc)`. Runs in browser and Node. Playground at
 `examples/playground`. See [BUILDER.md](./BUILDER.md).
+
+**Reverse builder** — the inverse (`@forevka/wordcanvas/codegen`):
+`docxToBuilderCode(bytes)` emits editable TypeScript that calls the fluent
+builder to reconstruct a document, turning a visually-authored `.docx` into a
+code template. Fields the builder can't yet express are reported, not dropped.
+See [CODEGEN.md](./CODEGEN.md).
 
 **Collaboration** — operational-transform sync over a WebSocket backend.
 Opening a doc with `backendUrl` set auto-publishes it (gzipped snapshot +

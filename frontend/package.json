@@ -49,6 +49,10 @@
       "types": "./types/builder.d.ts",
       "import": "./dist-lib/builder.js"
     },
+    "./codegen": {
+      "types": "./types/codegen.d.ts",
+      "import": "./dist-lib/codegen.js"
+    },
     "./query": {
       "types": "./types/query.d.ts",
       "import": "./dist-lib/query.js"
