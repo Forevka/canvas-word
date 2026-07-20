@@ -146,11 +146,14 @@ typing coalescence, pending styles at a collapsed caret, Ctrl+Enter page breaks.
 
 **Formatting** — bold/italic/underline/strike, font family/size, line and
 letter spacing, color, alignment including true justification (slack into
-`ctx.wordSpacing`), first-line indents. A **floating mini-toolbar** pops above a
-text selection (Word's selection toolbar) for one-click font, size, B/I/U/S,
-colour, and highlight without leaving the caret — configurable via
-`floatingToolbar` (toggle, reorder/pick buttons, show at a bare caret, add custom
-buttons; see [`examples/floating-toolbar`](./examples/floating-toolbar)).
+`ctx.wordSpacing`), first-line indents. **Contextual floating toolbars** pop above
+the caret/selection — one priority-based manager shows the most relevant of a
+built-in **text format** bar (Word's selection toolbar: font, size, B/I/U/S, colour,
+highlight — configurable via `floatingToolbar`; see
+[`examples/floating-toolbar`](./examples/floating-toolbar)), an **image** bar, and a
+**hyperlink** bar (Open/Edit/Copy/Remove). Embedders can register their own via the
+`contextToolbars` option (see
+[`examples/context-toolbars`](./examples/context-toolbars)).
 
 **Styles (Style Manager)** — one **Manage Styles** dialog to create/edit/delete
 styles for every OOXML-styleable entity, each with a live canvas preview:

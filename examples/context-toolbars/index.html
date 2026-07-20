@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WordCanvas — contextual toolbars</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      #editor {
+        position: fixed;
+        inset: 0;
+      }
+
+      /* A small hint panel describing what to try. */
+      #hint {
+        position: fixed;
+        z-index: 15;
+        bottom: 10px;
+        right: 10px;
+        width: 300px;
+        padding: 10px 12px;
+        background: rgba(255, 255, 255, 0.96);
+        border: 1px solid #d0d4d9;
+        border-radius: 8px;
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+        font: 12px/1.5 system-ui, sans-serif;
+        color: #333;
+      }
+      #hint b {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #80868b;
+      }
+      #hint ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      /* First-load overlay (same pattern as the other examples). */
+      #loader {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: #fafafa;
+        font: 14px/1.4 system-ui, sans-serif;
+        color: #444;
+        transition: opacity 0.3s ease;
+      }
+      #loader.done {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #loader .track {
+        width: 280px;
+        height: 6px;
+        border-radius: 3px;
+        background: #e4e4e4;
+        overflow: hidden;
+      }
+      #loader .bar {
+        height: 100%;
+        width: 0;
+        border-radius: 3px;
+        background: #2563eb;
+        transition: width 0.15s ease;
+      }
+    </style>
+
+    <!--
+      Resolve the bare package specifiers to the built bundles (see embed-offline).
+      Serve this example with the repo root as the static root (see README.md); build
+      the lib first. The `/builder` subpath is a separate entry. In a bundler app
+      you'd just `import { WordCanvas } from "@forevka/wordcanvas"` and skip this map.
+    -->
+    <script type="importmap">
+      {
+        "imports": {
+          "@forevka/wordcanvas": "/node_modules/@forevka/wordcanvas/dist-lib/wordcanvas.js",
+          "@forevka/wordcanvas/builder": "/node_modules/@forevka/wordcanvas/dist-lib/builder.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="loader">
+      <div class="label">Loading editor…</div>
+      <div class="track"><div class="bar"></div></div>
+    </div>
+    <div id="editor"></div>
+    <aside id="hint">
+      <b>Contextual toolbars — try:</b>
+      <ul>
+        <li>Select a sentence → <b>text format</b> bar</li>
+        <li>Caret inside the blue link → <b>hyperlink</b> bar</li>
+        <li>Drag across 2+ table cells → built-in <b>table</b> bar</li>
+        <li>Caret in a single table cell → <b>custom</b> bar (registered via <code>contextToolbars</code>)</li>
+      </ul>
+    </aside>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

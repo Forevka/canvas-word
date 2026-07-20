@@ -16,7 +16,8 @@ import type {
 } from "../config";
 import { injectCssOnce } from "./styles";
 import { showContextMenu, type MenuEntry } from "./contextMenu";
-import { placeSelectionBar, anchorInView, type AnchorRect } from "./floatingBarPosition";
+import type { AnchorRect } from "./floatingBarPosition";
+import { createFloatingBar, type ContextToolbar } from "./contextToolbar";
 
 /** The edits a built-in bar button performs — each keeps the current selection. */
 export interface FloatingFormatBarActions {
@@ -39,9 +40,6 @@ export interface FloatingFormatBarDeps {
   hasRangeSelection(): boolean;
   /** Font family choices for the picker ({ value, label }). */
   fonts(): { value: string; label: string }[];
-  /** True when the bar must stay hidden (view-only mode, an image is selected, a
-   *  modal owns the screen, …). */
-  suppressed(): boolean;
   /** px→pt for the size readout (Word shows points). */
   pxToPt(px: number): number;
   /** Return caret focus to the editor after a built-in action. */
@@ -52,16 +50,6 @@ export interface FloatingFormatBarDeps {
   actions: FloatingFormatBarActions;
   /** Invoke a custom button (host wires it to the ribbon action context). */
   runCustomButton(button: FloatingToolbarButtonSpec): void;
-}
-
-export interface FloatingFormatBar {
-  /** Re-evaluate visibility, pressed state, and position. Cheap; call on every
-   *  change / scroll / resize. */
-  refresh(): void;
-  /** Hide without tearing down (e.g. on Escape / focus loss). */
-  hide(): void;
-  /** Remove the bar from the DOM. */
-  destroy(): void;
 }
 
 /** A small, Word-like highlight palette for the highlight dropdown, plus "None". */
@@ -104,17 +92,13 @@ const CSS = `
   :root[data-theme="dark"] .cw-fmtbar .sep{background:#4a4a4a;}
 }`;
 
-export function createFloatingFormatBar(deps: FloatingFormatBarDeps): FloatingFormatBar {
+/** The text selection format bar as a ContextToolbar (priority 20 — below the image
+ *  bar, so a selected image wins). */
+export function createFloatingFormatBar(deps: FloatingFormatBarDeps): ContextToolbar {
   injectCssOnce("cw-fmtbar-styles", CSS);
 
-  const bar = document.createElement("div");
-  bar.className = "cw-fmtbar";
-  bar.setAttribute("role", "toolbar");
-  bar.setAttribute("aria-label", "Text formatting");
-  // Never steal the selection: buttons act on mouseup/click, so suppressing the
-  // default mousedown keeps the caret where it is (same trick the ribbon uses).
-  bar.addEventListener("mousedown", (e) => e.preventDefault());
-  document.body.appendChild(bar);
+  const fb = createFloatingBar({ className: "cw-fmtbar", ariaLabel: "Text formatting" });
+  const bar = fb.el;
 
   // Hidden native colour picker for text colour (applied on `change` so a drag is
   // one undo step), mirroring the ribbon's shared picker.
@@ -314,41 +298,27 @@ export function createFloatingFormatBar(deps: FloatingFormatBarDeps): FloatingFo
 
   for (const item of deps.config.buttons) buildItem(item);
 
-  // ---- visibility / positioning --------------------------------------------
-  let visible = false;
-  const hide = (): void => {
-    if (!visible) return;
-    visible = false;
-    bar.style.display = "none";
+  // ---- ContextToolbar contract ---------------------------------------------
+  return {
+    id: "text-format",
+    priority: 20,
+    // Active over a range (always) or at a bare caret when `onCaret` is set. The
+    // manager owns mutual exclusion, so a selected image (higher priority) wins.
+    resolve: (): AnchorRect | null => {
+      if (!deps.config.enabled) return null;
+      if (!(deps.config.onCaret || deps.hasRangeSelection())) return null;
+      return deps.anchorRect();
+    },
+    show: (anchor: AnchorRect): void => {
+      // Sync pressed state + labels BEFORE placing (label widths affect layout).
+      const f = deps.format();
+      for (const update of refreshers) update(f);
+      fb.place(anchor);
+    },
+    hide: () => fb.hide(),
+    destroy: () => {
+      fb.destroy();
+      colorInput.remove();
+    },
   };
-
-  const refresh = (): void => {
-    // `onCaret` shows the bar at a bare caret too; otherwise only over a range.
-    const wantShow = deps.config.enabled && (deps.config.onCaret || deps.hasRangeSelection());
-    if (!wantShow || deps.suppressed()) return hide();
-    const anchor = deps.anchorRect();
-    const viewport = { width: window.innerWidth, height: window.innerHeight };
-    if (!anchor || !anchorInView(anchor, viewport)) return hide();
-
-    // Sync pressed state + labels BEFORE measuring (label widths affect layout).
-    const f = deps.format();
-    for (const update of refreshers) update(f);
-
-    bar.style.display = "flex";
-    visible = true;
-    const { left, top } = placeSelectionBar(
-      anchor,
-      { width: bar.offsetWidth, height: bar.offsetHeight },
-      viewport,
-    );
-    bar.style.left = `${left}px`;
-    bar.style.top = `${top}px`;
-  };
-
-  const destroy = (): void => {
-    bar.remove();
-    colorInput.remove();
-  };
-
-  return { refresh, hide, destroy };
 }

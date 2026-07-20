@@ -924,6 +924,25 @@ export function sdtAtPosition(doc: EditorState["doc"], pos: DocPosition): string
   return dominantCellSdt(table);
 }
 
+/** The hyperlink URL on the run at `pos` (favouring the run the caret is entering,
+ *  else the one it's leaving), or null. Position-based analog of the point-based
+ *  `linkAt` (geometry.ts): links live on run styles (`run.style.link`), so this
+ *  scans the caret paragraph's runs — used to drive the hyperlink context toolbar. */
+export function linkAtPosition(doc: EditorState["doc"], pos: DocPosition): string | null {
+  const block = blockById(doc, pos.blockId);
+  if (!block) return null;
+  let off = 0;
+  let before: string | null = null;
+  let after: string | null = null;
+  for (const r of block.runs) {
+    const end = off + r.text.length;
+    if (pos.offset > off && pos.offset <= end) before = r.style.link ?? null;
+    if (pos.offset >= off && pos.offset < end) after = r.style.link ?? null;
+    off = end;
+  }
+  return after ?? before;
+}
+
 /** The INLINE content control directly on the run at `pos`, ignoring any
  *  block-level control wrapping the whole paragraph/table. Splitting a paragraph
  *  is only unsafe INSIDE an inline control (it can't span a paragraph break); a

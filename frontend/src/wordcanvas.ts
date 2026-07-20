@@ -12,7 +12,7 @@
 import type { AgentToolsOptions, EditMode, EditorHandle, FieldResolver, Participant, SaveEvent, SaveFormat, SaveHandler, WordCanvasEvent, WordCanvasRuntime, WordCanvasViewOptions } from "./app/runtime";
 import type { ChildContent, ChildDocument, ChildEditorHandle, ChildRenderOptions, FieldResolveRequest, FieldResult } from "./index";
 import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
-import type { CjkConfig, CustomFontDef, CustomFontFaces, DefaultStyleOverrides, EditorBehavior, EditorTheme, FloatingToolbarButtonSpec, FloatingToolbarConfig, FloatingToolbarItem, FloatingToolbarOptions, FontsConfig } from "./config";
+import type { CjkConfig, ContextToolbarSpec, CustomFontDef, CustomFontFaces, DefaultStyleOverrides, EditorBehavior, EditorTheme, FloatingToolbarButtonSpec, FloatingToolbarConfig, FloatingToolbarItem, FloatingToolbarOptions, FontsConfig, ToolbarContext } from "./config";
 import { darkCanvasTheme } from "./config";
 import type { CustomizeRibbon, RibbonActionContext, RibbonApi, RibbonButtonSpec } from "./ribbon";
 import type { CommandContext, EditorCommand } from "./commands";
@@ -27,6 +27,7 @@ export type { Document, UserInfo, Participant, EditMode, ReviewLayer, Fragment, 
 export type { ChildDocument, ChildContent, ChildRenderOptions, ChildEditorHandle };
 export type { EditorTheme, DefaultStyleOverrides, EditorBehavior, FontsConfig, CjkConfig, CustomFontDef, CustomFontFaces };
 export type { FloatingToolbarConfig, FloatingToolbarOptions, FloatingToolbarItem, FloatingToolbarButtonSpec };
+export type { ContextToolbarSpec, ToolbarContext };
 export type { CustomizeRibbon, RibbonApi, RibbonButtonSpec, RibbonActionContext, DocSelection };
 export type { EditorCommand, CommandContext };
 export type { DecorationSpec, RangeDecoration, BadgeDecoration };
@@ -128,6 +129,13 @@ export interface WordCanvasOptions {
    *  buttons `{ id, icon|label, tooltip?, onClick, active? }` whose `onClick` gets
    *  the same context as a custom ribbon button). Never shown in view-only mode. */
   floatingToolbar?: FloatingToolbarConfig;
+  /** Register custom **contextual floating toolbars** shown for your own contexts,
+   *  alongside the built-in image / hyperlink / text-selection bars. Each spec has a
+   *  `when(ctx)` predicate (over the current `ToolbarContext`), `buttons` (the same
+   *  custom-button shape as `floatingToolbar`), an optional `priority` (built-ins are
+   *  30/25/20; default 15), and an optional `anchor(ctx)` (defaults to the selection).
+   *  The manager shows only the single highest-priority active toolbar. */
+  contextToolbars?: ContextToolbarSpec[];
   /** Supply your OWN fonts, loaded from URLs at runtime. Each custom font needs a
    *  `family` (stored in the model + shown in the toolbar), per-style face URLs
    *  (`regular` required; bold/italic/boldItalic optional, falling back to regular),
@@ -211,6 +219,7 @@ export class WordCanvas {
         develop: opts.develop,
         organizePages: opts.organizePages,
         floatingToolbar: opts.floatingToolbar,
+        contextToolbars: opts.contextToolbars,
         fonts: opts.fonts,
         cjk: opts.cjk,
         customizeRibbon: opts.customizeRibbon,

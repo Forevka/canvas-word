@@ -20,6 +20,12 @@ import { buildShell } from "./app/shell";
 import { ensureWordCanvasStyles } from "./ui/styles";
 import { showContextMenu, type MenuEntry } from "./ui/contextMenu";
 import { createFloatingFormatBar } from "./ui/floatingFormatBar";
+import { createContextToolbarManager } from "./ui/contextToolbar";
+import { createImageContextToolbar } from "./ui/imageContextToolbar";
+import { createLinkContextToolbar } from "./ui/linkContextToolbar";
+import { createTableContextToolbar } from "./ui/tableContextToolbar";
+import { createCustomContextToolbar } from "./ui/customContextToolbar";
+import type { FloatingToolbarButtonSpec, ToolbarContext } from "./config";
 import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
 import { showDevPanel, type DevPanelHandle } from "./ui/devPanel";
 import { showPageLayout, type PageLayoutHandle } from "./ui/pageLayout";
@@ -130,6 +136,7 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
     ...(runtime.develop !== undefined ? { develop: runtime.develop } : {}),
     ...(runtime.organizePages !== undefined ? { organizePages: runtime.organizePages } : {}),
     ...(runtime.floatingToolbar !== undefined ? { floatingToolbar: runtime.floatingToolbar } : {}),
+    ...(runtime.contextToolbars !== undefined ? { contextToolbars: runtime.contextToolbars } : {}),
   });
   // This editor instance's own font registry — threaded into its layout engine and
   // paint layer (below) so its custom fonts can't be clobbered by another WordCanvas
@@ -266,8 +273,8 @@ let refreshRuler: () => void = () => {};
 let toggleRuler: () => boolean = () => false;
 let refreshVRuler: () => void = () => {};
 let toggleVRuler: () => boolean = () => false;
-let refreshImageBar: () => void = () => {};
-let refreshFloatingBar: () => void = () => {};
+let refreshContextToolbars: () => void = () => {};
+let openLinkDialog: (anchor: HTMLElement, url?: string) => void = () => {};
 let refreshBookmarks: () => void = () => {};
 let toggleBookmarks: () => void = () => {};
 let refreshReview: () => void = () => {};
@@ -353,8 +360,7 @@ const editorOpts = {
     refreshStatus();
     refreshRuler();
     refreshVRuler();
-    refreshImageBar();
-    refreshFloatingBar();
+    refreshContextToolbars();
     refreshBookmarks();
     refreshDevPanel();
   },
@@ -363,8 +369,7 @@ const editorOpts = {
     refreshStatus();
     refreshRuler();
     refreshVRuler();
-    refreshImageBar();
-    refreshFloatingBar();
+    refreshContextToolbars();
   },
 };
 let editor = createEditor(app, doc, editorOpts);
@@ -1130,14 +1135,17 @@ if (toolbar) {
     openPop(anchor, wrap);
   };
 
-  /** Hyperlink dialog: URL field + Apply / Remove, applied to the selection. */
-  const linkDialog = (anchor: HTMLElement): void => {
+  /** Hyperlink dialog: URL field + Apply / Remove, applied to the selection.
+   *  `url` pre-fills the field (the hyperlink context toolbar's Edit passes the
+   *  existing address). */
+  const linkDialog = (anchor: HTMLElement, url = ""): void => {
     const wrap = el("div", "cw-dialog");
     const lab = el("label");
     lab.textContent = "Address";
     const input = el("input");
     input.type = "text";
     input.placeholder = "https://example.com";
+    input.value = url;
     input.addEventListener("mousedown", (e) => e.stopPropagation()); // allow focus
     lab.appendChild(input);
     const row = el("div", "row");
@@ -1166,6 +1174,9 @@ if (toolbar) {
     openPop(anchor, wrap);
     setTimeout(() => input.focus(), 0);
   };
+  // Expose the link dialog to the hyperlink context toolbar (built outside this
+  // ribbon closure).
+  openLinkDialog = linkDialog;
 
   /** Open the Font dialog seeded from the caret's effective style; Apply routes
    *  the edited patch through setCharStyle (one undoable edit over the selection,
@@ -3216,122 +3227,131 @@ if (toolbar) {
   }
 }
 
-// ---- floating image mini-toolbar -------------------------------------------
-// Appears above a selected image (Word's hover bar): wrap, align, delete. Skipped
-// in view-only mode — images can't be selected there, and all its actions edit.
+// ---- contextual floating toolbars ------------------------------------------
+// One priority-based manager shows the single most-relevant floating bar above the
+// caret/selection: the selected-image bar, the hyperlink bar, the text format bar,
+// and any embedder-registered `contextToolbars`. Edit-only (view mode has nothing
+// to format). The manager owns the scroll/resize/Escape lifecycle and the mutual
+// exclusion (highest priority wins) that used to be hand-wired per bar.
 if (!readonly) {
-  const bar = document.createElement("div");
-  bar.className = "cw-img-toolbar";
-  document.body.appendChild(bar);
-  detachables.push(bar);
-  const ibtn = (icon: string, title: string, onClick: () => void, cls = ""): void => {
-    const b = document.createElement("button");
-    if (cls) b.className = cls;
-    b.innerHTML = icon;
-    b.title = title;
-    b.addEventListener("mousedown", (e) => e.preventDefault()); // keep the image selected
-    b.addEventListener("click", () => {
-      onClick();
-      refreshImageBar();
-    });
-    bar.appendChild(b);
-  };
-  const sep = (): void => {
-    const s = document.createElement("div");
-    s.className = "sep";
-    bar.appendChild(s);
-  };
-  const withImg = (fn: (id: string) => void): void => {
-    const id = editor.getSelectedObject();
-    if (id) fn(id);
-  };
-  ibtn(ICONS.wrapInline, "In line with text", () => withImg((id) => editor.dispatch(setImageProps(id, { wrap: "block", align: "center" }))));
-  ibtn(ICONS.wrapSquare, "Wrap text (square)", () => withImg((id) => editor.dispatch(setImageProps(id, { wrap: "square", align: "left" }))));
-  sep();
-  ibtn(ICONS.alignLeft, "Align left", () => editor.align("left"));
-  ibtn(ICONS.alignCenter, "Align center", () => editor.align("center"));
-  ibtn(ICONS.alignRight, "Align right", () => editor.align("right"));
-  sep();
-  ibtn(ICONS.trash, "Delete image (Del)", () => {
-    editor.deleteSelectedObject();
-    editor.focus();
-  }, "danger");
-
-  refreshImageBar = (): void => {
-    const r = editor.getSelectedObject() ? editor.getSelectedObjectRect() : null;
-    if (!r) {
-      bar.style.display = "none";
-      return;
-    }
-    bar.style.display = "flex";
-    const bw = bar.offsetWidth;
-    const bh = bar.offsetHeight;
-    const left = Math.max(8, Math.min(window.innerWidth - bw - 8, r.left + r.width / 2 - bw / 2));
-    const top = r.top - bh - 8 < 56 ? r.top + r.height + 8 : r.top - bh - 8;
-    bar.style.left = `${Math.round(left)}px`;
-    bar.style.top = `${Math.round(top)}px`;
-  };
-  app.addEventListener("scroll", () => refreshImageBar());
-  window.addEventListener("resize", () => refreshImageBar(), { signal: teardown.signal });
-}
-
-// ---- floating format mini-toolbar (Word's selection toolbar) ----------------
-// Shows configurable quick character formatting above a text selection. Edit-only
-// (view mode has nothing to format); controls + caret behavior come from
-// config.floatingToolbar (see resolveFloatingToolbar).
-if (!readonly && config.floatingToolbar.enabled) {
   const isRangeSelection = (): boolean => {
     const sel = editor.getSelection();
     if (!sel) return false;
     return sel.anchor.blockId !== sel.focus.blockId || sel.anchor.offset !== sel.focus.offset;
   };
   const clampSizePx = (pt: number): number => Math.min(96, Math.max(6, sharedPtToPx(pt)));
-  const fmtBar = createFloatingFormatBar({
-    anchorRect: () => editor.getSelectionAnchorRect(),
-    format: () => editor.currentFormat(),
-    hasRangeSelection: isRangeSelection,
-    fonts: () => toolbarFonts(config.fonts),
-    // Hide while an image owns the floating image toolbar (mutually exclusive).
-    suppressed: () => editor.getSelectedObject() !== null,
-    pxToPt: (px) => Math.round(sharedPxToPt(px) * 2) / 2,
-    focus: () => editor.focus(),
-    config: config.floatingToolbar,
-    // A custom button gets the same context a custom ribbon button gets — and,
-    // like the ribbon path, a throwing handler is caught rather than surfaced.
-    runCustomButton: (spec) => {
-      try {
-        if (ribbonCtx) spec.onClick(ribbonCtx);
-      } catch (err) {
-        console.error("[canvas-word] custom floating-toolbar button onClick threw", err);
-      }
-    },
-    actions: {
-      toggle: (key) => editor.toggleStyle(key),
-      setFontFamily: (value) => editor.setCharStyle({ fontFamily: value }),
-      setFontSizePt: (pt) => {
-        if (Number.isFinite(pt)) editor.setCharStyle({ fontSizePx: clampSizePx(pt) });
+  // A custom button gets the same context a custom ribbon button gets; a throwing
+  // handler is caught rather than surfaced (mirrors the ribbon path).
+  const runCustomButton = (spec: FloatingToolbarButtonSpec): void => {
+    try {
+      if (ribbonCtx) spec.onClick(ribbonCtx);
+    } catch (err) {
+      console.error("[canvas-word] custom context-toolbar button onClick threw", err);
+    }
+  };
+
+  const manager = createContextToolbarManager({ scrollEl: app, signal: teardown.signal });
+
+  // Image bar (priority 30) — the highest, so a selected image always wins.
+  const withImg = (fn: (id: string) => void): void => {
+    const id = editor.getSelectedObject();
+    if (id) fn(id);
+  };
+  manager.register(
+    createImageContextToolbar({
+      anchorRect: () => editor.getSelectedObjectRect(),
+      actions: {
+        wrapInline: () => withImg((id) => editor.dispatch(setImageProps(id, { wrap: "block", align: "center" }))),
+        wrapSquare: () => withImg((id) => editor.dispatch(setImageProps(id, { wrap: "square", align: "left" }))),
+        alignLeft: () => editor.align("left"),
+        alignCenter: () => editor.align("center"),
+        alignRight: () => editor.align("right"),
+        remove: () => {
+          editor.deleteSelectedObject();
+          editor.focus();
+        },
       },
-      setColor: (color) => editor.setCharStyle({ color }),
-      setHighlight: (color) => editor.dispatch(toggleHighlight(color)),
-      clearHighlight: () => editor.setCharStyle({ highlightColor: undefined }),
-      clearFormatting: () => {
-        editor.dispatch(clearCharFormatting());
-        editor.dispatch(applyNamedStyle("Normal"));
-      },
-    },
-  });
-  refreshFloatingBar = fmtBar.refresh;
-  teardown.signal.addEventListener("abort", () => fmtBar.destroy(), { once: true });
-  app.addEventListener("scroll", () => fmtBar.refresh());
-  window.addEventListener("resize", () => fmtBar.refresh(), { signal: teardown.signal });
-  // Dismiss on Escape so it doesn't linger over the caret after the user bails.
-  window.addEventListener(
-    "keydown",
-    (e) => {
-      if (e.key === "Escape") fmtBar.hide();
-    },
-    { signal: teardown.signal },
+    }),
   );
+
+  // Table bar (priority 28) — a multi-cell selection (2+ rows/columns).
+  manager.register(
+    createTableContextToolbar({
+      anchorRect: () => editor.getCellSelectionRect(),
+      actions: {
+        mergeCells: () => editor.dispatch(mergeCellsCmd()),
+        insertRowAbove: () => editor.dispatch(insertTableRowCmd("above")),
+        insertRowBelow: () => editor.dispatch(insertTableRowCmd("below")),
+        insertColumnLeft: () => editor.dispatch(insertTableColumnCmd("left")),
+        insertColumnRight: () => editor.dispatch(insertTableColumnCmd("right")),
+        deleteRow: () => editor.dispatch(deleteTableRowCmd()),
+        deleteColumn: () => editor.dispatch(deleteTableColumnCmd()),
+      },
+    }),
+  );
+
+  // Hyperlink bar (priority 25) — a collapsed caret inside a link.
+  manager.register(
+    createLinkContextToolbar({
+      linkUrl: () => editor.linkAtCaret(),
+      hasRangeSelection: isRangeSelection,
+      anchorRect: () => editor.getSelectionAnchorRect(),
+      actions: {
+        open: (url) => window.open(url, "_blank", "noopener,noreferrer"),
+        edit: (anchorEl, url) => openLinkDialog(anchorEl, url),
+        copy: (url) => void navigator.clipboard?.writeText(url),
+        remove: () => {
+          editor.dispatch(setLinkCmd(null));
+          editor.focus();
+        },
+      },
+    }),
+  );
+
+  // Text format bar (priority 20) — over a range (always) or a caret (config.onCaret).
+  if (config.floatingToolbar.enabled) {
+    manager.register(
+      createFloatingFormatBar({
+        anchorRect: () => editor.getSelectionAnchorRect(),
+        format: () => editor.currentFormat(),
+        hasRangeSelection: isRangeSelection,
+        fonts: () => toolbarFonts(config.fonts),
+        pxToPt: (px) => Math.round(sharedPxToPt(px) * 2) / 2,
+        focus: () => editor.focus(),
+        config: config.floatingToolbar,
+        runCustomButton,
+        actions: {
+          toggle: (key) => editor.toggleStyle(key),
+          setFontFamily: (value) => editor.setCharStyle({ fontFamily: value }),
+          setFontSizePt: (pt) => {
+            if (Number.isFinite(pt)) editor.setCharStyle({ fontSizePx: clampSizePx(pt) });
+          },
+          setColor: (color) => editor.setCharStyle({ color }),
+          setHighlight: (color) => editor.dispatch(toggleHighlight(color)),
+          clearHighlight: () => editor.setCharStyle({ highlightColor: undefined }),
+          clearFormatting: () => {
+            editor.dispatch(clearCharFormatting());
+            editor.dispatch(applyNamedStyle("Normal"));
+          },
+        },
+      }),
+    );
+  }
+
+  // Embedder-registered context toolbars (default priority 15, below the built-ins).
+  const buildContext = (): ToolbarContext => ({
+    format: editor.currentFormat(),
+    selection: editor.getSelection(),
+    hasRange: isRangeSelection(),
+    linkUrl: editor.linkAtCaret(),
+    selectionRect: () => editor.getSelectionAnchorRect(),
+    objectRect: () => editor.getSelectedObjectRect(),
+  });
+  for (const spec of config.contextToolbars) {
+    manager.register(createCustomContextToolbar(spec, { context: buildContext, runButton: runCustomButton }));
+  }
+
+  refreshContextToolbars = manager.refresh;
 }
 
 // ---- page setup ------------------------------------------------------------

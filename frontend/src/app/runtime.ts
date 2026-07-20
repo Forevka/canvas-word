@@ -7,7 +7,7 @@ import type { DocSelection, Document, Fragment, ReviewLayer, UserInfo } from "@c
 import type { ChildDocument, EditMode, FieldResolver } from "../index";
 import type { DecorationSpec } from "../decorations";
 import type { ExportWarning } from "../export/exportDocument";
-import type { CjkConfig, DefaultStyleOverrides, EditorBehavior, EditorTheme, FloatingToolbarConfig, FontsConfig } from "../config";
+import type { CjkConfig, ContextToolbarSpec, DefaultStyleOverrides, EditorBehavior, EditorTheme, FloatingToolbarConfig, FontsConfig } from "../config";
 import type { CustomizeRibbon } from "../ribbon";
 import type { EditorCommand } from "../commands";
 import type { LoadProgress } from "./loadProgress";
@@ -224,6 +224,8 @@ export interface WordCanvasRuntime {
   /** Floating mini-toolbar above a text selection: toggle, or customize its
    *  controls / caret behavior. */
   floatingToolbar?: FloatingToolbarConfig | undefined;
+  /** Register custom contextual floating toolbars. */
+  contextToolbars?: ContextToolbarSpec[] | undefined;
   /** Custom fonts (URL-loaded faces + sizing) and toolbar disables. */
   fonts?: FontsConfig | undefined;
   /** CJK locale + fallback font tuning. */

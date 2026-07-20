@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Contextual floating toolbars — one framework, priority-based.** The two hand-wired floating
+  mini-toolbars (image + text selection) are now unified under a single manager that shows the one
+  most-relevant bar for whatever the caret/selection is on. Built-ins: the **image** bar (priority
+  30), a new **table** bar (28 — merge / insert & delete rows & columns, shown when 2+ cells are
+  selected), a new **hyperlink** bar (25 — Open / Edit / Copy / Remove, shown when the caret sits in
+  a link), and the **text format** bar (20). Highest priority wins, so a selected image beats a text
+  selection and a text *range* inside a link still shows the format bar. A new **public
+  `contextToolbars` option** lets an embedder register their own context bars: each spec has a
+  `when(ctx)` predicate over a `ToolbarContext` (format flags incl. `inTable`/`inContentControl`,
+  selection, `hasRange`, `linkUrl`, anchor helpers), `buttons` (the same custom-button shape as
+  `floatingToolbar` / the ribbon), an optional `priority` (default 15), and an optional `anchor(ctx)`.
+  New editor accessors back it: `linkAtCaret()` (+ position-based `linkAtPosition`) and
+  `getCellSelectionRect()`. See the [`context-toolbars`](./examples/context-toolbars) example.
 - **Floating format toolbar (Word's selection mini-toolbar).** Selecting text now pops a compact
   toolbar just above the selection with the most-used character formatting — font family, font size
   (grow/shrink + presets), **Bold / Italic / Underline / Strikethrough**, text colour, highlight, and

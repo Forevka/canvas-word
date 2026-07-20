@@ -14,6 +14,7 @@ each consuming the package by name the way a third-party integrator would.
 | [`ribbon-customization`](./ribbon-customization) | Customize the ribbon (`customizeRibbon`) — reorder/remove built-ins, add tabs/buttons, macros + popups | None (static HTML) | [![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/ribbon-customization) |
 | [`command-registry`](./command-registry) | Register custom commands + keyboard shortcuts (`commands`) — cross-platform `Mod+…` bindings, `handle.runCommand`, built-ins always win | None (static HTML) | [![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/command-registry) |
 | [`floating-toolbar`](./floating-toolbar) | Configure the floating selection mini-toolbar (`floatingToolbar`) — toggle it, pick/reorder built-in buttons, show it at a caret, add custom buttons | None (static HTML) | [![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/floating-toolbar) |
+| [`context-toolbars`](./context-toolbars) | Contextual floating toolbars — built-in image/hyperlink/text bars + a custom one registered via `contextToolbars` (priority-based, one shows at a time) | None (static HTML) | [![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/context-toolbars) |
 | [`decorations`](./decorations) | Draw custom overlays at document coordinates (`setDecorations`) — highlight/underline/box a range, badge a position; anchored across edits | None (static HTML) | [![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/decorations) |
 | [`custom-block`](./custom-block) | Add a new canvas-drawn block type (`registerBlockType`) — a bar-chart block that paginates like an image; lossy `.docx` export | None (static HTML) | [![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/custom-block) |
 | [`custom-fonts`](./custom-fonts) | Supply your own fonts (`fonts`) — a self-hosted PT Serif (4 faces + sizing), hide a built-in, export with the font embedded | None (static HTML) | [![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Forevka/canvas-word/tree/main/examples/custom-fonts) |
@@ -30,8 +31,8 @@ Each **Open in StackBlitz** button boots the example in the browser against the
 - The **Vite** examples (`embed-live`, `playground`, `query-edit`, `merge-docs`,
   `embed-multi`, `editor-constructor`) install the package and run under Vite.
 - The **static** examples (`embed-offline`, `ribbon-customization`,
-  `command-registry`, `floating-toolbar`, `decorations`, `custom-block`,
-  `custom-fonts`) keep their
+  `command-registry`, `floating-toolbar`, `context-toolbars`, `decorations`,
+  `custom-block`, `custom-fonts`) keep their
   no-build browser import map but each declares `@forevka/wordcanvas` as a
   dependency plus a `serve` static server (`npm start`), so StackBlitz installs
   the published package into the example's own `node_modules` and the import map's
