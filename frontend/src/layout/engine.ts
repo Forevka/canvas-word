@@ -1931,6 +1931,12 @@ function layoutDocument(
       // Out-of-flow anchor: place absolutely, advance nothing, no gap.
       if (m.block.anchor) { placeImage(m.block); continue; }
       if (!prevAtomic) y += ATOMIC_GAP;
+      // A block image is atomic — it can't flow beside a float — so drop below
+      // any float still active at y (like tables/equations/custom). Otherwise a
+      // float (square-wrap) image immediately followed by another block image
+      // would place the second one at the un-advanced y, painting it on top of
+      // the float and hiding the floated image (#201).
+      for (const f of floats) if (f.bottom > y) y = f.bottom;
       placeImage(m.block);
       if (!nextAtomic && (m.block.wrap !== "square" || m.block.align === "center")) y += ATOMIC_GAP;
       continue;

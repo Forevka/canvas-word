@@ -1060,6 +1060,18 @@ describe("engine — floats", () => {
     expect(tablePb.y).toBeGreaterThanOrEqual(imgPb.y + 100);
   });
 
+  it("drops a following block image below an active float instead of overlapping it", () => {
+    // Regression for #201: wrapping the first of two consecutive images made it
+    // vanish — the second (block) image was placed at the float's un-advanced y and
+    // painted over it. A block image is atomic, so it must sit below the float.
+    const first = leftFloat(200, 100);
+    const second = image(150, 110); // a plain block image following the float
+    const tree = layout(doc([first, second]));
+    const firstPb = placedOf(tree, first.id)!.pb;
+    const secondPb = placedOf(tree, second.id)!.pb;
+    expect(secondPb.y).toBeGreaterThanOrEqual(firstPb.y + 100);
+  });
+
   it("hangs a list marker beside a left float, not stranded on top of it", () => {
     const img = leftFloat(200, 100);
     const item = para("Item text that flows beside the floated image and wraps onward", {

@@ -51,6 +51,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **de-dups** so a copy/pasted image never repeats an id.
 
 ### Fixed
+- **Wrapping the first of two consecutive images no longer makes it vanish.** Turning an image into a
+  square (text-wrap) float registers a float and does not advance the flow cursor, so following content
+  flows beside it. But the layout engine's image-placement branch — unlike the table/equation/custom
+  branches — did not drop below an active float first, so a float immediately followed by another
+  **block image** placed the second image at the float's un-advanced `y`, painting it directly over the
+  floated image and hiding it ([#201](https://github.com/Forevka/canvas-word/issues/201)). A block image
+  is atomic and cannot flow beside a float, so it now drops below any active float before placing —
+  matching how tables, equations, and custom blocks already behave.
 - **Inline images no longer gain an unclickable vertical gap in Word.** An exported inline image lived
   in a `w:p` whose `w:pPr` carried only `w:jc`, so in Word the image paragraph inherited the default
   paragraph spacing from `Normal` (space-after plus a line multiplier — e.g. 1.5×). That opened a
