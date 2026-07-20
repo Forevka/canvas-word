@@ -4,6 +4,7 @@ dist/
 
 # local agent state / scratch
 .omc/
+.agents/
 shots/
 .playwright-mcp/
 *.docx
@@ -23,6 +24,12 @@ RenderedReportsDocx_*
 frontend/dist-lib/
 frontend/dist-node/
 .codegraph/
+
+# .NET build artifacts (dotnet/ library, tools/OoxmlValidate, any csproj) — catch-all
+# on top of the per-project dotnet/.gitignore and tools/.gitignore
+bin/
+obj/
+*.user
 
 # Tauri desktop build output (Rust target + generated schemas)
 desktop/src-tauri/target/
