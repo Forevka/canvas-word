@@ -3356,16 +3356,26 @@ if (!readonly) {
     objectRect: () => editor.getSelectedObjectRect(),
   });
 
+  // Dispatch a command, then return focus to the editor so typing continues (the
+  // context bars act on click, like the ribbon).
+  const dispatchFocus = (cmd: Command): void => {
+    editor.dispatch(cmd);
+    editor.focus();
+  };
+
   // Equation bar (priority 29) — a selected equation block.
   manager.register(
     createEquationContextToolbar({
       anchorRect: () => editor.getSelectedEquationRect(),
       actions: {
-        edit: () => editor.editSelectedEquation(),
-        alignLeft: () => withSelectedObject((id) => editor.dispatch(setEquationAlignCmd(id, "left"))),
-        alignCenter: () => withSelectedObject((id) => editor.dispatch(setEquationAlignCmd(id, "center"))),
-        alignRight: () => withSelectedObject((id) => editor.dispatch(setEquationAlignCmd(id, "right"))),
-        remove: () => editor.deleteSelectedObject(),
+        edit: () => editor.editSelectedEquation(), // opens the equation dialog — keep its focus
+        alignLeft: () => withSelectedObject((id) => dispatchFocus(setEquationAlignCmd(id, "left"))),
+        alignCenter: () => withSelectedObject((id) => dispatchFocus(setEquationAlignCmd(id, "center"))),
+        alignRight: () => withSelectedObject((id) => dispatchFocus(setEquationAlignCmd(id, "right"))),
+        remove: () => {
+          editor.deleteSelectedObject();
+          editor.focus();
+        },
       },
     }),
   );
@@ -3377,10 +3387,19 @@ if (!readonly) {
       hasRangeSelection: isRangeSelection,
       anchorRect: () => editor.getSelectionAnchorRect(),
       actions: {
-        accept: (id) => editor.acceptSuggestion(id),
-        reject: (id) => editor.rejectSuggestion(id),
-        open: (id) => editor.revealReview(id),
-        resolve: (id, resolved) => editor.resolveThread(id, resolved),
+        accept: (id) => {
+          editor.acceptSuggestion(id);
+          editor.focus();
+        },
+        reject: (id) => {
+          editor.rejectSuggestion(id);
+          editor.focus();
+        },
+        open: (id) => editor.revealReview(id), // navigates to the thread — don't steal focus
+        resolve: (id, resolved) => {
+          editor.resolveThread(id, resolved);
+          editor.focus();
+        },
       },
     }),
   );
@@ -3393,6 +3412,7 @@ if (!readonly) {
       anchorRect: () => editor.getSelectionAnchorRect(),
       update: () => {
         editor.recalculateToc();
+        editor.focus();
       },
     }),
   );
@@ -3404,9 +3424,9 @@ if (!readonly) {
       hasRangeSelection: isRangeSelection,
       anchorRect: () => editor.getSelectionAnchorRect(),
       actions: {
-        promote: () => editor.dispatch(changeListLevel(-1)),
-        demote: () => editor.dispatch(changeListLevel(1)),
-        removeList: () => editor.dispatch(toggleList(editor.currentFormat().listKind === "bullet" ? "bullet" : "decimal")),
+        promote: () => dispatchFocus(changeListLevel(-1)),
+        demote: () => dispatchFocus(changeListLevel(1)),
+        removeList: () => dispatchFocus(toggleList(editor.currentFormat().listKind === "bullet" ? "bullet" : "decimal")),
       },
     }),
   );
@@ -3418,18 +3438,19 @@ if (!readonly) {
       anchorRect: () => editor.getSelectionAnchorRect(),
       openMenu: (anchorEl) => {
         const r = anchorEl.getBoundingClientRect();
+        const insert = (cmd: Command): (() => void) => () => dispatchFocus(cmd);
         const entries: MenuEntry[] = [
-          { kind: "item", label: "Heading 1", onClick: () => editor.dispatch(applyNamedStyle("Heading1")) },
-          { kind: "item", label: "Heading 2", onClick: () => editor.dispatch(applyNamedStyle("Heading2")) },
-          { kind: "item", label: "Heading 3", onClick: () => editor.dispatch(applyNamedStyle("Heading3")) },
+          { kind: "item", label: "Heading 1", onClick: insert(applyNamedStyle("Heading1")) },
+          { kind: "item", label: "Heading 2", onClick: insert(applyNamedStyle("Heading2")) },
+          { kind: "item", label: "Heading 3", onClick: insert(applyNamedStyle("Heading3")) },
           { kind: "sep" },
-          { kind: "item", label: "Bulleted list", onClick: () => editor.dispatch(toggleList("bullet")) },
-          { kind: "item", label: "Numbered list", onClick: () => editor.dispatch(toggleList("decimal")) },
+          { kind: "item", label: "Bulleted list", onClick: insert(toggleList("bullet")) },
+          { kind: "item", label: "Numbered list", onClick: insert(toggleList("decimal")) },
           { kind: "sep" },
-          { kind: "item", label: "Table", onClick: () => editor.dispatch(insertTable(3, 3)) },
-          { kind: "item", label: "Page break", onClick: () => editor.dispatch(insertPageBreak()) },
-          { kind: "item", label: "Table of contents", onClick: () => editor.dispatch(insertTocCmd()) },
-          { kind: "item", label: "Footnote", onClick: () => editor.dispatch(insertFootnoteCmd()) },
+          { kind: "item", label: "Table", onClick: insert(insertTable(3, 3)) },
+          { kind: "item", label: "Page break", onClick: insert(insertPageBreak()) },
+          { kind: "item", label: "Table of contents", onClick: insert(insertTocCmd()) },
+          { kind: "item", label: "Footnote", onClick: insert(insertFootnoteCmd()) },
         ];
         showContextMenu(r.left, r.bottom + 2, entries);
       },
