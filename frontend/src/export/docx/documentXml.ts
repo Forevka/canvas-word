@@ -31,6 +31,7 @@ import { borderEdgeXml, hexColor as hex } from "./mappings";
 import { MediaManager } from "./mediaPack";
 import { REL, RelManager } from "./relationships";
 import { paraBordersXml, paraCoreXml, runPropsXml as rPrXml, shdClearXml, shdFillXml } from "./styleProps";
+import { orderChildren, PPR_ORDER, SECTPR_ORDER, TCPR_ORDER } from "./schemaOrder";
 import { getBlockType } from "../../blockRegistry";
 import { el, escapeText, textEl, WML_NS, XML_DECL } from "./xmlWrite";
 import { mathmlToOmml } from "../../mathml/toOmml";
@@ -243,6 +244,16 @@ function sdtPrXml(props: SdtProps | undefined): string {
   const c: string[] = [];
   if (props.alias) c.push(el("w:alias", { "w:val": props.alias }));
   if (props.tag) c.push(el("w:tag", { "w:val": props.tag }));
+  // w:lock is a metadata child and MUST precede the control-type element (w:text,
+  // w:dropDownList, w:date, w14:checkbox, …), which is the final child of CT_SdtPr.
+  // Word rejects a lock that follows the type element (issue #180).
+  if (props.lockContent || props.lockControl) {
+    const v =
+      props.lockContent && props.lockControl ? "sdtContentLocked"
+      : props.lockContent ? "contentLocked"
+      : "sdtLocked";
+    c.push(el("w:lock", { "w:val": v }));
+  }
   if (props.placeholder) c.push(el("w:showingPlcHdr"));
   if (props.type === "plainText") c.push(el("w:text"));
   else if (props.type === "dropDown" || props.type === "comboBox") {
@@ -257,13 +268,6 @@ function sdtPrXml(props: SdtProps | undefined): string {
     if (props.checkedSymbol) box.push(el("w14:checkedState", { "w14:font": props.checkedSymbol.font, "w14:val": props.checkedSymbol.val }));
     if (props.uncheckedSymbol) box.push(el("w14:uncheckedState", { "w14:font": props.uncheckedSymbol.font, "w14:val": props.uncheckedSymbol.val }));
     c.push(el("w14:checkbox", undefined, box.join("")));
-  }
-  if (props.lockContent || props.lockControl) {
-    const v =
-      props.lockContent && props.lockControl ? "sdtContentLocked"
-      : props.lockContent ? "contentLocked"
-      : "sdtLocked";
-    c.push(el("w:lock", { "w:val": v }));
   }
   return el("w:sdtPr", undefined, c.join(""));
 }
@@ -313,13 +317,11 @@ function pPrXml(style: ParaStyle, ctx: PartCtx, markRun?: CharStyle): string {
   // w:shd so a "No Color" over a shaded named style survives the round-trip.
   if (style.shading) c.push(shdFillXml(style.shading));
   else if (style.shadingCleared) c.push(shdClearXml());
-  // Explicit "ltr" emits w:bidi="0" (round-trips an imported w:bidi="0", clearing
-  // an inherited RTL style); undefined stays absent.
-  if (style.direction === "rtl") c.push(el("w:bidi"));
-  else if (style.direction === "ltr") c.push(el("w:bidi", { "w:val": "0" }));
 
-  // spacing / indent / jc / tabs — shared with the TOC generator.
-  c.push(paraCoreXml(style));
+  // bidi / spacing / indent / contextualSpacing / jc / tabs — shared with the TOC
+  // generator. paraCoreXml owns w:bidi (do NOT re-emit it here or the pPr would
+  // carry two of them). Its elements are spread in so the whole pPr sorts as one list.
+  c.push(...paraCoreXml(style));
 
   // The paragraph mark's run props size empty lines on re-import.
   if (markRun) c.push(rPrXml(markRun));
@@ -327,7 +329,9 @@ function pPrXml(style: ParaStyle, ctx: PartCtx, markRun?: CharStyle): string {
   // A mid-document section break rides the paragraph that ENDS the section.
   if (style.sectionBreak) c.push(sectPrXml(style.sectionBreak.props, ctx, () => "", false, style.sectionBreak.type));
 
-  return el("w:pPr", undefined, c.join(""));
+  // Word enforces CT_PPr's xsd:sequence — the pushes above are in a convenient
+  // (grouped) order; sort to the schema order before emitting (issue #180).
+  return el("w:pPr", undefined, orderChildren(c, PPR_ORDER).join(""));
 }
 
 const bookmarkEl = (m: ExportBookmarkMark): string =>
@@ -494,7 +498,9 @@ function cellXml(cell: TableCell, ctx: PartCtx, vMergeRestart = false): string {
   if (cell.vAlign === "center" || cell.vAlign === "bottom") pr.push(el("w:vAlign", { "w:val": cell.vAlign }));
   // w:hideMark is the LAST child of CT_TcPr.
   if (cell.hideMark) pr.push(el("w:hideMark"));
-  const tcPr = el("w:tcPr", undefined, pr.join(""));
+  // Word enforces CT_TcPr's xsd:sequence (e.g. w:tcBorders must precede w:shd) —
+  // sort to schema order (issue #180).
+  const tcPr = el("w:tcPr", undefined, orderChildren(pr, TCPR_ORDER).join(""));
   // A cell must contain at least one paragraph.
   const content = cell.blocks.length > 0 ? emitBlocks(cell.blocks, 0, ctx) : el("w:p");
   return el("w:tc", undefined, tcPr + content);
@@ -525,7 +531,7 @@ function continueCellXml(m: PendingMerge): string {
     if (isFinalBand && m.borders.bottom) b.bottom = m.borders.bottom;
     if (b.left || b.right || b.bottom) pr.push(bordersXml("w:tcBorders", b));
   }
-  return el("w:tc", undefined, el("w:tcPr", undefined, pr.join("")) + el("w:p"));
+  return el("w:tc", undefined, el("w:tcPr", undefined, orderChildren(pr, TCPR_ORDER).join("")) + el("w:p"));
 }
 
 /** w:trPr — row properties. w:cantSplit/w:tblHeader are on/off toggles; w:trHeight
@@ -1047,7 +1053,10 @@ export function sectPrXml(
   // sectPr omits w:type for the default (nextPage) but emits an even/odd parity
   // start when the final section requests one.
   if (!isBody || breakType !== "nextPage") c.push(el("w:type", { "w:val": breakType }));
-  return el("w:sectPr", undefined, c.join(""));
+  // Word enforces CT_SectPr's xsd:sequence — the pushes above group header/footer
+  // refs, sizing, borders and w:type by concern; sort to the schema order before
+  // emitting (w:type precedes w:pgSz, w:titlePg trails w:cols, …) (issue #180).
+  return el("w:sectPr", undefined, orderChildren(c, SECTPR_ORDER).join(""));
 }
 
 export interface BuildResult {

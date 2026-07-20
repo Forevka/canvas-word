@@ -25,6 +25,7 @@ import { runImport } from "../import/docx/pipeline";
 import { createLayoutEngine } from "../layout/engine";
 import { pageOfBlockMap } from "./recalcToc";
 import { paraCoreXml, runPropsXml } from "../export/docx/styleProps";
+import { orderChildren, PPR_ORDER } from "../export/docx/schemaOrder";
 import { el, escapeText, textEl } from "../export/docx/xmlWrite";
 
 // --- OOXML serialization for the generated entries (full rPr/pPr shared with the
@@ -52,7 +53,7 @@ function entryXml(
 ): string {
   const { char, para } = tocEntryStyle(opts, e.level, contentWidthPx);
   const rPr = runPropsXml(char);
-  let body = el("w:pPr", undefined, paraCoreXml(para));
+  let body = el("w:pPr", undefined, orderChildren(paraCoreXml(para), PPR_ORDER).join(""));
   if (ctx.first) body += fld("begin") + instrRun(ctx.instr) + fld("separate");
   const sep = ctx.separator && ctx.separator !== "\t" ? el("w:r", undefined, rPr + textEl(ctx.separator)) : el("w:r", undefined, rPr + el("w:tab"));
   const num = e.numText

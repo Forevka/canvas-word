@@ -5,6 +5,7 @@
 import type { CellBorders, CharStyle, ParaStyle, TableCond, TableCondProps, TableStyle, TabStop } from "@cw/shared";
 import { multiplierToLine, pxToHalfPoints, pxToTwips } from "../units";
 import { borderEdgeXml, HIGHLIGHT_NAME, hexColor as hex, JC, TAB_LEADER, TAB_VAL } from "./mappings";
+import { orderChildren, PPR_ORDER, RPR_ORDER } from "./schemaOrder";
 import { el } from "./xmlWrite";
 
 /** w:u attributes for a run: the line style (w:val) + optional color. underline
@@ -24,7 +25,7 @@ const runBorderXml = (b: NonNullable<CharStyle["runBorder"]>): string => borderE
  *  width scaling, kerning, baseline position, run border, fitText, and emphasis
  *  marks. Only DEFINED/truthy fields are emitted, so a run without them serializes
  *  exactly as before (no drift). */
-function runEffectsXml(s: Partial<CharStyle>): string {
+function runEffectsXml(s: Partial<CharStyle>): string[] {
   const out: string[] = [];
   // Emit explicit on/off (w:val="1"/"0") whenever DEFINED — so a style patch's
   // `false` can clear an inherited w:rStyle value, mirroring w:b/w:i/w:strike.
@@ -51,7 +52,7 @@ function runEffectsXml(s: Partial<CharStyle>): string {
   if (s.runBorder) out.push(runBorderXml(s.runBorder));
   if (s.fitTextPx !== undefined) out.push(el("w:fitText", { "w:val": pxToTwips(s.fitTextPx) }));
   if (s.emphasisMark) out.push(el("w:em", { "w:val": s.emphasisMark }));
-  return out.join("");
+  return out;
 }
 
 // Full rPr serializer: every toggle written explicitly (on/off) so a run's
@@ -112,20 +113,22 @@ export function runPropsXml(s: CharStyle): string {
     children.push(el("w:highlight", { "w:val": "none" }));
   }
   if (s.verticalAlign) children.push(el("w:vertAlign", { "w:val": s.verticalAlign === "super" ? "superscript" : "subscript" }));
-  const effects = runEffectsXml(s);
-  if (effects) children.push(effects);
+  children.push(...runEffectsXml(s));
   // Emit an explicit OFF (w:val="0") so an imported w:rtl="0" round-trips and can
   // still clear an inherited RTL run style; undefined stays absent.
   if (s.rtl === true) children.push(el("w:rtl"));
   else if (s.rtl === false) children.push(el("w:rtl", { "w:val": "0" }));
-  return el("w:rPr", undefined, children.join(""));
+  // Word enforces CT_RPr's xsd:sequence — sort to schema order (issue #180).
+  return el("w:rPr", undefined, orderChildren(children, RPR_ORDER).join(""));
 }
 
-// The spacing/indent/jc/tabs core shared by every full pPr: returned as
-// concatenated child elements (NOT wrapped in w:pPr) so the main exporter can
-// interleave it with pStyle/numPr/breaks/section props, while the TOC generator
-// wraps it directly. Emission order matches OOXML's tolerant exporter convention.
-export function paraCoreXml(style: ParaStyle): string {
+// The spacing/indent/jc/tabs core shared by every full pPr: returned as a LIST of
+// child elements (NOT wrapped in w:pPr) so the main exporter can interleave them with
+// pStyle/numPr/breaks/section props and sort the merged list to schema order, while
+// the TOC generator wraps them directly (also via orderChildren). The elements are
+// pushed in a convenient order; `orderChildren`/PPR_ORDER give them their final,
+// Word-valid CT_PPr sequence (issue #180).
+export function paraCoreXml(style: ParaStyle): string[] {
   const c: string[] = [];
   // w:bidi precedes w:spacing/w:ind/w:jc in the CT_PPr schema sequence. An explicit
   // "ltr" emits w:bidi="0" so an imported w:bidi="0" round-trips (clears inherited
@@ -162,7 +165,7 @@ export function paraCoreXml(style: ParaStyle): string {
   if (style.tabStops && style.tabStops.length > 0) {
     c.push(el("w:tabs", undefined, style.tabStops.map(tabXml).join("")));
   }
-  return c.join("");
+  return c;
 }
 
 /** One w:tab element — a real stop, or an explicit clear (issue #154) that re-emits
@@ -199,9 +202,8 @@ export function partialRPrXml(c: Partial<CharStyle>): string {
     if (name) out.push(el("w:highlight", { "w:val": name }));
   }
   if (c.verticalAlign) out.push(el("w:vertAlign", { "w:val": c.verticalAlign === "super" ? "superscript" : "subscript" }));
-  const effects = runEffectsXml(c);
-  if (effects) out.push(effects);
-  return out.length > 0 ? el("w:rPr", undefined, out.join("")) : "";
+  out.push(...runEffectsXml(c));
+  return out.length > 0 ? el("w:rPr", undefined, orderChildren(out, RPR_ORDER).join("")) : "";
 }
 
 // w:pBdr — paragraph borders. Only edges that are set are written (no "explicit
@@ -271,7 +273,8 @@ export function partialPPrXml(p: Partial<ParaStyle>): string {
   if (p.tabStops && p.tabStops.length > 0) {
     out.push(el("w:tabs", undefined, p.tabStops.map(tabXml).join("")));
   }
-  return out.length > 0 ? el("w:pPr", undefined, out.join("")) : "";
+  // Word enforces CT_PPr's xsd:sequence — sort to schema order (issue #180).
+  return out.length > 0 ? el("w:pPr", undefined, orderChildren(out, PPR_ORDER).join("")) : "";
 }
 
 // ---------------------------------------------------------------------------
