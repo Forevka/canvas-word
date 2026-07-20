@@ -30,9 +30,17 @@ Then open `http://localhost:3000/examples/context-toolbars/`. Try:
 | Bar | Shows when | Priority |
 | --- | --- | --- |
 | Image | an image is selected | 30 |
+| Equation | an equation is selected — edit / align / delete | 29 |
 | Table | 2+ table cells are selected (drag across cells) — merge, insert/delete rows & columns | 28 |
+| Comment/suggestion | caret inside a comment thread or tracked change — accept/reject · open/resolve | 26 |
 | Hyperlink | the caret (collapsed) is inside a link | 25 |
+| TOC | caret inside a table-of-contents entry — update | 22 |
 | Text format | a range is selected (or a caret, if `floatingToolbar.onCaret`) | 20 |
+| List item | caret in a bulleted/numbered list — promote / demote / remove | 18 |
+| Empty paragraph | caret on an empty line — a ＋ insert menu (heading / list / table / page break / TOC / footnote) | 16 |
+
+The 5 caret-driven bars (comment, TOC, list, empty-paragraph — and hyperlink) show on a
+*collapsed caret* only, so selecting a text range still gets the format bar.
 
 Higher priority wins, so a selected image always beats a text selection, and a text
 *range* inside a link shows the format bar (not the link bar). All are edit-only.

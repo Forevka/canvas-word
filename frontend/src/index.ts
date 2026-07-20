@@ -338,6 +338,20 @@ export interface Editor {
   /** Viewport bounding rect of a MULTI-cell table selection (2+ rows/columns), or
    *  null. Anchors the table context toolbar. */
   getCellSelectionRect(): { left: number; top: number; width: number; height: number } | null;
+  /** Viewport rect of the selected EQUATION block, or null. Anchors the equation
+   *  context toolbar (images use getSelectedObjectRect). */
+  getSelectedEquationRect(): { left: number; top: number; width: number; height: number } | null;
+  /** Open the equation editor for the currently selected equation block (no-op if
+   *  none). Reuses the same editor the right-click "Edit Equation…" opens. */
+  editSelectedEquation(): void;
+  /** True when the caret is inside a Table-of-Contents entry paragraph. */
+  caretInToc(): boolean;
+  /** True when the caret is collapsed in an empty paragraph (drives the Notion-style
+   *  insert menu). */
+  caretInEmptyParagraph(): boolean;
+  /** The review item (comment thread or tracked-change suggestion) whose range
+   *  contains the caret, or null. Drives the review context toolbar. */
+  reviewAtCaret(): { kind: "comment" | "suggestion"; id: string; resolved?: boolean } | null;
   /** Delete the selected image and clear the object selection. */
   deleteSelectedObject(): void;
   // ---- develop-mode Document-tree inspector --------------------------------
@@ -3653,6 +3667,47 @@ export function createEditor(
       const x2 = Math.max(...same.map((r) => r.x + r.width));
       const y2 = Math.max(...same.map((r) => r.y + r.height));
       return pageRectToClient(pageIndex, x, y, x2 - x, y2 - y);
+    },
+    getSelectedEquationRect: (): { left: number; top: number; width: number; height: number } | null => {
+      if (!selectedObject || !locateEquation(doc, selectedObject)) return null;
+      const r = objectRect(tree, selectedObject);
+      return r ? pageRectToClient(r.pageIndex, r.x, r.y, r.width, r.height) : null;
+    },
+    editSelectedEquation: (): void => {
+      const eq = selectedObject ? locateEquation(doc, selectedObject)?.block : undefined;
+      if (!eq) return;
+      const blk = eq;
+      withEquationEditor(({ showEquationEditor, equationToMathmlString }) =>
+        showEquationEditor({
+          editing: true,
+          initialDisplay: true,
+          initialMathml: equationToMathmlString(blk.equation),
+          onApply: (next) => dispatch(editEquationCmd(blk.id, next)),
+        }),
+      );
+    },
+    caretInToc: (): boolean => {
+      if (!selection) return false;
+      const id = selection.focus.blockId;
+      // A populated TOC's entries carry `tocEntry`; an empty/placeholder TOC is just
+      // the `tocAnchorBlockId` paragraph — match both so Update is always reachable.
+      if (doc.tocAnchorBlockId === id) return true;
+      const b = blockById(doc, id);
+      return b?.kind === "paragraph" && !!b.style.tocEntry;
+    },
+    caretInEmptyParagraph: (): boolean => {
+      if (!selection || !isCollapsed(selection)) return false;
+      const b = blockById(doc, selection.focus.blockId);
+      return b?.kind === "paragraph" && textOfRuns(b.runs).length === 0;
+    },
+    reviewAtCaret: (): { kind: "comment" | "suggestion"; id: string; resolved?: boolean } | null => {
+      if (!selection) return null;
+      const caret = selection.focus;
+      const inAnchor = (a: { start: DocPosition; end: DocPosition }): boolean =>
+        comparePositions(tree, a.start, caret, scope()) <= 0 && comparePositions(tree, caret, a.end, scope()) <= 0;
+      for (const s of review.suggestions) if (inAnchor(s.anchor)) return { kind: "suggestion", id: s.id };
+      for (const t of review.threads) if (inAnchor(t.anchor)) return { kind: "comment", id: t.id, resolved: t.status === "resolved" };
+      return null;
     },
     deleteSelectedObject: deleteSelectedObjectInternal,
     setInspectorHighlight: (target: InspectorTarget | null): void => {

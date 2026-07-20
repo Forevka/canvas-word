@@ -6,6 +6,36 @@
 // context is active and renders itself there.
 
 import { anchorInView, placeSelectionBar, type AnchorRect } from "./floatingBarPosition";
+import { injectCssOnce } from "./styles";
+
+// Shared look for the built-in context bars (equation / review / TOC / list / insert
+// menu). Apply the `cw-ctxbar` class alongside a bar-specific one and call
+// `injectCtxBarCss()` once; per-bar CSS then only needs overrides.
+const CTX_BAR_CSS = `
+.cw-ctxbar{position:fixed;display:none;align-items:center;gap:2px;z-index:41;
+  background:#fff;border:1px solid #c8c6c4;border-radius:6px;padding:3px;
+  box-shadow:0 3px 12px rgba(0,0,0,.18);font:13px Arial,sans-serif;color:#323130;
+  user-select:none;white-space:nowrap;}
+.cw-ctxbar button{height:26px;min-width:26px;display:inline-flex;align-items:center;
+  justify-content:center;gap:4px;padding:0 8px;border:1px solid transparent;border-radius:4px;
+  background:transparent;cursor:pointer;color:#323130;font:13px Arial,sans-serif;}
+.cw-ctxbar button:hover{background:#e1dfdd;}
+.cw-ctxbar button.active{background:#cfe2ff;border-color:#9ac2ff;}
+.cw-ctxbar button.danger:hover{background:#fde7e9;color:#a4262c;}
+.cw-ctxbar button svg{width:16px;height:16px;}
+.cw-ctxbar .sep{width:1px;height:18px;background:#e1dfdd;margin:0 3px;flex:0 0 auto;}
+@media (prefers-color-scheme: dark){
+  :root[data-theme="dark"] .cw-ctxbar{background:#2b2b2b;border-color:#4a4a4a;color:#e6e6e6;}
+  :root[data-theme="dark"] .cw-ctxbar button{color:#e6e6e6;}
+  :root[data-theme="dark"] .cw-ctxbar button:hover{background:#3c3c3c;}
+  :root[data-theme="dark"] .cw-ctxbar button.active{background:#264b73;border-color:#3d6ba5;}
+  :root[data-theme="dark"] .cw-ctxbar .sep{background:#4a4a4a;}
+}`;
+
+/** Inject the shared context-bar stylesheet once (idempotent). */
+export function injectCtxBarCss(): void {
+  injectCssOnce("cw-ctxbar-shared", CTX_BAR_CSS);
+}
 
 /** A body-level `position:fixed` bar: the shared DOM + placement/visibility the
  *  image and text bars both need. Content is built by the caller into `.el`. */

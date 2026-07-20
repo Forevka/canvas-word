@@ -24,6 +24,11 @@ import { createContextToolbarManager } from "./ui/contextToolbar";
 import { createImageContextToolbar } from "./ui/imageContextToolbar";
 import { createLinkContextToolbar } from "./ui/linkContextToolbar";
 import { createTableContextToolbar } from "./ui/tableContextToolbar";
+import { createEquationContextToolbar } from "./ui/equationContextToolbar";
+import { createReviewContextToolbar } from "./ui/reviewContextToolbar";
+import { createTocContextToolbar } from "./ui/tocContextToolbar";
+import { createListContextToolbar } from "./ui/listContextToolbar";
+import { createInsertMenuToolbar } from "./ui/insertMenuToolbar";
 import { createCustomContextToolbar } from "./ui/customContextToolbar";
 import type { FloatingToolbarButtonSpec, ToolbarContext } from "./config";
 import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
@@ -77,6 +82,8 @@ import {
   removeBookmarkCmd,
   renameBookmarkCmd,
   toggleList,
+  changeListLevel,
+  setEquationAlignCmd,
   applyListStyleCmd,
   toggleMultilevelList,
   toggleHighlight,
@@ -3253,7 +3260,8 @@ if (!readonly) {
   const manager = createContextToolbarManager({ scrollEl: app, signal: teardown.signal });
 
   // Image bar (priority 30) — the highest, so a selected image always wins.
-  const withImg = (fn: (id: string) => void): void => {
+  // Run `fn` with the selected object's id (the image or equation the bar acts on).
+  const withSelectedObject = (fn: (id: string) => void): void => {
     const id = editor.getSelectedObject();
     if (id) fn(id);
   };
@@ -3261,8 +3269,8 @@ if (!readonly) {
     createImageContextToolbar({
       anchorRect: () => editor.getSelectedObjectRect(),
       actions: {
-        wrapInline: () => withImg((id) => editor.dispatch(setImageProps(id, { wrap: "block", align: "center" }))),
-        wrapSquare: () => withImg((id) => editor.dispatch(setImageProps(id, { wrap: "square", align: "left" }))),
+        wrapInline: () => withSelectedObject((id) => editor.dispatch(setImageProps(id, { wrap: "block", align: "center" }))),
+        wrapSquare: () => withSelectedObject((id) => editor.dispatch(setImageProps(id, { wrap: "square", align: "left" }))),
         alignLeft: () => editor.align("left"),
         alignCenter: () => editor.align("center"),
         alignRight: () => editor.align("right"),
@@ -3347,6 +3355,87 @@ if (!readonly) {
     selectionRect: () => editor.getSelectionAnchorRect(),
     objectRect: () => editor.getSelectedObjectRect(),
   });
+
+  // Equation bar (priority 29) — a selected equation block.
+  manager.register(
+    createEquationContextToolbar({
+      anchorRect: () => editor.getSelectedEquationRect(),
+      actions: {
+        edit: () => editor.editSelectedEquation(),
+        alignLeft: () => withSelectedObject((id) => editor.dispatch(setEquationAlignCmd(id, "left"))),
+        alignCenter: () => withSelectedObject((id) => editor.dispatch(setEquationAlignCmd(id, "center"))),
+        alignRight: () => withSelectedObject((id) => editor.dispatch(setEquationAlignCmd(id, "right"))),
+        remove: () => editor.deleteSelectedObject(),
+      },
+    }),
+  );
+
+  // Review bar (priority 26) — caret inside a comment thread or a suggestion.
+  manager.register(
+    createReviewContextToolbar({
+      review: () => editor.reviewAtCaret(),
+      hasRangeSelection: isRangeSelection,
+      anchorRect: () => editor.getSelectionAnchorRect(),
+      actions: {
+        accept: (id) => editor.acceptSuggestion(id),
+        reject: (id) => editor.rejectSuggestion(id),
+        open: (id) => editor.revealReview(id),
+        resolve: (id, resolved) => editor.resolveThread(id, resolved),
+      },
+    }),
+  );
+
+  // TOC bar (priority 22) — caret inside a Table-of-Contents entry.
+  manager.register(
+    createTocContextToolbar({
+      inToc: () => editor.caretInToc(),
+      hasRangeSelection: isRangeSelection,
+      anchorRect: () => editor.getSelectionAnchorRect(),
+      update: () => {
+        editor.recalculateToc();
+      },
+    }),
+  );
+
+  // List-item bar (priority 18) — caret in a bulleted/numbered list.
+  manager.register(
+    createListContextToolbar({
+      listKind: () => editor.currentFormat().listKind,
+      hasRangeSelection: isRangeSelection,
+      anchorRect: () => editor.getSelectionAnchorRect(),
+      actions: {
+        promote: () => editor.dispatch(changeListLevel(-1)),
+        demote: () => editor.dispatch(changeListLevel(1)),
+        removeList: () => editor.dispatch(toggleList(editor.currentFormat().listKind === "bullet" ? "bullet" : "decimal")),
+      },
+    }),
+  );
+
+  // Empty-paragraph insert menu (priority 16) — Notion-style ＋ on an empty line.
+  manager.register(
+    createInsertMenuToolbar({
+      onEmptyParagraph: () => editor.caretInEmptyParagraph(),
+      anchorRect: () => editor.getSelectionAnchorRect(),
+      openMenu: (anchorEl) => {
+        const r = anchorEl.getBoundingClientRect();
+        const entries: MenuEntry[] = [
+          { kind: "item", label: "Heading 1", onClick: () => editor.dispatch(applyNamedStyle("Heading1")) },
+          { kind: "item", label: "Heading 2", onClick: () => editor.dispatch(applyNamedStyle("Heading2")) },
+          { kind: "item", label: "Heading 3", onClick: () => editor.dispatch(applyNamedStyle("Heading3")) },
+          { kind: "sep" },
+          { kind: "item", label: "Bulleted list", onClick: () => editor.dispatch(toggleList("bullet")) },
+          { kind: "item", label: "Numbered list", onClick: () => editor.dispatch(toggleList("decimal")) },
+          { kind: "sep" },
+          { kind: "item", label: "Table", onClick: () => editor.dispatch(insertTable(3, 3)) },
+          { kind: "item", label: "Page break", onClick: () => editor.dispatch(insertPageBreak()) },
+          { kind: "item", label: "Table of contents", onClick: () => editor.dispatch(insertTocCmd()) },
+          { kind: "item", label: "Footnote", onClick: () => editor.dispatch(insertFootnoteCmd()) },
+        ];
+        showContextMenu(r.left, r.bottom + 2, entries);
+      },
+    }),
+  );
+
   for (const spec of config.contextToolbars) {
     manager.register(createCustomContextToolbar(spec, { context: buildContext, runButton: runCustomButton }));
   }
