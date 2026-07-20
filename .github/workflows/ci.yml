@@ -36,3 +36,33 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+  # Authoritative schema check: our tests only re-open exported files with our own
+  # lenient, order-independent importer, so schema-invalid output that Word rejects
+  # (issue #180 / #193) slipped through. Export the showcase document and validate it
+  # with the Open XML SDK — the same validation Word applies — failing on any error.
+  ooxml-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Export the showcase .docx
+        working-directory: frontend
+        env:
+          OOXML_OUT: ${{ runner.temp }}/showcase.docx
+        run: npx vitest run src/export/docx/showcaseArtifact.test.ts
+
+      - name: Validate the exported .docx against the OOXML schema (Open XML SDK)
+        run: dotnet run -c Release --project tools/OoxmlValidate -- "${{ runner.temp }}/showcase.docx"

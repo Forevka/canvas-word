@@ -1,0 +1,3 @@
+# .NET build artifacts for the dev/CI tools (e.g. OoxmlValidate).
+bin/
+obj/
