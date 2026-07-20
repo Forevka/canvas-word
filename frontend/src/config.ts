@@ -240,6 +240,9 @@ export interface ResolvedConfig {
   /** Show the "Organize Pages" ribbon button (Layout tab) that opens the visual
    *  page-reorder overlay. Default true; set false to hide it for an embed. */
   organizePages: boolean;
+  /** Show the floating mini-toolbar (quick B/I/U, font, size, colour) above a text
+   *  selection, so common formatting is reachable without the ribbon. Default true. */
+  floatingToolbar: boolean;
 }
 
 export interface EditorConfigInput {
@@ -253,6 +256,8 @@ export interface EditorConfigInput {
   develop?: boolean | undefined;
   /** Show the "Organize Pages" reorder overlay button. Default true. */
   organizePages?: boolean | undefined;
+  /** Show the floating mini-toolbar above a text selection. Default true. */
+  floatingToolbar?: boolean | undefined;
 }
 
 /** Resolve the public partial options into the fully-populated internal config. */
@@ -267,6 +272,7 @@ export function resolveConfig(input: EditorConfigInput = {}): ResolvedConfig {
     cjk: resolveCjk(input.cjk),
     develop: input.develop ?? false,
     organizePages: input.organizePages ?? true,
+    floatingToolbar: input.floatingToolbar ?? true,
   };
 }
 

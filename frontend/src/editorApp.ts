@@ -19,6 +19,7 @@ import type { EditorHandle, WordCanvasRuntime } from "./app/runtime";
 import { buildShell } from "./app/shell";
 import { ensureWordCanvasStyles } from "./ui/styles";
 import { showContextMenu, type MenuEntry } from "./ui/contextMenu";
+import { createFloatingFormatBar } from "./ui/floatingFormatBar";
 import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
 import { showDevPanel, type DevPanelHandle } from "./ui/devPanel";
 import { showPageLayout, type PageLayoutHandle } from "./ui/pageLayout";
@@ -128,6 +129,7 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
     ...(runtime.cjk ? { cjk: runtime.cjk } : {}),
     ...(runtime.develop !== undefined ? { develop: runtime.develop } : {}),
     ...(runtime.organizePages !== undefined ? { organizePages: runtime.organizePages } : {}),
+    ...(runtime.floatingToolbar !== undefined ? { floatingToolbar: runtime.floatingToolbar } : {}),
   });
   // This editor instance's own font registry — threaded into its layout engine and
   // paint layer (below) so its custom fonts can't be clobbered by another WordCanvas
@@ -265,6 +267,7 @@ let toggleRuler: () => boolean = () => false;
 let refreshVRuler: () => void = () => {};
 let toggleVRuler: () => boolean = () => false;
 let refreshImageBar: () => void = () => {};
+let refreshFloatingBar: () => void = () => {};
 let refreshBookmarks: () => void = () => {};
 let toggleBookmarks: () => void = () => {};
 let refreshReview: () => void = () => {};
@@ -351,6 +354,7 @@ const editorOpts = {
     refreshRuler();
     refreshVRuler();
     refreshImageBar();
+    refreshFloatingBar();
     refreshBookmarks();
     refreshDevPanel();
   },
@@ -360,6 +364,7 @@ const editorOpts = {
     refreshRuler();
     refreshVRuler();
     refreshImageBar();
+    refreshFloatingBar();
   },
 };
 let editor = createEditor(app, doc, editorOpts);
@@ -3268,6 +3273,54 @@ if (!readonly) {
   };
   app.addEventListener("scroll", () => refreshImageBar());
   window.addEventListener("resize", () => refreshImageBar(), { signal: teardown.signal });
+}
+
+// ---- floating format mini-toolbar (Word's selection toolbar) ----------------
+// Shows quick character formatting above a text selection. Edit-only (view mode
+// has nothing to format), and opt-out via config.floatingToolbar.
+if (!readonly && config.floatingToolbar) {
+  const isRangeSelection = (): boolean => {
+    const sel = editor.getSelection();
+    if (!sel) return false;
+    return sel.anchor.blockId !== sel.focus.blockId || sel.anchor.offset !== sel.focus.offset;
+  };
+  const clampSizePx = (pt: number): number => Math.min(96, Math.max(6, sharedPtToPx(pt)));
+  const fmtBar = createFloatingFormatBar({
+    anchorRect: () => editor.getSelectionAnchorRect(),
+    format: () => editor.currentFormat(),
+    hasRangeSelection: isRangeSelection,
+    fonts: () => toolbarFonts(config.fonts),
+    // Hide while an image owns the floating image toolbar (mutually exclusive).
+    suppressed: () => editor.getSelectedObject() !== null,
+    pxToPt: (px) => Math.round(sharedPxToPt(px) * 2) / 2,
+    focus: () => editor.focus(),
+    actions: {
+      toggle: (key) => editor.toggleStyle(key),
+      setFontFamily: (value) => editor.setCharStyle({ fontFamily: value }),
+      setFontSizePt: (pt) => {
+        if (Number.isFinite(pt)) editor.setCharStyle({ fontSizePx: clampSizePx(pt) });
+      },
+      setColor: (color) => editor.setCharStyle({ color }),
+      setHighlight: (color) => editor.dispatch(toggleHighlight(color)),
+      clearHighlight: () => editor.setCharStyle({ highlightColor: undefined }),
+      clearFormatting: () => {
+        editor.dispatch(clearCharFormatting());
+        editor.dispatch(applyNamedStyle("Normal"));
+      },
+    },
+  });
+  refreshFloatingBar = fmtBar.refresh;
+  teardown.signal.addEventListener("abort", () => fmtBar.destroy(), { once: true });
+  app.addEventListener("scroll", () => fmtBar.refresh());
+  window.addEventListener("resize", () => fmtBar.refresh(), { signal: teardown.signal });
+  // Dismiss on Escape so it doesn't linger over the caret after the user bails.
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      if (e.key === "Escape") fmtBar.hide();
+    },
+    { signal: teardown.signal },
+  );
 }
 
 // ---- page setup ------------------------------------------------------------

@@ -146,7 +146,10 @@ typing coalescence, pending styles at a collapsed caret, Ctrl+Enter page breaks.
 
 **Formatting** — bold/italic/underline/strike, font family/size, line and
 letter spacing, color, alignment including true justification (slack into
-`ctx.wordSpacing`), first-line indents.
+`ctx.wordSpacing`), first-line indents. A **floating mini-toolbar** pops above a
+text selection (Word's selection toolbar) for one-click font, size, B/I/U/S,
+colour, and highlight without leaving the caret — opt out with
+`floatingToolbar: false`.
 
 **Styles (Style Manager)** — one **Manage Styles** dialog to create/edit/delete
 styles for every OOXML-styleable entity, each with a live canvas preview:
