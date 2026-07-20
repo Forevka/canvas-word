@@ -137,6 +137,18 @@ export function createFloatingFormatBar(deps: FloatingFormatBarDeps): FloatingFo
     fn();
     deps.focus();
   };
+  // Reflect a toggle button's pressed state to both the visual class and assistive
+  // tech (the bar is a role="toolbar", so its toggles should expose aria-pressed).
+  const setPressed = (b: HTMLButtonElement, on: boolean): void => {
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-pressed", String(on));
+  };
+  /** A pressable toggle button (seeds aria-pressed="false"). */
+  const toggleButton = (cls: string, title: string, onClick: () => void): HTMLButtonElement => {
+    const b = button(cls, title, onClick);
+    b.setAttribute("aria-pressed", "false");
+    return b;
+  };
 
   // --- Font family -----------------------------------------------------------
   const fontBtn = button("cw-fmtbar-font", "Font", () => {
@@ -179,13 +191,13 @@ export function createFloatingFormatBar(deps: FloatingFormatBarDeps): FloatingFo
   sep();
 
   // --- Bold / Italic / Underline / Strikethrough -----------------------------
-  const bBtn = button("cw-fmtbar-b", "Bold (Ctrl+B)", () => act(() => deps.actions.toggle("bold")));
+  const bBtn = toggleButton("cw-fmtbar-b", "Bold (Ctrl+B)", () => act(() => deps.actions.toggle("bold")));
   bBtn.textContent = "B";
-  const iBtn = button("cw-fmtbar-i", "Italic (Ctrl+I)", () => act(() => deps.actions.toggle("italic")));
+  const iBtn = toggleButton("cw-fmtbar-i", "Italic (Ctrl+I)", () => act(() => deps.actions.toggle("italic")));
   iBtn.textContent = "I";
-  const uBtn = button("cw-fmtbar-u", "Underline (Ctrl+U)", () => act(() => deps.actions.toggle("underline")));
+  const uBtn = toggleButton("cw-fmtbar-u", "Underline (Ctrl+U)", () => act(() => deps.actions.toggle("underline")));
   uBtn.textContent = "U";
-  const sBtn = button("cw-fmtbar-s", "Strikethrough", () => act(() => deps.actions.toggle("strikethrough")));
+  const sBtn = toggleButton("cw-fmtbar-s", "Strikethrough", () => act(() => deps.actions.toggle("strikethrough")));
   sBtn.textContent = "S";
 
   sep();
@@ -203,7 +215,7 @@ export function createFloatingFormatBar(deps: FloatingFormatBarDeps): FloatingFo
   });
   colorBtn.textContent = "A";
 
-  const hlBtn = button("cw-fmtbar-hl", "Text highlight colour", () => {
+  const hlBtn = toggleButton("cw-fmtbar-hl", "Text highlight colour", () => {
     const entries: MenuEntry[] = [
       ...HIGHLIGHT_COLORS.map(
         (c): MenuEntry => ({
@@ -241,11 +253,11 @@ export function createFloatingFormatBar(deps: FloatingFormatBarDeps): FloatingFo
 
     // Sync pressed state + labels BEFORE measuring (label widths affect layout).
     const f = deps.format();
-    bBtn.classList.toggle("active", f.bold);
-    iBtn.classList.toggle("active", f.italic);
-    uBtn.classList.toggle("active", f.underline);
-    sBtn.classList.toggle("active", f.strikethrough);
-    hlBtn.classList.toggle("active", f.highlight);
+    setPressed(bBtn, f.bold);
+    setPressed(iBtn, f.italic);
+    setPressed(uBtn, f.underline);
+    setPressed(sBtn, f.strikethrough);
+    setPressed(hlBtn, f.highlight);
     if (f.fontFamily) {
       const match = deps.fonts().find((x) => x.value.toLowerCase() === f.fontFamily!.toLowerCase());
       fontLbl.textContent = match ? match.label : f.fontFamily;
