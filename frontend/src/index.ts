@@ -335,6 +335,9 @@ export interface Editor {
   /** The hyperlink URL at the caret (focus position), or null when there's no
    *  selection or the caret isn't on a link. Drives the hyperlink context toolbar. */
   linkAtCaret(): string | null;
+  /** Viewport bounding rect of a MULTI-cell table selection (2+ rows/columns), or
+   *  null. Anchors the table context toolbar. */
+  getCellSelectionRect(): { left: number; top: number; width: number; height: number } | null;
   /** Delete the selected image and clear the object selection. */
   deleteSelectedObject(): void;
   // ---- develop-mode Document-tree inspector --------------------------------
@@ -3633,6 +3636,24 @@ export function createEditor(
       return first ? pageRectToClient(first.pageIndex, first.x, first.y, first.width, first.height) : null;
     },
     linkAtCaret: (): string | null => (selection ? linkAtPosition(doc, selection.focus) : null),
+    getCellSelectionRect: (): { left: number; top: number; width: number; height: number } | null => {
+      // Only a MULTI-cell selection (2+ rows/columns) gets the table toolbar — a
+      // single cell is just a caret context.
+      if (!cellSelection) return null;
+      if (cellSelection.anchor.row === cellSelection.focus.row && cellSelection.anchor.col === cellSelection.focus.col) {
+        return null;
+      }
+      const rects = cellSelectionRects();
+      if (rects.length === 0) return null;
+      // Bounding box of the selection on its first (top-most) page.
+      const pageIndex = rects[0]!.pageIndex;
+      const same = rects.filter((r) => r.pageIndex === pageIndex);
+      const x = Math.min(...same.map((r) => r.x));
+      const y = Math.min(...same.map((r) => r.y));
+      const x2 = Math.max(...same.map((r) => r.x + r.width));
+      const y2 = Math.max(...same.map((r) => r.y + r.height));
+      return pageRectToClient(pageIndex, x, y, x2 - x, y2 - y);
+    },
     deleteSelectedObject: deleteSelectedObjectInternal,
     setInspectorHighlight: (target: InspectorTarget | null): void => {
       paint.setInspectorRects(target ? inspectorRectsFor(target) : null);

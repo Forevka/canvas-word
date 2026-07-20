@@ -23,6 +23,7 @@ import { createFloatingFormatBar } from "./ui/floatingFormatBar";
 import { createContextToolbarManager } from "./ui/contextToolbar";
 import { createImageContextToolbar } from "./ui/imageContextToolbar";
 import { createLinkContextToolbar } from "./ui/linkContextToolbar";
+import { createTableContextToolbar } from "./ui/tableContextToolbar";
 import { createCustomContextToolbar } from "./ui/customContextToolbar";
 import type { FloatingToolbarButtonSpec, ToolbarContext } from "./config";
 import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
@@ -3269,6 +3270,22 @@ if (!readonly) {
           editor.deleteSelectedObject();
           editor.focus();
         },
+      },
+    }),
+  );
+
+  // Table bar (priority 28) — a multi-cell selection (2+ rows/columns).
+  manager.register(
+    createTableContextToolbar({
+      anchorRect: () => editor.getCellSelectionRect(),
+      actions: {
+        mergeCells: () => editor.dispatch(mergeCellsCmd()),
+        insertRowAbove: () => editor.dispatch(insertTableRowCmd("above")),
+        insertRowBelow: () => editor.dispatch(insertTableRowCmd("below")),
+        insertColumnLeft: () => editor.dispatch(insertTableColumnCmd("left")),
+        insertColumnRight: () => editor.dispatch(insertTableColumnCmd("right")),
+        deleteRow: () => editor.dispatch(deleteTableRowCmd()),
+        deleteColumn: () => editor.dispatch(deleteTableColumnCmd()),
       },
     }),
   );

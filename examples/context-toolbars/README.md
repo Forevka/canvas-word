@@ -30,6 +30,7 @@ Then open `http://localhost:3000/examples/context-toolbars/`. Try:
 | Bar | Shows when | Priority |
 | --- | --- | --- |
 | Image | an image is selected | 30 |
+| Table | 2+ table cells are selected (drag across cells) — merge, insert/delete rows & columns | 28 |
 | Hyperlink | the caret (collapsed) is inside a link | 25 |
 | Text format | a range is selected (or a caret, if `floatingToolbar.onCaret`) | 20 |
 
