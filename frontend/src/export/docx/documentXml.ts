@@ -958,7 +958,16 @@ function imageParagraphXml(img: Extract<Block, { kind: "image" }>, ctx: PartCtx)
     ),
   );
   const align = img.align === "center" ? "center" : img.align === "right" ? "right" : "left";
-  return el("w:p", undefined, el("w:pPr", undefined, el("w:jc", { "w:val": align })) + el("w:r", undefined, drawing));
+  // The editor measures an image block at exactly heightPx with NO paragraph
+  // spacing (layout/engine.ts), so consecutive images render flush. Word, though,
+  // applies the default paragraph spacing to the image's w:p — Normal's space-after
+  // plus its line multiplier (e.g. 1.5) inflate the tall image line — opening an
+  // "unclickable" vertical gap the editor never shows (#198). The ImageBlock model
+  // carries no paragraph spacing, so pin the paragraph to zero before/after and
+  // single (auto) line spacing: Word then lays the image out flush, matching canvas.
+  // w:spacing precedes w:jc in the CT_PPr schema sequence.
+  const spacing = el("w:spacing", { "w:before": 0, "w:after": 0, "w:line": 240, "w:lineRule": "auto" });
+  return el("w:p", undefined, el("w:pPr", undefined, spacing + el("w:jc", { "w:val": align })) + el("w:r", undefined, drawing));
 }
 
 /** Band reference + part registration callback: returns the new relationship id. */

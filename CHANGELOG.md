@@ -42,6 +42,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **de-dups** so a copy/pasted image never repeats an id.
 
 ### Fixed
+- **Inline images no longer gain an unclickable vertical gap in Word.** An exported inline image lived
+  in a `w:p` whose `w:pPr` carried only `w:jc`, so in Word the image paragraph inherited the default
+  paragraph spacing from `Normal` (space-after plus a line multiplier — e.g. 1.5×). That opened a
+  vertical gap around the image (most visible between the two consecutive images in the showcase's
+  "Miscellaneous OOXML" section) that the editor never shows, since it lays an image out at exactly its
+  pixel height with no paragraph spacing ([#198](https://github.com/Forevka/canvas-word/issues/198)).
+  The image paragraph is now pinned to zero before/after and single (`w:line="240"`, `w:lineRule="auto"`)
+  line spacing, so Word renders it flush — matching the canvas and the spacing-less `ImageBlock` model.
 - **Exported `.docx` files now open in Microsoft Word.** Word validates every part against the strict
   OOXML `xsd:sequence` and rejects the whole document on the first violation; lenient consumers (Google
   Docs, LibreOffice) and our own order-independent importer did not, so several latent violations shipped
