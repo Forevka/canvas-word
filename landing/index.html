@@ -26,6 +26,11 @@
 <meta name="twitter:title" content="WordCanvas — Embeddable Word editor for your app" />
 <meta name="twitter:description" content="A Word-class editor you embed in an afternoon. MIT, zero dependencies, DOCX + PDF in the browser." />
 
+<!-- Gold redesign fonts: Fraunces (display serif) + Inter (body) + JetBrains Mono -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
 <style>
 :root{
   --ink:#16181d; --ink-soft:#41464f; --muted:#767b85;
@@ -294,6 +299,117 @@ td.mtx-scorecell{background:#fff; border-left:1px solid var(--line)}
 .mtx-scorebar .num{font-family:var(--mono); font-weight:700; font-size:13px; min-width:36px; text-align:right; color:var(--ink-soft)}
 .mtx-scorebar .track{display:inline-block; height:7px; border-radius:4px; background:var(--line); overflow:hidden; width:48px}
 .mtx-scorebar .fill{display:block; height:100%; background:linear-gradient(90deg,var(--accent),var(--good))}
+</style>
+
+<!-- ============================================================
+     GOLD REDESIGN — visual override layer (removable as one unit)
+     Non-destructive: overrides design tokens and adds typography,
+     atmosphere, and motion. No HTML structure or JS logic touched.
+     To fully revert: delete this <style>, the Google-Fonts <link>,
+     and the #gold-motion <script> at the end of <body>.
+     ============================================================ -->
+<style id="gold-redesign">
+:root{
+  /* ── Warm paper palette (was cold #fff / #f7f8fa + cool grays) ── */
+  --ink:#1B1714; --ink-soft:#4A453D; --muted:#8A8478;
+  --line:#E8E2D6; --line-soft:#F1ECE2;
+  --paper:#FAF8F3; --paper-2:#F2EEE5; --paper-3:#F6F2EA;
+
+  /* ── Considered accent — editorial indigo-ink (was SaaS blue #2f6fed) ── */
+  --accent:#5B46D9; --accent-dark:#4634BE; --accent-soft:#ECE9FB; --accent-rgb:91,70,217;
+
+  --good:#2F7D57; --good-soft:#E6F2EA;
+
+  /* ── Real type: display serif + neutral body + mono ── */
+  --serif:"Fraunces","Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
+
+  --radius:16px;
+  --shadow:0 1px 2px rgba(27,23,20,.04),0 14px 34px -16px rgba(27,23,20,.14);
+  --shadow-lg:0 34px 80px -30px rgba(27,23,20,.34);
+
+  /* ── Custom easing (was CSS keyword easings) ── */
+  --gold-ease-out:cubic-bezier(.16,1,.3,1);
+  --gold-ease-snap:cubic-bezier(.22,1,.36,1);
+}
+
+/* ── Typography: Fraunces display serif, tightened tracking ── */
+h1,h2,h3,h4{ font-optical-sizing:auto; letter-spacing:-.02em; text-wrap:balance; }
+.hero h1{ font-variation-settings:"opsz" 144; letter-spacing:-.035em; line-height:1.03; font-weight:600; }
+.sec-head h2,.split h2,.cta h2{ letter-spacing:-.025em; }
+.eyebrow{ font-family:var(--mono); letter-spacing:.14em; font-size:12px; }
+
+/* ── Hero atmosphere: warm ink glow (was cold blue radials) ── */
+.hero::before{ background:
+  radial-gradient(720px 340px at 80% 4%, rgba(91,70,217,.09), transparent 68%),
+  radial-gradient(560px 300px at 4% 0%, rgba(200,120,60,.07), transparent 70%); }
+.hero h1 .ul{ background:linear-gradient(transparent 60%, rgba(91,70,217,.20) 60%); }
+
+/* ── Page atmosphere: warm body wash + grain overlay (felt, not seen) ── */
+body{ background:
+  radial-gradient(1100px 620px at 50% -8%, rgba(91,70,217,.045), transparent 60%),
+  var(--paper); }
+body::after{ content:""; position:fixed; inset:0; pointer-events:none; z-index:9999;
+  opacity:.028; mix-blend-mode:multiply;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+
+/* ── Brand glyph + frosted header, warmed ── */
+.brand .glyph{ background:linear-gradient(135deg,var(--accent),#8A6BFF); box-shadow:0 5px 14px -4px rgba(91,70,217,.6); }
+header.site{ background:rgba(250,248,243,.82); }
+
+/* ── Buttons: snappier, physical hover with custom easing ── */
+.btn{ transition:transform .38s var(--gold-ease-snap), box-shadow .38s var(--gold-ease-snap), background .25s var(--gold-ease-out), border-color .25s var(--gold-ease-out); }
+.btn-primary{ box-shadow:0 1px 3px rgba(27,23,20,.10),0 10px 24px -10px rgba(91,70,217,.55); }
+.btn-primary:hover{ transform:translateY(-2px); box-shadow:0 6px 22px -6px rgba(91,70,217,.6),0 2px 8px rgba(27,23,20,.08); }
+.btn-ghost{ background:var(--paper); }
+.btn-ghost:hover{ border-color:#cbbfae; background:#fff; transform:translateY(-1px); }
+
+/* ── Nav links: sliding underline ── */
+.nav-links a{ position:relative; transition:color .25s var(--gold-ease-snap); }
+.nav-links a::after{ content:""; position:absolute; left:0; right:0; bottom:-6px; height:1.5px; background:var(--accent); transform:scaleX(0); transform-origin:right; transition:transform .3s var(--gold-ease-snap); }
+.nav-links a:hover::after{ transform:scaleX(1); transform-origin:left; }
+@media (max-width:900px){ .nav-links.open a::after{ display:none; } }
+
+/* ── Cards / benefits / steps: warm border + hover lift ── */
+.card,.benefit,.step,.feat,.ex-card{ transition:transform .4s var(--gold-ease-snap), box-shadow .4s var(--gold-ease-snap), border-color .3s var(--gold-ease-snap); }
+.card:hover,.benefit:hover,.step:hover{ transform:translateY(-3px); box-shadow:var(--shadow-lg); border-color:#d8cfbe; }
+.ex-card.lead{ background:linear-gradient(160deg,#FBF9F4,#F1ECFB); border-color:#DED6F4; }
+
+/* ── Compare + matrix accent surfaces (traffic-light semantics preserved) ── */
+table.cmp thead th.us{ color:var(--accent); background:var(--accent-soft); }
+table.cmp td.us{ background:rgba(91,70,217,.05); }
+.chip::before{ background:var(--accent); }
+
+/* ── Code / terminal blocks: deeper premium shadow ── */
+.code,.cmd{ box-shadow:var(--shadow-lg); }
+
+/* ── Final CTA: enrich the dark panel with an accent glow ── */
+.cta{ background:linear-gradient(160deg,#161320 0%,#211B33 100%); }
+.cta::before{ background:radial-gradient(560px 260px at 50% -12%, rgba(123,101,255,.32), transparent 68%); }
+
+/* ============================================================
+   MOTION — staggered hero entry + content-safe scroll reveals
+   ============================================================ */
+@keyframes gold-enter{ from{ opacity:0; transform:translateY(22px); filter:blur(6px); } to{ opacity:1; transform:none; filter:none; } }
+.hero-copy > *{ animation:gold-enter .8s var(--gold-ease-out) both; }
+.hero-copy > *:nth-child(2){ animation-delay:.06s; }
+.hero-copy > *:nth-child(3){ animation-delay:.12s; }
+.hero-copy > *:nth-child(4){ animation-delay:.18s; }
+.hero-copy > *:nth-child(5){ animation-delay:.24s; }
+.hero-copy > *:nth-child(6){ animation-delay:.30s; }
+.hero .mock{ animation:gold-enter .9s var(--gold-ease-out) both; animation-delay:.16s; }
+
+/* .gold-reveal is added by the #gold-motion script, so if that script
+   is absent nothing is ever hidden — content stays fully visible. */
+.gold-reveal{ opacity:0; transform:translateY(28px); transition:opacity .8s var(--gold-ease-out), transform .8s var(--gold-ease-out); }
+.gold-reveal.gold-in{ opacity:1; transform:none; }
+
+@media (prefers-reduced-motion:reduce){
+  .hero-copy > *, .hero .mock{ animation:none; }
+  .gold-reveal{ opacity:1; transform:none; transition:none; }
+  *,*::before,*::after{ animation-duration:.01ms !important; transition-duration:.01ms !important; }
+}
 </style>
 </head>
 <body>
@@ -1032,6 +1148,24 @@ wireCopy('copy-npm'); wireCopy('copy-npm-2');
     tb += "<td class='mtx-scorecell'><div class='mtx-scorebar'><span class='num'>"+green+"/"+applicable+"</span><span class='track'><span class='fill' style='width:"+pct+"%'></span></span></div></td></tr>";
   });
   grid.querySelector("tbody").innerHTML = tb;
+})();
+</script>
+
+<!-- Gold redesign: scroll reveals (part of the removable redesign unit) -->
+<script id="gold-motion">
+(function(){
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (!('IntersectionObserver' in window)) return;
+  var sel = '.sec-head, .signalbar, .card, .benefit, .step, .feat, .ex-card, .tablewrap, .cmp-note, .mtx-legend, #how .code, #headless .split > div';
+  var targets = [].slice.call(document.querySelectorAll(sel));
+  if (!targets.length) return;
+  targets.forEach(function(el){ el.classList.add('gold-reveal'); });
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if (e.isIntersecting){ e.target.classList.add('gold-in'); io.unobserve(e.target); }
+    });
+  }, { threshold:0.12, rootMargin:'0px 0px -40px 0px' });
+  targets.forEach(function(el){ io.observe(el); });
 })();
 </script>
 </body>
