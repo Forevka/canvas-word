@@ -20,8 +20,17 @@ export const TAB_VAL: Record<string, string> = { left: "left", center: "center",
 /** tab leader → w:tab w:leader. */
 export const TAB_LEADER: Record<string, string> = { dot: "dot", dash: "hyphen", underscore: "underscore" };
 
-/** strip a leading "#" and lowercase a hex color for OOXML w:val attributes. */
-export const hexColor = (c: string): string => c.replace(/^#/, "").toLowerCase();
+/** Normalize a model color to an OOXML color value: 6 lowercase hex digits (or the
+ *  literal "auto"). Strips a leading "#", and — crucially — expands 3-digit CSS
+ *  shorthand (#fff → ffffff), which Word's schema rejects as a color value. Every
+ *  color attribute in the exporter (run w:color, w:shd w:fill, border w:color, page
+ *  color) routes through here, so all of them stay schema-valid (issue #193). */
+export const hexColor = (c: string): string => {
+  if (c === "auto") return "auto";
+  const h = c.replace(/^#/, "").toLowerCase();
+  if (/^[0-9a-f]{3}$/.test(h)) return h.replace(/(.)/g, "$1$1"); // #abc → aabbcc
+  return h;
+};
 
 /** A border edge in model terms — shared by cell, table, paragraph, and run
  *  borders (CellBorder and friends are all structurally this). */

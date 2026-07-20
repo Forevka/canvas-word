@@ -42,6 +42,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **de-dups** so a copy/pasted image never repeats an id.
 
 ### Fixed
+- **Exported `.docx` files now open in Microsoft Word.** Word validates every part against the strict
+  OOXML `xsd:sequence` and rejects the whole document on the first violation; lenient consumers (Google
+  Docs, LibreOffice) and our own order-independent importer did not, so several latent violations shipped
+  unnoticed ([#180](https://github.com/Forevka/canvas-word/issues/180)). Three distinct classes were fixed:
+  - **Element ordering** ([#191](https://github.com/Forevka/canvas-word/issues/191)). Children of
+    `w:pPr`, `w:rPr`, `w:tcPr`, `w:sectPr`, `w:sdtPr` and `settings.xml` were emitted grouped by concern
+    rather than in schema order (e.g. `w:tabs` after `w:spacing`, `w:shd` before `w:tcBorders`, `w:type`
+    last in `w:sectPr`, `w:defaultTabStop` after `w:evenAndOddHeadersAndFooters`, content-control `w:lock`
+    after the type element). A new schema-order normalizer sorts each property element's children to the
+    canonical ECMA-376 sequence before emitting; a latent duplicate `w:bidi` in `w:pPr` is also gone.
+  - **Display equations** ([#193](https://github.com/Forevka/canvas-word/issues/193)). A block equation
+    was written as a bare `m:oMathPara` directly under `w:body`, which the schema forbids. It is now
+    wrapped in a `w:p` (how Word stores it); the importer reads an `m:oMathPara` inside a `w:p` back to a
+    display equation, so it round-trips.
+  - **Colors** ([#193](https://github.com/Forevka/canvas-word/issues/193)). A 3-digit CSS hex color such
+    as `#fff` was written as the invalid `w:val="fff"`; it now expands to the required 6 digits
+    (`ffffff`). Applies to every color attribute (run color, shading fill, borders, page color).
+  Export is now validated against the real schema (Open XML SDK) on the showcase document. No editor
+  feature is stripped — this is correct OOXML for every document, so no "Word compatibility mode" is needed.
 - **`wp14` percentage-positioned floating images no longer snap to the top-left corner on import.**
   Word wraps a floating object's percentage position (`wp14:pctPosHOffset`/`pctPosVOffset`) in an
   `mc:AlternateContent`, pushing the absolute `wp:posOffset` down into the `mc:Fallback` — so it is no

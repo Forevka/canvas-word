@@ -2,6 +2,7 @@
 // Proves the m: namespace, m:oMathPara emit, and the OMML→MathML import all line up.
 
 import { beforeAll, describe, expect, it } from "vitest";
+import { strFromU8, unzipSync } from "fflate";
 import type { CharStyle, Document, EquationBlock, FieldDef, Paragraph, Run } from "@cw/shared";
 import { runExport } from "../pipeline";
 import { runImport } from "../../import/docx/pipeline";
@@ -55,6 +56,19 @@ describe("equation docx round-trip", () => {
       expect(JSON.stringify(frac.num)).toContain("\"+\"");
       expect(JSON.stringify(frac.den)).toContain("\"2\"");
     }
+  });
+
+  it("wraps the display equation in a w:p (m:oMathPara is not a valid child of w:body) — issue #193", async () => {
+    const doc: Document = {
+      section: { pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } },
+      blocks: [{ kind: "equation", id: "e1", revision: 0, align: "center", equation: { ...parseMathml(FRAC), display: true } } satisfies EquationBlock],
+    };
+    const { bytes } = await runExport(doc, "docx");
+    const xml = strFromU8(unzipSync(bytes)["word/document.xml"]!);
+    expect(xml).toContain("<w:p><m:oMathPara");
+    // The bug: a bare m:oMathPara sitting directly under w:body.
+    expect(xml).not.toContain("<w:body><m:oMathPara");
+    expect(xml).not.toMatch(/<\/w:p><m:oMathPara/);
   });
 
   it("preserves a right-aligned display equation through export then import", async () => {
