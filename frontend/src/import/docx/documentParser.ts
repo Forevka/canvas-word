@@ -176,6 +176,20 @@ function walkBlocks(nodes: XmlNode[], out: IRBlock[], ctx: ParseCtx): void {
     if (ctx.trackFields) ctx.fieldTrack.markBlock = ctx.fieldTrack.openId;
     switch (node.tagName) {
       case "w:p": {
+        // A display equation lives inside its own paragraph (<w:p><m:oMathPara/></w:p>)
+        // — how Word stores it and how we export it (issue #193). Read that paragraph
+        // straight to a display EquationBlock, carrying the same field/control metadata
+        // as any other block, rather than a paragraph with a dropped math child.
+        const mathPara = el(node, "m:oMathPara");
+        if (mathPara) {
+          const jc = mathParaJc(mathPara);
+          const m: IRBlock = { kind: "math", root: ommlToMathml(mathPara), display: true };
+          if (jc) m.align = jc;
+          if (ctx.trackFields && ctx.fieldTrack.markBlock) m.fieldId = ctx.fieldTrack.markBlock;
+          if (ctx.blockSdtStack.length) m.sdtPath = [...ctx.blockSdtStack];
+          out.push(m);
+          break;
+        }
         const p = parseParagraph(node, ctx);
         if (ctx.trackFields && ctx.fieldTrack.markBlock) p.fieldId = ctx.fieldTrack.markBlock;
         if (ctx.blockSdtStack.length) p.sdtPath = [...ctx.blockSdtStack];

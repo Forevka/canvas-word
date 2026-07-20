@@ -717,7 +717,11 @@ function equationParagraphXml(block: EquationBlock, ctx: PartCtx): string {
   const oMath = mathmlToOmml({ ...block.equation, display: false }); // inner m:oMath only
   const jc = block.align === "left" ? "left" : block.align === "right" ? "right" : "center";
   const pr = el("m:oMathParaPr", undefined, el("m:jc", { "m:val": jc }));
-  return el("m:oMathPara", undefined, pr + oMath);
+  // m:oMathPara is NOT a valid child of w:body — Word (and the schema) require a
+  // display equation to live inside a paragraph, exactly as Word writes it. The
+  // importer reads an m:oMathPara found inside a w:p back to a display EquationBlock
+  // (documentParser.walkBlocks), so this round-trips (issue #193).
+  return el("w:p", undefined, el("m:oMathPara", undefined, pr + oMath));
 }
 
 /** Emit a block list, reconstructing NESTED block-level content controls from each
