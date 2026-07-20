@@ -1,0 +1,16 @@
+{
+  "name": "@cw/example-floating-toolbar",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Configure the floating selection mini-toolbar (floatingToolbar option) — toggle it, pick/reorder its buttons, show it at a caret, add custom buttons — no build step, browser import map.",
+  "scripts": {
+    "start": "serve ."
+  },
+  "dependencies": {
+    "@forevka/wordcanvas": "*"
+  },
+  "devDependencies": {
+    "serve": "^14.2.5"
+  }
+}

@@ -9,6 +9,8 @@
 
 import type { EditorTypography, Stylesheet } from "@cw/shared";
 import { makeDefaultStylesheet } from "@cw/shared";
+import type { CurrentFormat } from "./index";
+import type { RibbonActionContext } from "./ribbon";
 import type { FontsConfig, ResolvedFontsConfig } from "./fonts/customRegistry";
 import { ARABIC_FONT_FAMILY, CJK_FONT_FAMILY, HEBREW_FONT_FAMILY } from "./fonts/clones";
 import {
@@ -205,6 +207,101 @@ export function resolveBehavior(b?: EditorBehavior): ResolvedBehavior {
   return b ? { ...DEFAULT_BEHAVIOR, ...stripUndefined(b) } : DEFAULT_BEHAVIOR;
 }
 
+// ---- floating format toolbar (Word's selection mini-toolbar) ----------------
+
+/** A built-in floating-toolbar control. `"|"` renders a separator. */
+export type FloatingToolbarBuiltin =
+  | "font"
+  | "fontSize"
+  | "bold"
+  | "italic"
+  | "underline"
+  | "strikethrough"
+  | "color"
+  | "highlight"
+  | "clearFormat";
+
+/** A custom floating-toolbar button. Its `onClick` receives the same
+ *  `RibbonActionContext` a custom ribbon button gets (editor handle + macro
+ *  helpers), so the two customization surfaces share button code. */
+export interface FloatingToolbarButtonSpec {
+  /** Stable id (namespace it to avoid clashes, e.g. "myco.upper"). */
+  id: string;
+  /** Raw innerHTML for the button face — an SVG string, emoji, or text. */
+  icon?: string;
+  /** Text label (used when `icon` is omitted). */
+  label?: string;
+  /** Hover tooltip. */
+  tooltip?: string;
+  /** Invoked on click with the editor handle + macro helpers. */
+  onClick: (ctx: RibbonActionContext) => void;
+  /** Optional pressed-state predicate, re-evaluated on every selection change. */
+  active?: (fmt: CurrentFormat) => boolean;
+}
+
+/** One entry in the floating toolbar: a built-in control id, a `"|"` separator,
+ *  or a custom button. */
+export type FloatingToolbarItem = FloatingToolbarBuiltin | "|" | FloatingToolbarButtonSpec;
+
+/** The object form of the `floatingToolbar` option (the boolean is shorthand for
+ *  `{ enabled }`). */
+export interface FloatingToolbarOptions {
+  /** Show the toolbar at all. Default true. */
+  enabled?: boolean;
+  /** Also show it at a collapsed caret (no selection), not only over a range —
+   *  Word only shows it on selection, so this is off by default. */
+  onCaret?: boolean;
+  /** Which controls to show, in order (built-in ids, `"|"` separators, and custom
+   *  buttons). Omit for the full built-in set. An empty array falls back to the
+   *  default set. */
+  buttons?: FloatingToolbarItem[];
+}
+
+/** The public `floatingToolbar` option: `false`/`true` toggles the default set,
+ *  an object customizes it. */
+export type FloatingToolbarConfig = boolean | FloatingToolbarOptions;
+
+/** Fully-populated floating-toolbar config the editor app reads. */
+export interface ResolvedFloatingToolbar {
+  enabled: boolean;
+  onCaret: boolean;
+  buttons: FloatingToolbarItem[];
+}
+
+/** The built-in control order (Word-like: font · size · B/I/U/S · colour ·
+ *  highlight · clear). */
+export const DEFAULT_FLOATING_TOOLBAR_BUTTONS: FloatingToolbarItem[] = [
+  "font",
+  "|",
+  "fontSize",
+  "|",
+  "bold",
+  "italic",
+  "underline",
+  "strikethrough",
+  "|",
+  "color",
+  "highlight",
+  "|",
+  "clearFormat",
+];
+
+/** Normalize the public partial `floatingToolbar` option into the fully-populated
+ *  form. Booleans map to enabled/disabled with the default button set; an empty
+ *  `buttons` array falls back to the default set (a fully-empty bar is never
+ *  useful). */
+export function resolveFloatingToolbar(input?: FloatingToolbarConfig): ResolvedFloatingToolbar {
+  if (input === undefined || typeof input === "boolean") {
+    return { enabled: input ?? true, onCaret: false, buttons: DEFAULT_FLOATING_TOOLBAR_BUTTONS };
+  }
+  return {
+    enabled: input.enabled ?? true,
+    onCaret: input.onCaret ?? false,
+    buttons:
+      input.buttons && input.buttons.length > 0 ? input.buttons : DEFAULT_FLOATING_TOOLBAR_BUTTONS,
+  };
+}
+
 /** The library's built-in (empty) fonts config. */
 export const DEFAULT_FONTS: ResolvedFontsConfig = { disableBuiltin: [], fonts: [] };
 
@@ -240,9 +337,9 @@ export interface ResolvedConfig {
   /** Show the "Organize Pages" ribbon button (Layout tab) that opens the visual
    *  page-reorder overlay. Default true; set false to hide it for an embed. */
   organizePages: boolean;
-  /** Show the floating mini-toolbar (quick B/I/U, font, size, colour) above a text
-   *  selection, so common formatting is reachable without the ribbon. Default true. */
-  floatingToolbar: boolean;
+  /** Floating mini-toolbar (quick formatting above a text selection): whether it's
+   *  shown, whether it appears at a bare caret, and which controls it carries. */
+  floatingToolbar: ResolvedFloatingToolbar;
 }
 
 export interface EditorConfigInput {
@@ -256,8 +353,9 @@ export interface EditorConfigInput {
   develop?: boolean | undefined;
   /** Show the "Organize Pages" reorder overlay button. Default true. */
   organizePages?: boolean | undefined;
-  /** Show the floating mini-toolbar above a text selection. Default true. */
-  floatingToolbar?: boolean | undefined;
+  /** Floating mini-toolbar above a text selection: `true`/`false` to toggle, or an
+   *  object to customize which controls appear, their order, and caret behavior. */
+  floatingToolbar?: FloatingToolbarConfig | undefined;
 }
 
 /** Resolve the public partial options into the fully-populated internal config. */
@@ -272,7 +370,7 @@ export function resolveConfig(input: EditorConfigInput = {}): ResolvedConfig {
     cjk: resolveCjk(input.cjk),
     develop: input.develop ?? false,
     organizePages: input.organizePages ?? true,
-    floatingToolbar: input.floatingToolbar ?? true,
+    floatingToolbar: resolveFloatingToolbar(input.floatingToolbar),
   };
 }
 

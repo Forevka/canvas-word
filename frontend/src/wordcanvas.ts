@@ -12,7 +12,7 @@
 import type { AgentToolsOptions, EditMode, EditorHandle, FieldResolver, Participant, SaveEvent, SaveFormat, SaveHandler, WordCanvasEvent, WordCanvasRuntime, WordCanvasViewOptions } from "./app/runtime";
 import type { ChildContent, ChildDocument, ChildEditorHandle, ChildRenderOptions, FieldResolveRequest, FieldResult } from "./index";
 import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
-import type { CjkConfig, CustomFontDef, CustomFontFaces, DefaultStyleOverrides, EditorBehavior, EditorTheme, FontsConfig } from "./config";
+import type { CjkConfig, CustomFontDef, CustomFontFaces, DefaultStyleOverrides, EditorBehavior, EditorTheme, FloatingToolbarButtonSpec, FloatingToolbarConfig, FloatingToolbarItem, FloatingToolbarOptions, FontsConfig } from "./config";
 import { darkCanvasTheme } from "./config";
 import type { CustomizeRibbon, RibbonActionContext, RibbonApi, RibbonButtonSpec } from "./ribbon";
 import type { CommandContext, EditorCommand } from "./commands";
@@ -26,6 +26,7 @@ import { BUNDLE_SHARE, type LoadProgress } from "./app/loadProgress";
 export type { Document, UserInfo, Participant, EditMode, ReviewLayer, Fragment, FieldResolver, FieldResolveRequest, FieldResult, AgentToolsOptions, LoadProgress, WordCanvasViewOptions, SaveEvent, SaveFormat, SaveHandler };
 export type { ChildDocument, ChildContent, ChildRenderOptions, ChildEditorHandle };
 export type { EditorTheme, DefaultStyleOverrides, EditorBehavior, FontsConfig, CjkConfig, CustomFontDef, CustomFontFaces };
+export type { FloatingToolbarConfig, FloatingToolbarOptions, FloatingToolbarItem, FloatingToolbarButtonSpec };
 export type { CustomizeRibbon, RibbonApi, RibbonButtonSpec, RibbonActionContext, DocSelection };
 export type { EditorCommand, CommandContext };
 export type { DecorationSpec, RangeDecoration, BadgeDecoration };
@@ -114,12 +115,19 @@ export interface WordCanvasOptions {
    *  reorders whole page-break/section-delimited groups, so content is never
    *  split. Default true; set false to hide it. */
   organizePages?: boolean;
-  /** Show the floating mini-toolbar above a text selection (Word's selection
-   *  toolbar): quick Bold/Italic/Underline/Strikethrough, font family & size,
-   *  text colour, highlight, and clear-formatting, positioned at the selection so
-   *  common formatting is one click away without moving to the ribbon. Default
-   *  true; set false to hide it. Never shown in view-only mode. */
-  floatingToolbar?: boolean;
+  /** Floating mini-toolbar above a text selection (Word's selection toolbar) —
+   *  quick Bold/Italic/Underline/Strikethrough, font family & size, text colour,
+   *  highlight, and clear-formatting, positioned at the selection so common
+   *  formatting is one click away without moving to the ribbon.
+   *
+   *  Pass `true`/`false` to toggle the default set, or an object to customize:
+   *  `enabled` (default true), `onCaret` (also show at a bare caret, default
+   *  false), and `buttons` (which controls appear + their order — built-in ids
+   *  `"font" | "fontSize" | "bold" | "italic" | "underline" | "strikethrough" |
+   *  "color" | "highlight" | "clearFormat"`, `"|"` separators, and your own custom
+   *  buttons `{ id, icon|label, tooltip?, onClick, active? }` whose `onClick` gets
+   *  the same context as a custom ribbon button). Never shown in view-only mode. */
+  floatingToolbar?: FloatingToolbarConfig;
   /** Supply your OWN fonts, loaded from URLs at runtime. Each custom font needs a
    *  `family` (stored in the model + shown in the toolbar), per-style face URLs
    *  (`regular` required; bold/italic/boldItalic optional, falling back to regular),

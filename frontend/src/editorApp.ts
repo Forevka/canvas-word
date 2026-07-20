@@ -3276,9 +3276,10 @@ if (!readonly) {
 }
 
 // ---- floating format mini-toolbar (Word's selection toolbar) ----------------
-// Shows quick character formatting above a text selection. Edit-only (view mode
-// has nothing to format), and opt-out via config.floatingToolbar.
-if (!readonly && config.floatingToolbar) {
+// Shows configurable quick character formatting above a text selection. Edit-only
+// (view mode has nothing to format); controls + caret behavior come from
+// config.floatingToolbar (see resolveFloatingToolbar).
+if (!readonly && config.floatingToolbar.enabled) {
   const isRangeSelection = (): boolean => {
     const sel = editor.getSelection();
     if (!sel) return false;
@@ -3294,6 +3295,16 @@ if (!readonly && config.floatingToolbar) {
     suppressed: () => editor.getSelectedObject() !== null,
     pxToPt: (px) => Math.round(sharedPxToPt(px) * 2) / 2,
     focus: () => editor.focus(),
+    config: config.floatingToolbar,
+    // A custom button gets the same context a custom ribbon button gets — and,
+    // like the ribbon path, a throwing handler is caught rather than surfaced.
+    runCustomButton: (spec) => {
+      try {
+        if (ribbonCtx) spec.onClick(ribbonCtx);
+      } catch (err) {
+        console.error("[canvas-word] custom floating-toolbar button onClick threw", err);
+      }
+    },
     actions: {
       toggle: (key) => editor.toggleStyle(key),
       setFontFamily: (value) => editor.setCharStyle({ fontFamily: value }),
