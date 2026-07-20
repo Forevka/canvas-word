@@ -144,8 +144,21 @@ export function createContextToolbarManager(deps: ContextToolbarManagerDeps): Co
     for (const t of toolbars) t.destroy();
   };
 
-  deps.scrollEl.addEventListener("scroll", refresh, { signal: deps.signal });
-  window.addEventListener("resize", refresh, { signal: deps.signal });
+  // Coalesce the high-frequency scroll/resize streams to one refresh per frame —
+  // refresh reads layout (getBoundingClientRect + offsetWidth/Height), so running it
+  // per scroll tick thrashes reflow (the editor throttles its hover/pinch paths the
+  // same way). onChange/onZoomChange still call refresh() synchronously for immediacy.
+  let rafId: number | null = null;
+  const scheduleRefresh = (): void => {
+    if (rafId !== null) return;
+    rafId = requestAnimationFrame(() => {
+      rafId = null;
+      refresh();
+    });
+  };
+
+  deps.scrollEl.addEventListener("scroll", scheduleRefresh, { signal: deps.signal });
+  window.addEventListener("resize", scheduleRefresh, { signal: deps.signal });
   window.addEventListener(
     "keydown",
     (e) => {
@@ -153,7 +166,14 @@ export function createContextToolbarManager(deps: ContextToolbarManagerDeps): Co
     },
     { signal: deps.signal },
   );
-  deps.signal.addEventListener("abort", destroy, { once: true });
+  deps.signal.addEventListener(
+    "abort",
+    () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      destroy();
+    },
+    { once: true },
+  );
 
   return {
     register(toolbar) {
