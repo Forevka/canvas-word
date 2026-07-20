@@ -24,6 +24,11 @@ import { createContextToolbarManager } from "./ui/contextToolbar";
 import { createImageContextToolbar } from "./ui/imageContextToolbar";
 import { createLinkContextToolbar } from "./ui/linkContextToolbar";
 import { createTableContextToolbar } from "./ui/tableContextToolbar";
+import { createEquationContextToolbar } from "./ui/equationContextToolbar";
+import { createReviewContextToolbar } from "./ui/reviewContextToolbar";
+import { createTocContextToolbar } from "./ui/tocContextToolbar";
+import { createListContextToolbar } from "./ui/listContextToolbar";
+import { createInsertMenuToolbar } from "./ui/insertMenuToolbar";
 import { createCustomContextToolbar } from "./ui/customContextToolbar";
 import type { FloatingToolbarButtonSpec, ToolbarContext } from "./config";
 import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
@@ -77,6 +82,8 @@ import {
   removeBookmarkCmd,
   renameBookmarkCmd,
   toggleList,
+  changeListLevel,
+  setEquationAlignCmd,
   applyListStyleCmd,
   toggleMultilevelList,
   toggleHighlight,
@@ -3253,7 +3260,8 @@ if (!readonly) {
   const manager = createContextToolbarManager({ scrollEl: app, signal: teardown.signal });
 
   // Image bar (priority 30) — the highest, so a selected image always wins.
-  const withImg = (fn: (id: string) => void): void => {
+  // Run `fn` with the selected object's id (the image or equation the bar acts on).
+  const withSelectedObject = (fn: (id: string) => void): void => {
     const id = editor.getSelectedObject();
     if (id) fn(id);
   };
@@ -3261,8 +3269,8 @@ if (!readonly) {
     createImageContextToolbar({
       anchorRect: () => editor.getSelectedObjectRect(),
       actions: {
-        wrapInline: () => withImg((id) => editor.dispatch(setImageProps(id, { wrap: "block", align: "center" }))),
-        wrapSquare: () => withImg((id) => editor.dispatch(setImageProps(id, { wrap: "square", align: "left" }))),
+        wrapInline: () => withSelectedObject((id) => editor.dispatch(setImageProps(id, { wrap: "block", align: "center" }))),
+        wrapSquare: () => withSelectedObject((id) => editor.dispatch(setImageProps(id, { wrap: "square", align: "left" }))),
         alignLeft: () => editor.align("left"),
         alignCenter: () => editor.align("center"),
         alignRight: () => editor.align("right"),
@@ -3347,6 +3355,108 @@ if (!readonly) {
     selectionRect: () => editor.getSelectionAnchorRect(),
     objectRect: () => editor.getSelectedObjectRect(),
   });
+
+  // Dispatch a command, then return focus to the editor so typing continues (the
+  // context bars act on click, like the ribbon).
+  const dispatchFocus = (cmd: Command): void => {
+    editor.dispatch(cmd);
+    editor.focus();
+  };
+
+  // Equation bar (priority 29) — a selected equation block.
+  manager.register(
+    createEquationContextToolbar({
+      anchorRect: () => editor.getSelectedEquationRect(),
+      actions: {
+        edit: () => editor.editSelectedEquation(), // opens the equation dialog — keep its focus
+        alignLeft: () => withSelectedObject((id) => dispatchFocus(setEquationAlignCmd(id, "left"))),
+        alignCenter: () => withSelectedObject((id) => dispatchFocus(setEquationAlignCmd(id, "center"))),
+        alignRight: () => withSelectedObject((id) => dispatchFocus(setEquationAlignCmd(id, "right"))),
+        remove: () => {
+          editor.deleteSelectedObject();
+          editor.focus();
+        },
+      },
+    }),
+  );
+
+  // Review bar (priority 26) — caret inside a comment thread or a suggestion.
+  manager.register(
+    createReviewContextToolbar({
+      review: () => editor.reviewAtCaret(),
+      hasRangeSelection: isRangeSelection,
+      anchorRect: () => editor.getSelectionAnchorRect(),
+      actions: {
+        accept: (id) => {
+          editor.acceptSuggestion(id);
+          editor.focus();
+        },
+        reject: (id) => {
+          editor.rejectSuggestion(id);
+          editor.focus();
+        },
+        open: (id) => editor.revealReview(id), // navigates to the thread — don't steal focus
+        resolve: (id, resolved) => {
+          editor.resolveThread(id, resolved);
+          editor.focus();
+        },
+      },
+    }),
+  );
+
+  // TOC bar (priority 22) — caret inside a Table-of-Contents entry.
+  manager.register(
+    createTocContextToolbar({
+      inToc: () => editor.caretInToc(),
+      hasRangeSelection: isRangeSelection,
+      anchorRect: () => editor.getSelectionAnchorRect(),
+      update: () => {
+        editor.recalculateToc();
+        editor.focus();
+      },
+    }),
+  );
+
+  // List-item bar (priority 18) — caret in a bulleted/numbered list.
+  manager.register(
+    createListContextToolbar({
+      listKind: () => editor.currentFormat().listKind,
+      hasRangeSelection: isRangeSelection,
+      anchorRect: () => editor.getSelectionAnchorRect(),
+      actions: {
+        promote: () => dispatchFocus(changeListLevel(-1)),
+        demote: () => dispatchFocus(changeListLevel(1)),
+        removeList: () => dispatchFocus(toggleList(editor.currentFormat().listKind === "bullet" ? "bullet" : "decimal")),
+      },
+    }),
+  );
+
+  // Empty-paragraph insert menu (priority 16) — Notion-style ＋ on an empty line.
+  manager.register(
+    createInsertMenuToolbar({
+      onEmptyParagraph: () => editor.caretInEmptyParagraph(),
+      anchorRect: () => editor.getSelectionAnchorRect(),
+      openMenu: (anchorEl) => {
+        const r = anchorEl.getBoundingClientRect();
+        const insert = (cmd: Command): (() => void) => () => dispatchFocus(cmd);
+        const entries: MenuEntry[] = [
+          { kind: "item", label: "Heading 1", onClick: insert(applyNamedStyle("Heading1")) },
+          { kind: "item", label: "Heading 2", onClick: insert(applyNamedStyle("Heading2")) },
+          { kind: "item", label: "Heading 3", onClick: insert(applyNamedStyle("Heading3")) },
+          { kind: "sep" },
+          { kind: "item", label: "Bulleted list", onClick: insert(toggleList("bullet")) },
+          { kind: "item", label: "Numbered list", onClick: insert(toggleList("decimal")) },
+          { kind: "sep" },
+          { kind: "item", label: "Table", onClick: insert(insertTable(3, 3)) },
+          { kind: "item", label: "Page break", onClick: insert(insertPageBreak()) },
+          { kind: "item", label: "Table of contents", onClick: insert(insertTocCmd()) },
+          { kind: "item", label: "Footnote", onClick: insert(insertFootnoteCmd()) },
+        ];
+        showContextMenu(r.left, r.bottom + 2, entries);
+      },
+    }),
+  );
+
   for (const spec of config.contextToolbars) {
     manager.register(createCustomContextToolbar(spec, { context: buildContext, runButton: runCustomButton }));
   }

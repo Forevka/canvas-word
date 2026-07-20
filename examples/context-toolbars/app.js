@@ -14,6 +14,12 @@ const doc = DocumentBuilder.create()
   .text(" (no selection) to see the hyperlink bar — Open / Edit / Copy / Remove.")
   .paragraph("Click a cell in the table below to see a CUSTOM toolbar that this page registered with the contextToolbars option:")
   .table([["Item", "Qty"], ["Widget", "3"], ["Gadget", "7"]], { headerRow: true })
+  .paragraph("Click into this list to see the list toolbar (promote / demote / remove):")
+  .bulletList(["First item", "Second item", "Third item"])
+  .paragraph("Select this equation to see the equation toolbar (edit / align / delete):")
+  .equation("E = mc^2")
+  .paragraph("Put the caret on the empty line below to see the ＋ insert menu:")
+  .paragraph("")
   .build();
 
 // --- first-load progress bar ---------------------------------------------------

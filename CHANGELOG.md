@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **More contextual toolbars — equation, comment/suggestion, TOC, list-item, empty-paragraph.**
+  Five new built-in context bars on the priority-based manager: an **equation** bar (29 — Edit /
+  align / Delete when an equation is selected), a **comment/suggestion** bar (26 — Accept/Reject a
+  tracked change, Open/Resolve a comment thread when the caret is inside one), a **TOC** bar (22 —
+  Update table of contents), a **list-item** bar (18 — Promote / Demote / Remove list), and a
+  Notion-style **empty-paragraph** ＋ insert menu (16 — Heading / list / Table / Page break / TOC /
+  Footnote). The four caret bars show on a collapsed caret only (a text range still gets the format
+  bar). Backed by new editor accessors (`getSelectedEquationRect`, `editSelectedEquation`,
+  `reviewAtCaret`, `caretInToc`, `caretInEmptyParagraph`). See the
+  [`context-toolbars`](./examples/context-toolbars) example. (Footnote/endnote, drawing-shape, and
+  equation-resize bars are tracked as follow-up issues.)
 - **Contextual floating toolbars — one framework, priority-based.** The two hand-wired floating
   mini-toolbars (image + text selection) are now unified under a single manager that shows the one
   most-relevant bar for whatever the caret/selection is on. Built-ins: the **image** bar (priority
