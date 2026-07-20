@@ -37,10 +37,13 @@ export function settingsXml(opts: SettingsXmlOptions): string {
         )
       : "";
   const docId = opts.docId && opts.docId.length > 0 ? opts.docId : undefined;
+  // CT_Settings is an xsd:sequence; Word rejects out-of-order children. The schema
+  // order of what we emit is displayBackgroundShape(7) → defaultTabStop(39) →
+  // evenAndOddHeaders(48) → compat(81) → w15:docId (issue #180).
   const body =
     (opts.displayBackgroundShape ? el("w:displayBackgroundShape") : "") +
-    (opts.evenAndOdd ? el("w:evenAndOddHeadersAndFooters") : "") +
     (defaultTabStopPx !== undefined ? el("w:defaultTabStop", { "w:val": Math.round(pxToTwips(defaultTabStopPx)) }) : "") +
+    (opts.evenAndOdd ? el("w:evenAndOddHeadersAndFooters") : "") +
     compat +
     // w15:docId (Office 2013+) rides at the end of the settings sequence via the w15
     // extension; the namespace + mc:Ignorable are declared on the root below.
