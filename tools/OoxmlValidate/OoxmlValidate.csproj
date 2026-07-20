@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Standalone dev/CI tool: validates an exported .docx against the OOXML schema with
+    the Open XML SDK (the same validation Word applies) and exits non-zero on any
+    error. Targets net8.0 (LTS) so the `ooxml-validate` CI job needs only a stable,
+    always-available .NET SDK, independent of the shipping library's TFM. See the
+    `ooxml-validate` job in .github/workflows/ci.yml and issue #195.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.1.0" />
+  </ItemGroup>
+
+</Project>
