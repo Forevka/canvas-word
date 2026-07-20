@@ -1,0 +1,16 @@
+{
+  "name": "@cw/example-context-toolbars",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Contextual floating toolbars — the built-in image/hyperlink/text bars plus a custom one registered via the contextToolbars option. No build step, browser import map.",
+  "scripts": {
+    "start": "serve ."
+  },
+  "dependencies": {
+    "@forevka/wordcanvas": "*"
+  },
+  "devDependencies": {
+    "serve": "^14.2.5"
+  }
+}

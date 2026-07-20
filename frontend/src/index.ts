@@ -105,6 +105,7 @@ import {
   replaceSdtBlockSpan,
   replaceSdtCellContent,
   sdtAtPosition,
+  linkAtPosition,
   inlineSdtAtPosition,
   sdtStackAtPosition,
   setAlignment,
@@ -331,6 +332,9 @@ export interface Editor {
    *  is no selection. Coordinates are zoom-scaled client px (like
    *  getSelectedObjectRect), so a `position:fixed` overlay can sit against it. */
   getSelectionAnchorRect(): { left: number; top: number; width: number; height: number } | null;
+  /** The hyperlink URL at the caret (focus position), or null when there's no
+   *  selection or the caret isn't on a link. Drives the hyperlink context toolbar. */
+  linkAtCaret(): string | null;
   /** Delete the selected image and clear the object selection. */
   deleteSelectedObject(): void;
   // ---- develop-mode Document-tree inspector --------------------------------
@@ -568,6 +572,22 @@ export function createEditor(
     ...(options.theme ? { theme: options.theme } : {}),
     ...(options.behavior ? { zoomMin: options.behavior.zoomMin, zoomMax: options.behavior.zoomMax } : {}),
   });
+  /** Map a page-local rect (doc px) to zoom-scaled client/viewport px via its page
+   *  element — the anchor transform for every floating overlay (image / selection /
+   *  link toolbars). Returns null if the page isn't currently mounted. */
+  const pageRectToClient = (
+    pageIndex: number,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ): { left: number; top: number; width: number; height: number } | null => {
+    const ph = paint.getPageElement(pageIndex);
+    if (!ph) return null;
+    const z = paint.getZoom();
+    const pr = ph.getBoundingClientRect();
+    return { left: pr.left + x * z, top: pr.top + y * z, width: width * z, height: height * z };
+  };
   const undoMgr = new UndoManager();
   // Document history: every committed edit (and undo/redo, as forward ops) is
   // recorded as a Change. The base snapshot + this ordered log reconstructs any
@@ -3598,39 +3618,21 @@ export function createEditor(
       // selection frame (driven by objectRect directly, not this method).
       if (!selectedIsImage()) return null;
       const r = objectRect(tree, selectedObject!);
-      if (!r) return null;
-      const ph = paint.getPageElement(r.pageIndex);
-      if (!ph) return null;
-      const z = paint.getZoom();
-      const pr = ph.getBoundingClientRect();
-      return { left: pr.left + r.x * z, top: pr.top + r.y * z, width: r.width * z, height: r.height * z };
+      return r ? pageRectToClient(r.pageIndex, r.x, r.y, r.width, r.height) : null;
     },
     getSelectionAnchorRect: (): { left: number; top: number; width: number; height: number } | null => {
       if (!selection) return null;
-      const z = paint.getZoom();
-      // Map a page-local rect to zoom-scaled client coords via its page element.
-      const toClient = (
-        pageIndex: number,
-        x: number,
-        y: number,
-        width: number,
-        height: number,
-      ): { left: number; top: number; width: number; height: number } | null => {
-        const ph = paint.getPageElement(pageIndex);
-        if (!ph) return null;
-        const pr = ph.getBoundingClientRect();
-        return { left: pr.left + x * z, top: pr.top + y * z, width: width * z, height: height * z };
-      };
       if (isCollapsed(selection)) {
         const c = caretRect(tree, selection.focus, scope());
-        return c ? toClient(c.pageIndex, c.x, c.y, 0, c.height) : null;
+        return c ? pageRectToClient(c.pageIndex, c.x, c.y, 0, c.height) : null;
       }
       // selectionRects walks entries in document order, so the first rect is the
       // selection's start line — where Word anchors the mini-toolbar.
       const rects = selectionRects(tree, selection, scope());
       const first = rects[0];
-      return first ? toClient(first.pageIndex, first.x, first.y, first.width, first.height) : null;
+      return first ? pageRectToClient(first.pageIndex, first.x, first.y, first.width, first.height) : null;
     },
+    linkAtCaret: (): string | null => (selection ? linkAtPosition(doc, selection.focus) : null),
     deleteSelectedObject: deleteSelectedObjectInternal,
     setInspectorHighlight: (target: InspectorTarget | null): void => {
       paint.setInspectorRects(target ? inspectorRectsFor(target) : null);

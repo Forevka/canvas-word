@@ -9,8 +9,10 @@
 
 import type { EditorTypography, Stylesheet } from "@cw/shared";
 import { makeDefaultStylesheet } from "@cw/shared";
+import type { DocSelection } from "@cw/shared";
 import type { CurrentFormat } from "./index";
 import type { RibbonActionContext } from "./ribbon";
+import type { AnchorRect } from "./ui/floatingBarPosition";
 import type { FontsConfig, ResolvedFontsConfig } from "./fonts/customRegistry";
 import { ARABIC_FONT_FAMILY, CJK_FONT_FAMILY, HEBREW_FONT_FAMILY } from "./fonts/clones";
 import {
@@ -302,6 +304,49 @@ export function resolveFloatingToolbar(input?: FloatingToolbarConfig): ResolvedF
   };
 }
 
+// ---- contextual floating toolbars (public embedder API) ---------------------
+
+/** What an embedder-registered context toolbar sees to decide whether to show and
+ *  where to anchor. Mirrors the signals the built-in bars use. */
+export interface ToolbarContext {
+  /** Character/paragraph format + context flags at the caret (imageSelected,
+   *  inTable, inContentControl, …). */
+  format: CurrentFormat;
+  /** The live selection, or null when the editor isn't focused. */
+  selection: DocSelection | null;
+  /** True when a non-empty range is selected (vs a bare caret). */
+  hasRange: boolean;
+  /** The hyperlink URL at the caret, or null. */
+  linkUrl: string | null;
+  /** Viewport anchor rect of the selection start line / caret (the default anchor). */
+  selectionRect(): AnchorRect | null;
+  /** Viewport anchor rect of the selected image, or null. */
+  objectRect(): AnchorRect | null;
+}
+
+/** A custom contextual floating toolbar an embedder registers via the
+ *  `contextToolbars` option. Shown (above the selection) whenever `when(ctx)` is
+ *  true and no higher-priority toolbar is active. */
+export interface ContextToolbarSpec {
+  /** Stable id (namespace it, e.g. "myco.table"). */
+  id: string;
+  /** Higher wins when several contexts are active. Built-ins use image=30,
+   *  hyperlink=25, text=20; default 15 keeps custom bars below them. */
+  priority?: number;
+  /** Show predicate over the current context. */
+  when: (ctx: ToolbarContext) => boolean;
+  /** Buttons — the same custom-button shape as `floatingToolbar` / the ribbon. */
+  buttons: FloatingToolbarButtonSpec[];
+  /** Anchor rect resolver; defaults to the selection anchor (`ctx.selectionRect()`). */
+  anchor?: (ctx: ToolbarContext) => AnchorRect | null;
+}
+
+/** Normalize the `contextToolbars` option (a plain copy — nothing to default at the
+ *  array level; per-spec `priority`/`anchor` defaults are applied at wiring time). */
+export function resolveContextToolbars(input?: ContextToolbarSpec[]): ContextToolbarSpec[] {
+  return input ? [...input] : [];
+}
+
 /** The library's built-in (empty) fonts config. */
 export const DEFAULT_FONTS: ResolvedFontsConfig = { disableBuiltin: [], fonts: [] };
 
@@ -340,6 +385,9 @@ export interface ResolvedConfig {
   /** Floating mini-toolbar (quick formatting above a text selection): whether it's
    *  shown, whether it appears at a bare caret, and which controls it carries. */
   floatingToolbar: ResolvedFloatingToolbar;
+  /** Embedder-registered contextual floating toolbars (in addition to the built-in
+   *  image / hyperlink / text bars). */
+  contextToolbars: ContextToolbarSpec[];
 }
 
 export interface EditorConfigInput {
@@ -356,6 +404,9 @@ export interface EditorConfigInput {
   /** Floating mini-toolbar above a text selection: `true`/`false` to toggle, or an
    *  object to customize which controls appear, their order, and caret behavior. */
   floatingToolbar?: FloatingToolbarConfig | undefined;
+  /** Register custom contextual floating toolbars (shown for your own contexts,
+   *  alongside the built-in image / hyperlink / text bars). */
+  contextToolbars?: ContextToolbarSpec[] | undefined;
 }
 
 /** Resolve the public partial options into the fully-populated internal config. */
@@ -371,6 +422,7 @@ export function resolveConfig(input: EditorConfigInput = {}): ResolvedConfig {
     develop: input.develop ?? false,
     organizePages: input.organizePages ?? true,
     floatingToolbar: resolveFloatingToolbar(input.floatingToolbar),
+    contextToolbars: resolveContextToolbars(input.contextToolbars),
   };
 }
 
