@@ -98,6 +98,31 @@ describe("image crop — a:srcRect", () => {
   });
 });
 
+// ── inline image paragraph spacing (#198) ────────────────────────────────────
+describe("inline image paragraph spacing", () => {
+  const inlineImage = (): ImageBlock => ({ kind: "image", id: "img0", revision: 0, src: "img1", widthPx: 150, heightPx: 110, align: "left" });
+
+  it("pins the image paragraph to zero before/after and single (auto) line spacing", () => {
+    // The editor lays an image out at exactly heightPx with no paragraph spacing, so
+    // consecutive images render flush. Without an explicit spacing override the image
+    // w:p inherits Normal's space-after + line multiplier and Word opens an unclickable
+    // gap around the image; pinning it keeps Word flush with the canvas.
+    const doc: Document = { section: SECTION, blocks: [inlineImage()] };
+    const xml = exportedDocXml(doc, { img1: PNG_1PX });
+    expect(xml).toContain('<w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/>');
+    // w:spacing must precede w:jc in the CT_PPr schema sequence.
+    expect(xml.indexOf("<w:spacing")).toBeLessThan(xml.indexOf("<w:jc"));
+    // it is an inline drawing (no floating anchor), so the spacing applies to flow.
+    expect(xml).toContain("wp:inline");
+  });
+
+  it("still round-trips the image itself", () => {
+    const out = firstImage(roundTrip({ section: SECTION, blocks: [inlineImage()] }, { img1: PNG_1PX }));
+    expect(out.widthPx).toBeCloseTo(150, 0);
+    expect(out.heightPx).toBeCloseTo(110, 0);
+  });
+});
+
 // ── anchored (floating) images inside a table cell ───────────────────────────
 const anchoredDrawing = `<w:drawing><wp:anchor behindDoc="0" relativeHeight="2">` +
   `<wp:positionH relativeFrom="column"><wp:posOffset>91440</wp:posOffset></wp:positionH>` +
