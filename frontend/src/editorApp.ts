@@ -3296,9 +3296,14 @@ if (!readonly && config.floatingToolbar.enabled) {
     pxToPt: (px) => Math.round(sharedPxToPt(px) * 2) / 2,
     focus: () => editor.focus(),
     config: config.floatingToolbar,
-    // A custom button gets the same context a custom ribbon button gets.
+    // A custom button gets the same context a custom ribbon button gets — and,
+    // like the ribbon path, a throwing handler is caught rather than surfaced.
     runCustomButton: (spec) => {
-      if (ribbonCtx) spec.onClick(ribbonCtx);
+      try {
+        if (ribbonCtx) spec.onClick(ribbonCtx);
+      } catch (err) {
+        console.error("[canvas-word] custom floating-toolbar button onClick threw", err);
+      }
     },
     actions: {
       toggle: (key) => editor.toggleStyle(key),
