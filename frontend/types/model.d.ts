@@ -133,18 +133,28 @@ export interface ImageBlock {
   wrap?: "block" | "square";
 }
 
-/** A DrawingML preset shape (rect/ellipse/line) with a solid fill + solid stroke,
- *  drawn in the flow like an image. See ShapeBlock in the model. */
-export type ShapePreset = "rect" | "ellipse" | "line";
+/** A DrawingML preset shape drawn in the flow like an image, with an optional solid
+ *  fill + (optionally dashed) solid stroke and rotation. See ShapeBlock in the model. */
+export type ShapePreset =
+  | "rect"
+  | "roundRect"
+  | "ellipse"
+  | "triangle"
+  | "diamond"
+  | "rightArrow"
+  | "leftArrow"
+  | "line";
+export type ShapeDash = "solid" | "dash" | "dot" | "dashDot" | "lgDash";
 export type ShapeFill = { color: string } | { none: true };
-export type ShapeStroke = { color: string; widthPt: number } | { none: true };
+export type ShapeStroke = { color: string; widthPt: number; dash?: ShapeDash } | { none: true };
 
 export interface ShapeBlock {
   kind: "shape";
   id: string;
   revision: number;
-  /** The vector geometry drawn inside the box (a:prstGeom@prst). */
-  geometry: { preset: ShapePreset };
+  /** The vector geometry drawn inside the box (a:prstGeom@prst); `adjust` carries
+   *  the raw a:avLst guide values (name → number) for parametric presets. */
+  geometry: { preset: ShapePreset; adjust?: Record<string, number> };
   /** Interior fill; absent = the theme-neutral default. */
   fill?: ShapeFill;
   /** Outline; absent = the default outline. */
@@ -152,6 +162,8 @@ export interface ShapeBlock {
   widthPx: number;
   heightPx: number;
   align: "left" | "center" | "right";
+  /** Clockwise rotation in degrees (a:xfrm@rot); absent = none. */
+  rotation?: number;
 }
 
 export interface CellBorder {

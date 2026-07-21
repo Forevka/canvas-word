@@ -138,10 +138,15 @@ export class BuilderContext {
     align: ShapeBlock["align"],
     fill?: ShapeFill,
     stroke?: ShapeStroke,
+    rotation?: number,
+    adjust?: Record<string, number>,
   ): ShapeBlock {
-    const shape: ShapeBlock = { kind: "shape", id: this.ids.next(), revision: 0, geometry: { preset }, widthPx, heightPx, align };
+    const geometry: ShapeBlock["geometry"] = { preset };
+    if (adjust && Object.keys(adjust).length > 0) geometry.adjust = adjust;
+    const shape: ShapeBlock = { kind: "shape", id: this.ids.next(), revision: 0, geometry, widthPx, heightPx, align };
     if (fill) shape.fill = fill;
     if (stroke) shape.stroke = stroke;
+    if (rotation) shape.rotation = rotation;
     return shape;
   }
 

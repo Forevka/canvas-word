@@ -471,26 +471,57 @@ function placeholderBox(ctx: PaintCtx, x: number, y: number, w: number, h: numbe
   ctx.doc.rect(x, y, w, h).fill(IMAGE_PLACEHOLDER_COLOR);
 }
 
+/** Trace a preset geometry into the pdfkit path, inside the box (x,y,w,h) — the PDF
+ *  mirror of the canvas traceShapePath (same proportions, so screen and export
+ *  match). pdfkit consumes the path on fill/stroke, so it is retraced for each. */
+function shapePathPdf(doc: PDFKit.PDFDocument, preset: PlacedShape["preset"], x: number, y: number, w: number, h: number): void {
+  const poly = (pts: [number, number][]): void => {
+    doc.moveTo(pts[0]![0], pts[0]![1]);
+    for (let i = 1; i < pts.length; i++) doc.lineTo(pts[i]![0], pts[i]![1]);
+    doc.closePath();
+  };
+  switch (preset) {
+    case "ellipse": doc.ellipse(x + w / 2, y + h / 2, w / 2, h / 2); return;
+    case "line": doc.moveTo(x, y).lineTo(x + w, y + h); return;
+    case "roundRect": doc.roundedRect(x, y, w, h, Math.min(w, h) * 0.18); return;
+    case "triangle": poly([[x + w / 2, y], [x + w, y + h], [x, y + h]]); return;
+    case "diamond": poly([[x + w / 2, y], [x + w, y + h / 2], [x + w / 2, y + h], [x, y + h / 2]]); return;
+    case "rightArrow": {
+      const head = Math.min(0.4 * w, w);
+      const t = y + h * 0.25, b = y + h * 0.75;
+      poly([[x, t], [x + w - head, t], [x + w - head, y], [x + w, y + h / 2], [x + w - head, y + h], [x + w - head, b], [x, b]]);
+      return;
+    }
+    case "leftArrow": {
+      const head = Math.min(0.4 * w, w);
+      const t = y + h * 0.25, b = y + h * 0.75;
+      poly([[x + w, t], [x + head, t], [x + head, y], [x, y + h / 2], [x + head, y + h], [x + head, b], [x + w, b]]);
+      return;
+    }
+    default: doc.rect(x, y, w, h);
+  }
+}
+
 /** Draw a placed drawing shape's preset geometry into its box at (x,y) — the PDF
- *  mirror of the canvas paintShapeCanvas. pdfkit consumes the path on fill/stroke,
- *  so the path is retraced for each. Line is the box diagonal (OOXML prst="line"). */
+ *  mirror of the canvas paintShapeCanvas: fill, then the (optionally dashed) stroke,
+ *  about the box center when rotated. Line is the box diagonal (OOXML prst="line"). */
 function paintShapePdf(doc: PDFKit.PDFDocument, shape: PlacedShape, x: number, y: number): void {
   const { fill, stroke } = resolveShapePaint(shape);
   const w = shape.width;
   const h = shape.height;
-  const tracePath = (): void => {
-    if (shape.preset === "ellipse") doc.ellipse(x + w / 2, y + h / 2, w / 2, h / 2);
-    else if (shape.preset === "line") doc.moveTo(x, y).lineTo(x + w, y + h);
-    else doc.rect(x, y, w, h);
-  };
   doc.save();
+  if (shape.rotation) doc.rotate(shape.rotation, { origin: [x + w / 2, y + h / 2] });
   if (fill && shape.preset !== "line") {
-    tracePath();
+    shapePathPdf(doc, shape.preset, x, y, w, h);
     doc.fill(fill);
   }
   if (stroke) {
-    tracePath();
-    doc.lineWidth(stroke.widthPx).stroke(stroke.color);
+    shapePathPdf(doc, shape.preset, x, y, w, h);
+    doc.lineWidth(stroke.widthPx);
+    if (stroke.dash.length === 2) doc.dash(stroke.dash[0]!, { space: stroke.dash[1]! });
+    else if (stroke.dash.length > 2) doc.addContent(`[${stroke.dash.map((d) => Number(d.toFixed(2))).join(" ")}] 0 d`);
+    doc.stroke(stroke.color);
+    doc.undash();
   }
   doc.restore();
 }

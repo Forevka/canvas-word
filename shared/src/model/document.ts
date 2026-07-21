@@ -530,31 +530,44 @@ export interface ImageBlock {
 
 /** A DrawingML preset shape (OOXML wps:wsp / a:prstGeom). This is the "like an
  *  image, but the picture is a vector geometry we draw" block. PR 1 (issue #214)
- *  ships the foundation slice — presets rect/ellipse/line, solid fill + solid
- *  stroke, in-flow (block) only. The following field holes are deliberately absent
- *  and filled by later shape PRs (see docs/SHAPES_PLAN.md):
+ *  shipped the foundation slice (rect/ellipse/line, solid fill + solid stroke);
+ *  PR 2 (issue #215) widens the preset set, adds dash styles + `a:avLst` adjust
+ *  passthrough + `a:xfrm@rot` rotation. The following field holes are deliberately
+ *  absent and filled by later shape PRs (see docs/SHAPES_PLAN.md):
  *    - `wrap` / `anchor` (square wrap + wp:anchor float + z-order) — PR 4,
- *    - `text` (wps:txbx body) — PR 3,
- *    - `rotation` (a:xfrm@rot) — PR 2,
- *  and the preset union grows (roundRect/triangle/diamond/arrows) in PR 2. */
-export type ShapePreset = "rect" | "ellipse" | "line";
+ *    - `text` (wps:txbx body) — PR 3. */
+export type ShapePreset =
+  | "rect"
+  | "roundRect"
+  | "ellipse"
+  | "triangle"
+  | "diamond"
+  | "rightArrow"
+  | "leftArrow"
+  | "line";
+
+/** Outline dash pattern (a:prstDash@val). Each value is the raw OOXML preset-dash
+ *  name, so import/export is a pass-through. Absent = a solid line. */
+export type ShapeDash = "solid" | "dash" | "dot" | "dashDot" | "lgDash";
 
 /** Shape fill (a:solidFill / a:noFill). `{ color }` is a solid CSS hex fill;
  *  `{ none }` is an explicit no-fill. Absent = the theme-neutral default fill. */
 export type ShapeFill = { color: string } | { none: true };
 
 /** Shape outline (a:ln). `{ color, widthPt }` is a solid stroke of `widthPt` points
- *  in CSS hex `color`; `{ none }` is an explicit no-outline. Absent = the default
- *  outline. Dash styles arrive in PR 2. */
-export type ShapeStroke = { color: string; widthPt: number } | { none: true };
+ *  in CSS hex `color`, optionally dashed (`dash`); `{ none }` is an explicit
+ *  no-outline. Absent = the default outline. */
+export type ShapeStroke = { color: string; widthPt: number; dash?: ShapeDash } | { none: true };
 
 export interface ShapeBlock {
   kind: "shape";
   id: string;
   revision: number;
   /** The vector geometry drawn inside the box: a preset path (a:prstGeom@prst).
-   *  `adjust` (a:avLst) passthrough arrives with the parametric presets in PR 2. */
-  geometry: { preset: ShapePreset };
+   *  `adjust` (a:avLst) carries the raw `a:gd` guide values (name → number)
+   *  verbatim so parametric presets (roundRect corner radius, arrow head size, …)
+   *  round-trip; absent = the preset's built-in default handles. */
+  geometry: { preset: ShapePreset; adjust?: Record<string, number> };
   /** Interior fill; absent ⇒ theme-neutral default (see paint). */
   fill?: ShapeFill;
   /** Outline; absent ⇒ default outline (see paint). */
@@ -564,6 +577,9 @@ export interface ShapeBlock {
   widthPx: number;
   heightPx: number;
   align: "left" | "center" | "right";
+  /** Clockwise rotation in degrees (a:xfrm@rot, stored there as 60000ths of a
+   *  degree). Absent ⇒ no rotation. */
+  rotation?: number;
   /** Word's persistent drawing identity (wp14:anchorId/editId on the
    *  wp:inline|wp:anchor container) — mirror ImageBlock.drawingId. Preserved
    *  verbatim from import and re-emitted (de-duped on export). */

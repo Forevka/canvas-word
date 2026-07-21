@@ -103,6 +103,9 @@ export interface PlacedShape {
   stroke?: ShapeStroke;
   width: number;
   height: number;
+  /** Clockwise rotation in degrees (ShapeBlock.rotation); the painters rotate the
+   *  geometry about the box center. Absent = none. */
+  rotation?: number;
 }
 
 export interface PlacedTableCell {

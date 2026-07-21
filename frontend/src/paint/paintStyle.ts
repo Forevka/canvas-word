@@ -5,7 +5,7 @@
 // drifting; the actual draw calls stay separate (canvas vs pdfkit are different
 // APIs). Pure data + math — no DOM, no rendering backend.
 
-import type { CharStyle, PageBorderEdge, PageBorders, TabLeader, UnderlineStyle } from "@cw/shared";
+import type { CharStyle, PageBorderEdge, PageBorders, ShapeDash, TabLeader, UnderlineStyle } from "@cw/shared";
 import { ptToPx } from "@cw/shared";
 import type { PlacedShape } from "../layout/layoutTree";
 
@@ -32,12 +32,29 @@ export const SHAPE_DEFAULT_FILL = "#d9e2f0";
 export const SHAPE_DEFAULT_STROKE_COLOR = "#41719c";
 export const SHAPE_DEFAULT_STROKE_WIDTH_PT = 1;
 
+/** The on/off px pattern for an outline dash preset, scaled by the stroke width so
+ *  a thicker line gets proportionally longer dashes (matching Word/DrawingML). An
+ *  empty array (solid, or absent) means "no dash" — the painters skip setLineDash.
+ *  Shared by the canvas renderer and the PDF painter so a dashed outline is
+ *  pixel-identical on screen and in the export. */
+export function shapeDashArray(dash: ShapeDash | undefined, widthPx: number): number[] {
+  const w = Math.max(1, widthPx);
+  switch (dash) {
+    case "dot": return [w, 2 * w];
+    case "dash": return [4 * w, 3 * w];
+    case "lgDash": return [8 * w, 3 * w];
+    case "dashDot": return [4 * w, 3 * w, w, 3 * w];
+    default: return []; // "solid" / undefined
+  }
+}
+
 /** Resolve a placed shape's fill + stroke into concrete paint values the canvas and
  *  PDF painters both consume (keeping them in lockstep). `fill`/`stroke` come back
- *  null when there is nothing to paint (explicit `none`, or a line's absent fill). */
+ *  null when there is nothing to paint (explicit `none`, or a line's absent fill).
+ *  A resolved stroke carries its dash as a ready-to-use px pattern (empty = solid). */
 export function resolveShapePaint(shape: PlacedShape): {
   fill: string | null;
-  stroke: { color: string; widthPx: number } | null;
+  stroke: { color: string; widthPx: number; dash: number[] } | null;
 } {
   // Fill: explicit color, explicit none → null, absent → default (but a line is a
   // stroke-only geometry, so it never fills).
@@ -46,10 +63,15 @@ export function resolveShapePaint(shape: PlacedShape): {
   else if (shape.fill && "color" in shape.fill) fill = shape.fill.color;
   else fill = shape.preset === "line" ? null : SHAPE_DEFAULT_FILL;
   // Stroke: explicit (unless none), absent → default.
-  let stroke: { color: string; widthPx: number } | null;
-  if (shape.stroke && "none" in shape.stroke) stroke = null;
-  else if (shape.stroke) stroke = { color: shape.stroke.color, widthPx: Math.max(0.5, ptToPx(shape.stroke.widthPt)) };
-  else stroke = { color: SHAPE_DEFAULT_STROKE_COLOR, widthPx: ptToPx(SHAPE_DEFAULT_STROKE_WIDTH_PT) };
+  let stroke: { color: string; widthPx: number; dash: number[] } | null;
+  if (shape.stroke && "none" in shape.stroke) {
+    stroke = null;
+  } else if (shape.stroke) {
+    const widthPx = Math.max(0.5, ptToPx(shape.stroke.widthPt));
+    stroke = { color: shape.stroke.color, widthPx, dash: shapeDashArray(shape.stroke.dash, widthPx) };
+  } else {
+    stroke = { color: SHAPE_DEFAULT_STROKE_COLOR, widthPx: ptToPx(SHAPE_DEFAULT_STROKE_WIDTH_PT), dash: [] };
+  }
   return { fill, stroke };
 }
 

@@ -36,9 +36,14 @@ export interface ShapeOptions {
   align?: "left" | "center" | "right";
   /** Solid fill (CSS hex) or explicit no-fill; omit for the theme-neutral default. */
   fill?: ShapeFill;
-  /** Solid outline (CSS hex + point width) or explicit no-outline; omit for the
-   *  default outline. */
+  /** Solid outline (CSS hex + point width, optional `dash`) or explicit no-outline;
+   *  omit for the default outline. */
   stroke?: ShapeStroke;
+  /** Clockwise rotation in degrees (a:xfrm@rot); omit for none. */
+  rotation?: number;
+  /** Raw a:avLst adjust guides (name → number) for parametric presets; omit for the
+   *  preset's default handles. */
+  adjust?: Record<string, number>;
 }
 
 export interface ListItem {
@@ -130,15 +135,16 @@ export class StoryBuilder {
     return this;
   }
 
-  /** Insert a drawing shape (preset geometry: rect/ellipse/line) with an optional
-   *  fill + outline. Like `.image()`, the size is required (the builder runs in Node
-   *  too, with no DOM). */
+  /** Insert a drawing shape (a preset geometry: rect/roundRect/ellipse/triangle/
+   *  diamond/right|leftArrow/line) with an optional fill, outline (with dash),
+   *  rotation and adjust handles. Like `.image()`, the size is required (the builder
+   *  runs in Node too, with no DOM). */
   shape(preset: ShapePreset, opts: ShapeOptions): this {
     if (!Number.isFinite(opts?.widthPx) || !Number.isFinite(opts?.heightPx) || opts.widthPx <= 0 || opts.heightPx <= 0) {
       this.ctx.warn("shape-size-invalid", ".shape() requires positive widthPx and heightPx; shape skipped.");
       return this;
     }
-    this.push(this.ctx.shape(preset, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.fill, opts.stroke));
+    this.push(this.ctx.shape(preset, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.fill, opts.stroke, opts.rotation, opts.adjust));
     return this;
   }
 

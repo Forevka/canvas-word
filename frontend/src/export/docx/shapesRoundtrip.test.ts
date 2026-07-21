@@ -35,9 +35,34 @@ describe("drawing shapes — DrawingML wps:wsp round-trip", () => {
     expect(out.stroke).toEqual({ color: "#41719c", widthPt: 1.5 });
   });
 
-  it("round-trips the ellipse and line presets", () => {
-    expect(firstShape(roundTrip(docOf(shape({ geometry: { preset: "ellipse" } })))).geometry.preset).toBe("ellipse");
-    expect(firstShape(roundTrip(docOf(shape({ geometry: { preset: "line" } })))).geometry.preset).toBe("line");
+  it("round-trips every preset in the Part 2 set", () => {
+    for (const preset of ["rect", "roundRect", "ellipse", "triangle", "diamond", "rightArrow", "leftArrow", "line"] as const) {
+      expect(firstShape(roundTrip(docOf(shape({ geometry: { preset } })))).geometry.preset).toBe(preset);
+    }
+  });
+
+  it("round-trips a dashed outline (a:prstDash)", () => {
+    const s = shape({ stroke: { color: "#333333", widthPt: 1.5, dash: "dashDot" } });
+    const out = firstShape(roundTrip(docOf(s)));
+    expect(out.stroke).toEqual({ color: "#333333", widthPt: 1.5, dash: "dashDot" });
+    // a solid stroke omits a:prstDash entirely.
+    expect(exportedDocXml(docOf(s))).toContain('<a:prstDash val="dashDot"/>');
+    expect(exportedDocXml(docOf(shape({ stroke: { color: "#333333", widthPt: 1 } })))).not.toContain("a:prstDash");
+  });
+
+  it("round-trips rotation (a:xfrm@rot degrees ↔ 60000ths)", () => {
+    const out = firstShape(roundTrip(docOf(shape({ rotation: 20 }))));
+    expect(out.rotation).toBe(20);
+    expect(exportedDocXml(docOf(shape({ rotation: 20 })))).toContain('<a:xfrm rot="1200000">');
+    // no rotation → the a:xfrm carries no rot attribute.
+    expect(exportedDocXml(docOf(shape()))).toContain("<a:xfrm>");
+  });
+
+  it("round-trips a:avLst adjust guides on a parametric preset", () => {
+    const s = shape({ geometry: { preset: "roundRect", adjust: { adj: 18000 } } });
+    const out = firstShape(roundTrip(docOf(s)));
+    expect(out.geometry).toEqual({ preset: "roundRect", adjust: { adj: 18000 } });
+    expect(exportedDocXml(docOf(s))).toContain('<a:gd name="adj" fmla="val 18000"/>');
   });
 
   it("round-trips explicit no-fill and no-outline", () => {
@@ -95,12 +120,31 @@ describe("drawing shapes — DrawingML wps:wsp round-trip", () => {
     expect(out.stroke).toEqual({ color: "#41719c", widthPt: 1.5 });
   });
 
-  it("maps an unsupported preset to a rectangle (PR 1 preset set)", () => {
+  it("imports a hand-written adjust + rotation + dash (the importer as oracle)", () => {
+    const drawing = `<w:p><w:r><w:drawing>
+      <wp:inline><wp:extent cx="1905000" cy="1143000"/><wp:docPr id="1" name="Shape"/>
+        <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
+          <wps:wsp><wps:cNvSpPr/><wps:spPr>
+            <a:xfrm rot="1200000"><a:off x="0" y="0"/><a:ext cx="1905000" cy="1143000"/></a:xfrm>
+            <a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val 18000"/></a:avLst></a:prstGeom>
+            <a:solidFill><a:srgbClr val="d9ead3"/></a:solidFill>
+            <a:ln w="19050"><a:solidFill><a:srgbClr val="38761d"/></a:solidFill><a:prstDash val="dash"/></a:ln>
+          </wps:spPr><wps:bodyPr/></wps:wsp>
+        </a:graphicData></a:graphic>
+      </wp:inline>
+    </w:drawing></w:r></w:p>`;
+    const out = firstShape(runImport(simpleDocx(drawing)).doc);
+    expect(out.geometry).toEqual({ preset: "roundRect", adjust: { adj: 18000 } });
+    expect(out.rotation).toBe(20);
+    expect(out.stroke).toEqual({ color: "#38761d", widthPt: 1.5, dash: "dash" });
+  });
+
+  it("maps a genuinely unsupported preset to a rectangle (+ warning), dropping its adjust", () => {
     const drawing = `<w:p><w:r><w:drawing>
       <wp:inline><wp:extent cx="914400" cy="914400"/><wp:docPr id="1" name="Shape"/>
         <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
           <wps:wsp><wps:cNvSpPr/><wps:spPr>
-            <a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom>
+            <a:prstGeom prst="star5"><a:avLst><a:gd name="adj" fmla="val 19000"/></a:avLst></a:prstGeom>
             <a:solidFill><a:srgbClr val="d9e2f0"/></a:solidFill>
           </wps:spPr><wps:bodyPr/></wps:wsp>
         </a:graphicData></a:graphic>
@@ -108,6 +152,6 @@ describe("drawing shapes — DrawingML wps:wsp round-trip", () => {
     </w:drawing></w:r></w:p>`;
     const res = runImport(simpleDocx(drawing));
     const out = firstShape(res.doc);
-    expect(out.geometry.preset).toBe("rect");
+    expect(out.geometry).toEqual({ preset: "rect" });
   });
 });

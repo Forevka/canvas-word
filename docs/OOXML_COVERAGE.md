@@ -349,15 +349,16 @@ Decoded in `documentParser.ts` (`parseShapeWsp`), emitted by `shapeParagraphXml`
 
 ```
 w:drawing → wp:inline → a:graphicData @uri=…/wordprocessingShape → wps:wsp ✅ ShapeBlock
-├─ wps:spPr / a:prstGeom @prst .......... ⚠️ rect/ellipse/line (Part 1); other presets → rect + warning
+├─ wps:spPr / a:prstGeom @prst .......... ✅ rect/roundRect/ellipse/triangle/diamond/right|leftArrow/line; other presets → rect + warning
 ├─ wp:extent (@cx/@cy) → widthPx/heightPx ✅
 ├─ a:solidFill / a:noFill (shape fill) .. ✅ hex color / explicit none (absent = default)
-├─ a:ln (@w + a:solidFill / a:noFill) ... ✅ solid outline (point width) / explicit none; dash styles ❌ (Part 2)
+├─ a:ln (@w + a:solidFill / a:noFill) ... ✅ solid outline (point width) / explicit none
+│   └─ a:prstDash (@val) ................ ✅ solid/dash/dot/dashDot/lgDash
 ├─ wp14:anchorId / wp14:editId .......... ✅ ShapeBlock.drawingId (preserved verbatim; export de-dups)
-├─ a:avLst (adjust handles) ............. ❌ (Part 2)
-├─ a:xfrm @rot (rotation) ............... ❌ (Part 2)
+├─ a:avLst / a:gd (adjust handles) ...... ✅ raw guide values (name → `val N`) round-trip via geometry.adjust
+├─ a:xfrm @rot (rotation) ............... ✅ ShapeBlock.rotation (degrees ↔ 60000ths)
 ├─ wps:txbx (text box body) ............. ❌ (Part 3)
-└─ wp:anchor (float / wrap / z-order) ... ❌ in-flow only in Part 1 (Part 4)
+└─ wp:anchor (float / wrap / z-order) ... ❌ in-flow only (Part 4)
 ```
 
 > Parts 2–9 (geometry & style breadth, text boxes, positioning, VML import,

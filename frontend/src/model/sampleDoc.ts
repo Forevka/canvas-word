@@ -76,14 +76,16 @@ const croppedImage = (w: number, h: number, crop: NonNullable<ImageBlock["crop"]
   kind: "image", id: id(), revision: 0, src: TILE_PNG, widthPx: w, heightPx: h, align: "left", crop });
 
 // --- drawing shapes (DrawingML wps:wsp) ----------------------------------------
-/** A preset drawing shape (OOXML wps:wsp / a:prstGeom) with an optional fill +
- *  outline — the #206 shape round-trip. PR 1 covers rect/ellipse/line. */
+/** A preset drawing shape (OOXML wps:wsp / a:prstGeom) with an optional fill,
+ *  outline (with dash) and rotation — the #206 shape round-trip. */
 const shape = (
   preset: ShapePreset, w: number, h: number, align: ShapeBlock["align"],
-  fill?: ShapeFill, stroke?: ShapeStroke,
+  fill?: ShapeFill, stroke?: ShapeStroke, rotation?: number, adjust?: Record<string, number>,
 ): ShapeBlock => ({
-  kind: "shape", id: id(), revision: 0, geometry: { preset }, widthPx: w, heightPx: h, align,
-  ...(fill ? { fill } : {}), ...(stroke ? { stroke } : {}),
+  kind: "shape", id: id(), revision: 0,
+  geometry: adjust ? { preset, adjust } : { preset },
+  widthPx: w, heightPx: h, align,
+  ...(fill ? { fill } : {}), ...(stroke ? { stroke } : {}), ...(rotation ? { rotation } : {}),
 });
 
 // --- symbols (w:sym) -----------------------------------------------------------
@@ -492,15 +494,27 @@ export function sampleDoc(): Document {
 
     // --- Drawing shapes (DrawingML wps:wsp) ------------------------------------
     heading("Drawing shapes", 2),
-    para([run("Vector preset shapes (OOXML wps:wsp / a:prstGeom) draw in the flow like an image. PR 1 covers rectangle, ellipse and line with a solid fill and a solid outline, selectable and drag-resizable, and round-tripping losslessly to .docx.")], { spaceAfterPx: 6 }),
-    para([run("A filled rectangle (blue fill, darker outline), centered:")], { spaceAfterPx: 4 }),
-    shape("rect", 220, 90, "center", { color: "#bcd6ef" }, { color: "#41719c", widthPt: 1.5 }),
-    para([run("An ellipse with a soft fill, left-aligned:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
-    shape("ellipse", 180, 120, "left", { color: "#f4cccc" }, { color: "#cc4125", widthPt: 1 }),
-    para([run("A stroke-only diagonal line (no fill), right-aligned:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
-    shape("line", 200, 60, "right", { none: true }, { color: "#38761d", widthPt: 2 }),
-    para([run("An outline-only rectangle (no fill), left-aligned:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
-    shape("rect", 160, 80, "left", { none: true }, { color: "#674ea7", widthPt: 1 }),
+    para([run("Vector preset shapes (OOXML wps:wsp / a:prstGeom) draw in the flow like an image — selectable, drag-resizable, and round-tripping losslessly to .docx. Fill and outline (colour, width, dash) are editable from the shape's floating toolbar and the ribbon Shape group.")], { spaceAfterPx: 6 }),
+    para([run("The preset gallery — rectangle, rounded rectangle, ellipse, triangle, diamond, right/left arrow, each with its own fill + outline:")], { spaceAfterPx: 4 }),
+    shape("rect", 150, 80, "left", { color: "#bcd6ef" }, { color: "#41719c", widthPt: 1.5 }),
+    shape("roundRect", 150, 80, "left", { color: "#d9ead3" }, { color: "#38761d", widthPt: 1.5 }, 0, { adj: 18000 }),
+    shape("ellipse", 150, 90, "left", { color: "#f4cccc" }, { color: "#cc4125", widthPt: 1 }),
+    shape("triangle", 130, 90, "center", { color: "#fce5cd" }, { color: "#e69138", widthPt: 1.5 }),
+    shape("diamond", 130, 90, "center", { color: "#d9d2e9" }, { color: "#674ea7", widthPt: 1.5 }),
+    shape("rightArrow", 180, 70, "right", { color: "#c9daf8" }, { color: "#3d6ea5", widthPt: 1.5 }),
+    shape("leftArrow", 180, 70, "right", { color: "#ead1dc" }, { color: "#a64d79", widthPt: 1.5 }),
+    para([run("Outline styles — solid, dash, dot, dash-dot and a thick long-dash:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
+    shape("rect", 150, 56, "left", { color: "#eeeeee" }, { color: "#333333", widthPt: 1.5 }),
+    shape("rect", 150, 56, "left", { color: "#eeeeee" }, { color: "#333333", widthPt: 1.5, dash: "dash" }),
+    shape("rect", 150, 56, "left", { color: "#eeeeee" }, { color: "#333333", widthPt: 1.5, dash: "dot" }),
+    shape("rect", 150, 56, "left", { color: "#eeeeee" }, { color: "#333333", widthPt: 1.5, dash: "dashDot" }),
+    shape("rect", 150, 56, "left", { color: "#eeeeee" }, { color: "#333333", widthPt: 3, dash: "lgDash" }),
+    para([run("Fill variants — a stroke-only diagonal line (no fill) and an outline-only rectangle (no fill):")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
+    shape("line", 200, 60, "left", { none: true }, { color: "#38761d", widthPt: 2 }),
+    shape("rect", 160, 70, "left", { none: true }, { color: "#674ea7", widthPt: 1 }),
+    para([run("A rotated rectangle (20°) and a rotated arrow — a:xfrm@rot round-trips:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
+    shape("rect", 150, 90, "center", { color: "#fff2cc" }, { color: "#bf9000", widthPt: 1.5 }, 20),
+    shape("rightArrow", 170, 80, "center", { color: "#d0e0e3" }, { color: "#134f5c", widthPt: 1.5 }, -15),
 
     para([run("Multilevel numbered list:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
     para([run("Model — invertible ops")], { list: { listId: DEFAULT_NUMBER_LIST_ID, level: 0 }, spaceAfterPx: 2 }),

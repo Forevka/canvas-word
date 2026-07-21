@@ -28,7 +28,9 @@ import type {
   SectionPatch,
   SectionProps,
   ShapeBlock,
+  ShapeDash,
   ShapePreset,
+  ShapeStroke,
   TabAlign,
   TableBlock,
   TableCell,
@@ -797,7 +799,8 @@ export function createMapper(
     return image;
   }
 
-  const KNOWN_PRESETS = new Set<ShapePreset>(["rect", "ellipse", "line"]);
+  const KNOWN_PRESETS = new Set<ShapePreset>(["rect", "roundRect", "ellipse", "triangle", "diamond", "rightArrow", "leftArrow", "line"]);
+  const KNOWN_DASHES = new Set<ShapeDash>(["solid", "dash", "dot", "dashDot", "lgDash"]);
 
   function mapShape(
     inline: Extract<IRInline, { kind: "shape" }>,
@@ -807,23 +810,36 @@ export function createMapper(
       warnings.add("shapes-unsized", "A drawing shape without explicit dimensions was skipped.");
       return undefined;
     }
-    // PR 1 models rect/ellipse/line; any other preset maps to rect (a box) so the
-    // shape still round-trips — later PRs widen the preset set.
+    // Recognized presets map through; any other maps to rect (a box) so the shape
+    // still round-trips its size/fill/stroke — the preset set grows with later PRs.
     let preset: ShapePreset = "rect";
     if (KNOWN_PRESETS.has(inline.preset as ShapePreset)) preset = inline.preset as ShapePreset;
     else warnings.add("shape-preset-unsupported", `An unsupported shape preset "${inline.preset}" was imported as a rectangle.`);
+    const geometry: ShapeBlock["geometry"] = { preset };
+    // Adjust handles are only meaningful for the geometry that owns them, so keep
+    // them only when the preset mapped through (a rect fallback has none).
+    if (inline.adjust && preset === inline.preset) geometry.adjust = inline.adjust;
     const shape: ShapeBlock = {
       kind: "shape",
       id: id(),
       revision: 0,
-      geometry: { preset },
+      geometry,
       widthPx: round2(emuToPx(inline.widthEmu)),
       heightPx: round2(emuToPx(inline.heightEmu)),
       align: paraAlign === "justify" ? "left" : paraAlign,
     };
+    if (inline.rotationDeg !== undefined) shape.rotation = round2(inline.rotationDeg);
     if (inline.fill) shape.fill = inline.fill;
     if (inline.stroke) {
-      shape.stroke = "none" in inline.stroke ? inline.stroke : { color: inline.stroke.color, widthPt: round2(inline.stroke.widthPt) };
+      if ("none" in inline.stroke) {
+        shape.stroke = inline.stroke;
+      } else {
+        const stroke: ShapeStroke = { color: inline.stroke.color, widthPt: round2(inline.stroke.widthPt) };
+        if (inline.stroke.dash && KNOWN_DASHES.has(inline.stroke.dash as ShapeDash) && inline.stroke.dash !== "solid") {
+          stroke.dash = inline.stroke.dash as ShapeDash;
+        }
+        shape.stroke = stroke;
+      }
     }
     // wp14:anchorId/editId — persistent drawing identity, preserved verbatim.
     if (inline.anchorId || inline.editId) {

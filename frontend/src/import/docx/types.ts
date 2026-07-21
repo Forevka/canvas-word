@@ -253,18 +253,23 @@ export type IRInline =
       };
     }
   /** w:drawing → …/wordprocessingShape → wps:wsp — a DrawingML preset shape. Becomes
-   *  a block-level ShapeBlock (mapShape). PR 1 handles rect/ellipse/line + solid
-   *  fill/stroke; unknown presets are still parsed (mapShape maps them to rect). */
+   *  a block-level ShapeBlock (mapShape). Recognized presets map through; unknown
+   *  presets are still parsed (mapShape maps them to rect + warns). */
   | {
       kind: "shape";
-      /** a:prstGeom@prst — the raw preset name (rect/ellipse/line/…). */
+      /** a:prstGeom@prst — the raw preset name (rect/ellipse/roundRect/…). */
       preset: string;
+      /** a:avLst → a:gd (name → the numeric value of its `val N` formula). */
+      adjust?: Record<string, number>;
       widthEmu?: number;
       heightEmu?: number;
+      /** a:xfrm@rot in degrees (OOXML stores 60000ths of a degree). */
+      rotationDeg?: number;
       /** spPr's direct a:solidFill (color) / a:noFill (none); absent = default. */
       fill?: { color: string } | { none: true };
-      /** a:ln: a solid stroke (color + point width) or an explicit no-outline. */
-      stroke?: { color: string; widthPt: number } | { none: true };
+      /** a:ln: a solid stroke (color + point width, optional a:prstDash) or an
+       *  explicit no-outline. */
+      stroke?: { color: string; widthPt: number; dash?: string } | { none: true };
       /** wp14:anchorId / wp14:editId on the wp:inline container — preserved verbatim. */
       anchorId?: string;
       editId?: string;

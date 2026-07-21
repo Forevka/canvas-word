@@ -2,7 +2,7 @@
 // One-way data flow: input -> command -> transaction -> applyOp* -> new state
 // -> incremental layout -> paint + caret + proxy reposition (same frame).
 
-import type { Block, CharStyle, Document, EmphasisMark, ImageBlock, ParaStyle, TableBlock, UnderlineStyle } from "@cw/shared";
+import type { Block, CharStyle, Document, EmphasisMark, ImageBlock, ParaStyle, ShapeBlock, TableBlock, UnderlineStyle } from "@cw/shared";
 import { BAND_CONTAINERS, parseTocInstruction } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, UserInfo } from "@cw/shared";
 import { isCollapsed, colorForId, userDisplayName, freshId, DEFAULT_CHAR_STYLE } from "@cw/shared";
@@ -270,6 +270,9 @@ export interface Editor {
    *  renders or edits a content slice on canvas (see ./child/childDocument). */
   createChild(): ChildDocument;
   getSelectedObject(): string | null;
+  /** The object-selected drawing shape (fill/stroke/geometry for the shape toolbar
+   *  + ribbon Shape group), or null when the selection is not a shape. */
+  getSelectedShape(): ShapeBlock | null;
   dispatch(cmd: Command): void;
   toggleStyle(key: StyleKey): void;
   /** Absolute char patch: range -> restyle runs; collapsed -> pending style. */
@@ -3531,6 +3534,9 @@ export function createEditor(
       }),
     getSelectedObject(): string | null {
       return selectedObject;
+    },
+    getSelectedShape(): ShapeBlock | null {
+      return selectedObject ? (locateShape(doc, selectedObject)?.block ?? null) : null;
     },
     getChangeLog(): Change[] {
       return recorder.changes();

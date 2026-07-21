@@ -785,11 +785,26 @@ function parseShapeWsp(wsp: XmlNode, container: XmlNode): Extract<IRInline, { ki
   const prst = prstGeom && attr(prstGeom, "prst");
   if (!prst) return undefined; // no geometry → not a shape we can place
   const shape: Extract<IRInline, { kind: "shape" }> = { kind: "shape", preset: prst };
+  // a:avLst → a:gd @name/@fmla="val N": the parametric adjust handles, kept raw.
+  const avLst = prstGeom && el(prstGeom, "a:avLst");
+  if (avLst) {
+    const adjust: Record<string, number> = {};
+    for (const gd of els(avLst, "a:gd")) {
+      const name = attr(gd, "name");
+      const fmla = attr(gd, "fmla");
+      const m = fmla?.match(/^val\s+(-?\d+)$/);
+      if (name && m) adjust[name] = Number(m[1]);
+    }
+    if (Object.keys(adjust).length > 0) shape.adjust = adjust;
+  }
   const extent = el(container, "wp:extent");
   const cx = numAttr(extent, "cx");
   if (cx !== undefined) shape.widthEmu = cx;
   const cy = numAttr(extent, "cy");
   if (cy !== undefined) shape.heightEmu = cy;
+  // a:xfrm@rot — clockwise rotation in 60000ths of a degree → degrees.
+  const rot = numAttr(spPr && el(spPr, "a:xfrm"), "rot");
+  if (rot !== undefined && rot !== 0) shape.rotationDeg = rot / 60000;
   const srgbVal = (parent: XmlNode | undefined): string | undefined => {
     const solid = parent && el(parent, "a:solidFill");
     const clr = solid && el(solid, "a:srgbClr");
@@ -800,7 +815,8 @@ function parseShapeWsp(wsp: XmlNode, container: XmlNode): Extract<IRInline, { ki
     const fillVal = srgbVal(spPr);
     if (fillVal) shape.fill = { color: `#${fillVal}` };
     else if (el(spPr, "a:noFill")) shape.fill = { none: true };
-    // Outline: a:ln → noFill (no outline) or solidFill (color) with @w (EMU) width.
+    // Outline: a:ln → noFill (no outline) or solidFill (color) with @w (EMU) width
+    // and an optional a:prstDash@val dash preset.
     const ln = el(spPr, "a:ln");
     if (ln) {
       if (el(ln, "a:noFill")) {
@@ -809,7 +825,11 @@ function parseShapeWsp(wsp: XmlNode, container: XmlNode): Extract<IRInline, { ki
         const lnVal = srgbVal(ln);
         if (lnVal) {
           const w = numAttr(ln, "w");
-          shape.stroke = { color: `#${lnVal}`, widthPt: w !== undefined ? w / 12700 : 1 };
+          const stroke: { color: string; widthPt: number; dash?: string } = { color: `#${lnVal}`, widthPt: w !== undefined ? w / 12700 : 1 };
+          const prstDash = el(ln, "a:prstDash");
+          const dash = prstDash && attr(prstDash, "val");
+          if (dash) stroke.dash = dash;
+          shape.stroke = stroke;
         }
       }
     }

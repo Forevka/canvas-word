@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Drawing shapes — geometry & style breadth + fill/outline UI (issue #206, Part 2).** The `shape`
+  block gains five more preset geometries — **rounded rectangle, triangle, diamond, right arrow and
+  left arrow** (on top of Part 1's rectangle / ellipse / line) — plus **dashed outlines** (solid / dash
+  / dot / dash-dot / long-dash via `a:prstDash`), **rotation** (`a:xfrm@rot`, degrees), and
+  **`a:avLst` adjust-handle passthrough** (`geometry.adjust`) so parametric presets round-trip their
+  guide values. **Fill** and **Outline** (colour, width, dash) are now editable from **both** the
+  shape's floating context toolbar **and** the contextual **Shape** ribbon group, reusing the same
+  colour popover as font-colour / highlight; the Insert → Shapes gallery lists every preset. New XML
+  is validated against the OOXML schema and the canvas + PDF painters draw each geometry (and its dash
+  / rotation) identically. Authorable from the `DocumentBuilder` (`.shape(preset, { …, rotation,
+  adjust, stroke: { dash } })`) and the C# bindings (`ShapePreset`, `ShapeDash`, `ShapeStroke.Dashed`,
+  `ShapeOptions.Rotation`/`.Adjust`), demonstrated in the default in-editor document and the C#
+  showcase. Text boxes, float/wrap positioning, VML import and grouped/freeform shapes follow in
+  Parts 3–9 (see `docs/SHAPES_PLAN.md`).
 - **Drawing shapes — `ShapeBlock` foundation (issue #206, Part 1).** A new `shape` document-model
   block draws a DrawingML preset geometry (**rectangle / ellipse / line**) with a **solid fill** and a
   **solid outline**, in the text flow like an image. Shapes are click-selectable, drag-resizable
