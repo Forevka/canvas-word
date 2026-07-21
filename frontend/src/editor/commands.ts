@@ -263,7 +263,18 @@ export function deleteBackward(): Command {
           "command",
         );
       }
-      return null; // first paragraph of a cell: the cell boundary stops backspace
+      // Inside a shape's text box body: merge with the previous paragraph in the
+      // SAME box; the box boundary stops backspace at its first paragraph (#219).
+      if (loc?.kind === "shape" && loc.pi > 0) {
+        const shape = containerBlocks(state.doc, loc.where)[loc.bi] as ShapeBlock;
+        const prevBlock = shape.text!.blocks[loc.pi - 1]!;
+        return tr(
+          [{ type: "mergeParagraphs", firstBlockId: prevBlock.id }],
+          caret(prevBlock.id, textOfRuns(prevBlock.runs).length),
+          "command",
+        );
+      }
+      return null; // first paragraph of a cell/text box: the boundary stops backspace
     }
     // Word's ladder: list level/membership goes first...
     const ladder = listBackspaceLadder(state);
@@ -333,6 +344,13 @@ export function deleteForward(): Command {
           );
         }
         if (nextBlock?.kind === "paragraph") {
+          return tr([{ type: "mergeParagraphs", firstBlockId: blockId }], caret(blockId, offset), "command");
+        }
+      }
+      // Inside a shape's text box body: merge with the next paragraph in the box.
+      if (loc?.kind === "shape") {
+        const shape = containerBlocks(state.doc, loc.where)[loc.bi] as ShapeBlock;
+        if (shape.text!.blocks[loc.pi + 1]) {
           return tr([{ type: "mergeParagraphs", firstBlockId: blockId }], caret(blockId, offset), "command");
         }
       }

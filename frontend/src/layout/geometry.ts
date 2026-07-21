@@ -100,10 +100,24 @@ interface TreeIndex {
 /** Story-editing scope: limit every query to ONE page's margin band. The same
  *  band block ids repeat on every page, so an unscoped lookup would be
  *  ambiguous — the scope pins queries to the page being edited. */
-export interface GeoScope {
+export interface BandScope {
   band: "header" | "footer";
   pageIndex: number;
 }
+
+/** Shape text-box editing scope: limit every query to ONE drawing shape's nested
+ *  text sub-flow (wps:txbx). Its paragraphs are laid out in the shape's LOCAL
+ *  frame; the scoped index shifts them to absolute page coords so caret/hit-test/
+ *  selection all work through the SAME geometry queries, with the shape's text
+ *  invisible to normal body hit-testing (like a band story). #219. */
+export interface ShapeScope {
+  shape: string;
+  pageIndex: number;
+}
+
+/** A restricted-query scope: a margin-band story OR a shape text box. Only
+ *  getIndex reads the discriminant; every other query passes it straight through. */
+export type GeoScope = BandScope | ShapeScope;
 
 const indexCache = new WeakMap<LayoutTree, TreeIndex>();
 const bandIndexCache = new WeakMap<LayoutTree, Map<string, TreeIndex>>();
@@ -208,12 +222,42 @@ function treeIndex(tree: LayoutTree): TreeIndex {
   return idx;
 }
 
+/** The shape's placed text box body shifted from its LOCAL frame to absolute page
+ *  coords, so the shared line index (which reads block.x/y as page coords) works
+ *  unchanged. Searches every page for the placed shape; returns null if it has no
+ *  laid-out text. */
+function shapeTextBlocksAbs(tree: LayoutTree, shapeId: string): { pageIndex: number; blocks: PlacedBlock[] } | null {
+  for (const page of tree.pages) {
+    for (const b of page.blocks) {
+      if (b.blockId !== shapeId || !b.shape?.text) continue;
+      const t = b.shape.text;
+      const ox = b.x + t.offsetX;
+      const oy = b.y + t.offsetY;
+      // The paragraphs are pure text (no nested tables/images), so shifting each
+      // block's own x/y is enough — lines/fragments stay block-relative.
+      const blocks = t.blocks.map((cb) => ({ ...cb, x: cb.x + ox, y: cb.y + oy }));
+      return { pageIndex: page.index, blocks };
+    }
+  }
+  return null;
+}
+
 function getIndex(tree: LayoutTree, scope?: GeoScope): TreeIndex {
   if (!scope) return treeIndex(tree);
   let perTree = bandIndexCache.get(tree);
   if (!perTree) {
     perTree = new Map();
     bandIndexCache.set(tree, perTree);
+  }
+  if ("shape" in scope) {
+    const key = `shape:${scope.shape}`;
+    let idx = perTree.get(key);
+    if (!idx) {
+      const abs = shapeTextBlocksAbs(tree, scope.shape);
+      idx = buildIndex(abs ? [abs] : [], true);
+      perTree.set(key, idx);
+    }
+    return idx;
   }
   const key = `${scope.band}:${scope.pageIndex}`;
   let idx = perTree.get(key);

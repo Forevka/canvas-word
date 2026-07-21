@@ -28,6 +28,7 @@ import {
   type ColumnBoundaryHit,
   type RowBoundaryHit,
   type GeoScope,
+  type BandScope,
   type Rect,
 } from "./layout/geometry";
 import type { LayoutTree, Page, PlacedBlock } from "./layout/layoutTree";
@@ -641,13 +642,27 @@ export function createEditor(
   let selection: DocSelection | null = null;
   let cellSelection: CellSelection | null = null; // rectangular table-cell selection
   let pendingStyle: Partial<CharStyle> | null = null;
-  let activeStory: GeoScope | null = null; // header/footer story-edit scope
+  let activeStory: BandScope | null = null; // header/footer story-edit scope
   let savedBodySelection: DocSelection | null = null; // restored on story exit
   let decorationSpecs: DecorationSpec[] = []; // embedder custom decorations (paint-only)
+  // The drawing shape whose text box body is being caret-edited, or null. Set on
+  // double-click / Enter into a text box; cleared on Escape / click-away. While
+  // set, geometry queries scope to the shape's nested sub-flow (#219).
+  let activeShapeText: string | null = null;
   paint.setTree(tree);
 
   const state = (): EditorState => ({ doc, selection, cellSelection, pendingStyle });
-  const scope = (): GeoScope | undefined => activeStory ?? undefined;
+  /** Page index a placed shape currently lives on (for its edit scope). */
+  const shapePageIndex = (shapeId: string): number => {
+    for (const page of tree.pages) {
+      if (page.blocks.some((b) => b.blockId === shapeId && b.shape?.text)) return page.index;
+    }
+    return 0;
+  };
+  /** The geometry scope for the active shape text box, or null when not editing one. */
+  const shapeScope = (): GeoScope | null =>
+    activeShapeText ? { shape: activeShapeText, pageIndex: shapePageIndex(activeShapeText) } : null;
+  const scope = (): GeoScope | undefined => activeStory ?? shapeScope() ?? undefined;
 
   // ---- selection visuals + proxy follow ----------------------------------
 
@@ -1133,7 +1148,7 @@ export function createEditor(
     paint.setTree(tree);
   };
 
-  const setStory = (next: GeoScope | null): void => {
+  const setStory = (next: BandScope | null): void => {
     const changingBand = (activeStory?.band ?? null) !== (next?.band ?? null);
     if (!changingBand && activeStory?.pageIndex === next?.pageIndex) return;
     // The band hover affordance is mutually exclusive with an open band (the
@@ -1282,6 +1297,8 @@ export function createEditor(
       if (blockId) refreshObjectFrame();
       return;
     }
+    // Selecting a (different) object leaves any text-box editing session.
+    if (blockId !== activeShapeText) activeShapeText = null;
     selectedObject = blockId;
     if (blockId) selection = null; // object selection replaces the text selection (Word)
     // Always refresh: selecting an image raises its control chrome (if any), and
@@ -1290,6 +1307,54 @@ export function createEditor(
     refreshSelectionVisuals();
     refreshObjectFrame();
     notifyChange(); // object selection drives the floating image toolbar
+  };
+
+  // ---- shape text box editing (issue #219) --------------------------------
+  // A drawing shape's text body is a nested paragraph sub-flow (wps:txbx). The
+  // caret enters it on double-click / Enter and edits it exactly like body text
+  // (the content ops locate the paragraph through its ParaLocation), with every
+  // geometry query scoped to the box (see `scope()` / ShapeScope). Escape pops
+  // back to selecting the shape object; a click outside the box commits.
+  const shapeHasEditableText = (shapeId: string): boolean => {
+    // ONLY a TOP-LEVEL shape's text box is editable: a text box nested inside a
+    // table cell is not in the locatable paragraph space and has no caret-geometry
+    // scope, so double-click / Enter must refuse it (it stays read-only). #219.
+    const loc = locateShape(doc, shapeId);
+    return loc?.kind === "top" && !!loc.block.text && loc.block.text.blocks.length > 0;
+  };
+
+  const enterShapeText = (shapeId: string, pos: DocPosition): boolean => {
+    if (mode === "view") return false; // editing-only
+    if (!shapeHasEditableText(shapeId)) return false;
+    selectObject(null); // leave object mode (also clears any prior text-box session)
+    activeShapeText = shapeId; // set BEFORE the selection so caret geometry scopes correctly
+    setSelection({ anchor: pos, focus: pos });
+    proxy.focus();
+    return true;
+  };
+
+  const exitShapeText = (toObject: boolean): void => {
+    const shapeId = activeShapeText;
+    if (!shapeId) return;
+    activeShapeText = null;
+    if (toObject) {
+      selection = null;
+      selectObject(shapeId); // Escape pops back to the shape as a selected object
+    } else {
+      refreshSelectionVisuals(); // click-away: the caller sets the new body caret next
+    }
+  };
+
+  /** Enter the currently-selected shape's text box (Enter on a selected shape).
+   *  Returns the REAL outcome — false for a non-shape, a shape without text, or a
+   *  cell-nested text box (which enterShapeText refuses) — so the caller only
+   *  consumes the key when the caret actually moved into a box. */
+  const enterSelectedShapeText = (): boolean => {
+    if (!selectedObject) return false;
+    const loc = locateShape(doc, selectedObject);
+    const first = loc?.kind === "top" ? loc.block.text?.blocks[0] : undefined;
+    if (!first) return false;
+    return enterShapeText(selectedObject, { blockId: first.id, offset: 0 });
   };
 
   // ---- image crop mode -----------------------------------------------------
@@ -2253,6 +2318,15 @@ export function createEditor(
       ),
     onTab: tabInTable,
     onSdtPress: sdtPopupCtl.handlePress,
+    // ---- shape text box editing (issue #219) ----
+    getActiveShapeText: () => activeShapeText,
+    getShapeScope: () => shapeScope(),
+    getShapeTextParagraphs: (shapeId) => locateShape(doc, shapeId)?.block.text?.blocks ?? [],
+    shapeTextRect: (shapeId) => objectRect(tree, shapeId),
+    shapeHasText: shapeHasEditableText,
+    enterShapeText,
+    exitShapeText,
+    enterSelectedShapeText,
     jumpToBlock: (blockId: string): void => {
       // Word: Ctrl+click on a TOC entry moves the caret to the heading.
       if (!blockById(doc, blockId)) return;

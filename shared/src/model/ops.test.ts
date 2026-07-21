@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CharStyle, Document, FieldDef, Paragraph, SectionProps, TableBlock, TableCell, TableRow } from "./document";
+import type { CharStyle, Document, FieldDef, Paragraph, SectionProps, ShapeBlock, TableBlock, TableCell, TableRow } from "./document";
 import { applyOp, styleEq } from "./ops";
 
 const section = (): SectionProps => ({ pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } });
@@ -85,6 +85,67 @@ describe("applyOp splitParagraph — block-level content control", () => {
     // Undo: the re-split must put the control back on the restored tail.
     const undo = applyOp(merge.doc, merge.inverse);
     expect((undo.doc.blocks[1] as Paragraph).sdtPath).toEqual(["sec"]);
+  });
+});
+
+describe("applyOp — editable shape text box body (issue #219)", () => {
+  const shapeDoc = (...paras: Paragraph[]): Document => ({
+    section: section(),
+    blocks: [
+      para("body", "Body"),
+      {
+        kind: "shape",
+        id: "s",
+        revision: 0,
+        geometry: { preset: "rect" },
+        widthPx: 200,
+        heightPx: 100,
+        align: "left",
+        text: { blocks: paras },
+      },
+    ],
+  });
+  const shapeText = (d: Document, pi = 0): string =>
+    ((d.blocks[1] as ShapeBlock).text!.blocks[pi]!).runs.map((r) => r.text).join("");
+  const shapeRev = (d: Document): number => (d.blocks[1] as ShapeBlock).revision;
+
+  it("inserts text into a text box paragraph; inverse restores it (undo round-trip)", () => {
+    const d = shapeDoc(para("t0", "Hi"));
+    const r = applyOp(d, { type: "insertText", at: { blockId: "t0", offset: 2 }, text: "!" });
+    expect(shapeText(r.doc)).toBe("Hi!");
+    expect(shapeRev(r.doc)).toBe(1); // shape revision bumped
+    expect(shapeText(applyOp(r.doc, r.inverse).doc)).toBe("Hi"); // undo
+  });
+
+  it("deletes a range in a text box paragraph; inverse restores it", () => {
+    const d = shapeDoc(para("t0", "Hello"));
+    const r = applyOp(d, { type: "deleteRange", blockId: "t0", start: 0, end: 3 });
+    expect(shapeText(r.doc)).toBe("lo");
+    expect(shapeText(applyOp(r.doc, r.inverse).doc)).toBe("Hello");
+  });
+
+  it("splits a text box paragraph into two; the inverse merges them back", () => {
+    const d = shapeDoc(para("t0", "onetwo"));
+    const r = applyOp(d, { type: "splitParagraph", at: { blockId: "t0", offset: 3 }, newBlockId: "t1" });
+    const shape = r.doc.blocks[1] as ShapeBlock;
+    expect(shape.text!.blocks.map((p) => p.runs.map((x) => x.text).join(""))).toEqual(["one", "two"]);
+    // Undo: merge restores the single paragraph.
+    const undo = applyOp(r.doc, r.inverse);
+    const undoShape = undo.doc.blocks[1] as ShapeBlock;
+    expect(undoShape.text!.blocks).toHaveLength(1);
+    expect(undoShape.text!.blocks[0]!.runs.map((x) => x.text).join("")).toBe("onetwo");
+  });
+
+  it("merges two text box paragraphs; the inverse splits them back", () => {
+    const d = shapeDoc(para("t0", "one"), para("t1", "two"));
+    const r = applyOp(d, { type: "mergeParagraphs", firstBlockId: "t0" });
+    const shape = r.doc.blocks[1] as ShapeBlock;
+    expect(shape.text!.blocks).toHaveLength(1);
+    expect(shape.text!.blocks[0]!.runs.map((x) => x.text).join("")).toBe("onetwo");
+    // Undo: re-split restores both paragraphs.
+    const undo = applyOp(r.doc, r.inverse);
+    const undoShape = undo.doc.blocks[1] as ShapeBlock;
+    expect(undoShape.text!.blocks.map((p) => p.runs.map((x) => x.text).join(""))).toEqual(["one", "two"]);
   });
 });
 

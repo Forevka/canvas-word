@@ -6,7 +6,7 @@
 // through a model → writeDocx → re-import cycle.
 import { describe, expect, it } from "vitest";
 import type { Document, Paragraph, SectionProps, ShapeBlock, ShapeGroupChild, ShapePath } from "@cw/shared";
-import { DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE } from "@cw/shared";
+import { DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE, applyOp } from "@cw/shared";
 import { runImport } from "../../import/docx/pipeline";
 import { simpleDocx } from "../../import/docx/fixture";
 import { writeDocx } from "./writeDocx";
@@ -150,6 +150,19 @@ describe("drawing shapes — DrawingML wps:wsp round-trip", () => {
     expect(out.text?.blocks.length).toBe(2);
     expect(out.text?.blocks[0]?.runs.map((r) => r.text).join("")).toBe("Drawing text box");
     expect(out.text?.blocks[1]?.runs.map((r) => r.text).join("")).toBe("second line");
+  });
+
+  it("persists an EDITED text box body through the cycle (issue #219)", () => {
+    // Edit the box the way the caret-in-box editing path does — through the model
+    // ops (insert a char, then split into a second paragraph) — then round-trip.
+    const s = shape({ text: { blocks: [txtPara("Hi")] } });
+    const firstId = s.text!.blocks[0]!.id;
+    let doc: Document = docOf(s);
+    doc = applyOp(doc, { type: "insertText", at: { blockId: firstId, offset: 2 }, text: "!" }).doc;
+    doc = applyOp(doc, { type: "splitParagraph", at: { blockId: firstId, offset: 3 }, newBlockId: "np" }).doc;
+    doc = applyOp(doc, { type: "insertText", at: { blockId: "np", offset: 0 }, text: "line 2" }).doc;
+    const out = firstShape(roundTrip(doc));
+    expect(out.text?.blocks.map((b) => b.runs.map((r) => r.text).join(""))).toEqual(["Hi!", "line 2"]);
   });
 
   it("emits wps:txbx / w:txbxContent for a text box body", () => {

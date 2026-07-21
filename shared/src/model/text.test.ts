@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Block, CharStyle, Document, Paragraph, Run, SectionProps, TableBlock } from "./document";
+import type { Block, CharStyle, Document, Paragraph, Run, SectionProps, ShapeBlock, TableBlock } from "./document";
+import { applyOp } from "./ops";
 import {
   bandParagraphs,
   blockById,
@@ -9,6 +10,7 @@ import {
   isHiddenParagraph,
   isInCell,
   locateParagraph,
+  navigableParagraphs,
   nextGrapheme,
   nextWordEnd,
   paragraphAt,
@@ -16,6 +18,7 @@ import {
   prevGrapheme,
   prevWordStart,
   replaceParagraphAt,
+  shapeTextParagraphIds,
   styleAtRuns,
   textOfBlock,
   textOfRuns,
@@ -40,6 +43,18 @@ const tableWith = (id: string, paras: Paragraph[]): TableBlock => ({
   id,
   revision: 0,
   rows: [{ cells: [{ id: `${id}-c0`, blocks: paras }] }],
+});
+
+/** A drawing shape with a text box body holding the given paragraphs. */
+const shapeWith = (id: string, paras: Paragraph[]): ShapeBlock => ({
+  kind: "shape",
+  id,
+  revision: 0,
+  geometry: { preset: "rect" },
+  widthPx: 200,
+  heightPx: 100,
+  align: "left",
+  text: { blocks: paras },
 });
 
 describe("isHiddenParagraph", () => {
@@ -165,19 +180,73 @@ describe("locateParagraph", () => {
     expect(locateParagraph(doc, "p1")).toEqual({ kind: "footnote", noteId: "n1", pi: 1 });
   });
 
+  it("locates a shape text box paragraph (issue #219)", () => {
+    const doc = docOf(para("a", "A"), shapeWith("s", [para("t0", "T0"), para("t1", "T1")]));
+    expect(locateParagraph(doc, "t1")).toEqual({ kind: "shape", where: "body", bi: 1, pi: 1 });
+  });
+
+  it("locates a shape text box paragraph in a band container", () => {
+    const doc: Document = {
+      section: section({ header: [shapeWith("s", [para("t", "T")])] }),
+      blocks: [para("a", "A")],
+    };
+    expect(locateParagraph(doc, "t")).toEqual({ kind: "shape", where: "header", bi: 0, pi: 0 });
+  });
+
   it("returns null for an unknown id", () => {
     expect(locateParagraph(docOf(para("a", "A")), "missing")).toBeNull();
   });
 });
 
+describe("shape text box paragraphs (issue #219)", () => {
+  it("are in paragraphsOf / blockById (so ops + find-replace reach them)", () => {
+    const doc = docOf(para("a", "A"), shapeWith("s", [para("t", "Box")]));
+    expect(paragraphsOf(doc).map((p) => p.id)).toContain("t");
+    expect(textOfBlock(doc, "t")).toBe("Box");
+  });
+
+  it("are EXCLUDED from body caret navigation (a closed sub-flow)", () => {
+    const doc = docOf(para("a", "A"), shapeWith("s", [para("t", "Box")]), para("b", "B"));
+    const nav = navigableParagraphs(doc).map((p) => p.id);
+    expect(nav).toEqual(["a", "b"]);
+    expect(shapeTextParagraphIds(doc).has("t")).toBe(true);
+  });
+
+  // A text box nested INSIDE a table cell is read-only: its paragraphs must NOT be
+  // in the editable paragraph space (paragraphsOf / locateParagraph), matching the
+  // top-level-only index — otherwise a paragraphsOf-iterating editor would hand a
+  // content op a paragraph it can't locate and throw.
+  it("a text box inside a table cell is NOT in the editable paragraph space (no throw path)", () => {
+    const cellShape = shapeWith("cellbox", [para("bx", "boxed")]);
+    const table: TableBlock = {
+      kind: "table", id: "tbl", revision: 0,
+      rows: [{ cells: [{ id: "c0", blocks: [para("cellp", "cell"), cellShape] }] }],
+    };
+    const doc = docOf(para("a", "A"), table);
+    // The cell-nested text box paragraph is invisible to content editing…
+    expect(paragraphsOf(doc).map((p) => p.id)).not.toContain("bx");
+    expect(locateParagraph(doc, "bx")).toBeNull();
+    expect(blockById(doc, "bx")).toBeUndefined();
+    // …but the ordinary cell paragraph is still reachable (regression guard).
+    expect(paragraphsOf(doc).map((p) => p.id)).toContain("cellp");
+    // Simulate the find/replace / style-delete loop: apply a content op to every
+    // paragraph paragraphsOf yields — none is unlocatable, so nothing throws.
+    expect(() => {
+      for (const pp of paragraphsOf(doc)) {
+        applyOp(doc, { type: "insertText", at: { blockId: pp.id, offset: 0 }, text: "x" });
+      }
+    }).not.toThrow();
+  });
+});
+
 describe("paragraphAt", () => {
-  it("round-trips with locateParagraph for body, cell, band, footnote", () => {
+  it("round-trips with locateParagraph for body, cell, band, footnote, shape", () => {
     const doc: Document = {
       section: section({ header: [para("h", "H")] }),
-      blocks: [para("a", "A"), tableWith("t", [para("c", "C")])],
+      blocks: [para("a", "A"), tableWith("t", [para("c", "C")]), shapeWith("s", [para("sx", "SX")])],
       footnotes: { n1: [para("fn", "FN")] },
     };
-    for (const id of ["a", "c", "h", "fn"]) {
+    for (const id of ["a", "c", "h", "fn", "sx"]) {
       const loc = locateParagraph(doc, id)!;
       expect(paragraphAt(doc, loc).id).toBe(id);
     }
@@ -224,6 +293,19 @@ describe("replaceParagraphAt", () => {
     expect(textOfBlock(next, "fn")).toBe("FN2");
     expect(textOfBlock(doc, "fn")).toBe("FN");
     expect(doc.footnotes).not.toBe(next.footnotes);
+  });
+
+  it("replaces a shape text box paragraph, bumps the shape revision, input intact", () => {
+    const doc = docOf(para("a", "A"), shapeWith("s", [para("t", "T")]));
+    const loc = locateParagraph(doc, "t")!;
+    const next = replaceParagraphAt(doc, loc, para("t", "T2"));
+    expect(textOfBlock(next, "t")).toBe("T2");
+    const origShape = doc.blocks[1] as ShapeBlock;
+    const newShape = next.blocks[1] as ShapeBlock;
+    expect(newShape.revision).toBe(origShape.revision + 1);
+    // input untouched
+    expect(textOfBlock(doc, "t")).toBe("T");
+    expect(origShape.revision).toBe(0);
   });
 });
 

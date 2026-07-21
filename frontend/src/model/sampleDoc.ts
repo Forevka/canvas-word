@@ -564,10 +564,10 @@ export function sampleDoc(): Document {
     para([run("A rotated rectangle (20°) and a rotated arrow — a:xfrm@rot round-trips:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
     shape("rect", 150, 90, "center", { color: "#fff2cc" }, { color: "#bf9000", widthPt: 1.5 }, 20),
     shape("rightArrow", 170, 80, "center", { color: "#d0e0e3" }, { color: "#134f5c", widthPt: 1.5 }, -15),
-    para([run("A text box — a shape carrying a body of text (OOXML wps:txbx), rendered read-only and round-tripping losslessly:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
+    para([run("A text box — a shape carrying a body of text (OOXML wps:txbx). Double-click (or select it and press Enter) to type inside; Escape pops back out. Edits round-trip losslessly:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
     shape("rect", 300, 96, "center", { color: "#fff2cc" }, { color: "#bf9000", widthPt: 1 }, undefined, undefined, [
-      "Drawing text box",
-      "A shape can carry a paragraph flow, laid out inside its box.",
+      "Editable text box",
+      "Double-click to edit this text, then click away to commit.",
     ]),
     para([run("A freeform custom geometry (OOXML a:custGeom) — a five-pointed star traced as a path of line segments rather than a preset. The path is stored in normalized box coordinates and round-trips losslessly to .docx:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
     shape("rect", 120, 120, "center", { color: "#ffe599" }, { color: "#bf9000", widthPt: 1.5 }, undefined, undefined, undefined, { custom: STAR_PATH }),

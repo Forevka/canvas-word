@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CharStyle, Document, NamedStyle, Paragraph, ParaStyle, SectionProps, Stylesheet } from "@cw/shared";
-import { applyOp, descendantsOf, mergeDuplicateNamedStyles, styleById, styleType, wouldCycle } from "@cw/shared";
+import { applyOp, descendantsOf, locateShape, mergeDuplicateNamedStyles, styleById, styleType, wouldCycle } from "@cw/shared";
 import { bulletListDefinition, numberListDefinition } from "@cw/shared";
 import { applyCharStyle, deleteListDefinition, deleteNamedStyle, mergeDuplicateStyles, renameNamedStyle, setDefaultStyle, upsertListDefinition, upsertNamedStyle, type NamedStyleSpec } from "./commands";
 import type { Command, EditorState } from "./state";
@@ -267,5 +267,64 @@ describe("deleteNamedStyle / rename / setDefault", () => {
     expect(styleById(renamed.stylesheet!, "Heading1")!.name).toBe("Big Heading");
     const def = run({ doc: renamed, selection: null }, setDefaultStyle("Heading1")).doc;
     expect(def.stylesheet!.defaultStyleId).toBe("Heading1");
+  });
+
+  // Regression (#219): a text box nested INSIDE a table cell is read-only — its
+  // paragraphs must NOT enter the editable paragraph space, or a paragraphsOf-
+  // iterating editor (deleting a character style here, like find/replace) would
+  // emit an op for a paragraph no content op can locate and throw.
+  it("deleting a character style over a cell-nested text box does not throw (and leaves it untouched)", () => {
+    const charSheet: Stylesheet = {
+      defaultStyleId: "Normal",
+      styles: [
+        { id: "Normal", name: "Normal", type: "paragraph", char: {}, para: {} },
+        { id: "Emph", name: "Emphasis", type: "character", char: { italic: true }, para: {} },
+      ],
+    };
+    const withCs = (text: string, id: string): Paragraph => ({
+      kind: "paragraph", id, revision: 0,
+      runs: [{ text, style: { ...CHAR, charStyleId: "Emph" } }], style: { ...PARA },
+    });
+    // A text box nested in a table cell, whose run references the char style.
+    const cellShape = {
+      kind: "shape" as const, id: "cellbox", revision: 0, geometry: { preset: "rect" as const },
+      widthPx: 200, heightPx: 90, align: "left" as const, text: { blocks: [withCs("boxed", "boxpar")] },
+    };
+    const table = {
+      kind: "table" as const, id: "tbl", revision: 0,
+      rows: [{ cells: [{ id: "c0", blocks: [p("cell"), cellShape] }] }],
+    };
+    const topPar = withCs("top-level", "toppar");
+    const doc: Document = { section: SECTION, blocks: [topPar, table], stylesheet: charSheet };
+
+    let result!: RunResult;
+    expect(() => {
+      result = run({ doc, selection: sel(topPar) }, deleteNamedStyle("Emph"));
+    }).not.toThrow();
+
+    // The TOP-LEVEL paragraph had its now-dangling char-style ref stripped…
+    expect((result.doc.blocks[0] as Paragraph).runs[0]!.style.charStyleId).toBeUndefined();
+    // …while the cell-nested text box run is left untouched (read-only sub-flow).
+    const boxRun = ((result.doc.blocks[1] as { rows: { cells: { blocks: { text?: { blocks: Paragraph[] } }[] }[] }[] })
+      .rows[0]!.cells[0]!.blocks[1] as { text: { blocks: Paragraph[] } }).text.blocks[0]!.runs[0]!;
+    expect(boxRun.style.charStyleId).toBe("Emph");
+  });
+
+  // Regression (#219): Enter on a cell-nested text box is a no-op — the interactive
+  // enter path gates on locateShape(...).kind === "top", so a cell-nested shape is
+  // refused. This pins the location kind the gate reads.
+  it("a text box inside a table cell is a cell-nested shape (Enter refuses it)", () => {
+    const cellShape = {
+      kind: "shape" as const, id: "cellbox", revision: 0, geometry: { preset: "rect" as const },
+      widthPx: 200, heightPx: 90, align: "left" as const, text: { blocks: [p("boxed")] },
+    };
+    const topShape = {
+      kind: "shape" as const, id: "topbox", revision: 0, geometry: { preset: "rect" as const },
+      widthPx: 200, heightPx: 90, align: "left" as const, text: { blocks: [p("boxed")] },
+    };
+    const table = { kind: "table" as const, id: "tbl", revision: 0, rows: [{ cells: [{ id: "c0", blocks: [cellShape] }] }] };
+    const doc: Document = { section: SECTION, blocks: [topShape, table], stylesheet: SHEET };
+    expect(locateShape(doc, "cellbox")?.kind).toBe("cell"); // refused by the top-only gate
+    expect(locateShape(doc, "topbox")?.kind).toBe("top"); // accepted
   });
 });
