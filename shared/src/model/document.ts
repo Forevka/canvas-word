@@ -530,13 +530,11 @@ export interface ImageBlock {
 
 /** A DrawingML preset shape (OOXML wps:wsp / a:prstGeom). This is the "like an
  *  image, but the picture is a vector geometry we draw" block. PR 1 (issue #214)
- *  shipped the foundation slice (rect/ellipse/line, solid fill + solid stroke);
- *  PR 2 (issue #215) widens the preset set, adds dash styles + `a:avLst` adjust
- *  passthrough + `a:xfrm@rot` rotation. The following field holes are deliberately
- *  absent and filled by later shape PRs (see docs/SHAPES_PLAN.md):
- *    - `wrap` / `anchor` (square wrap + wp:anchor float + z-order) — PR 4.
- *  The wider preset set + dash styles + `a:avLst` adjust + `a:xfrm@rot` rotation
- *  arrived in PR 2; the `wps:txbx` text body arrived in PR 3 (issue #216). */
+ *  shipped the foundation slice (rect/ellipse/line, solid fill + solid stroke).
+ *  PR 2 (issue #215) widened the preset set, added dash styles + `a:avLst` adjust
+ *  passthrough + `a:xfrm@rot` rotation; PR 3 (issue #216) added the `wps:txbx` text
+ *  body; PR 4 (issue #217) added `wrap` (square) + `anchor` (wp:anchor float +
+ *  z-order) below. See docs/SHAPES_PLAN.md for the remaining shape PRs. */
 export type ShapePreset =
   | "rect"
   | "roundRect"
@@ -594,6 +592,17 @@ export interface ShapeBlock {
   /** Clockwise rotation in degrees (a:xfrm@rot, stored there as 60000ths of a
    *  degree). Absent ⇒ no rotation. */
   rotation?: number;
+  /** 'block' (default): occupies vertical space like a paragraph.
+   *  'square': floats at the left/right margin (per align) and text flows around
+   *  it. Mirrors ImageBlock.wrap exactly (issue #217). Mutually exclusive with
+   *  `anchor`. */
+  wrap?: "block" | "square";
+  /** Absolutely-positioned anchored shape (DOCX wp:anchor + wp:wrapNone) that sits
+   *  BEHIND (behind=true) or in front of the text. Does NOT occupy vertical flow
+   *  space and does NOT reflow surrounding text — painted at `offset{X,Y}Px` from
+   *  the `relFrom{H,V}` origin. Reuses the ImageBlock.anchor shape verbatim (float +
+   *  z-order); mutually exclusive with `wrap`; absent = ordinary flow shape. */
+  anchor?: ImageBlock["anchor"];
   /** Word's persistent drawing identity (wp14:anchorId/editId on the
    *  wp:inline|wp:anchor container) — mirror ImageBlock.drawingId. Preserved
    *  verbatim from import and re-emitted (de-duped on export). */

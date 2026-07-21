@@ -141,6 +141,7 @@ export class BuilderContext {
     rotation?: number,
     adjust?: Record<string, number>,
     text?: string[],
+    wrap?: ShapeBlock["wrap"],
   ): ShapeBlock {
     const geometry: ShapeBlock["geometry"] = { preset };
     if (adjust && Object.keys(adjust).length > 0) geometry.adjust = adjust;
@@ -150,6 +151,7 @@ export class BuilderContext {
     if (rotation) shape.rotation = rotation;
     // Text box body: one paragraph per string (a single default-styled run each).
     if (text && text.length > 0) shape.text = { blocks: text.map((line) => this.paragraph([this.run(line)])) };
+    if (wrap) shape.wrap = wrap;
     return shape;
   }
 

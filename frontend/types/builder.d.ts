@@ -89,6 +89,8 @@ export interface ShapeOptions {
   widthPx: number;
   heightPx: number;
   align?: "left" | "center" | "right";
+  /** 'block' (default): own line. 'square': floats per align, text wraps beside. */
+  wrap?: "block" | "square";
   /** Solid fill (CSS hex) or explicit no-fill; omit for the theme-neutral default. */
   fill?: ShapeFill;
   /** Solid outline (CSS hex + point width, optional `dash`) or explicit no-outline;

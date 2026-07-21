@@ -112,6 +112,15 @@ export interface PlacedShape {
    *  wps:bodyPr left inset plus the vertical-center offset — then paint each block
    *  and clip to the box. Absent = no text box. */
   text?: { blocks: PlacedBlock[]; offsetX: number; offsetY: number };
+  /** Behind-text anchored shape (ShapeBlock.anchor.behind): painted under the text
+   *  and ignored by foreground hit-testing so the text on top stays selectable.
+   *  Mirrors PlacedImage.behind (issue #217). */
+  behind?: boolean;
+  /** In-front-of-text anchored shape (anchored, not behind): painted ABOVE the text
+   *  layer (the engine's z-order pass moves it last in the page block list). */
+  front?: boolean;
+  /** Stacking order within the behind/front layer (ShapeBlock.anchor.z). */
+  z?: number;
 }
 
 export interface PlacedTableCell {

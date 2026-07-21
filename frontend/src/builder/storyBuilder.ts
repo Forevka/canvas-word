@@ -34,6 +34,10 @@ export interface ShapeOptions {
   widthPx: number;
   heightPx: number;
   align?: "left" | "center" | "right";
+  /** 'block' (default): own line. 'square': floats per align, text wraps beside it
+   *  (issue #217). Absolute float/z-order anchoring is interactive/import-only, like
+   *  images. */
+  wrap?: "block" | "square";
   /** Solid fill (CSS hex) or explicit no-fill; omit for the theme-neutral default. */
   fill?: ShapeFill;
   /** Solid outline (CSS hex + point width, optional `dash`) or explicit no-outline;
@@ -147,7 +151,7 @@ export class StoryBuilder {
       this.ctx.warn("shape-size-invalid", ".shape() requires positive widthPx and heightPx; shape skipped.");
       return this;
     }
-    this.push(this.ctx.shape(preset, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.fill, opts.stroke, opts.rotation, opts.adjust, opts.text));
+    this.push(this.ctx.shape(preset, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.fill, opts.stroke, opts.rotation, opts.adjust, opts.text, opts.wrap));
     return this;
   }
 

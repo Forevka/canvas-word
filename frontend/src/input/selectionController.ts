@@ -266,10 +266,11 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
   }
   let objectDrag: ObjectDrag | null = null;
 
-  /** The top-level anchored (out-of-flow, draggable) image with this id, if any. */
-  const movableImage = (blockId: string): ImageBlock | null => {
+  /** The top-level anchored (out-of-flow, draggable) image OR shape with this id, if
+   *  any — both carry the same anchor offset shape, so a drag repositions either. */
+  const movableObject = (blockId: string): { anchor: NonNullable<ImageBlock["anchor"]> } | null => {
     const b = deps.getDoc().blocks.find((x) => x.id === blockId);
-    return b?.kind === "image" && b.anchor ? b : null;
+    return (b?.kind === "image" || b?.kind === "shape") && b.anchor ? { anchor: b.anchor } : null;
   };
 
   const posFromEvent = (ev: MouseEvent): DocPosition | null => {
@@ -389,11 +390,11 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
         if (objHit) {
           ev.preventDefault();
           deps.selectObject(objHit.blockId);
-          // Anchored images can be dragged to reposition: arm a move from here.
-          const mv = movableImage(objHit.blockId);
+          // Anchored images/shapes can be dragged to reposition: arm a move here.
+          const mv = movableObject(objHit.blockId);
           if (mv) {
-            const baseX = mv.anchor!.offsetXPx;
-            const baseY = mv.anchor!.offsetYPx;
+            const baseX = mv.anchor.offsetXPx;
+            const baseY = mv.anchor.offsetYPx;
             // Back out the anchor's reference origin from the placed rect so a
             // snapped offset lands the object on the page-relative grid lines.
             const placed = objectRect(deps.getTree(), objHit.blockId);
@@ -654,7 +655,7 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
     let objCursor: string | null = null;
     if (!hit && !href && !overTocEntry && pt?.inside && !deps.getStory()) {
       const oh = hitTestSelectableObject(deps.getTree(), pt.pageIndex, pt.x, pt.y, scope());
-      if (oh) objCursor = movableImage(oh.blockId) ? "move" : "default";
+      if (oh) objCursor = movableObject(oh.blockId) ? "move" : "default";
     }
     container.style.cursor = colHit
       ? "col-resize"

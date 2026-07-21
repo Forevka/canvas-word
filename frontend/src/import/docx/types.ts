@@ -273,7 +273,26 @@ export type IRInline =
       /** wps:txbx → w:txbxContent block flow (the text box body) — mapped to
        *  ShapeBlock.text (paragraphs only; PR 3). Absent = no text box. */
       text?: IRBlock[];
-      /** wp14:anchorId / wp14:editId on the wp:inline container — preserved verbatim. */
+      /** True when the shape lives in a wp:anchor (out-of-flow), false for wp:inline. */
+      anchored?: boolean;
+      /** For wp:anchor: square = text wraps around (maps to ShapeBlock.wrap); block =
+       *  a wrap mode the model can't express (none/topAndBottom). Mirrors the image. */
+      anchorWrap?: "square" | "block";
+      /** wp:positionH/wp:align when present. */
+      anchorAlign?: "left" | "right" | "center";
+      /** Set for wrapNone anchors (shape sits behind/in-front of text). Maps to
+       *  ShapeBlock.anchor — positioned absolutely, no flow height, no text reflow. */
+      anchorFloat?: {
+        behind: boolean;
+        offsetXEmu: number;
+        offsetYEmu: number;
+        relFromH: "page" | "margin" | "column" | "leftMargin" | "rightMargin" | "character";
+        relFromV: "page" | "margin" | "paragraph" | "line" | "topMargin" | "bottomMargin";
+        decorative?: boolean;
+        /** wp:anchor @relativeHeight — stacking order within the layer. */
+        z?: number;
+      };
+      /** wp14:anchorId / wp14:editId on the wp:inline|wp:anchor container — preserved verbatim. */
       anchorId?: string;
       editId?: string;
     };

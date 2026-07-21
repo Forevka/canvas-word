@@ -348,7 +348,7 @@ Preset drawing shapes round-trip as bare DrawingML (no VML / `mc:AlternateConten
 Decoded in `documentParser.ts` (`parseShapeWsp`), emitted by `shapeParagraphXml`.
 
 ```
-w:drawing → wp:inline → a:graphicData @uri=…/wordprocessingShape → wps:wsp ✅ ShapeBlock
+w:drawing → wp:inline / wp:anchor → a:graphicData @uri=…/wordprocessingShape → wps:wsp ✅ ShapeBlock
 ├─ wps:spPr / a:prstGeom @prst .......... ✅ rect/roundRect/ellipse/triangle/diamond/right|leftArrow/line; other presets → rect + warning
 ├─ wp:extent (@cx/@cy) → widthPx/heightPx ✅
 ├─ a:solidFill / a:noFill (shape fill) .. ✅ hex color / explicit none (absent = default)
@@ -358,7 +358,9 @@ w:drawing → wp:inline → a:graphicData @uri=…/wordprocessingShape → wps:w
 ├─ a:avLst / a:gd (adjust handles) ...... ✅ raw guide values (name → `val N`) round-trip via geometry.adjust
 ├─ a:xfrm @rot (rotation) ............... ✅ ShapeBlock.rotation (degrees ↔ 60000ths)
 ├─ wps:txbx / w:txbxContent (text body) . ✅ ShapeBlock.text — paragraph flow, read-only render + round-trip (edit ❌ Part 6)
-└─ wp:anchor (float / wrap / z-order) ... ❌ in-flow only (Part 4)
+├─ wp:anchor + wp:wrapSquare (float) .... ✅ ShapeBlock.wrap="square" — text flows beside (Part 4, #217)
+├─ wp:anchor + wp:wrapNone (behind/front) ✅ ShapeBlock.anchor {behind, offsetX/Y, relFromH/V, z} (Part 4)
+└─ @relativeHeight / @behindDoc (z-order) ✅ shared z-space with images; bring-to-front / send-to-back
 ```
 
 > **Known limitation — rotation + text.** A shape's `rotation` and its text body

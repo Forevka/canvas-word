@@ -275,6 +275,9 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
         Stroke = ShapeStroke.Solid("#bf9000", 1),
         Text = new[] { "Drawing text box", "A shape can carry a paragraph flow, laid out inside its box." },
     })
+    .Paragraph("A square-wrapped shape floats at the margin and text flows around it (issue #217):")
+    .Shape(ShapePreset.Ellipse, new ShapeOptions { WidthPx = 130, HeightPx = 100, Align = TextAlign.Left, Wrap = ImageWrap.Square, Fill = ShapeFill.Solid("#d9ead3"), Stroke = ShapeStroke.Solid("#38761d", 1.25) })
+    .Paragraph("Square wrap lifts the shape out of the block flow and registers a float so this paragraph re-breaks beside it, just like a square-wrapped image does.")
     .Paragraph("Multilevel numbered list:")
     .List(new[]
     {

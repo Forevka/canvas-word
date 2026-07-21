@@ -828,7 +828,7 @@ export function createMapper(
       geometry,
       widthPx: round2(emuToPx(inline.widthEmu)),
       heightPx: round2(emuToPx(inline.heightEmu)),
-      align: paraAlign === "justify" ? "left" : paraAlign,
+      align: inline.anchorAlign ?? (paraAlign === "justify" ? "left" : paraAlign),
     };
     if (inline.rotationDeg !== undefined) shape.rotation = round2(inline.rotationDeg);
     if (inline.fill) shape.fill = inline.fill;
@@ -854,6 +854,22 @@ export function createMapper(
         warnings.add("shape-text-nonpara-dropped", "A text box contained non-paragraph content (e.g. a nested table) that was dropped — only paragraphs are supported.");
       }
       if (paras.length > 0) shape.text = { blocks: paras };
+    }
+    // Anchored square/tight wrap → an honest float (text flows beside it).
+    if (inline.anchored && inline.anchorWrap === "square") shape.wrap = "square";
+    // wrapNone anchor → absolutely-positioned behind/in-front shape: no flow height,
+    // no reflow. Mutually exclusive with `wrap` (parser sets at most one).
+    if (inline.anchorFloat) {
+      const a = inline.anchorFloat;
+      shape.anchor = {
+        behind: a.behind,
+        offsetXPx: round2(emuToPx(a.offsetXEmu)),
+        offsetYPx: round2(emuToPx(a.offsetYEmu)),
+        relFromH: a.relFromH,
+        relFromV: a.relFromV,
+        ...(a.decorative ? { decorative: true } : {}),
+        ...(a.z !== undefined ? { z: a.z } : {}),
+      };
     }
     // wp14:anchorId/editId — persistent drawing identity, preserved verbatim.
     if (inline.anchorId || inline.editId) {

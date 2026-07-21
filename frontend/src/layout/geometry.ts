@@ -837,14 +837,23 @@ export function hitTestCustom(tree: LayoutTree, pageIndex: number, x: number, y:
 }
 
 /** Drawing shape under a page point (incl. shapes inside table cells).
- *  Object-selectable + resizable like an image — the topmost match in paint order. */
-export function hitTestShape(tree: LayoutTree, pageIndex: number, x: number, y: number): ObjectHit | null {
+ *  Object-selectable + resizable like an image — the topmost match in paint order.
+ *  `want` filters by layer (default: foreground — inline / in-front-of-text; a
+ *  behind-text shape only matches when explicitly requested, so text on top stays
+ *  clickable — mirrors hitImage, issue #217). */
+export function hitTestShape(
+  tree: LayoutTree,
+  pageIndex: number,
+  x: number,
+  y: number,
+  want: (s: { behind?: boolean }) => boolean = (s) => s.behind !== true,
+): ObjectHit | null {
   const page = tree.pages[pageIndex];
   if (!page) return null;
   let hit: ObjectHit | null = null;
   const scan = (blocks: PlacedBlock[]): void => {
     for (const block of blocks) {
-      if (block.shape) {
+      if (block.shape && want(block.shape)) {
         const { width, height } = block.shape;
         if (x >= block.x && x <= block.x + width && y >= block.y && y <= block.y + height) {
           hit = { blockId: block.blockId, rect: { pageIndex, x: block.x, y: block.y, width, height } };
@@ -869,14 +878,16 @@ export function hitTestSelectableObject(
 ): ObjectHit | null {
   const fg = hitTestObject(tree, pageIndex, x, y);
   if (fg) return fg;
-  const sh = hitTestShape(tree, pageIndex, x, y);
+  const sh = hitTestShape(tree, pageIndex, x, y); // foreground shapes (behind excluded)
   if (sh) return sh;
   const eq = hitTestEquation(tree, pageIndex, x, y);
   if (eq) return eq;
   const cu = hitTestCustom(tree, pageIndex, x, y);
   if (cu) return cu;
   if (pointOnText(tree, pageIndex, x, y, scope)) return null;
-  return hitTestBehindObject(tree, pageIndex, x, y);
+  // Behind-text layer: an anchored image or shape, selectable only where no text
+  // covers it (so text on top keeps the click).
+  return hitTestBehindObject(tree, pageIndex, x, y) ?? hitTestShape(tree, pageIndex, x, y, (s) => s.behind === true);
 }
 
 /** Where the selection frame for an image OR equation block lives right now

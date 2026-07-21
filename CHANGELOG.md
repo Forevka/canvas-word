@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Drawing shapes — positioning parity (issue #206, Part 4 / #217).** Shapes gain the image's
+  positioning surface: **square text-wrap** (the shape floats at the left/right margin per its align and
+  text flows around it), **absolute float anchoring** (a `wp:anchor` shape that sits **behind** or **in
+  front of** the text without occupying flow space), and **z-order** (bring-to-front / send-to-back over
+  a stacking space **shared with images**). `ShapeBlock` reuses the `ImageBlock` `anchor` shape verbatim
+  and adds `wrap`; the new `setShapeLayer` / `bringShapeToFront` / `sendShapeToBack` / `moveAnchoredShape`
+  commands mirror their image counterparts. Every control is reachable from **all three** surfaces — the
+  floating shape context toolbar (wrap + front/back), the contextual **Shape** ribbon group, **and** the
+  right-click shape menu (Wrap Text ▸ In Line / Square / Behind Text / In Front of Text, Align, Bring to
+  Front, Send to Back). Anchored shapes drag-move and resize to the full page width. It all round-trips
+  losslessly to `.docx` (`wp:anchor` + `wp:wrapSquare` / `wp:wrapNone`, `@relativeHeight` / `@behindDoc`),
+  validated against the OOXML schema, and the default in-editor document + C# showcase demonstrate a
+  square-wrapped shape, overlapping z-ordered shapes, and behind-/in-front-of-text shapes. Square wrap is
+  also authorable from the `DocumentBuilder` (`.shape(preset, { wrap: "square" })`) and the C# bindings.
 - **Drawing shapes — text boxes (issue #206, Part 3).** A `ShapeBlock` can now carry a **text box
   body** (`ShapeBlock.text` — a nested paragraph flow, like a table cell), rendered **read-only** inside
   the shape box and round-tripping **losslessly** to `.docx` as `wps:txbx` → `w:txbxContent`. The text

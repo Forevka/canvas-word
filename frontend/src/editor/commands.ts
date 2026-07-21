@@ -2536,21 +2536,24 @@ export function setImageCropCmd(
 
 type ImageAnchor = NonNullable<ImageBlock["anchor"]>;
 
-/** Anchor for an image being lifted out of the flow into the behind/front layer:
- *  keep its existing anchor (just flip the layer) or seed one at the margin. */
-function anchorFor(img: ImageBlock, behind: boolean): ImageAnchor {
-  return img.anchor
-    ? { ...img.anchor, behind }
+/** Anchor for an image OR shape being lifted out of the flow into the behind/front
+ *  layer: keep its existing anchor (just flip the layer) or seed one at the margin.
+ *  Shapes reuse ImageBlock's anchor shape verbatim (issue #217). */
+function anchorFor(obj: { anchor?: ImageAnchor | undefined }, behind: boolean): ImageAnchor {
+  return obj.anchor
+    ? { ...obj.anchor, behind }
     : { behind, offsetXPx: 0, offsetYPx: 0, relFromH: "margin", relFromV: "paragraph" };
 }
 
-/** z extremes across every anchored image in the document (body + cells). */
+/** z extremes across every anchored image AND shape in the document (body + cells) —
+ *  images and shapes share one stacking space, so "bring to front" lifts a shape
+ *  above images too. */
 function anchorZRange(doc: EditorState["doc"]): { min: number; max: number } {
   let min = 0;
   let max = 0;
   const walk = (blocks: Block[]): void => {
     for (const b of blocks) {
-      if (b.kind === "image" && b.anchor) {
+      if ((b.kind === "image" || b.kind === "shape") && b.anchor) {
         const z = b.anchor.z ?? 0;
         if (z < min) min = z;
         if (z > max) max = z;
@@ -2608,6 +2611,56 @@ export function moveAnchoredImage(
     if (!loc?.image.anchor) return null; // only anchored (out-of-flow) images move
     const anchor: ImageAnchor = { ...loc.image.anchor, offsetXPx, offsetYPx };
     return tr([{ type: "setImageProps", blockId, patch: { anchor } }], state.selection, origin);
+  };
+}
+
+/** Toggle a shape between the behind-text and in-front-of-text layers (lifting an
+ *  in-flow shape into an anchored one). Clears `wrap` — the two are exclusive.
+ *  Mirrors setImageLayer (issue #217). */
+export function setShapeLayer(blockId: string, behind: boolean): Command {
+  return (state) => {
+    const loc = locateShape(state.doc, blockId);
+    if (!loc) return null;
+    const anchor = anchorFor(loc.block, behind);
+    return tr([{ type: "setShapeProps", blockId, patch: { anchor, wrap: null } }], state.selection, "command");
+  };
+}
+
+/** Raise a shape above every other object AND the text (in-front layer, top z). */
+export function bringShapeToFront(blockId: string): Command {
+  return (state) => {
+    const loc = locateShape(state.doc, blockId);
+    if (!loc) return null;
+    const anchor: ImageAnchor = { ...anchorFor(loc.block, false), z: anchorZRange(state.doc).max + 1 };
+    return tr([{ type: "setShapeProps", blockId, patch: { anchor, wrap: null } }], state.selection, "command");
+  };
+}
+
+/** Drop a shape below every other object AND the text (behind layer, bottom z). */
+export function sendShapeToBack(blockId: string): Command {
+  return (state) => {
+    const loc = locateShape(state.doc, blockId);
+    if (!loc) return null;
+    const anchor: ImageAnchor = { ...anchorFor(loc.block, true), z: anchorZRange(state.doc).min - 1 };
+    return tr([{ type: "setShapeProps", blockId, patch: { anchor, wrap: null } }], state.selection, "command");
+  };
+}
+
+/** Reposition an anchored shape to absolute anchor offsets (drag-move). Pass origin
+ *  "transient" for the live drag preview and "command" for the committed drop — the
+ *  same revert-then-commit dance as resize keeps a drag = one undo step. Mirrors
+ *  moveAnchoredImage. */
+export function moveAnchoredShape(
+  blockId: string,
+  offsetXPx: number,
+  offsetYPx: number,
+  origin: TransactionOrigin = "command",
+): Command {
+  return (state) => {
+    const loc = locateShape(state.doc, blockId);
+    if (!loc?.block.anchor) return null; // only anchored (out-of-flow) shapes move
+    const anchor: ImageAnchor = { ...loc.block.anchor, offsetXPx, offsetYPx };
+    return tr([{ type: "setShapeProps", blockId, patch: { anchor } }], state.selection, origin);
   };
 }
 
