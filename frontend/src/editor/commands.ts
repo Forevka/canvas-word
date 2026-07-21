@@ -1868,9 +1868,11 @@ export const EQUATION_SCALE_MAX = 4;
  *  clears the field back to the default. Container-aware via locateEquation. */
 export function setEquationScaleCmd(blockId: string, scale: number): Command {
   return (state) => {
-    if (!locateEquation(state.doc, blockId)) return null;
+    const loc = locateEquation(state.doc, blockId);
+    if (!loc) return null;
     if (!Number.isFinite(scale)) return null;
     const clamped = Math.min(EQUATION_SCALE_MAX, Math.max(EQUATION_SCALE_MIN, scale));
+    if (clamped === (loc.block.scale ?? 1)) return null; // no-op — don't dirty history
     return tr([{ type: "setEquationScale", blockId, scale: clamped }], state.selection, "command");
   };
 }

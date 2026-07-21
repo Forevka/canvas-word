@@ -98,6 +98,15 @@ describe("setEquationScale op", () => {
     expect(back.scale).toBe(2);
   });
 
+  it("normalizes scale 1 away (drops the field, like setTableAlign drops \"left\")", () => {
+    const doc = docOf([{ ...equationBlock("e1", eq("1")), scale: 2 }]);
+    const r = applyOp(doc, { type: "setEquationScale", blockId: "e1", scale: 1 });
+    expect((r.doc.blocks[0] as EquationBlock)).not.toHaveProperty("scale");
+    // Inverse restores the explicit prior scale.
+    const back = applyOp(r.doc, r.inverse).doc.blocks[0] as EquationBlock;
+    expect(back.scale).toBe(2);
+  });
+
   it("throws for a non-equation block id", () => {
     const doc = docWith(eq("1"));
     expect(() => applyOp(doc, { type: "setEquationScale", blockId: "missing", scale: 2 })).toThrow();

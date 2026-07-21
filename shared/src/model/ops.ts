@@ -860,7 +860,12 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       const loc = locateEquation(doc, op.blockId);
       if (!loc) throw new Error(`equation ${op.blockId} not found`);
       const old = loc.block.scale ?? 1;
-      const updated: EquationBlock = { ...loc.block, revision: loc.block.revision + 1, scale: op.scale };
+      // Normalize the default away (like setTableAlign drops "left") so scale 1 is
+      // never persisted — keeps the model tree clean and the unscaled-export path
+      // byte-identical. The inverse restores the prior effective scale.
+      const updated: EquationBlock = { ...loc.block, revision: loc.block.revision + 1 };
+      if (op.scale === 1) delete updated.scale;
+      else updated.scale = op.scale;
       return {
         doc: replaceLocatedBlock(doc, loc, updated),
         inverse: { type: "setEquationScale", blockId: op.blockId, scale: old },
