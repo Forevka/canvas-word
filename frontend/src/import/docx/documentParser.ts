@@ -920,27 +920,176 @@ function relFromV(pos: XmlNode | undefined): NonNullable<Extract<IRInline, { kin
   return v && REL_FROM_V.has(v) ? (v as never) : "paragraph";
 }
 
-/** Legacy VML (w:pict → v:shape → v:imagedata r:id), still produced for some
- *  content. Size comes from the shape's style="width:…pt;height:…pt". */
+/** Legacy VML (w:pict), still produced for some content and the only shape markup
+ *  in pre-DrawingML (Word 2003-era) documents. Two flavours are recognized:
+ *   • a picture — v:shape → v:imagedata r:id (checked first; unchanged behaviour);
+ *   • a drawn shape / text box — v:rect|v:roundrect|v:oval|v:line|v:shape, mapped
+ *     read-only into the SAME `kind:"shape"` IR the DrawingML wps path emits
+ *     (export always re-emits modern DrawingML — see parseVmlShape). */
 function parseVmlPict(pict: XmlNode, ctx: ParseCtx): IRInline | undefined {
   const imagedata = findDeep(pict, "v:imagedata");
   const relId = imagedata && attr(imagedata, "r:id");
-  if (!relId) {
-    ctx.warnings.add("images-skipped", "A legacy picture without an image reference was skipped.");
-    return undefined;
+  if (relId) {
+    const image: IRInline = { kind: "image", relId, anchored: false };
+    const shape = findDeep(pict, "v:shape");
+    const w = vmlLengthToEmu(vmlStyle(shape)["width"]);
+    if (w !== undefined) image.widthEmu = w;
+    const h = vmlLengthToEmu(vmlStyle(shape)["height"]);
+    if (h !== undefined) image.heightEmu = h;
+    return image;
   }
-  const image: IRInline = { kind: "image", relId, anchored: false };
-  const shape = findDeep(pict, "v:shape");
-  const style = (shape && attr(shape, "style")) ?? "";
-  const dim = (name: string): number | undefined => {
-    const m = style.match(new RegExp(`(?:^|;)\\s*${name}:([\\d.]+)pt`));
-    return m ? Number(m[1]) * 12700 : undefined; // pt → EMU (12700 EMU/pt)
-  };
-  const w = dim("width");
-  if (w !== undefined) image.widthEmu = w;
-  const h = dim("height");
-  if (h !== undefined) image.heightEmu = h;
-  return image;
+  const shape = parseVmlShape(pict, ctx);
+  if (shape) return shape;
+  // Neither a picture nor a recognized drawn shape — the pict carries content we
+  // don't model (WordArt, a group we can't place, an OLE preview, …). Warn once
+  // rather than dropping it silently.
+  ctx.warnings.add("pict-skipped", "A legacy VML drawing that isn't a picture or a recognized shape was skipped.");
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Legacy VML drawn shapes (import-only; export always emits DrawingML wps)
+
+/** Parse a VML style="k:v;…" declaration list into a lookup (keys lower-cased). */
+function vmlStyle(node: XmlNode | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const decl of (node ? attr(node, "style") ?? "" : "").split(";")) {
+    const i = decl.indexOf(":");
+    if (i < 0) continue;
+    const k = decl.slice(0, i).trim().toLowerCase();
+    if (k) out[k] = decl.slice(i + 1).trim();
+  }
+  return out;
+}
+
+const EMU_PER = { pt: 12700, px: 9525, in: 914400, cm: 360000, mm: 36000, pc: 152400 } as const;
+
+/** A VML/CSS length ("72pt", "1in", "96px", ".5cm", bare number) → EMU. Bare
+ *  numbers default to points — the unit Word emits for w:pict style width/height. */
+function vmlLengthToEmu(raw: string | undefined): number | undefined {
+  const m = raw?.trim().match(/^(-?[\d.]+)(pt|px|in|cm|mm|pc)?$/);
+  if (!m) return undefined;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.round(n * (m[2] ? EMU_PER[m[2] as keyof typeof EMU_PER] : EMU_PER.pt));
+}
+
+/** A handful of CSS/VML named colours (legacy docs mostly use hex; cover the
+ *  common words so a `fillcolor="red"` still maps). */
+const VML_NAMED_COLORS: Record<string, string> = {
+  black: "000000", white: "ffffff", red: "ff0000", green: "008000", lime: "00ff00",
+  blue: "0000ff", yellow: "ffff00", gray: "808080", grey: "808080", silver: "c0c0c0",
+};
+
+/** A VML colour attribute → "#rrggbb". Accepts "#RRGGBB", "#RGB", a named colour,
+ *  and Word's "#rrggbb [theme-index]" form (takes the leading token). */
+function vmlColor(raw: string | undefined): string | undefined {
+  const tok = raw?.trim().split(/\s+/)[0];
+  if (!tok) return undefined;
+  const named = VML_NAMED_COLORS[tok.toLowerCase()];
+  let hex = tok.startsWith("#") ? tok.slice(1) : named;
+  if (!hex) return undefined;
+  if (hex.length === 3) hex = hex.split("").map((c) => c + c).join("");
+  return /^[0-9a-fA-F]{6}$/.test(hex) ? `#${hex.toLowerCase()}` : undefined;
+}
+
+/** MSO shape-type numbers (v:shape @o:spt, or the `_tNNN` suffix of a shapetype
+ *  @type reference) → the DrawingML preset the model draws. Unlisted → rect. */
+const VML_SPT_PRESET: Record<string, string> = {
+  "1": "rect", "2": "roundRect", "3": "ellipse", "4": "diamond",
+  "5": "triangle", "6": "triangle", "13": "rightArrow", "20": "line",
+  "202": "rect", // text box
+};
+
+/** The DrawingML preset for a concrete VML element tag (rect/oval/line/…). */
+function vmlElementPreset(tagName: string): string | undefined {
+  switch (tagName) {
+    case "v:rect": return "rect";
+    case "v:roundrect": return "roundRect";
+    case "v:oval": return "ellipse";
+    case "v:line": return "line";
+    default: return undefined;
+  }
+}
+
+/** "x,y" VML coordinate pair (from/to on v:line) → [emuX, emuY]. */
+function vmlPoint(raw: string | undefined): [number, number] | undefined {
+  const parts = raw?.split(",");
+  if (!parts || parts.length !== 2) return undefined;
+  const x = vmlLengthToEmu(parts[0]);
+  const y = vmlLengthToEmu(parts[1]);
+  return x === undefined || y === undefined ? undefined : [x, y];
+}
+
+/** Parse the first recognized VML drawn shape / text box in a w:pict into the
+ *  shared `kind:"shape"` IR (geometry + fill + stroke + size + text body). Legacy
+ *  float positioning (w10:wrap / absolute style) is NOT modelled — the shape lands
+ *  in the text flow, matching the read-only scope. */
+function parseVmlShape(pict: XmlNode, ctx: ParseCtx): Extract<IRInline, { kind: "shape" }> | undefined {
+  // Prefer a concrete primitive; fall back to a generic v:shape (text boxes,
+  // typed shapes). A v:shapetype is only a template — never a drawn instance.
+  const node =
+    findDeep(pict, "v:rect") ?? findDeep(pict, "v:roundrect") ?? findDeep(pict, "v:oval") ??
+    findDeep(pict, "v:line") ?? findDeep(pict, "v:shape");
+  if (!node) return undefined;
+
+  let preset = vmlElementPreset(node.tagName);
+  if (preset === undefined) {
+    // v:shape — resolve the MSO shape type from @o:spt, else the `_tNNN` suffix
+    // of its @type shapetype reference (Word encodes the spt in the id).
+    const spt = attr(node, "o:spt") ?? attr(node, "type")?.match(/_t(\d+)/)?.[1];
+    preset = (spt !== undefined && VML_SPT_PRESET[spt]) || "rect";
+  }
+  const shape: Extract<IRInline, { kind: "shape" }> = { kind: "shape", preset };
+
+  const style = vmlStyle(node);
+  let widthEmu = vmlLengthToEmu(style["width"]);
+  let heightEmu = vmlLengthToEmu(style["height"]);
+  if (node.tagName === "v:line") {
+    // A line's box comes from its from/to endpoints; keep a small floor on the
+    // degenerate axis of a horizontal/vertical line so the box stays selectable.
+    const from = vmlPoint(attr(node, "from")) ?? [0, 0];
+    const to = vmlPoint(attr(node, "to")) ?? [0, 0];
+    widthEmu ??= Math.max(Math.abs(to[0] - from[0]), EMU_PER.pt);
+    heightEmu ??= Math.max(Math.abs(to[1] - from[1]), EMU_PER.pt);
+  }
+  if (widthEmu !== undefined) shape.widthEmu = widthEmu;
+  if (heightEmu !== undefined) shape.heightEmu = heightEmu;
+
+  // Fill: filled="f" ⇒ no fill; else fillcolor (default fill left to the model).
+  const filled = attr(node, "filled");
+  const fillColor = vmlColor(attr(node, "fillcolor"));
+  if (filled === "f" || filled === "false") shape.fill = { none: true };
+  else if (fillColor) shape.fill = { color: fillColor };
+
+  // Stroke: stroked="f" ⇒ no outline; else a solid stroke from strokecolor +
+  // strokeweight (VML defaults: black, 0.75pt). A bare line needs a visible
+  // stroke, so synthesize the default when the markup omits both.
+  const stroked = attr(node, "stroked");
+  const strokeColor = vmlColor(attr(node, "strokecolor"));
+  const strokeWeightEmu = vmlLengthToEmu(attr(node, "strokeweight"));
+  if (stroked === "f" || stroked === "false") {
+    shape.stroke = { none: true };
+  } else if (strokeColor || strokeWeightEmu !== undefined || node.tagName === "v:line") {
+    shape.stroke = { color: strokeColor ?? "#000000", widthPt: strokeWeightEmu !== undefined ? strokeWeightEmu / EMU_PER.pt : 0.75 };
+  }
+
+  // Text box body: v:textbox → w:txbxContent (a paragraph flow). Parse it as a
+  // fresh block container (like a table cell) so surrounding field/control
+  // tracking never leaks into the nested paragraphs — mirrors parseShapeWsp.
+  const txbxContent = findDeep(node, "w:txbxContent") ?? findDeep(pict, "w:txbxContent");
+  if (txbxContent) {
+    const savedBlockStack = ctx.blockSdtStack;
+    const savedTrackFields = ctx.trackFields;
+    ctx.blockSdtStack = [];
+    ctx.trackFields = false;
+    const blocks: IRBlock[] = [];
+    walkBlocks(children(txbxContent), blocks, ctx);
+    ctx.blockSdtStack = savedBlockStack;
+    ctx.trackFields = savedTrackFields;
+    if (blocks.length > 0) shape.text = blocks;
+  }
+  return shape;
 }
 
 // ---------------------------------------------------------------------------

@@ -91,7 +91,7 @@ w:r
 ├─ w:ptab (absolute-position tab) ......... ❌
 ├─ w:ruby (phonetic guide) ................ ❌
 ├─ w:object (OLE) ......................... 🚫 out of scope
-└─ w:pict (VML shape) ..................... 🚫 out of scope
+└─ w:pict (legacy VML) ..................... ✅ picture (v:imagedata) + drawn shape/text box → ShapeBlock (import-only; #218)
 ```
 
 ---
@@ -336,10 +336,10 @@ w:drawing → wp:inline / wp:anchor → a:blip @r:embed ✅
 ├─ wp14 relative size (sizeRelH/V, pctWidth/Height) ❌ (absolute wp:extent kept)
 ├─ wrap: topAndBottom / overlapping ..... ⚠️ demoted to inline flow (warning)
 ├─ mc:AlternateContent (Choice/Fallback) ✅ (run-level: Choice preferred; inside positionH/V: Fallback recovered)
-└─ VML w:pict → v:shape/v:imagedata @r:id ✅ (image only)
+└─ VML w:pict → v:shape/v:imagedata @r:id ✅ picture + drawn shape/text box (see VML shapes below)
 w:object (OLE) .......................... 🚫 skipped (warning)
 Charts (c:chart) ........................ ❌
-VML shapes / textboxes / canvas (non-image) 🚫
+VML drawing canvas / grouped / WordArt .. 🚫 skipped (pict-skipped warning)
 ```
 
 ### Drawing shapes (DrawingML wps:wsp) — issue #206
@@ -371,8 +371,29 @@ w:drawing → wp:inline / wp:anchor → a:graphicData @uri=…/wordprocessingSha
 > is unaffected (both fields survive) — this is a paint-only gap in the canvas and
 > PDF painters.
 
-> Parts 2–9 (geometry & style breadth, text boxes, positioning, VML import,
-> freeform/grouped shapes) are tracked in [SHAPES_PLAN.md](./SHAPES_PLAN.md).
+> Parts 6–9 (editable text boxes, freeform/grouped shapes, polish) are tracked in
+> [SHAPES_PLAN.md](./SHAPES_PLAN.md).
+
+### Legacy VML shapes (w:pict) — issue #218 (import-only)
+
+Pre-DrawingML (Word 2003-era) documents draw shapes with `w:pict` → VML, not
+`w:drawing` → `wps:wsp`. These are parsed **read-only** into the same `ShapeBlock`
+model (`parseVmlShape` in `documentParser.ts`); there is **no VML writer** — a
+VML-sourced shape **re-exports as modern DrawingML `wps`** (the intentional
+VML→DrawingML normalization). Word wraps modern shapes in
+`mc:AlternateContent` (a DrawingML `mc:Choice` + a VML `mc:Fallback`); the importer
+prefers `mc:Choice`, so this path only fires for genuinely legacy content.
+
+```
+w:pict → …                                  (import-only → DrawingML on re-export)
+├─ v:rect / v:oval / v:roundrect / v:line .. ✅ → preset rect/ellipse/roundRect/line
+├─ v:shape @o:spt | @type="#_x0000_tNNN" ... ✅ MSO shape-type → preset (unknown → rect box)
+├─ @style width/height (pt/px/in/cm/mm/pc) . ✅ → widthPx/heightPx; v:line box from @from/@to
+├─ @fillcolor / filled="f" ................. ✅ hex / named / "#hex [idx]" → fill; "f" → none
+├─ @strokecolor / @strokeweight / stroked="f" ✅ solid outline (pt) / none (line defaults black 0.75pt)
+├─ v:textbox → w:txbxContent ............... ✅ → ShapeBlock.text (paragraph flow, like the wps path)
+└─ absolute style position / w10:wrap ...... ❌ dropped — VML shapes land in the text flow (read-only)
+```
 
 ---
 
@@ -445,7 +466,8 @@ webSettings.xml / fontTable.xml ......... ❌
 - **Shading** (`decodeShdFill`) reads `@w:fill` (+ `@w:val`/`@w:color` for pattern approximation);
   other pattern types are approximated by color or cleared.
 - **Intentionally out of scope** (never imported): comments, tracked-change metadata & moves, OLE
-  objects, non-image VML shapes / textboxes / drawing canvas, charts, glossary document, custom XML,
+  objects, the VML drawing canvas / grouped / WordArt shapes (legacy VML **preset shapes & text
+  boxes** *are* imported read-only — issue #218), charts, glossary document, custom XML,
   `docProps` metadata, footnote/endnote numbering properties.
 - **Custom blocks** (`registerBlockType`, `CustomBlock`) have no native OOXML: `.docx` export is
   lossy by default — an empty placeholder `w:p` plus a `custom-block-dropped` warning; a registered
