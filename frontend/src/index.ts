@@ -8,7 +8,7 @@ import type { BookmarkRange, DocPosition, DocSelection, UserInfo } from "@cw/sha
 import { isCollapsed, colorForId, userDisplayName, freshId, DEFAULT_CHAR_STYLE } from "@cw/shared";
 import type { ResolvedBehavior, ResolvedTheme } from "./config";
 import { ZOOM_STEP } from "./uiConstants";
-import { applyOp, containerBlocks, containerOf, effectiveFractions, locateImage, locateEquation, sliceRuns, type Op } from "@cw/shared";
+import { applyOp, containerBlocks, containerOf, effectiveFractions, locateImage, locateEquation, locateShape, sliceRuns, type Op } from "@cw/shared";
 import { bandParagraphs, blockById, buildTableGrid, containerListOf, gridOriginOfCell, locateParagraph, normalizeRect, paragraphAt, paragraphsOf, styleAtRuns, styleOfCharAt, textOfRuns } from "@cw/shared";
 import type { CellBorders, CellMargin, TableBorders } from "@cw/shared";
 import { createLayoutEngine, type LayoutEngine } from "./layout/engine";
@@ -114,6 +114,7 @@ import {
   setAlignment,
   setCharStyle as setCharStyleCmd,
   setImageProps,
+  setShapeProps,
   setImageCropCmd,
   setImageLayer,
   bringImageToFront,
@@ -207,6 +208,8 @@ export interface CurrentFormat {
   listKind: "bullet" | "number" | null;
   /** Caret/selection context — drives which ribbon buttons are enabled. */
   imageSelected: boolean;
+  /** A drawing shape is object-selected (gates the contextual Shape ribbon group). */
+  shapeSelected: boolean;
   inTable: boolean;
   inContentControl: boolean;
 }
@@ -344,6 +347,9 @@ export interface Editor {
   /** Viewport rect of the selected EQUATION block, or null. Anchors the equation
    *  context toolbar (images use getSelectedObjectRect). */
   getSelectedEquationRect(): { left: number; top: number; width: number; height: number } | null;
+  /** Viewport rect of the selected drawing SHAPE, or null. Anchors the shape
+   *  context toolbar. */
+  getSelectedShapeRect(): { left: number; top: number; width: number; height: number } | null;
   /** Open the equation editor for the currently selected equation block (no-op if
    *  none). Reuses the same editor the right-click "Edit Equation…" opens. */
   editSelectedEquation(): void;
@@ -1170,6 +1176,11 @@ export function createEditor(
         dispatch(setEquationScaleCmd(selectedObject, (eq.scale ?? 1) * ratio));
         return;
       }
+      // Shapes take the raw drag box on their widthPx/heightPx (like an image).
+      if (locateShape(doc, selectedObject)) {
+        dispatch(setShapeProps(selectedObject, { widthPx: w, heightPx: h }));
+        return;
+      }
       dispatch(setImageProps(selectedObject, { widthPx: w, heightPx: h }));
     },
     // Live crop preview: each crop-handle release writes the crop field as a
@@ -1224,6 +1235,13 @@ export function createEditor(
       objectFrame.show(rect, contentWidth(), undefined, anchor, true);
       return;
     }
+    // Drawing shapes resize like images (raw width/height, no aspect lock) — the
+    // 8-handle frame with no bitmap ghost, holding the edge their align keeps fixed.
+    const shp = locateShape(doc, selectedObject)?.block;
+    if (shp) {
+      objectFrame.show(rect, contentWidth(), undefined, shp.align, true);
+      return;
+    }
     // Any other selectable object (e.g. a custom block) is selectable but NOT
     // resizable — a plain selection box with no handles.
     objectFrame.show(rect, contentWidth(), undefined, "left", false);
@@ -1231,6 +1249,9 @@ export function createEditor(
 
   /** Is the current object selection an image (vs an equation / other block)? */
   const selectedIsImage = (): boolean => !!selectedObject && locateImage(doc, selectedObject) !== null;
+
+  /** Is the current object selection a drawing shape? */
+  const selectedIsShape = (): boolean => !!selectedObject && locateShape(doc, selectedObject) !== null;
 
   /** Delete the selected object — image or equation — and clear the selection. */
   const deleteSelectedObjectInternal = (): void => {
@@ -3599,6 +3620,7 @@ export function createEditor(
         direction: block?.style.direction ?? null,
         listKind,
         imageSelected: selectedIsImage(),
+        shapeSelected: selectedIsShape(),
         inTable: !!cellSelection || (focus ? locateParagraph(doc, focus.blockId)?.kind === "cell" : false),
         // A selected image inside a control counts too (its caret is cleared), so
         // the Controls ribbon group lights up instead of leaving the user no clue.
@@ -3619,6 +3641,7 @@ export function createEditor(
       if (selectedObject) {
         if (align === "justify") return; // objects don't justify
         if (selectedIsImage()) dispatch(setImageProps(selectedObject, { align }));
+        else if (selectedIsShape()) dispatch(setShapeProps(selectedObject, { align }));
         else dispatch(setEquationAlignCmd(selectedObject, align)); // display equation
         return;
       }
@@ -3758,6 +3781,11 @@ export function createEditor(
     getSelectedEquationRect: (): { left: number; top: number; width: number; height: number } | null => {
       if (!selectedObject || !locateEquation(doc, selectedObject)) return null;
       const r = objectRect(tree, selectedObject);
+      return r ? pageRectToClient(r.pageIndex, r.x, r.y, r.width, r.height) : null;
+    },
+    getSelectedShapeRect: (): { left: number; top: number; width: number; height: number } | null => {
+      if (!selectedIsShape()) return null;
+      const r = objectRect(tree, selectedObject!);
       return r ? pageRectToClient(r.pageIndex, r.x, r.y, r.width, r.height) : null;
     },
     editSelectedEquation: (): void => {

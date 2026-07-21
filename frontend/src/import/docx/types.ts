@@ -251,6 +251,23 @@ export type IRInline =
         /** wp:anchor @relativeHeight — stacking order within the layer. */
         z?: number;
       };
+    }
+  /** w:drawing → …/wordprocessingShape → wps:wsp — a DrawingML preset shape. Becomes
+   *  a block-level ShapeBlock (mapShape). PR 1 handles rect/ellipse/line + solid
+   *  fill/stroke; unknown presets are still parsed (mapShape maps them to rect). */
+  | {
+      kind: "shape";
+      /** a:prstGeom@prst — the raw preset name (rect/ellipse/line/…). */
+      preset: string;
+      widthEmu?: number;
+      heightEmu?: number;
+      /** spPr's direct a:solidFill (color) / a:noFill (none); absent = default. */
+      fill?: { color: string } | { none: true };
+      /** a:ln: a solid stroke (color + point width) or an explicit no-outline. */
+      stroke?: { color: string; widthPt: number } | { none: true };
+      /** wp14:anchorId / wp14:editId on the wp:inline container — preserved verbatim. */
+      anchorId?: string;
+      editId?: string;
     };
 
 export interface IRParaProps {

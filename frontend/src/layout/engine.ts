@@ -9,14 +9,14 @@ import {
   materializeRichInlineLineRange,
   type RichInlineCursor,
 } from "@chenglou/pretext/rich-inline";
-import type { Block, CharStyle, CustomBlock, Document, EquationBlock, ImageBlock, LineNumbering, Paragraph, ParaStyle, Run, SectionBreakType, SectionProps, TableBlock, TableCell, TabStop } from "@cw/shared";
+import type { Block, CharStyle, CustomBlock, Document, EquationBlock, ImageBlock, LineNumbering, Paragraph, ParaStyle, Run, SectionBreakType, SectionProps, ShapeBlock, TableBlock, TableCell, TabStop } from "@cw/shared";
 import { getBlockType } from "../blockRegistry";
 import { effectiveFractions, isHiddenParagraph, resolveSections } from "@cw/shared";
 // Section resolution moved to the shared model core; re-export so existing
 // importers of these from "./engine" (and the layout tests) keep working.
 export { effectiveSection, resolveSections } from "@cw/shared";
 import { formatListNumber, markerText, type ListDefinition, type ListLevel } from "@cw/shared";
-import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock, PlacedImage } from "./layoutTree";
+import type { InlineFragment, LayoutTree, LineBox, Page, PlacedBlock, PlacedImage, PlacedShape } from "./layoutTree";
 import { PrepareCache, prepareRunSegment, setActiveCjkFallback, setActiveArabicFallback, setActiveHebrewFallback, applyCjkLocale, type PreparedSegment } from "./prepareCache";
 import { charStyleToFont, fontMetrics, measureTextWidth } from "./metrics";
 import { widthScale, PARA_BORDER_PAD_PX } from "../paint/paintStyle";
@@ -1208,6 +1208,7 @@ function layoutDocument(
   type Measured =
     | { kind: "para"; block: Paragraph; lines: LineBox[] }
     | { kind: "image"; block: ImageBlock; height: number }
+    | { kind: "shape"; block: ShapeBlock; height: number }
     | { kind: "equation"; block: EquationBlock; box: MathBox; height: number }
     | { kind: "custom"; block: CustomBlock; height: number }
     | { kind: "table"; block: TableBlock; rows: MeasuredRow[]; colWidths: number[]; height: number; tableWidth: number; xOffset: number };
@@ -1233,6 +1234,9 @@ function layoutDocument(
     } else if (block.kind === "image") {
       // Anchored (out-of-flow) images contribute no flow height.
       measured.push({ kind: "image", block, height: block.anchor ? 0 : block.heightPx });
+    } else if (block.kind === "shape") {
+      // In-flow (block) shapes occupy their box height (PR 1 has no anchor/wrap).
+      measured.push({ kind: "shape", block, height: block.heightPx });
     } else if (block.kind === "equation") {
       const box = eqBox(block);
       measured.push({ kind: "equation", block, box, height: box.ascent + box.descent });
@@ -1689,6 +1693,17 @@ function layoutDocument(
     y += h;
   };
 
+  /** In-flow (block) drawing shape: positioned in the column by its align (like a
+   *  block image), the preset path drawn into the widthPx×heightPx box. PR 1 has no
+   *  anchor/wrap, so a shape always advances the flow cursor by its height. */
+  const placeShape = (sb: ShapeBlock): void => {
+    if (y + sb.heightPx > bottomY() && colHasContent()) newPage();
+    const slack = colWidth - sb.widthPx;
+    const x = colX() + (sb.align === "center" ? slack / 2 : sb.align === "right" ? slack : 0);
+    page.blocks.push({ blockId: sb.id, x, y, firstLineIndex: 0, lines: [], shape: placedShapeOf(sb) });
+    y += sb.heightPx;
+  };
+
   /** Float-affected paragraphs: re-break per line with the float-shrunk width
    *  at the line's own y (pretext's per-line maxWidth makes this cheap). A line
    *  that doesn't fit the page is ROLLED BACK (runCursors snapshot) and
@@ -1927,7 +1942,7 @@ function layoutDocument(
     // Anchored (behind/in-front) images are out of flow — transparent to the
     // gap logic so they neither take a gap nor suppress one between neighbours.
     const atomicKind = (x: Measured | undefined): boolean =>
-      x?.kind === "table" || x?.kind === "equation" || x?.kind === "custom" || (x?.kind === "image" && x.block.anchor === undefined);
+      x?.kind === "table" || x?.kind === "equation" || x?.kind === "custom" || x?.kind === "shape" || (x?.kind === "image" && x.block.anchor === undefined);
     const prevAtomic = atomicKind(measured[bi - 1]);
     const nextAtomic = atomicKind(measured[bi + 1]);
 
@@ -1943,6 +1958,13 @@ function layoutDocument(
       for (const f of floats) if (f.bottom > y) y = f.bottom;
       placeImage(m.block);
       if (!nextAtomic && (m.block.wrap !== "square" || m.block.align === "center")) y += ATOMIC_GAP;
+      continue;
+    }
+    if (m.kind === "shape") {
+      if (!prevAtomic) y += ATOMIC_GAP;
+      for (const f of floats) if (f.bottom > y) y = f.bottom;
+      placeShape(m.block);
+      if (!nextAtomic) y += ATOMIC_GAP;
       continue;
     }
     if (m.kind === "equation") {
@@ -2551,6 +2573,11 @@ function layoutBand(
       const h = measureCustom(b, width);
       placed.push({ blockId: b.id, x: originX, y, firstLineIndex: 0, lines: [], custom: { customType: b.customType, data: b.data, width, height: h } });
       y += h;
+    } else if (b.kind === "shape") {
+      const slack = width - b.widthPx;
+      const x = originX + (b.align === "center" ? slack / 2 : b.align === "right" ? slack : 0);
+      placed.push({ blockId: b.id, x, y, firstLineIndex: 0, lines: [], shape: placedShapeOf(b) });
+      y += b.heightPx;
     } else {
       const m = measureTable(b, width, getBandLines, EMPTY_LIST_CTX);
       placed.push(placeTable(b, m.rows, m.colWidths, originX + m.xOffset, y, m.tableWidth, 0, EMPTY_LIST_CTX));
@@ -2558,6 +2585,16 @@ function layoutBand(
     }
   }
   return { placed, height: y };
+}
+
+/** Build the PlacedShape payload for a shape block (shared by the main flow layout
+ *  and the band/cell layout paths). `width`/`height` default to the block's box but
+ *  can be overridden when a cell scales the shape down to fit. */
+function placedShapeOf(sb: ShapeBlock, width = sb.widthPx, height = sb.heightPx): PlacedShape {
+  const shape: PlacedShape = { preset: sb.geometry.preset, width, height };
+  if (sb.fill) shape.fill = sb.fill;
+  if (sb.stroke) shape.stroke = sb.stroke;
+  return shape;
 }
 
 function shiftPlaced(p: PlacedBlock, dy: number): PlacedBlock {
@@ -2656,6 +2693,8 @@ function blockMinMax(
     if (b.anchor) return { min: 0, max: 0 };
     return { min: b.widthPx, max: b.widthPx };
   }
+  // A drawing shape is an unbreakable box, like an in-flow image.
+  if (b.kind === "shape") return { min: b.widthPx, max: b.widthPx };
   if (b.kind === "equation") {
     const w = eqBox(b).width;
     return { min: w, max: w };
@@ -2691,6 +2730,8 @@ function cellMinMax(
         cross += b.style.spaceBeforePx + totalLinesHeight(getLines(b, AUTOFIT_NATURAL_W)) + b.style.spaceAfterPx;
       } else if (b.kind === "image") {
         if (!b.anchor) cross += b.heightPx + CELL_BLOCK_GAP;
+      } else if (b.kind === "shape") {
+        cross += b.heightPx + CELL_BLOCK_GAP;
       } else if (b.kind === "equation") {
         const box = eqBox(b);
         cross += box.ascent + box.descent + CELL_BLOCK_GAP;
@@ -2821,6 +2862,7 @@ function solveColumns(perCol: ColMinMax[], available: number, mode: "autofitCont
 type MeasuredCellItem =
   | { kind: "para"; block: Paragraph; lines: LineBox[] }
   | { kind: "image"; block: ImageBlock; width: number; height: number } // scaled to fit the cell
+  | { kind: "shape"; block: ShapeBlock; width: number; height: number } // scaled to fit the cell
   | { kind: "equation"; block: EquationBlock; box: MathBox; width: number; height: number }
   | { kind: "custom"; block: CustomBlock; width: number; height: number }
   | { kind: "table"; block: TableBlock; rows: MeasuredRow[]; colWidths: number[]; height: number; tableWidth: number; xOffset: number };
@@ -2942,6 +2984,10 @@ function measureTable(
             flow = Math.max(flow, b.widthPx + CELL_BLOCK_GAP);
             return { kind: "image", block: b, width: b.widthPx, height: b.heightPx };
           }
+          if (b.kind === "shape") {
+            flow = Math.max(flow, b.widthPx + CELL_BLOCK_GAP);
+            return { kind: "shape", block: b, width: b.widthPx, height: b.heightPx };
+          }
           if (b.kind === "equation") {
             const box = eqBox(b);
             flow = Math.max(flow, box.width + CELL_BLOCK_GAP);
@@ -2984,6 +3030,15 @@ function measureTable(
           const ih = b.heightPx * scale;
           h += ih + CELL_BLOCK_GAP;
           return { kind: "image", block: b, width: w, height: ih };
+        }
+        if (b.kind === "shape") {
+          // Scale a wide shape down to the cell's inner width (keep aspect), like a
+          // photo-grid image.
+          const scale = Math.min(1, innerWidth / Math.max(1, b.widthPx));
+          const w = b.widthPx * scale;
+          const sh = b.heightPx * scale;
+          h += sh + CELL_BLOCK_GAP;
+          return { kind: "shape", block: b, width: w, height: sh };
         }
         if (b.kind === "equation") {
           const box = eqBox(b);
@@ -3156,6 +3211,9 @@ function placeTable(
           } else if (it.kind === "custom") {
             blocks.push({ blockId: it.block.id, x: 0, y: ly, firstLineIndex: 0, lines: [], custom: { customType: it.block.customType, data: it.block.data, width: it.width, height: it.height } });
             ly += it.height + CELL_BLOCK_GAP;
+          } else if (it.kind === "shape") {
+            blocks.push({ blockId: it.block.id, x: 0, y: ly, firstLineIndex: 0, lines: [], shape: placedShapeOf(it.block, it.width, it.height) });
+            ly += it.height + CELL_BLOCK_GAP;
           } else {
             blocks.push(placeTable(it.block, it.rows, it.colWidths, it.xOffset, ly, it.tableWidth, 0, listCtx));
             ly += it.height + CELL_BLOCK_GAP;
@@ -3292,6 +3350,11 @@ function placeTable(
             lines: [],
             custom: { customType: it.block.customType, data: it.block.data, width: it.width, height: it.height },
           });
+          py += it.height + CELL_BLOCK_GAP;
+        } else if (it.kind === "shape") {
+          const slack = innerWidth - it.width;
+          const ix = cx + mgn.left + (it.block.align === "center" ? slack / 2 : it.block.align === "right" ? slack : 0);
+          blocks.push({ blockId: it.block.id, x: ix, y: py, firstLineIndex: 0, lines: [], shape: placedShapeOf(it.block, it.width, it.height) });
           py += it.height + CELL_BLOCK_GAP;
         } else {
           // nested table — placed recursively, read-only inner cells

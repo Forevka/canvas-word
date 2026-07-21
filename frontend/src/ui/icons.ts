@@ -53,6 +53,10 @@ export const ICONS = {
   image: svg(
     `<rect x="2" y="3" width="12" height="10" rx="1"/><circle cx="5.5" cy="6.5" r="1.2"/><path d="M2 11l3.5-3 3 2.5L11 8l3 3"/>`,
   ),
+  shapes: svg(`<rect x="1.5" y="8" width="6" height="6" rx=".8"/><circle cx="11" cy="5" r="3.5"/>`),
+  shapeRect: svg(`<rect x="2" y="4" width="12" height="8" rx="1"/>`),
+  shapeEllipse: svg(`<ellipse cx="8" cy="8" rx="6" ry="4.5"/>`),
+  shapeLine: svg(`<path d="M2.5 13.5 13.5 2.5"/>`),
   table: svg(
     `<rect x="2" y="2.5" width="12" height="11" rx="1"/><path d="M2 6h12"/><path d="M2 9.7h12"/><path d="M6.5 2.5v11"/><path d="M10.7 2.5v11"/>`,
   ),

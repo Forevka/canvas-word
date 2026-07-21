@@ -1,13 +1,13 @@
 // Commands: pure (state) -> Transaction | null. The keymap, the IME proxy, and
 // (later) toolbar buttons all dispatch through these.
 
-import type { Block, CellBorder, CellBorders, CharStyle, EquationBlock, FieldDef, FieldSpec, GridSlot, ImageBlock, MathEquation, ParaStyle, Paragraph, Run, RowProps, SdtProps, SdtType, TableBlock, TableCell, TableGrid, TableRow, TableStyle, TocOptions, TocSwitches } from "@cw/shared";
+import type { Block, CellBorder, CellBorders, CharStyle, EquationBlock, FieldDef, FieldSpec, GridSlot, ImageBlock, MathEquation, ParaStyle, Paragraph, Run, RowProps, SdtProps, SdtType, ShapeBlock, ShapePreset, TableBlock, TableCell, TableGrid, TableRow, TableStyle, TocOptions, TocSwitches } from "@cw/shared";
 import { bakeTableStyleRows, DEFAULT_TBL_LOOK } from "@cw/shared";
 import { buildTocParagraphs, buildTocInstruction, buildInstruction, evaluateField } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, GridRect } from "@cw/shared";
 import { isCollapsed, BAND_CONTAINERS } from "@cw/shared";
-import type { ImagePropsPatch, Op, SectionGeometry, TablePropsPatch } from "@cw/shared";
-import { sliceRuns, applyStylePatchToRuns, mapTextInRuns, splitRunsAt, normalizeRuns, containerOf, containerBlocks, containerListOf, locateImage, locateEquation, locateBlock, freshId } from "@cw/shared";
+import type { ImagePropsPatch, Op, SectionGeometry, ShapePropsPatch, TablePropsPatch } from "@cw/shared";
+import { sliceRuns, applyStylePatchToRuns, mapTextInRuns, splitRunsAt, normalizeRuns, containerOf, containerBlocks, containerListOf, locateImage, locateEquation, locateShape, locateBlock, freshId } from "@cw/shared";
 import { inSdt, innermostSdtId, pushSdt, removeSdt, ancestryThrough } from "@cw/shared";
 import { buildTableGrid, cellsInRect, gridOriginOfCell, mergeRows, normalizeRect, rebuildRows, unmergeRows } from "@cw/shared";
 import type { CellSelection } from "./state";
@@ -1831,6 +1831,32 @@ export function insertImage(src: string, widthPx: number, heightPx: number, medi
     });
 }
 
+/** Default size for a freshly-inserted shape (px). A modest box the user resizes. */
+export const SHAPE_DEFAULT_WIDTH_PX = 180;
+export const SHAPE_DEFAULT_HEIGHT_PX = 120;
+
+/** Insert a drawing shape (preset geometry) as its own block at the caret. Seeds a
+ *  solid fill + solid outline so the shape is visible and immediately editable. A
+ *  "line" preset gets no fill — OOXML prst="line" is the box diagonal, a stroke-only
+ *  geometry — but keeps a full box so it stays selectable/resizable. */
+export function insertShape(preset: ShapePreset): Command {
+  return (state) =>
+    insertBlockAtCaret(state, (): ShapeBlock => {
+      const shape: ShapeBlock = {
+        kind: "shape",
+        id: freshBlockId(),
+        revision: 0,
+        geometry: { preset },
+        widthPx: SHAPE_DEFAULT_WIDTH_PX,
+        heightPx: SHAPE_DEFAULT_HEIGHT_PX,
+        align: "left",
+        stroke: { color: "#1f77b4", widthPt: 1 },
+      };
+      if (preset !== "line") shape.fill = { color: "#bcd6ef" };
+      return shape;
+    });
+}
+
 /** Insert a display equation as its own block at the caret. */
 export function insertEquation(equation: MathEquation): Command {
   return (state) =>
@@ -2479,6 +2505,19 @@ export function setImageProps(
   };
 }
 
+/** Set a drawing shape's props (size / align / fill / stroke). Cell-aware, like
+ *  setImageProps: shapes in table cells resize + align through the reducer op. */
+export function setShapeProps(
+  blockId: string,
+  patch: ShapePropsPatch,
+  origin: TransactionOrigin = "command",
+): Command {
+  return (state) => {
+    if (!locateShape(state.doc, blockId)) return null;
+    return tr([{ type: "setShapeProps", blockId, patch }], state.selection, origin);
+  };
+}
+
 /** Set (or clear, with `null`) the SELECTED image's crop insets (a:srcRect 0..1
  *  fractions). The interactive crop tool previews the new window purely in the DOM
  *  overlay and commits ONE op here on exit — same single-undo-step protocol as
@@ -2577,10 +2616,13 @@ export function moveAnchoredImage(
  *  deleteImage (it also handles in-cell images). */
 export function removeBlockObject(blockId: string): Command {
   return (state) => {
-    // Object-selectable non-image blocks: display equations and registered custom
-    // blocks. Both remove identically (top-level removeBlock, or a row rewrite in
-    // a cell) — only the location matters, not the block type.
-    const loc = locateEquation(state.doc, blockId) ?? locateBlock(state.doc, blockId, "custom");
+    // Object-selectable non-image blocks: display equations, drawing shapes, and
+    // registered custom blocks. All remove identically (top-level removeBlock, or a
+    // row rewrite in a cell) — only the location matters, not the block type.
+    const loc =
+      locateEquation(state.doc, blockId) ??
+      locateShape(state.doc, blockId) ??
+      locateBlock(state.doc, blockId, "custom");
     if (!loc) return null;
     if (loc.kind === "cell") {
       // In-cell equations can't go through removeBlock (it scans top-level only);

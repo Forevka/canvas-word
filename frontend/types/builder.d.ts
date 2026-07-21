@@ -9,7 +9,7 @@
 // Works in the browser (live preview via WordCanvas.setDocument) and in Node
 // (server-side DOCX/PDF generation via the export subpath).
 
-import type { CellBorders, CellMargin, CharStyle, Document, NamedStyle, PageNumFmt, ParaBorders, ParaStyle, SdtProps, Stylesheet, TableCondOverrides, TableStyle, TabStop } from "./model";
+import type { CellBorders, CellMargin, CharStyle, Document, NamedStyle, PageNumFmt, ParaBorders, ParaStyle, SdtProps, ShapeFill, ShapePreset, ShapeStroke, Stylesheet, TableCondOverrides, TableStyle, TabStop } from "./model";
 
 export type { Block, CharStyle, Document, NamedStyle, ParaStyle, Stylesheet, TableCondOverrides, TableStyle, TabStop } from "./model";
 
@@ -82,6 +82,17 @@ export interface ImageOptions {
   heightPx: number;
   align?: "left" | "center" | "right";
   wrap?: "block" | "square";
+}
+
+export interface ShapeOptions {
+  /** Box the preset geometry is drawn into (required — no DOM auto-measure). */
+  widthPx: number;
+  heightPx: number;
+  align?: "left" | "center" | "right";
+  /** Solid fill (CSS hex) or explicit no-fill; omit for the theme-neutral default. */
+  fill?: ShapeFill;
+  /** Solid outline (CSS hex + point width) or explicit no-outline; omit for default. */
+  stroke?: ShapeStroke;
 }
 
 export interface ListItem {
@@ -167,6 +178,8 @@ export declare class StoryBuilder {
   table(rows: CellContent[][], opts?: TableOptions): this;
   table(build: (t: TableBuilder) => void, opts?: TableOptions): this;
   image(src: string | { data: Uint8Array | ArrayBuffer; mime: string }, opts: ImageOptions): this;
+  /** A drawing shape (preset geometry: rect/ellipse/line) with an optional fill + outline. */
+  shape(preset: ShapePreset, opts: ShapeOptions): this;
   list(items: (string | ListItem)[], opts?: ListOptions): this;
   bulletList(items: (string | ListItem)[]): this;
   numberedList(items: (string | ListItem)[]): this;
@@ -278,6 +291,7 @@ export declare class ParagraphBuilder<P extends StoryBuilder> {
   table(rows: CellContent[][], opts?: TableOptions): P;
   table(build: (t: TableBuilder) => void, opts?: TableOptions): P;
   image(src: string | { data: Uint8Array | ArrayBuffer; mime: string }, opts: ImageOptions): P;
+  shape(preset: ShapePreset, opts: ShapeOptions): P;
   list(items: (string | ListItem)[], opts?: ListOptions): P;
   bulletList(items: (string | ListItem)[]): P;
   numberedList(items: (string | ListItem)[]): P;

@@ -695,6 +695,19 @@ function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
   const anchor = el(drawing, "wp:anchor");
   const container = el(drawing, "wp:inline") ?? anchor;
   if (!container) return undefined;
+  // A DrawingML preset shape (…/wordprocessingShape → wps:wsp) has no a:blip. Parse
+  // it before the image path so the images-skipped warning stays narrowed to
+  // genuinely unknown drawings.
+  const wsp = findDeep(container, "wps:wsp");
+  if (wsp) {
+    const shape = parseShapeWsp(wsp, container);
+    if (shape) return shape;
+    // Structurally a wps shape but without a preset geometry we can place yet
+    // (e.g. freeform a:custGeom) — warn instead of dropping it silently, mirroring
+    // the image branch's images-skipped warning.
+    ctx.warnings.add("shape-skipped", "A drawing shape without a supported preset geometry (e.g. a freeform/custom geometry) was skipped.");
+    return undefined;
+  }
   const blip = findDeep(container, "a:blip");
   // r:embed = image bytes packaged inside the docx; r:link = a "Link to File"
   // image whose bytes live outside the package (an http(s) URL or local path,
@@ -761,6 +774,51 @@ function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
     }
   }
   return image;
+}
+
+/** DrawingML preset shape: wps:wsp → wps:spPr (a:prstGeom, a:solidFill/a:noFill,
+ *  a:ln). Size comes from the container's wp:extent (like an image). The spPr's
+ *  DIRECT fill is the shape fill; a:ln carries the outline (its own nested fill). */
+function parseShapeWsp(wsp: XmlNode, container: XmlNode): Extract<IRInline, { kind: "shape" }> | undefined {
+  const spPr = el(wsp, "wps:spPr");
+  const prstGeom = spPr && el(spPr, "a:prstGeom");
+  const prst = prstGeom && attr(prstGeom, "prst");
+  if (!prst) return undefined; // no geometry → not a shape we can place
+  const shape: Extract<IRInline, { kind: "shape" }> = { kind: "shape", preset: prst };
+  const extent = el(container, "wp:extent");
+  const cx = numAttr(extent, "cx");
+  if (cx !== undefined) shape.widthEmu = cx;
+  const cy = numAttr(extent, "cy");
+  if (cy !== undefined) shape.heightEmu = cy;
+  const srgbVal = (parent: XmlNode | undefined): string | undefined => {
+    const solid = parent && el(parent, "a:solidFill");
+    const clr = solid && el(solid, "a:srgbClr");
+    return clr ? attr(clr, "val") : undefined;
+  };
+  if (spPr) {
+    // Fill: spPr's DIRECT solidFill/noFill (never descend into a:ln's fill).
+    const fillVal = srgbVal(spPr);
+    if (fillVal) shape.fill = { color: `#${fillVal}` };
+    else if (el(spPr, "a:noFill")) shape.fill = { none: true };
+    // Outline: a:ln → noFill (no outline) or solidFill (color) with @w (EMU) width.
+    const ln = el(spPr, "a:ln");
+    if (ln) {
+      if (el(ln, "a:noFill")) {
+        shape.stroke = { none: true };
+      } else {
+        const lnVal = srgbVal(ln);
+        if (lnVal) {
+          const w = numAttr(ln, "w");
+          shape.stroke = { color: `#${lnVal}`, widthPt: w !== undefined ? w / 12700 : 1 };
+        }
+      }
+    }
+  }
+  const anchorId = attr(container, "wp14:anchorId");
+  if (anchorId) shape.anchorId = anchorId;
+  const editId = attr(container, "wp14:editId");
+  if (editId) shape.editId = editId;
+  return shape;
 }
 
 /** wp:positionH|V → wp:posOffset (EMU, signed). Absent/non-numeric → 0.

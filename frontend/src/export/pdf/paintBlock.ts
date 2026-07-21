@@ -6,7 +6,7 @@
 
 import type { CellBorder } from "@cw/shared";
 import { DEFAULT_CHAR_STYLE } from "@cw/shared";
-import type { LineBox, Page, PlacedBlock, PlacedTableCell } from "../../layout/layoutTree";
+import type { LineBox, Page, PlacedBlock, PlacedShape, PlacedTableCell } from "../../layout/layoutTree";
 import type { MathBox } from "../../layout/math/mathBox";
 import { MATH_FONT_FAMILY } from "../../fonts/clones";
 import {
@@ -19,6 +19,7 @@ import {
   leaderDash,
   leaderWidth,
   normalizeLinkBlue,
+  resolveShapePaint,
   runPaint,
   strikeOffset,
   SUB_SUPER_SCALE,
@@ -167,6 +168,11 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
       placeholderBox(ctx, block.x, block.y, width, height);
     }
     if (clip) doc.restore();
+    return;
+  }
+
+  if (block.shape) {
+    paintShapePdf(doc, block.shape, block.x, block.y);
     return;
   }
 
@@ -463,6 +469,30 @@ function paintLine(ctx: PaintCtx, block: PlacedBlock, line: LineBox, baselineY: 
 
 function placeholderBox(ctx: PaintCtx, x: number, y: number, w: number, h: number): void {
   ctx.doc.rect(x, y, w, h).fill(IMAGE_PLACEHOLDER_COLOR);
+}
+
+/** Draw a placed drawing shape's preset geometry into its box at (x,y) — the PDF
+ *  mirror of the canvas paintShapeCanvas. pdfkit consumes the path on fill/stroke,
+ *  so the path is retraced for each. Line is the box diagonal (OOXML prst="line"). */
+function paintShapePdf(doc: PDFKit.PDFDocument, shape: PlacedShape, x: number, y: number): void {
+  const { fill, stroke } = resolveShapePaint(shape);
+  const w = shape.width;
+  const h = shape.height;
+  const tracePath = (): void => {
+    if (shape.preset === "ellipse") doc.ellipse(x + w / 2, y + h / 2, w / 2, h / 2);
+    else if (shape.preset === "line") doc.moveTo(x, y).lineTo(x + w, y + h);
+    else doc.rect(x, y, w, h);
+  };
+  doc.save();
+  if (fill && shape.preset !== "line") {
+    tracePath();
+    doc.fill(fill);
+  }
+  if (stroke) {
+    tracePath();
+    doc.lineWidth(stroke.widthPx).stroke(stroke.color);
+  }
+  doc.restore();
 }
 
 /** Draw a default-bullet marker as a vector shape (disc / ring / square), the PDF

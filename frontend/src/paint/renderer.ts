@@ -10,7 +10,7 @@
 // The caret is a DOM overlay div inside the page placeholder — blinking via CSS
 // animation, so it never triggers a canvas repaint.
 
-import type { LayoutTree, LineBox, Page, PlacedBlock, PlacedTableCell } from "../layout/layoutTree";
+import type { LayoutTree, LineBox, Page, PlacedBlock, PlacedShape, PlacedTableCell } from "../layout/layoutTree";
 import type { CaretRect, Rect } from "../layout/geometry";
 import { spaceMarkXs } from "../layout/geometry";
 import { BADGE_DOT_RADIUS, BADGE_HEIGHT, EMPTY_DECORATIONS, type ResolvedDecorations } from "../decorations";
@@ -44,6 +44,7 @@ import {
   doubleStrikeOffsets,
   bulletShapeFor,
   paraDecorBox,
+  resolveShapePaint,
 } from "./paintStyle";
 import type { RunPaint, BulletShape } from "./paintStyle";
 import type { UnderlineStyle } from "@cw/shared";
@@ -69,6 +70,40 @@ function paintBulletShape(ctx: CanvasRenderingContext2D, shape: BulletShape, col
       ctx.fillStyle = color;
       ctx.fill();
     }
+  }
+  ctx.restore();
+}
+
+/** Draw a placed drawing shape's preset geometry into its box at (x,y): the fill
+ *  path, then the stroke. Constant-for-constant mirror of the PDF shape painter
+ *  (export/pdf/paintBlock.ts). Line is the box diagonal (OOXML prst="line"). */
+function paintShapeCanvas(ctx: CanvasRenderingContext2D, shape: PlacedShape, x: number, y: number): void {
+  const { fill, stroke } = resolveShapePaint(shape);
+  const w = shape.width;
+  const h = shape.height;
+  ctx.save();
+  const tracePath = (): void => {
+    ctx.beginPath();
+    if (shape.preset === "ellipse") {
+      ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+    } else if (shape.preset === "line") {
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + w, y + h);
+    } else {
+      ctx.rect(x, y, w, h);
+    }
+  };
+  // A line has no interior to fill.
+  if (fill && shape.preset !== "line") {
+    tracePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+  if (stroke) {
+    tracePath();
+    ctx.lineWidth = stroke.widthPx;
+    ctx.strokeStyle = stroke.color;
+    ctx.stroke();
   }
   ctx.restore();
 }
@@ -1130,6 +1165,10 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
         ctx.fillRect(block.x, block.y, block.image.width, block.image.height);
       }
       if (clip) ctx.restore();
+      return;
+    }
+    if (block.shape) {
+      paintShapeCanvas(ctx, block.shape, block.x, block.y);
       return;
     }
     if (block.equation) {

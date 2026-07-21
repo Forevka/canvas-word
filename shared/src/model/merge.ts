@@ -30,6 +30,7 @@ import type {
   SectionBreakType,
   SectionPatch,
   SectionProps,
+  ShapeBlock,
   TableBlock,
   TableCell,
   TableRow,
@@ -215,6 +216,14 @@ function cloneBlock(block: Block, ctx: Ctx): Block {
       // data is JSON-serializable by contract — deep-clone it so the copy never
       // aliases the original block's payload.
       const out: CustomBlock = { ...block, id, data: block.data === undefined ? undefined : structuredClone(block.data) };
+      if (out.fieldId) out.fieldId = remap(ctx.fields, out.fieldId);
+      out.sdtPath = clonePath(block.sdtPath, ctx.sdts);
+      return out;
+    }
+    case "shape": {
+      // geometry/fill/stroke are immutable value objects (replaced wholesale on
+      // edit), so a shallow copy is safe. drawingId is de-duped on export.
+      const out: ShapeBlock = { ...block, id };
       if (out.fieldId) out.fieldId = remap(ctx.fields, out.fieldId);
       out.sdtPath = clonePath(block.sdtPath, ctx.sdts);
       return out;

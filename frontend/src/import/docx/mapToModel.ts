@@ -27,6 +27,8 @@ import type {
   SectionBreakType,
   SectionPatch,
   SectionProps,
+  ShapeBlock,
+  ShapePreset,
   TabAlign,
   TableBlock,
   TableCell,
@@ -640,6 +642,17 @@ export function createMapper(
           }
           break;
         }
+        case "shape": {
+          const shape = mapShape(inline, style.align);
+          if (shape) {
+            flushPara();
+            // A shape can't carry a page/column break — give the break a carrier.
+            if (pendingPageBreak || pendingColumnBreak) blocks.push(paraOf([]));
+            blocks.push(shape);
+            trailingBreak = false;
+          }
+          break;
+        }
         case "run": {
           const effective = resolver.run(ir.props.styleId, inline.props);
           // Hidden text (w:vanish) is PRESERVED with style.hidden (set via
@@ -782,6 +795,44 @@ export function createMapper(
       };
     }
     return image;
+  }
+
+  const KNOWN_PRESETS = new Set<ShapePreset>(["rect", "ellipse", "line"]);
+
+  function mapShape(
+    inline: Extract<IRInline, { kind: "shape" }>,
+    paraAlign: ParaStyle["align"],
+  ): ShapeBlock | undefined {
+    if (inline.widthEmu === undefined || inline.heightEmu === undefined) {
+      warnings.add("shapes-unsized", "A drawing shape without explicit dimensions was skipped.");
+      return undefined;
+    }
+    // PR 1 models rect/ellipse/line; any other preset maps to rect (a box) so the
+    // shape still round-trips — later PRs widen the preset set.
+    let preset: ShapePreset = "rect";
+    if (KNOWN_PRESETS.has(inline.preset as ShapePreset)) preset = inline.preset as ShapePreset;
+    else warnings.add("shape-preset-unsupported", `An unsupported shape preset "${inline.preset}" was imported as a rectangle.`);
+    const shape: ShapeBlock = {
+      kind: "shape",
+      id: id(),
+      revision: 0,
+      geometry: { preset },
+      widthPx: round2(emuToPx(inline.widthEmu)),
+      heightPx: round2(emuToPx(inline.heightEmu)),
+      align: paraAlign === "justify" ? "left" : paraAlign,
+    };
+    if (inline.fill) shape.fill = inline.fill;
+    if (inline.stroke) {
+      shape.stroke = "none" in inline.stroke ? inline.stroke : { color: inline.stroke.color, widthPt: round2(inline.stroke.widthPt) };
+    }
+    // wp14:anchorId/editId — persistent drawing identity, preserved verbatim.
+    if (inline.anchorId || inline.editId) {
+      shape.drawingId = {
+        ...(inline.anchorId ? { anchorId: inline.anchorId } : {}),
+        ...(inline.editId ? { editId: inline.editId } : {}),
+      };
+    }
+    return shape;
   }
 
   function mapRun(rawText: string, effective: IRRunProps, resolveLink: LinkResolver, sdtPath?: string[], fieldId?: string): Run {

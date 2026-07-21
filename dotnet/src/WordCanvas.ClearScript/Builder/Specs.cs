@@ -37,6 +37,8 @@ public enum SectionBreakType { NextPage, EvenPage, OddPage }
 /// <summary>When line numbering restarts (OOXML w:lnNumType/@w:restart).</summary>
 public enum LineNumberRestart { Continuous, NewPage, NewSection }
 public enum ImageWrap { Block, Square }
+/// <summary>Drawing-shape preset geometry (OOXML a:prstGeom@prst). PR 1 set.</summary>
+public enum ShapePreset { Rect, Ellipse, Line }
 public enum PageSizeName { Letter, Legal, A4, A3, Tabloid }
 /// <summary>Block/inline equation horizontal placement (display equations only).</summary>
 public enum EquationAlign { Left, Center, Right }
@@ -89,6 +91,12 @@ internal static class EnumJs
     };
 
     public static string Wrap(ImageWrap w) => w == ImageWrap.Square ? "square" : "block";
+    public static string ShapePreset(ShapePreset p) => p switch
+    {
+        WordCanvas.ClearScript.Builder.ShapePreset.Ellipse => "ellipse",
+        WordCanvas.ClearScript.Builder.ShapePreset.Line => "line",
+        _ => "rect",
+    };
     public static string Orient(Orientation o) => o == Orientation.Landscape ? "landscape" : "portrait";
     public static string BreakType(SectionBreakType t) => t switch
     {
@@ -554,6 +562,84 @@ public sealed record ImageCrop(double Left, double Top, double Right, double Bot
         Js.Set(o, "top", Top);
         Js.Set(o, "right", Right);
         Js.Set(o, "bottom", Bottom);
+        return o;
+    }
+}
+
+/// <summary>Drawing-shape fill: a solid CSS-hex color, or an explicit no-fill.
+/// Omit the option for the theme-neutral default fill.</summary>
+public sealed record ShapeFill
+{
+    public string? Color { get; init; }
+    public bool None { get; init; }
+    public static ShapeFill Solid(string color) => new() { Color = color };
+    public static ShapeFill NoFill => new() { None = true };
+
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        if (None) Js.Set(o, "none", true);
+        else if (Color is { } c) Js.Set(o, "color", c);
+        else throw new InvalidOperationException(
+            "ShapeFill requires a Color (use ShapeFill.Solid(color)) or None (ShapeFill.NoFill).");
+        return o;
+    }
+}
+
+/// <summary>Drawing-shape outline: a solid CSS-hex color + point width, or an
+/// explicit no-outline. Omit the option for the default outline.</summary>
+public sealed record ShapeStroke
+{
+    public string? Color { get; init; }
+    public double WidthPt { get; init; } = 1;
+    public bool None { get; init; }
+    public static ShapeStroke Solid(string color, double widthPt = 1) => new() { Color = color, WidthPt = widthPt };
+    public static ShapeStroke NoOutline => new() { None = true };
+
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        if (None)
+        {
+            Js.Set(o, "none", true);
+        }
+        else if (Color is { } c)
+        {
+            Js.Set(o, "color", c);
+            Js.Set(o, "widthPt", WidthPt);
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                "ShapeStroke requires a Color (use ShapeStroke.Solid(color, widthPt)) or None (ShapeStroke.NoOutline).");
+        }
+        return o;
+    }
+}
+
+/// <summary>Options for <c>.Shape()</c> — the box the preset geometry is drawn into
+/// (required, like an image), plus an optional alignment, fill and outline.</summary>
+public sealed record ShapeOptions
+{
+    public required double WidthPx { get; init; }
+    public required double HeightPx { get; init; }
+    public TextAlign? Align { get; init; }
+    public ShapeFill? Fill { get; init; }
+    public ShapeStroke? Stroke { get; init; }
+
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        Js.Set(o, "widthPx", WidthPx);
+        Js.Set(o, "heightPx", HeightPx);
+        if (Align is { } a)
+        {
+            if (a == TextAlign.Justify)
+                throw new ArgumentOutOfRangeException(nameof(Align), "Shape align supports left/center/right only (not Justify).");
+            Js.Set(o, "align", EnumJs.Align(a));
+        }
+        if (Fill is { } f) Js.Set(o, "fill", f.ToJs(e));
+        if (Stroke is { } s) Js.Set(o, "stroke", s.ToJs(e));
         return o;
     }
 }

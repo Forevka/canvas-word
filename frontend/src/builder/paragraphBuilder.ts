@@ -8,12 +8,12 @@
 // text() in this scope — "make this paragraph bold" is the dominant authoring
 // intent. Mixed formatting within a paragraph uses text(t, { …patch }).
 
-import type { Block, CellBorder, CharStyle, Document, EmphasisMark, FieldSpec, IfOp, NamedStyle, PageNumFmt, ParaBorders, ParaStyle, Paragraph, Run, RunLang, SdtProps, TableStyle, TabStop, UnderlineStyle } from "@cw/shared";
+import type { Block, CellBorder, CharStyle, Document, EmphasisMark, FieldSpec, IfOp, NamedStyle, PageNumFmt, ParaBorders, ParaStyle, Paragraph, Run, RunLang, SdtProps, ShapePreset, TableStyle, TabStop, UnderlineStyle } from "@cw/shared";
 import { AUTO_PARA_SPACING_PX, buildInstruction, defaultListDefinition, evaluateField, resolveStyle, styleById, textOfRuns } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import type { BandOptions, DocumentBuilder, ListDefinitionSpec, PageSetup, SectionBreakOptions } from "./documentBuilder";
 import { equationFromLatex, equationFromMathml } from "./mathInput";
-import type { EquationOptions, ImageOptions, ListItem, ListOptions } from "./storyBuilder";
+import type { EquationOptions, ImageOptions, ListItem, ListOptions, ShapeOptions } from "./storyBuilder";
 import { StoryBuilder } from "./storyBuilder";
 import type { CellContent, TableBuilder, TableOptions } from "./tableBuilder";
 import type { TableStylePreset } from "./tableStyles";
@@ -803,6 +803,10 @@ export class ParagraphBuilder<P extends StoryBuilder> {
 
   image(src: string | { data: Uint8Array | ArrayBuffer; mime: string }, opts: ImageOptions): P {
     return this.parent.image(src, opts) as P;
+  }
+
+  shape(preset: ShapePreset, opts: ShapeOptions): P {
+    return this.parent.shape(preset, opts) as P;
   }
 
   list(items: (string | ListItem)[], opts?: ListOptions): P {
