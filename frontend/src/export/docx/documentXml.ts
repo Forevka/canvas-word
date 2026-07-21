@@ -1195,9 +1195,12 @@ function shapeParagraphXml(shape: Extract<Block, { kind: "shape" }>, ctx: PartCt
   }
 
   // Square-wrapped shape (text flows beside it): a wp:anchor + wp:wrapSquare, aligned
-  // at the margin per `align`. Unlike the image path (which currently drops square
-  // wrap to inline on export), shapes round-trip wrap faithfully (issue #217 DoD).
-  if (shape.wrap === "square") {
+  // at the margin per `align`. Unlike the image path (which drops square wrap to inline
+  // on export), a left/right square shape round-trips wrap faithfully (issue #217 DoD).
+  // A CENTER + square shape has no left/right margin to float against — the layout
+  // engine renders it in-flow (engine.ts: floating requires align !== "center"), so we
+  // export it inline too, matching what the editor shows (the image path's behavior).
+  if (shape.wrap === "square" && shape.align !== "center") {
     const anchor = el(
       "wp:anchor",
       {

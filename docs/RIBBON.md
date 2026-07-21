@@ -51,6 +51,24 @@ de-duped within a group with a `-2`, `-3`, … suffix. The tab ids are the stabl
 above. Because item ids derive from tooltips, **discover them with `api.items(groupId)`**
 rather than hard-coding — that list is the source of truth.
 
+### Drawing shapes
+
+Shape controls live on the **Insert** tab across two built-in groups:
+
+- **`insert.illustrations`** — the **Insert a shape** button opens the preset
+  gallery (rectangle, rounded rectangle, ellipse, triangle, diamond, right/left
+  arrow, line); picking one inserts it at the caret. This group also holds the
+  image-insert button.
+- **`insert.shape`** — acts on the *selected* shape: **Shape fill** (colour / no
+  fill), **Shape outline** (colour, width, dash), **wrap square** / **in line with
+  text**, **bring in front of text** / **send behind text**, and **delete**. Every
+  button is disabled until a shape is selected.
+
+The same actions are reachable from the shape's floating context toolbar and the
+right-click menu. Reorder or hide any of them with `moveItem`/`removeItem` — resolve
+the exact ids at runtime with `api.items("insert.illustrations")` /
+`api.items("insert.shape")`.
+
 ## Adding your own tabs, groups, and buttons
 
 ```ts

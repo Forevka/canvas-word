@@ -379,8 +379,15 @@ a:graphicData @uri=…/wordprocessingGroup → wpg:wgp ✅ ShapeBlock.group (a s
 > is unaffected (both fields survive) — this is a paint-only gap in the canvas and
 > PDF painters.
 
-> The remaining shape parts (editable text boxes, freeform custom geometry, polish)
-> are tracked in [SHAPES_PLAN.md](./SHAPES_PLAN.md).
+> **Drawing shapes are fully supported** (issue #206, Parts 1–9): the preset gallery,
+> freeform custom geometry, solid/no fill, outline colour/width/dash, rotation,
+> **editable** text boxes, square wrap, absolute behind/in-front float + z-order, and
+> grouped/nested-group drawings are authorable from the editor surfaces (ribbon,
+> floating toolbar, right-click), the JS `DocumentBuilder`, and the C# builder, and
+> round-trip to `.docx` — losslessly except two documented corners: the rotation +
+> text paint-only gap noted just above, and a builder-only center-aligned
+> square-wrap shape (it exports inline, so re-imports as in-flow). See
+> [SHAPES_PLAN.md](./SHAPES_PLAN.md) for the delivered plan.
 
 ### Legacy VML shapes (w:pict) — issue #218 (import-only)
 

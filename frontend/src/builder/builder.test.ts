@@ -87,6 +87,65 @@ describe("paragraphs and runs", () => {
     expect(shape.geometry.custom?.segments.map((s) => s.type)).toEqual(["moveTo", "lineTo", "lineTo", "close"]);
   });
 
+  it(".shape() authors an absolute float anchor (behind/in-front + z-order)", () => {
+    const doc = DocumentBuilder.create()
+      .shape("rect", {
+        widthPx: 150, heightPx: 90,
+        anchor: { behind: true, offsetXPx: 20, offsetYPx: 120, relFromH: "margin", relFromV: "paragraph", z: -1 },
+      })
+      .shape("ellipse", {
+        widthPx: 80, heightPx: 80,
+        anchor: { behind: false, offsetXPx: 230, offsetYPx: 110, relFromH: "margin", relFromV: "paragraph", z: 3 },
+      })
+      .build();
+    const behind = doc.blocks[0] as { anchor?: { behind: boolean; z?: number }; wrap?: string };
+    const front = doc.blocks[1] as { anchor?: { behind: boolean; z?: number } };
+    expect(behind.anchor).toMatchObject({ behind: true, offsetXPx: 20, offsetYPx: 120, z: -1 });
+    expect(behind.wrap).toBeUndefined(); // anchor and wrap are mutually exclusive
+    expect(front.anchor).toMatchObject({ behind: false, z: 3 });
+  });
+
+  it(".shape() anchor wins over wrap when both are set", () => {
+    const doc = DocumentBuilder.create()
+      .shape("rect", {
+        widthPx: 100, heightPx: 60, wrap: "square",
+        anchor: { behind: false, offsetXPx: 0, offsetYPx: 0, relFromH: "margin", relFromV: "paragraph" },
+      })
+      .build();
+    const s = doc.blocks[0] as { anchor?: unknown; wrap?: string };
+    expect(s.anchor).toBeDefined();
+    expect(s.wrap).toBeUndefined();
+  });
+
+  it(".shapeGroup() authors a NESTED group (a group inside a group)", () => {
+    const doc = DocumentBuilder.create()
+      .shapeGroup({
+        widthPx: 300, heightPx: 120, align: "center",
+        children: [
+          { preset: "rect", xPx: 0, yPx: 0, widthPx: 120, heightPx: 60, stroke: { color: "#333333", widthPt: 1 } },
+          {
+            preset: "rect", xPx: 140, yPx: 10, widthPx: 120, heightPx: 60,
+            group: {
+              children: [
+                { preset: "ellipse", xPx: 0, yPx: 0, widthPx: 50, heightPx: 50, fill: { color: "#ead1dc" } },
+                { preset: "triangle", xPx: 60, yPx: 0, widthPx: 50, heightPx: 50 },
+              ],
+            },
+          },
+        ],
+      })
+      .build();
+    const outer = doc.blocks[0] as {
+      group?: { children: { shape: { geometry: { preset: string }; group?: { children: { shape: { geometry: { preset: string } } }[] } } }[] };
+    };
+    expect(outer.group?.children).toHaveLength(2);
+    const nested = outer.group!.children[1]!.shape;
+    expect(nested.group).toBeDefined();
+    expect(nested.group!.children.map((c) => c.shape.geometry.preset)).toEqual(["ellipse", "triangle"]);
+    // the nested group's own box is the child's widthPx×heightPx.
+    expect(nested).toMatchObject({ widthPx: 120, heightPx: 60 });
+  });
+
   it("char formatting patches every run already in the paragraph", () => {
     const doc = DocumentBuilder.create()
       .paragraph("a").text("b").color("#ff0000")

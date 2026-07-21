@@ -41,6 +41,10 @@ public enum ImageWrap { Block, Square }
 public enum ShapePreset { Rect, RoundRect, Ellipse, Triangle, Diamond, RightArrow, LeftArrow, Line }
 /// <summary>Drawing-shape outline dash pattern (OOXML a:prstDash@val).</summary>
 public enum ShapeDash { Solid, Dash, Dot, DashDot, LgDash }
+/// <summary>Anchored-shape horizontal origin (OOXML wp:positionH@relativeFrom).</summary>
+public enum ShapeRelH { Page, Margin, Column, LeftMargin, RightMargin, Character }
+/// <summary>Anchored-shape vertical origin (OOXML wp:positionV@relativeFrom).</summary>
+public enum ShapeRelV { Page, Margin, Paragraph, Line, TopMargin, BottomMargin }
 public enum PageSizeName { Letter, Legal, A4, A3, Tabloid }
 /// <summary>Block/inline equation horizontal placement (display equations only).</summary>
 public enum EquationAlign { Left, Center, Right }
@@ -111,6 +115,24 @@ internal static class EnumJs
         WordCanvas.ClearScript.Builder.ShapeDash.DashDot => "dashDot",
         WordCanvas.ClearScript.Builder.ShapeDash.LgDash => "lgDash",
         _ => "solid",
+    };
+    public static string ShapeRelH(ShapeRelH r) => r switch
+    {
+        WordCanvas.ClearScript.Builder.ShapeRelH.Page => "page",
+        WordCanvas.ClearScript.Builder.ShapeRelH.Column => "column",
+        WordCanvas.ClearScript.Builder.ShapeRelH.LeftMargin => "leftMargin",
+        WordCanvas.ClearScript.Builder.ShapeRelH.RightMargin => "rightMargin",
+        WordCanvas.ClearScript.Builder.ShapeRelH.Character => "character",
+        _ => "margin",
+    };
+    public static string ShapeRelV(ShapeRelV r) => r switch
+    {
+        WordCanvas.ClearScript.Builder.ShapeRelV.Page => "page",
+        WordCanvas.ClearScript.Builder.ShapeRelV.Margin => "margin",
+        WordCanvas.ClearScript.Builder.ShapeRelV.Line => "line",
+        WordCanvas.ClearScript.Builder.ShapeRelV.TopMargin => "topMargin",
+        WordCanvas.ClearScript.Builder.ShapeRelV.BottomMargin => "bottomMargin",
+        _ => "paragraph",
     };
     public static string Orient(Orientation o) => o == Orientation.Landscape ? "landscape" : "portrait";
     public static string BreakType(SectionBreakType t) => t switch
@@ -636,6 +658,40 @@ public sealed record ShapeStroke
     }
 }
 
+/// <summary>Absolute float anchor for a drawing shape (OOXML wp:anchor + wp:wrapNone):
+/// position the shape at <see cref="OffsetXPx"/>/<see cref="OffsetYPx"/> from the
+/// <see cref="RelFromH"/>/<see cref="RelFromV"/> origin, BEHIND (<see cref="Behind"/>) or
+/// in front of the text, with an optional <see cref="Z"/> stacking order (higher paints
+/// on top). Does NOT reflow surrounding text. Mutually exclusive with a shape's Wrap.</summary>
+public sealed record ShapeAnchor
+{
+    /// <summary>True = sits behind the text (a background); false = in front.</summary>
+    public required bool Behind { get; init; }
+    /// <summary>Horizontal offset (px) from the <see cref="RelFromH"/> origin.</summary>
+    public required double OffsetXPx { get; init; }
+    /// <summary>Vertical offset (px) from the <see cref="RelFromV"/> origin.</summary>
+    public required double OffsetYPx { get; init; }
+    /// <summary>Horizontal origin the offset measures from (default Margin).</summary>
+    public ShapeRelH RelFromH { get; init; } = ShapeRelH.Margin;
+    /// <summary>Vertical origin the offset measures from (default Paragraph).</summary>
+    public ShapeRelV RelFromV { get; init; } = ShapeRelV.Paragraph;
+    /// <summary>Stacking order among anchored drawings in the same layer — higher paints
+    /// on top (wp:anchor@relativeHeight). Null = 0.</summary>
+    public int? Z { get; init; }
+
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        Js.Set(o, "behind", Behind);
+        Js.Set(o, "offsetXPx", OffsetXPx);
+        Js.Set(o, "offsetYPx", OffsetYPx);
+        Js.Set(o, "relFromH", EnumJs.ShapeRelH(RelFromH));
+        Js.Set(o, "relFromV", EnumJs.ShapeRelV(RelFromV));
+        if (Z is { } z) Js.Set(o, "z", z);
+        return o;
+    }
+}
+
 /// <summary>One segment of a freeform custom-geometry path (OOXML a:custGeom / a:path).
 /// Coordinates are fractions of the shape box (0–1, x rightward / y downward). Build via
 /// the static factories (<see cref="MoveTo"/> / <see cref="LineTo"/> /
@@ -685,25 +741,30 @@ public sealed record ShapePathSegment
 }
 
 /// <summary>Options for <c>.Shape()</c> — the box the geometry is drawn into (required,
-/// like an image), plus an optional alignment, wrap, fill, outline, clockwise rotation
-/// (degrees), raw a:avLst adjust guides (name → number), a text box body, and a freeform
-/// custom-geometry <see cref="Path"/> (which, when set, replaces the preset).</summary>
+/// like an image), plus an optional alignment, wrap or absolute float <see cref="Anchor"/>,
+/// fill, outline, clockwise rotation (degrees), raw a:avLst adjust guides (name → number),
+/// a text box body, and a freeform custom-geometry <see cref="Path"/> (which, when set,
+/// replaces the preset).</summary>
 public sealed record ShapeOptions
 {
     public required double WidthPx { get; init; }
     public required double HeightPx { get; init; }
     public TextAlign? Align { get; init; }
     /// <summary>Text-wrap mode: Block (own line, default) or Square (floats per align,
-    /// text flows beside it). Absolute float/z-order anchoring is interactive/import-only.</summary>
+    /// text flows beside it). Mutually exclusive with <see cref="Anchor"/>.</summary>
     public ImageWrap? Wrap { get; init; }
+    /// <summary>Absolute float anchor (wp:anchor + wp:wrapNone) — behind/in-front of the
+    /// text at a fixed offset with an optional z-order. Mutually exclusive with
+    /// <see cref="Wrap"/> (an anchor wins if both are set).</summary>
+    public ShapeAnchor? Anchor { get; init; }
     public ShapeFill? Fill { get; init; }
     public ShapeStroke? Stroke { get; init; }
     /// <summary>Clockwise rotation in degrees (a:xfrm@rot). Null = none.</summary>
     public double? Rotation { get; init; }
     /// <summary>Raw a:avLst adjust guides (guide name → value) for parametric presets.</summary>
     public IReadOnlyDictionary<string, double>? Adjust { get; init; }
-    /// <summary>Text box body — one paragraph per string, rendered read-only inside
-    /// the shape box (OOXML wps:txbx). Null/empty = a shape with no text.</summary>
+    /// <summary>Text box body — one paragraph per string, laid out inside the shape box
+    /// and editable in Word / the editor (OOXML wps:txbx). Null/empty = a shape with no text.</summary>
     public IReadOnlyList<string>? Text { get; init; }
     /// <summary>Freeform custom geometry (OOXML a:custGeom) — a path of segments in
     /// normalized box coordinates (0–1). When set it replaces the preset (which is kept
@@ -722,6 +783,7 @@ public sealed record ShapeOptions
             Js.Set(o, "align", EnumJs.Align(a));
         }
         if (Wrap is { } w) Js.Set(o, "wrap", EnumJs.Wrap(w));
+        if (Anchor is { } an) Js.Set(o, "anchor", an.ToJs(e));
         if (Fill is { } f) Js.Set(o, "fill", f.ToJs(e));
         if (Stroke is { } s) Js.Set(o, "stroke", s.ToJs(e));
         if (Rotation is { } r) Js.Set(o, "rotation", r);
@@ -739,7 +801,8 @@ public sealed record ShapeOptions
 
 /// <summary>One member of a <c>.ShapeGroup()</c> — a preset shape at its local rect
 /// (X/Y/Width/Height, px) within the group box, with the same optional fill, outline,
-/// rotation, adjust guides and text a standalone shape takes.</summary>
+/// rotation, adjust guides and text a standalone shape takes, OR a NESTED group when
+/// <see cref="Group"/> is set.</summary>
 public sealed record ShapeGroupChild
 {
     public required ShapePreset Preset { get; init; }
@@ -752,6 +815,11 @@ public sealed record ShapeGroupChild
     public double? Rotation { get; init; }
     public IReadOnlyDictionary<string, double>? Adjust { get; init; }
     public IReadOnlyList<string>? Text { get; init; }
+    /// <summary>When set, this child is itself a NESTED group (OOXML nested wpg:grpSp):
+    /// its own member shapes are authored in this child's box pixels (Width/Height is the
+    /// nested group box). The leaf facets (Preset/Fill/Stroke/Rotation/Adjust/Text) are
+    /// ignored for a group child. Nesting may recurse to any depth.</summary>
+    public IReadOnlyList<ShapeGroupChild>? Group { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -771,6 +839,12 @@ public sealed record ShapeGroupChild
             Js.Set(o, "adjust", adj);
         }
         if (Text is { Count: > 0 } t) Js.Set(o, "text", Js.ToArray(e, t.Select(x => (object?)x)));
+        if (Group is { Count: > 0 } g)
+        {
+            var grp = Js.Obj(e);
+            Js.Set(grp, "children", Js.ToArray(e, g.Select(c => (object?)c.ToJs(e))));
+            Js.Set(o, "group", grp);
+        }
         return o;
     }
 }

@@ -15,7 +15,8 @@ export interface BuilderWarning {
 
 /** One member of a {@link StoryBuilder.shapeGroup} — a preset shape at its local
  *  rect (xPx/yPx/widthPx/heightPx) within the group box, with the same optional
- *  fill / outline / rotation / adjust / text a standalone shape takes. */
+ *  fill / outline / rotation / adjust / text a standalone shape takes, OR a NESTED
+ *  group when `group` is set. */
 export interface ShapeGroupChildInput {
   preset: ShapePreset;
   xPx: number;
@@ -27,6 +28,12 @@ export interface ShapeGroupChildInput {
   rotation?: number;
   adjust?: Record<string, number>;
   text?: string[];
+  /** When set, this child is itself a NESTED group (OOXML nested `wpg:grpSp`): its
+   *  own member shapes are authored in this child's box pixels (`widthPx`×`heightPx`
+   *  is the nested group box; `childOffset` 0, `childExtent` = that box). The leaf
+   *  facets (`preset`/`fill`/`stroke`/`rotation`/`adjust`/`text`) are ignored for a
+   *  group child. Nesting may recurse to any depth. */
+  group?: { children: ShapeGroupChildInput[] };
 }
 
 /** Baseline concrete styles (match the editor's sample-doc/import defaults). */
@@ -159,6 +166,7 @@ export class BuilderContext {
     text?: string[],
     wrap?: ShapeBlock["wrap"],
     path?: ShapePath["segments"],
+    anchor?: ShapeBlock["anchor"],
   ): ShapeBlock {
     const geometry: ShapeBlock["geometry"] = { preset };
     if (adjust && Object.keys(adjust).length > 0) geometry.adjust = adjust;
@@ -177,7 +185,10 @@ export class BuilderContext {
     if (rotation) shape.rotation = rotation;
     // Text box body: one paragraph per string (a single default-styled run each).
     if (text && text.length > 0) shape.text = { blocks: text.map((line) => this.paragraph([this.run(line)])) };
-    if (wrap) shape.wrap = wrap;
+    // `wrap` (square float) and `anchor` (absolute behind/in-front float) are mutually
+    // exclusive in the model; an anchor wins if a caller sets both.
+    if (anchor) shape.anchor = anchor;
+    else if (wrap) shape.wrap = wrap;
     return shape;
   }
 
@@ -196,7 +207,11 @@ export class BuilderContext {
       children: childInputs.map((c) => ({
         xPx: c.xPx,
         yPx: c.yPx,
-        shape: this.shape(c.preset, c.widthPx, c.heightPx, "left", c.fill, c.stroke, c.rotation, c.adjust, c.text),
+        // A nested-group child builds a group ShapeBlock (its box is c.widthPx×c.heightPx);
+        // otherwise it is a leaf preset/custom shape. Recurses to any depth.
+        shape: c.group && c.group.children.length > 0
+          ? this.shapeGroup(c.widthPx, c.heightPx, "left", c.group.children)
+          : this.shape(c.preset, c.widthPx, c.heightPx, "left", c.fill, c.stroke, c.rotation, c.adjust, c.text),
       })),
       childOffsetXPx: 0,
       childOffsetYPx: 0,

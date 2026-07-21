@@ -3,7 +3,7 @@
 // table cells — shares this surface. Methods append eagerly and return `this`
 // (or a ParagraphBuilder that delegates back), so chains never need a seal step.
 
-import type { Block, CharStyle, EquationBlock, Paragraph, ParaStyle, SdtProps, ShapeFill, ShapePath, ShapePreset, ShapeStroke } from "@cw/shared";
+import type { Block, CharStyle, EquationBlock, Paragraph, ParaStyle, SdtProps, ShapeBlock, ShapeFill, ShapePath, ShapePreset, ShapeStroke } from "@cw/shared";
 import { DEFAULT_BULLET_LIST_ID, DEFAULT_NUMBER_LIST_ID, defaultListDefinition, textOfRuns } from "@cw/shared";
 import type { BuilderContext, ShapeGroupChildInput } from "./blockFactory";
 import { equationFromLatex, equationFromMathml } from "./mathInput";
@@ -35,9 +35,14 @@ export interface ShapeOptions {
   heightPx: number;
   align?: "left" | "center" | "right";
   /** 'block' (default): own line. 'square': floats per align, text wraps beside it
-   *  (issue #217). Absolute float/z-order anchoring is interactive/import-only, like
-   *  images. */
+   *  (issue #217). Mutually exclusive with `anchor`. */
   wrap?: "block" | "square";
+  /** Absolute float anchor (OOXML `wp:anchor` + `wp:wrapNone`) — position the shape at
+   *  `offset{X,Y}Px` from the `relFrom{H,V}` origin, BEHIND (`behind:true`) or in front
+   *  of the text, with an optional `z` stacking order (higher paints on top). Unlike
+   *  `wrap` it does NOT reflow surrounding text. Mutually exclusive with `wrap`; an
+   *  anchor wins if both are set (issue #217). */
+  anchor?: ShapeBlock["anchor"];
   /** Solid fill (CSS hex) or explicit no-fill; omit for the theme-neutral default. */
   fill?: ShapeFill;
   /** Solid outline (CSS hex + point width, optional `dash`) or explicit no-outline;
@@ -160,15 +165,15 @@ export class StoryBuilder {
 
   /** Insert a drawing shape (a preset geometry: rect/roundRect/ellipse/triangle/
    *  diamond/right|leftArrow/line, or a freeform `path` custom geometry) with an
-   *  optional fill, outline (with dash), rotation, adjust handles and a read-only
-   *  text box body. Like `.image()`, the size is required (the builder runs in Node
-   *  too, with no DOM). */
+   *  optional fill, outline (with dash), rotation, adjust handles, a wrap or absolute
+   *  float `anchor`, and an editable text box body. Like `.image()`, the size is
+   *  required (the builder runs in Node too, with no DOM). */
   shape(preset: ShapePreset, opts: ShapeOptions): this {
     if (!Number.isFinite(opts?.widthPx) || !Number.isFinite(opts?.heightPx) || opts.widthPx <= 0 || opts.heightPx <= 0) {
       this.ctx.warn("shape-size-invalid", ".shape() requires positive widthPx and heightPx; shape skipped.");
       return this;
     }
-    this.push(this.ctx.shape(preset, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.fill, opts.stroke, opts.rotation, opts.adjust, opts.text, opts.wrap, opts.path));
+    this.push(this.ctx.shape(preset, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.fill, opts.stroke, opts.rotation, opts.adjust, opts.text, opts.wrap, opts.path, opts.anchor));
     return this;
   }
 
