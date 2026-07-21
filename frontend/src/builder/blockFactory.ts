@@ -4,7 +4,7 @@
 // default style over editor-matching baselines — and every factory spreads
 // them. Modeled on the run/para closures in model/sampleDoc.ts.
 
-import type { CharStyle, Document, EquationBlock, ImageBlock, MathEquation, ParaStyle, Paragraph, Run, ShapeBlock, ShapeFill, ShapePath, ShapePreset, ShapeStroke, Stylesheet } from "@cw/shared";
+import type { CharStyle, Document, EquationBlock, ImageBlock, MathEquation, ParaStyle, Paragraph, Run, ShapeBlock, ShapeFill, ShapePath, ShapePathSegment, ShapePreset, ShapeStroke, Stylesheet } from "@cw/shared";
 import { createIdGenerator, DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE, resolveStyle, styleById, type IdGenerator } from "@cw/shared";
 import { builtinTableStyles, type TableStylePreset } from "./tableStyles";
 
@@ -147,8 +147,14 @@ export class BuilderContext {
     const geometry: ShapeBlock["geometry"] = { preset };
     if (adjust && Object.keys(adjust).length > 0) geometry.adjust = adjust;
     // Freeform custom geometry — the painters/export use the path and ignore the
-    // preset (which stays a schema fallback).
-    if (path && path.length > 0) geometry.custom = { segments: path };
+    // preset (which stays a schema fallback). A well-formed path starts with a
+    // moveTo; if it doesn't, prepend an implicit moveTo(0,0) so a stray leading
+    // lineTo/cubic still has a defined start point (Path2D would otherwise treat
+    // the first draw command as an implicit move to its own endpoint).
+    if (path && path.length > 0) {
+      const segments = path[0]?.type === "moveTo" ? path : [{ type: "moveTo", x: 0, y: 0 } as ShapePathSegment, ...path];
+      geometry.custom = { segments };
+    }
     const shape: ShapeBlock = { kind: "shape", id: this.ids.next(), revision: 0, geometry, widthPx, heightPx, align };
     if (fill) shape.fill = fill;
     if (stroke) shape.stroke = stroke;

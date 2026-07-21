@@ -51,6 +51,42 @@ describe("paragraphs and runs", () => {
     expect(runs[1]!.style.bold).toBe(false); // explicit patch wins
   });
 
+  it(".shape() with a freeform path builds a custom geometry (and preset is the fallback)", () => {
+    const doc = DocumentBuilder.create()
+      .shape("rect", {
+        widthPx: 100, heightPx: 100,
+        path: [
+          { type: "moveTo", x: 0, y: 0 },
+          { type: "lineTo", x: 1, y: 1 },
+          { type: "close" },
+        ],
+      })
+      .build();
+    const shape = doc.blocks[0] as { geometry: { preset: string; custom?: { segments: unknown[] } } };
+    expect(shape.geometry.preset).toBe("rect");
+    expect(shape.geometry.custom?.segments).toEqual([
+      { type: "moveTo", x: 0, y: 0 },
+      { type: "lineTo", x: 1, y: 1 },
+      { type: "close" },
+    ]);
+  });
+
+  it(".shape() prepends an implicit moveTo(0,0) when a path doesn't start with one", () => {
+    const doc = DocumentBuilder.create()
+      .shape("rect", {
+        widthPx: 100, heightPx: 100,
+        path: [
+          { type: "lineTo", x: 1, y: 0 },
+          { type: "lineTo", x: 1, y: 1 },
+          { type: "close" },
+        ],
+      })
+      .build();
+    const shape = doc.blocks[0] as { geometry: { custom?: { segments: Array<{ type: string }> } } };
+    expect(shape.geometry.custom?.segments[0]).toEqual({ type: "moveTo", x: 0, y: 0 });
+    expect(shape.geometry.custom?.segments.map((s) => s.type)).toEqual(["moveTo", "lineTo", "lineTo", "close"]);
+  });
+
   it("char formatting patches every run already in the paragraph", () => {
     const doc = DocumentBuilder.create()
       .paragraph("a").text("b").color("#ff0000")

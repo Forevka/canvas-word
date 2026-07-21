@@ -795,12 +795,18 @@ function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
 
 /** a:custGeom → a:pathLst/a:path into a normalized (0–1) ShapePath. Point coords are
  *  divided by the a:path @w/@h design space so the model path is box-independent
- *  (mirrors the exporter's fixed-unit emission). Unmodeled commands (arc/quad Bézier)
- *  are skipped. Returns undefined when there is no usable path. */
-function parseCustGeom(custGeom: XmlNode): ShapePath | undefined {
+ *  (mirrors the exporter's fixed-unit emission). The model only carries move/line/
+ *  cubic/close, so unmodeled commands (a:arcTo / a:quadBezTo), malformed segments,
+ *  and any a:path beyond the first are dropped — but never silently: a
+ *  `custom-path-simplified` warning fires per the importer's warn-don't-drop contract.
+ *  Returns undefined when there is no usable path. */
+function parseCustGeom(custGeom: XmlNode, ctx: ParseCtx): ShapePath | undefined {
   const pathLst = el(custGeom, "a:pathLst");
-  const path = pathLst && el(pathLst, "a:path");
+  const paths = pathLst ? els(pathLst, "a:path") : [];
+  const path = paths[0];
   if (!path) return undefined;
+  // Extra sub-paths (a:pathLst with >1 a:path) collapse to the first — flag the loss.
+  let simplified = paths.length > 1;
   const w = numAttr(path, "w") ?? 0;
   const h = numAttr(path, "h") ?? 0;
   if (w <= 0 || h <= 0) return undefined; // no design space to normalize against
@@ -814,11 +820,13 @@ function parseCustGeom(custGeom: XmlNode): ShapePath | undefined {
       case "a:moveTo": {
         const p = el(cmd, "a:pt");
         if (p) segments.push({ type: "moveTo", ...ptOf(p) });
+        else simplified = true;
         break;
       }
       case "a:lnTo": {
         const p = el(cmd, "a:pt");
         if (p) segments.push({ type: "lineTo", ...ptOf(p) });
+        else simplified = true;
         break;
       }
       case "a:cubicBezTo": {
@@ -826,13 +834,24 @@ function parseCustGeom(custGeom: XmlNode): ShapePath | undefined {
         if (pts.length === 3) {
           const c1 = ptOf(pts[0]!), c2 = ptOf(pts[1]!), end = ptOf(pts[2]!);
           segments.push({ type: "cubicBezierTo", x1: c1.x, y1: c1.y, x2: c2.x, y2: c2.y, x: end.x, y: end.y });
+        } else {
+          simplified = true; // a cubic needs exactly 3 control/end points
         }
         break;
       }
       case "a:close":
         segments.push({ type: "close" });
         break;
+      default:
+        // a:arcTo / a:quadBezTo or any other command the model can't represent.
+        simplified = true;
     }
+  }
+  if (simplified) {
+    ctx.warnings.add(
+      "custom-path-simplified",
+      "A freeform shape's custom geometry used path commands we don't model (arcs, quadratic Béziers, malformed segments, or multiple sub-paths) — they were simplified out.",
+    );
   }
   return segments.length > 0 ? { segments } : undefined;
 }
@@ -856,7 +875,7 @@ function parseShapeWsp(
   // a:custGeom → a:pathLst/a:path: the freeform path, normalized to 0–1 fractions
   // of the box (dividing point coords by the a:path @w/@h design space).
   if (custGeom) {
-    const custom = parseCustGeom(custGeom);
+    const custom = parseCustGeom(custGeom, ctx);
     if (custom) shape.custom = custom;
   }
   // a:avLst → a:gd @name/@fmla="val N": the parametric adjust handles, kept raw.
