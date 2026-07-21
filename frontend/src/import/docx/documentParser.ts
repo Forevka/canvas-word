@@ -699,7 +699,15 @@ function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
   // it before the image path so the images-skipped warning stays narrowed to
   // genuinely unknown drawings.
   const wsp = findDeep(container, "wps:wsp");
-  if (wsp) return parseShapeWsp(wsp, container);
+  if (wsp) {
+    const shape = parseShapeWsp(wsp, container);
+    if (shape) return shape;
+    // Structurally a wps shape but without a preset geometry we can place yet
+    // (e.g. freeform a:custGeom) — warn instead of dropping it silently, mirroring
+    // the image branch's images-skipped warning.
+    ctx.warnings.add("shape-skipped", "A drawing shape without a supported preset geometry (e.g. a freeform/custom geometry) was skipped.");
+    return undefined;
+  }
   const blip = findDeep(container, "a:blip");
   // r:embed = image bytes packaged inside the docx; r:link = a "Link to File"
   // image whose bytes live outside the package (an http(s) URL or local path,

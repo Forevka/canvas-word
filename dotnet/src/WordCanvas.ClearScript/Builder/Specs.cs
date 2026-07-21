@@ -580,6 +580,8 @@ public sealed record ShapeFill
         var o = Js.Obj(e);
         if (None) Js.Set(o, "none", true);
         else if (Color is { } c) Js.Set(o, "color", c);
+        else throw new InvalidOperationException(
+            "ShapeFill requires a Color (use ShapeFill.Solid(color)) or None (ShapeFill.NoFill).");
         return o;
     }
 }
@@ -601,10 +603,15 @@ public sealed record ShapeStroke
         {
             Js.Set(o, "none", true);
         }
+        else if (Color is { } c)
+        {
+            Js.Set(o, "color", c);
+            Js.Set(o, "widthPt", WidthPt);
+        }
         else
         {
-            if (Color is { } c) Js.Set(o, "color", c);
-            Js.Set(o, "widthPt", WidthPt);
+            throw new InvalidOperationException(
+                "ShapeStroke requires a Color (use ShapeStroke.Solid(color, widthPt)) or None (ShapeStroke.NoOutline).");
         }
         return o;
     }
