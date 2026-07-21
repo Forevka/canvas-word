@@ -1891,7 +1891,10 @@ function layoutDocument(
             right.width = r.width;
           }
           const rSlack = box.right!.width - rightIndentOf(p) - right.width;
-          let rStartX = box.right!.x0 - colX();
+          // placed.x already bakes in the paragraph's left indent (colX + indentOf),
+          // and the left gap adds it on top; the right gap must NOT — subtract it back
+          // so right-gap text lands at box.right.x0, not box.right.x0 + indent (#232).
+          let rStartX = box.right!.x0 - colX() - indentOf(p);
           if (palign === "center") rStartX += rSlack / 2;
           else if (palign === "right") rStartX += rSlack;
           for (const rf of right.frags) rf.frag.x += rStartX;

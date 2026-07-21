@@ -1121,6 +1121,33 @@ describe("engine — centered square-wrap shape float", () => {
     });
     expect(twoSided).toBe(true);
   });
+
+  it("does NOT push right-gap text right by the paragraph's own indent", () => {
+    // The right gap must start at box.right.x0 (shape right edge + float gutter),
+    // regardless of the paragraph's left indent — placed.x already bakes the indent
+    // in, so the right gap must subtract it back rather than add it again (#232).
+    const s = centerSquare(200, 120);
+    const INDENT = 48;
+    const body = para("word ".repeat(160).trim(), { indentLeftPx: INDENT });
+    const tree = layout(doc([s, body]));
+    const sPb = placedOf(tree, s.id)!.pb;
+    const bodyPb = placedOf(tree, body.id)!.pb;
+    const shapeRight = sPb.x + sPb.shape!.width;
+    const GUTTER = 10; // FLOAT_GUTTER in engine.ts
+    // The left edge of the right-gap text = the smallest page-x among fragments that
+    // sit to the right of the shape, across every two-sided line.
+    let rightGapStart = Infinity;
+    for (const l of bodyPb.lines) {
+      for (const f of l.fragments) {
+        const px = bodyPb.x + f.x;
+        if (px >= shapeRight) rightGapStart = Math.min(rightGapStart, px);
+      }
+    }
+    expect(rightGapStart).toBeLessThan(Infinity); // some text landed in the right gap
+    // It hugs the shape's right edge + gutter — NOT offset by the 48px indent.
+    expect(rightGapStart).toBeCloseTo(shapeRight + GUTTER, 0);
+    expect(rightGapStart).toBeLessThan(shapeRight + GUTTER + INDENT - 1);
+  });
 });
 
 // --- behind-text anchored images (wrapNone backgrounds) -------------------
