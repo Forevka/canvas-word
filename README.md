@@ -87,6 +87,11 @@ Node `backend` can reuse them.
 | `examples/` | Standalone embeds consuming the published package |
 | `web/` | Caddy edge config for the deployed stack (see [DEPLOY.md](./DEPLOY.md)) |
 
+> **Contributing / making a change?** [SDLC.md](./SDLC.md) is the workflow every
+> feature follows — the explore → implement → verify → PR → review loop, the
+> Definition of Done (which layers a change must land in), and the verification
+> gates.
+
 ### Editor layer map (`frontend/src/`)
 
 | Directory | Owns | Key files |
