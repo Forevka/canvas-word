@@ -709,6 +709,15 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
             /* pointer no longer active */
           }
         }
+        // Same for an in-flight rotate drag: the detach releases the rotate handle's
+        // capture, so re-acquire it or the rotation silently dies mid-drag.
+        if (rotDrag && rotDragEl) {
+          try {
+            rotDragEl.setPointerCapture(rotPointerId);
+          } catch {
+            /* pointer no longer active */
+          }
+        }
       }
       const z = deps.getZoom();
       frame.style.display = "block";

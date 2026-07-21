@@ -129,6 +129,14 @@ describe("image rotation — a:xfrm@rot", () => {
     expect(xml).toContain("<a:xfrm>");
     expect(xml).not.toContain("<a:xfrm rot=");
   });
+
+  it("round-trips a rotated image inside a table cell", () => {
+    const cellImg: ImageBlock = { kind: "image", id: "ci0", revision: 0, src: "img1", widthPx: 96, heightPx: 48, align: "left", rotation: 30 };
+    const tbl: TableBlock = { kind: "table", id: "T0", revision: 0, colFractions: [1], rows: [{ cells: [{ id: "c0", blocks: [cellImg] }] }] };
+    const out = firstTable(roundTrip({ section: SECTION, blocks: [tbl] }, { img1: PNG_1PX }));
+    const img = out.rows[0]!.cells[0]!.blocks.find((b): b is ImageBlock => b.kind === "image");
+    expect(img!.rotation).toBe(30);
+  });
 });
 
 // ── inline image paragraph spacing (#198) ────────────────────────────────────
