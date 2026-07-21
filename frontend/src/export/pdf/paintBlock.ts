@@ -554,7 +554,11 @@ function paintShapePdf(doc: PDFKit.PDFDocument, shape: PlacedShape, x: number, y
 function paintPlacedShapePdf(ctx: PaintCtx, shape: PlacedShape, x: number, y: number): void {
   const { doc } = ctx;
   if (shape.children) {
+    // A rotated group turns the whole child cluster about the group-box center.
+    const rot = shape.rotation;
+    if (rot) doc.save().rotate(rot, { origin: [x + shape.width / 2, y + shape.height / 2] });
     for (const c of shape.children) paintPlacedShapePdf(ctx, c.shape, x + c.x, y + c.y);
+    if (rot) doc.restore();
     return;
   }
   paintShapePdf(doc, shape, x, y);

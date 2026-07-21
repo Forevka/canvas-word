@@ -2671,6 +2671,9 @@ function placedShapeOf(sb: ShapeBlock, width = sb.widthPx, height = sb.heightPx)
         shape: placedShapeOf(c.shape, cw, ch),
       };
     });
+    // The group as a whole can be rotated (a:xfrm@rot on wpg:grpSpPr); the painters
+    // rotate the whole child cluster about the group-box center.
+    if (sb.rotation) shape.rotation = sb.rotation;
     return shape;
   }
   if (sb.geometry.custom) shape.custom = sb.geometry.custom;

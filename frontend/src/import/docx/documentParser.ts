@@ -1028,10 +1028,16 @@ function parseShapeGroupData(wgp: XmlNode, ctx: ParseCtx): IRShapeGroup | undefi
     } else if (node.tagName === "wpg:grpSp") {
       const nested = parseShapeGroupData(node, ctx);
       if (!nested) continue;
-      const rect = xfrmRect(el(node, "wpg:grpSpPr"));
+      // A nested group's own a:xfrm carries its rect (a:off/a:ext) AND its rotation
+      // (a:xfrm@rot) — read both so a rotated nested group round-trips.
+      const gx = parseGroupXfrm(node);
       // A nested group is a member shape whose geometry is the group; carry a rect +
       // a placeholder preset so mapShape treats it as a (nested) group container.
-      kids.push({ xEmu: rect.xEmu, yEmu: rect.yEmu, widthEmu: rect.cxEmu, heightEmu: rect.cyEmu, preset: "rect", group: nested });
+      kids.push({
+        xEmu: gx.off.x, yEmu: gx.off.y, widthEmu: gx.ext.cx, heightEmu: gx.ext.cy,
+        preset: "rect", group: nested,
+        ...(gx.rotDeg !== undefined ? { rotationDeg: gx.rotDeg } : {}),
+      });
     }
   }
   if (kids.length === 0) return undefined;
@@ -1064,6 +1070,10 @@ function parseShapeGroupDrawing(
   if (cx !== undefined) shape.widthEmu = cx;
   const cy = numAttr(extent, "cy");
   if (cy !== undefined) shape.heightEmu = cy;
+  // The group's a:xfrm@rot (wpg:grpSpPr) — a rotated group must round-trip its
+  // rotation onto the container (mapped to ShapeBlock.rotation, re-emitted on export).
+  const rotDeg = parseGroupXfrm(wgp).rotDeg;
+  if (rotDeg !== undefined) shape.rotationDeg = rotDeg;
   if (anchor) applyShapeAnchor(shape, anchor, ctx);
   applyDrawingIds(shape, container);
   return shape;

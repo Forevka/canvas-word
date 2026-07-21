@@ -1215,7 +1215,17 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
    *  groups compose. Mirrors the PDF painter (export/pdf/paintBlock.ts). */
   function paintPlacedShape(ctx: CanvasRenderingContext2D, shape: PlacedShape, x: number, y: number, pageIndex: number): void {
     if (shape.children) {
+      // A rotated group turns the whole child cluster about the group-box center.
+      const rot = shape.rotation;
+      if (rot) {
+        ctx.save();
+        const cx = x + shape.width / 2, cy = y + shape.height / 2;
+        ctx.translate(cx, cy);
+        ctx.rotate((rot * Math.PI) / 180);
+        ctx.translate(-cx, -cy);
+      }
       for (const c of shape.children) paintPlacedShape(ctx, c.shape, x + c.x, y + c.y, pageIndex);
+      if (rot) ctx.restore();
       return;
     }
     paintShapeCanvas(ctx, shape, x, y);

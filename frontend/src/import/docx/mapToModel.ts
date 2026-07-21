@@ -873,6 +873,9 @@ export function createMapper(
       if (paras.length > 0) shape.text = { blocks: paras };
     }
     // Group container (wpg:wgp): map the child coordinate space + members recursively.
+    // A member without an explicit a:xfrm/a:ext has a zero-size rect — skip it (with a
+    // warning) rather than emitting an invisible 0×0 shape, mirroring the unsized guard
+    // in mapShape for a top-level shape.
     if (parts.group) {
       const g = parts.group;
       shape.group = {
@@ -880,11 +883,17 @@ export function createMapper(
         childOffsetYPx: round2(emuToPx(g.childOffYEmu)),
         childExtentXPx: round2(emuToPx(g.childExtXEmu)),
         childExtentYPx: round2(emuToPx(g.childExtYEmu)),
-        children: g.children.map((c) => ({
-          xPx: round2(emuToPx(c.xEmu)),
-          yPx: round2(emuToPx(c.yEmu)),
-          shape: buildShapeCore(c, "left", media, resolveLink),
-        })),
+        children: g.children.flatMap((c) => {
+          if (!c.widthEmu || !c.heightEmu) {
+            warnings.add("shape-group-child-unsized", "A grouped shape member without explicit dimensions (no a:xfrm/a:ext) was skipped.");
+            return [];
+          }
+          return [{
+            xPx: round2(emuToPx(c.xEmu)),
+            yPx: round2(emuToPx(c.yEmu)),
+            shape: buildShapeCore(c, "left", media, resolveLink),
+          }];
+        }),
       };
     }
     return shape;
