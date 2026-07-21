@@ -39,6 +39,7 @@ import { createChildDocument, type ChildDocument, type StyleContext } from "./ch
 export type { ChildDocument, ChildContent, ChildRenderOptions, ChildEditorHandle, StyleContext } from "./child/childDocument";
 import { createSelectionController } from "./input/selectionController";
 import { createObjectFrame } from "./input/objectController";
+import { bandRegionRect, createBandHoverController } from "./input/bandHoverController";
 import { createImeProxy } from "./input/imeProxy";
 import { createKeymapHandler, type StyleKey } from "./input/keymap";
 import { extractFragment, fragmentToHtml, fragmentToPlainText, htmlToFragment, tableRectToClipboard, type DocFragment } from "./input/clipboard";
@@ -1122,6 +1123,11 @@ export function createEditor(
   const setStory = (next: GeoScope | null): void => {
     const changingBand = (activeStory?.band ?? null) !== (next?.band ?? null);
     if (!changingBand && activeStory?.pageIndex === next?.pageIndex) return;
+    // The band hover affordance is mutually exclusive with an open band (the
+    // story-edit dimming/boundary is the affordance then). Hide it here so it
+    // never lingers when a band is entered without a subsequent mousemove —
+    // e.g. entering via double-click, where the pointer stays put afterward.
+    bandHover.hide();
     if (next) selectObject(null); // objects and band stories are exclusive modes
     if (next && !activeStory) savedBodySelection = selection;
     activeStory = next;
@@ -3285,6 +3291,51 @@ export function createEditor(
   };
   container.addEventListener("keydown", onCropKeyCapture, true);
 
+  // Header/footer hover affordance: pointing at a header/footer margin band
+  // outlines the band area and offers an "Edit" button (a discoverable path into
+  // band-edit mode alongside the preserved double-click). Pure DOM overlay.
+  const bandHover = createBandHoverController({
+    getPageElement: (i) => paint.getPageElement(i),
+    getZoom: () => paint.getZoom(),
+    onEdit: (band, pageIndex) => {
+      setStory({ band, pageIndex }); // also hides the affordance (see setStory)
+      // Parity with the double-click path: drop a caret at the band's start so
+      // the user can type immediately (setStory alone leaves the selection null).
+      // hitTest in the now-active story scope, at the band's top-left, resolves
+      // to the first line's start offset.
+      const pg = tree.pages[pageIndex];
+      if (pg) {
+        const rect = bandRegionRect(pg, band);
+        const pos = hitTest(tree, pageIndex, rect.x + 1, rect.y + 1, scope());
+        if (pos) setSelection({ anchor: pos, focus: pos });
+      }
+      proxy.focus();
+    },
+  });
+  const updateBandHover = (clientX: number, clientY: number, buttons: number): void => {
+    // Idle pointer only, and never while a band is already open (the story-edit
+    // dimming/boundary is the affordance then) or an object is selected. Also
+    // never in view mode: it's read-only (editing entry points are misleading and
+    // would surface raw field tokens), gated on the LIVE mode. "suggest" mode
+    // still edits (via the review interceptor), so it keeps the affordance.
+    if (buttons !== 0 || activeStory || selectedObject || mode === "view") {
+      bandHover.hide();
+      return;
+    }
+    const pt = paint.clientToPage(clientX, clientY);
+    if (!pt || !pt.inside) {
+      bandHover.hide();
+      return;
+    }
+    const band = bandAtPoint(pt);
+    const pg = band ? tree.pages[pt.pageIndex] : undefined;
+    if (!band || !pg) {
+      bandHover.hide();
+      return;
+    }
+    bandHover.show(band, pt.pageIndex, bandRegionRect(pg, band));
+  };
+
   // Hover highlighting for content controls (incl. nested) — point at any control
   // to see its frame(s) and breadcrumb, without moving the caret. Coalesced to at
   // most one probe pass per animation frame (mousemove can outpace the frame
@@ -3301,10 +3352,12 @@ export function createEditor(
       if (!e) return;
       updateHoverAdornment(e.clientX, e.clientY, e.buttons);
       updateInspectorHover(e.clientX, e.clientY, e.buttons);
+      updateBandHover(e.clientX, e.clientY, e.buttons);
     });
   };
   const onSdtHoverLeave = (): void => {
     sdtHoverEvent = null; // a queued rAF must not re-apply hover after leave
+    bandHover.hide();
     if (inspectorActive && lastInspectorHover !== null) {
       lastInspectorHover = null;
       options.onInspectorHover?.(null);
@@ -3329,6 +3382,7 @@ export function createEditor(
     const after = paint.getZoom();
     if (after === before) return;
     refreshObjectFrame(); // the selection frame's geometry is zoom-scaled
+    bandHover.hide(); // the affordance is zoom-scaled too; it re-shows on the next hover
     // Keep the anchored point (cursor, or viewport center) stationary.
     const rect = container.getBoundingClientRect();
     const anchorY = anchorClientY ?? rect.top + rect.height / 2;
@@ -3806,6 +3860,7 @@ export function createEditor(
       container.removeEventListener("pointercancel", onPinchUp);
       controller.destroy();
       objectFrame.destroy();
+      bandHover.destroy();
       mirror.destroy();
       proxy.destroy();
       paint.destroy();
