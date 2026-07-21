@@ -101,6 +101,14 @@ public abstract class StoryBuilderBase<TSelf> where TSelf : StoryBuilderBase<TSe
         return Self;
     }
 
+    /// <summary>Insert a drawing shape (preset geometry: rect/ellipse/line) with an
+    /// optional fill + outline.</summary>
+    public TSelf Shape(ShapePreset preset, ShapeOptions opts)
+    {
+        JsScope.InvokeMethod("shape", EnumJs.ShapePreset(preset), opts.ToJs(Engine));
+        return Self;
+    }
+
     /// <summary>One paragraph per item, marked as list members.</summary>
     public TSelf List(IEnumerable<ListItem> items, ListOptions? opts = null)
     {

@@ -5,7 +5,7 @@
 // Built as plain model data (the same Document the editor/exporter/collab consume).
 
 import type {
-  BookmarkRange, CellBorder, CellMargin, CharStyle, Document, EquationBlock, FieldDef, FieldSpec, ImageBlock, ParaStyle, Paragraph, RowProps, Run, SdtProps, TableBlock, TableCell,
+  BookmarkRange, CellBorder, CellMargin, CharStyle, Document, EquationBlock, FieldDef, FieldSpec, ImageBlock, ParaStyle, Paragraph, RowProps, Run, SdtProps, ShapeBlock, ShapeFill, ShapePreset, ShapeStroke, TableBlock, TableCell,
 } from "@cw/shared";
 import { buildInstruction, buildTocParagraphs, DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE, defaultStylesheet, evaluateIf, formatFieldDate } from "@cw/shared";
 import { defaultListDefinition, DEFAULT_BULLET_LIST_ID, DEFAULT_NUMBER_LIST_ID } from "@cw/shared";
@@ -74,6 +74,17 @@ const image = (w: number, h: number, align: ImageBlock["align"], wrap?: "block" 
  *  inner window shows — demonstrating the #63 image-crop round-trip. */
 const croppedImage = (w: number, h: number, crop: NonNullable<ImageBlock["crop"]>): ImageBlock => ({
   kind: "image", id: id(), revision: 0, src: TILE_PNG, widthPx: w, heightPx: h, align: "left", crop });
+
+// --- drawing shapes (DrawingML wps:wsp) ----------------------------------------
+/** A preset drawing shape (OOXML wps:wsp / a:prstGeom) with an optional fill +
+ *  outline — the #206 shape round-trip. PR 1 covers rect/ellipse/line. */
+const shape = (
+  preset: ShapePreset, w: number, h: number, align: ShapeBlock["align"],
+  fill?: ShapeFill, stroke?: ShapeStroke,
+): ShapeBlock => ({
+  kind: "shape", id: id(), revision: 0, geometry: { preset }, widthPx: w, heightPx: h, align,
+  ...(fill ? { fill } : {}), ...(stroke ? { stroke } : {}),
+});
 
 // --- symbols (w:sym) -----------------------------------------------------------
 /** A symbol-font glyph run (OOXML w:sym): font + hex code point, decoded to the
@@ -394,7 +405,7 @@ export function sampleDoc(): Document {
 
   const richHeading = heading("Rich text, lists & images", 1);
 
-  const bodyBlocks: (Paragraph | TableBlock | ImageBlock | EquationBlock)[] = [
+  const bodyBlocks: (Paragraph | TableBlock | ImageBlock | EquationBlock | ShapeBlock)[] = [
     fieldsHeading,
     fieldsPara,
     para([
@@ -478,6 +489,19 @@ export function sampleDoc(): Document {
       run("A square-wrapped image floats and text flows around it. " + LOREM.repeat(3)),
     ]),
     image(150, 110, "left", "square"),
+
+    // --- Drawing shapes (DrawingML wps:wsp) ------------------------------------
+    heading("Drawing shapes", 2),
+    para([run("Vector preset shapes (OOXML wps:wsp / a:prstGeom) draw in the flow like an image. PR 1 covers rectangle, ellipse and line with a solid fill and a solid outline, selectable and drag-resizable, and round-tripping losslessly to .docx.")], { spaceAfterPx: 6 }),
+    para([run("A filled rectangle (blue fill, darker outline), centered:")], { spaceAfterPx: 4 }),
+    shape("rect", 220, 90, "center", { color: "#bcd6ef" }, { color: "#41719c", widthPt: 1.5 }),
+    para([run("An ellipse with a soft fill, left-aligned:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
+    shape("ellipse", 180, 120, "left", { color: "#f4cccc" }, { color: "#cc4125", widthPt: 1 }),
+    para([run("A stroke-only diagonal line (no fill), right-aligned:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
+    shape("line", 200, 60, "right", { none: true }, { color: "#38761d", widthPt: 2 }),
+    para([run("An outline-only rectangle (no fill), left-aligned:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
+    shape("rect", 160, 80, "left", { none: true }, { color: "#674ea7", widthPt: 1 }),
+
     para([run("Multilevel numbered list:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
     para([run("Model — invertible ops")], { list: { listId: DEFAULT_NUMBER_LIST_ID, level: 0 }, spaceAfterPx: 2 }),
     para([run("Layout — pretext pagination")], { list: { listId: DEFAULT_NUMBER_LIST_ID, level: 0 }, spaceAfterPx: 2 }),

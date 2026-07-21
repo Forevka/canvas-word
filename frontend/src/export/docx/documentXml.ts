@@ -426,16 +426,16 @@ function paraIdAttrs(p: Paragraph, ctx: PartCtx): Record<string, string> | undef
   return a;
 }
 
-/** wp14:anchorId/editId attributes for an image's wp:inline|wp:anchor, or `{}` when
- *  the image has no id or its anchorId was already emitted (drawing ids are
- *  doc-unique, so a copy/pasted image must not re-emit a colliding id). Marks it
- *  seen. Returns `{}` (not undefined) so it spreads cleanly into an attr literal. */
-function drawingIdAttrs(img: Extract<Block, { kind: "image" }>, ctx: PartCtx): Record<string, string> {
-  const anchorId = img.drawingId?.anchorId;
+/** wp14:anchorId/editId attributes for a drawing's wp:inline|wp:anchor, or `{}` when
+ *  the drawing has no id or its anchorId was already emitted (drawing ids are
+ *  doc-unique, so a copy/pasted image/shape must not re-emit a colliding id). Marks
+ *  it seen. Returns `{}` (not undefined) so it spreads cleanly into an attr literal. */
+function drawingIdAttrs(drawingId: { anchorId?: string; editId?: string } | undefined, ctx: PartCtx): Record<string, string> {
+  const anchorId = drawingId?.anchorId;
   if (!anchorId || ctx.seenDrawingIds.has(anchorId)) return {};
   ctx.seenDrawingIds.add(anchorId);
   const a: Record<string, string> = { "wp14:anchorId": anchorId };
-  if (img.drawingId?.editId) a["wp14:editId"] = img.drawingId.editId;
+  if (drawingId?.editId) a["wp14:editId"] = drawingId.editId;
   return a;
 }
 
@@ -680,6 +680,7 @@ export function blockXml(block: Block, ctx: PartCtx): string {
   if (block.kind === "table") return tableXml(block, ctx);
   if (block.kind === "equation") return equationParagraphXml(block, ctx);
   if (block.kind === "custom") return customBlockXml(block, ctx);
+  if (block.kind === "shape") return shapeParagraphXml(block, ctx);
   return imageParagraphXml(block, ctx);
 }
 
@@ -902,7 +903,7 @@ function imageParagraphXml(img: Extract<Block, { kind: "image" }>, ctx: PartCtx)
   const blipAttr = img.externalSrc ? { "r:link": relId } : { "r:embed": relId };
   // wp14:anchorId/editId go on the wp:anchor|wp:inline container; only one of the two
   // paths below runs per image, so computing (and de-dup-marking) once is correct.
-  const idAttrs = drawingIdAttrs(img, ctx);
+  const idAttrs = drawingIdAttrs(img.drawingId, ctx);
   const cx = pxToEmu(img.widthPx);
   const cy = pxToEmu(img.heightPx);
   // a:srcRect crop (insets as 1/1000 of a percent); omitted when there's no crop.
@@ -978,6 +979,80 @@ function imageParagraphXml(img: Extract<Block, { kind: "image" }>, ctx: PartCtx)
   // carries no paragraph spacing, so pin the paragraph to zero before/after and
   // single (auto) line spacing: Word then lays the image out flush, matching canvas.
   // w:spacing precedes w:jc in the CT_PPr schema sequence.
+  const spacing = el("w:spacing", { "w:before": 0, "w:after": 0, "w:line": 240, "w:lineRule": "auto" });
+  return el("w:p", undefined, el("w:pPr", undefined, spacing + el("w:jc", { "w:val": align })) + el("w:r", undefined, drawing));
+}
+
+/** EMU per point — a:ln@w (outline width) is in EMU. */
+const EMU_PER_PT = 12700;
+
+/** A drawing shape as a paragraph: reuse the image wp:inline wrapper + drawingId
+ *  plumbing, swapping the graphic payload for a bare DrawingML wps:wsp (no
+ *  mc:AlternateContent / VML — modern Word reads it and it validates against the
+ *  OOXML schema). PR 1 emits an in-flow (inline) rect/ellipse/line with solid fill
+ *  + solid outline; wrap/anchor/text/rotation are later shape PRs. */
+function shapeParagraphXml(shape: Extract<Block, { kind: "shape" }>, ctx: PartCtx): string {
+  const idAttrs = drawingIdAttrs(shape.drawingId, ctx);
+  const cx = pxToEmu(shape.widthPx);
+  const cy = pxToEmu(shape.heightPx);
+
+  // Fill: solid → a:solidFill; explicit none → a:noFill; absent → omit (default).
+  let fillXml = "";
+  if (shape.fill) {
+    fillXml = "none" in shape.fill ? el("a:noFill") : el("a:solidFill", undefined, el("a:srgbClr", { val: hex(shape.fill.color) }));
+  }
+  // Outline: a:ln with a width + solidFill; explicit none → a:noFill inside a:ln;
+  // absent → omit (default). w (EMU) rounds the model's point width.
+  let lnXml = "";
+  if (shape.stroke) {
+    if ("none" in shape.stroke) {
+      lnXml = el("a:ln", undefined, el("a:noFill"));
+    } else {
+      lnXml = el(
+        "a:ln",
+        { w: Math.round(shape.stroke.widthPt * EMU_PER_PT) },
+        el("a:solidFill", undefined, el("a:srgbClr", { val: hex(shape.stroke.color) })),
+      );
+    }
+  }
+
+  const spPr = el(
+    "wps:spPr",
+    undefined,
+    el("a:xfrm", undefined, el("a:off", { x: 0, y: 0 }) + el("a:ext", { cx, cy })) +
+      el("a:prstGeom", { prst: shape.geometry.preset }, el("a:avLst")) +
+      fillXml +
+      lnXml,
+  );
+  const wsp = el(
+    "wps:wsp",
+    undefined,
+    el("wps:cNvPr", { id: ctx.nextId(), name: "Shape" }) +
+      el("wps:cNvSpPr") +
+      spPr +
+      el("wps:bodyPr", { rot: 0, anchor: "ctr" }),
+  );
+  const graphic = el(
+    "a:graphic",
+    undefined,
+    el(
+      "a:graphicData",
+      { uri: "http://schemas.microsoft.com/office/word/2010/wordprocessingShape" },
+      wsp,
+    ),
+  );
+  const drawing = el(
+    "w:drawing",
+    undefined,
+    el(
+      "wp:inline",
+      { ...idAttrs, distT: 0, distB: 0, distL: 0, distR: 0 },
+      el("wp:extent", { cx, cy }) + el("wp:docPr", { id: ctx.nextId(), name: "Shape" }) + graphic,
+    ),
+  );
+  const align = shape.align === "center" ? "center" : shape.align === "right" ? "right" : "left";
+  // Pin zero paragraph spacing + single line (like the image path) so Word lays the
+  // shape flush, matching the editor's spacing-free shape block.
   const spacing = el("w:spacing", { "w:before": 0, "w:after": 0, "w:line": 240, "w:lineRule": "auto" });
   return el("w:p", undefined, el("w:pPr", undefined, spacing + el("w:jc", { "w:val": align })) + el("w:r", undefined, drawing));
 }

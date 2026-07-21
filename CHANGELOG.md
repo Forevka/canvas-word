@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Drawing shapes — `ShapeBlock` foundation (issue #206, Part 1).** A new `shape` document-model
+  block draws a DrawingML preset geometry (**rectangle / ellipse / line**) with a **solid fill** and a
+  **solid outline**, in the text flow like an image. Shapes are click-selectable, drag-resizable
+  (8-handle frame), alignable (left/center/right) and deletable, reachable from **both** an Insert →
+  Illustrations **Shapes** gallery **and** a floating shape context toolbar + a contextual **Shape**
+  ribbon group. They round-trip losslessly to `.docx` as **bare DrawingML** (`wp:inline` →
+  `a:graphicData` → `wps:wsp`; no VML / `mc:AlternateContent`) — validated against the OOXML schema —
+  and render identically on canvas and in the PDF export. Authorable from the `DocumentBuilder`
+  (`.shape(preset, opts)`) and the C# bindings (`.Shape(ShapePreset, ShapeOptions)`), demonstrated in
+  the default in-editor document and the C# showcase. Geometry & style breadth, rotation, text boxes,
+  float/wrap positioning, VML import and grouped/freeform shapes follow in Parts 2–9
+  (see `docs/SHAPES_PLAN.md`).
 - **Header/footer hover affordance — "Edit" button + area outline.** Pointing at a header or footer
   margin band now reveals a Word-style overlay: a dashed outline with a soft tint delineating the band
   **area** (so it reads as distinct from body content), a corner **Header**/**Footer** label, and an

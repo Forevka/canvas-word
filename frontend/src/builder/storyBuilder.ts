@@ -3,7 +3,7 @@
 // table cells — shares this surface. Methods append eagerly and return `this`
 // (or a ParagraphBuilder that delegates back), so chains never need a seal step.
 
-import type { Block, CharStyle, EquationBlock, Paragraph, ParaStyle, SdtProps } from "@cw/shared";
+import type { Block, CharStyle, EquationBlock, Paragraph, ParaStyle, SdtProps, ShapeFill, ShapePreset, ShapeStroke } from "@cw/shared";
 import { DEFAULT_BULLET_LIST_ID, DEFAULT_NUMBER_LIST_ID, defaultListDefinition, textOfRuns } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import { equationFromLatex, equationFromMathml } from "./mathInput";
@@ -27,6 +27,18 @@ export interface ImageOptions {
    *  relationship rather than packing bytes into word/media. Ignored for raw-byte
    *  sources (those are always embedded as data:). */
   linked?: boolean;
+}
+
+export interface ShapeOptions {
+  /** Box the preset geometry is drawn into (required — no DOM auto-measure). */
+  widthPx: number;
+  heightPx: number;
+  align?: "left" | "center" | "right";
+  /** Solid fill (CSS hex) or explicit no-fill; omit for the theme-neutral default. */
+  fill?: ShapeFill;
+  /** Solid outline (CSS hex + point width) or explicit no-outline; omit for the
+   *  default outline. */
+  stroke?: ShapeStroke;
 }
 
 export interface ListItem {
@@ -115,6 +127,18 @@ export class StoryBuilder {
     // Linked only makes sense for an external URL source (raw bytes are embedded).
     const externalSrc = opts.linked && typeof src === "string" ? url : undefined;
     this.push(this.ctx.image(url, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.wrap, opts.crop, externalSrc));
+    return this;
+  }
+
+  /** Insert a drawing shape (preset geometry: rect/ellipse/line) with an optional
+   *  fill + outline. Like `.image()`, the size is required (the builder runs in Node
+   *  too, with no DOM). */
+  shape(preset: ShapePreset, opts: ShapeOptions): this {
+    if (!Number.isFinite(opts?.widthPx) || !Number.isFinite(opts?.heightPx) || opts.widthPx <= 0 || opts.heightPx <= 0) {
+      this.ctx.warn("shape-size-invalid", ".shape() requires positive widthPx and heightPx; shape skipped.");
+      return this;
+    }
+    this.push(this.ctx.shape(preset, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.fill, opts.stroke));
     return this;
   }
 

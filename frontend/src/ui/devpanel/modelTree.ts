@@ -208,6 +208,18 @@ function blockNode(doc: Document, block: Block): TreeNode {
       children: block.equation.root.children.map((n, i) => mathNode(n, `${block.id}#m${i}`, { kind: "block", blockId: block.id })),
     };
   }
+  if (block.kind === "shape") {
+    return {
+      key: block.id, kind: "block",
+      label: "◇ shape",
+      preview: block.geometry.preset,
+      badges: [block.geometry.preset, `${Math.round(block.widthPx)}×${Math.round(block.heightPx)}`],
+      blockId: block.id,
+      target: { kind: "block", blockId: block.id },
+      data: block,
+      children: [],
+    };
+  }
   if (block.kind === "custom") {
     return {
       key: block.id, kind: "block",

@@ -22,6 +22,7 @@ import { showContextMenu, type MenuEntry } from "./ui/contextMenu";
 import { createFloatingFormatBar } from "./ui/floatingFormatBar";
 import { createContextToolbarManager } from "./ui/contextToolbar";
 import { createImageContextToolbar } from "./ui/imageContextToolbar";
+import { createShapeContextToolbar } from "./ui/shapeContextToolbar";
 import { createLinkContextToolbar } from "./ui/linkContextToolbar";
 import { createTableContextToolbar } from "./ui/tableContextToolbar";
 import { createEquationContextToolbar } from "./ui/equationContextToolbar";
@@ -59,6 +60,7 @@ import {
   setCustomBlockData as setCustomBlockDataCmd,
   insertImage,
   insertImageInCell,
+  insertShape,
   insertEquation,
   insertInlineEquation,
   insertSymbolCmd,
@@ -1152,6 +1154,38 @@ if (toolbar) {
     openPop(anchor, wrap);
   };
 
+  /** Shapes gallery: a small preset picker (rect / ellipse / line) that inserts the
+   *  chosen shape at the caret. Mirrors the table grid picker's popover pattern; the
+   *  gallery grows with the preset set in PR 2. */
+  const shapesPopover = (anchor: HTMLElement): void => {
+    const wrap = el("div");
+    const grid = el("div", "cw-grid");
+    grid.style.gridTemplateColumns = "repeat(3, 28px)";
+    const label = el("div", "cw-grid-label");
+    label.textContent = "Insert shape";
+    const presets: { preset: "rect" | "ellipse" | "line"; icon: string; name: string }[] = [
+      { preset: "rect", icon: ICONS.shapeRect, name: "Rectangle" },
+      { preset: "ellipse", icon: ICONS.shapeEllipse, name: "Ellipse" },
+      { preset: "line", icon: ICONS.shapeLine, name: "Line" },
+    ];
+    for (const p of presets) {
+      const cell = el("div", "cell");
+      cell.style.width = "28px";
+      cell.style.height = "28px";
+      cell.innerHTML = p.icon;
+      cell.title = p.name;
+      cell.addEventListener("mouseenter", () => { label.textContent = p.name; });
+      cell.addEventListener("click", () => {
+        closePop();
+        editor.dispatch(insertShape(p.preset));
+        editor.focus();
+      });
+      grid.appendChild(cell);
+    }
+    wrap.append(grid, label);
+    openPop(anchor, wrap);
+  };
+
   /** Hyperlink dialog: URL field + Apply / Remove, applied to the selection.
    *  `url` pre-fills the field (the hyperlink context toolbar's Edit passes the
    *  existing address). */
@@ -1743,6 +1777,8 @@ if (toolbar) {
     input.click();
   };
   btn(ICONS.image, "Insert image from your device", () => pickAndInsertImage());
+  const insShapeBtn = btn(ICONS.shapes, "Insert a shape", () => {}, true);
+  insShapeBtn.addEventListener("click", () => shapesPopover(insShapeBtn));
   group(insert, "Picture"); // acts on the selected image
   enable(
     btn(ICONS.wrapSquare, "Wrap text around image (square)", () => {
@@ -1759,6 +1795,17 @@ if (toolbar) {
     }),
     (f) => f.imageSelected,
     "select an image first",
+  );
+  group(insert, "Shape"); // acts on the selected shape (fill/outline arrive in PR 2)
+  enable(
+    btn(ICONS.trash, "Delete shape", () => {
+      if (editor.getSelectedObject()) {
+        editor.deleteSelectedObject();
+        editor.focus();
+      }
+    }),
+    (f) => f.shapeSelected,
+    "select a shape first",
   );
   group(insert, "Equation");
   let equationEditorLoading = false; // debounce double-clicks while the chunk loads
@@ -3281,6 +3328,22 @@ if (!readonly) {
       actions: {
         wrapInline: () => withSelectedObject((id) => editor.dispatch(setImageProps(id, { wrap: "block", align: "center" }))),
         wrapSquare: () => withSelectedObject((id) => editor.dispatch(setImageProps(id, { wrap: "square", align: "left" }))),
+        alignLeft: () => editor.align("left"),
+        alignCenter: () => editor.align("center"),
+        alignRight: () => editor.align("right"),
+        remove: () => {
+          editor.deleteSelectedObject();
+          editor.focus();
+        },
+      },
+    }),
+  );
+
+  // Shape bar (priority 31) — a selected drawing shape (wins over the image bar).
+  manager.register(
+    createShapeContextToolbar({
+      anchorRect: () => editor.getSelectedShapeRect(),
+      actions: {
         alignLeft: () => editor.align("left"),
         alignCenter: () => editor.align("center"),
         alignRight: () => editor.align("right"),

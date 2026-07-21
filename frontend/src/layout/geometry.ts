@@ -836,6 +836,27 @@ export function hitTestCustom(tree: LayoutTree, pageIndex: number, x: number, y:
   return hit;
 }
 
+/** Drawing shape under a page point (incl. shapes inside table cells).
+ *  Object-selectable + resizable like an image — the topmost match in paint order. */
+export function hitTestShape(tree: LayoutTree, pageIndex: number, x: number, y: number): ObjectHit | null {
+  const page = tree.pages[pageIndex];
+  if (!page) return null;
+  let hit: ObjectHit | null = null;
+  const scan = (blocks: PlacedBlock[]): void => {
+    for (const block of blocks) {
+      if (block.shape) {
+        const { width, height } = block.shape;
+        if (x >= block.x && x <= block.x + width && y >= block.y && y <= block.y + height) {
+          hit = { blockId: block.blockId, rect: { pageIndex, x: block.x, y: block.y, width, height } };
+        }
+      }
+      if (block.table) for (const row of block.table.rows) for (const cell of row.cells) scan(cell.blocks);
+    }
+  };
+  scan(page.blocks);
+  return hit;
+}
+
 /** Object to select for a click/right-click at a page point: a foreground image
  *  wins anywhere it's hit; a behind-text image is selectable only where no text
  *  covers it (so text on top stays clickable). */
@@ -848,6 +869,8 @@ export function hitTestSelectableObject(
 ): ObjectHit | null {
   const fg = hitTestObject(tree, pageIndex, x, y);
   if (fg) return fg;
+  const sh = hitTestShape(tree, pageIndex, x, y);
+  if (sh) return sh;
   const eq = hitTestEquation(tree, pageIndex, x, y);
   if (eq) return eq;
   const cu = hitTestCustom(tree, pageIndex, x, y);
@@ -886,6 +909,21 @@ export function objectRect(tree: LayoutTree, blockId: string): Rect | null {
       for (const block of blocks) {
         if (block.custom && block.blockId === blockId) {
           rect = { pageIndex: page.index, x: block.x, y: block.y, width: block.custom.width, height: block.custom.height };
+          return;
+        }
+        if (block.table) for (const row of block.table.rows) for (const cell of row.cells) scan(cell.blocks);
+      }
+    };
+    scan(page.blocks);
+    if (rect) return rect;
+  }
+  // Drawing shapes carry their box on the `shape` payload.
+  for (const page of tree.pages) {
+    let rect: Rect | null = null;
+    const scan = (blocks: PlacedBlock[]): void => {
+      for (const block of blocks) {
+        if (block.shape && block.blockId === blockId) {
+          rect = { pageIndex: page.index, x: block.x, y: block.y, width: block.shape.width, height: block.shape.height };
           return;
         }
         if (block.table) for (const row of block.table.rows) for (const cell of row.cells) scan(cell.blocks);

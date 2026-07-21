@@ -1,7 +1,7 @@
 // Layer 2 output: the LayoutTree — absolutely-positioned geometry the paint and
 // input layers consume. Coordinates are CSS px, page-relative.
 
-import type { BandContainer, CellBorders, CharStyle, PageBorders, ParaBorders, TabLeader } from "@cw/shared";
+import type { BandContainer, CellBorders, CharStyle, PageBorders, ParaBorders, ShapeFill, ShapePreset, ShapeStroke, TabLeader } from "@cw/shared";
 import type { MathBox } from "./math/mathBox";
 
 /** A same-styled slice of text placed on a line. One ctx.fillText call each.
@@ -94,6 +94,17 @@ export interface PlacedCustom {
   height: number;
 }
 
+/** A placed drawing shape — the preset geometry plus its resolved fill/stroke and
+ *  the box (widthPx×heightPx) the painter draws the geometry into. Object-selectable
+ *  and resizable like an image. */
+export interface PlacedShape {
+  preset: ShapePreset;
+  fill?: ShapeFill;
+  stroke?: ShapeStroke;
+  width: number;
+  height: number;
+}
+
 export interface PlacedTableCell {
   x: number; // absolute page coords for everything in tables
   y: number;
@@ -166,6 +177,7 @@ export interface PlacedBlock {
   table?: PlacedTable;
   equation?: PlacedEquation;
   custom?: PlacedCustom;
+  shape?: PlacedShape;
   /** Paragraph shading fill + border box (OOXML w:shd / w:pBdr), painted behind
    *  the text. `width`/`height` are the box extent for THIS placed chunk (a
    *  paragraph split across pages decorates each chunk); `x`/`y` come from the

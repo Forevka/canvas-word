@@ -249,6 +249,13 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
     .Paragraph("A linked (\"Link to File\") image: its bytes stay OUTSIDE the document — export re-emits an a:blip r:link + a TargetMode=\"External\" relationship instead of packing bytes:")
     .Image("https://raw.githubusercontent.com/git/git-scm.com/main/public/images/logos/downloads/Git-Icon-1788C.png",
         new ImageOptions { WidthPx = 96, HeightPx = 96, Align = TextAlign.Left, Linked = true })
+    .Paragraph("Drawing shapes", p => p.WithStyle("Heading2"))
+    .Paragraph("Vector preset shapes (OOXML wps:wsp / a:prstGeom) — a filled rectangle, an ellipse, and a stroke-only line — round-trip losslessly to .docx:")
+    .Shape(ShapePreset.Rect, new ShapeOptions { WidthPx = 220, HeightPx = 90, Align = TextAlign.Center, Fill = ShapeFill.Solid("#bcd6ef"), Stroke = ShapeStroke.Solid("#41719c", 1.5) })
+    .Paragraph("An ellipse with a soft fill:")
+    .Shape(ShapePreset.Ellipse, new ShapeOptions { WidthPx = 180, HeightPx = 120, Align = TextAlign.Left, Fill = ShapeFill.Solid("#f4cccc"), Stroke = ShapeStroke.Solid("#cc4125", 1) })
+    .Paragraph("A stroke-only diagonal line (no fill):")
+    .Shape(ShapePreset.Line, new ShapeOptions { WidthPx = 200, HeightPx = 60, Align = TextAlign.Right, Fill = ShapeFill.NoFill, Stroke = ShapeStroke.Solid("#38761d", 2) })
     .Paragraph("Multilevel numbered list:")
     .List(new[]
     {

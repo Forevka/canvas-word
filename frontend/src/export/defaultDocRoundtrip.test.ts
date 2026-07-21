@@ -71,7 +71,7 @@ function normalize(v: unknown): unknown {
 // A quick structural census: a legible fingerprint of the document's content so a
 // dropped run/table/field surfaces as a one-number diff.
 function fingerprint(doc: Document): Record<string, number> {
-  let paras = 0, runs = 0, tables = 0, cells = 0, images = 0, chars = 0, sectionBreaks = 0, equations = 0;
+  let paras = 0, runs = 0, tables = 0, cells = 0, images = 0, chars = 0, sectionBreaks = 0, equations = 0, shapes = 0;
   const walk = (blocks: Block[] | undefined): void => {
     if (!blocks) return;
     for (const b of blocks) {
@@ -89,11 +89,12 @@ function fingerprint(doc: Document): Record<string, number> {
         for (const r of b.rows) for (const c of r.cells) { cells++; walk(c.blocks); }
       } else if (b.kind === "image") images++;
       else if (b.kind === "equation") equations++;
+      else if (b.kind === "shape") shapes++;
     }
   };
   walk(doc.blocks);
   return {
-    paras, runs, tables, cells, images, chars, sectionBreaks, equations,
+    paras, runs, tables, cells, images, chars, sectionBreaks, equations, shapes,
     footnotes: Object.keys(doc.footnotes ?? {}).length,
     endnotes: Object.keys(doc.endnotes ?? {}).length,
     fields: Object.keys(doc.fields ?? {}).length,
@@ -151,19 +152,20 @@ describe("default showcase doc: export → open → export fidelity", () => {
     const doc0 = sampleDoc();
     const doc1 = runImport((await runExport(doc0, "docx", await resolveImages(doc0))).bytes).doc;
     expect(fingerprint(doc1)).toEqual({
-      paras: 317,
-      runs: 476,
+      paras: 324,
+      runs: 483,
       tables: 11,
       cells: 203,
       images: 4,
-      chars: 21582,
+      chars: 22043,
       sectionBreaks: 2,
       equations: 5,
+      shapes: 4,
       footnotes: 1,
       endnotes: 1,
       fields: 8,
       sdts: 13,
-      bookmarks: 14,
+      bookmarks: 15,
     });
   }, 60_000);
 });

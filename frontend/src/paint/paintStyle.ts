@@ -6,6 +6,8 @@
 // APIs). Pure data + math — no DOM, no rendering backend.
 
 import type { CharStyle, PageBorderEdge, PageBorders, TabLeader, UnderlineStyle } from "@cw/shared";
+import { ptToPx } from "@cw/shared";
+import type { PlacedShape } from "../layout/layoutTree";
 
 // --- colours ---------------------------------------------------------------
 /** Unstyled/native table grid (when a cell carries no explicit borders). */
@@ -22,6 +24,34 @@ export const FOOTNOTE_RULE_COLOR = "#80868b";
 export const FORMATTING_MARK_COLOR = "#7a8aa0";
 export const TOC_LEADER_COLOR = "#9aa0a6";
 export const IMAGE_PLACEHOLDER_COLOR = "#f1f3f4";
+
+// --- drawing shapes --------------------------------------------------------
+/** Theme-neutral defaults for a shape whose fill/stroke are absent (an author
+ *  can still request an explicit no-fill / no-outline via `{ none: true }`). */
+export const SHAPE_DEFAULT_FILL = "#d9e2f0";
+export const SHAPE_DEFAULT_STROKE_COLOR = "#41719c";
+export const SHAPE_DEFAULT_STROKE_WIDTH_PT = 1;
+
+/** Resolve a placed shape's fill + stroke into concrete paint values the canvas and
+ *  PDF painters both consume (keeping them in lockstep). `fill`/`stroke` come back
+ *  null when there is nothing to paint (explicit `none`, or a line's absent fill). */
+export function resolveShapePaint(shape: PlacedShape): {
+  fill: string | null;
+  stroke: { color: string; widthPx: number } | null;
+} {
+  // Fill: explicit color, explicit none → null, absent → default (but a line is a
+  // stroke-only geometry, so it never fills).
+  let fill: string | null;
+  if (shape.fill && "none" in shape.fill) fill = null;
+  else if (shape.fill && "color" in shape.fill) fill = shape.fill.color;
+  else fill = shape.preset === "line" ? null : SHAPE_DEFAULT_FILL;
+  // Stroke: explicit (unless none), absent → default.
+  let stroke: { color: string; widthPx: number } | null;
+  if (shape.stroke && "none" in shape.stroke) stroke = null;
+  else if (shape.stroke) stroke = { color: shape.stroke.color, widthPx: Math.max(0.5, ptToPx(shape.stroke.widthPt)) };
+  else stroke = { color: SHAPE_DEFAULT_STROKE_COLOR, widthPx: ptToPx(SHAPE_DEFAULT_STROKE_WIDTH_PT) };
+  return { fill, stroke };
+}
 
 /** Office "Hyperlink" character-style blues, normalised to text colour when they
  *  arrive on an in-document anchor (TOC/cross-ref) so those read as plain text. */

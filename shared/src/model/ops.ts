@@ -18,6 +18,7 @@ import type {
   Run,
   RowProps,
   SdtProps,
+  ShapeBlock,
   TableBlock,
   TableCell,
   TableRow,
@@ -48,6 +49,19 @@ export interface ImagePropsPatch {
   anchor?: ImageBlock["anchor"] | null;
   /** Crop insets (a:srcRect 0..1 fractions). `null` clears the crop. */
   crop?: ImageBlock["crop"] | null;
+}
+
+/** setShapeProps payload — the drawing-shape analog of ImagePropsPatch. `fill`
+ *  and `stroke` accept `null` as an explicit "clear this field" sentinel (plain
+ *  `undefined` means "leave unchanged", which exactOptionalPropertyTypes needs to
+ *  keep distinguishable). PR 1 uses widthPx/heightPx (drag-resize) + align; fill /
+ *  stroke are wired through for the PR 2 fill/outline UI. */
+export interface ShapePropsPatch {
+  widthPx?: number;
+  heightPx?: number;
+  align?: ShapeBlock["align"];
+  fill?: ShapeBlock["fill"] | null;
+  stroke?: ShapeBlock["stroke"] | null;
 }
 
 /** setTableProps payload — table-LEVEL fields (w:tblPr): indent + the cascade
@@ -91,6 +105,7 @@ export type Op =
   | { type: "insertBlock"; index: number; block: Block; where?: Container }
   | { type: "removeBlock"; blockId: string }
   | { type: "setImageProps"; blockId: string; patch: ImagePropsPatch }
+  | { type: "setShapeProps"; blockId: string; patch: ShapePropsPatch }
   | { type: "setEquation"; blockId: string; equation: MathEquation }
   | { type: "setEquationAlign"; blockId: string; align: "left" | "center" | "right" }
   | { type: "setEquationScale"; blockId: string; scale: number }
@@ -490,6 +505,11 @@ export function locateEquation(doc: Document, blockId: string): BlockLocation<Eq
   return locateBlock(doc, blockId, "equation");
 }
 
+/** Locate a drawing-shape block anywhere editable (body / band / table cell). */
+export function locateShape(doc: Document, blockId: string): BlockLocation<ShapeBlock> | null {
+  return locateBlock(doc, blockId, "shape");
+}
+
 /** Path-clone the document replacing a located block in place (top-level in any
  *  container, or one level deep in a table cell). */
 function replaceLocatedBlock(doc: Document, loc: BlockLocation<Block>, block: Block): Document {
@@ -807,6 +827,39 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       return {
         doc: next,
         inverse: { type: "setImageProps", blockId: op.blockId, patch: oldPatch },
+        mapPosition: identity,
+        dirtyBlockIds: [op.blockId],
+      };
+    }
+
+    case "setShapeProps": {
+      // Cell-aware (like setImageProps): shapes inside table cells resize/align too.
+      const loc = locateShape(doc, op.blockId);
+      if (!loc) throw new Error(`shape ${op.blockId} not found`);
+      const block = loc.block;
+      // Inverse restores prior values; a field absent before is cleared (null) on
+      // undo. fill/stroke use null to mean "clear" (mirrors the image reducer).
+      const oldPatch: ShapePropsPatch = {};
+      if (op.patch.widthPx !== undefined) oldPatch.widthPx = block.widthPx;
+      if (op.patch.heightPx !== undefined) oldPatch.heightPx = block.heightPx;
+      if (op.patch.align !== undefined) oldPatch.align = block.align;
+      if (op.patch.fill !== undefined) oldPatch.fill = block.fill ?? null;
+      if (op.patch.stroke !== undefined) oldPatch.stroke = block.stroke ?? null;
+      const updated: ShapeBlock = { ...block, revision: block.revision + 1 };
+      if (op.patch.widthPx !== undefined) updated.widthPx = op.patch.widthPx;
+      if (op.patch.heightPx !== undefined) updated.heightPx = op.patch.heightPx;
+      if (op.patch.align !== undefined) updated.align = op.patch.align;
+      if (op.patch.fill !== undefined) {
+        if (op.patch.fill === null) delete updated.fill;
+        else updated.fill = op.patch.fill;
+      }
+      if (op.patch.stroke !== undefined) {
+        if (op.patch.stroke === null) delete updated.stroke;
+        else updated.stroke = op.patch.stroke;
+      }
+      return {
+        doc: replaceLocatedBlock(doc, loc, updated),
+        inverse: { type: "setShapeProps", blockId: op.blockId, patch: oldPatch },
         mapPosition: identity,
         dirtyBlockIds: [op.blockId],
       };

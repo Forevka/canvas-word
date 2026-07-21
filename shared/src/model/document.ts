@@ -528,6 +528,52 @@ export interface ImageBlock {
   drawingId?: { anchorId?: string; editId?: string };
 }
 
+/** A DrawingML preset shape (OOXML wps:wsp / a:prstGeom). This is the "like an
+ *  image, but the picture is a vector geometry we draw" block. PR 1 (issue #214)
+ *  ships the foundation slice — presets rect/ellipse/line, solid fill + solid
+ *  stroke, in-flow (block) only. The following field holes are deliberately absent
+ *  and filled by later shape PRs (see docs/SHAPES_PLAN.md):
+ *    - `wrap` / `anchor` (square wrap + wp:anchor float + z-order) — PR 4,
+ *    - `text` (wps:txbx body) — PR 3,
+ *    - `rotation` (a:xfrm@rot) — PR 2,
+ *  and the preset union grows (roundRect/triangle/diamond/arrows) in PR 2. */
+export type ShapePreset = "rect" | "ellipse" | "line";
+
+/** Shape fill (a:solidFill / a:noFill). `{ color }` is a solid CSS hex fill;
+ *  `{ none }` is an explicit no-fill. Absent = the theme-neutral default fill. */
+export type ShapeFill = { color: string } | { none: true };
+
+/** Shape outline (a:ln). `{ color, widthPt }` is a solid stroke of `widthPt` points
+ *  in CSS hex `color`; `{ none }` is an explicit no-outline. Absent = the default
+ *  outline. Dash styles arrive in PR 2. */
+export type ShapeStroke = { color: string; widthPt: number } | { none: true };
+
+export interface ShapeBlock {
+  kind: "shape";
+  id: string;
+  revision: number;
+  /** The vector geometry drawn inside the box: a preset path (a:prstGeom@prst).
+   *  `adjust` (a:avLst) passthrough arrives with the parametric presets in PR 2. */
+  geometry: { preset: ShapePreset };
+  /** Interior fill; absent ⇒ theme-neutral default (see paint). */
+  fill?: ShapeFill;
+  /** Outline; absent ⇒ default outline (see paint). */
+  stroke?: ShapeStroke;
+  /** The single layout lever — the box the preset path is drawn into (like an
+   *  image's widthPx/heightPx). */
+  widthPx: number;
+  heightPx: number;
+  align: "left" | "center" | "right";
+  /** Word's persistent drawing identity (wp14:anchorId/editId on the
+   *  wp:inline|wp:anchor container) — mirror ImageBlock.drawingId. Preserved
+   *  verbatim from import and re-emitted (de-duped on export). */
+  drawingId?: { anchorId?: string; editId?: string };
+  /** Field result membership — see Paragraph.fieldId. */
+  fieldId?: string | undefined;
+  /** Block-level content-control ancestry — see Paragraph.sdtPath. */
+  sdtPath?: string[] | undefined;
+}
+
 /** Cells hold Blocks: paragraphs (first-class editing targets, located through
  *  model/text.ts), images, and nested tables (rendered; their inner cells are
  *  read-only — the paragraph locator goes one level deep). */
@@ -774,7 +820,7 @@ export interface CustomBlock {
   sdtPath?: string[] | undefined;
 }
 
-export type Block = Paragraph | ImageBlock | TableBlock | EquationBlock | CustomBlock;
+export type Block = Paragraph | ImageBlock | TableBlock | EquationBlock | CustomBlock | ShapeBlock;
 
 /** OOXML page-number / list format (the field `\* <fmt>` switch). */
 export type PageNumFmt = "arabic" | "roman" | "Roman" | "alpha" | "Alpha";

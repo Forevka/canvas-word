@@ -133,6 +133,27 @@ export interface ImageBlock {
   wrap?: "block" | "square";
 }
 
+/** A DrawingML preset shape (rect/ellipse/line) with a solid fill + solid stroke,
+ *  drawn in the flow like an image. See ShapeBlock in the model. */
+export type ShapePreset = "rect" | "ellipse" | "line";
+export type ShapeFill = { color: string } | { none: true };
+export type ShapeStroke = { color: string; widthPt: number } | { none: true };
+
+export interface ShapeBlock {
+  kind: "shape";
+  id: string;
+  revision: number;
+  /** The vector geometry drawn inside the box (a:prstGeom@prst). */
+  geometry: { preset: ShapePreset };
+  /** Interior fill; absent = the theme-neutral default. */
+  fill?: ShapeFill;
+  /** Outline; absent = the default outline. */
+  stroke?: ShapeStroke;
+  widthPx: number;
+  heightPx: number;
+  align: "left" | "center" | "right";
+}
+
 export interface CellBorder {
   color: string;
   widthPx: number;
@@ -249,7 +270,7 @@ export interface CustomBlock {
   sdtPath?: string[] | undefined;
 }
 
-export type Block = Paragraph | ImageBlock | TableBlock | EquationBlock | CustomBlock;
+export type Block = Paragraph | ImageBlock | TableBlock | EquationBlock | CustomBlock | ShapeBlock;
 
 /** Conditional-format slots of a table style (OOXML w:tblStylePr types). */
 export type TableCond =
