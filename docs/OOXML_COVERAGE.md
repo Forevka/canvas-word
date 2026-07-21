@@ -359,7 +359,7 @@ w:drawing → wp:inline / wp:anchor → a:graphicData @uri=…/wordprocessingSha
 ├─ a:avLst / a:gd (adjust handles) ...... ✅ raw guide values (name → `val N`) round-trip via geometry.adjust
 ├─ a:xfrm @rot (rotation) ............... ✅ ShapeBlock.rotation (degrees ↔ 60000ths)
 ├─ wps:txbx / w:txbxContent (text body) . ✅ ShapeBlock.text — paragraph flow, editable caret-in-box + round-trip (Part 6 / #219)
-├─ wp:anchor + wp:wrapSquare (float) .... ✅ ShapeBlock.wrap="square" — text flows beside (Part 4, #217)
+├─ wp:anchor + wp:wrapSquare (float) .... ✅ ShapeBlock.wrap="square" — text flows beside; center floats mid-column with text on both sides (Part 4, #217; center #232)
 ├─ wp:anchor + wp:wrapNone (behind/front) ✅ ShapeBlock.anchor {behind, offsetX/Y, relFromH/V, z} (Part 4)
 └─ @relativeHeight / @behindDoc (z-order) ✅ shared z-space with images; bring-to-front / send-to-back
 
@@ -371,23 +371,15 @@ a:graphicData @uri=…/wordprocessingGroup → wpg:wgp ✅ ShapeBlock.group (a s
 └─ wpg:grpSp (nested group) ............. ✅ recursive — a member may itself be a group
 ```
 
-> **Known limitation — rotation + text.** A shape's `rotation` and its text body
-> both round-trip losslessly, but they don't compose in the *render*: a rotated
-> shape paints its geometry rotated while its text box body stays **axis-aligned**
-> (upright). Only the geometry rotates; laying the text sub-flow out in the rotated
-> frame is deferred. Rotated text boxes are an uncommon combination, and the `.docx`
-> is unaffected (both fields survive) — this is a paint-only gap in the canvas and
-> PDF painters.
-
-> **Drawing shapes are fully supported** (issue #206, Parts 1–9): the preset gallery,
-> freeform custom geometry, solid/no fill, outline colour/width/dash, rotation,
-> **editable** text boxes, square wrap, absolute behind/in-front float + z-order, and
+> **Drawing shapes are fully supported** (issue #206, Parts 1–9; fidelity #232): the
+> preset gallery, freeform custom geometry, solid/no fill, outline colour/width/dash,
+> rotation (geometry **and** text body rotate together), **editable** text boxes,
+> square wrap at any alignment (a centered square shape floats mid-column with text
+> wrapping on both sides), absolute behind/in-front float + z-order, and
 > grouped/nested-group drawings are authorable from the editor surfaces (ribbon,
 > floating toolbar, right-click), the JS `DocumentBuilder`, and the C# builder, and
-> round-trip to `.docx` — losslessly except two documented corners: the rotation +
-> text paint-only gap noted just above, and a builder-only center-aligned
-> square-wrap shape (it exports inline, so re-imports as in-flow). See
-> [SHAPES_PLAN.md](./SHAPES_PLAN.md) for the delivered plan.
+> round-trip to `.docx` **losslessly**. See [SHAPES_PLAN.md](./SHAPES_PLAN.md) for the
+> delivered plan.
 
 ### Legacy VML shapes (w:pict) — issue #218 (import-only)
 

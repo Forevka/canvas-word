@@ -14,6 +14,7 @@ import type {
   Paragraph,
   ParaStyle,
   SectionProps,
+  ShapeBlock,
   TableBlock,
   TableCell,
 } from "@cw/shared";
@@ -1087,6 +1088,38 @@ describe("engine — floats", () => {
     // …and the marker hangs with it, clear of the image — not back at the margin.
     expect(pb.marker).toBeDefined();
     expect(pb.marker!.x).toBeGreaterThanOrEqual(imgRight);
+  });
+});
+
+// --- centered square-wrap shapes float with two-sided text wrap (#232) ----
+
+describe("engine — centered square-wrap shape float", () => {
+  const centerSquare = (widthPx: number, heightPx: number): ShapeBlock => ({
+    kind: "shape", id: fresh(), revision: 0, geometry: { preset: "rect" },
+    widthPx, heightPx, align: "center", wrap: "square",
+  });
+
+  it("floats a centered square shape (does not push text down) with text on both sides", () => {
+    const s = centerSquare(200, 120);
+    const body = para("word ".repeat(160).trim());
+    const tree = layout(doc([s, body]));
+    const sPb = placedOf(tree, s.id)!.pb;
+    const bodyPb = placedOf(tree, body.id)!.pb;
+    // The shape is centered in the 624px content box (not hugging the left margin).
+    expect(sPb.x).toBeGreaterThan(96 + 100);
+    // The paragraph flows BESIDE the shape (float), sharing its vertical band — not
+    // dropped below it as an in-flow block would be.
+    expect(bodyPb.y).toBeLessThan(sPb.y + 120);
+    // Some line has fragments in BOTH flanking gaps: one left of the shape and one
+    // right of it — Word's wrapText="bothSides" (issue #232).
+    const shapeLeft = sPb.x;
+    const shapeRight = sPb.x + sPb.shape!.width;
+    const twoSided = bodyPb.lines.some((l) => {
+      const hasLeft = l.fragments.some((f) => bodyPb.x + f.x < shapeLeft);
+      const hasRight = l.fragments.some((f) => bodyPb.x + f.x >= shapeRight);
+      return hasLeft && hasRight;
+    });
+    expect(twoSided).toBe(true);
   });
 });
 

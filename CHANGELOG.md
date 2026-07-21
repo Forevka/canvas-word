@@ -205,6 +205,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **de-dups** so a copy/pasted image never repeats an id.
 
 ### Fixed
+- **Drawing shapes — rotated text bodies and lossless centered square wrap (issue #206 fidelity / #232).**
+  Two documented corners of the shapes feature now close. (1) A **rotated** shape used to paint its
+  geometry tilted but its text-box body **upright** — the canvas and PDF painters now apply the same
+  rotation-about-centre transform to the text sub-flow, so the label rotates *with* the box (the
+  sub-flow still lays out in the local frame; rotation stays paint-only). (2) A **center-aligned
+  square-wrap** shape used to export **inline** (reverting #231's WYSIWYG special-case), so its
+  `wrap:"square"` flag was lost on re-import (it became an in-flow block). It now **floats mid-column**
+  with text wrapping on **both** sides (Word's `wrapText="bothSides"`) and exports as a `wp:anchor` +
+  `wp:wrapSquare` aligned `center`, so render, export and re-import all agree and the wrap survives
+  losslessly. The two caveats are removed from `docs/OOXML_COVERAGE.md` and the README.
 - **Context toolbars: appear on cell selection, and never hover over the ribbon.** Two fixes to the
   contextual floating-toolbar framework: (1) selecting 2+ table cells now shows the table bar
   immediately — the cell-selection setter skips the heavy change broadcast (it fires per drag-move), so

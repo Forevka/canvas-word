@@ -562,11 +562,13 @@ function paintPlacedShapePdf(ctx: PaintCtx, shape: PlacedShape, x: number, y: nu
     return;
   }
   paintShapePdf(doc, shape, x, y);
-  // Read-only text box body (mirrors canvas). KNOWN LIMITATION (same as canvas): the
-  // text is painted axis-aligned even when the shape is rotated — only the geometry rotates.
+  // Read-only text box body (mirrors canvas). When the shape is rotated, the text
+  // rotates WITH the geometry about the box center (same transform paintShapePdf
+  // applies) — the sub-flow layout stays in the local frame; rotation is paint-only.
   const text = shape.text;
   if (text && text.blocks.length > 0) {
     doc.save();
+    if (shape.rotation) doc.rotate(shape.rotation, { origin: [x + shape.width / 2, y + shape.height / 2] });
     doc.rect(x, y, shape.width, shape.height).clip();
     doc.translate(x + text.offsetX, y + text.offsetY);
     for (const cb of text.blocks) paintBlock(ctx, cb);
