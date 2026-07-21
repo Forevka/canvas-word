@@ -120,6 +120,14 @@ export const ICONS = {
   wrapInline: svg(
     `<rect x="5" y="5" width="6" height="5" rx=".8"/><path d="M2 2.5h12M2 12.5h12"/>`,
   ),
+  // Bring-to-front: a solid square lifted above an outlined one (z-order up).
+  bringFront: svg(
+    `<rect x="2.5" y="2.5" width="7" height="7" rx="1" fill="currentColor" stroke="none"/><rect x="6.5" y="6.5" width="7" height="7" rx="1"/>`,
+  ),
+  // Send-to-back: an outlined square dropped behind a solid one (z-order down).
+  sendBack: svg(
+    `<rect x="6.5" y="6.5" width="7" height="7" rx="1" fill="currentColor" stroke="none"/><rect x="2.5" y="2.5" width="7" height="7" rx="1"/>`,
+  ),
   sdtText: svg(
     `<rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M5 6.2h6"/><path d="M8 6.2v4"/>`,
   ),

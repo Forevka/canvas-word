@@ -1,9 +1,9 @@
-// Shape context toolbar (Word's drawing-shape hover bar): fill, outline, align +
-// delete, shown above a selected drawing shape. Mirrors imageContextToolbar as a
-// ContextToolbar so the shared manager coordinates it with the image/text/link bars.
-// Priority 31 — just above the image bar (30), so a selected shape always wins. Fill
-// and Outline open the host's shared colour popover (anchored to their button), the
-// same picker font-colour / highlight use — no new colour UI.
+// Shape context toolbar (Word's drawing-shape hover bar): fill, outline, wrap, align,
+// z-order and delete, shown above a selected drawing shape. Mirrors imageContextToolbar
+// as a ContextToolbar so the shared manager coordinates it with the image/text/link
+// bars. Priority 31 — just above the image bar (30), so a selected shape always wins.
+// Fill and Outline open the host's shared colour popover (anchored to their button),
+// the same picker font-colour / highlight use — no new colour UI.
 
 import { ICONS } from "./icons";
 import { createFloatingBar, type ContextToolbar } from "./contextToolbar";
@@ -14,9 +14,13 @@ export interface ShapeContextToolbarActions {
   fill(anchor: HTMLElement): void;
   /** Open the outline picker (colour + width + dash) anchored to `anchor`. */
   outline(anchor: HTMLElement): void;
+  wrapInline(): void;
+  wrapSquare(): void;
   alignLeft(): void;
   alignCenter(): void;
   alignRight(): void;
+  bringToFront(): void;
+  sendToBack(): void;
   remove(): void;
 }
 
@@ -47,9 +51,15 @@ export function createShapeContextToolbar(deps: ShapeContextToolbarDeps): Contex
   ibtn(ICONS.shapeFill, "Fill colour", (b) => deps.actions.fill(b));
   ibtn(ICONS.outline, "Outline (colour, width, dash)", (b) => deps.actions.outline(b));
   sep();
+  ibtn(ICONS.wrapInline, "In line with text", () => deps.actions.wrapInline());
+  ibtn(ICONS.wrapSquare, "Wrap text (square)", () => deps.actions.wrapSquare());
+  sep();
   ibtn(ICONS.alignLeft, "Align left", () => deps.actions.alignLeft());
   ibtn(ICONS.alignCenter, "Align center", () => deps.actions.alignCenter());
   ibtn(ICONS.alignRight, "Align right", () => deps.actions.alignRight());
+  sep();
+  ibtn(ICONS.bringFront, "Bring to front", () => deps.actions.bringToFront());
+  ibtn(ICONS.sendBack, "Send to back", () => deps.actions.sendToBack());
   sep();
   ibtn(ICONS.trash, "Delete shape (Del)", () => deps.actions.remove(), "danger");
 

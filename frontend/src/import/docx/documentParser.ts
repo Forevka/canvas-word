@@ -689,6 +689,42 @@ function symbolGlyph(charHex: string): string {
   return Number.isFinite(cp) && cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : "�";
 }
 
+/** wp:anchor wrap + float extraction shared by the image and shape drawing paths.
+ *  Square/tight/through wrap → the model's "square" float; wrapNone (behind/in-front
+ *  of text) → an absolutely-positioned anchor; only topAndBottom/none-without-wrapNone
+ *  fall back to block flow (`unsupported`). */
+interface ParsedAnchor {
+  wrap: "square" | "block";
+  align?: "left" | "right" | "center";
+  float?: NonNullable<Extract<IRInline, { kind: "image" }>["anchorFloat"]>;
+  /** True for an anchor whose wrap mode the model can't express (caller may warn). */
+  unsupported: boolean;
+}
+function parseAnchorProps(anchor: XmlNode): ParsedAnchor {
+  const square = el(anchor, "wp:wrapSquare") ?? el(anchor, "wp:wrapTight") ?? el(anchor, "wp:wrapThrough");
+  const wrapNone = el(anchor, "wp:wrapNone");
+  const posH = el(anchor, "wp:positionH");
+  const posV = el(anchor, "wp:positionV");
+  const alignText = posH && el(posH, "wp:align");
+  const alignVal = alignText && textOf(alignText);
+  const result: ParsedAnchor = { wrap: square ? "square" : "block", unsupported: !wrapNone && !square };
+  if (alignVal === "left" || alignVal === "right" || alignVal === "center") result.align = alignVal;
+  if (wrapNone) {
+    const dec = findDeep(anchor, "adec:decorative");
+    const z = numAttr(anchor, "relativeHeight");
+    result.float = {
+      behind: attr(anchor, "behindDoc") === "1",
+      offsetXEmu: posOffsetEmu(posH),
+      offsetYEmu: posOffsetEmu(posV),
+      relFromH: relFromH(posH),
+      relFromV: relFromV(posV),
+      decorative: !!dec && attr(dec, "val") !== "0",
+      ...(z !== undefined ? { z } : {}),
+    };
+  }
+  return result;
+}
+
 /** DrawingML: w:drawing → wp:inline|wp:anchor → … → a:blip r:embed. The exact
  *  nesting varies by producer, so the blip is found by deep search. */
 function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
@@ -700,7 +736,7 @@ function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
   // genuinely unknown drawings.
   const wsp = findDeep(container, "wps:wsp");
   if (wsp) {
-    const shape = parseShapeWsp(wsp, container, ctx);
+    const shape = parseShapeWsp(wsp, container, anchor, ctx);
     if (shape) return shape;
     // Structurally a wps shape but without a preset geometry we can place yet
     // (e.g. freeform a:custGeom) — warn instead of dropping it silently, mirroring
@@ -743,30 +779,11 @@ function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
     }
   }
   if (anchor) {
-    // Square/tight/through wrap maps onto the model's "square" float; wrapNone
-    // (behind/in-front of text) becomes an absolutely-positioned anchor; only
-    // topAndBottom/none-without-wrapNone fall back to block flow.
-    const square = el(anchor, "wp:wrapSquare") ?? el(anchor, "wp:wrapTight") ?? el(anchor, "wp:wrapThrough");
-    const wrapNone = el(anchor, "wp:wrapNone");
-    image.anchorWrap = square ? "square" : "block";
-    const posH = el(anchor, "wp:positionH");
-    const posV = el(anchor, "wp:positionV");
-    const alignText = posH && el(posH, "wp:align");
-    const align = alignText && textOf(alignText);
-    if (align === "left" || align === "right" || align === "center") image.anchorAlign = align;
-    if (wrapNone) {
-      const dec = findDeep(anchor, "adec:decorative");
-      const z = numAttr(anchor, "relativeHeight");
-      image.anchorFloat = {
-        behind: attr(anchor, "behindDoc") === "1",
-        offsetXEmu: posOffsetEmu(posH),
-        offsetYEmu: posOffsetEmu(posV),
-        relFromH: relFromH(posH),
-        relFromV: relFromV(posV),
-        decorative: !!dec && attr(dec, "val") !== "0",
-        ...(z !== undefined ? { z } : {}),
-      };
-    } else if (!square) {
+    const ap = parseAnchorProps(anchor);
+    image.anchorWrap = ap.wrap;
+    if (ap.align) image.anchorAlign = ap.align;
+    if (ap.float) image.anchorFloat = ap.float;
+    else if (ap.unsupported) {
       ctx.warnings.add(
         "images-anchored",
         "Some floating images (overlapping or top-and-bottom wrap) were placed in the text flow.",
@@ -779,7 +796,12 @@ function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
 /** DrawingML preset shape: wps:wsp → wps:spPr (a:prstGeom, a:solidFill/a:noFill,
  *  a:ln). Size comes from the container's wp:extent (like an image). The spPr's
  *  DIRECT fill is the shape fill; a:ln carries the outline (its own nested fill). */
-function parseShapeWsp(wsp: XmlNode, container: XmlNode, ctx: ParseCtx): Extract<IRInline, { kind: "shape" }> | undefined {
+function parseShapeWsp(
+  wsp: XmlNode,
+  container: XmlNode,
+  anchor: XmlNode | undefined,
+  ctx: ParseCtx,
+): Extract<IRInline, { kind: "shape" }> | undefined {
   const spPr = el(wsp, "wps:spPr");
   const prstGeom = spPr && el(spPr, "a:prstGeom");
   const prst = prstGeom && attr(prstGeom, "prst");
@@ -848,6 +870,19 @@ function parseShapeWsp(wsp: XmlNode, container: XmlNode, ctx: ParseCtx): Extract
     ctx.blockSdtStack = savedBlockStack;
     ctx.trackFields = savedTrackFields;
     if (blocks.length > 0) shape.text = blocks;
+  }
+  if (anchor) {
+    shape.anchored = true;
+    const ap = parseAnchorProps(anchor);
+    shape.anchorWrap = ap.wrap;
+    if (ap.align) shape.anchorAlign = ap.align;
+    if (ap.float) shape.anchorFloat = ap.float;
+    else if (ap.unsupported) {
+      ctx.warnings.add(
+        "shapes-anchored",
+        "Some floating shapes (overlapping or top-and-bottom wrap) were placed in the text flow.",
+      );
+    }
   }
   const anchorId = attr(container, "wp14:anchorId");
   if (anchorId) shape.anchorId = anchorId;

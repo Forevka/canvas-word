@@ -189,6 +189,39 @@ describe("drawing shapes — DrawingML wps:wsp round-trip", () => {
     expect(out.text?.blocks[1]?.runs.map((r) => r.text).join("")).toBe("Line two");
   });
 
+  // --- Positioning parity (issue #217): wrap / float anchor / z-order ----------
+  it("round-trips square text-wrap (wp:anchor + wp:wrapSquare)", () => {
+    const s = shape({ wrap: "square", align: "left" });
+    const xml = exportedDocXml(docOf(s));
+    expect(xml).toContain("<wp:anchor");
+    expect(xml).toContain('<wp:wrapSquare wrapText="bothSides"/>');
+    const out = firstShape(roundTrip(docOf(s)));
+    expect(out.wrap).toBe("square");
+    expect(out.anchor).toBeUndefined(); // exclusive with anchor
+  });
+
+  it("round-trips a behind-text float anchor (wrapNone, behindDoc, offsets, z)", () => {
+    const s = shape({
+      anchor: { behind: true, offsetXPx: 40, offsetYPx: 120, relFromH: "margin", relFromV: "paragraph", z: -1 },
+    });
+    const xml = exportedDocXml(docOf(s));
+    expect(xml).toContain("<wp:anchor");
+    expect(xml).toContain("<wp:wrapNone/>");
+    expect(xml).toContain('behindDoc="1"');
+    const out = firstShape(roundTrip(docOf(s)));
+    expect(out.wrap).toBeUndefined();
+    expect(out.anchor).toMatchObject({ behind: true, offsetXPx: 40, offsetYPx: 120, relFromH: "margin", relFromV: "paragraph" });
+  });
+
+  it("round-trips an in-front-of-text anchor with a positive z-order", () => {
+    const s = shape({
+      anchor: { behind: false, offsetXPx: 10, offsetYPx: 5, relFromH: "margin", relFromV: "paragraph", z: 4 },
+    });
+    const out = firstShape(roundTrip(docOf(s)));
+    expect(out.anchor?.behind).toBe(false);
+    expect(out.anchor?.z).toBe(4);
+  });
+
   it("maps a genuinely unsupported preset to a rectangle (+ warning), dropping its adjust", () => {
     const drawing = `<w:p><w:r><w:drawing>
       <wp:inline><wp:extent cx="914400" cy="914400"/><wp:docPr id="1" name="Shape"/>

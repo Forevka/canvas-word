@@ -1063,6 +1063,53 @@ function shapeParagraphXml(shape: Extract<Block, { kind: "shape" }>, ctx: PartCt
       wsp,
     ),
   );
+  const align = shape.align === "center" ? "center" : shape.align === "right" ? "right" : "left";
+
+  // Anchored behind/in-front shape (wrapNone): re-emit as a wp:anchor so the absolute
+  // position and z-order survive the round-trip — mirrors the image anchor path (#217).
+  if (shape.anchor) {
+    const a = shape.anchor;
+    const anchor = el(
+      "wp:anchor",
+      {
+        ...idAttrs,
+        distT: 0, distB: 0, distL: 0, distR: 0, simplePos: 0,
+        relativeHeight: Math.max(0, Math.round(a.z ?? 0)), behindDoc: a.behind ? 1 : 0, locked: 0,
+        layoutInCell: 1, allowOverlap: 1,
+      },
+      el("wp:simplePos", { x: 0, y: 0 }) +
+        el("wp:positionH", { relativeFrom: a.relFromH }, el("wp:posOffset", undefined, String(pxToEmu(a.offsetXPx)))) +
+        el("wp:positionV", { relativeFrom: a.relFromV }, el("wp:posOffset", undefined, String(pxToEmu(a.offsetYPx)))) +
+        el("wp:extent", { cx, cy }) +
+        el("wp:wrapNone") +
+        el("wp:docPr", { id: ctx.nextId(), name: "Shape" }) +
+        graphic,
+    );
+    return el("w:p", undefined, el("w:r", undefined, el("w:drawing", undefined, anchor)));
+  }
+
+  // Square-wrapped shape (text flows beside it): a wp:anchor + wp:wrapSquare, aligned
+  // at the margin per `align`. Unlike the image path (which currently drops square
+  // wrap to inline on export), shapes round-trip wrap faithfully (issue #217 DoD).
+  if (shape.wrap === "square") {
+    const anchor = el(
+      "wp:anchor",
+      {
+        ...idAttrs,
+        distT: 0, distB: 0, distL: 45720, distR: 45720, simplePos: 0,
+        relativeHeight: 0, behindDoc: 0, locked: 0, layoutInCell: 1, allowOverlap: 1,
+      },
+      el("wp:simplePos", { x: 0, y: 0 }) +
+        el("wp:positionH", { relativeFrom: "margin" }, el("wp:align", undefined, align)) +
+        el("wp:positionV", { relativeFrom: "paragraph" }, el("wp:posOffset", undefined, "0")) +
+        el("wp:extent", { cx, cy }) +
+        el("wp:wrapSquare", { wrapText: "bothSides" }) +
+        el("wp:docPr", { id: ctx.nextId(), name: "Shape" }) +
+        graphic,
+    );
+    return el("w:p", undefined, el("w:r", undefined, el("w:drawing", undefined, anchor)));
+  }
+
   const drawing = el(
     "w:drawing",
     undefined,
@@ -1072,7 +1119,6 @@ function shapeParagraphXml(shape: Extract<Block, { kind: "shape" }>, ctx: PartCt
       el("wp:extent", { cx, cy }) + el("wp:docPr", { id: ctx.nextId(), name: "Shape" }) + graphic,
     ),
   );
-  const align = shape.align === "center" ? "center" : shape.align === "right" ? "right" : "left";
   // Pin zero paragraph spacing + single line (like the image path) so Word lays the
   // shape flush, matching the editor's spacing-free shape block.
   const spacing = el("w:spacing", { "w:before": 0, "w:after": 0, "w:line": 240, "w:lineRule": "auto" });

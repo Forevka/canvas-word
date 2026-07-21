@@ -84,12 +84,14 @@ const shape = (
   preset: ShapePreset, w: number, h: number, align: ShapeBlock["align"],
   fill?: ShapeFill, stroke?: ShapeStroke, rotation?: number, adjust?: Record<string, number>,
   text?: string[],
+  extra?: { wrap?: ShapeBlock["wrap"]; anchor?: ShapeBlock["anchor"] },
 ): ShapeBlock => ({
   kind: "shape", id: id(), revision: 0,
   geometry: adjust ? { preset, adjust } : { preset },
   widthPx: w, heightPx: h, align,
   ...(fill ? { fill } : {}), ...(stroke ? { stroke } : {}), ...(rotation ? { rotation } : {}),
   ...(text ? { text: { blocks: text.map((line) => para([run(line)])) } } : {}),
+  ...(extra?.wrap ? { wrap: extra.wrap } : {}), ...(extra?.anchor ? { anchor: extra.anchor } : {}),
 });
 
 // --- symbols (w:sym) -----------------------------------------------------------
@@ -524,6 +526,28 @@ export function sampleDoc(): Document {
       "Drawing text box",
       "A shape can carry a paragraph flow, laid out inside its box.",
     ]),
+
+    // --- Shape positioning: wrap / float anchor / z-order (issue #217) ----------
+    heading("Shape positioning — wrap, float & z-order", 3),
+    para([run("A square-wrapped shape floats at the margin and the paragraph text flows around it, exactly like a square-wrapped image:")], { spaceBeforePx: 6, spaceAfterPx: 4 }),
+    shape("ellipse", 130, 100, "left", { color: "#d9ead3" }, { color: "#38761d", widthPt: 1.25 }, undefined, undefined, undefined, { wrap: "square" }),
+    para([run("Square wrap lifts the shape out of the block flow and registers a float so following text re-breaks beside it. " + LOREM.repeat(4))]),
+    para([run("Below, two absolutely-anchored shapes overlap: the second has a higher z-order so it paints on top. A third shape sits BEHIND this text (a soft background tint) while text stays selectable, and a fourth sits IN FRONT of it.")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
+    // Overlapping anchored shapes — same layer, different z (higher paints on top).
+    shape("rect", 150, 90, "left", { color: "#c9daf8" }, { color: "#3d85c6", widthPt: 1 }, undefined, undefined, undefined, {
+      anchor: { behind: false, offsetXPx: 20, offsetYPx: 0, relFromH: "margin", relFromV: "paragraph", z: 1 },
+    }),
+    shape("ellipse", 150, 90, "left", { color: "#fce5cd" }, { color: "#e69138", widthPt: 1 }, undefined, undefined, undefined, {
+      anchor: { behind: false, offsetXPx: 90, offsetYPx: 30, relFromH: "margin", relFromV: "paragraph", z: 2 },
+    }),
+    // Behind-text tint (selectable text stays on top) + an in-front-of-text accent.
+    shape("rect", 260, 70, "left", { color: "#fff2cc" }, { none: true }, undefined, undefined, undefined, {
+      anchor: { behind: true, offsetXPx: 0, offsetYPx: 120, relFromH: "margin", relFromV: "paragraph", z: -1 },
+    }),
+    shape("ellipse", 80, 80, "left", { color: "#ead1dc" }, { color: "#a64d79", widthPt: 1 }, undefined, undefined, undefined, {
+      anchor: { behind: false, offsetXPx: 230, offsetYPx: 110, relFromH: "margin", relFromV: "paragraph", z: 3 },
+    }),
+    para([run("Anchored shapes do not occupy vertical flow space, so this line follows the previous paragraph directly while the shapes float over/under it. " + LOREM.repeat(2))], { spaceBeforePx: 4 }),
 
     para([run("Multilevel numbered list:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
     para([run("Model — invertible ops")], { list: { listId: DEFAULT_NUMBER_LIST_ID, level: 0 }, spaceAfterPx: 2 }),

@@ -1235,8 +1235,9 @@ function layoutDocument(
       // Anchored (out-of-flow) images contribute no flow height.
       measured.push({ kind: "image", block, height: block.anchor ? 0 : block.heightPx });
     } else if (block.kind === "shape") {
-      // In-flow (block) shapes occupy their box height (PR 1 has no anchor/wrap).
-      measured.push({ kind: "shape", block, height: block.heightPx });
+      // Anchored (out-of-flow) shapes contribute no flow height; in-flow shapes
+      // occupy their box height (issue #217).
+      measured.push({ kind: "shape", block, height: block.anchor ? 0 : block.heightPx });
     } else if (block.kind === "equation") {
       const box = eqBox(block);
       measured.push({ kind: "equation", block, box, height: box.ascent + box.descent });
@@ -1693,15 +1694,59 @@ function layoutDocument(
     y += h;
   };
 
-  /** In-flow (block) drawing shape: positioned in the column by its align (like a
-   *  block image), the preset path drawn into the widthPx×heightPx box. PR 1 has no
-   *  anchor/wrap, so a shape always advances the flow cursor by its height. */
+  /** Absolutely-positioned anchored shape (wp:anchor + wp:wrapNone) — mirrors
+   *  placeAnchoredImage. Positioned at its offset from the relativeFrom origin; it
+   *  does NOT advance the flow cursor and registers NO float (text flows OVER it).
+   *  Z-order is resolved by the reorderAnchoredLayers pass. */
+  const placeAnchoredShape = (sb: ShapeBlock): void => {
+    const a = sb.anchor!;
+    let ox: number;
+    switch (a.relFromH) {
+      case "page":
+      case "leftMargin": ox = 0; break;
+      case "rightMargin": ox = sec.pageWidthPx - sec.marginPx.right; break;
+      case "column": ox = colX(); break;
+      default: ox = sec.marginPx.left; break; // margin / character
+    }
+    let oy: number;
+    switch (a.relFromV) {
+      case "page":
+      case "topMargin": oy = 0; break;
+      case "bottomMargin": oy = sec.pageHeightPx - sec.marginPx.bottom; break;
+      case "paragraph":
+      case "line": oy = y; break; // current flow position
+      default: oy = sec.marginPx.top; break; // margin
+    }
+    const placedShape = placedShapeOf(sb);
+    placedShape.z = a.z ?? 0;
+    if (a.behind) placedShape.behind = true;
+    else placedShape.front = true;
+    page.blocks.push({
+      blockId: sb.id,
+      x: ox + a.offsetXPx,
+      y: oy + a.offsetYPx,
+      firstLineIndex: 0,
+      lines: [],
+      shape: placedShape,
+    });
+  };
+
+  /** In-flow drawing shape: block (advances the flow cursor) or square-wrap (floats
+   *  at the margin per align, text flows beside — like placeImage). Anchored shapes
+   *  go through placeAnchoredShape instead (issue #217). */
   const placeShape = (sb: ShapeBlock): void => {
+    if (sb.anchor) { placeAnchoredShape(sb); return; }
     if (y + sb.heightPx > bottomY() && colHasContent()) newPage();
+    const floating = sb.wrap === "square" && sb.align !== "center";
     const slack = colWidth - sb.widthPx;
     const x = colX() + (sb.align === "center" ? slack / 2 : sb.align === "right" ? slack : 0);
     page.blocks.push({ blockId: sb.id, x, y, firstLineIndex: 0, lines: [], shape: placedShapeOf(sb) });
-    y += sb.heightPx;
+    if (floating) {
+      // Text flows beside the shape: register the float, do NOT advance y.
+      floats.push({ left: x, right: x + sb.widthPx, bottom: y + sb.heightPx, side: sb.align === "right" ? "right" : "left" });
+    } else {
+      y += sb.heightPx;
+    }
   };
 
   /** Float-affected paragraphs: re-break per line with the float-shrunk width
@@ -1942,7 +1987,9 @@ function layoutDocument(
     // Anchored (behind/in-front) images are out of flow — transparent to the
     // gap logic so they neither take a gap nor suppress one between neighbours.
     const atomicKind = (x: Measured | undefined): boolean =>
-      x?.kind === "table" || x?.kind === "equation" || x?.kind === "custom" || x?.kind === "shape" || (x?.kind === "image" && x.block.anchor === undefined);
+      x?.kind === "table" || x?.kind === "equation" || x?.kind === "custom" ||
+      (x?.kind === "shape" && x.block.anchor === undefined) ||
+      (x?.kind === "image" && x.block.anchor === undefined);
     const prevAtomic = atomicKind(measured[bi - 1]);
     const nextAtomic = atomicKind(measured[bi + 1]);
 
@@ -1961,10 +2008,14 @@ function layoutDocument(
       continue;
     }
     if (m.kind === "shape") {
+      // Out-of-flow anchor: place absolutely, advance nothing, no gap.
+      if (m.block.anchor) { placeShape(m.block); continue; }
       if (!prevAtomic) y += ATOMIC_GAP;
+      // A block shape is atomic — drop below any float still active at y (like the
+      // block-image path) so it never paints on top of a preceding square float.
       for (const f of floats) if (f.bottom > y) y = f.bottom;
       placeShape(m.block);
-      if (!nextAtomic) y += ATOMIC_GAP;
+      if (!nextAtomic && (m.block.wrap !== "square" || m.block.align === "center")) y += ATOMIC_GAP;
       continue;
     }
     if (m.kind === "equation") {
@@ -2278,17 +2329,24 @@ function layoutDocument(
     for (const b of blocks) {
       if (b.table) for (const row of b.table.rows) for (const cell of row.cells) cell.blocks = reorderAnchoredLayers(cell.blocks);
     }
-    if (!blocks.some((b) => b.image?.behind || b.image?.front)) return blocks;
+    // An anchored image OR shape carries the behind/front + z stacking info; both
+    // share one z-space (issue #217). Returns it for whichever payload the block has.
+    const anchoredLayer = (b: PlacedBlock): { behind?: boolean; front?: boolean; z?: number } | undefined =>
+      b.image?.behind || b.image?.front ? b.image : b.shape?.behind || b.shape?.front ? b.shape : undefined;
+    if (!blocks.some((b) => anchoredLayer(b))) return blocks;
     // Stable layer partition (behind → flow/text → front); within an anchored
     // layer, higher z paints later (on top). Flow blocks keep document order.
-    const layer = (b: PlacedBlock): number => (b.image?.behind ? 0 : b.image?.front ? 2 : 1);
+    const layer = (b: PlacedBlock): number => {
+      const a = anchoredLayer(b);
+      return a?.behind ? 0 : a?.front ? 2 : 1;
+    };
     return blocks
       .map((b, i) => ({ b, i }))
       .sort((p, q) => {
         const dl = layer(p.b) - layer(q.b);
         if (dl !== 0) return dl;
         if (layer(p.b) !== 1) {
-          const dz = (p.b.image!.z ?? 0) - (q.b.image!.z ?? 0);
+          const dz = (anchoredLayer(p.b)!.z ?? 0) - (anchoredLayer(q.b)!.z ?? 0);
           if (dz !== 0) return dz;
         }
         return p.i - q.i; // stable within a layer / equal z
@@ -2748,7 +2806,7 @@ function cellMinMax(
       } else if (b.kind === "image") {
         if (!b.anchor) cross += b.heightPx + CELL_BLOCK_GAP;
       } else if (b.kind === "shape") {
-        cross += b.heightPx + CELL_BLOCK_GAP;
+        if (!b.anchor) cross += b.heightPx + CELL_BLOCK_GAP;
       } else if (b.kind === "equation") {
         const box = eqBox(b);
         cross += box.ascent + box.descent + CELL_BLOCK_GAP;
@@ -3002,6 +3060,7 @@ function measureTable(
             return { kind: "image", block: b, width: b.widthPx, height: b.heightPx };
           }
           if (b.kind === "shape") {
+            if (b.anchor) return { kind: "shape", block: b, width: b.widthPx, height: b.heightPx };
             flow = Math.max(flow, b.widthPx + CELL_BLOCK_GAP);
             return { kind: "shape", block: b, width: b.widthPx, height: b.heightPx };
           }
@@ -3049,6 +3108,9 @@ function measureTable(
           return { kind: "image", block: b, width: w, height: ih };
         }
         if (b.kind === "shape") {
+          // Anchored shapes are lifted out of the flow: no cursor advance, no cell
+          // height — carry native size, placement positions them by their offsets.
+          if (b.anchor) return { kind: "shape", block: b, width: b.widthPx, height: b.heightPx };
           // Scale a wide shape down to the cell's inner width (keep aspect), like a
           // photo-grid image.
           const scale = Math.min(1, innerWidth / Math.max(1, b.widthPx));
@@ -3229,6 +3291,15 @@ function placeTable(
             blocks.push({ blockId: it.block.id, x: 0, y: ly, firstLineIndex: 0, lines: [], custom: { customType: it.block.customType, data: it.block.data, width: it.width, height: it.height } });
             ly += it.height + CELL_BLOCK_GAP;
           } else if (it.kind === "shape") {
+            const sAnchor = it.block.anchor;
+            if (sAnchor) {
+              const ps = placedShapeOf(it.block);
+              ps.z = sAnchor.z ?? 0;
+              if (sAnchor.behind) ps.behind = true;
+              else ps.front = true;
+              blocks.push({ blockId: it.block.id, x: sAnchor.offsetXPx, y: sAnchor.offsetYPx, firstLineIndex: 0, lines: [], shape: ps });
+              continue;
+            }
             blocks.push({ blockId: it.block.id, x: 0, y: ly, firstLineIndex: 0, lines: [], shape: placedShapeOf(it.block, it.width, it.height) });
             ly += it.height + CELL_BLOCK_GAP;
           } else {
@@ -3369,6 +3440,24 @@ function placeTable(
           });
           py += it.height + CELL_BLOCK_GAP;
         } else if (it.kind === "shape") {
+          const sAnchor = it.block.anchor;
+          if (sAnchor) {
+            // Anchored (behind/in-front) cell shape: positioned absolutely from the
+            // cell's content origin, carrying behind/front/z; does NOT advance py.
+            const ps = placedShapeOf(it.block);
+            ps.z = sAnchor.z ?? 0;
+            if (sAnchor.behind) ps.behind = true;
+            else ps.front = true;
+            blocks.push({
+              blockId: it.block.id,
+              x: cx + mgn.left + sAnchor.offsetXPx,
+              y: ry + mgn.top + sAnchor.offsetYPx,
+              firstLineIndex: 0,
+              lines: [],
+              shape: ps,
+            });
+            continue;
+          }
           const slack = innerWidth - it.width;
           const ix = cx + mgn.left + (it.block.align === "center" ? slack / 2 : it.block.align === "right" ? slack : 0);
           blocks.push({ blockId: it.block.id, x: ix, y: py, firstLineIndex: 0, lines: [], shape: placedShapeOf(it.block, it.width, it.height) });

@@ -120,6 +120,10 @@ import {
   bringImageToFront,
   sendImageToBack,
   moveAnchoredImage,
+  setShapeLayer,
+  bringShapeToFront,
+  sendShapeToBack,
+  moveAnchoredShape,
   setLinkCmd,
   setParaProps,
   setSdtContent,
@@ -1240,9 +1244,13 @@ export function createEditor(
     }
     // Drawing shapes resize like images (raw width/height, no aspect lock) — the
     // 8-handle frame with no bitmap ghost, holding the edge their align keeps fixed.
+    // Anchored (out-of-flow) shapes may bleed past the margins, so they resize up to
+    // the full page width and keep their left edge (offset-positioned).
     const shp = locateShape(doc, selectedObject)?.block;
     if (shp) {
-      objectFrame.show(rect, contentWidth(), undefined, shp.align, true);
+      const maxW = shp.anchor ? doc.section.pageWidthPx : contentWidth();
+      const anchor = shp.anchor ? "left" : shp.align;
+      objectFrame.show(rect, maxW, undefined, anchor, true);
       return;
     }
     // Any other selectable object (e.g. a custom block) is selectable but NOT
@@ -2235,7 +2243,14 @@ export function createEditor(
     startRowDrag,
     setRowGuide: (guide) => paint.setRowGuide(guide),
     applyObjectMove: (blockId, x, y, transient) =>
-      dispatch(moveAnchoredImage(blockId, x, y, transient ? "transient" : "command")),
+      dispatch(
+        (locateShape(doc, blockId) ? moveAnchoredShape : moveAnchoredImage)(
+          blockId,
+          x,
+          y,
+          transient ? "transient" : "command",
+        ),
+      ),
     onTab: tabInTable,
     onSdtPress: sdtPopupCtl.handlePress,
     jumpToBlock: (blockId: string): void => {
@@ -2777,6 +2792,9 @@ export function createEditor(
     // (an equation selection is handled by its own "Edit/Delete Equation" entries).
     const imgId = selectedObject && locateImage(doc, selectedObject) ? selectedObject : null;
     const imgInCell = imgId ? locateImage(doc, imgId)?.kind === "cell" : false;
+    // Shape-specific menu items key on shapeId — only when a drawing shape is the
+    // object selection (mirrors imgId; the shape was object-selected on right-click).
+    const shapeId = selectedObject && locateShape(doc, selectedObject) ? selectedObject : null;
     const inCell = loc?.kind === "cell" || imgInCell || hasCellSel;
     // The active control: around a selected image, or at the caret.
     const imgSdtChain = imgId ? objectSdtChain(imgId) : [];
@@ -2994,6 +3012,41 @@ export function createEditor(
           selectObject(null);
           dispatch(deleteImage(imgId));
         }, { icon: ICONS.image, danger: true }),
+      );
+    }
+
+    // Drawing shape — mirrors the image menu (Wrap Text / Align / z-order / Delete).
+    if (shapeId) {
+      entries.push(
+        sep,
+        {
+          kind: "submenu",
+          label: "Wrap Text",
+          icon: ICONS.wrapSquare,
+          items: [
+            { kind: "item", label: "In Line with Text", icon: ICONS.wrapInline, onClick: () => dispatch(setShapeProps(shapeId, { wrap: "block", align: "center", anchor: null })) },
+            { kind: "item", label: "Square", icon: ICONS.wrapSquare, onClick: () => dispatch(setShapeProps(shapeId, { wrap: "square", align: "left", anchor: null })) },
+            { kind: "sep" },
+            { kind: "item", label: "Behind Text", onClick: () => dispatch(setShapeLayer(shapeId, true)) },
+            { kind: "item", label: "In Front of Text", onClick: () => dispatch(setShapeLayer(shapeId, false)) },
+          ],
+        },
+        {
+          kind: "submenu",
+          label: "Align",
+          icon: ICONS.alignLeft,
+          items: [
+            { kind: "item", label: "Left", icon: ICONS.alignLeft, onClick: () => dispatch(setShapeProps(shapeId, { align: "left" })) },
+            { kind: "item", label: "Center", icon: ICONS.alignCenter, onClick: () => dispatch(setShapeProps(shapeId, { align: "center" })) },
+            { kind: "item", label: "Right", icon: ICONS.alignRight, onClick: () => dispatch(setShapeProps(shapeId, { align: "right" })) },
+          ],
+        },
+        item("Bring to Front", () => dispatch(bringShapeToFront(shapeId))),
+        item("Send to Back", () => dispatch(sendShapeToBack(shapeId))),
+        item("Delete Shape", () => {
+          selectObject(null);
+          dispatch(removeBlockObject(shapeId));
+        }, { danger: true }),
       );
     }
 

@@ -172,6 +172,8 @@ export interface ShapeBlock {
   align: "left" | "center" | "right";
   /** Clockwise rotation in degrees (a:xfrm@rot); absent = none. */
   rotation?: number;
+  /** 'block' (default): own line. 'square': floats per align, text wraps beside. */
+  wrap?: "block" | "square";
 }
 
 export interface CellBorder {

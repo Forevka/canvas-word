@@ -637,13 +637,16 @@ public sealed record ShapeStroke
 }
 
 /// <summary>Options for <c>.Shape()</c> — the box the preset geometry is drawn into
-/// (required, like an image), plus an optional alignment, fill, outline, clockwise
-/// rotation (degrees) and raw a:avLst adjust guides (name → number).</summary>
+/// (required, like an image), plus an optional alignment, wrap, fill, outline, clockwise
+/// rotation (degrees), raw a:avLst adjust guides (name → number) and a text box body.</summary>
 public sealed record ShapeOptions
 {
     public required double WidthPx { get; init; }
     public required double HeightPx { get; init; }
     public TextAlign? Align { get; init; }
+    /// <summary>Text-wrap mode: Block (own line, default) or Square (floats per align,
+    /// text flows beside it). Absolute float/z-order anchoring is interactive/import-only.</summary>
+    public ImageWrap? Wrap { get; init; }
     public ShapeFill? Fill { get; init; }
     public ShapeStroke? Stroke { get; init; }
     /// <summary>Clockwise rotation in degrees (a:xfrm@rot). Null = none.</summary>
@@ -665,6 +668,7 @@ public sealed record ShapeOptions
                 throw new ArgumentOutOfRangeException(nameof(Align), "Shape align supports left/center/right only (not Justify).");
             Js.Set(o, "align", EnumJs.Align(a));
         }
+        if (Wrap is { } w) Js.Set(o, "wrap", EnumJs.Wrap(w));
         if (Fill is { } f) Js.Set(o, "fill", f.ToJs(e));
         if (Stroke is { } s) Js.Set(o, "stroke", s.ToJs(e));
         if (Rotation is { } r) Js.Set(o, "rotation", r);

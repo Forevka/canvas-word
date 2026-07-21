@@ -63,6 +63,8 @@ import {
   insertImageInCell,
   insertShape,
   setShapeProps,
+  bringShapeToFront,
+  sendShapeToBack,
   insertEquation,
   insertInlineEquation,
   insertSymbolCmd,
@@ -1922,6 +1924,38 @@ if (toolbar) {
   const shapeOutlineBtn = btn(ICONS.outline, "Shape outline (colour, width, dash)", () => shapeOutlinePopover(shapeOutlineBtn), true);
   enable(shapeOutlineBtn, (f) => f.shapeSelected, "select a shape first");
   enable(
+    btn(ICONS.wrapSquare, "Wrap text around shape (square)", () => {
+      const id = editor.getSelectedObject();
+      if (id) { editor.dispatch(setShapeProps(id, { wrap: "square", align: "left", anchor: null })); editor.focus(); }
+    }),
+    (f) => f.shapeSelected,
+    "select a shape first",
+  );
+  enable(
+    btn(ICONS.wrapInline, "Shape in line with text (block)", () => {
+      const id = editor.getSelectedObject();
+      if (id) { editor.dispatch(setShapeProps(id, { wrap: "block", align: "center", anchor: null })); editor.focus(); }
+    }),
+    (f) => f.shapeSelected,
+    "select a shape first",
+  );
+  enable(
+    btn(ICONS.bringFront, "Bring shape in front of text", () => {
+      const id = editor.getSelectedObject();
+      if (id) { editor.dispatch(bringShapeToFront(id)); editor.focus(); }
+    }),
+    (f) => f.shapeSelected,
+    "select a shape first",
+  );
+  enable(
+    btn(ICONS.sendBack, "Send shape behind text", () => {
+      const id = editor.getSelectedObject();
+      if (id) { editor.dispatch(sendShapeToBack(id)); editor.focus(); }
+    }),
+    (f) => f.shapeSelected,
+    "select a shape first",
+  );
+  enable(
     btn(ICONS.trash, "Delete shape", () => {
       if (editor.getSelectedObject()) {
         editor.deleteSelectedObject();
@@ -3470,9 +3504,13 @@ if (!readonly) {
       actions: {
         fill: (btn) => shapeFillPopover(btn),
         outline: (btn) => shapeOutlinePopover(btn),
+        wrapInline: () => withSelectedObject((id) => editor.dispatch(setShapeProps(id, { wrap: "block", align: "center", anchor: null }))),
+        wrapSquare: () => withSelectedObject((id) => editor.dispatch(setShapeProps(id, { wrap: "square", align: "left", anchor: null }))),
         alignLeft: () => editor.align("left"),
         alignCenter: () => editor.align("center"),
         alignRight: () => editor.align("right"),
+        bringToFront: () => withSelectedObject((id) => editor.dispatch(bringShapeToFront(id))),
+        sendToBack: () => withSelectedObject((id) => editor.dispatch(sendShapeToBack(id))),
         remove: () => {
           editor.deleteSelectedObject();
           editor.focus();
