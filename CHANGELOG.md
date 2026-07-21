@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Drawing shapes — legacy VML import (issue #206, Part 5 / #218).** Older `.docx` files that predate
+  DrawingML draw their shapes with `w:pict` → VML (`v:rect` / `v:oval` / `v:roundrect` / `v:line` /
+  `v:shape` + `v:textbox`) instead of `w:drawing` → `wps:wsp`. These used to be **dropped**; they now
+  import **read-only** into the same `ShapeBlock` model — geometry (element tag or the `v:shape`
+  MSO shape-type from `@o:spt` / the `_tNNN` shapetype id), size (`@style` width/height and a line's
+  `@from`/`@to` box), fill (`@fillcolor` / `filled`), stroke (`@strokecolor` / `@strokeweight` /
+  `stroked` — a bare shape gets VML's default black 0.75pt border), and a `v:textbox` body (→
+  `ShapeBlock.text`). The `filled`/`stroked` toggles accept every VML boolean spelling
+  (`f`/`false`/`0`/`no`/`off`). Import is one-way: a VML-sourced shape **re-exports as modern DrawingML
+  `wps`** (there is no VML writer — the intentional VML→DrawingML normalization, documented in
+  `docs/OOXML_COVERAGE.md`). The legacy `w:pict` warning is relaxed so recognized VML shapes no longer
+  warn; a VML group (or several shapes in one `w:pict`) flattens to the first shape with a
+  `vml-group-flattened` warning, and genuinely unmodelled pict content (WordArt, the drawing canvas)
+  still warns (`pict-skipped`).
 - **Drawing shapes — positioning parity (issue #206, Part 4 / #217).** Shapes gain the image's
   positioning surface: **square text-wrap** (the shape floats at the left/right margin per its align and
   text flows around it), **absolute float anchoring** (a `wp:anchor` shape that sits **behind** or **in
