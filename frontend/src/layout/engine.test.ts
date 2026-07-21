@@ -14,6 +14,7 @@ import type {
   Paragraph,
   ParaStyle,
   SectionProps,
+  ShapeBlock,
   TableBlock,
   TableCell,
 } from "@cw/shared";
@@ -1087,6 +1088,65 @@ describe("engine — floats", () => {
     // …and the marker hangs with it, clear of the image — not back at the margin.
     expect(pb.marker).toBeDefined();
     expect(pb.marker!.x).toBeGreaterThanOrEqual(imgRight);
+  });
+});
+
+// --- centered square-wrap shapes float with two-sided text wrap (#232) ----
+
+describe("engine — centered square-wrap shape float", () => {
+  const centerSquare = (widthPx: number, heightPx: number): ShapeBlock => ({
+    kind: "shape", id: fresh(), revision: 0, geometry: { preset: "rect" },
+    widthPx, heightPx, align: "center", wrap: "square",
+  });
+
+  it("floats a centered square shape (does not push text down) with text on both sides", () => {
+    const s = centerSquare(200, 120);
+    const body = para("word ".repeat(160).trim());
+    const tree = layout(doc([s, body]));
+    const sPb = placedOf(tree, s.id)!.pb;
+    const bodyPb = placedOf(tree, body.id)!.pb;
+    // The shape is centered in the 624px content box (not hugging the left margin).
+    expect(sPb.x).toBeGreaterThan(96 + 100);
+    // The paragraph flows BESIDE the shape (float), sharing its vertical band — not
+    // dropped below it as an in-flow block would be.
+    expect(bodyPb.y).toBeLessThan(sPb.y + 120);
+    // Some line has fragments in BOTH flanking gaps: one left of the shape and one
+    // right of it — Word's wrapText="bothSides" (issue #232).
+    const shapeLeft = sPb.x;
+    const shapeRight = sPb.x + sPb.shape!.width;
+    const twoSided = bodyPb.lines.some((l) => {
+      const hasLeft = l.fragments.some((f) => bodyPb.x + f.x < shapeLeft);
+      const hasRight = l.fragments.some((f) => bodyPb.x + f.x >= shapeRight);
+      return hasLeft && hasRight;
+    });
+    expect(twoSided).toBe(true);
+  });
+
+  it("does NOT push right-gap text right by the paragraph's own indent", () => {
+    // The right gap must start at box.right.x0 (shape right edge + float gutter),
+    // regardless of the paragraph's left indent — placed.x already bakes the indent
+    // in, so the right gap must subtract it back rather than add it again (#232).
+    const s = centerSquare(200, 120);
+    const INDENT = 48;
+    const body = para("word ".repeat(160).trim(), { indentLeftPx: INDENT });
+    const tree = layout(doc([s, body]));
+    const sPb = placedOf(tree, s.id)!.pb;
+    const bodyPb = placedOf(tree, body.id)!.pb;
+    const shapeRight = sPb.x + sPb.shape!.width;
+    const GUTTER = 10; // FLOAT_GUTTER in engine.ts
+    // The left edge of the right-gap text = the smallest page-x among fragments that
+    // sit to the right of the shape, across every two-sided line.
+    let rightGapStart = Infinity;
+    for (const l of bodyPb.lines) {
+      for (const f of l.fragments) {
+        const px = bodyPb.x + f.x;
+        if (px >= shapeRight) rightGapStart = Math.min(rightGapStart, px);
+      }
+    }
+    expect(rightGapStart).toBeLessThan(Infinity); // some text landed in the right gap
+    // It hugs the shape's right edge + gutter — NOT offset by the 48px indent.
+    expect(rightGapStart).toBeCloseTo(shapeRight + GUTTER, 0);
+    expect(rightGapStart).toBeLessThan(shapeRight + GUTTER + INDENT - 1);
   });
 });
 

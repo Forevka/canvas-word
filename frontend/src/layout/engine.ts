@@ -1576,26 +1576,43 @@ function layoutDocument(
     return h;
   };
 
-  // Active floats on the CURRENT page (wrap:'square' images). Cleared on page
-  // break — floats never cross pages.
+  // Active floats on the CURRENT page (wrap:'square' images/shapes). Cleared on
+  // page break — floats never cross pages. A "center" float (a centered square-wrap
+  // shape, issue #232) carves the MIDDLE of the column: text flows in the two gaps
+  // that flank it, so lineBoxAt returns a second segment for its band.
   interface Float {
     left: number;
     right: number;
     bottom: number;
-    side: "left" | "right";
+    side: "left" | "right" | "center";
   }
   let floats: Float[] = [];
   const FLOAT_GUTTER = 10;
 
-  /** Line box available at vertical position yy within the CURRENT column,
-   *  shrunk by active floats. */
-  const lineBoxAt = (yy: number): { x0: number; width: number } => {
+  /** Line box available at vertical position yy within the CURRENT column, shrunk by
+   *  active floats. Left/right floats shrink one edge; a centered float carves the
+   *  middle and yields a `right` gap too (text wraps on both sides). Falls back to a
+   *  single gap when only one side of a centered float is wide enough for text. */
+  const lineBoxAt = (yy: number): { x0: number; width: number; right?: { x0: number; width: number } } => {
     let x0 = colX();
     let x1 = colX() + colWidth;
+    let center: Float | undefined;
     for (const f of floats) {
       if (yy >= f.bottom) continue;
       if (f.side === "left") x0 = Math.max(x0, f.right + FLOAT_GUTTER);
-      else x1 = Math.min(x1, f.left - FLOAT_GUTTER);
+      else if (f.side === "right") x1 = Math.min(x1, f.left - FLOAT_GUTTER);
+      else center = f; // at most one centered float carves the middle
+    }
+    if (center && center.bottom > yy) {
+      const leftW = center.left - FLOAT_GUTTER - x0;
+      const rightX0 = center.right + FLOAT_GUTTER;
+      const rightW = x1 - rightX0;
+      const leftOk = leftW >= 40;
+      const rightOk = rightW >= 40;
+      if (leftOk && rightOk) return { x0, width: leftW, right: { x0: rightX0, width: rightW } };
+      if (leftOk) return { x0, width: leftW };
+      if (rightOk) return { x0: rightX0, width: rightW };
+      // Shape spans (nearly) the whole column — neither gap fits text.
     }
     return { x0, width: Math.max(40, x1 - x0) };
   };
@@ -1737,13 +1754,16 @@ function layoutDocument(
   const placeShape = (sb: ShapeBlock): void => {
     if (sb.anchor) { placeAnchoredShape(sb); return; }
     if (y + sb.heightPx > bottomY() && colHasContent()) newPage();
-    const floating = sb.wrap === "square" && sb.align !== "center";
+    // A square-wrap shape floats at any alignment: left/right hug the margin (text on
+    // one side); center sits mid-column with text wrapping on BOTH sides (issue #232).
+    const floating = sb.wrap === "square";
     const slack = colWidth - sb.widthPx;
     const x = colX() + (sb.align === "center" ? slack / 2 : sb.align === "right" ? slack : 0);
     page.blocks.push({ blockId: sb.id, x, y, firstLineIndex: 0, lines: [], shape: placedShapeOf(sb) });
     if (floating) {
       // Text flows beside the shape: register the float, do NOT advance y.
-      floats.push({ left: x, right: x + sb.widthPx, bottom: y + sb.heightPx, side: sb.align === "right" ? "right" : "left" });
+      const side = sb.align === "center" ? "center" : sb.align === "right" ? "right" : "left";
+      floats.push({ left: x, right: x + sb.widthPx, bottom: y + sb.heightPx, side });
     } else {
       y += sb.heightPx;
     }
@@ -1830,7 +1850,23 @@ function layoutDocument(
           runCursors,
         );
         if (bl === null) break;
-        if (y + bl.height > bottomY() && colHasContent()) {
+        // Centered-float band (issue #232): continue the SAME visual line into the
+        // right-hand gap that flanks the shape, so text wraps on both sides. Broken
+        // from the same runCursors right after the left gap, so reading order is
+        // left-of-shape then right-of-shape — matching Word's wrapText="bothSides".
+        const right = box.right
+          ? breakNextLine(
+              p,
+              seg,
+              Math.max(24, box.right.width - rightIndentOf(p)),
+              bl.end,
+              runStarts,
+              runCursors,
+            )
+          : null;
+        const lineHeight = Math.max(bl.height, right?.height ?? 0);
+        const lineAscent = Math.max(bl.ascent, right?.ascent ?? 0);
+        if (y + lineHeight > bottomY() && colHasContent()) {
           for (let k = 0; k < runCursors.length; k++) runCursors[k] = snapshot[k]!;
           decorateFloat();
           newPage(); // floats cleared; the line re-breaks at full width
@@ -1847,15 +1883,34 @@ function layoutDocument(
         if (palign === "center") startX += slack / 2;
         else if (palign === "right") startX += slack;
         for (const rf of bl.frags) rf.frag.x += startX;
+        let frags = bl.frags;
+        if (right) {
+          if (levels !== null && right.frags.length > 0) {
+            const r = bidiReorderLine(right.frags, levels);
+            right.frags = r.frags;
+            right.width = r.width;
+          }
+          const rSlack = box.right!.width - rightIndentOf(p) - right.width;
+          // placed.x already bakes in the paragraph's left indent (colX + indentOf),
+          // and the left gap adds it on top; the right gap must NOT — subtract it back
+          // so right-gap text lands at box.right.x0, not box.right.x0 + indent (#232).
+          let rStartX = box.right!.x0 - colX() - indentOf(p);
+          if (palign === "center") rStartX += rSlack / 2;
+          else if (palign === "right") rStartX += rSlack;
+          for (const rf of right.frags) rf.frag.x += rStartX;
+          frags = bl.frags.concat(right.frags);
+        }
         // Justify the PREVIOUS line now that this one exists (so it's non-last);
         // buffer this line for the same decision next iteration. Justify runs on the
-        // visual fragment order, so bidi-reordered lines justify too.
+        // visual fragment order, so bidi-reordered lines justify too. A two-gap
+        // centered-float line stays ragged (justifying a narrow gap looks unnatural)
+        // and flushes any buffered line — it's now confirmed non-last.
         if (palign === "justify") {
           if (justifyPrev) justifyLine(justifyPrev.frags, justifyPrev.slack);
-          justifyPrev = { frags: bl.frags, slack };
+          justifyPrev = right ? null : { frags: bl.frags, slack };
         }
-        pushLine(bl.frags, bl.height, bl.ascent);
-        cursor = bl.end;
+        pushLine(frags, lineHeight, lineAscent);
+        cursor = right ? right.end : bl.end;
         first = false;
         produced = true;
       }
@@ -2015,7 +2070,8 @@ function layoutDocument(
       // block-image path) so it never paints on top of a preceding square float.
       for (const f of floats) if (f.bottom > y) y = f.bottom;
       placeShape(m.block);
-      if (!nextAtomic && (m.block.wrap !== "square" || m.block.align === "center")) y += ATOMIC_GAP;
+      // A square-wrap shape (any alignment) floats — y wasn't advanced, so no gap.
+      if (!nextAtomic && m.block.wrap !== "square") y += ATOMIC_GAP;
       continue;
     }
     if (m.kind === "equation") {
