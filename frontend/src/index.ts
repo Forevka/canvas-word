@@ -1316,17 +1316,21 @@ export function createEditor(
   // geometry query scoped to the box (see `scope()` / ShapeScope). Escape pops
   // back to selecting the shape object; a click outside the box commits.
   const shapeHasEditableText = (shapeId: string): boolean => {
-    const s = locateShape(doc, shapeId)?.block;
-    return !!s?.text && s.text.blocks.length > 0;
+    // ONLY a TOP-LEVEL shape's text box is editable: a text box nested inside a
+    // table cell is not in the locatable paragraph space and has no caret-geometry
+    // scope, so double-click / Enter must refuse it (it stays read-only). #219.
+    const loc = locateShape(doc, shapeId);
+    return loc?.kind === "top" && !!loc.block.text && loc.block.text.blocks.length > 0;
   };
 
-  const enterShapeText = (shapeId: string, pos: DocPosition): void => {
-    if (mode === "view") return; // editing-only
-    if (!shapeHasEditableText(shapeId)) return;
+  const enterShapeText = (shapeId: string, pos: DocPosition): boolean => {
+    if (mode === "view") return false; // editing-only
+    if (!shapeHasEditableText(shapeId)) return false;
     selectObject(null); // leave object mode (also clears any prior text-box session)
     activeShapeText = shapeId; // set BEFORE the selection so caret geometry scopes correctly
     setSelection({ anchor: pos, focus: pos });
     proxy.focus();
+    return true;
   };
 
   const exitShapeText = (toObject: boolean): void => {
@@ -1342,14 +1346,15 @@ export function createEditor(
   };
 
   /** Enter the currently-selected shape's text box (Enter on a selected shape).
-   *  Returns true when it did (a shape with text was selected). */
+   *  Returns the REAL outcome — false for a non-shape, a shape without text, or a
+   *  cell-nested text box (which enterShapeText refuses) — so the caller only
+   *  consumes the key when the caret actually moved into a box. */
   const enterSelectedShapeText = (): boolean => {
     if (!selectedObject) return false;
-    const shp = locateShape(doc, selectedObject)?.block;
-    const first = shp?.text?.blocks[0];
+    const loc = locateShape(doc, selectedObject);
+    const first = loc?.kind === "top" ? loc.block.text?.blocks[0] : undefined;
     if (!first) return false;
-    enterShapeText(selectedObject, { blockId: first.id, offset: 0 });
-    return true;
+    return enterShapeText(selectedObject, { blockId: first.id, offset: 0 });
   };
 
   // ---- image crop mode -----------------------------------------------------

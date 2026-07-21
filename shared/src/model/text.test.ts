@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Block, CharStyle, Document, Paragraph, Run, SectionProps, ShapeBlock, TableBlock } from "./document";
+import { applyOp } from "./ops";
 import {
   bandParagraphs,
   blockById,
@@ -209,6 +210,32 @@ describe("shape text box paragraphs (issue #219)", () => {
     const nav = navigableParagraphs(doc).map((p) => p.id);
     expect(nav).toEqual(["a", "b"]);
     expect(shapeTextParagraphIds(doc).has("t")).toBe(true);
+  });
+
+  // A text box nested INSIDE a table cell is read-only: its paragraphs must NOT be
+  // in the editable paragraph space (paragraphsOf / locateParagraph), matching the
+  // top-level-only index — otherwise a paragraphsOf-iterating editor would hand a
+  // content op a paragraph it can't locate and throw.
+  it("a text box inside a table cell is NOT in the editable paragraph space (no throw path)", () => {
+    const cellShape = shapeWith("cellbox", [para("bx", "boxed")]);
+    const table: TableBlock = {
+      kind: "table", id: "tbl", revision: 0,
+      rows: [{ cells: [{ id: "c0", blocks: [para("cellp", "cell"), cellShape] }] }],
+    };
+    const doc = docOf(para("a", "A"), table);
+    // The cell-nested text box paragraph is invisible to content editing…
+    expect(paragraphsOf(doc).map((p) => p.id)).not.toContain("bx");
+    expect(locateParagraph(doc, "bx")).toBeNull();
+    expect(blockById(doc, "bx")).toBeUndefined();
+    // …but the ordinary cell paragraph is still reachable (regression guard).
+    expect(paragraphsOf(doc).map((p) => p.id)).toContain("cellp");
+    // Simulate the find/replace / style-delete loop: apply a content op to every
+    // paragraph paragraphsOf yields — none is unlocatable, so nothing throws.
+    expect(() => {
+      for (const pp of paragraphsOf(doc)) {
+        applyOp(doc, { type: "insertText", at: { blockId: pp.id, offset: 0 }, text: "x" });
+      }
+    }).not.toThrow();
   });
 });
 

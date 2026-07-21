@@ -38,18 +38,27 @@ export const resetParaScanStats = (): void => {
 export const isHiddenParagraph = (p: Paragraph): boolean =>
   p.runs.some((r) => r.text.length > 0) && p.runs.every((r) => r.text.length === 0 || r.style.hidden === true);
 
-const paragraphsInBlocks = (blocks: Block[], includeCells: boolean): Paragraph[] => {
+const paragraphsInBlocks = (
+  blocks: Block[],
+  includeCells: boolean,
+  includeShapeText = true,
+): Paragraph[] => {
   const out: Paragraph[] = [];
   for (const b of blocks) {
     if (b.kind === "paragraph") out.push(b);
     else if (b.kind === "table" && includeCells) {
+      // Cell content stays one level deep: a text box nested INSIDE a table cell is
+      // NOT an editable/locatable paragraph flow (locateParagraph indexes only
+      // top-level shapes), so it must not enter the paragraph space either — else
+      // find/replace / style-delete would iterate a paragraph that no content op
+      // can locate and throw. Pass includeShapeText=false into cells. (#219)
       for (const row of b.rows) {
-        for (const cell of row.cells) out.push(...paragraphsInBlocks(cell.blocks, includeCells));
+        for (const cell of row.cells) out.push(...paragraphsInBlocks(cell.blocks, includeCells, false));
       }
-    } else if (b.kind === "shape" && includeCells && b.text) {
-      // A drawing shape's text box body is a nested paragraph sub-flow (like a
-      // table cell). Include it so the caret can reach it and content ops locate
-      // its paragraphs (editable text boxes — issue #219).
+    } else if (b.kind === "shape" && includeCells && includeShapeText && b.text) {
+      // A TOP-LEVEL drawing shape's text box body is a nested paragraph sub-flow
+      // (like a table cell). Include it so the caret can reach it and content ops
+      // locate its paragraphs (editable text boxes — issue #219).
       out.push(...b.text.blocks);
     }
   }
@@ -161,12 +170,13 @@ export const bandParagraphIds = (doc: Document): ReadonlySet<string> => {
  *  Enter, then navigates the box in its own scope). Same WeakMap-on-identity
  *  invalidation as the band-id set. #219. */
 const shapeTextIdCache = new WeakMap<Document, ReadonlySet<string>>();
+// Only TOP-LEVEL shape text is in `paragraphsOf` (a text box nested inside a table
+// cell stays read-only — see paragraphsInBlocks), so the nav-exclusion set walks
+// only the container's direct blocks, never into cells. #219.
 const collectShapeTextIds = (blocks: Block[], into: Set<string>): void => {
   for (const b of blocks) {
     if (b.kind === "shape" && b.text) {
       for (const p of b.text.blocks) into.add(p.id);
-    } else if (b.kind === "table") {
-      for (const row of b.rows) for (const cell of row.cells) collectShapeTextIds(cell.blocks, into);
     }
   }
 };
