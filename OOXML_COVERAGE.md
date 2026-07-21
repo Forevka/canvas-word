@@ -346,6 +346,17 @@ VML shapes / textboxes / canvas (non-image) 🚫
 
 ---
 
+## Math (OMML — `m:` namespace)
+
+```
+m:oMath (inline) ........................ ✅ CharStyle.equation (MathML AST)
+m:oMathPara (display) ................... ✅ EquationBlock, wrapped in a w:p (#193)
+m:oMathParaPr/m:jc (alignment) .......... ✅ EquationBlock.align
+display equation size (drag-to-resize) .. ✅ EquationBlock.scale ↔ w:p/w:pPr/w:rPr/w:sz
+```
+
+---
+
 ## Notes — `footnotes.xml` / `endnotes.xml`
 
 ```

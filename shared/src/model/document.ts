@@ -740,6 +740,11 @@ export interface EquationBlock {
   equation: MathEquation;
   /** Horizontal placement of the equation. Default "center" (Word display math). */
   align?: "left" | "center" | "right";
+  /** Uniform size multiplier applied to the whole equation, default 1 (the base
+   *  display size). Driven by drag-to-resize (like an image), clamped to a sane
+   *  range by the command. Layout measures the equation at `baseSize * scale`;
+   *  `.docx` round-trips it as the wrapper paragraph's run font size. */
+  scale?: number | undefined;
   /** Field result membership — see Paragraph.fieldId. */
   fieldId?: string | undefined;
   /** Block-level content-control ancestry — see Paragraph.sdtPath. */

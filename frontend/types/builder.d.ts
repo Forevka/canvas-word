@@ -136,6 +136,8 @@ export interface TableOptions {
 export interface EquationOptions {
   /** Horizontal placement of the display equation (default "center"). */
   align?: "left" | "center" | "right";
+  /** Uniform size multiplier (drag-to-resize), default 1. Clamped to [0.25, 4]. */
+  scale?: number;
 }
 
 export interface SpacingOptions {

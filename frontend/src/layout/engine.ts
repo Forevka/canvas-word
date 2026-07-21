@@ -26,8 +26,12 @@ import { equationBox, EQUATION_DISPLAY_PX } from "./math/equationLayout";
 import type { MathBox } from "./math/mathBox";
 import { MATH_FONT_FAMILY } from "../fonts/clones";
 
-/** Display equations are typeset with the bundled math font (STIX Two Math). */
-const eqBox = (b: EquationBlock): MathBox => equationBox(b.equation, MATH_FONT_FAMILY, EQUATION_DISPLAY_PX);
+/** Display equations are typeset with the bundled math font (STIX Two Math). The
+ *  block's `scale` (drag-to-resize, default 1) rides on the font size, so the whole
+ *  equation — glyphs, fractions, spacing — grows/shrinks uniformly and its measured
+ *  box tracks the resize with no extra geometry work. */
+const eqBox = (b: EquationBlock): MathBox =>
+  equationBox(b.equation, MATH_FONT_FAMILY, EQUATION_DISPLAY_PX * (b.scale ?? 1));
 
 /** Fallback box height for a custom block whose type isn't registered (a visible
  *  placeholder is painted so a missing `registerBlockType` is obvious). */

@@ -92,6 +92,7 @@ import {
   editInlineEquationCmd,
   removeInlineEquationCmd,
   setEquationAlignCmd,
+  setEquationScaleCmd,
   updateFieldCmd,
   updateTocFieldCmd,
   setTocSwitchesCmd,
@@ -1158,6 +1159,17 @@ export function createEditor(
     // on mouseup, as a single undoable op.
     onResizeCommit: (w, h) => {
       if (!selectedObject) return;
+      // Equations scale uniformly: turn the drag's target box into a new scale
+      // relative to the current (already-scaled) rect, favouring whichever axis
+      // the user dragged further. Images take the raw width/height.
+      const eq = locateEquation(doc, selectedObject)?.block;
+      if (eq) {
+        const rect = objectRect(tree, selectedObject);
+        if (!rect || rect.width <= 0 || rect.height <= 0) return;
+        const ratio = Math.abs(w - rect.width) >= Math.abs(h - rect.height) ? w / rect.width : h / rect.height;
+        dispatch(setEquationScaleCmd(selectedObject, (eq.scale ?? 1) * ratio));
+        return;
+      }
       dispatch(setImageProps(selectedObject, { widthPx: w, heightPx: h }));
     },
     // Live crop preview: each crop-handle release writes the crop field as a
@@ -1191,16 +1203,30 @@ export function createEditor(
     // locateImage (not doc.blocks) so in-cell images resolve too — needed for both
     // the anchor check and the ghost bitmap src.
     const img = locateImage(doc, selectedObject)?.image;
-    // Anchored (out-of-flow) images may bleed past the margins, so they resize up
-    // to the full page width; in-flow images stay within the content box.
-    const maxW = img?.anchor ? doc.section.pageWidthPx : contentWidth();
-    // In-flow images re-align on resize (the engine re-centers/right-aligns from
-    // remaining slack), so the ghost must hold the same edge fixed; anchored
-    // images are offset-positioned and keep their left edge.
-    const anchor = !img || img.anchor ? "left" : img.align;
-    // Non-image objects (equations) are selectable but NOT resizable — show a plain
-    // selection box with no handles.
-    objectFrame.show(rect, maxW, img?.src, anchor, !!img);
+    if (img) {
+      // Anchored (out-of-flow) images may bleed past the margins, so they resize up
+      // to the full page width; in-flow images stay within the content box.
+      const maxW = img.anchor ? doc.section.pageWidthPx : contentWidth();
+      // In-flow images re-align on resize (the engine re-centers/right-aligns from
+      // remaining slack), so the ghost must hold the same edge fixed; anchored
+      // images are offset-positioned and keep their left edge.
+      const anchor = img.anchor ? "left" : img.align;
+      objectFrame.show(rect, maxW, img.src, anchor, true);
+      return;
+    }
+    // Display equations resize too (uniform scale) — same 8-handle frame, but no
+    // bitmap ghost (there's no source image; the blue frame + start outline track
+    // the drag). Hold the edge the equation's alignment keeps fixed so the frame
+    // follows the reflow the way an image's does.
+    const eq = locateEquation(doc, selectedObject)?.block;
+    if (eq) {
+      const anchor = eq.align === "right" ? "right" : eq.align === "left" ? "left" : "center";
+      objectFrame.show(rect, contentWidth(), undefined, anchor, true);
+      return;
+    }
+    // Any other selectable object (e.g. a custom block) is selectable but NOT
+    // resizable — a plain selection box with no handles.
+    objectFrame.show(rect, contentWidth(), undefined, "left", false);
   };
 
   /** Is the current object selection an image (vs an equation / other block)? */

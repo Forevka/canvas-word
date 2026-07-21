@@ -26,7 +26,8 @@ import type {
   TableCondOverrides,
 } from "@cw/shared";
 import { inRange, parseTocInstruction } from "@cw/shared";
-import { pxToEighthPoints, pxToEmu, pxToTwips } from "../units";
+import { pxToEighthPoints, pxToEmu, pxToHalfPoints, pxToTwips } from "../units";
+import { EQUATION_DISPLAY_PX } from "../../layout/math/equationLayout";
 import { borderEdgeXml, hexColor as hex } from "./mappings";
 import { MediaManager } from "./mediaPack";
 import { REL, RelManager } from "./relationships";
@@ -717,11 +718,22 @@ function equationParagraphXml(block: EquationBlock, ctx: PartCtx): string {
   const oMath = mathmlToOmml({ ...block.equation, display: false }); // inner m:oMath only
   const jc = block.align === "left" ? "left" : block.align === "right" ? "right" : "center";
   const pr = el("m:oMathParaPr", undefined, el("m:jc", { "m:val": jc }));
+  const mathPara = el("m:oMathPara", undefined, pr + oMath);
+  // A non-default drag-resize scale rides on the equation paragraph's run font size
+  // (the math zone sizes with it), so it round-trips as a plain w:pPr/w:rPr/w:sz —
+  // schema-valid and read back by the importer (documentParser.walkBlocks). Scale 1
+  // stays absent so unresized equations emit byte-identical XML to before.
+  const scale = block.scale ?? 1;
+  let pPr = "";
+  if (scale !== 1) {
+    const sz = pxToHalfPoints(EQUATION_DISPLAY_PX * scale);
+    pPr = el("w:pPr", undefined, el("w:rPr", undefined, el("w:sz", { "w:val": sz }) + el("w:szCs", { "w:val": sz })));
+  }
   // m:oMathPara is NOT a valid child of w:body — Word (and the schema) require a
   // display equation to live inside a paragraph, exactly as Word writes it. The
   // importer reads an m:oMathPara found inside a w:p back to a display EquationBlock
   // (documentParser.walkBlocks), so this round-trips (issue #193).
-  return el("w:p", undefined, el("m:oMathPara", undefined, pr + oMath));
+  return el("w:p", undefined, pPr + mathPara);
 }
 
 /** Emit a block list, reconstructing NESTED block-level content controls from each
