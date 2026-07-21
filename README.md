@@ -158,7 +158,7 @@ the caret/selection — one priority-based manager shows the most relevant of a
 built-in **text format** bar (Word's selection toolbar: font, size, B/I/U/S, colour,
 highlight — configurable via `floatingToolbar`; see
 [`examples/floating-toolbar`](./examples/floating-toolbar)) plus bars for a selected
-**image** / **equation**, a multi-cell **table** selection, a **hyperlink**, a
+**image** / **shape** / **equation**, a multi-cell **table** selection, a **hyperlink**, a
 **comment/suggestion**, a **footnote/endnote** marker, the **TOC**, a **list item**, and
 an empty-paragraph ＋ **insert menu**. Embedders can register their own via the
 `contextToolbars` option (see
@@ -189,6 +189,18 @@ Contents/Window; `w:tcW`/`w:tblLayout`/`w:tblW` round-trip).
 
 **Images** — insert in body or cells, 8-handle select frame, proportional
 resize with live reflow, alignment, square text-wrap (float left/right).
+
+**Shapes** — DrawingML vector shapes (OOXML `wps:wsp`): a preset gallery
+(rectangle, rounded rectangle, ellipse, triangle, diamond, right/left arrow,
+line) plus freeform **custom geometry** (`a:custGeom`), editable fill (solid /
+none) and outline (colour, width, dash), rotation, **editable text boxes**
+(`wps:txbx`, double-click to type inside), square text-wrap, absolute
+behind/in-front float with z-order, and **grouped / nested-group** drawings
+(`wpg:wgp`) that move and scale as one object. Insert from the ribbon shapes
+gallery; edit via the floating shape toolbar, the ribbon Shape group, or the
+right-click menu. Everything round-trips losslessly to `.docx` and is authorable
+from the JS `DocumentBuilder` and the C# builder. Legacy `w:pict` **VML** shapes
+and text boxes import (read-only) and re-export as modern DrawingML.
 
 **Headers/footers** — rich `Block[]` stories laid out per page with field
 tokens (`{page}` with roman/alpha, `{pages}`, `{date}`, `{time}`), story

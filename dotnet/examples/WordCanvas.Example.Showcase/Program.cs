@@ -258,14 +258,19 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
     .Shape(ShapePreset.Diamond, new ShapeOptions { WidthPx = 130, HeightPx = 90, Align = TextAlign.Center, Fill = ShapeFill.Solid("#d9d2e9"), Stroke = ShapeStroke.Solid("#674ea7", 1.5) })
     .Shape(ShapePreset.RightArrow, new ShapeOptions { WidthPx = 180, HeightPx = 70, Align = TextAlign.Right, Fill = ShapeFill.Solid("#c9daf8"), Stroke = ShapeStroke.Solid("#3d6ea5", 1.5) })
     .Shape(ShapePreset.LeftArrow, new ShapeOptions { WidthPx = 180, HeightPx = 70, Align = TextAlign.Right, Fill = ShapeFill.Solid("#ead1dc"), Stroke = ShapeStroke.Solid("#a64d79", 1.5) })
-    .Paragraph("Outline dash styles (a:prstDash) — dash, dot and dash-dot:")
+    .Paragraph("Outline styles (a:prstDash) — solid, dash, dot, dash-dot and a thick long-dash:")
+    .Shape(ShapePreset.Rect, new ShapeOptions { WidthPx = 150, HeightPx = 56, Align = TextAlign.Left, Fill = ShapeFill.Solid("#eeeeee"), Stroke = ShapeStroke.Solid("#333333", 1.5) })
     .Shape(ShapePreset.Rect, new ShapeOptions { WidthPx = 150, HeightPx = 56, Align = TextAlign.Left, Fill = ShapeFill.Solid("#eeeeee"), Stroke = ShapeStroke.Dashed("#333333", ShapeDash.Dash, 1.5) })
     .Shape(ShapePreset.Rect, new ShapeOptions { WidthPx = 150, HeightPx = 56, Align = TextAlign.Left, Fill = ShapeFill.Solid("#eeeeee"), Stroke = ShapeStroke.Dashed("#333333", ShapeDash.Dot, 1.5) })
     .Shape(ShapePreset.Rect, new ShapeOptions { WidthPx = 150, HeightPx = 56, Align = TextAlign.Left, Fill = ShapeFill.Solid("#eeeeee"), Stroke = ShapeStroke.Dashed("#333333", ShapeDash.DashDot, 1.5) })
-    .Paragraph("A stroke-only diagonal line (no fill), and a rectangle rotated 20° (a:xfrm@rot):")
+    .Shape(ShapePreset.Rect, new ShapeOptions { WidthPx = 150, HeightPx = 56, Align = TextAlign.Left, Fill = ShapeFill.Solid("#eeeeee"), Stroke = ShapeStroke.Dashed("#333333", ShapeDash.LgDash, 3) })
+    .Paragraph("Fill variants — a stroke-only diagonal line (no fill) and an outline-only rectangle (no fill):")
     .Shape(ShapePreset.Line, new ShapeOptions { WidthPx = 200, HeightPx = 60, Align = TextAlign.Left, Fill = ShapeFill.NoFill, Stroke = ShapeStroke.Solid("#38761d", 2) })
+    .Shape(ShapePreset.Rect, new ShapeOptions { WidthPx = 160, HeightPx = 70, Align = TextAlign.Left, Fill = ShapeFill.NoFill, Stroke = ShapeStroke.Solid("#674ea7", 1) })
+    .Paragraph("A rotated rectangle (20°) and a rotated arrow (−15°) — a:xfrm@rot round-trips:")
     .Shape(ShapePreset.Rect, new ShapeOptions { WidthPx = 150, HeightPx = 90, Align = TextAlign.Center, Fill = ShapeFill.Solid("#fff2cc"), Stroke = ShapeStroke.Solid("#bf9000", 1.5), Rotation = 20 })
-    .Paragraph("A text box — a shape carrying a body of text (OOXML wps:txbx), rendered read-only:")
+    .Shape(ShapePreset.RightArrow, new ShapeOptions { WidthPx = 170, HeightPx = 80, Align = TextAlign.Center, Fill = ShapeFill.Solid("#d0e0e3"), Stroke = ShapeStroke.Solid("#134f5c", 1.5), Rotation = -15 })
+    .Paragraph("A text box — a shape carrying a body of text (OOXML wps:txbx), editable in Word and the editor (double-click to type inside); edits round-trip losslessly:")
     .Shape(ShapePreset.Rect, new ShapeOptions
     {
         WidthPx = 300,
@@ -273,7 +278,7 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
         Align = TextAlign.Center,
         Fill = ShapeFill.Solid("#fff2cc"),
         Stroke = ShapeStroke.Solid("#bf9000", 1),
-        Text = new[] { "Drawing text box", "A shape can carry a paragraph flow, laid out inside its box." },
+        Text = new[] { "Editable text box", "Double-click to edit this text, then click away to commit." },
     })
     .Paragraph("A freeform custom geometry (OOXML a:custGeom) — a five-pointed star traced as a path of line segments rather than a preset, round-tripping losslessly:")
     .Shape(ShapePreset.Rect, new ShapeOptions
@@ -298,9 +303,18 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
             ShapePathSegment.Close,
         },
     })
-    .Paragraph("A square-wrapped shape floats at the margin and text flows around it (issue #217):")
+    .Paragraph("Shape positioning — wrap, float & z-order", p => p.WithStyle("Heading3"))
+    .Paragraph("A square-wrapped shape floats at the margin and the paragraph text flows around it, exactly like a square-wrapped image (issue #217):")
     .Shape(ShapePreset.Ellipse, new ShapeOptions { WidthPx = 130, HeightPx = 100, Align = TextAlign.Left, Wrap = ImageWrap.Square, Fill = ShapeFill.Solid("#d9ead3"), Stroke = ShapeStroke.Solid("#38761d", 1.25) })
-    .Paragraph("Square wrap lifts the shape out of the block flow and registers a float so this paragraph re-breaks beside it, just like a square-wrapped image does.")
+    .Paragraph("Square wrap lifts the shape out of the block flow and registers a float so this paragraph re-breaks beside it. " + Lorem + Lorem)
+    .Paragraph("Below, two absolutely-anchored shapes overlap: the second has a higher z-order so it paints on top. A third shape sits BEHIND this text (a soft background tint) while text stays selectable, and a fourth sits IN FRONT of it.")
+    // Overlapping anchored shapes — same layer, different z (higher paints on top).
+    .Shape(ShapePreset.Rect, new ShapeOptions { WidthPx = 150, HeightPx = 90, Align = TextAlign.Left, Fill = ShapeFill.Solid("#c9daf8"), Stroke = ShapeStroke.Solid("#3d85c6", 1), Anchor = new ShapeAnchor { Behind = false, OffsetXPx = 20, OffsetYPx = 0, Z = 1 } })
+    .Shape(ShapePreset.Ellipse, new ShapeOptions { WidthPx = 150, HeightPx = 90, Align = TextAlign.Left, Fill = ShapeFill.Solid("#fce5cd"), Stroke = ShapeStroke.Solid("#e69138", 1), Anchor = new ShapeAnchor { Behind = false, OffsetXPx = 90, OffsetYPx = 30, Z = 2 } })
+    // Behind-text tint (selectable text stays on top) + an in-front-of-text accent.
+    .Shape(ShapePreset.Rect, new ShapeOptions { WidthPx = 260, HeightPx = 70, Align = TextAlign.Left, Fill = ShapeFill.Solid("#fff2cc"), Stroke = ShapeStroke.NoOutline, Anchor = new ShapeAnchor { Behind = true, OffsetXPx = 0, OffsetYPx = 120, Z = -1 } })
+    .Shape(ShapePreset.Ellipse, new ShapeOptions { WidthPx = 80, HeightPx = 80, Align = TextAlign.Left, Fill = ShapeFill.Solid("#ead1dc"), Stroke = ShapeStroke.Solid("#a64d79", 1), Anchor = new ShapeAnchor { Behind = false, OffsetXPx = 230, OffsetYPx = 110, Z = 3 } })
+    .Paragraph("Anchored shapes do not occupy vertical flow space, so this line follows the previous paragraph directly while the shapes float over/under it. " + Lorem)
     .Paragraph("A grouped drawing (OOXML wpg:wgp) bundles several shapes into one object that moves and scales together — here a small flow diagram of two labelled boxes joined by an arrow:")
     .ShapeGroup(new ShapeGroupOptions
     {

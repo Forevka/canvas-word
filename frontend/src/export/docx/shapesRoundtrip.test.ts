@@ -296,6 +296,21 @@ describe("drawing shapes — DrawingML wps:wsp round-trip", () => {
     expect(out.anchor).toBeUndefined(); // exclusive with anchor
   });
 
+  it("exports a CENTER + square shape inline (no float) — matching the in-flow render", () => {
+    // A centered square shape has no left/right margin to float against; the layout
+    // engine renders it in-flow (a block), so export drops to inline rather than a
+    // wp:anchor+wrapSquare that Word would float and re-break text around (issue #222
+    // WYSIWYG fold-in). This mirrors the image path, which always inlines on export.
+    const s = shape({ wrap: "square", align: "center" });
+    const xml = exportedDocXml(docOf(s));
+    expect(xml).toContain("<wp:inline");
+    expect(xml).not.toContain("<wp:anchor");
+    expect(xml).not.toContain("wp:wrapSquare");
+    expect(xml).toContain('<w:jc w:val="center"/>');
+    // Left/right square shapes still float (regression guard).
+    expect(exportedDocXml(docOf(shape({ wrap: "square", align: "left" })))).toContain("<wp:anchor");
+  });
+
   it("round-trips a behind-text float anchor (wrapNone, behindDoc, offsets, z)", () => {
     const s = shape({
       anchor: { behind: true, offsetXPx: 40, offsetYPx: 120, relFromH: "margin", relFromV: "paragraph", z: -1 },
