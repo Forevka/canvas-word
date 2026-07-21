@@ -55,13 +55,14 @@ export interface ImagePropsPatch {
 }
 
 /** setShapeProps payload — the drawing-shape analog of ImagePropsPatch. `fill`,
- *  `stroke`, `rotation`, `wrap` and `anchor` accept `null` as an explicit "clear
- *  this field" sentinel (plain `undefined` means "leave unchanged", which
+ *  `stroke`, `rotation`, `wrap`, `anchor` and `text` accept `null` as an explicit
+ *  "clear this field" sentinel (plain `undefined` means "leave unchanged", which
  *  exactOptionalPropertyTypes needs to keep distinguishable). widthPx/heightPx
  *  (drag-resize) + align come from PR 1; fill / stroke drive the PR 2 fill/outline
  *  UI; geometry (preset + adjust) and rotation let a shape's kind/orientation change
  *  in place; `wrap` and `anchor` are mutually-exclusive positioning states (mirror
- *  ImagePropsPatch, issue #217). */
+ *  ImagePropsPatch, issue #217); `text` starts (or clears) the wps:txbx text body —
+ *  the in-editor "Add text" / Insert Text Box authoring gesture (issue #235). */
 export interface ShapePropsPatch {
   widthPx?: number;
   heightPx?: number;
@@ -72,6 +73,7 @@ export interface ShapePropsPatch {
   rotation?: number | null;
   wrap?: ShapeBlock["wrap"] | null;
   anchor?: ShapeBlock["anchor"] | null;
+  text?: ShapeBlock["text"] | null;
 }
 
 /** setTableProps payload — table-LEVEL fields (w:tblPr): indent + the cascade
@@ -896,6 +898,7 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       if (op.patch.rotation !== undefined) oldPatch.rotation = block.rotation ?? null;
       if (op.patch.wrap !== undefined) oldPatch.wrap = block.wrap ?? null;
       if (op.patch.anchor !== undefined) oldPatch.anchor = block.anchor ?? null;
+      if (op.patch.text !== undefined) oldPatch.text = block.text ?? null;
       const updated: ShapeBlock = { ...block, revision: block.revision + 1 };
       if (op.patch.widthPx !== undefined) updated.widthPx = op.patch.widthPx;
       if (op.patch.heightPx !== undefined) updated.heightPx = op.patch.heightPx;
@@ -920,6 +923,10 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       if (op.patch.anchor !== undefined) {
         if (op.patch.anchor === null) delete updated.anchor;
         else updated.anchor = op.patch.anchor;
+      }
+      if (op.patch.text !== undefined) {
+        if (op.patch.text === null) delete updated.text;
+        else updated.text = op.patch.text;
       }
       return {
         doc: replaceLocatedBlock(doc, loc, updated),

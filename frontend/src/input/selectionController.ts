@@ -125,6 +125,10 @@ export interface SelectionControllerDeps {
   /** Enter the currently-selected shape's text box (Enter on a selected shape).
    *  Returns true when it did. */
   enterSelectedShapeText(): boolean;
+  /** Start a text body on a TOP-LEVEL, text-less shape and enter it (double-click
+   *  "Add text"). Returns false for a cell-nested shape (stays read-only) or a
+   *  non-editable context, so the caller falls back to plain object selection. #235. */
+  startShapeText(shapeId: string): boolean;
 }
 
 export interface SelectionController {
@@ -429,13 +433,18 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
         if (objHit) {
           ev.preventDefault();
           // A double-click on a shape carrying a text box enters it (caret inside),
-          // instead of just (re)selecting the object — like Word (#219).
-          if (ev.detail >= 2 && deps.shapeHasText(objHit.blockId)) {
-            const sc: GeoScope = { shape: objHit.blockId, pageIndex: pt.pageIndex };
-            const inside = hitTest(deps.getTree(), pt.pageIndex, pt.x, pt.y, sc);
-            if (inside) {
-              deps.enterShapeText(objHit.blockId, inside);
-              return;
+          // instead of just (re)selecting the object — like Word (#219). A double-
+          // click on a top-level text-LESS shape starts a body and enters it (#235).
+          if (ev.detail >= 2) {
+            if (deps.shapeHasText(objHit.blockId)) {
+              const sc: GeoScope = { shape: objHit.blockId, pageIndex: pt.pageIndex };
+              const inside = hitTest(deps.getTree(), pt.pageIndex, pt.x, pt.y, sc);
+              if (inside) {
+                deps.enterShapeText(objHit.blockId, inside);
+                return;
+              }
+            } else if (deps.startShapeText(objHit.blockId)) {
+              return; // created an empty body + dropped the caret inside
             }
           }
           deps.selectObject(objHit.blockId);

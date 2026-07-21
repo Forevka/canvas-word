@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import type { Document, Paragraph, SectionProps, ShapeBlock } from "@cw/shared";
 import { applyOp } from "@cw/shared";
-import { insertShape, setShapeProps, removeBlockObject, SHAPE_DEFAULT_WIDTH_PX, SHAPE_DEFAULT_HEIGHT_PX } from "./commands";
+import { insertShape, insertTextBox, addShapeText, setShapeProps, removeBlockObject, SHAPE_DEFAULT_WIDTH_PX, SHAPE_DEFAULT_HEIGHT_PX } from "./commands";
 import type { Command, EditorState } from "./state";
 
 const SECTION: SectionProps = { pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } };
@@ -47,6 +47,57 @@ describe("insertShape", () => {
     expect(s.geometry.preset).toBe("line");
     expect(s.fill).toBeUndefined();
     expect(s.stroke).toBeDefined();
+  });
+});
+
+describe("insertTextBox (issue #235)", () => {
+  it("inserts a rectangle carrying an empty, editable text body seeded with the given ids", () => {
+    const base: Document = { section: SECTION, blocks: [para("p1")] };
+    const trn = trnOf({ doc: base, selection: caret("p1", 2) }, insertTextBox("box1", "boxpar1"));
+    let doc = base;
+    for (const op of trn.ops) doc = applyOp(doc, op).doc;
+    const s = doc.blocks.find((b): b is ShapeBlock => b.kind === "shape")!;
+    expect(s.id).toBe("box1");
+    expect(s.geometry.preset).toBe("rect");
+    // A text body with exactly one empty paragraph — the shape the wps:txbx
+    // round-trip already handles, and enough for the caret to land inside.
+    expect(s.text?.blocks.length).toBe(1);
+    expect(s.text?.blocks[0]?.id).toBe("boxpar1");
+    expect(s.text?.blocks[0]?.runs.map((r) => r.text).join("")).toBe("");
+    expect(s.fill).toBeDefined();
+    expect(s.stroke).toBeDefined();
+  });
+});
+
+describe("addShapeText (issue #235)", () => {
+  const docOf = (...blocks: ShapeBlock[]): Document => ({ section: SECTION, blocks });
+
+  it("starts an empty text body on a text-less top-level shape; the op inverse clears it", () => {
+    const base = docOf(shape("a"));
+    const trn = trnOf({ doc: base, selection: null }, addShapeText("a", "np"));
+    const res = applyOp(base, trn.ops[0]!);
+    const s = shapeOf(res.doc, "a");
+    expect(s.text?.blocks.length).toBe(1);
+    expect(s.text?.blocks[0]?.id).toBe("np");
+    expect(s.text?.blocks[0]?.runs.map((r) => r.text).join("")).toBe("");
+    // Undo removes the whole body (single-step).
+    expect(shapeOf(applyOp(res.doc, res.inverse).doc, "a").text).toBeUndefined();
+  });
+
+  it("is a no-op for a shape that already has a text body", () => {
+    const base = docOf(shape("a", { text: { blocks: [para("boxpar", "hi")] } }));
+    expect(addShapeText("a", "np")({ doc: base, selection: null })).toBeNull();
+  });
+
+  it("is a no-op for a missing shape id", () => {
+    expect(addShapeText("nope", "np")({ doc: docOf(shape("a")), selection: null })).toBeNull();
+  });
+
+  it("refuses a cell-nested shape (its text box stays read-only, #219/#230)", () => {
+    const cellShape = shape("cellbox");
+    const table = { kind: "table" as const, id: "tbl", revision: 0, rows: [{ cells: [{ id: "c0", blocks: [cellShape] }] }] };
+    const doc: Document = { section: SECTION, blocks: [table] };
+    expect(addShapeText("cellbox", "np")({ doc, selection: null })).toBeNull();
   });
 });
 

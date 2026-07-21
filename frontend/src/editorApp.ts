@@ -1304,6 +1304,20 @@ if (toolbar) {
       });
       grid.appendChild(cell);
     }
+    // Text Box — a rectangle with an empty editable body; inserting it drops the
+    // caret inside so the user types straight away (issue #235). Distinct from the
+    // presets above (it seeds a text body + enters editing), so it's its own cell.
+    const tb = el("div", "cell");
+    tb.style.width = "28px";
+    tb.style.height = "28px";
+    tb.innerHTML = ICONS.shapeTextBox;
+    tb.title = "Text Box";
+    tb.addEventListener("mouseenter", () => { label.textContent = "Text Box"; });
+    tb.addEventListener("click", () => {
+      closePop();
+      editor.insertTextBox();
+    });
+    grid.appendChild(tb);
     wrap.append(grid, label);
     openPop(anchor, wrap);
   };
@@ -3504,6 +3518,7 @@ if (!readonly) {
       actions: {
         fill: (btn) => shapeFillPopover(btn),
         outline: (btn) => shapeOutlinePopover(btn),
+        addText: () => { editor.addTextToSelectedShape(); },
         wrapInline: () => withSelectedObject((id) => editor.dispatch(setShapeProps(id, { wrap: "block", align: "center", anchor: null }))),
         wrapSquare: () => withSelectedObject((id) => editor.dispatch(setShapeProps(id, { wrap: "square", align: "left", anchor: null }))),
         alignLeft: () => editor.align("left"),

@@ -65,6 +65,7 @@ export const ICONS = {
   shapeRightArrow: svg(`<path d="M2 6h7V3.5L14 8 9 12.5V10H2z"/>`),
   shapeLeftArrow: svg(`<path d="M14 6H7V3.5L2 8l5 4.5V10h7z"/>`),
   shapeLine: svg(`<path d="M2.5 13.5 13.5 2.5"/>`),
+  shapeTextBox: svg(`<rect x="2" y="4" width="12" height="8" rx="1"/><path d="M5 7h6M5 9.3h4"/>`),
   shapeFill: svg(`<path d="M6 2.5 12.5 9 8 13.5a2 2 0 0 1-2.8 0L2.5 10.8a2 2 0 0 1 0-2.8z"/><path d="M12.5 11.5c1 1.2 1.5 2 1.5 2.6a1.2 1.2 0 0 1-2.4 0c0-.6.5-1.4 1.4-2.6z" fill="currentColor" stroke="none"/>`),
   table: svg(
     `<rect x="2" y="2.5" width="12" height="11" rx="1"/><path d="M2 6h12"/><path d="M2 9.7h12"/><path d="M6.5 2.5v11"/><path d="M10.7 2.5v11"/>`,

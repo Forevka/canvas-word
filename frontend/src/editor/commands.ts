@@ -1,8 +1,8 @@
 // Commands: pure (state) -> Transaction | null. The keymap, the IME proxy, and
 // (later) toolbar buttons all dispatch through these.
 
-import type { Block, CellBorder, CellBorders, CharStyle, EquationBlock, FieldDef, FieldSpec, GridSlot, ImageBlock, MathEquation, ParaStyle, Paragraph, Run, RowProps, SdtProps, SdtType, ShapeBlock, ShapePreset, TableBlock, TableCell, TableGrid, TableRow, TableStyle, TocOptions, TocSwitches } from "@cw/shared";
-import { bakeTableStyleRows, DEFAULT_TBL_LOOK } from "@cw/shared";
+import type { Block, CellBorder, CellBorders, CharStyle, EquationBlock, FieldDef, FieldSpec, GridSlot, ImageBlock, MathEquation, ParaStyle, Paragraph, Run, RowProps, SdtProps, SdtType, ShapeBlock, ShapePreset, ShapeTextBody, TableBlock, TableCell, TableGrid, TableRow, TableStyle, TocOptions, TocSwitches } from "@cw/shared";
+import { bakeTableStyleRows, DEFAULT_TBL_LOOK, DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE } from "@cw/shared";
 import { buildTocParagraphs, buildTocInstruction, buildInstruction, evaluateField } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, GridRect } from "@cw/shared";
 import { isCollapsed, BAND_CONTAINERS } from "@cw/shared";
@@ -1873,6 +1873,60 @@ export function insertShape(preset: ShapePreset): Command {
       if (preset !== "line") shape.fill = { color: "#bcd6ef" };
       return shape;
     });
+}
+
+/** A fresh, empty text-box body: one empty paragraph (document-default styling) so
+ *  a caret can land inside immediately and it exports as a wps:txbx carrying a
+ *  single empty w:p — the shape of body the txbx round-trip already handles
+ *  (issue #235). */
+function emptyShapeTextBody(paraId: string): ShapeTextBody {
+  return {
+    blocks: [{
+      kind: "paragraph",
+      id: paraId,
+      revision: 0,
+      runs: [{ text: "", style: { ...DEFAULT_CHAR_STYLE } }],
+      style: { ...DEFAULT_PARA_STYLE },
+    }],
+  };
+}
+
+/** Insert a TEXT BOX — a rectangle-geometry shape carrying an empty, editable text
+ *  body — as its own block at the caret (Insert → Shapes → Text Box, issue #235).
+ *  Unlike insertShape it seeds `text` with one empty paragraph so the host can drop
+ *  the caret inside right away, and it round-trips as wps:txbx. A light fill + thin
+ *  outline read like Word's default text box. The shape + first-paragraph ids are
+ *  supplied by the caller so it can enter the new body deterministically after
+ *  dispatch. */
+export function insertTextBox(shapeId: string, paraId: string): Command {
+  return (state) =>
+    insertBlockAtCaret(state, (): ShapeBlock => ({
+      kind: "shape",
+      id: shapeId,
+      revision: 0,
+      geometry: { preset: "rect" },
+      widthPx: SHAPE_DEFAULT_WIDTH_PX,
+      heightPx: SHAPE_DEFAULT_HEIGHT_PX,
+      align: "left",
+      fill: { color: "#ffffff" },
+      stroke: { color: "#1f77b4", widthPt: 1 },
+      text: emptyShapeTextBody(paraId),
+    }));
+}
+
+/** Start a text body on an existing text-LESS shape (the "Add text" gesture:
+ *  double-click, right-click menu, or shape toolbar — issue #235). TOP-LEVEL only:
+ *  a cell-nested shape's text box is not in the locatable paragraph space, so it
+ *  stays read-only (#219/#230). No-op if the shape already carries a non-empty body
+ *  or isn't a top-level shape. Reuses setShapeProps' `text` patch (whose inverse
+ *  clears the body, so one undo removes it). */
+export function addShapeText(blockId: string, paraId: string): Command {
+  return (state) => {
+    const loc = locateShape(state.doc, blockId);
+    if (loc?.kind !== "top") return null;
+    if (loc.block.text && loc.block.text.blocks.length > 0) return null;
+    return tr([{ type: "setShapeProps", blockId, patch: { text: emptyShapeTextBody(paraId) } }], state.selection, "command");
+  };
 }
 
 /** Insert a display equation as its own block at the caret. */

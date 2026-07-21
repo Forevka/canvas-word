@@ -57,12 +57,18 @@ Shape controls live on the **Insert** tab across two built-in groups:
 
 - **`insert.illustrations`** — the **Insert a shape** button opens the preset
   gallery (rectangle, rounded rectangle, ellipse, triangle, diamond, right/left
-  arrow, line); picking one inserts it at the caret. This group also holds the
+  arrow, line, and **Text Box**); picking a preset inserts it at the caret. The
+  **Text Box** entry inserts a rectangle with an empty editable body and drops the
+  caret **inside** so you can type straight away. This group also holds the
   image-insert button.
 - **`insert.shape`** — acts on the *selected* shape: **Shape fill** (colour / no
-  fill), **Shape outline** (colour, width, dash), **wrap square** / **in line with
-  text**, **bring in front of text** / **send behind text**, and **delete**. Every
-  button is disabled until a shape is selected.
+  fill), **Shape outline** (colour, width, dash), **add / edit text**, **wrap
+  square** / **in line with text**, **bring in front of text** / **send behind
+  text**, and **delete**. Every button is disabled until a shape is selected.
+
+Any top-level shape can gain a text body after the fact: **double-click** it (or
+use **Add text** on the floating toolbar / right-click menu) to start a body and
+edit it in place. Shapes nested inside a table cell stay read-only.
 
 The same actions are reachable from the shape's floating context toolbar and the
 right-click menu. Reorder or hide any of them with `moveItem`/`removeItem` — resolve
