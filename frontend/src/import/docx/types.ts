@@ -5,7 +5,7 @@
 // everything it understands (even what the model can't hold yet); mapToModel
 // decides what survives and emits an ImportWarning for every lossy decision.
 
-import type { Document, FieldDef, MathRow } from "@cw/shared";
+import type { Document, FieldDef, MathRow, ShapePath } from "@cw/shared";
 
 export type ImportPhase = "unzip" | "styles" | "parse" | "map";
 
@@ -257,10 +257,15 @@ export type IRInline =
    *  presets are still parsed (mapShape maps them to rect + warns). */
   | {
       kind: "shape";
-      /** a:prstGeom@prst — the raw preset name (rect/ellipse/roundRect/…). */
+      /** a:prstGeom@prst — the raw preset name (rect/ellipse/roundRect/…). Falls
+       *  back to "rect" when the shape carries a custom geometry (a:custGeom) with
+       *  no preset. */
       preset: string;
       /** a:avLst → a:gd (name → the numeric value of its `val N` formula). */
       adjust?: Record<string, number>;
+      /** a:custGeom → a:pathLst/a:path parsed into a normalized (0–1) path — maps to
+       *  ShapeBlock.geometry.custom (PR 7, issue #220). Absent = a preset geometry. */
+      custom?: ShapePath;
       widthEmu?: number;
       heightEmu?: number;
       /** a:xfrm@rot in degrees (OOXML stores 60000ths of a degree). */

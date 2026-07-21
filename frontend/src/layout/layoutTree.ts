@@ -1,7 +1,7 @@
 // Layer 2 output: the LayoutTree — absolutely-positioned geometry the paint and
 // input layers consume. Coordinates are CSS px, page-relative.
 
-import type { BandContainer, CellBorders, CharStyle, PageBorders, ParaBorders, ShapeFill, ShapePreset, ShapeStroke, TabLeader } from "@cw/shared";
+import type { BandContainer, CellBorders, CharStyle, PageBorders, ParaBorders, ShapeFill, ShapePath, ShapePreset, ShapeStroke, TabLeader } from "@cw/shared";
 import type { MathBox } from "./math/mathBox";
 
 /** A same-styled slice of text placed on a line. One ctx.fillText call each.
@@ -99,6 +99,9 @@ export interface PlacedCustom {
  *  and resizable like an image. */
 export interface PlacedShape {
   preset: ShapePreset;
+  /** Freeform custom geometry (ShapeBlock.geometry.custom); when present the
+   *  painters trace this path instead of the preset (PR 7, issue #220). */
+  custom?: ShapePath;
   fill?: ShapeFill;
   stroke?: ShapeStroke;
   width: number;

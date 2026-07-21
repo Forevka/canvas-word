@@ -152,15 +152,15 @@ describe("default showcase doc: export → open → export fidelity", () => {
     const doc0 = sampleDoc();
     const doc1 = runImport((await runExport(doc0, "docx", await resolveImages(doc0))).bytes).doc;
     expect(fingerprint(doc1)).toEqual({
-      paras: 333,
-      runs: 492,
+      paras: 334,
+      runs: 493,
       tables: 11,
       cells: 203,
       images: 4,
-      chars: 24493,
+      chars: 24702,
       sectionBreaks: 2,
       equations: 5,
-      shapes: 22,
+      shapes: 23,
       footnotes: 1,
       endnotes: 1,
       fields: 8,

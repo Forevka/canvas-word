@@ -275,6 +275,29 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
         Stroke = ShapeStroke.Solid("#bf9000", 1),
         Text = new[] { "Drawing text box", "A shape can carry a paragraph flow, laid out inside its box." },
     })
+    .Paragraph("A freeform custom geometry (OOXML a:custGeom) — a five-pointed star traced as a path of line segments rather than a preset, round-tripping losslessly:")
+    .Shape(ShapePreset.Rect, new ShapeOptions
+    {
+        WidthPx = 120,
+        HeightPx = 120,
+        Align = TextAlign.Center,
+        Fill = ShapeFill.Solid("#ffe599"),
+        Stroke = ShapeStroke.Solid("#bf9000", 1.5),
+        Path = new[]
+        {
+            ShapePathSegment.MoveTo(0.5, 0.0),
+            ShapePathSegment.LineTo(0.6176, 0.3382),
+            ShapePathSegment.LineTo(0.9755, 0.3455),
+            ShapePathSegment.LineTo(0.6902, 0.5618),
+            ShapePathSegment.LineTo(0.7939, 0.9045),
+            ShapePathSegment.LineTo(0.5, 0.7),
+            ShapePathSegment.LineTo(0.2061, 0.9045),
+            ShapePathSegment.LineTo(0.3098, 0.5618),
+            ShapePathSegment.LineTo(0.0245, 0.3455),
+            ShapePathSegment.LineTo(0.3824, 0.3382),
+            ShapePathSegment.Close,
+        },
+    })
     .Paragraph("A square-wrapped shape floats at the margin and text flows around it (issue #217):")
     .Shape(ShapePreset.Ellipse, new ShapeOptions { WidthPx = 130, HeightPx = 100, Align = TextAlign.Left, Wrap = ImageWrap.Square, Fill = ShapeFill.Solid("#d9ead3"), Stroke = ShapeStroke.Solid("#38761d", 1.25) })
     .Paragraph("Square wrap lifts the shape out of the block flow and registers a float so this paragraph re-breaks beside it, just like a square-wrapped image does.")

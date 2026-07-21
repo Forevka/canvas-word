@@ -3,7 +3,7 @@
 // table cells — shares this surface. Methods append eagerly and return `this`
 // (or a ParagraphBuilder that delegates back), so chains never need a seal step.
 
-import type { Block, CharStyle, EquationBlock, Paragraph, ParaStyle, SdtProps, ShapeFill, ShapePreset, ShapeStroke } from "@cw/shared";
+import type { Block, CharStyle, EquationBlock, Paragraph, ParaStyle, SdtProps, ShapeFill, ShapePath, ShapePreset, ShapeStroke } from "@cw/shared";
 import { DEFAULT_BULLET_LIST_ID, DEFAULT_NUMBER_LIST_ID, defaultListDefinition, textOfRuns } from "@cw/shared";
 import type { BuilderContext } from "./blockFactory";
 import { equationFromLatex, equationFromMathml } from "./mathInput";
@@ -51,6 +51,10 @@ export interface ShapeOptions {
   /** Text box body — one paragraph per string, rendered read-only inside the
    *  shape box (OOXML wps:txbx). Omit for a shape with no text. */
   text?: string[];
+  /** Freeform custom geometry (OOXML a:custGeom) — a path of segments in normalized
+   *  box coordinates (0–1). When present it replaces the preset (which is ignored,
+   *  kept only as a schema fallback). Omit for an ordinary preset shape. */
+  path?: ShapePath["segments"];
 }
 
 export interface ListItem {
@@ -143,15 +147,16 @@ export class StoryBuilder {
   }
 
   /** Insert a drawing shape (a preset geometry: rect/roundRect/ellipse/triangle/
-   *  diamond/right|leftArrow/line) with an optional fill, outline (with dash),
-   *  rotation, adjust handles and a read-only text box body. Like `.image()`, the
-   *  size is required (the builder runs in Node too, with no DOM). */
+   *  diamond/right|leftArrow/line, or a freeform `path` custom geometry) with an
+   *  optional fill, outline (with dash), rotation, adjust handles and a read-only
+   *  text box body. Like `.image()`, the size is required (the builder runs in Node
+   *  too, with no DOM). */
   shape(preset: ShapePreset, opts: ShapeOptions): this {
     if (!Number.isFinite(opts?.widthPx) || !Number.isFinite(opts?.heightPx) || opts.widthPx <= 0 || opts.heightPx <= 0) {
       this.ctx.warn("shape-size-invalid", ".shape() requires positive widthPx and heightPx; shape skipped.");
       return this;
     }
-    this.push(this.ctx.shape(preset, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.fill, opts.stroke, opts.rotation, opts.adjust, opts.text, opts.wrap));
+    this.push(this.ctx.shape(preset, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.fill, opts.stroke, opts.rotation, opts.adjust, opts.text, opts.wrap, opts.path));
     return this;
   }
 

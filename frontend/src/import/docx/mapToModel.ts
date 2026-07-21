@@ -821,6 +821,9 @@ export function createMapper(
     // Adjust handles are only meaningful for the geometry that owns them, so keep
     // them only when the preset mapped through (a rect fallback has none).
     if (inline.adjust && preset === inline.preset) geometry.adjust = inline.adjust;
+    // Freeform custom geometry (a:custGeom) — the escape hatch; the preset stays as
+    // a schema fallback but the painters/export use this path (PR 7, issue #220).
+    if (inline.custom) geometry.custom = inline.custom;
     const shape: ShapeBlock = {
       kind: "shape",
       id: id(),

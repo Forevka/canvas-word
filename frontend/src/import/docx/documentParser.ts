@@ -5,7 +5,7 @@
 // properties during mapping. Everything the parser understands goes into the
 // IR; mapToModel decides what the model can hold.
 
-import type { CharStyle, FieldDef, FieldSpec } from "@cw/shared";
+import type { CharStyle, FieldDef, FieldSpec, ShapePath, ShapePathSegment } from "@cw/shared";
 import { isCustomFieldInstruction, parseFieldInstruction, parseFieldSpec } from "@cw/shared";
 import { ImportError, WarningSink } from "./types";
 import type {
@@ -738,10 +738,10 @@ function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
   if (wsp) {
     const shape = parseShapeWsp(wsp, container, anchor, ctx);
     if (shape) return shape;
-    // Structurally a wps shape but without a preset geometry we can place yet
-    // (e.g. freeform a:custGeom) — warn instead of dropping it silently, mirroring
-    // the image branch's images-skipped warning.
-    ctx.warnings.add("shape-skipped", "A drawing shape without a supported preset geometry (e.g. a freeform/custom geometry) was skipped.");
+    // Structurally a wps shape but with no geometry we can place (neither a
+    // a:prstGeom preset nor a a:custGeom path) — warn instead of dropping it
+    // silently, mirroring the image branch's images-skipped warning.
+    ctx.warnings.add("shape-skipped", "A drawing shape without a supported geometry (no preset or custom path) was skipped.");
     return undefined;
   }
   const blip = findDeep(container, "a:blip");
@@ -793,6 +793,50 @@ function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
   return image;
 }
 
+/** a:custGeom → a:pathLst/a:path into a normalized (0–1) ShapePath. Point coords are
+ *  divided by the a:path @w/@h design space so the model path is box-independent
+ *  (mirrors the exporter's fixed-unit emission). Unmodeled commands (arc/quad Bézier)
+ *  are skipped. Returns undefined when there is no usable path. */
+function parseCustGeom(custGeom: XmlNode): ShapePath | undefined {
+  const pathLst = el(custGeom, "a:pathLst");
+  const path = pathLst && el(pathLst, "a:path");
+  if (!path) return undefined;
+  const w = numAttr(path, "w") ?? 0;
+  const h = numAttr(path, "h") ?? 0;
+  if (w <= 0 || h <= 0) return undefined; // no design space to normalize against
+  const ptOf = (node: XmlNode): { x: number; y: number } => ({
+    x: (numAttr(node, "x") ?? 0) / w,
+    y: (numAttr(node, "y") ?? 0) / h,
+  });
+  const segments: ShapePathSegment[] = [];
+  for (const cmd of children(path)) {
+    switch (cmd.tagName) {
+      case "a:moveTo": {
+        const p = el(cmd, "a:pt");
+        if (p) segments.push({ type: "moveTo", ...ptOf(p) });
+        break;
+      }
+      case "a:lnTo": {
+        const p = el(cmd, "a:pt");
+        if (p) segments.push({ type: "lineTo", ...ptOf(p) });
+        break;
+      }
+      case "a:cubicBezTo": {
+        const pts = els(cmd, "a:pt");
+        if (pts.length === 3) {
+          const c1 = ptOf(pts[0]!), c2 = ptOf(pts[1]!), end = ptOf(pts[2]!);
+          segments.push({ type: "cubicBezierTo", x1: c1.x, y1: c1.y, x2: c2.x, y2: c2.y, x: end.x, y: end.y });
+        }
+        break;
+      }
+      case "a:close":
+        segments.push({ type: "close" });
+        break;
+    }
+  }
+  return segments.length > 0 ? { segments } : undefined;
+}
+
 /** DrawingML preset shape: wps:wsp → wps:spPr (a:prstGeom, a:solidFill/a:noFill,
  *  a:ln). Size comes from the container's wp:extent (like an image). The spPr's
  *  DIRECT fill is the shape fill; a:ln carries the outline (its own nested fill). */
@@ -805,8 +849,16 @@ function parseShapeWsp(
   const spPr = el(wsp, "wps:spPr");
   const prstGeom = spPr && el(spPr, "a:prstGeom");
   const prst = prstGeom && attr(prstGeom, "prst");
-  if (!prst) return undefined; // no geometry → not a shape we can place
-  const shape: Extract<IRInline, { kind: "shape" }> = { kind: "shape", preset: prst };
+  const custGeom = spPr && el(spPr, "a:custGeom");
+  if (!prst && !custGeom) return undefined; // no geometry → not a shape we can place
+  // A custom geometry has no preset; keep a "rect" fallback so the box still maps.
+  const shape: Extract<IRInline, { kind: "shape" }> = { kind: "shape", preset: prst ?? "rect" };
+  // a:custGeom → a:pathLst/a:path: the freeform path, normalized to 0–1 fractions
+  // of the box (dividing point coords by the a:path @w/@h design space).
+  if (custGeom) {
+    const custom = parseCustGeom(custGeom);
+    if (custom) shape.custom = custom;
+  }
   // a:avLst → a:gd @name/@fmla="val N": the parametric adjust handles, kept raw.
   const avLst = prstGeom && el(prstGeom, "a:avLst");
   if (avLst) {

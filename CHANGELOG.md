@@ -22,6 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warn; a VML group (or several shapes in one `w:pict`) flattens to the first shape with a
   `vml-group-flattened` warning, and genuinely unmodelled pict content (WordArt, the drawing canvas)
   still warns (`pict-skipped`).
+- **Drawing shapes — freeform custom geometry (issue #206, Part 7 / #220).** A `ShapeBlock` can now
+  carry a **freeform path** instead of a preset: `geometry.custom` holds a list of path segments
+  (`moveTo` / `lineTo` / `cubicBezierTo` / `close`) in **normalized box coordinates** (0–1), the escape
+  hatch for shapes that aren't one of the presets. The canvas and PDF painters trace the path (fill +
+  stroke), so a custom shape renders identically on screen and in export. It round-trips **losslessly**
+  to `.docx` as `a:custGeom` / `a:pathLst` / `a:path` (import parses `a:moveTo` / `a:lnTo` / `a:cubicBezTo`
+  / `a:close`, normalizing point coords against the path design space; export re-emits them, schema-valid).
+  Authorable from the `DocumentBuilder` (`.shape(preset, { path: [...] })`) and the C# bindings
+  (`ShapeOptions.Path` + the `ShapePathSegment.MoveTo/LineTo/CubicBezierTo/Close` factories); the default
+  in-editor document and the C# showcase demonstrate a five-pointed star drawn as a freeform path. Presets
+  remain the common case — custom geometry is opt-in.
 - **Drawing shapes — positioning parity (issue #206, Part 4 / #217).** Shapes gain the image's
   positioning surface: **square text-wrap** (the shape floats at the left/right margin per its align and
   text flows around it), **absolute float anchoring** (a `wp:anchor` shape that sits **behind** or **in

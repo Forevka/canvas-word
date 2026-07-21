@@ -4,7 +4,7 @@
 // default style over editor-matching baselines — and every factory spreads
 // them. Modeled on the run/para closures in model/sampleDoc.ts.
 
-import type { CharStyle, Document, EquationBlock, ImageBlock, MathEquation, ParaStyle, Paragraph, Run, ShapeBlock, ShapeFill, ShapePreset, ShapeStroke, Stylesheet } from "@cw/shared";
+import type { CharStyle, Document, EquationBlock, ImageBlock, MathEquation, ParaStyle, Paragraph, Run, ShapeBlock, ShapeFill, ShapePath, ShapePreset, ShapeStroke, Stylesheet } from "@cw/shared";
 import { createIdGenerator, DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE, resolveStyle, styleById, type IdGenerator } from "@cw/shared";
 import { builtinTableStyles, type TableStylePreset } from "./tableStyles";
 
@@ -142,9 +142,13 @@ export class BuilderContext {
     adjust?: Record<string, number>,
     text?: string[],
     wrap?: ShapeBlock["wrap"],
+    path?: ShapePath["segments"],
   ): ShapeBlock {
     const geometry: ShapeBlock["geometry"] = { preset };
     if (adjust && Object.keys(adjust).length > 0) geometry.adjust = adjust;
+    // Freeform custom geometry — the painters/export use the path and ignore the
+    // preset (which stays a schema fallback).
+    if (path && path.length > 0) geometry.custom = { segments: path };
     const shape: ShapeBlock = { kind: "shape", id: this.ids.next(), revision: 0, geometry, widthPx, heightPx, align };
     if (fill) shape.fill = fill;
     if (stroke) shape.stroke = stroke;

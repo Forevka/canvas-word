@@ -5,7 +5,7 @@
 // Built as plain model data (the same Document the editor/exporter/collab consume).
 
 import type {
-  BookmarkRange, CellBorder, CellMargin, CharStyle, Document, EquationBlock, FieldDef, FieldSpec, ImageBlock, ParaStyle, Paragraph, RowProps, Run, SdtProps, ShapeBlock, ShapeFill, ShapePreset, ShapeStroke, TableBlock, TableCell,
+  BookmarkRange, CellBorder, CellMargin, CharStyle, Document, EquationBlock, FieldDef, FieldSpec, ImageBlock, ParaStyle, Paragraph, RowProps, Run, SdtProps, ShapeBlock, ShapeFill, ShapePath, ShapePreset, ShapeStroke, TableBlock, TableCell,
 } from "@cw/shared";
 import { buildInstruction, buildTocParagraphs, DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE, defaultStylesheet, evaluateIf, formatFieldDate } from "@cw/shared";
 import { defaultListDefinition, DEFAULT_BULLET_LIST_ID, DEFAULT_NUMBER_LIST_ID } from "@cw/shared";
@@ -84,15 +84,34 @@ const shape = (
   preset: ShapePreset, w: number, h: number, align: ShapeBlock["align"],
   fill?: ShapeFill, stroke?: ShapeStroke, rotation?: number, adjust?: Record<string, number>,
   text?: string[],
-  extra?: { wrap?: ShapeBlock["wrap"]; anchor?: ShapeBlock["anchor"] },
+  extra?: { wrap?: ShapeBlock["wrap"]; anchor?: ShapeBlock["anchor"]; custom?: ShapePath },
 ): ShapeBlock => ({
   kind: "shape", id: id(), revision: 0,
-  geometry: adjust ? { preset, adjust } : { preset },
+  geometry: extra?.custom ? { preset, custom: extra.custom } : adjust ? { preset, adjust } : { preset },
   widthPx: w, heightPx: h, align,
   ...(fill ? { fill } : {}), ...(stroke ? { stroke } : {}), ...(rotation ? { rotation } : {}),
   ...(text ? { text: { blocks: text.map((line) => para([run(line)])) } } : {}),
   ...(extra?.wrap ? { wrap: extra.wrap } : {}), ...(extra?.anchor ? { anchor: extra.anchor } : {}),
 });
+
+/** A five-pointed star traced as a freeform path (OOXML a:custGeom) — outer/inner
+ *  vertices in normalized box coords (0–1), demonstrating the #220 custom-geometry
+ *  round-trip. */
+const STAR_PATH: ShapePath = {
+  segments: [
+    { type: "moveTo", x: 0.5, y: 0.0 },
+    { type: "lineTo", x: 0.6176, y: 0.3382 },
+    { type: "lineTo", x: 0.9755, y: 0.3455 },
+    { type: "lineTo", x: 0.6902, y: 0.5618 },
+    { type: "lineTo", x: 0.7939, y: 0.9045 },
+    { type: "lineTo", x: 0.5, y: 0.7 },
+    { type: "lineTo", x: 0.2061, y: 0.9045 },
+    { type: "lineTo", x: 0.3098, y: 0.5618 },
+    { type: "lineTo", x: 0.0245, y: 0.3455 },
+    { type: "lineTo", x: 0.3824, y: 0.3382 },
+    { type: "close" },
+  ],
+};
 
 // --- symbols (w:sym) -----------------------------------------------------------
 /** A symbol-font glyph run (OOXML w:sym): font + hex code point, decoded to the
@@ -526,6 +545,8 @@ export function sampleDoc(): Document {
       "Drawing text box",
       "A shape can carry a paragraph flow, laid out inside its box.",
     ]),
+    para([run("A freeform custom geometry (OOXML a:custGeom) — a five-pointed star traced as a path of line segments rather than a preset. The path is stored in normalized box coordinates and round-trips losslessly to .docx:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
+    shape("rect", 120, 120, "center", { color: "#ffe599" }, { color: "#bf9000", widthPt: 1.5 }, undefined, undefined, undefined, { custom: STAR_PATH }),
 
     // --- Shape positioning: wrap / float anchor / z-order (issue #217) ----------
     heading("Shape positioning — wrap, float & z-order", 3),

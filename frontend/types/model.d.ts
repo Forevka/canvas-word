@@ -148,6 +148,20 @@ export type ShapeDash = "solid" | "dash" | "dot" | "dashDot" | "lgDash";
 export type ShapeFill = { color: string } | { none: true };
 export type ShapeStroke = { color: string; widthPt: number; dash?: ShapeDash } | { none: true };
 
+/** One segment of a freeform custom-geometry path (a:custGeom / a:path). Points are
+ *  fractions of the shape box (0–1). */
+export type ShapePathSegment =
+  | { type: "moveTo"; x: number; y: number }
+  | { type: "lineTo"; x: number; y: number }
+  | { type: "cubicBezierTo"; x1: number; y1: number; x2: number; y2: number; x: number; y: number }
+  | { type: "close" };
+
+/** A freeform custom geometry (a:custGeom). Segments trace a path in normalized box
+ *  coordinates (0–1). */
+export interface ShapePath {
+  segments: ShapePathSegment[];
+}
+
 /** A drawing shape's text box body (OOXML wps:txbx) — a nested paragraph flow
  *  rendered read-only inside the shape box. */
 export interface ShapeTextBody {
@@ -158,9 +172,10 @@ export interface ShapeBlock {
   kind: "shape";
   id: string;
   revision: number;
-  /** The vector geometry drawn inside the box (a:prstGeom@prst); `adjust` carries
-   *  the raw a:avLst guide values (name → number) for parametric presets. */
-  geometry: { preset: ShapePreset; adjust?: Record<string, number> };
+  /** The vector geometry drawn inside the box (a:prstGeom@prst), or a freeform
+   *  path when `custom` is present (a:custGeom); `adjust` carries the raw a:avLst
+   *  guide values (name → number) for parametric presets. */
+  geometry: { preset: ShapePreset; adjust?: Record<string, number>; custom?: ShapePath };
   /** Interior fill; absent = the theme-neutral default. */
   fill?: ShapeFill;
   /** Outline; absent = the default outline. */

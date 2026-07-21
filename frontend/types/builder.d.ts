@@ -9,7 +9,7 @@
 // Works in the browser (live preview via WordCanvas.setDocument) and in Node
 // (server-side DOCX/PDF generation via the export subpath).
 
-import type { CellBorders, CellMargin, CharStyle, Document, NamedStyle, PageNumFmt, ParaBorders, ParaStyle, SdtProps, ShapeFill, ShapePreset, ShapeStroke, Stylesheet, TableCondOverrides, TableStyle, TabStop } from "./model";
+import type { CellBorders, CellMargin, CharStyle, Document, NamedStyle, PageNumFmt, ParaBorders, ParaStyle, SdtProps, ShapeFill, ShapePath, ShapePreset, ShapeStroke, Stylesheet, TableCondOverrides, TableStyle, TabStop } from "./model";
 
 export type { Block, CharStyle, Document, NamedStyle, ParaStyle, Stylesheet, TableCondOverrides, TableStyle, TabStop } from "./model";
 
@@ -102,6 +102,9 @@ export interface ShapeOptions {
   adjust?: Record<string, number>;
   /** Text box body — one paragraph per string, rendered read-only inside the box. */
   text?: string[];
+  /** Freeform custom geometry (OOXML a:custGeom) — a path of segments in normalized
+   *  box coordinates (0–1); when present it replaces the preset. */
+  path?: ShapePath["segments"];
 }
 
 export interface ListItem {
