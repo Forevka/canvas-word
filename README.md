@@ -150,8 +150,10 @@ letter spacing, color, alignment including true justification (slack into
 the caret/selection — one priority-based manager shows the most relevant of a
 built-in **text format** bar (Word's selection toolbar: font, size, B/I/U/S, colour,
 highlight — configurable via `floatingToolbar`; see
-[`examples/floating-toolbar`](./examples/floating-toolbar)), an **image** bar, and a
-**hyperlink** bar (Open/Edit/Copy/Remove). Embedders can register their own via the
+[`examples/floating-toolbar`](./examples/floating-toolbar)) plus bars for a selected
+**image** / **equation**, a multi-cell **table** selection, a **hyperlink**, a
+**comment/suggestion**, a **footnote/endnote** marker, the **TOC**, a **list item**, and
+an empty-paragraph ＋ **insert menu**. Embedders can register their own via the
 `contextToolbars` option (see
 [`examples/context-toolbars`](./examples/context-toolbars)).
 

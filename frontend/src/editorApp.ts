@@ -26,6 +26,7 @@ import { createLinkContextToolbar } from "./ui/linkContextToolbar";
 import { createTableContextToolbar } from "./ui/tableContextToolbar";
 import { createEquationContextToolbar } from "./ui/equationContextToolbar";
 import { createReviewContextToolbar } from "./ui/reviewContextToolbar";
+import { createNoteContextToolbar } from "./ui/noteContextToolbar";
 import { createTocContextToolbar } from "./ui/tocContextToolbar";
 import { createListContextToolbar } from "./ui/listContextToolbar";
 import { createInsertMenuToolbar } from "./ui/insertMenuToolbar";
@@ -99,6 +100,7 @@ import {
   insertTocCmd,
   insertFootnoteCmd,
   insertEndnoteCmd,
+  deleteNoteCmd,
   insertContentControl,
   wrapImageInContentControl,
   removeContentControl,
@@ -3400,6 +3402,22 @@ if (!readonly) {
           editor.resolveThread(id, resolved);
           editor.focus();
         },
+      },
+    }),
+  );
+
+  // Footnote/endnote bar (priority 24) — caret on a note reference marker.
+  manager.register(
+    createNoteContextToolbar({
+      note: () => editor.noteAtCaret(),
+      hasRangeSelection: isRangeSelection,
+      anchorRect: () => editor.getSelectionAnchorRect(),
+      actions: {
+        goTo: (info) => {
+          editor.goToNote(info.kind, info.id); // jumps into the note body
+          editor.focus();
+        },
+        remove: (info) => dispatchFocus(deleteNoteCmd(info.kind, info.id)),
       },
     }),
   );

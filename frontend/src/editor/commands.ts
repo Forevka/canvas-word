@@ -943,6 +943,35 @@ export function linkAtPosition(doc: EditorState["doc"], pos: DocPosition): strin
   return after ?? before;
 }
 
+/** The footnote/endnote whose superscript marker run sits at `pos` (favouring the
+ *  run the caret is entering, else the one it's leaving), or null. Note markers are
+ *  single superscript runs carrying `footnoteRef`/`endnoteRef`; this scans the caret
+ *  paragraph's runs the same way `linkAtPosition` scans for links, and drives the
+ *  footnote/endnote context toolbar. */
+export function noteAtPosition(
+  doc: EditorState["doc"],
+  pos: DocPosition,
+): { kind: "footnote" | "endnote"; id: string } | null {
+  const block = blockById(doc, pos.blockId);
+  if (!block || block.kind !== "paragraph") return null;
+  const noteOf = (r: Run): { kind: "footnote" | "endnote"; id: string } | null =>
+    r.style.footnoteRef
+      ? { kind: "footnote", id: r.style.footnoteRef }
+      : r.style.endnoteRef
+        ? { kind: "endnote", id: r.style.endnoteRef }
+        : null;
+  let off = 0;
+  let before: { kind: "footnote" | "endnote"; id: string } | null = null;
+  let after: { kind: "footnote" | "endnote"; id: string } | null = null;
+  for (const r of block.runs) {
+    const end = off + r.text.length;
+    if (pos.offset > off && pos.offset <= end) before = noteOf(r);
+    if (pos.offset >= off && pos.offset < end) after = noteOf(r);
+    off = end;
+  }
+  return after ?? before;
+}
+
 /** The INLINE content control directly on the run at `pos`, ignoring any
  *  block-level control wrapping the whole paragraph/table. Splitting a paragraph
  *  is only unsafe INSIDE an inline control (it can't span a paragraph break); a
@@ -1481,6 +1510,33 @@ export function removeContentControl(id: string, deleteContents: boolean): Comma
 // later ref in the same transaction, so model text and the page-bottom note
 // markers (which echo the ref text) can never disagree.
 
+/** A note reference marker's location: its host paragraph, run index, start
+ *  offset within the paragraph, and the note id it points at. */
+interface NoteRefAt {
+  para: Paragraph;
+  runIdx: number;
+  offset: number;
+  id: string;
+}
+
+/** Every footnote/endnote reference of one kind in document order, walking body
+ *  AND table-cell paragraphs so numbering stays correct wherever a ref lives.
+ *  Shared by the insert commands (renumber-on-insert) and `deleteNoteCmd`
+ *  (renumber-on-delete). Callers that need document ORDER of arbitrary blocks
+ *  keep `body` around separately for that lookup. */
+function noteRefsIn(body: Paragraph[], refKey: "footnoteRef" | "endnoteRef"): NoteRefAt[] {
+  const refs: NoteRefAt[] = [];
+  body.forEach((para) => {
+    let off = 0;
+    para.runs.forEach((r, runIdx) => {
+      const id = r.style[refKey];
+      if (id) refs.push({ para, runIdx, offset: off, id });
+      off += r.text.length;
+    });
+  });
+  return refs;
+}
+
 export function insertFootnoteCmd(): Command {
   return (state) => {
     const sel = state.selection;
@@ -1490,23 +1546,8 @@ export function insertFootnoteCmd(): Command {
     // Body paragraphs OR body table cells — not header/footer bands or notes.
     if (loc?.kind !== "top" && !(loc?.kind === "cell" && loc.where === "body")) return null;
 
-    // Document-ordered refs with their host paragraph + run index.
-    interface RefAt {
-      para: Paragraph;
-      runIdx: number;
-      offset: number;
-    }
-    // Walk body AND table-cell paragraphs in document order, so numbering stays
-    // correct wherever a ref lives (and a ref can sit inside a table cell).
     const body = bodyParagraphs(state.doc);
-    const refs: RefAt[] = [];
-    body.forEach((para) => {
-      let off = 0;
-      para.runs.forEach((r, runIdx) => {
-        if (r.style.footnoteRef) refs.push({ para, runIdx, offset: off });
-        off += r.text.length;
-      });
-    });
+    const refs = noteRefsIn(body, "footnoteRef");
     const orderOf = (blockId: string): number => body.findIndex((p) => p.id === blockId);
     const caretOrder = orderOf(at.blockId);
     let idx = 0;
@@ -1572,23 +1613,8 @@ export function insertEndnoteCmd(): Command {
     // Body paragraphs OR body table cells — not header/footer bands or notes.
     if (loc?.kind !== "top" && !(loc?.kind === "cell" && loc.where === "body")) return null;
 
-    // Document-ordered refs with their host paragraph + run index.
-    interface RefAt {
-      para: Paragraph;
-      runIdx: number;
-      offset: number;
-    }
-    // Walk body AND table-cell paragraphs in document order, so numbering stays
-    // correct wherever a ref lives (and a ref can sit inside a table cell).
     const body = bodyParagraphs(state.doc);
-    const refs: RefAt[] = [];
-    body.forEach((para) => {
-      let off = 0;
-      para.runs.forEach((r, runIdx) => {
-        if (r.style.endnoteRef) refs.push({ para, runIdx, offset: off });
-        off += r.text.length;
-      });
-    });
+    const refs = noteRefsIn(body, "endnoteRef");
     const orderOf = (blockId: string): number => body.findIndex((p) => p.id === blockId);
     const caretOrder = orderOf(at.blockId);
     let idx = 0;
@@ -1641,6 +1667,68 @@ export function insertEndnoteCmd(): Command {
     ops.push({ type: "setEndnote", noteId, paras: [notePara] });
     // Word drops the caret into the new note for immediate typing.
     return tr(ops, caret(notePara.id, 0), "command");
+  };
+}
+
+/** Delete a footnote/endnote by id: drop its superscript marker run from the host
+ *  paragraph, delete the note body (`setFootnote`/`setEndnote` with no paras), and
+ *  renumber every remaining ref of the same kind in one transaction — mirroring the
+ *  insert commands' renumber pass in reverse. Drives the note context toolbar's
+ *  Delete action. No-op if the note doesn't exist. */
+export function deleteNoteCmd(kind: "footnote" | "endnote", noteId: string): Command {
+  return (state) => {
+    const doc = state.doc;
+    const registry = kind === "footnote" ? doc.footnotes : doc.endnotes;
+    if (!registry?.[noteId]) return null;
+    const refKey = kind === "footnote" ? "footnoteRef" : "endnoteRef";
+    const noteOp = (id: string, paras: Paragraph[] | null): Op =>
+      kind === "footnote" ? { type: "setFootnote", noteId: id, paras } : { type: "setEndnote", noteId: id, paras };
+
+    // Every ref of this kind, document order (body + cell paragraphs).
+    const refs = noteRefsIn(bodyParagraphs(doc), refKey);
+    const target = refs.find((r) => r.id === noteId);
+    // Orphan body (marker already gone) — just drop the dangling body.
+    if (!target) return tr([noteOp(noteId, null)], state.selection ?? null, "command");
+
+    // Per-paragraph run edits: drop the target marker run; renumber the rest by
+    // their post-deletion document order (1-based).
+    const edits = new Map<string, Map<number, string | null>>(); // null → drop the run
+    const editFor = (paraId: string): Map<number, string | null> => {
+      let m = edits.get(paraId);
+      if (!m) {
+        m = new Map();
+        edits.set(paraId, m);
+      }
+      return m;
+    };
+    editFor(target.para.id).set(target.runIdx, null);
+    refs
+      .filter((r) => r.id !== noteId)
+      .forEach((r, i) => editFor(r.para.id).set(r.runIdx, String(i + 1)));
+
+    const ops: Op[] = [];
+    for (const [paraId, m] of edits) {
+      const p = blockById(doc, paraId)!; // cell-aware (refs may live in cells)
+      const runs: Run[] = [];
+      p.runs.forEach((r, i) => {
+        if (!m.has(i)) {
+          runs.push(r);
+          return;
+        }
+        const v = m.get(i);
+        if (v !== null) runs.push({ ...r, text: v! });
+      });
+      // A paragraph must keep at least one run; if dropping the marker emptied it,
+      // seed an empty run carrying a cleaned style (no stray ref/superscript flags).
+      if (runs.length === 0) {
+        const base = p.runs[target.runIdx] ?? p.runs[0]!;
+        runs.push({ text: "", style: { ...base.style, footnoteRef: undefined, endnoteRef: undefined, verticalAlign: undefined } });
+      }
+      ops.push({ type: "setRuns", blockId: paraId, runs });
+    }
+    ops.push(noteOp(noteId, null));
+    // Collapse the caret to where the marker was.
+    return tr(ops, caret(target.para.id, target.offset), "command");
   };
 }
 
