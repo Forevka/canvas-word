@@ -58,6 +58,45 @@ describe("legacy VML shape import (issue #218)", () => {
     expect(s.stroke).toEqual({ none: true });
   });
 
+  it("recognizes every VML boolean-off spelling (f/false/0/no/off)", () => {
+    for (const off of ["f", "false", "0", "no", "off", "OFF", "False"]) {
+      const s = shapeOf(`<v:rect style="width:20pt;height:20pt" filled="${off}" stroked="${off}"/>`);
+      expect(s.fill).toEqual({ none: true });
+      expect(s.stroke).toEqual({ none: true });
+    }
+    // A truthy value (or absence) does NOT clear the fill/stroke.
+    expect(shapeOf(`<v:rect style="width:20pt;height:20pt" filled="t" fillcolor="#4472c4"/>`).fill).toEqual({ color: "#4472c4" });
+  });
+
+  it("synthesizes the VML default border for a bare shape (black 0.75pt)", () => {
+    // VML shapes are stroked by default — a bare v:rect/v:oval still shows an
+    // outline, so the importer materializes the default rather than dropping it.
+    expect(shapeOf(`<v:rect style="width:60pt;height:60pt"/>`).stroke).toEqual({ color: "#000000", widthPt: 0.75 });
+    expect(shapeOf(`<v:oval style="width:60pt;height:60pt"/>`).stroke).toEqual({ color: "#000000", widthPt: 0.75 });
+  });
+
+  it("warns and imports only the first shape of a VML group / multi-shape pict", () => {
+    const r = importPict(
+      `<v:group style="width:200pt;height:100pt" coordsize="21600,21600">` +
+      `<v:rect style="width:80pt;height:80pt" fillcolor="#4472c4"/>` +
+      `<v:oval style="width:80pt;height:80pt" fillcolor="#ed7d31"/>` +
+      `</v:group>`,
+    );
+    expect(codes(r)).toContain("vml-group-flattened");
+    const shapes = r.doc.blocks.filter((b) => b.kind === "shape");
+    expect(shapes).toHaveLength(1); // only the first shape survives the flatten
+    expect(firstShape(r.doc).geometry.preset).toBe("rect");
+    expect(firstShape(r.doc).fill).toEqual({ color: "#4472c4" });
+  });
+
+  it("does not warn about a group for a lone shape (even a text box)", () => {
+    const r = importPict(
+      `<v:shape type="#_x0000_t202" style="width:120pt;height:60pt">` +
+      `<v:textbox><w:txbxContent><w:p><w:r><w:t>solo</w:t></w:r></w:p></w:txbxContent></v:textbox></v:shape>`,
+    );
+    expect(codes(r)).not.toContain("vml-group-flattened");
+  });
+
   it("accepts a named fill colour and Word's '#hex [theme-idx]' form", () => {
     expect(shapeOf(`<v:rect style="width:20pt;height:20pt" fillcolor="red"/>`).fill).toEqual({ color: "#ff0000" });
     expect(shapeOf(`<v:rect style="width:20pt;height:20pt" fillcolor="#4472c4 [3204]"/>`).fill).toEqual({ color: "#4472c4" });

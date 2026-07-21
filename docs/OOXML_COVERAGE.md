@@ -389,9 +389,10 @@ w:pict → …                                  (import-only → DrawingML on re
 ├─ v:rect / v:oval / v:roundrect / v:line .. ✅ → preset rect/ellipse/roundRect/line
 ├─ v:shape @o:spt | @type="#_x0000_tNNN" ... ✅ MSO shape-type → preset (unknown → rect box)
 ├─ @style width/height (pt/px/in/cm/mm/pc) . ✅ → widthPx/heightPx; v:line box from @from/@to
-├─ @fillcolor / filled="f" ................. ✅ hex / named / "#hex [idx]" → fill; "f" → none
-├─ @strokecolor / @strokeweight / stroked="f" ✅ solid outline (pt) / none (line defaults black 0.75pt)
+├─ @fillcolor / filled ..................... ✅ hex / named / "#hex [idx]" → fill; off (f/false/0/no/off) → none
+├─ @strokecolor / @strokeweight / stroked .. ✅ solid outline (pt); off → none; bare shape → default black 0.75pt border
 ├─ v:textbox → w:txbxContent ............... ✅ → ShapeBlock.text (paragraph flow, like the wps path)
+├─ v:group / multiple shapes in one w:pict . ⚠️ flattened to the first shape (vml-group-flattened warning)
 └─ absolute style position / w10:wrap ...... ❌ dropped — VML shapes land in the text flow (read-only)
 ```
 

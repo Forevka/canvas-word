@@ -993,6 +993,16 @@ function vmlColor(raw: string | undefined): string | undefined {
   return /^[0-9a-fA-F]{6}$/.test(hex) ? `#${hex.toLowerCase()}` : undefined;
 }
 
+/** A VML boolean attribute (filled / stroked / …). VML accepts several spellings:
+ *  t/true/1/yes/on ⇒ true; f/false/0/no/off ⇒ false; anything else (incl. absent)
+ *  ⇒ undefined (leave the caller's default). */
+function vmlBool(raw: string | undefined): boolean | undefined {
+  const v = raw?.trim().toLowerCase();
+  if (v === "t" || v === "true" || v === "1" || v === "yes" || v === "on") return true;
+  if (v === "f" || v === "false" || v === "0" || v === "no" || v === "off") return false;
+  return undefined;
+}
+
 /** MSO shape-type numbers (v:shape @o:spt, or the `_tNNN` suffix of a shapetype
  *  @type reference) → the DrawingML preset the model draws. Unlisted → rect. */
 const VML_SPT_PRESET: Record<string, string> = {
@@ -1010,6 +1020,21 @@ function vmlElementPreset(tagName: string): string | undefined {
     case "v:line": return "line";
     default: return undefined;
   }
+}
+
+/** The VML tags that denote a *drawn* shape instance (a v:shapetype is only a
+ *  template, and an image is handled by the v:imagedata branch — neither counts). */
+const VML_SHAPE_TAGS = new Set(["v:rect", "v:roundrect", "v:oval", "v:line", "v:shape"]);
+
+/** Count the drawn VML shapes anywhere under a node. >1 means a group (v:group)
+ *  or several shapes share one w:pict — we only import the first, so warn. */
+function countVmlShapes(node: XmlNode): number {
+  let n = 0;
+  for (const c of children(node)) {
+    if (VML_SHAPE_TAGS.has(c.tagName)) n++;
+    n += countVmlShapes(c);
+  }
+  return n;
 }
 
 /** "x,y" VML coordinate pair (from/to on v:line) → [emuX, emuY]. */
@@ -1032,6 +1057,11 @@ function parseVmlShape(pict: XmlNode, ctx: ParseCtx): Extract<IRInline, { kind: 
     findDeep(pict, "v:rect") ?? findDeep(pict, "v:roundrect") ?? findDeep(pict, "v:oval") ??
     findDeep(pict, "v:line") ?? findDeep(pict, "v:shape");
   if (!node) return undefined;
+  // A group (or several shapes in one w:pict) flattens to just the first — the
+  // model has no VML group container. Surface the loss instead of hiding it.
+  if (countVmlShapes(pict) > 1) {
+    ctx.warnings.add("vml-group-flattened", "A VML shape group (or multiple VML shapes in one drawing) was found; only the first shape was imported.");
+  }
 
   let preset = vmlElementPreset(node.tagName);
   if (preset === undefined) {
@@ -1056,21 +1086,20 @@ function parseVmlShape(pict: XmlNode, ctx: ParseCtx): Extract<IRInline, { kind: 
   if (widthEmu !== undefined) shape.widthEmu = widthEmu;
   if (heightEmu !== undefined) shape.heightEmu = heightEmu;
 
-  // Fill: filled="f" ⇒ no fill; else fillcolor (default fill left to the model).
-  const filled = attr(node, "filled");
+  // Fill: filled off (f/false/0/no/off) ⇒ no fill; else fillcolor (default fill
+  // left to the model — VML's default fill is white, which the model draws too).
   const fillColor = vmlColor(attr(node, "fillcolor"));
-  if (filled === "f" || filled === "false") shape.fill = { none: true };
+  if (vmlBool(attr(node, "filled")) === false) shape.fill = { none: true };
   else if (fillColor) shape.fill = { color: fillColor };
 
-  // Stroke: stroked="f" ⇒ no outline; else a solid stroke from strokecolor +
-  // strokeweight (VML defaults: black, 0.75pt). A bare line needs a visible
-  // stroke, so synthesize the default when the markup omits both.
-  const stroked = attr(node, "stroked");
+  // Stroke: stroked off (f/false/0/no/off) ⇒ no outline; otherwise VML shapes are
+  // stroked by default — synthesize the default black 0.75pt border when the
+  // markup omits both colour and weight (a bare shape still shows an outline).
   const strokeColor = vmlColor(attr(node, "strokecolor"));
   const strokeWeightEmu = vmlLengthToEmu(attr(node, "strokeweight"));
-  if (stroked === "f" || stroked === "false") {
+  if (vmlBool(attr(node, "stroked")) === false) {
     shape.stroke = { none: true };
-  } else if (strokeColor || strokeWeightEmu !== undefined || node.tagName === "v:line") {
+  } else {
     shape.stroke = { color: strokeColor ?? "#000000", widthPt: strokeWeightEmu !== undefined ? strokeWeightEmu / EMU_PER.pt : 0.75 };
   }
 
