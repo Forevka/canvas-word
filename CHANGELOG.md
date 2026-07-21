@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Footnote/endnote context toolbar.** A new **note** bar (priority 24 — between the comment and
+  TOC bars) appears when the caret sits on a footnote/endnote reference marker: **Go to note** jumps
+  the caret into the note body and scrolls it into view, **Delete** removes the marker *and* its body
+  and renumbers the remaining notes of that kind — in a single undoable step. Collapsed-caret only (a
+  text range still gets the format bar). Backed by a new `deleteNoteCmd(kind, id)` command, a
+  position-based `noteAtPosition(doc, pos)` detector, and editor accessors `noteAtCaret()` /
+  `goToNote(kind, id)`. Completes the batch of built-in bars from the previous entry. See the
+  [`context-toolbars`](./examples/context-toolbars) example (now seeds a footnote).
 - **More contextual toolbars — equation, comment/suggestion, TOC, list-item, empty-paragraph.**
   Five new built-in context bars on the priority-based manager: an **equation** bar (29 — Edit /
   align / Delete when an equation is selected), a **comment/suggestion** bar (26 — Accept/Reject a
@@ -17,8 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Footnote). The four caret bars show on a collapsed caret only (a text range still gets the format
   bar). Backed by new editor accessors (`getSelectedEquationRect`, `editSelectedEquation`,
   `reviewAtCaret`, `caretInToc`, `caretInEmptyParagraph`). See the
-  [`context-toolbars`](./examples/context-toolbars) example. (Footnote/endnote, drawing-shape, and
-  equation-resize bars are tracked as follow-up issues.)
+  [`context-toolbars`](./examples/context-toolbars) example. (The footnote/endnote bar landed
+  separately — see the entry above; drawing-shape and equation-resize are tracked as follow-up issues.)
 - **Contextual floating toolbars — one framework, priority-based.** The two hand-wired floating
   mini-toolbars (image + text selection) are now unified under a single manager that shows the one
   most-relevant bar for whatever the caret/selection is on. Built-ins: the **image** bar (priority

@@ -1,7 +1,8 @@
 // Contextual floating toolbars demo. The editor shows ONE floating bar for whatever
 // the caret/selection is on — built-in bars for a selected image, a hyperlink, and a
 // text selection, PLUS any you register via the `contextToolbars` option. This demo
-// seeds a document (a hyperlink + a table) and registers a custom TABLE toolbar.
+// seeds a document (hyperlink, table, list, equation, footnote) and registers a custom
+// TABLE toolbar.
 import { WordCanvas } from "@forevka/wordcanvas";
 import { DocumentBuilder } from "@forevka/wordcanvas/builder";
 
@@ -18,6 +19,9 @@ const doc = DocumentBuilder.create()
   .bulletList(["First item", "Second item", "Third item"])
   .paragraph("Select this equation to see the equation toolbar (edit / align / delete):")
   .equation("E = mc^2")
+  .paragraph("This sentence has a footnote")
+  .footnote("Put the caret on the footnote marker to see the note bar — Go to note / Delete.")
+  .text(" — click its superscript marker to see the footnote bar.")
   .paragraph("Put the caret on the empty line below to see the ＋ insert menu:")
   .paragraph("")
   .build();

@@ -106,6 +106,7 @@ import {
   replaceSdtCellContent,
   sdtAtPosition,
   linkAtPosition,
+  noteAtPosition,
   inlineSdtAtPosition,
   sdtStackAtPosition,
   setAlignment,
@@ -352,6 +353,12 @@ export interface Editor {
   /** The review item (comment thread or tracked-change suggestion) whose range
    *  contains the caret, or null. Drives the review context toolbar. */
   reviewAtCaret(): { kind: "comment" | "suggestion"; id: string; resolved?: boolean } | null;
+  /** The footnote/endnote whose marker sits at the caret, or null. Drives the
+   *  footnote/endnote context toolbar. */
+  noteAtCaret(): { kind: "footnote" | "endnote"; id: string } | null;
+  /** Move the caret into a note's body (first paragraph) and scroll it into view.
+   *  No-op if the note has no body. */
+  goToNote(kind: "footnote" | "endnote", id: string): void;
   /** Delete the selected image and clear the object selection. */
   deleteSelectedObject(): void;
   // ---- develop-mode Document-tree inspector --------------------------------
@@ -3708,6 +3715,17 @@ export function createEditor(
       for (const s of review.suggestions) if (inAnchor(s.anchor)) return { kind: "suggestion", id: s.id };
       for (const t of review.threads) if (inAnchor(t.anchor)) return { kind: "comment", id: t.id, resolved: t.status === "resolved" };
       return null;
+    },
+    noteAtCaret: (): { kind: "footnote" | "endnote"; id: string } | null =>
+      selection ? noteAtPosition(doc, selection.focus) : null,
+    goToNote: (kind: "footnote" | "endnote", id: string): void => {
+      // Note bodies are real, indexed page blocks (no story scope), so revealing one
+      // is the same set-selection + ensureVisible dance as revealBlock.
+      const first = (kind === "footnote" ? doc.footnotes : doc.endnotes)?.[id]?.[0];
+      if (!first) return;
+      setSelection({ anchor: { blockId: first.id, offset: 0 }, focus: { blockId: first.id, offset: 0 } });
+      const rect = caretRect(tree, { blockId: first.id, offset: 0 });
+      if (rect) paint.ensureVisible(rect, "center");
     },
     deleteSelectedObject: deleteSelectedObjectInternal,
     setInspectorHighlight: (target: InspectorTarget | null): void => {
