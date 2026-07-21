@@ -176,6 +176,8 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
     // Read-only text box body: clip to the box, translate into the local text
     // frame (bodyPr insets + vertical-center offset), and paint each nested
     // paragraph with the same paintBlock used for cell content (mirrors canvas).
+    // KNOWN LIMITATION (same as the canvas painter): the text is painted
+    // axis-aligned even when the shape is rotated — only the geometry rotates.
     const text = block.shape.text;
     if (text && text.blocks.length > 0) {
       doc.save();
