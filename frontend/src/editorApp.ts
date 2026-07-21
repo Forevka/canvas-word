@@ -283,6 +283,8 @@ let toggleRuler: () => boolean = () => false;
 let refreshVRuler: () => void = () => {};
 let toggleVRuler: () => boolean = () => false;
 let refreshContextToolbars: () => void = () => {};
+// rAF-coalesced variant for the drag-frequency selection hook (see onSelectionChange).
+let scheduleRefreshContextToolbars: () => void = () => {};
 let openLinkDialog: (anchor: HTMLElement, url?: string) => void = () => {};
 let refreshBookmarks: () => void = () => {};
 let toggleBookmarks: () => void = () => {};
@@ -360,7 +362,9 @@ const editorOpts = {
     // Cell (multi-row/col) selection updates through this hook only — its setter
     // skips the heavy onChange broadcast (it fires per drag-move) — so refresh the
     // context toolbars here too, else the table bar wouldn't appear until a scroll.
-    refreshContextToolbars();
+    // Coalesced (rAF) because this fires continuously during a drag and refresh reads
+    // layout; onChange stays synchronous for typing/caret immediacy.
+    scheduleRefreshContextToolbars();
     refreshDevPanel();
   },
   // Develop mode only: the inspector turns this signal on while open (dormant
@@ -3484,6 +3488,7 @@ if (!readonly) {
   }
 
   refreshContextToolbars = manager.refresh;
+  scheduleRefreshContextToolbars = manager.scheduleRefresh;
 }
 
 // ---- page setup ------------------------------------------------------------

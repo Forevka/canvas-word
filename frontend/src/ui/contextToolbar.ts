@@ -141,9 +141,14 @@ export function pickActive(
 export interface ContextToolbarManager {
   /** Add a toolbar to the coordination set. */
   register(toolbar: ContextToolbar): void;
-  /** Re-evaluate which toolbar (if any) should be visible, and where. Cheap —
-   *  call on every change / scroll / zoom / resize. */
+  /** Re-evaluate which toolbar (if any) should be visible, and where. Reads layout
+   *  (getBoundingClientRect + offset sizes), so call it synchronously only for
+   *  immediacy (onChange / zoom). For high-frequency sources (a selection drag) use
+   *  {@link scheduleRefresh} instead. */
   refresh(): void;
+  /** rAF-coalesced {@link refresh}: at most one refresh per frame no matter how many
+   *  times it's called. Use for drag-frequency triggers to avoid reflow thrashing. */
+  scheduleRefresh(): void;
   /** Hide whatever is currently shown (e.g. on Escape). */
   hideActive(): void;
   /** Remove every toolbar's DOM. */
@@ -219,6 +224,7 @@ export function createContextToolbarManager(deps: ContextToolbarManagerDeps): Co
       toolbars.sort((a, b) => b.priority - a.priority);
     },
     refresh,
+    scheduleRefresh,
     hideActive,
     destroy,
   };
