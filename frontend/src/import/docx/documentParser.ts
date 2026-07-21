@@ -26,7 +26,9 @@ import type {
 import { decodeBorders, decodeShdFill } from "./borders";
 import { decodeLineNumbering, decodeParaProps, decodeRunProps } from "./props";
 import { attr, children, el, els, findDeep, numAttr, onOff, parseXml, rootEl, textOf, val, type XmlNode } from "./xml";
+import { halfPointsToPx } from "./units";
 import { ommlToMathml } from "../../mathml/fromOmml";
+import { EQUATION_DISPLAY_PX } from "../../layout/math/equationLayout";
 
 interface ParseCtx {
   warnings: WarningSink;
@@ -169,6 +171,20 @@ function mathParaJc(node: XmlNode): "left" | "center" | "right" | undefined {
   return undefined;
 }
 
+/** Uniform scale of a display equation from its paragraph's run font size
+ *  (`w:p/w:pPr/w:rPr/w:sz`, half-points) relative to the base display size — the
+ *  inverse of the export in documentXml.equationParagraphXml. Returns undefined
+ *  when absent or ≈1 (the default size), so unresized equations carry no field. */
+function mathParaScale(pNode: XmlNode): number | undefined {
+  const pPr = el(pNode, "w:pPr");
+  const rPr = pPr ? el(pPr, "w:rPr") : undefined;
+  const sz = rPr ? el(rPr, "w:sz") : undefined;
+  const hp = sz ? Number(attr(sz, "w:val")) : NaN;
+  if (!Number.isFinite(hp) || hp <= 0) return undefined;
+  const scale = halfPointsToPx(hp) / EQUATION_DISPLAY_PX;
+  return Math.abs(scale - 1) < 0.02 ? undefined : scale;
+}
+
 function walkBlocks(nodes: XmlNode[], out: IRBlock[], ctx: ParseCtx): void {
   for (const node of nodes) {
     // A custom field open here marks the block being built; one that opens/closes
@@ -185,6 +201,8 @@ function walkBlocks(nodes: XmlNode[], out: IRBlock[], ctx: ParseCtx): void {
           const jc = mathParaJc(mathPara);
           const m: IRBlock = { kind: "math", root: ommlToMathml(mathPara), display: true };
           if (jc) m.align = jc;
+          const scale = mathParaScale(node);
+          if (scale !== undefined) m.scale = scale;
           if (ctx.trackFields && ctx.fieldTrack.markBlock) m.fieldId = ctx.fieldTrack.markBlock;
           if (ctx.blockSdtStack.length) m.sdtPath = [...ctx.blockSdtStack];
           out.push(m);

@@ -926,10 +926,14 @@ public sealed record EquationOptions
 {
     public EquationAlign? Align { get; init; }
 
+    /// <summary>Uniform size multiplier (drag-to-resize), default 1. Clamped to [0.25, 4].</summary>
+    public double? Scale { get; init; }
+
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
         var o = Js.Obj(e);
         if (Align is { } a) Js.Set(o, "align", EnumJs.EqAlign(a));
+        if (Scale is { } s) Js.Set(o, "scale", s);
         return o;
     }
 }

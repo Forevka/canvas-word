@@ -131,10 +131,14 @@ export class BuilderContext {
     return img;
   }
 
-  /** A display (block) equation block from a ready MathEquation AST. */
-  equation(equation: MathEquation, align?: EquationBlock["align"]): EquationBlock {
+  /** A display (block) equation block from a ready MathEquation AST. An optional
+   *  uniform `scale` (drag-to-resize) is clamped to [0.25, 4]; scale 1 is omitted. */
+  equation(equation: MathEquation, align?: EquationBlock["align"], scale?: number): EquationBlock {
     const eq: EquationBlock = { kind: "equation", id: this.ids.next(), revision: 0, equation };
     if (align) eq.align = align;
+    if (scale !== undefined && Number.isFinite(scale) && scale !== 1) {
+      eq.scale = Math.min(4, Math.max(0.25, scale));
+    }
     return eq;
   }
 

@@ -229,6 +229,9 @@ export interface EquationBlock {
   revision: number;
   equation: MathEquation;
   align?: "left" | "center" | "right";
+  /** Uniform size multiplier (drag-to-resize), default 1. Clamped to [0.25, 4].
+   *  Round-trips to .docx as the equation paragraph's run font size. */
+  scale?: number | undefined;
   fieldId?: string | undefined;
   sdtPath?: string[] | undefined;
 }

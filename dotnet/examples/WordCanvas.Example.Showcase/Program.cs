@@ -392,6 +392,8 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
     .EquationMathml(
         "<math><mrow><msup><mi>a</mi><mn>2</mn></msup><mo>+</mo><msup><mi>b</mi><mn>2</mn></msup><mo>=</mo><msup><mi>c</mi><mn>2</mn></msup></mrow></math>",
         new EquationOptions { Align = EquationAlign.Right })
+    .Paragraph("Equations can be drag-resized in the editor; the scale round-trips to .docx:")
+    .Equation("E = mc^2", new EquationOptions { Scale = 1.6 })
 
     // ---- Right-to-left / bidirectional ----
     // NOTE: .Direction(Rtl) drives a true bidi (OOXML w:bidi) layout. We demo it with
