@@ -1208,6 +1208,37 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     }
   }
 
+  /** Paint a placed drawing shape at absolute (x,y): a GROUP container (PlacedShape
+   *  with `children`) recurses into its members (each already offset into the box);
+   *  a leaf paints its preset geometry and, if it has one, its read-only text box body
+   *  (clipped to the box, translated into the local text frame). Recursive so nested
+   *  groups compose. Mirrors the PDF painter (export/pdf/paintBlock.ts). */
+  function paintPlacedShape(ctx: CanvasRenderingContext2D, shape: PlacedShape, x: number, y: number, pageIndex: number): void {
+    if (shape.children) {
+      for (const c of shape.children) paintPlacedShape(ctx, c.shape, x + c.x, y + c.y, pageIndex);
+      return;
+    }
+    paintShapeCanvas(ctx, shape, x, y);
+    // Read-only text box body: clip to the box, translate into the local text frame
+    // (bodyPr insets + vertical-center offset), and paint each nested paragraph with
+    // the same paintBlock used for cell content.
+    // KNOWN LIMITATION: the text is painted axis-aligned even when the shape is
+    // rotated (shape.rotation) — only the geometry rotates, the text stays upright.
+    // Rotated text boxes are an uncommon combination; laying the sub-flow out in the
+    // rotated frame is deferred (see docs/OOXML_COVERAGE.md). The PDF painter mirrors this.
+    const text = shape.text;
+    if (text && text.blocks.length > 0) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x, y, shape.width, shape.height);
+      ctx.clip();
+      ctx.beginPath(); // clear the clip rect from the current path
+      ctx.translate(x + text.offsetX, y + text.offsetY);
+      for (const cb of text.blocks) paintBlock(ctx, cb, pageIndex);
+      ctx.restore();
+    }
+  }
+
   function paintBlock(ctx: CanvasRenderingContext2D, block: PlacedBlock, pageIndex: number): void {
     if (block.image) {
       const img = getImage(block.image.src);
@@ -1239,26 +1270,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       return;
     }
     if (block.shape) {
-      paintShapeCanvas(ctx, block.shape, block.x, block.y);
-      // Read-only text box body: clip to the box, translate into the local text
-      // frame (bodyPr insets + vertical-center offset), and paint each nested
-      // paragraph with the same paintBlock used for cell content.
-      // KNOWN LIMITATION: the text is painted axis-aligned even when the shape is
-      // rotated (block.shape.rotation) — only the geometry rotates, the text stays
-      // upright. Rotated text boxes are an uncommon combination; laying the sub-flow
-      // out in the rotated frame is deferred (see docs/OOXML_COVERAGE.md). The PDF
-      // painter (export/pdf/paintBlock.ts) mirrors this.
-      const text = block.shape.text;
-      if (text && text.blocks.length > 0) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(block.x, block.y, block.shape.width, block.shape.height);
-        ctx.clip();
-        ctx.beginPath(); // clear the clip rect from the current path
-        ctx.translate(block.x + text.offsetX, block.y + text.offsetY);
-        for (const cb of text.blocks) paintBlock(ctx, cb, pageIndex);
-        ctx.restore();
-      }
+      paintPlacedShape(ctx, block.shape, block.x, block.y, pageIndex);
       return;
     }
     if (block.equation) {

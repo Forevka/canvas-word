@@ -583,6 +583,38 @@ export type ShapeFill = { color: string } | { none: true };
  *  no-outline. Absent = the default outline. */
 export type ShapeStroke = { color: string; widthPt: number; dash?: ShapeDash } | { none: true };
 
+/** A grouped-shapes container (OOXML wpg:wgp). Set on `ShapeBlock.group`, it turns
+ *  the shape into a GROUP: instead of a preset path, the box draws its child
+ *  drawings composed under the group transform. Children are positioned in the
+ *  group's child coordinate space (`childOffset`/`childExtent` = a:chOff/a:chExt);
+ *  layout maps each child rect through that space into the group's widthPx×heightPx
+ *  box, so resizing / dragging the group moves and scales the children as one
+ *  object. A child may itself be a group (its `shape.group` set) — nesting is
+ *  supported. (issue #221) */
+export interface ShapeGroup {
+  /** The member drawings, in the child coordinate space (paint/z order). */
+  children: ShapeGroupChild[];
+  /** a:chOff — the origin of the child coordinate space (px). */
+  childOffsetXPx: number;
+  childOffsetYPx: number;
+  /** a:chExt — the extent of the child coordinate space (px). A child's local rect
+   *  is mapped (child − childOffset) / childExtent × groupExtent into the group box. */
+  childExtentXPx: number;
+  childExtentYPx: number;
+}
+
+/** One member of a {@link ShapeGroup}, positioned by its local rect (a:xfrm
+ *  a:off/a:ext) within the group's child coordinate space. `shape` is the member
+ *  drawing — a leaf shape, or a nested group when its own `group` is set; its
+ *  `widthPx`/`heightPx` are the child a:ext (its `align`/`wrap`/`anchor` are inert
+ *  inside a group). */
+export interface ShapeGroupChild {
+  /** a:off x/y in the child coordinate space (px). */
+  xPx: number;
+  yPx: number;
+  shape: ShapeBlock;
+}
+
 export interface ShapeBlock {
   kind: "shape";
   id: string;
@@ -595,6 +627,11 @@ export interface ShapeBlock {
    *  set the painters/export use the freeform path and ignore the preset (which
    *  stays as a schema fallback). */
   geometry: { preset: ShapePreset; adjust?: Record<string, number>; custom?: ShapePath };
+  /** When present, this shape is a GROUP container (OOXML wpg:wgp): it draws its
+   *  child drawings composed under the group transform instead of `geometry`'s
+   *  preset/custom path. `geometry.preset` stays set (a rect) but is not painted. The
+   *  single resize lever (widthPx/heightPx) scales the whole group. (issue #221) */
+  group?: ShapeGroup;
   /** Interior fill; absent ⇒ theme-neutral default (see paint). */
   fill?: ShapeFill;
   /** Outline; absent ⇒ default outline (see paint). */

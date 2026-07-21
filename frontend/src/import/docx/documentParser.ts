@@ -19,6 +19,8 @@ import type {
   IRRunProps,
   IRSdtProps,
   IRSection,
+  IRShapeChild,
+  IRShapeGroup,
   IRTable,
   IRTableCell,
   IRTableRow,
@@ -731,6 +733,16 @@ function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
   const anchor = el(drawing, "wp:anchor");
   const container = el(drawing, "wp:inline") ?? anchor;
   if (!container) return undefined;
+  // A grouped-shapes container (…/wordprocessingGroup → wpg:wgp) — a wps:wsp lives
+  // INSIDE it, so this must be checked BEFORE the plain-shape branch below or the
+  // group's first child would be mistaken for a standalone shape.
+  const wgp = findDeep(container, "wpg:wgp");
+  if (wgp) {
+    const group = parseShapeGroupDrawing(wgp, container, anchor, ctx);
+    if (group) return group;
+    ctx.warnings.add("shape-skipped", "A grouped drawing without any supported member shapes was skipped.");
+    return undefined;
+  }
   // A DrawingML preset shape (…/wordprocessingShape → wps:wsp) has no a:blip. Parse
   // it before the image path so the images-skipped warning stays narrowed to
   // genuinely unknown drawings.
@@ -856,27 +868,33 @@ function parseCustGeom(custGeom: XmlNode, ctx: ParseCtx): ShapePath | undefined 
   return segments.length > 0 ? { segments } : undefined;
 }
 
-/** DrawingML preset shape: wps:wsp → wps:spPr (a:prstGeom, a:solidFill/a:noFill,
- *  a:ln). Size comes from the container's wp:extent (like an image). The spPr's
- *  DIRECT fill is the shape fill; a:ln carries the outline (its own nested fill). */
-function parseShapeWsp(
-  wsp: XmlNode,
-  container: XmlNode,
-  anchor: XmlNode | undefined,
-  ctx: ParseCtx,
-): Extract<IRInline, { kind: "shape" }> | undefined {
+/** The geometry/style props shared by a leaf shape and a group member: a:prstGeom
+ *  (preset + a:avLst adjust) or a:custGeom (freeform path), a:xfrm@rot rotation,
+ *  spPr's direct fill, the a:ln outline (+ a:prstDash), and the wps:txbx text body.
+ *  Size and anchor/position are the caller's concern (they differ for a top-level
+ *  shape vs a group child). Returns undefined when there's no geometry at all. */
+interface WspCore {
+  preset: string;
+  adjust?: Record<string, number>;
+  custom?: ShapePath;
+  rotationDeg?: number;
+  fill?: { color: string } | { none: true };
+  stroke?: { color: string; widthPt: number; dash?: string } | { none: true };
+  text?: IRBlock[];
+}
+function parseWspCore(wsp: XmlNode, ctx: ParseCtx): WspCore | undefined {
   const spPr = el(wsp, "wps:spPr");
   const prstGeom = spPr && el(spPr, "a:prstGeom");
   const prst = prstGeom && attr(prstGeom, "prst");
   const custGeom = spPr && el(spPr, "a:custGeom");
   if (!prst && !custGeom) return undefined; // no geometry → not a shape we can place
   // A custom geometry has no preset; keep a "rect" fallback so the box still maps.
-  const shape: Extract<IRInline, { kind: "shape" }> = { kind: "shape", preset: prst ?? "rect" };
-  // a:custGeom → a:pathLst/a:path: the freeform path, normalized to 0–1 fractions
-  // of the box (dividing point coords by the a:path @w/@h design space).
+  const core: WspCore = { preset: prst ?? "rect" };
+  // a:custGeom → a:pathLst/a:path: the freeform path, normalized to 0–1 fractions of
+  // the box (dividing point coords by the a:path @w/@h design space). Mirrors #220.
   if (custGeom) {
     const custom = parseCustGeom(custGeom, ctx);
-    if (custom) shape.custom = custom;
+    if (custom) core.custom = custom;
   }
   // a:avLst → a:gd @name/@fmla="val N": the parametric adjust handles, kept raw.
   const avLst = prstGeom && el(prstGeom, "a:avLst");
@@ -888,16 +906,11 @@ function parseShapeWsp(
       const m = fmla?.match(/^val\s+(-?\d+)$/);
       if (name && m) adjust[name] = Number(m[1]);
     }
-    if (Object.keys(adjust).length > 0) shape.adjust = adjust;
+    if (Object.keys(adjust).length > 0) core.adjust = adjust;
   }
-  const extent = el(container, "wp:extent");
-  const cx = numAttr(extent, "cx");
-  if (cx !== undefined) shape.widthEmu = cx;
-  const cy = numAttr(extent, "cy");
-  if (cy !== undefined) shape.heightEmu = cy;
   // a:xfrm@rot — clockwise rotation in 60000ths of a degree → degrees.
   const rot = numAttr(spPr && el(spPr, "a:xfrm"), "rot");
-  if (rot !== undefined && rot !== 0) shape.rotationDeg = rot / 60000;
+  if (rot !== undefined && rot !== 0) core.rotationDeg = rot / 60000;
   const srgbVal = (parent: XmlNode | undefined): string | undefined => {
     const solid = parent && el(parent, "a:solidFill");
     const clr = solid && el(solid, "a:srgbClr");
@@ -906,14 +919,14 @@ function parseShapeWsp(
   if (spPr) {
     // Fill: spPr's DIRECT solidFill/noFill (never descend into a:ln's fill).
     const fillVal = srgbVal(spPr);
-    if (fillVal) shape.fill = { color: `#${fillVal}` };
-    else if (el(spPr, "a:noFill")) shape.fill = { none: true };
+    if (fillVal) core.fill = { color: `#${fillVal}` };
+    else if (el(spPr, "a:noFill")) core.fill = { none: true };
     // Outline: a:ln → noFill (no outline) or solidFill (color) with @w (EMU) width
     // and an optional a:prstDash@val dash preset.
     const ln = el(spPr, "a:ln");
     if (ln) {
       if (el(ln, "a:noFill")) {
-        shape.stroke = { none: true };
+        core.stroke = { none: true };
       } else {
         const lnVal = srgbVal(ln);
         if (lnVal) {
@@ -922,7 +935,7 @@ function parseShapeWsp(
           const prstDash = el(ln, "a:prstDash");
           const dash = prstDash && attr(prstDash, "val");
           if (dash) stroke.dash = dash;
-          shape.stroke = stroke;
+          core.stroke = stroke;
         }
       }
     }
@@ -940,26 +953,143 @@ function parseShapeWsp(
     walkBlocks(children(txbxContent), blocks, ctx);
     ctx.blockSdtStack = savedBlockStack;
     ctx.trackFields = savedTrackFields;
-    if (blocks.length > 0) shape.text = blocks;
+    if (blocks.length > 0) core.text = blocks;
   }
-  if (anchor) {
-    shape.anchored = true;
-    const ap = parseAnchorProps(anchor);
-    shape.anchorWrap = ap.wrap;
-    if (ap.align) shape.anchorAlign = ap.align;
-    if (ap.float) shape.anchorFloat = ap.float;
-    else if (ap.unsupported) {
-      ctx.warnings.add(
-        "shapes-anchored",
-        "Some floating shapes (overlapping or top-and-bottom wrap) were placed in the text flow.",
-      );
+  return core;
+}
+
+/** DrawingML preset shape: wps:wsp → wps:spPr (a:prstGeom, a:solidFill/a:noFill,
+ *  a:ln). Size comes from the container's wp:extent (like an image). The spPr's
+ *  DIRECT fill is the shape fill; a:ln carries the outline (its own nested fill). */
+function parseShapeWsp(
+  wsp: XmlNode,
+  container: XmlNode,
+  anchor: XmlNode | undefined,
+  ctx: ParseCtx,
+): Extract<IRInline, { kind: "shape" }> | undefined {
+  const core = parseWspCore(wsp, ctx);
+  if (!core) return undefined;
+  const shape: Extract<IRInline, { kind: "shape" }> = { kind: "shape", ...core };
+  const extent = el(container, "wp:extent");
+  const cx = numAttr(extent, "cx");
+  if (cx !== undefined) shape.widthEmu = cx;
+  const cy = numAttr(extent, "cy");
+  if (cy !== undefined) shape.heightEmu = cy;
+  if (anchor) applyShapeAnchor(shape, anchor, ctx);
+  applyDrawingIds(shape, container);
+  return shape;
+}
+
+/** wps:wsp / wpg:grpSp @a:xfrm a:off/a:ext — a group member's local rect in the
+ *  child coordinate space (EMU). Absent → 0. */
+function xfrmRect(spPr: XmlNode | undefined): { xEmu: number; yEmu: number; cxEmu: number; cyEmu: number } {
+  const xfrm = spPr && el(spPr, "a:xfrm");
+  const off = xfrm && el(xfrm, "a:off");
+  const ext = xfrm && el(xfrm, "a:ext");
+  return {
+    xEmu: numAttr(off, "x") ?? 0,
+    yEmu: numAttr(off, "y") ?? 0,
+    cxEmu: numAttr(ext, "cx") ?? 0,
+    cyEmu: numAttr(ext, "cy") ?? 0,
+  };
+}
+
+/** wpg:grpSpPr / a:xfrm — a group's own extent + child coordinate space
+ *  (a:chOff / a:chExt), all in EMU. */
+function parseGroupXfrm(wgp: XmlNode): { off: { x: number; y: number }; ext: { cx: number; cy: number }; chOff: { x: number; y: number }; chExt: { cx: number; cy: number }; rotDeg?: number } {
+  const grpSpPr = el(wgp, "wpg:grpSpPr");
+  const xfrm = grpSpPr && el(grpSpPr, "a:xfrm");
+  const off = xfrm && el(xfrm, "a:off");
+  const ext = xfrm && el(xfrm, "a:ext");
+  const chOff = xfrm && el(xfrm, "a:chOff");
+  const chExt = xfrm && el(xfrm, "a:chExt");
+  const rot = numAttr(xfrm, "rot");
+  return {
+    off: { x: numAttr(off, "x") ?? 0, y: numAttr(off, "y") ?? 0 },
+    ext: { cx: numAttr(ext, "cx") ?? 0, cy: numAttr(ext, "cy") ?? 0 },
+    chOff: { x: numAttr(chOff, "x") ?? 0, y: numAttr(chOff, "y") ?? 0 },
+    chExt: { cx: numAttr(chExt, "cx") ?? 0, cy: numAttr(chExt, "cy") ?? 0 },
+    ...(rot !== undefined && rot !== 0 ? { rotDeg: rot / 60000 } : {}),
+  };
+}
+
+/** A grouped-shapes container (wpg:wgp / wpg:grpSp): its child coordinate space and
+ *  its member drawings (leaf wps:wsp shapes and nested wpg:grpSp groups). Returns
+ *  undefined when no member has a supported geometry. */
+function parseShapeGroupData(wgp: XmlNode, ctx: ParseCtx): IRShapeGroup | undefined {
+  const xf = parseGroupXfrm(wgp);
+  const kids: IRShapeChild[] = [];
+  for (const node of children(wgp)) {
+    if (node.tagName === "wps:wsp") {
+      const core = parseWspCore(node, ctx);
+      if (!core) continue;
+      const rect = xfrmRect(el(node, "wps:spPr"));
+      kids.push({ xEmu: rect.xEmu, yEmu: rect.yEmu, widthEmu: rect.cxEmu, heightEmu: rect.cyEmu, ...core });
+    } else if (node.tagName === "wpg:grpSp") {
+      const nested = parseShapeGroupData(node, ctx);
+      if (!nested) continue;
+      const rect = xfrmRect(el(node, "wpg:grpSpPr"));
+      // A nested group is a member shape whose geometry is the group; carry a rect +
+      // a placeholder preset so mapShape treats it as a (nested) group container.
+      kids.push({ xEmu: rect.xEmu, yEmu: rect.yEmu, widthEmu: rect.cxEmu, heightEmu: rect.cyEmu, preset: "rect", group: nested });
     }
   }
+  if (kids.length === 0) return undefined;
+  return {
+    childOffXEmu: xf.chOff.x,
+    childOffYEmu: xf.chOff.y,
+    childExtXEmu: xf.chExt.cx,
+    childExtYEmu: xf.chExt.cy,
+    children: kids,
+  };
+}
+
+/** Top-level grouped shapes: wp:inline|wp:anchor → …/wordprocessingGroup → wpg:wgp.
+ *  Becomes a block-level ShapeBlock whose `group` carries the members. Size comes
+ *  from the container's wp:extent (like a shape/image); anchor + wp14 ids mirror the
+ *  leaf-shape path. */
+function parseShapeGroupDrawing(
+  wgp: XmlNode,
+  container: XmlNode,
+  anchor: XmlNode | undefined,
+  ctx: ParseCtx,
+): Extract<IRInline, { kind: "shape" }> | undefined {
+  const group = parseShapeGroupData(wgp, ctx);
+  if (!group) return undefined;
+  // The container is a rect box; its preset is a placeholder (never painted — the
+  // paint layer draws the children when `group` is present).
+  const shape: Extract<IRInline, { kind: "shape" }> = { kind: "shape", preset: "rect", group };
+  const extent = el(container, "wp:extent");
+  const cx = numAttr(extent, "cx");
+  if (cx !== undefined) shape.widthEmu = cx;
+  const cy = numAttr(extent, "cy");
+  if (cy !== undefined) shape.heightEmu = cy;
+  if (anchor) applyShapeAnchor(shape, anchor, ctx);
+  applyDrawingIds(shape, container);
+  return shape;
+}
+
+/** wp:anchor → the shape's wrap/float props (shared by leaf shapes and groups). */
+function applyShapeAnchor(shape: Extract<IRInline, { kind: "shape" }>, anchor: XmlNode, ctx: ParseCtx): void {
+  shape.anchored = true;
+  const ap = parseAnchorProps(anchor);
+  shape.anchorWrap = ap.wrap;
+  if (ap.align) shape.anchorAlign = ap.align;
+  if (ap.float) shape.anchorFloat = ap.float;
+  else if (ap.unsupported) {
+    ctx.warnings.add(
+      "shapes-anchored",
+      "Some floating shapes (overlapping or top-and-bottom wrap) were placed in the text flow.",
+    );
+  }
+}
+
+/** wp14:anchorId / wp14:editId on the wp:inline|wp:anchor container — preserved verbatim. */
+function applyDrawingIds(shape: Extract<IRInline, { kind: "shape" }>, container: XmlNode): void {
   const anchorId = attr(container, "wp14:anchorId");
   if (anchorId) shape.anchorId = anchorId;
   const editId = attr(container, "wp14:editId");
   if (editId) shape.editId = editId;
-  return shape;
 }
 
 /** wp:positionH|V → wp:posOffset (EMU, signed). Absent/non-numeric → 0.

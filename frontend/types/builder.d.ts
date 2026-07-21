@@ -107,6 +107,31 @@ export interface ShapeOptions {
   path?: ShapePath["segments"];
 }
 
+/** One member of a {@link ShapeGroupOptions} — a preset shape at its local rect
+ *  within the group box, with the same fill / outline / rotation / adjust / text. */
+export interface ShapeGroupChildOptions {
+  preset: ShapePreset;
+  xPx: number;
+  yPx: number;
+  widthPx: number;
+  heightPx: number;
+  fill?: ShapeFill;
+  stroke?: ShapeStroke;
+  rotation?: number;
+  adjust?: Record<string, number>;
+  text?: string[];
+}
+
+export interface ShapeGroupOptions {
+  /** The group box (the single resize lever) — members scale with it. */
+  widthPx: number;
+  heightPx: number;
+  align?: "left" | "center" | "right";
+  wrap?: "block" | "square";
+  /** The member shapes (≥1), each at its local rect within the group box. */
+  children: ShapeGroupChildOptions[];
+}
+
 export interface ListItem {
   text: string;
   /** Nesting level 0..8 (default 0, or ListOptions.level). */
@@ -192,6 +217,8 @@ export declare class StoryBuilder {
   image(src: string | { data: Uint8Array | ArrayBuffer; mime: string }, opts: ImageOptions): this;
   /** A drawing shape (preset geometry: rect/ellipse/line) with an optional fill + outline. */
   shape(preset: ShapePreset, opts: ShapeOptions): this;
+  /** A grouped-shapes container (OOXML wpg:wgp) — member shapes that move/scale as one. */
+  shapeGroup(opts: ShapeGroupOptions): this;
   list(items: (string | ListItem)[], opts?: ListOptions): this;
   bulletList(items: (string | ListItem)[]): this;
   numberedList(items: (string | ListItem)[]): this;
@@ -304,6 +331,7 @@ export declare class ParagraphBuilder<P extends StoryBuilder> {
   table(build: (t: TableBuilder) => void, opts?: TableOptions): P;
   image(src: string | { data: Uint8Array | ArrayBuffer; mime: string }, opts: ImageOptions): P;
   shape(preset: ShapePreset, opts: ShapeOptions): P;
+  shapeGroup(opts: ShapeGroupOptions): P;
   list(items: (string | ListItem)[], opts?: ListOptions): P;
   bulletList(items: (string | ListItem)[]): P;
   numberedList(items: (string | ListItem)[]): P;

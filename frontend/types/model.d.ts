@@ -168,6 +168,27 @@ export interface ShapeTextBody {
   blocks: Paragraph[];
 }
 
+/** A grouped-shapes container (OOXML wpg:wgp): set on `ShapeBlock.group`, it draws
+ *  its child drawings composed under the group transform instead of a preset path;
+ *  resizing/moving the group transforms the children as one object. */
+export interface ShapeGroup {
+  children: ShapeGroupChild[];
+  /** a:chOff — origin of the child coordinate space (px). */
+  childOffsetXPx: number;
+  childOffsetYPx: number;
+  /** a:chExt — extent of the child coordinate space (px). */
+  childExtentXPx: number;
+  childExtentYPx: number;
+}
+
+/** One member of a {@link ShapeGroup}, at its local rect within the child
+ *  coordinate space; `shape` is a leaf shape or a nested group. */
+export interface ShapeGroupChild {
+  xPx: number;
+  yPx: number;
+  shape: ShapeBlock;
+}
+
 export interface ShapeBlock {
   kind: "shape";
   id: string;
@@ -176,6 +197,9 @@ export interface ShapeBlock {
    *  path when `custom` is present (a:custGeom); `adjust` carries the raw a:avLst
    *  guide values (name → number) for parametric presets. */
   geometry: { preset: ShapePreset; adjust?: Record<string, number>; custom?: ShapePath };
+  /** When present, this shape is a GROUP container (OOXML wpg:wgp) that draws its
+   *  children composed under the group transform instead of a preset path. */
+  group?: ShapeGroup;
   /** Interior fill; absent = the theme-neutral default. */
   fill?: ShapeFill;
   /** Outline; absent = the default outline. */

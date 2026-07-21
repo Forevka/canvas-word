@@ -4,13 +4,29 @@
 // default style over editor-matching baselines — and every factory spreads
 // them. Modeled on the run/para closures in model/sampleDoc.ts.
 
-import type { CharStyle, Document, EquationBlock, ImageBlock, MathEquation, ParaStyle, Paragraph, Run, ShapeBlock, ShapeFill, ShapePath, ShapePathSegment, ShapePreset, ShapeStroke, Stylesheet } from "@cw/shared";
+import type { CharStyle, Document, EquationBlock, ImageBlock, MathEquation, ParaStyle, Paragraph, Run, ShapeBlock, ShapeFill, ShapeGroup, ShapePath, ShapePathSegment, ShapePreset, ShapeStroke, Stylesheet } from "@cw/shared";
 import { createIdGenerator, DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE, resolveStyle, styleById, type IdGenerator } from "@cw/shared";
 import { builtinTableStyles, type TableStylePreset } from "./tableStyles";
 
 export interface BuilderWarning {
   code: string;
   message: string;
+}
+
+/** One member of a {@link StoryBuilder.shapeGroup} — a preset shape at its local
+ *  rect (xPx/yPx/widthPx/heightPx) within the group box, with the same optional
+ *  fill / outline / rotation / adjust / text a standalone shape takes. */
+export interface ShapeGroupChildInput {
+  preset: ShapePreset;
+  xPx: number;
+  yPx: number;
+  widthPx: number;
+  heightPx: number;
+  fill?: ShapeFill;
+  stroke?: ShapeStroke;
+  rotation?: number;
+  adjust?: Record<string, number>;
+  text?: string[];
 }
 
 /** Baseline concrete styles (match the editor's sample-doc/import defaults). */
@@ -161,6 +177,33 @@ export class BuilderContext {
     if (rotation) shape.rotation = rotation;
     // Text box body: one paragraph per string (a single default-styled run each).
     if (text && text.length > 0) shape.text = { blocks: text.map((line) => this.paragraph([this.run(line)])) };
+    if (wrap) shape.wrap = wrap;
+    return shape;
+  }
+
+  /** A grouped-shapes container (OOXML wpg:wgp): a box holding member shapes, each
+   *  positioned by its local rect within the group. The child coordinate space is the
+   *  group box itself (childOffset 0, childExtent = width×height) so `xPx`/`yPx` are
+   *  authored directly in the box's pixels; resizing the group later scales them. */
+  shapeGroup(
+    widthPx: number,
+    heightPx: number,
+    align: ShapeBlock["align"],
+    childInputs: ShapeGroupChildInput[],
+    wrap?: ShapeBlock["wrap"],
+  ): ShapeBlock {
+    const group: ShapeGroup = {
+      children: childInputs.map((c) => ({
+        xPx: c.xPx,
+        yPx: c.yPx,
+        shape: this.shape(c.preset, c.widthPx, c.heightPx, "left", c.fill, c.stroke, c.rotation, c.adjust, c.text),
+      })),
+      childOffsetXPx: 0,
+      childOffsetYPx: 0,
+      childExtentXPx: widthPx,
+      childExtentYPx: heightPx,
+    };
+    const shape: ShapeBlock = { kind: "shape", id: this.ids.next(), revision: 0, geometry: { preset: "rect" }, widthPx, heightPx, align, group };
     if (wrap) shape.wrap = wrap;
     return shape;
   }

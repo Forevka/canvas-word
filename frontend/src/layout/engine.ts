@@ -2655,6 +2655,24 @@ const SHAPE_TEXT_INSET_Y = 4.8;
  *  can be overridden when a cell scales the shape down to fit. */
 function placedShapeOf(sb: ShapeBlock, width = sb.widthPx, height = sb.heightPx): PlacedShape {
   const shape: PlacedShape = { preset: sb.geometry.preset, width, height };
+  // Group container (wpg:wgp): map each child's local rect from the child coordinate
+  // space (childOffset/childExtent) into this box (width×height) — so resizing the
+  // group scales the members — and place it recursively (nested groups just recurse).
+  if (sb.group) {
+    const g = sb.group;
+    const sx = g.childExtentXPx > 0 ? width / g.childExtentXPx : 1;
+    const sy = g.childExtentYPx > 0 ? height / g.childExtentYPx : 1;
+    shape.children = g.children.map((c) => {
+      const cw = c.shape.widthPx * sx;
+      const ch = c.shape.heightPx * sy;
+      return {
+        x: (c.xPx - g.childOffsetXPx) * sx,
+        y: (c.yPx - g.childOffsetYPx) * sy,
+        shape: placedShapeOf(c.shape, cw, ch),
+      };
+    });
+    return shape;
+  }
   if (sb.geometry.custom) shape.custom = sb.geometry.custom;
   if (sb.fill) shape.fill = sb.fill;
   if (sb.stroke) shape.stroke = sb.stroke;

@@ -109,6 +109,14 @@ public abstract class StoryBuilderBase<TSelf> where TSelf : StoryBuilderBase<TSe
         return Self;
     }
 
+    /// <summary>A grouped-shapes container (OOXML wpg:wgp) — member shapes that move
+    /// and scale together as one selectable object.</summary>
+    public TSelf ShapeGroup(ShapeGroupOptions opts)
+    {
+        JsScope.InvokeMethod("shapeGroup", opts.ToJs(Engine));
+        return Self;
+    }
+
     /// <summary>One paragraph per item, marked as list members.</summary>
     public TSelf List(IEnumerable<ListItem> items, ListOptions? opts = null)
     {

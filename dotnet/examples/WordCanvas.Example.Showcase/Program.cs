@@ -301,6 +301,19 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
     .Paragraph("A square-wrapped shape floats at the margin and text flows around it (issue #217):")
     .Shape(ShapePreset.Ellipse, new ShapeOptions { WidthPx = 130, HeightPx = 100, Align = TextAlign.Left, Wrap = ImageWrap.Square, Fill = ShapeFill.Solid("#d9ead3"), Stroke = ShapeStroke.Solid("#38761d", 1.25) })
     .Paragraph("Square wrap lifts the shape out of the block flow and registers a float so this paragraph re-breaks beside it, just like a square-wrapped image does.")
+    .Paragraph("A grouped drawing (OOXML wpg:wgp) bundles several shapes into one object that moves and scales together — here a small flow diagram of two labelled boxes joined by an arrow:")
+    .ShapeGroup(new ShapeGroupOptions
+    {
+        WidthPx = 360,
+        HeightPx = 96,
+        Align = TextAlign.Center,
+        Children = new[]
+        {
+            new ShapeGroupChild { Preset = ShapePreset.RoundRect, XPx = 0, YPx = 20, WidthPx = 130, HeightPx = 56, Fill = ShapeFill.Solid("#d9ead3"), Stroke = ShapeStroke.Solid("#38761d", 1.5), Text = new[] { "Input" } },
+            new ShapeGroupChild { Preset = ShapePreset.RightArrow, XPx = 140, YPx = 36, WidthPx = 80, HeightPx = 24, Fill = ShapeFill.Solid("#fff2cc"), Stroke = ShapeStroke.Solid("#bf9000", 1) },
+            new ShapeGroupChild { Preset = ShapePreset.RoundRect, XPx = 230, YPx = 20, WidthPx = 130, HeightPx = 56, Fill = ShapeFill.Solid("#c9daf8"), Stroke = ShapeStroke.Solid("#3d85c6", 1.5), Text = new[] { "Output" } },
+        },
+    })
     .Paragraph("Multilevel numbered list:")
     .List(new[]
     {

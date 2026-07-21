@@ -5,7 +5,7 @@
 
 import type { Block, CharStyle, EquationBlock, Paragraph, ParaStyle, SdtProps, ShapeFill, ShapePath, ShapePreset, ShapeStroke } from "@cw/shared";
 import { DEFAULT_BULLET_LIST_ID, DEFAULT_NUMBER_LIST_ID, defaultListDefinition, textOfRuns } from "@cw/shared";
-import type { BuilderContext } from "./blockFactory";
+import type { BuilderContext, ShapeGroupChildInput } from "./blockFactory";
 import { equationFromLatex, equationFromMathml } from "./mathInput";
 import { bytesToDataUrl } from "./media";
 import { ParagraphBuilder } from "./paragraphBuilder";
@@ -55,6 +55,18 @@ export interface ShapeOptions {
    *  box coordinates (0–1). When present it replaces the preset (which is ignored,
    *  kept only as a schema fallback). Omit for an ordinary preset shape. */
   path?: ShapePath["segments"];
+}
+
+export interface ShapeGroupOptions {
+  /** The group box (the single resize lever). Members are authored in this box's
+   *  pixels and scale with it. */
+  widthPx: number;
+  heightPx: number;
+  align?: "left" | "center" | "right";
+  /** 'block' (default): own line. 'square': floats per align, text wraps beside it. */
+  wrap?: "block" | "square";
+  /** The member shapes (≥1), each at its local rect within the group box. */
+  children: ShapeGroupChildInput[];
 }
 
 export interface ListItem {
@@ -157,6 +169,22 @@ export class StoryBuilder {
       return this;
     }
     this.push(this.ctx.shape(preset, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.fill, opts.stroke, opts.rotation, opts.adjust, opts.text, opts.wrap, opts.path));
+    return this;
+  }
+
+  /** Insert a grouped-shapes container (OOXML wpg:wgp): a box holding member shapes
+   *  that move and scale together as one selectable object. Members are positioned by
+   *  their local rect within the group box (`children[].xPx/yPx/widthPx/heightPx`). */
+  shapeGroup(opts: ShapeGroupOptions): this {
+    if (!Number.isFinite(opts?.widthPx) || !Number.isFinite(opts?.heightPx) || opts.widthPx <= 0 || opts.heightPx <= 0) {
+      this.ctx.warn("shape-group-size-invalid", ".shapeGroup() requires positive widthPx and heightPx; group skipped.");
+      return this;
+    }
+    if (!opts.children || opts.children.length === 0) {
+      this.ctx.warn("shape-group-empty", ".shapeGroup() requires at least one child shape; group skipped.");
+      return this;
+    }
+    this.push(this.ctx.shapeGroup(opts.widthPx, opts.heightPx, opts.align ?? "left", opts.children, opts.wrap));
     return this;
   }
 
