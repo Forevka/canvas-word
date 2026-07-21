@@ -94,10 +94,13 @@ export function createBandHoverController(deps: BandHoverDeps): BandHoverControl
   let current: { band: BandName; pageIndex: number } | null = null;
   let lastKey = "";
 
-  // Swallow the press so it doesn't fall through to the canvas mousedown
-  // (selection/caret routing) beneath the overlay; the click drives the action.
+  // Keep the press from reaching the canvas beneath the overlay — the container
+  // listens on both `mousedown` and `pointerdown` (caret / touch routing), so
+  // stopPropagation on both is what shields it. We deliberately do NOT
+  // preventDefault: canceling pointerdown can suppress the compatibility click
+  // the button relies on (and swallow its focus) across browsers; the click
+  // handler is what drives the action.
   const onButtonDown = (ev: Event): void => {
-    ev.preventDefault();
     ev.stopPropagation();
   };
   const onButtonClick = (ev: MouseEvent): void => {

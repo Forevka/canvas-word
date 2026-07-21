@@ -1122,6 +1122,11 @@ export function createEditor(
   const setStory = (next: GeoScope | null): void => {
     const changingBand = (activeStory?.band ?? null) !== (next?.band ?? null);
     if (!changingBand && activeStory?.pageIndex === next?.pageIndex) return;
+    // The band hover affordance is mutually exclusive with an open band (the
+    // story-edit dimming/boundary is the affordance then). Hide it here so it
+    // never lingers when a band is entered without a subsequent mousemove —
+    // e.g. entering via double-click, where the pointer stays put afterward.
+    bandHover.hide();
     if (next) selectObject(null); // objects and band stories are exclusive modes
     if (next && !activeStory) savedBodySelection = selection;
     activeStory = next;
@@ -3267,8 +3272,17 @@ export function createEditor(
     getPageElement: (i) => paint.getPageElement(i),
     getZoom: () => paint.getZoom(),
     onEdit: (band, pageIndex) => {
-      bandHover.hide();
-      setStory({ band, pageIndex });
+      setStory({ band, pageIndex }); // also hides the affordance (see setStory)
+      // Parity with the double-click path: drop a caret at the band's start so
+      // the user can type immediately (setStory alone leaves the selection null).
+      // hitTest in the now-active story scope, at the band's top-left, resolves
+      // to the first line's start offset.
+      const pg = tree.pages[pageIndex];
+      if (pg) {
+        const rect = bandRegionRect(pg, band);
+        const pos = hitTest(tree, pageIndex, rect.x + 1, rect.y + 1, scope());
+        if (pos) setSelection({ anchor: pos, focus: pos });
+      }
       proxy.focus();
     },
   });
@@ -3339,6 +3353,7 @@ export function createEditor(
     const after = paint.getZoom();
     if (after === before) return;
     refreshObjectFrame(); // the selection frame's geometry is zoom-scaled
+    bandHover.hide(); // the affordance is zoom-scaled too; it re-shows on the next hover
     // Keep the anchored point (cursor, or viewport center) stationary.
     const rect = container.getBoundingClientRect();
     const anchorY = anchorClientY ?? rect.top + rect.height / 2;
