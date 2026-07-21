@@ -68,7 +68,7 @@ export function createReviewContextToolbar(deps: ReviewContextToolbarDeps): Cont
       if (deps.hasRangeSelection()) return null;
       return deps.review() ? deps.anchorRect() : null;
     },
-    show: (anchor: AnchorRect): void => {
+    show: (anchor, viewport) => {
       current = deps.review();
       const isSuggestion = current?.kind === "suggestion";
       setVisible(acceptBtn, isSuggestion);
@@ -76,7 +76,7 @@ export function createReviewContextToolbar(deps: ReviewContextToolbarDeps): Cont
       setVisible(replyBtn, !isSuggestion);
       setVisible(resolveBtn, !isSuggestion);
       resolveBtn.textContent = current?.resolved ? "Reopen" : "Resolve";
-      fb.place(anchor);
+      fb.place(anchor, viewport);
     },
     hide: () => fb.hide(),
     destroy: () => fb.destroy(),

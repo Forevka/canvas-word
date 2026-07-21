@@ -38,6 +38,21 @@ describe("placeSelectionBar", () => {
     const { top } = placeSelectionBar(anchor, { width: 200, height: 30 }, VP, { gap: 20 });
     expect(top).toBe(250); // 300 - 30 - 20
   });
+
+  it("uses viewport.top as the guard so it never renders over the ribbon", () => {
+    // Anchor just below a 140px ribbon: room "above" (top 100) would land in the
+    // ribbon, so it must flip below instead of placing at 100.
+    const anchor = { left: 400, top: 150, width: 100, height: 20 };
+    const { top } = placeSelectionBar(anchor, { width: 200, height: 30 }, { ...VP, top: 140 });
+    // above = 150 - 30 - 8 = 112 < topGuard(140) → below = 150 + 20 + 8 = 178.
+    expect(top).toBe(178);
+  });
+
+  it("never places above viewport.top even when flipping below would go higher", () => {
+    const anchor = { left: 400, top: 130, width: 100, height: 4 };
+    const { top } = placeSelectionBar(anchor, { width: 200, height: 30 }, { ...VP, top: 140 });
+    expect(top).toBeGreaterThanOrEqual(140);
+  });
 });
 
 describe("anchorInView", () => {
@@ -51,5 +66,12 @@ describe("anchorInView", () => {
 
   it("is false for an anchor scrolled below the viewport", () => {
     expect(anchorInView({ left: 100, top: 900, width: 50, height: 20 }, VP)).toBe(false);
+  });
+
+  it("is false for an anchor scrolled up behind the ribbon (above viewport.top)", () => {
+    // Bottom at 120 is above the 140px content top → hidden, not left over the ribbon.
+    expect(anchorInView({ left: 100, top: 100, width: 50, height: 20 }, { ...VP, top: 140 })).toBe(false);
+    // Still visible once its bottom crosses into the content area.
+    expect(anchorInView({ left: 100, top: 135, width: 50, height: 20 }, { ...VP, top: 140 })).toBe(true);
   });
 });

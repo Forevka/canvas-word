@@ -309,11 +309,11 @@ export function createFloatingFormatBar(deps: FloatingFormatBarDeps): ContextToo
       if (!(deps.config.onCaret || deps.hasRangeSelection())) return null;
       return deps.anchorRect();
     },
-    show: (anchor: AnchorRect): void => {
+    show: (anchor, viewport) => {
       // Sync pressed state + labels BEFORE placing (label widths affect layout).
       const f = deps.format();
       for (const update of refreshers) update(f);
-      fb.place(anchor);
+      fb.place(anchor, viewport);
     },
     hide: () => fb.hide(),
     destroy: () => {

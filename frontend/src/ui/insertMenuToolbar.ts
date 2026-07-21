@@ -31,7 +31,7 @@ export function createInsertMenuToolbar(deps: InsertMenuToolbarDeps): ContextToo
     id: "insert-menu",
     priority: 16,
     resolve: (): AnchorRect | null => (deps.onEmptyParagraph() ? deps.anchorRect() : null),
-    show: (anchor: AnchorRect): void => fb.place(anchor),
+    show: (anchor, viewport) => fb.place(anchor, viewport),
     hide: () => fb.hide(),
     destroy: () => fb.destroy(),
   };

@@ -97,11 +97,11 @@ export function createLinkContextToolbar(deps: LinkContextToolbarDeps): ContextT
       if (deps.hasRangeSelection()) return null; // a range shows the format bar
       return deps.linkUrl() ? deps.anchorRect() : null;
     },
-    show: (anchor: AnchorRect): void => {
+    show: (anchor, viewport) => {
       const url = deps.linkUrl() ?? "";
       urlLabel.textContent = url;
       urlLabel.title = url;
-      fb.place(anchor);
+      fb.place(anchor, viewport);
     },
     hide: () => fb.hide(),
     destroy: () => fb.destroy(),

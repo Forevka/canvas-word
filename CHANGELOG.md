@@ -107,6 +107,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **de-dups** so a copy/pasted image never repeats an id.
 
 ### Fixed
+- **Context toolbars: appear on cell selection, and never hover over the ribbon.** Two fixes to the
+  contextual floating-toolbar framework: (1) selecting 2+ table cells now shows the table bar
+  immediately — the cell-selection setter skips the heavy change broadcast (it fires per drag-move), so
+  the toolbars are now refreshed on the selection-change hook too, instead of only appearing after the
+  next scroll; (2) a bar whose anchor scrolls up behind a fixed ribbon now hides (and never flips up
+  over the ribbon) — the manager passes the scroll container's top as the viewport's usable top, which
+  `anchorInView` and `placeSelectionBar` honour.
 - **Wrapping the first of two consecutive images no longer makes it vanish.** Turning an image into a
   square (text-wrap) float registers a float and does not advance the flow cursor, so following content
   flows beside it. But the layout engine's image-placement branch — unlike the table/equation/custom

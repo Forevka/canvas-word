@@ -18,6 +18,10 @@ export interface BarSize {
 export interface Viewport {
   width: number;
   height: number;
+  /** Top edge of the usable area in client px (default 0). Set this to the editor
+   *  content area's top — i.e. below a fixed ribbon — so bars neither render over
+   *  the ribbon nor linger there once the anchor scrolls up behind it. */
+  top?: number;
 }
 
 export interface Placement {
@@ -37,8 +41,9 @@ export function placeSelectionBar(
 ): Placement {
   const gap = opts.gap ?? 8;
   const margin = opts.margin ?? 8;
-  // Keep clear of the ribbon area near the top when flipping above would collide.
-  const topGuard = opts.topGuard ?? 56;
+  // Keep clear of the content-area top (below a fixed ribbon): flipping above must
+  // not collide with it, and the placed bar must never sit above it.
+  const topGuard = Math.max(opts.topGuard ?? 56, viewport.top ?? 0);
 
   const centered = anchor.left + anchor.width / 2 - bar.width / 2;
   const maxLeft = Math.max(margin, viewport.width - bar.width - margin);
@@ -46,16 +51,19 @@ export function placeSelectionBar(
 
   const above = anchor.top - bar.height - gap;
   const below = anchor.top + anchor.height + gap;
-  const top = above < topGuard ? below : above;
+  // Flip below when there isn't room above the guard; clamp so we never draw above it.
+  const top = Math.max(above < topGuard ? below : above, viewport.top ?? 0);
 
   return { left: Math.round(left), top: Math.round(top) };
 }
 
 /** Whether the anchor is at all within the (optionally padded) viewport — used to
- *  hide the bar once the selection scrolls out of view. */
+ *  hide the bar once the selection scrolls out of view. The top edge honours
+ *  `viewport.top`, so an anchor that has scrolled up behind the ribbon counts as
+ *  out of view (the bar hides instead of hovering over the ribbon). */
 export function anchorInView(anchor: AnchorRect, viewport: Viewport, pad = 0): boolean {
   return (
-    anchor.top + anchor.height >= -pad &&
+    anchor.top + anchor.height >= (viewport.top ?? 0) - pad &&
     anchor.top <= viewport.height + pad &&
     anchor.left + anchor.width >= -pad &&
     anchor.left <= viewport.width + pad
