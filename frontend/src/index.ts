@@ -125,6 +125,8 @@ import {
   bringShapeToFront,
   sendShapeToBack,
   moveAnchoredShape,
+  insertTextBox as insertTextBoxCmd,
+  addShapeText,
   setLinkCmd,
   setParaProps,
   setSdtContent,
@@ -358,6 +360,13 @@ export interface Editor {
   /** Viewport rect of the selected drawing SHAPE, or null. Anchors the shape
    *  context toolbar. */
   getSelectedShapeRect(): { left: number; top: number; width: number; height: number } | null;
+  /** Insert a text box (rectangle shape with an empty editable body) at the caret
+   *  and drop the caret inside it — the Insert → Shapes → Text Box entry. #235. */
+  insertTextBox(): void;
+  /** Start (or re-enter) the selected top-level shape's text box: the "Add text" /
+   *  "Edit text" gesture on the shape toolbar. Returns false when no shape is
+   *  selected or it's a cell-nested shape (read-only). #235. */
+  addTextToSelectedShape(): boolean;
   /** Open the equation editor for the currently selected equation block (no-op if
    *  none). Reuses the same editor the right-click "Edit Equation…" opens. */
   editSelectedEquation(): void;
@@ -1370,6 +1379,35 @@ export function createEditor(
     return enterShapeText(selectedObject, { blockId: first.id, offset: 0 });
   };
 
+  /** Start authoring text on a TOP-LEVEL, text-less shape: create an empty text
+   *  body then drop the caret inside it — the "Add text" gesture (double-click, the
+   *  right-click menu, and the shape toolbar). A shape that already carries a body
+   *  is just entered. Returns false (and does nothing) for a cell-nested shape —
+   *  its text box stays read-only (#219/#230) — or a non-shape / view mode. #235. */
+  const startShapeText = (shapeId: string): boolean => {
+    if (mode === "view") return false;
+    const loc = locateShape(doc, shapeId);
+    if (loc?.kind !== "top") return false; // top-level only
+    const existing = loc.block.text?.blocks[0];
+    if (existing) return enterShapeText(shapeId, { blockId: existing.id, offset: 0 });
+    const paraId = freshId();
+    dispatch(addShapeText(shapeId, paraId)); // seeds one empty paragraph
+    return enterShapeText(shapeId, { blockId: paraId, offset: 0 });
+  };
+
+  /** Insert a text box at the caret and immediately enter its (empty) body — the
+   *  Insert → Shapes → Text Box ribbon entry. Mints the shape + first-paragraph ids
+   *  up front so the caret lands inside deterministically after the insert. #235. */
+  const insertTextBoxAndEdit = (): void => {
+    if (mode === "view") return;
+    const shapeId = freshId();
+    const paraId = freshId();
+    dispatch(insertTextBoxCmd(shapeId, paraId));
+    // The insert only commits when the caret is a collapsed top-level position;
+    // enter the body only if the shape actually landed.
+    if (locateShape(doc, shapeId)) enterShapeText(shapeId, { blockId: paraId, offset: 0 });
+  };
+
   // ---- image crop mode -----------------------------------------------------
   // Enter: drag the 8 crop handles to set the visible window. Each handle release
   // writes the crop field LIVE via a transient op (so the model tracks the crop as
@@ -2340,6 +2378,7 @@ export function createEditor(
     enterShapeText,
     exitShapeText,
     enterSelectedShapeText,
+    startShapeText,
     jumpToBlock: (blockId: string): void => {
       // Word: Ctrl+click on a TOC entry moves the caret to the heading.
       if (!blockById(doc, blockId)) return;
@@ -3128,6 +3167,11 @@ export function createEditor(
             { kind: "item", label: "Right", icon: ICONS.alignRight, onClick: () => dispatch(setShapeProps(shapeId, { align: "right" })) },
           ],
         },
+        // Add / edit the text box body — top-level shapes only (a cell-nested
+        // shape's text box stays read-only, #219/#230/#235).
+        ...(locateShape(doc, shapeId)?.kind === "top"
+          ? [item(shapeHasEditableText(shapeId) ? "Edit Text" : "Add Text", () => startShapeText(shapeId), { icon: ICONS.shapeRect })]
+          : []),
         item("Bring to Front", () => dispatch(bringShapeToFront(shapeId))),
         item("Send to Back", () => dispatch(sendShapeToBack(shapeId))),
         item("Delete Shape", () => {
@@ -3934,6 +3978,8 @@ export function createEditor(
       const r = objectRect(tree, selectedObject!);
       return r ? pageRectToClient(r.pageIndex, r.x, r.y, r.width, r.height) : null;
     },
+    insertTextBox: (): void => insertTextBoxAndEdit(),
+    addTextToSelectedShape: (): boolean => (selectedIsShape() ? startShapeText(selectedObject!) : false),
     editSelectedEquation: (): void => {
       const eq = selectedObject ? locateEquation(doc, selectedObject)?.block : undefined;
       if (!eq) return;

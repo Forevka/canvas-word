@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (degrees → 60000ths) and import reads it back. Authorable from the `DocumentBuilder`
   (`.image(src, { …, rotation })`) and the C# bindings (`ImageOptions.Rotation`), and demonstrated by a
   rotated image in the default in-editor document and the C# showcase.
+- **Drawing shapes — in-editor text-box authoring (issue #235).** Text boxes could previously only be
+  *edited* (double-click an existing one) — there was no gesture to *create* one; they came only from
+  the builder or import. Now: the Insert → Shapes gallery has a **Text Box** entry that inserts a
+  rectangle with an empty editable body and drops the caret **inside** so you type immediately; and any
+  **top-level, text-less** shape can gain a body on the fly — **double-click** it, or use **Add text**
+  on the shape's floating toolbar / right-click menu — which starts an empty `wps:txbx` body and enters
+  editing. A shape nested inside a table cell stays **read-only** (its text box isn't in the locatable
+  paragraph space — #219/#230). An empty, never-typed-into text box round-trips losslessly as a
+  `wps:txbx` carrying a single empty `w:p` (no new OOXML — it reuses the existing text-body mapping).
 - **Drawing shapes — grouped shapes (issue #206, Part 8 / #221).** A `ShapeBlock` can now be a
   **group container** (`ShapeBlock.group` — OOXML `wpg:wgp`): a box that draws its **member shapes**
   composed under a shared group transform instead of a preset path. The members live in the group's

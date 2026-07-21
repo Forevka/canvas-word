@@ -58,4 +58,17 @@ describe("shape text box caret geometry (issue #219)", () => {
     // The box paragraph is a CLOSED sub-flow: an UNSCOPED query can't see it.
     expect(caretRect(tree, { blockId: p0.id, offset: 0 })).toBeNull();
   });
+
+  // Issue #235 — Insert Text Box / "Add text" seed an EMPTY body (one empty
+  // paragraph). The caret must still land inside so typing starts immediately.
+  it("places a caret at offset 0 of an empty text body (Insert Text Box)", () => {
+    const empty = para(""); // one empty paragraph, as the authoring gestures seed
+    const tree = layout({ section: SECTION, blocks: [para("body"), box([empty])] });
+    const { page, pb } = placedShape(tree);
+    const scoped = caretRect(tree, { blockId: empty.id, offset: 0 }, { shape: "shp", pageIndex: page });
+    expect(scoped).not.toBeNull();
+    expect(scoped!.pageIndex).toBe(page);
+    expect(scoped!.x).toBeGreaterThanOrEqual(pb.x);
+    expect(scoped!.y).toBeGreaterThanOrEqual(pb.y);
+  });
 });

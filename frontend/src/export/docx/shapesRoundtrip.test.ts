@@ -179,6 +179,19 @@ describe("drawing shapes — DrawingML wps:wsp round-trip", () => {
     expect(xml).not.toContain("wps:txbx");
   });
 
+  it("round-trips a user-created (empty) text box — Insert Text Box (issue #235)", () => {
+    // What insertTextBox / addShapeText seed: a body with one empty paragraph. It
+    // must survive the cycle as a wps:txbx (an empty w:p), so a text box authored
+    // in-editor and never typed into still round-trips as a text box, not a bare rect.
+    const s = shape({ text: { blocks: [txtPara("")] } });
+    const xml = exportedDocXml(docOf(s));
+    expect(xml).toContain("<wps:txbx>");
+    const out = firstShape(roundTrip(docOf(s)));
+    expect(out.text).toBeDefined();
+    expect(out.text!.blocks.length).toBeGreaterThanOrEqual(1);
+    expect(out.text!.blocks[0]?.runs.map((r) => r.text).join("")).toBe("");
+  });
+
   it("imports a hand-written wps:txbx text box (the importer as oracle)", () => {
     const drawing = `<w:p><w:r><w:drawing>
       <wp:inline><wp:extent cx="2743200" cy="914400"/><wp:docPr id="1" name="Shape"/>

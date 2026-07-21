@@ -14,6 +14,8 @@ export interface ShapeContextToolbarActions {
   fill(anchor: HTMLElement): void;
   /** Open the outline picker (colour + width + dash) anchored to `anchor`. */
   outline(anchor: HTMLElement): void;
+  /** Start (or re-enter) the shape's text box body — the "Add/Edit text" gesture. */
+  addText(): void;
   wrapInline(): void;
   wrapSquare(): void;
   alignLeft(): void;
@@ -50,6 +52,8 @@ export function createShapeContextToolbar(deps: ShapeContextToolbarDeps): Contex
 
   ibtn(ICONS.shapeFill, "Fill colour", (b) => deps.actions.fill(b));
   ibtn(ICONS.outline, "Outline (colour, width, dash)", (b) => deps.actions.outline(b));
+  sep();
+  ibtn(ICONS.shapeTextBox, "Add or edit text", () => deps.actions.addText());
   sep();
   ibtn(ICONS.wrapInline, "In line with text", () => deps.actions.wrapInline());
   ibtn(ICONS.wrapSquare, "Wrap text (square)", () => deps.actions.wrapSquare());
