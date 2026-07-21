@@ -60,6 +60,9 @@ export function createNoteContextToolbar(deps: NoteContextToolbarDeps): ContextT
     show: (anchor: AnchorRect): void => {
       current = deps.note();
       const noun = current?.kind === "endnote" ? "endnote" : "footnote";
+      // Keep the a11y label + button titles in sync with the marker kind, so a
+      // screen reader announces "Endnote" (not "Footnote") on an endnote marker.
+      fb.el.setAttribute("aria-label", noun === "endnote" ? "Endnote" : "Footnote");
       goToBtn.title = `Go to this ${noun}`;
       deleteBtn.title = `Delete this ${noun}`;
       fb.place(anchor);

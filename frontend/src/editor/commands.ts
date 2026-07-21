@@ -1510,6 +1510,33 @@ export function removeContentControl(id: string, deleteContents: boolean): Comma
 // later ref in the same transaction, so model text and the page-bottom note
 // markers (which echo the ref text) can never disagree.
 
+/** A note reference marker's location: its host paragraph, run index, start
+ *  offset within the paragraph, and the note id it points at. */
+interface NoteRefAt {
+  para: Paragraph;
+  runIdx: number;
+  offset: number;
+  id: string;
+}
+
+/** Every footnote/endnote reference of one kind in document order, walking body
+ *  AND table-cell paragraphs so numbering stays correct wherever a ref lives.
+ *  Shared by the insert commands (renumber-on-insert) and `deleteNoteCmd`
+ *  (renumber-on-delete). Callers that need document ORDER of arbitrary blocks
+ *  keep `body` around separately for that lookup. */
+function noteRefsIn(body: Paragraph[], refKey: "footnoteRef" | "endnoteRef"): NoteRefAt[] {
+  const refs: NoteRefAt[] = [];
+  body.forEach((para) => {
+    let off = 0;
+    para.runs.forEach((r, runIdx) => {
+      const id = r.style[refKey];
+      if (id) refs.push({ para, runIdx, offset: off, id });
+      off += r.text.length;
+    });
+  });
+  return refs;
+}
+
 export function insertFootnoteCmd(): Command {
   return (state) => {
     const sel = state.selection;
@@ -1519,23 +1546,8 @@ export function insertFootnoteCmd(): Command {
     // Body paragraphs OR body table cells — not header/footer bands or notes.
     if (loc?.kind !== "top" && !(loc?.kind === "cell" && loc.where === "body")) return null;
 
-    // Document-ordered refs with their host paragraph + run index.
-    interface RefAt {
-      para: Paragraph;
-      runIdx: number;
-      offset: number;
-    }
-    // Walk body AND table-cell paragraphs in document order, so numbering stays
-    // correct wherever a ref lives (and a ref can sit inside a table cell).
     const body = bodyParagraphs(state.doc);
-    const refs: RefAt[] = [];
-    body.forEach((para) => {
-      let off = 0;
-      para.runs.forEach((r, runIdx) => {
-        if (r.style.footnoteRef) refs.push({ para, runIdx, offset: off });
-        off += r.text.length;
-      });
-    });
+    const refs = noteRefsIn(body, "footnoteRef");
     const orderOf = (blockId: string): number => body.findIndex((p) => p.id === blockId);
     const caretOrder = orderOf(at.blockId);
     let idx = 0;
@@ -1601,23 +1613,8 @@ export function insertEndnoteCmd(): Command {
     // Body paragraphs OR body table cells — not header/footer bands or notes.
     if (loc?.kind !== "top" && !(loc?.kind === "cell" && loc.where === "body")) return null;
 
-    // Document-ordered refs with their host paragraph + run index.
-    interface RefAt {
-      para: Paragraph;
-      runIdx: number;
-      offset: number;
-    }
-    // Walk body AND table-cell paragraphs in document order, so numbering stays
-    // correct wherever a ref lives (and a ref can sit inside a table cell).
     const body = bodyParagraphs(state.doc);
-    const refs: RefAt[] = [];
-    body.forEach((para) => {
-      let off = 0;
-      para.runs.forEach((r, runIdx) => {
-        if (r.style.endnoteRef) refs.push({ para, runIdx, offset: off });
-        off += r.text.length;
-      });
-    });
+    const refs = noteRefsIn(body, "endnoteRef");
     const orderOf = (blockId: string): number => body.findIndex((p) => p.id === blockId);
     const caretOrder = orderOf(at.blockId);
     let idx = 0;
@@ -1687,24 +1684,8 @@ export function deleteNoteCmd(kind: "footnote" | "endnote", noteId: string): Com
     const noteOp = (id: string, paras: Paragraph[] | null): Op =>
       kind === "footnote" ? { type: "setFootnote", noteId: id, paras } : { type: "setEndnote", noteId: id, paras };
 
-    // Every ref of this kind, document order (body + cell paragraphs), with its
-    // host paragraph, run index and start offset.
-    interface RefAt {
-      para: Paragraph;
-      runIdx: number;
-      offset: number;
-      id: string;
-    }
-    const refs: RefAt[] = [];
-    bodyParagraphs(doc).forEach((para) => {
-      let off = 0;
-      para.runs.forEach((r, runIdx) => {
-        const id = r.style[refKey];
-        if (id) refs.push({ para, runIdx, offset: off, id });
-        off += r.text.length;
-      });
-    });
-
+    // Every ref of this kind, document order (body + cell paragraphs).
+    const refs = noteRefsIn(bodyParagraphs(doc), refKey);
     const target = refs.find((r) => r.id === noteId);
     // Orphan body (marker already gone) — just drop the dangling body.
     if (!target) return tr([noteOp(noteId, null)], state.selection ?? null, "command");
