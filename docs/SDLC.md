@@ -72,7 +72,9 @@ the document model, that means landing in all of:
 
 **Intentionally out of scope** (don't retrofit these unless asked): Comments /
 tracked changes as in-stream OOXML (they live in the review overlay — see
-[REVIEW.md](./REVIEW.md)), OLE objects, and non-image drawing shapes.
+[REVIEW.md](./REVIEW.md)) and OLE objects. (Drawing shapes — `wps:wsp`, text boxes,
+custom/grouped geometry — are **in scope** and tracked in
+[SHAPES_PLAN.md](./SHAPES_PLAN.md), issue #206.)
 
 ---
 
