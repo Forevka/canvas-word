@@ -112,6 +112,9 @@ as writing — the CodeRabbit review is the approval lane, and CI is the evidenc
 - **PR body.** What + why + how, a tests/verification section, and `Closes #NNN`.
   Be honest about what was and wasn't verified (see constraints below).
 - **Squash-merge** to `main`; the merge commit carries the `(#NNN)` suffix.
+- **Docs-only changes commit straight to `main`** — no branch, no PR, no review. The
+  branch → PR → CodeRabbit loop is for code; pure prose (`*.md`) doesn't need it. A
+  change that mixes code + docs still goes through a PR (the code drives that).
 - **Deferred work is a real issue.** Split from-scratch sub-features into their own
   tracked issues with a proper description before shipping the part that's ready.
 
