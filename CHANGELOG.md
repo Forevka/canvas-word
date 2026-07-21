@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Header/footer hover affordance — "Edit" button + area outline.** Pointing at a header or footer
+  margin band now reveals a Word-style overlay: a dashed outline with a soft tint delineating the band
+  **area** (so it reads as distinct from body content), a corner **Header**/**Footer** label, and an
+  **✎ Edit** button that enters band-edit mode on click — a discoverable path alongside the existing
+  double-click, which is unchanged. Purely a DOM overlay mounted on the page element (no canvas repaint,
+  no model op — same layer as the object-selection frame); it only appears on an idle pointer over a band
+  and never while a band is already open or an object is selected, so it doesn't block caret placement or
+  the double-click. Backed by a new `input/bandHoverController` (with a testable `bandRegionRect` geometry
+  helper) wired into the hover pass. Editor-side only — no `.docx`/model change.
 - **Footnote/endnote context toolbar.** A new **note** bar (priority 24 — between the comment and
   TOC bars) appears when the caret sits on a footnote/endnote reference marker: **Go to note** jumps
   the caret into the note body and scrolls it into view, **Delete** removes the marker *and* its body

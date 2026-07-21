@@ -39,6 +39,7 @@ import { createChildDocument, type ChildDocument, type StyleContext } from "./ch
 export type { ChildDocument, ChildContent, ChildRenderOptions, ChildEditorHandle, StyleContext } from "./child/childDocument";
 import { createSelectionController } from "./input/selectionController";
 import { createObjectFrame } from "./input/objectController";
+import { bandRegionRect, createBandHoverController } from "./input/bandHoverController";
 import { createImeProxy } from "./input/imeProxy";
 import { createKeymapHandler, type StyleKey } from "./input/keymap";
 import { extractFragment, fragmentToHtml, fragmentToPlainText, htmlToFragment, tableRectToClipboard, type DocFragment } from "./input/clipboard";
@@ -3259,6 +3260,39 @@ export function createEditor(
   };
   container.addEventListener("keydown", onCropKeyCapture, true);
 
+  // Header/footer hover affordance: pointing at a header/footer margin band
+  // outlines the band area and offers an "Edit" button (a discoverable path into
+  // band-edit mode alongside the preserved double-click). Pure DOM overlay.
+  const bandHover = createBandHoverController({
+    getPageElement: (i) => paint.getPageElement(i),
+    getZoom: () => paint.getZoom(),
+    onEdit: (band, pageIndex) => {
+      bandHover.hide();
+      setStory({ band, pageIndex });
+      proxy.focus();
+    },
+  });
+  const updateBandHover = (clientX: number, clientY: number, buttons: number): void => {
+    // Idle pointer only, and never while a band is already open (the story-edit
+    // dimming/boundary is the affordance then) or an object is selected.
+    if (buttons !== 0 || activeStory || selectedObject) {
+      bandHover.hide();
+      return;
+    }
+    const pt = paint.clientToPage(clientX, clientY);
+    if (!pt || !pt.inside) {
+      bandHover.hide();
+      return;
+    }
+    const band = bandAtPoint(pt);
+    const pg = band ? tree.pages[pt.pageIndex] : undefined;
+    if (!band || !pg) {
+      bandHover.hide();
+      return;
+    }
+    bandHover.show(band, pt.pageIndex, bandRegionRect(pg, band));
+  };
+
   // Hover highlighting for content controls (incl. nested) — point at any control
   // to see its frame(s) and breadcrumb, without moving the caret. Coalesced to at
   // most one probe pass per animation frame (mousemove can outpace the frame
@@ -3275,10 +3309,12 @@ export function createEditor(
       if (!e) return;
       updateHoverAdornment(e.clientX, e.clientY, e.buttons);
       updateInspectorHover(e.clientX, e.clientY, e.buttons);
+      updateBandHover(e.clientX, e.clientY, e.buttons);
     });
   };
   const onSdtHoverLeave = (): void => {
     sdtHoverEvent = null; // a queued rAF must not re-apply hover after leave
+    bandHover.hide();
     if (inspectorActive && lastInspectorHover !== null) {
       lastInspectorHover = null;
       options.onInspectorHover?.(null);
@@ -3780,6 +3816,7 @@ export function createEditor(
       container.removeEventListener("pointercancel", onPinchUp);
       controller.destroy();
       objectFrame.destroy();
+      bandHover.destroy();
       mirror.destroy();
       proxy.destroy();
       paint.destroy();

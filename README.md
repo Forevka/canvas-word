@@ -114,8 +114,10 @@ Node `backend` can reuse them.
   becomes commands and is cancelled; CJK composition renders as transient
   underlined edits outside the undo stack, committing as one insert on
   `compositionend`.
-- **Story mode** — double-click into header/footer. The edited band renders raw
-  (`{page}` literal, real block ids) so offsets align; the body dims; Esc
+- **Story mode** — double-click into header/footer, or hover the band and click
+  its **✎ Edit** button (hovering also outlines the band area with a
+  Header/Footer label, distinguishing it from the body). The edited band renders
+  raw (`{page}` literal, real block ids) so offsets align; the body dims; Esc
   restores selection. Ops are container-aware (`body | header | footer`).
 - **Transient-op drag** — image resize and column drags preview via
   `origin:'transient'` ops (bypassing undo), then revert and commit one undoable
@@ -185,8 +187,9 @@ resize with live reflow, alignment, square text-wrap (float left/right).
 
 **Headers/footers** — rich `Block[]` stories laid out per page with field
 tokens (`{page}` with roman/alpha, `{pages}`, `{date}`, `{time}`), story
-editing via double-click, editable band tables, first-page and odd/even
-variants, tall bands that push the content box live.
+editing via double-click **or a hover "Edit" button** (with an on-hover band
+outline), editable band tables, first-page and odd/even variants, tall bands
+that push the content box live.
 
 **Sections & columns** — next-page section breaks (OOXML sectPr-on-paragraph),
 per-section page setup via a draggable **Page Layout** dialog (Letter/A4/Legal
