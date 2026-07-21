@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Drawing shapes — text boxes (issue #206, Part 3).** A `ShapeBlock` can now carry a **text box
+  body** (`ShapeBlock.text` — a nested paragraph flow, like a table cell), rendered **read-only** inside
+  the shape box and round-tripping **losslessly** to `.docx` as `wps:txbx` → `w:txbxContent`. The text
+  is laid out at the box's fixed width (respecting the `wps:bodyPr` insets), vertically centered, clipped
+  to the box, and painted identically on canvas and in the PDF export. Import parses `wps:txbx` into the
+  model; export re-emits it (schema-valid, `txbx` before `bodyPr`). Authorable from the `DocumentBuilder`
+  (`.shape(preset, { text: [...] })`) and the C# bindings (`ShapeOptions.Text`), and demonstrated by a
+  text box in the default in-editor document and the C# showcase. Editable caret-in-box editing follows
+  in Part 6 (see `docs/SHAPES_PLAN.md`).
 - **Drawing shapes — geometry & style breadth + fill/outline UI (issue #206, Part 2).** The `shape`
   block gains five more preset geometries — **rounded rectangle, triangle, diamond, right arrow and
   left arrow** (on top of Part 1's rectangle / ellipse / line) — plus **dashed outlines** (solid / dash

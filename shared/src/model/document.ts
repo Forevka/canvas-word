@@ -534,8 +534,9 @@ export interface ImageBlock {
  *  PR 2 (issue #215) widens the preset set, adds dash styles + `a:avLst` adjust
  *  passthrough + `a:xfrm@rot` rotation. The following field holes are deliberately
  *  absent and filled by later shape PRs (see docs/SHAPES_PLAN.md):
- *    - `wrap` / `anchor` (square wrap + wp:anchor float + z-order) — PR 4,
- *    - `text` (wps:txbx body) — PR 3. */
+ *    - `wrap` / `anchor` (square wrap + wp:anchor float + z-order) — PR 4.
+ *  The wider preset set + dash styles + `a:avLst` adjust + `a:xfrm@rot` rotation
+ *  arrived in PR 2; the `wps:txbx` text body arrived in PR 3 (issue #216). */
 export type ShapePreset =
   | "rect"
   | "roundRect"
@@ -549,6 +550,14 @@ export type ShapePreset =
 /** Outline dash pattern (a:prstDash@val). Each value is the raw OOXML preset-dash
  *  name, so import/export is a pass-through. Absent = a solid line. */
 export type ShapeDash = "solid" | "dash" | "dot" | "dashDot" | "lgDash";
+
+/** A drawing shape's text body (OOXML wps:txbx → w:txbxContent) — a nested
+ *  paragraph flow, like a table cell's `blocks`. PR 3 (issue #216) renders it
+ *  read-only inside the shape box and round-trips it losslessly to `.docx`;
+ *  editable caret-in-box editing is a later shape PR. */
+export interface ShapeTextBody {
+  blocks: Paragraph[];
+}
 
 /** Shape fill (a:solidFill / a:noFill). `{ color }` is a solid CSS hex fill;
  *  `{ none }` is an explicit no-fill. Absent = the theme-neutral default fill. */
@@ -572,6 +581,11 @@ export interface ShapeBlock {
   fill?: ShapeFill;
   /** Outline; absent ⇒ default outline (see paint). */
   stroke?: ShapeStroke;
+  /** Text box body (OOXML wps:txbx / w:txbxContent) — a nested paragraph flow
+   *  laid out and painted read-only inside the shape box, respecting the
+   *  wps:bodyPr insets (PR 3, issue #216). Absent ⇒ no text box. Editable
+   *  caret-in-box editing is a later shape PR. */
+  text?: ShapeTextBody;
   /** The single layout lever — the box the preset path is drawn into (like an
    *  image's widthPx/heightPx). */
   widthPx: number;

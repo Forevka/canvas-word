@@ -357,7 +357,7 @@ w:drawing → wp:inline → a:graphicData @uri=…/wordprocessingShape → wps:w
 ├─ wp14:anchorId / wp14:editId .......... ✅ ShapeBlock.drawingId (preserved verbatim; export de-dups)
 ├─ a:avLst / a:gd (adjust handles) ...... ✅ raw guide values (name → `val N`) round-trip via geometry.adjust
 ├─ a:xfrm @rot (rotation) ............... ✅ ShapeBlock.rotation (degrees ↔ 60000ths)
-├─ wps:txbx (text box body) ............. ❌ (Part 3)
+├─ wps:txbx / w:txbxContent (text body) . ✅ ShapeBlock.text — paragraph flow, read-only render + round-trip (edit ❌ Part 6)
 └─ wp:anchor (float / wrap / z-order) ... ❌ in-flow only (Part 4)
 ```
 

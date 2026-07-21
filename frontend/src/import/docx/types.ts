@@ -270,6 +270,9 @@ export type IRInline =
       /** a:ln: a solid stroke (color + point width, optional a:prstDash) or an
        *  explicit no-outline. */
       stroke?: { color: string; widthPt: number; dash?: string } | { none: true };
+      /** wps:txbx → w:txbxContent block flow (the text box body) — mapped to
+       *  ShapeBlock.text (paragraphs only; PR 3). Absent = no text box. */
+      text?: IRBlock[];
       /** wp14:anchorId / wp14:editId on the wp:inline container — preserved verbatim. */
       anchorId?: string;
       editId?: string;

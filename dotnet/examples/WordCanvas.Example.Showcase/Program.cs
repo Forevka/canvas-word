@@ -265,6 +265,16 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
     .Paragraph("A stroke-only diagonal line (no fill), and a rectangle rotated 20° (a:xfrm@rot):")
     .Shape(ShapePreset.Line, new ShapeOptions { WidthPx = 200, HeightPx = 60, Align = TextAlign.Left, Fill = ShapeFill.NoFill, Stroke = ShapeStroke.Solid("#38761d", 2) })
     .Shape(ShapePreset.Rect, new ShapeOptions { WidthPx = 150, HeightPx = 90, Align = TextAlign.Center, Fill = ShapeFill.Solid("#fff2cc"), Stroke = ShapeStroke.Solid("#bf9000", 1.5), Rotation = 20 })
+    .Paragraph("A text box — a shape carrying a body of text (OOXML wps:txbx), rendered read-only:")
+    .Shape(ShapePreset.Rect, new ShapeOptions
+    {
+        WidthPx = 300,
+        HeightPx = 96,
+        Align = TextAlign.Center,
+        Fill = ShapeFill.Solid("#fff2cc"),
+        Stroke = ShapeStroke.Solid("#bf9000", 1),
+        Text = new[] { "Drawing text box", "A shape can carry a paragraph flow, laid out inside its box." },
+    })
     .Paragraph("Multilevel numbered list:")
     .List(new[]
     {

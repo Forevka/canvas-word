@@ -5,7 +5,8 @@
 // Exercised both from a hand-written wps:wsp docx (the importer is the oracle) and
 // through a model → writeDocx → re-import cycle.
 import { describe, expect, it } from "vitest";
-import type { Document, SectionProps, ShapeBlock } from "@cw/shared";
+import type { Document, Paragraph, SectionProps, ShapeBlock } from "@cw/shared";
+import { DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE } from "@cw/shared";
 import { runImport } from "../../import/docx/pipeline";
 import { simpleDocx } from "../../import/docx/fixture";
 import { writeDocx } from "./writeDocx";
@@ -17,6 +18,10 @@ let n = 0;
 const shape = (patch: Partial<ShapeBlock> = {}): ShapeBlock => ({
   kind: "shape", id: `s${n++}`, revision: 0, geometry: { preset: "rect" },
   widthPx: 220, heightPx: 90, align: "left", ...patch,
+});
+const txtPara = (text: string): Paragraph => ({
+  kind: "paragraph", id: `p${n++}`, revision: 0,
+  runs: [{ text, style: { ...DEFAULT_CHAR_STYLE } }], style: { ...DEFAULT_PARA_STYLE },
 });
 const docOf = (s: ShapeBlock): Document => ({ section: SECTION, blocks: [s] });
 const roundTrip = (doc: Document): Document => runImport(writeDocx(doc).bytes).doc;
@@ -137,6 +142,51 @@ describe("drawing shapes — DrawingML wps:wsp round-trip", () => {
     expect(out.geometry).toEqual({ preset: "roundRect", adjust: { adj: 18000 } });
     expect(out.rotation).toBe(20);
     expect(out.stroke).toEqual({ color: "#38761d", widthPt: 1.5, dash: "dash" });
+  });
+
+  it("round-trips a text box body (wps:txbx paragraphs survive the cycle)", () => {
+    const s = shape({ text: { blocks: [txtPara("Drawing text box"), txtPara("second line")] } });
+    const out = firstShape(roundTrip(docOf(s)));
+    expect(out.text?.blocks.length).toBe(2);
+    expect(out.text?.blocks[0]?.runs.map((r) => r.text).join("")).toBe("Drawing text box");
+    expect(out.text?.blocks[1]?.runs.map((r) => r.text).join("")).toBe("second line");
+  });
+
+  it("emits wps:txbx / w:txbxContent for a text box body", () => {
+    const xml = exportedDocXml(docOf(shape({ text: { blocks: [txtPara("Boxed text")] } })));
+    expect(xml).toContain("<wps:txbx>");
+    expect(xml).toContain("<w:txbxContent>");
+    expect(xml).toContain("Boxed text");
+    // txbx must precede bodyPr per CT_WordprocessingShape.
+    expect(xml.indexOf("<wps:txbx>")).toBeLessThan(xml.indexOf("<wps:bodyPr"));
+  });
+
+  it("omits wps:txbx when the shape has no text body", () => {
+    const xml = exportedDocXml(docOf(shape()));
+    expect(xml).not.toContain("wps:txbx");
+  });
+
+  it("imports a hand-written wps:txbx text box (the importer as oracle)", () => {
+    const drawing = `<w:p><w:r><w:drawing>
+      <wp:inline><wp:extent cx="2743200" cy="914400"/><wp:docPr id="1" name="Shape"/>
+        <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
+          <wps:wsp><wps:cNvSpPr/><wps:spPr>
+            <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+            <a:solidFill><a:srgbClr val="fff2cc"/></a:solidFill>
+          </wps:spPr>
+          <wps:txbx><w:txbxContent>
+            <w:p><w:r><w:t>Line one</w:t></w:r></w:p>
+            <w:p><w:r><w:t>Line two</w:t></w:r></w:p>
+          </w:txbxContent></wps:txbx>
+          <wps:bodyPr/></wps:wsp>
+        </a:graphicData></a:graphic>
+      </wp:inline>
+    </w:drawing></w:r></w:p>`;
+    const out = firstShape(runImport(simpleDocx(drawing)).doc);
+    expect(out.geometry.preset).toBe("rect");
+    expect(out.text?.blocks.length).toBe(2);
+    expect(out.text?.blocks[0]?.runs.map((r) => r.text).join("")).toBe("Line one");
+    expect(out.text?.blocks[1]?.runs.map((r) => r.text).join("")).toBe("Line two");
   });
 
   it("maps a genuinely unsupported preset to a rectangle (+ warning), dropping its adjust", () => {
