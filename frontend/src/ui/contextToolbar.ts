@@ -5,7 +5,7 @@
 // is a `ContextToolbar` — a small object that reports an anchor rect when its
 // context is active and renders itself there.
 
-import { anchorInView, placeSelectionBar, type AnchorRect } from "./floatingBarPosition";
+import { anchorInView, placeSelectionBar, type AnchorRect, type Viewport } from "./floatingBarPosition";
 import { injectCssOnce } from "./styles";
 
 // Shared look for the built-in context bars (equation / review / TOC / list / insert
@@ -43,8 +43,10 @@ export interface FloatingBar {
   /** The bar element (append your buttons here). */
   readonly el: HTMLDivElement;
   /** Position at `anchor` (flip/clamp via placeSelectionBar) and show. Call AFTER
-   *  syncing content, since placement measures the bar. */
-  place(anchor: AnchorRect): void;
+   *  syncing content, since placement measures the bar. Pass the manager's
+   *  ribbon-aware `viewport` so the bar never lands over the ribbon; omit it to
+   *  fall back to the full window. */
+  place(anchor: AnchorRect, viewport?: Viewport): void;
   hide(): void;
   visible(): boolean;
   destroy(): void;
@@ -74,13 +76,13 @@ export function createFloatingBar(opts: FloatingBarOptions): FloatingBar {
   let shown = false;
   return {
     el,
-    place(anchor) {
+    place(anchor, viewport) {
       el.style.display = "flex";
       shown = true;
       const { left, top } = placeSelectionBar(
         anchor,
         { width: el.offsetWidth, height: el.offsetHeight },
-        { width: window.innerWidth, height: window.innerHeight },
+        viewport ?? { width: window.innerWidth, height: window.innerHeight },
         opts.place ?? {},
       );
       el.style.left = `${left}px`;
@@ -108,8 +110,10 @@ export interface ContextToolbar {
   /** The context detector + anchor: return the viewport anchor rect when this
    *  toolbar's context is active right now, else null. Should be side-effect-free. */
   resolve(): AnchorRect | null;
-  /** Sync button state for the active context, then place + show at `anchor`. */
-  show(anchor: AnchorRect): void;
+  /** Sync button state for the active context, then place + show at `anchor`.
+   *  `viewport` is the manager's ribbon-aware viewport; forward it to the bar's
+   *  `place` so placement stays clear of the ribbon. */
+  show(anchor: AnchorRect, viewport?: Viewport): void;
   hide(): void;
   destroy(): void;
 }
@@ -124,7 +128,7 @@ export interface ActivePick {
  *  (stable sort). Exported for unit testing — no DOM access. */
 export function pickActive(
   toolbars: readonly ContextToolbar[],
-  viewport: { width: number; height: number },
+  viewport: Viewport,
 ): ActivePick | null {
   const byPriority = [...toolbars].sort((a, b) => b.priority - a.priority);
   for (const toolbar of byPriority) {
@@ -160,11 +164,15 @@ export function createContextToolbarManager(deps: ContextToolbarManagerDeps): Co
   let active: ContextToolbar | null = null;
 
   const refresh = (): void => {
-    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    // The usable area starts at the scroll container's top — below the ribbon. Bars
+    // hide (not hover over the ribbon) once their anchor scrolls above it, and never
+    // place above it. Clamp to >= 0 in case the whole editor is scrolled off-screen.
+    const contentTop = Math.max(0, deps.scrollEl.getBoundingClientRect().top);
+    const viewport: Viewport = { width: window.innerWidth, height: window.innerHeight, top: contentTop };
     const pick = deps.suppressed?.() ? null : pickActive(toolbars, viewport);
     for (const t of toolbars) if (t !== pick?.toolbar) t.hide();
     active = pick?.toolbar ?? null;
-    if (pick) pick.toolbar.show(pick.anchor);
+    if (pick) pick.toolbar.show(pick.anchor, viewport);
   };
   const hideActive = (): void => {
     active?.hide();

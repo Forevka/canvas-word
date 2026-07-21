@@ -68,10 +68,10 @@ export function createCustomContextToolbar(
       if (!spec.when(ctx)) return null;
       return spec.anchor ? spec.anchor(ctx) : ctx.selectionRect();
     },
-    show: (anchor: AnchorRect): void => {
+    show: (anchor, viewport) => {
       const ctx = deps.context();
       for (const update of refreshers) update(ctx);
-      fb.place(anchor);
+      fb.place(anchor, viewport);
     },
     hide: () => fb.hide(),
     destroy: () => fb.destroy(),

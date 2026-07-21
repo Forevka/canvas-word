@@ -54,7 +54,7 @@ export function createImageContextToolbar(deps: ImageContextToolbarDeps): Contex
     id: "image",
     priority: 30,
     resolve: (): AnchorRect | null => deps.anchorRect(),
-    show: (anchor: AnchorRect): void => fb.place(anchor),
+    show: (anchor, viewport) => fb.place(anchor, viewport),
     hide: () => fb.hide(),
     destroy: () => fb.destroy(),
   };

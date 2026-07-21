@@ -57,7 +57,7 @@ export function createNoteContextToolbar(deps: NoteContextToolbarDeps): ContextT
       if (deps.hasRangeSelection()) return null;
       return deps.note() ? deps.anchorRect() : null;
     },
-    show: (anchor: AnchorRect): void => {
+    show: (anchor, viewport) => {
       current = deps.note();
       const noun = current?.kind === "endnote" ? "endnote" : "footnote";
       // Keep the a11y label + button titles in sync with the marker kind, so a
@@ -65,7 +65,7 @@ export function createNoteContextToolbar(deps: NoteContextToolbarDeps): ContextT
       fb.el.setAttribute("aria-label", noun === "endnote" ? "Endnote" : "Footnote");
       goToBtn.title = `Go to this ${noun}`;
       deleteBtn.title = `Delete this ${noun}`;
-      fb.place(anchor);
+      fb.place(anchor, viewport);
     },
     hide: () => fb.hide(),
     destroy: () => fb.destroy(),

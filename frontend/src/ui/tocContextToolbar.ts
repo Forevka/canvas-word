@@ -33,7 +33,7 @@ export function createTocContextToolbar(deps: TocContextToolbarDeps): ContextToo
       if (deps.hasRangeSelection() || !deps.inToc()) return null;
       return deps.anchorRect();
     },
-    show: (anchor: AnchorRect): void => fb.place(anchor),
+    show: (anchor, viewport) => fb.place(anchor, viewport),
     hide: () => fb.hide(),
     destroy: () => fb.destroy(),
   };

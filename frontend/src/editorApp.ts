@@ -357,6 +357,10 @@ const editorOpts = {
   // Broadcast the local caret to collaborators on every move.
   onSelectionChange: (sel: DocSelection | null) => {
     sync?.localPresence(sel);
+    // Cell (multi-row/col) selection updates through this hook only — its setter
+    // skips the heavy onChange broadcast (it fires per drag-move) — so refresh the
+    // context toolbars here too, else the table bar wouldn't appear until a scroll.
+    refreshContextToolbars();
     refreshDevPanel();
   },
   // Develop mode only: the inspector turns this signal on while open (dormant

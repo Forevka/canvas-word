@@ -77,7 +77,7 @@ export function createTableContextToolbar(deps: TableContextToolbarDeps): Contex
     id: "table",
     priority: 28,
     resolve: (): AnchorRect | null => deps.anchorRect(),
-    show: (anchor: AnchorRect): void => fb.place(anchor),
+    show: (anchor, viewport) => fb.place(anchor, viewport),
     hide: () => fb.hide(),
     destroy: () => fb.destroy(),
   };
