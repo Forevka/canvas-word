@@ -645,7 +645,7 @@ export function createMapper(
           break;
         }
         case "shape": {
-          const shape = mapShape(inline, style.align);
+          const shape = mapShape(inline, style.align, media, resolveLink);
           if (shape) {
             flushPara();
             // A shape can't carry a page/column break — give the break a carrier.
@@ -805,6 +805,8 @@ export function createMapper(
   function mapShape(
     inline: Extract<IRInline, { kind: "shape" }>,
     paraAlign: ParaStyle["align"],
+    media: MediaStore,
+    resolveLink: LinkResolver,
   ): ShapeBlock | undefined {
     if (inline.widthEmu === undefined || inline.heightEmu === undefined) {
       warnings.add("shapes-unsized", "A drawing shape without explicit dimensions was skipped.");
@@ -840,6 +842,18 @@ export function createMapper(
         }
         shape.stroke = stroke;
       }
+    }
+    // Text box body (wps:txbx → w:txbxContent). The model text body is a paragraph
+    // flow (like a table cell); map the nested blocks and keep the paragraphs. A
+    // nested table inside a text box is out of PR-3 scope — drop it with a warning
+    // rather than silently, so the loss is visible.
+    if (inline.text && inline.text.length > 0) {
+      const mapped = mapBlocks(inline.text, media, resolveLink);
+      const paras = mapped.filter((b): b is Paragraph => b.kind === "paragraph");
+      if (paras.length < mapped.length) {
+        warnings.add("shape-text-nonpara-dropped", "A text box contained non-paragraph content (e.g. a nested table) that was dropped — only paragraphs are supported.");
+      }
+      if (paras.length > 0) shape.text = { blocks: paras };
     }
     // wp14:anchorId/editId — persistent drawing identity, preserved verbatim.
     if (inline.anchorId || inline.editId) {

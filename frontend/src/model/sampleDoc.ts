@@ -77,15 +77,19 @@ const croppedImage = (w: number, h: number, crop: NonNullable<ImageBlock["crop"]
 
 // --- drawing shapes (DrawingML wps:wsp) ----------------------------------------
 /** A preset drawing shape (OOXML wps:wsp / a:prstGeom) with an optional fill,
- *  outline (with dash) and rotation — the #206 shape round-trip. */
+ *  outline (with dash), rotation, and a read-only text box body (wps:txbx) — the
+ *  #206 shape round-trip. PR 1 rect/ellipse/line; PR 2 breadth+dash+rotation;
+ *  PR 3 the text body. */
 const shape = (
   preset: ShapePreset, w: number, h: number, align: ShapeBlock["align"],
   fill?: ShapeFill, stroke?: ShapeStroke, rotation?: number, adjust?: Record<string, number>,
+  text?: string[],
 ): ShapeBlock => ({
   kind: "shape", id: id(), revision: 0,
   geometry: adjust ? { preset, adjust } : { preset },
   widthPx: w, heightPx: h, align,
   ...(fill ? { fill } : {}), ...(stroke ? { stroke } : {}), ...(rotation ? { rotation } : {}),
+  ...(text ? { text: { blocks: text.map((line) => para([run(line)])) } } : {}),
 });
 
 // --- symbols (w:sym) -----------------------------------------------------------
@@ -515,6 +519,11 @@ export function sampleDoc(): Document {
     para([run("A rotated rectangle (20°) and a rotated arrow — a:xfrm@rot round-trips:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
     shape("rect", 150, 90, "center", { color: "#fff2cc" }, { color: "#bf9000", widthPt: 1.5 }, 20),
     shape("rightArrow", 170, 80, "center", { color: "#d0e0e3" }, { color: "#134f5c", widthPt: 1.5 }, -15),
+    para([run("A text box — a shape carrying a body of text (OOXML wps:txbx), rendered read-only and round-tripping losslessly:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
+    shape("rect", 300, 96, "center", { color: "#fff2cc" }, { color: "#bf9000", widthPt: 1 }, undefined, undefined, [
+      "Drawing text box",
+      "A shape can carry a paragraph flow, laid out inside its box.",
+    ]),
 
     para([run("Multilevel numbered list:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
     para([run("Model — invertible ops")], { list: { listId: DEFAULT_NUMBER_LIST_ID, level: 0 }, spaceAfterPx: 2 }),

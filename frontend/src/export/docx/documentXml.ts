@@ -989,8 +989,9 @@ const EMU_PER_PT = 12700;
 /** A drawing shape as a paragraph: reuse the image wp:inline wrapper + drawingId
  *  plumbing, swapping the graphic payload for a bare DrawingML wps:wsp (no
  *  mc:AlternateContent / VML — modern Word reads it and it validates against the
- *  OOXML schema). PR 1 emits an in-flow (inline) rect/ellipse/line with solid fill
- *  + solid outline; wrap/anchor/text/rotation are later shape PRs. */
+ *  OOXML schema). Emits an in-flow (inline) rect/ellipse/line with solid fill +
+ *  solid outline and an optional wps:txbx text box body; wrap/anchor/rotation are
+ *  later shape PRs. */
 function shapeParagraphXml(shape: Extract<Block, { kind: "shape" }>, ctx: PartCtx): string {
   const idAttrs = drawingIdAttrs(shape.drawingId, ctx);
   const cx = pxToEmu(shape.widthPx);
@@ -1036,12 +1037,21 @@ function shapeParagraphXml(shape: Extract<Block, { kind: "shape" }>, ctx: PartCt
       fillXml +
       lnXml,
   );
+  // Text box body: wps:txbx → w:txbxContent, reusing the block/paragraph emitter
+  // (like a table cell). Per CT_WordprocessingShape, txbx precedes bodyPr. Emit an
+  // empty w:p when the body has no blocks (w:txbxContent requires a paragraph).
+  let txbxXml = "";
+  if (shape.text) {
+    const inner = shape.text.blocks.length > 0 ? emitBlocks(shape.text.blocks, 0, ctx) : el("w:p");
+    txbxXml = el("wps:txbx", undefined, el("w:txbxContent", undefined, inner));
+  }
   const wsp = el(
     "wps:wsp",
     undefined,
     el("wps:cNvPr", { id: ctx.nextId(), name: "Shape" }) +
       el("wps:cNvSpPr") +
       spPr +
+      txbxXml +
       el("wps:bodyPr", { rot: 0, anchor: "ctr" }),
   );
   const graphic = el(

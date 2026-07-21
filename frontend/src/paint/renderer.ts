@@ -1219,6 +1219,25 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
     }
     if (block.shape) {
       paintShapeCanvas(ctx, block.shape, block.x, block.y);
+      // Read-only text box body: clip to the box, translate into the local text
+      // frame (bodyPr insets + vertical-center offset), and paint each nested
+      // paragraph with the same paintBlock used for cell content.
+      // KNOWN LIMITATION: the text is painted axis-aligned even when the shape is
+      // rotated (block.shape.rotation) — only the geometry rotates, the text stays
+      // upright. Rotated text boxes are an uncommon combination; laying the sub-flow
+      // out in the rotated frame is deferred (see docs/OOXML_COVERAGE.md). The PDF
+      // painter (export/pdf/paintBlock.ts) mirrors this.
+      const text = block.shape.text;
+      if (text && text.blocks.length > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(block.x, block.y, block.shape.width, block.shape.height);
+        ctx.clip();
+        ctx.beginPath(); // clear the clip rect from the current path
+        ctx.translate(block.x + text.offsetX, block.y + text.offsetY);
+        for (const cb of text.blocks) paintBlock(ctx, cb, pageIndex);
+        ctx.restore();
+      }
       return;
     }
     if (block.equation) {

@@ -89,7 +89,7 @@ function fingerprint(doc: Document): Record<string, number> {
         for (const r of b.rows) for (const c of r.cells) { cells++; walk(c.blocks); }
       } else if (b.kind === "image") images++;
       else if (b.kind === "equation") equations++;
-      else if (b.kind === "shape") shapes++;
+      else if (b.kind === "shape") { shapes++; walk(b.text?.blocks); }
     }
   };
   walk(doc.blocks);
@@ -152,15 +152,15 @@ describe("default showcase doc: export → open → export fidelity", () => {
     const doc0 = sampleDoc();
     const doc1 = runImport((await runExport(doc0, "docx", await resolveImages(doc0))).bytes).doc;
     expect(fingerprint(doc1)).toEqual({
-      paras: 324,
-      runs: 483,
+      paras: 327,
+      runs: 486,
       tables: 11,
       cells: 203,
       images: 4,
-      chars: 22235,
+      chars: 22423,
       sectionBreaks: 2,
       equations: 5,
-      shapes: 16,
+      shapes: 17,
       footnotes: 1,
       endnotes: 1,
       fields: 8,

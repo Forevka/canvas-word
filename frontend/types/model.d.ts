@@ -148,6 +148,12 @@ export type ShapeDash = "solid" | "dash" | "dot" | "dashDot" | "lgDash";
 export type ShapeFill = { color: string } | { none: true };
 export type ShapeStroke = { color: string; widthPt: number; dash?: ShapeDash } | { none: true };
 
+/** A drawing shape's text box body (OOXML wps:txbx) — a nested paragraph flow
+ *  rendered read-only inside the shape box. */
+export interface ShapeTextBody {
+  blocks: Paragraph[];
+}
+
 export interface ShapeBlock {
   kind: "shape";
   id: string;
@@ -159,6 +165,8 @@ export interface ShapeBlock {
   fill?: ShapeFill;
   /** Outline; absent = the default outline. */
   stroke?: ShapeStroke;
+  /** Text box body (OOXML wps:txbx) rendered read-only inside the box; absent = none. */
+  text?: ShapeTextBody;
   widthPx: number;
   heightPx: number;
   align: "left" | "center" | "right";

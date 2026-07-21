@@ -98,6 +98,8 @@ export interface ShapeOptions {
   rotation?: number;
   /** Raw a:avLst adjust guides (name → number) for parametric presets. */
   adjust?: Record<string, number>;
+  /** Text box body — one paragraph per string, rendered read-only inside the box. */
+  text?: string[];
 }
 
 export interface ListItem {

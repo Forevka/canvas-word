@@ -650,6 +650,9 @@ public sealed record ShapeOptions
     public double? Rotation { get; init; }
     /// <summary>Raw a:avLst adjust guides (guide name → value) for parametric presets.</summary>
     public IReadOnlyDictionary<string, double>? Adjust { get; init; }
+    /// <summary>Text box body — one paragraph per string, rendered read-only inside
+    /// the shape box (OOXML wps:txbx). Null/empty = a shape with no text.</summary>
+    public IReadOnlyList<string>? Text { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -671,6 +674,7 @@ public sealed record ShapeOptions
             foreach (var kv in Adjust) Js.Set(adj, kv.Key, kv.Value);
             Js.Set(o, "adjust", adj);
         }
+        if (Text is { Count: > 0 } t) Js.Set(o, "text", Js.ToArray(e, t.Select(x => (object?)x)));
         return o;
     }
 }

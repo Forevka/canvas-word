@@ -2587,6 +2587,11 @@ function layoutBand(
   return { placed, height: y };
 }
 
+/** Default wps:bodyPr text insets in px — the padding between the shape box and
+ *  its text body (lIns/rIns 91440 EMU, tIns/bIns 45720 EMU, ÷ 9525 EMU/px). */
+const SHAPE_TEXT_INSET_X = 9.6;
+const SHAPE_TEXT_INSET_Y = 4.8;
+
 /** Build the PlacedShape payload for a shape block (shared by the main flow layout
  *  and the band/cell layout paths). `width`/`height` default to the block's box but
  *  can be overridden when a cell scales the shape down to fit. */
@@ -2595,6 +2600,17 @@ function placedShapeOf(sb: ShapeBlock, width = sb.widthPx, height = sb.heightPx)
   if (sb.fill) shape.fill = sb.fill;
   if (sb.stroke) shape.stroke = sb.stroke;
   if (sb.rotation) shape.rotation = sb.rotation;
+  // Read-only text box body: lay the paragraphs out as a fixed-width sub-flow
+  // inside the box (minus the bodyPr insets), reusing the band/cell sub-flow
+  // layout, then vertically center them (wps:bodyPr anchor="ctr", which the export
+  // emits). Coords stay LOCAL to the shape box; painters translate into place.
+  if (sb.text && sb.text.blocks.length > 0) {
+    const innerW = Math.max(1, width - 2 * SHAPE_TEXT_INSET_X);
+    const { placed, height: textH } = layoutBand(sb.text.blocks, innerW, 0, 1, 1, new PrepareCache(), true);
+    const avail = height - 2 * SHAPE_TEXT_INSET_Y;
+    const offsetY = SHAPE_TEXT_INSET_Y + Math.max(0, (avail - textH) / 2);
+    shape.text = { blocks: placed, offsetX: SHAPE_TEXT_INSET_X, offsetY };
+  }
   return shape;
 }
 

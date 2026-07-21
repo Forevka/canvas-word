@@ -140,6 +140,7 @@ export class BuilderContext {
     stroke?: ShapeStroke,
     rotation?: number,
     adjust?: Record<string, number>,
+    text?: string[],
   ): ShapeBlock {
     const geometry: ShapeBlock["geometry"] = { preset };
     if (adjust && Object.keys(adjust).length > 0) geometry.adjust = adjust;
@@ -147,6 +148,8 @@ export class BuilderContext {
     if (fill) shape.fill = fill;
     if (stroke) shape.stroke = stroke;
     if (rotation) shape.rotation = rotation;
+    // Text box body: one paragraph per string (a single default-styled run each).
+    if (text && text.length > 0) shape.text = { blocks: text.map((line) => this.paragraph([this.run(line)])) };
     return shape;
   }
 

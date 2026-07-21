@@ -357,9 +357,17 @@ w:drawing → wp:inline → a:graphicData @uri=…/wordprocessingShape → wps:w
 ├─ wp14:anchorId / wp14:editId .......... ✅ ShapeBlock.drawingId (preserved verbatim; export de-dups)
 ├─ a:avLst / a:gd (adjust handles) ...... ✅ raw guide values (name → `val N`) round-trip via geometry.adjust
 ├─ a:xfrm @rot (rotation) ............... ✅ ShapeBlock.rotation (degrees ↔ 60000ths)
-├─ wps:txbx (text box body) ............. ❌ (Part 3)
+├─ wps:txbx / w:txbxContent (text body) . ✅ ShapeBlock.text — paragraph flow, read-only render + round-trip (edit ❌ Part 6)
 └─ wp:anchor (float / wrap / z-order) ... ❌ in-flow only (Part 4)
 ```
+
+> **Known limitation — rotation + text.** A shape's `rotation` and its text body
+> both round-trip losslessly, but they don't compose in the *render*: a rotated
+> shape paints its geometry rotated while its text box body stays **axis-aligned**
+> (upright). Only the geometry rotates; laying the text sub-flow out in the rotated
+> frame is deferred. Rotated text boxes are an uncommon combination, and the `.docx`
+> is unaffected (both fields survive) — this is a paint-only gap in the canvas and
+> PDF painters.
 
 > Parts 2–9 (geometry & style breadth, text boxes, positioning, VML import,
 > freeform/grouped shapes) are tracked in [SHAPES_PLAN.md](./SHAPES_PLAN.md).

@@ -700,7 +700,7 @@ function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
   // genuinely unknown drawings.
   const wsp = findDeep(container, "wps:wsp");
   if (wsp) {
-    const shape = parseShapeWsp(wsp, container);
+    const shape = parseShapeWsp(wsp, container, ctx);
     if (shape) return shape;
     // Structurally a wps shape but without a preset geometry we can place yet
     // (e.g. freeform a:custGeom) — warn instead of dropping it silently, mirroring
@@ -779,7 +779,7 @@ function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
 /** DrawingML preset shape: wps:wsp → wps:spPr (a:prstGeom, a:solidFill/a:noFill,
  *  a:ln). Size comes from the container's wp:extent (like an image). The spPr's
  *  DIRECT fill is the shape fill; a:ln carries the outline (its own nested fill). */
-function parseShapeWsp(wsp: XmlNode, container: XmlNode): Extract<IRInline, { kind: "shape" }> | undefined {
+function parseShapeWsp(wsp: XmlNode, container: XmlNode, ctx: ParseCtx): Extract<IRInline, { kind: "shape" }> | undefined {
   const spPr = el(wsp, "wps:spPr");
   const prstGeom = spPr && el(spPr, "a:prstGeom");
   const prst = prstGeom && attr(prstGeom, "prst");
@@ -833,6 +833,21 @@ function parseShapeWsp(wsp: XmlNode, container: XmlNode): Extract<IRInline, { ki
         }
       }
     }
+  }
+  // Text box body: wps:txbx → w:txbxContent holds a block flow (paragraphs).
+  // Parse it as a fresh block container (like a table cell) so any surrounding
+  // field/control tracking never leaks into the nested paragraphs.
+  const txbxContent = el(wsp, "wps:txbx") && el(el(wsp, "wps:txbx")!, "w:txbxContent");
+  if (txbxContent) {
+    const savedBlockStack = ctx.blockSdtStack;
+    const savedTrackFields = ctx.trackFields;
+    ctx.blockSdtStack = [];
+    ctx.trackFields = false;
+    const blocks: IRBlock[] = [];
+    walkBlocks(children(txbxContent), blocks, ctx);
+    ctx.blockSdtStack = savedBlockStack;
+    ctx.trackFields = savedTrackFields;
+    if (blocks.length > 0) shape.text = blocks;
   }
   const anchorId = attr(container, "wp14:anchorId");
   if (anchorId) shape.anchorId = anchorId;

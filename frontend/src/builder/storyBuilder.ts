@@ -44,6 +44,9 @@ export interface ShapeOptions {
   /** Raw a:avLst adjust guides (name → number) for parametric presets; omit for the
    *  preset's default handles. */
   adjust?: Record<string, number>;
+  /** Text box body — one paragraph per string, rendered read-only inside the
+   *  shape box (OOXML wps:txbx). Omit for a shape with no text. */
+  text?: string[];
 }
 
 export interface ListItem {
@@ -137,14 +140,14 @@ export class StoryBuilder {
 
   /** Insert a drawing shape (a preset geometry: rect/roundRect/ellipse/triangle/
    *  diamond/right|leftArrow/line) with an optional fill, outline (with dash),
-   *  rotation and adjust handles. Like `.image()`, the size is required (the builder
-   *  runs in Node too, with no DOM). */
+   *  rotation, adjust handles and a read-only text box body. Like `.image()`, the
+   *  size is required (the builder runs in Node too, with no DOM). */
   shape(preset: ShapePreset, opts: ShapeOptions): this {
     if (!Number.isFinite(opts?.widthPx) || !Number.isFinite(opts?.heightPx) || opts.widthPx <= 0 || opts.heightPx <= 0) {
       this.ctx.warn("shape-size-invalid", ".shape() requires positive widthPx and heightPx; shape skipped.");
       return this;
     }
-    this.push(this.ctx.shape(preset, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.fill, opts.stroke, opts.rotation, opts.adjust));
+    this.push(this.ctx.shape(preset, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.fill, opts.stroke, opts.rotation, opts.adjust, opts.text));
     return this;
   }
 
