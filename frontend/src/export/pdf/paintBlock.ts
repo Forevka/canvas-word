@@ -515,21 +515,41 @@ function shapePathPdf(doc: PDFKit.PDFDocument, preset: PlacedShape["preset"], x:
   }
 }
 
-/** Draw a placed drawing shape's preset geometry into its box at (x,y) — the PDF
- *  mirror of the canvas paintShapeCanvas: fill, then the (optionally dashed) stroke,
- *  about the box center when rotated. Line is the box diagonal (OOXML prst="line"). */
+/** Trace a freeform custom geometry (ShapePath) into the pdfkit path, scaling the
+ *  normalized (0–1) segment coords into the box (x,y,w,h) — the PDF mirror of the
+ *  canvas traceCustomPath (PR 7, issue #220). Retraced per fill/stroke like the
+ *  preset path helper. */
+function customPathPdf(doc: PDFKit.PDFDocument, path: PlacedShape["custom"] & object, x: number, y: number, w: number, h: number): void {
+  for (const seg of path.segments) {
+    switch (seg.type) {
+      case "moveTo": doc.moveTo(x + seg.x * w, y + seg.y * h); break;
+      case "lineTo": doc.lineTo(x + seg.x * w, y + seg.y * h); break;
+      case "cubicBezierTo": doc.bezierCurveTo(x + seg.x1 * w, y + seg.y1 * h, x + seg.x2 * w, y + seg.y2 * h, x + seg.x * w, y + seg.y * h); break;
+      case "close": doc.closePath(); break;
+    }
+  }
+}
+
+/** Draw a placed drawing shape's geometry into its box at (x,y) — the PDF mirror of
+ *  the canvas paintShapeCanvas: fill, then the (optionally dashed) stroke, about the
+ *  box center when rotated. A custom freeform path is traced when present; otherwise
+ *  the preset (line is the box diagonal, OOXML prst="line"). */
 function paintShapePdf(doc: PDFKit.PDFDocument, shape: PlacedShape, x: number, y: number): void {
   const { fill, stroke } = resolveShapePaint(shape);
   const w = shape.width;
   const h = shape.height;
+  const trace = (): void => {
+    if (shape.custom) customPathPdf(doc, shape.custom, x, y, w, h);
+    else shapePathPdf(doc, shape.preset, x, y, w, h);
+  };
   doc.save();
   if (shape.rotation) doc.rotate(shape.rotation, { origin: [x + w / 2, y + h / 2] });
-  if (fill && shape.preset !== "line") {
-    shapePathPdf(doc, shape.preset, x, y, w, h);
+  if (fill && (shape.custom || shape.preset !== "line")) {
+    trace();
     doc.fill(fill);
   }
   if (stroke) {
-    shapePathPdf(doc, shape.preset, x, y, w, h);
+    trace();
     doc.lineWidth(stroke.widthPx);
     if (stroke.dash.length === 2) doc.dash(stroke.dash[0]!, { space: stroke.dash[1]! });
     else if (stroke.dash.length > 2) doc.addContent(`[${stroke.dash.map((d) => Number(d.toFixed(2))).join(" ")}] 0 d`);

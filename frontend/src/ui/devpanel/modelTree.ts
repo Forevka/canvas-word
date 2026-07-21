@@ -212,8 +212,8 @@ function blockNode(doc: Document, block: Block): TreeNode {
     return {
       key: block.id, kind: "block",
       label: "◇ shape",
-      preview: block.geometry.preset,
-      badges: [block.geometry.preset, `${Math.round(block.widthPx)}×${Math.round(block.heightPx)}`],
+      preview: block.geometry.custom ? "custom" : block.geometry.preset,
+      badges: [block.geometry.custom ? "custom" : block.geometry.preset, `${Math.round(block.widthPx)}×${Math.round(block.heightPx)}`],
       blockId: block.id,
       target: { kind: "block", blockId: block.id },
       data: block,

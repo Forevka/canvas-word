@@ -636,9 +636,58 @@ public sealed record ShapeStroke
     }
 }
 
-/// <summary>Options for <c>.Shape()</c> — the box the preset geometry is drawn into
-/// (required, like an image), plus an optional alignment, wrap, fill, outline, clockwise
-/// rotation (degrees), raw a:avLst adjust guides (name → number) and a text box body.</summary>
+/// <summary>One segment of a freeform custom-geometry path (OOXML a:custGeom / a:path).
+/// Coordinates are fractions of the shape box (0–1, x rightward / y downward). Build via
+/// the static factories (<see cref="MoveTo"/> / <see cref="LineTo"/> /
+/// <see cref="CubicBezierTo"/> / <see cref="Close"/>).</summary>
+public sealed record ShapePathSegment
+{
+    public required string Type { get; init; }
+    public double X { get; init; }
+    public double Y { get; init; }
+    public double X1 { get; init; }
+    public double Y1 { get; init; }
+    public double X2 { get; init; }
+    public double Y2 { get; init; }
+
+    /// <summary>Start a new sub-path at (x, y).</summary>
+    public static ShapePathSegment MoveTo(double x, double y) => new() { Type = "moveTo", X = x, Y = y };
+    /// <summary>Straight line to (x, y).</summary>
+    public static ShapePathSegment LineTo(double x, double y) => new() { Type = "lineTo", X = x, Y = y };
+    /// <summary>Cubic Bézier via control points (x1,y1) and (x2,y2) to the end point (x, y).</summary>
+    public static ShapePathSegment CubicBezierTo(double x1, double y1, double x2, double y2, double x, double y)
+        => new() { Type = "cubicBezierTo", X1 = x1, Y1 = y1, X2 = x2, Y2 = y2, X = x, Y = y };
+    /// <summary>Close the current sub-path back to its start.</summary>
+    public static ShapePathSegment Close => new() { Type = "close" };
+
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        Js.Set(o, "type", Type);
+        switch (Type)
+        {
+            case "moveTo":
+            case "lineTo":
+                Js.Set(o, "x", X);
+                Js.Set(o, "y", Y);
+                break;
+            case "cubicBezierTo":
+                Js.Set(o, "x1", X1);
+                Js.Set(o, "y1", Y1);
+                Js.Set(o, "x2", X2);
+                Js.Set(o, "y2", Y2);
+                Js.Set(o, "x", X);
+                Js.Set(o, "y", Y);
+                break;
+        }
+        return o;
+    }
+}
+
+/// <summary>Options for <c>.Shape()</c> — the box the geometry is drawn into (required,
+/// like an image), plus an optional alignment, wrap, fill, outline, clockwise rotation
+/// (degrees), raw a:avLst adjust guides (name → number), a text box body, and a freeform
+/// custom-geometry <see cref="Path"/> (which, when set, replaces the preset).</summary>
 public sealed record ShapeOptions
 {
     public required double WidthPx { get; init; }
@@ -656,6 +705,10 @@ public sealed record ShapeOptions
     /// <summary>Text box body — one paragraph per string, rendered read-only inside
     /// the shape box (OOXML wps:txbx). Null/empty = a shape with no text.</summary>
     public IReadOnlyList<string>? Text { get; init; }
+    /// <summary>Freeform custom geometry (OOXML a:custGeom) — a path of segments in
+    /// normalized box coordinates (0–1). When set it replaces the preset (which is kept
+    /// only as a schema fallback). Null/empty = an ordinary preset shape.</summary>
+    public IReadOnlyList<ShapePathSegment>? Path { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -679,6 +732,7 @@ public sealed record ShapeOptions
             Js.Set(o, "adjust", adj);
         }
         if (Text is { Count: > 0 } t) Js.Set(o, "text", Js.ToArray(e, t.Select(x => (object?)x)));
+        if (Path is { Count: > 0 } p) Js.Set(o, "path", Js.ToArray(e, p.Select(seg => (object?)seg.ToJs(e))));
         return o;
     }
 }

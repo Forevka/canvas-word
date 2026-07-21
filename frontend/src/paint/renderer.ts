@@ -126,14 +126,35 @@ function traceShapePath(ctx: CanvasRenderingContext2D, preset: PlacedShape["pres
   }
 }
 
-/** Draw a placed drawing shape's preset geometry into its box at (x,y): the fill
- *  path, then the (optionally dashed) stroke, about the box center when rotated.
- *  Constant-for-constant mirror of the PDF shape painter (export/pdf/paintBlock.ts).
- *  Line is the box diagonal (OOXML prst="line"). */
+/** Trace a freeform custom geometry (ShapePath) into the current path of `ctx`,
+ *  scaling the normalized (0–1) segment coords into the box (x,y,w,h). Mirror of
+ *  the PDF painter's customPathPdf so a custom shape looks identical on screen and
+ *  in the export (PR 7, issue #220). */
+function traceCustomPath(ctx: CanvasRenderingContext2D, path: PlacedShape["custom"] & object, x: number, y: number, w: number, h: number): void {
+  ctx.beginPath();
+  for (const seg of path.segments) {
+    switch (seg.type) {
+      case "moveTo": ctx.moveTo(x + seg.x * w, y + seg.y * h); break;
+      case "lineTo": ctx.lineTo(x + seg.x * w, y + seg.y * h); break;
+      case "cubicBezierTo": ctx.bezierCurveTo(x + seg.x1 * w, y + seg.y1 * h, x + seg.x2 * w, y + seg.y2 * h, x + seg.x * w, y + seg.y * h); break;
+      case "close": ctx.closePath(); break;
+    }
+  }
+}
+
+/** Draw a placed drawing shape's geometry into its box at (x,y): the fill path, then
+ *  the (optionally dashed) stroke, about the box center when rotated. Constant-for-
+ *  constant mirror of the PDF shape painter (export/pdf/paintBlock.ts). A custom
+ *  freeform path is traced when present; otherwise the preset (line is the box
+ *  diagonal, OOXML prst="line"). */
 function paintShapeCanvas(ctx: CanvasRenderingContext2D, shape: PlacedShape, x: number, y: number): void {
   const { fill, stroke } = resolveShapePaint(shape);
   const w = shape.width;
   const h = shape.height;
+  const trace = (): void => {
+    if (shape.custom) traceCustomPath(ctx, shape.custom, x, y, w, h);
+    else traceShapePath(ctx, shape.preset, x, y, w, h);
+  };
   ctx.save();
   if (shape.rotation) {
     const cx = x + w / 2, cy = y + h / 2;
@@ -141,14 +162,14 @@ function paintShapeCanvas(ctx: CanvasRenderingContext2D, shape: PlacedShape, x: 
     ctx.rotate((shape.rotation * Math.PI) / 180);
     ctx.translate(-cx, -cy);
   }
-  // A line has no interior to fill.
-  if (fill && shape.preset !== "line") {
-    traceShapePath(ctx, shape.preset, x, y, w, h);
+  // A preset line has no interior to fill; a custom path (or any other preset) does.
+  if (fill && (shape.custom || shape.preset !== "line")) {
+    trace();
     ctx.fillStyle = fill;
     ctx.fill();
   }
   if (stroke) {
-    traceShapePath(ctx, shape.preset, x, y, w, h);
+    trace();
     ctx.lineWidth = stroke.widthPx;
     ctx.strokeStyle = stroke.color;
     ctx.setLineDash(stroke.dash);

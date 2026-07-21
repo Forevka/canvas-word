@@ -5,7 +5,7 @@
 // Exercised both from a hand-written wps:wsp docx (the importer is the oracle) and
 // through a model → writeDocx → re-import cycle.
 import { describe, expect, it } from "vitest";
-import type { Document, Paragraph, SectionProps, ShapeBlock } from "@cw/shared";
+import type { Document, Paragraph, SectionProps, ShapeBlock, ShapePath } from "@cw/shared";
 import { DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE } from "@cw/shared";
 import { runImport } from "../../import/docx/pipeline";
 import { simpleDocx } from "../../import/docx/fixture";
@@ -187,6 +187,89 @@ describe("drawing shapes — DrawingML wps:wsp round-trip", () => {
     expect(out.text?.blocks.length).toBe(2);
     expect(out.text?.blocks[0]?.runs.map((r) => r.text).join("")).toBe("Line one");
     expect(out.text?.blocks[1]?.runs.map((r) => r.text).join("")).toBe("Line two");
+  });
+
+  // --- Freeform custom geometry (issue #220): a:custGeom path ------------------
+  it("round-trips a freeform custom geometry (a:custGeom path with lines + a cubic)", () => {
+    const path: ShapePath = {
+      segments: [
+        { type: "moveTo", x: 0.5, y: 0 },
+        { type: "lineTo", x: 1, y: 1 },
+        { type: "cubicBezierTo", x1: 0.75, y1: 0.5, x2: 0.25, y2: 0.5, x: 0, y: 1 },
+        { type: "close" },
+      ],
+    };
+    const s = shape({ geometry: { preset: "rect", custom: path } });
+    const out = firstShape(roundTrip(docOf(s)));
+    expect(out.geometry.custom).toEqual(path);
+  });
+
+  it("emits a:custGeom (not a:prstGeom) for a custom geometry, and can fill it", () => {
+    const path: ShapePath = { segments: [{ type: "moveTo", x: 0, y: 0 }, { type: "lineTo", x: 1, y: 0 }, { type: "lineTo", x: 0.5, y: 1 }, { type: "close" }] };
+    const xml = exportedDocXml(docOf(shape({ geometry: { preset: "rect", custom: path }, fill: { color: "#ffe599" } })));
+    expect(xml).toContain("<a:custGeom>");
+    expect(xml).toContain("<a:pathLst>");
+    expect(xml).toContain('<a:path w="100000" h="100000">');
+    expect(xml).toContain("<a:moveTo><a:pt");
+    expect(xml).not.toContain("<a:cubicBezTo"); // this simple triangle path has no cubic
+    expect(xml).not.toContain("<a:prstGeom");
+    expect(xml).toContain('<a:srgbClr val="ffe599"/>');
+  });
+
+  it("imports a hand-written a:custGeom shape (the importer as oracle)", () => {
+    const drawing = `<w:p><w:r><w:drawing>
+      <wp:inline><wp:extent cx="1143000" cy="1143000"/><wp:docPr id="1" name="Shape"/>
+        <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
+          <wps:wsp><wps:cNvSpPr/><wps:spPr>
+            <a:xfrm><a:off x="0" y="0"/><a:ext cx="1143000" cy="1143000"/></a:xfrm>
+            <a:custGeom><a:pathLst><a:path w="200" h="100">
+              <a:moveTo><a:pt x="100" y="0"/></a:moveTo>
+              <a:lnTo><a:pt x="200" y="100"/></a:lnTo>
+              <a:lnTo><a:pt x="0" y="100"/></a:lnTo>
+              <a:close/>
+            </a:path></a:pathLst></a:custGeom>
+            <a:solidFill><a:srgbClr val="ffe599"/></a:solidFill>
+          </wps:spPr><wps:bodyPr/></wps:wsp>
+        </a:graphicData></a:graphic>
+      </wp:inline>
+    </w:drawing></w:r></w:p>`;
+    const out = firstShape(runImport(simpleDocx(drawing)).doc);
+    expect(out.geometry.custom).toEqual({
+      segments: [
+        { type: "moveTo", x: 0.5, y: 0 },
+        { type: "lineTo", x: 1, y: 1 },
+        { type: "lineTo", x: 0, y: 1 },
+        { type: "close" },
+      ],
+    });
+  });
+
+  it("warns (custom-path-simplified) when a custom path uses an unmodeled command (a:arcTo)", () => {
+    const drawing = `<w:p><w:r><w:drawing>
+      <wp:inline><wp:extent cx="1143000" cy="1143000"/><wp:docPr id="1" name="Shape"/>
+        <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
+          <wps:wsp><wps:cNvSpPr/><wps:spPr>
+            <a:xfrm><a:off x="0" y="0"/><a:ext cx="1143000" cy="1143000"/></a:xfrm>
+            <a:custGeom><a:pathLst><a:path w="100" h="100">
+              <a:moveTo><a:pt x="0" y="0"/></a:moveTo>
+              <a:lnTo><a:pt x="100" y="0"/></a:lnTo>
+              <a:arcTo wR="50" hR="50" stAng="0" swAng="5400000"/>
+              <a:close/>
+            </a:path></a:pathLst></a:custGeom>
+          </wps:spPr><wps:bodyPr/></wps:wsp>
+        </a:graphicData></a:graphic>
+      </wp:inline>
+    </w:drawing></w:r></w:p>`;
+    const result = runImport(simpleDocx(drawing));
+    // The arc is dropped but the rest of the path still imports — and it warns.
+    expect(result.warnings.map((w) => w.code)).toContain("custom-path-simplified");
+    expect(firstShape(result.doc).geometry.custom).toEqual({
+      segments: [
+        { type: "moveTo", x: 0, y: 0 },
+        { type: "lineTo", x: 1, y: 0 },
+        { type: "close" },
+      ],
+    });
   });
 
   // --- Positioning parity (issue #217): wrap / float anchor / z-order ----------

@@ -2655,6 +2655,7 @@ const SHAPE_TEXT_INSET_Y = 4.8;
  *  can be overridden when a cell scales the shape down to fit. */
 function placedShapeOf(sb: ShapeBlock, width = sb.widthPx, height = sb.heightPx): PlacedShape {
   const shape: PlacedShape = { preset: sb.geometry.preset, width, height };
+  if (sb.geometry.custom) shape.custom = sb.geometry.custom;
   if (sb.fill) shape.fill = sb.fill;
   if (sb.stroke) shape.stroke = sb.stroke;
   if (sb.rotation) shape.rotation = sb.rotation;

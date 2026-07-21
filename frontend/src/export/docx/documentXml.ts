@@ -986,6 +986,37 @@ function imageParagraphXml(img: Extract<Block, { kind: "image" }>, ctx: PartCtx)
 /** EMU per point — a:ln@w (outline width) is in EMU. */
 const EMU_PER_PT = 12700;
 
+/** The path coordinate space a custom geometry is emitted in (a:path@w/@h). The
+ *  model stores normalized 0–1 fractions of the box; scaling by a fixed unit keeps
+ *  the emitted points box-size-independent and round-trips cleanly (import divides
+ *  the point coords by the path @w/@h back to fractions). */
+const CUSTOM_PATH_UNIT = 100000;
+
+/** A custom-geometry (a:custGeom) body from a normalized ShapePath — the a:pathLst /
+ *  a:path with a:moveTo / a:lnTo / a:cubicBezTo / a:close commands. Points are scaled
+ *  from the 0–1 model coords into the CUSTOM_PATH_UNIT design space. */
+function custGeomXml(path: import("@cw/shared").ShapePath): string {
+  const pt = (x: number, y: number): string =>
+    el("a:pt", { x: Math.round(x * CUSTOM_PATH_UNIT), y: Math.round(y * CUSTOM_PATH_UNIT) });
+  const segs = path.segments
+    .map((seg) => {
+      switch (seg.type) {
+        case "moveTo": return el("a:moveTo", undefined, pt(seg.x, seg.y));
+        case "lineTo": return el("a:lnTo", undefined, pt(seg.x, seg.y));
+        case "cubicBezierTo": return el("a:cubicBezTo", undefined, pt(seg.x1, seg.y1) + pt(seg.x2, seg.y2) + pt(seg.x, seg.y));
+        case "close": return el("a:close");
+      }
+    })
+    .join("");
+  return el(
+    "a:custGeom",
+    undefined,
+    el("a:avLst") + el("a:gdLst") + el("a:ahLst") + el("a:cxnLst") +
+      el("a:rect", { l: 0, t: 0, r: CUSTOM_PATH_UNIT, b: CUSTOM_PATH_UNIT }) +
+      el("a:pathLst", undefined, el("a:path", { w: CUSTOM_PATH_UNIT, h: CUSTOM_PATH_UNIT }, segs)),
+  );
+}
+
 /** A drawing shape as a paragraph: reuse the image wp:inline wrapper + drawingId
  *  plumbing, swapping the graphic payload for a bare DrawingML wps:wsp (no
  *  mc:AlternateContent / VML — modern Word reads it and it validates against the
@@ -1029,11 +1060,16 @@ function shapeParagraphXml(shape: Extract<Block, { kind: "shape" }>, ctx: PartCt
   );
   // a:xfrm@rot — clockwise rotation in 60000ths of a degree (normalized to 0..360).
   const xfrmAttrs = shape.rotation ? { rot: Math.round(((((shape.rotation % 360) + 360) % 360)) * 60000) } : undefined;
+  // Geometry: a freeform a:custGeom when a custom path is present (PR 7, issue #220),
+  // else the preset a:prstGeom + its a:avLst adjust guides.
+  const geomXml = shape.geometry.custom
+    ? custGeomXml(shape.geometry.custom)
+    : el("a:prstGeom", { prst: shape.geometry.preset }, avLstXml);
   const spPr = el(
     "wps:spPr",
     undefined,
     el("a:xfrm", xfrmAttrs, el("a:off", { x: 0, y: 0 }) + el("a:ext", { cx, cy })) +
-      el("a:prstGeom", { prst: shape.geometry.preset }, avLstXml) +
+      geomXml +
       fillXml +
       lnXml,
   );

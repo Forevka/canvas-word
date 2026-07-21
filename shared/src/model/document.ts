@@ -549,6 +549,23 @@ export type ShapePreset =
  *  name, so import/export is a pass-through. Absent = a solid line. */
 export type ShapeDash = "solid" | "dash" | "dot" | "dashDot" | "lgDash";
 
+/** One segment of a freeform custom-geometry path (OOXML a:custGeom / a:path).
+ *  Coordinates are fractions of the shape box (0–1, x rightward / y downward), so
+ *  the path scales with widthPx × heightPx exactly like a preset does. Mirrors the
+ *  a:moveTo / a:lnTo / a:cubicBezTo / a:close path commands. */
+export type ShapePathSegment =
+  | { type: "moveTo"; x: number; y: number }
+  | { type: "lineTo"; x: number; y: number }
+  | { type: "cubicBezierTo"; x1: number; y1: number; x2: number; y2: number; x: number; y: number }
+  | { type: "close" };
+
+/** A freeform custom geometry (OOXML a:custGeom / a:pathLst / a:path) — the escape
+ *  hatch for shapes that aren't a preset. The segments trace a path in normalized
+ *  box coordinates (0–1); the painters and exporters scale them into the box. */
+export interface ShapePath {
+  segments: ShapePathSegment[];
+}
+
 /** A drawing shape's text body (OOXML wps:txbx → w:txbxContent) — a nested
  *  paragraph flow, like a table cell's `blocks`. PR 3 (issue #216) renders it
  *  read-only inside the shape box and round-trips it losslessly to `.docx`;
@@ -570,11 +587,14 @@ export interface ShapeBlock {
   kind: "shape";
   id: string;
   revision: number;
-  /** The vector geometry drawn inside the box: a preset path (a:prstGeom@prst).
+  /** The vector geometry drawn inside the box: a preset path (a:prstGeom@prst) or,
+   *  when `custom` is present, a freeform path (a:custGeom — PR 7, issue #220).
    *  `adjust` (a:avLst) carries the raw `a:gd` guide values (name → number)
    *  verbatim so parametric presets (roundRect corner radius, arrow head size, …)
-   *  round-trip; absent = the preset's built-in default handles. */
-  geometry: { preset: ShapePreset; adjust?: Record<string, number> };
+   *  round-trip; absent = the preset's built-in default handles. When `custom` is
+   *  set the painters/export use the freeform path and ignore the preset (which
+   *  stays as a schema fallback). */
+  geometry: { preset: ShapePreset; adjust?: Record<string, number>; custom?: ShapePath };
   /** Interior fill; absent ⇒ theme-neutral default (see paint). */
   fill?: ShapeFill;
   /** Outline; absent ⇒ default outline (see paint). */

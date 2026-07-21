@@ -56,12 +56,12 @@ export function resolveShapePaint(shape: PlacedShape): {
   fill: string | null;
   stroke: { color: string; widthPx: number; dash: number[] } | null;
 } {
-  // Fill: explicit color, explicit none → null, absent → default (but a line is a
-  // stroke-only geometry, so it never fills).
+  // Fill: explicit color, explicit none → null, absent → default (but a preset line
+  // is a stroke-only geometry, so it never fills; a custom path always may fill).
   let fill: string | null;
   if (shape.fill && "none" in shape.fill) fill = null;
   else if (shape.fill && "color" in shape.fill) fill = shape.fill.color;
-  else fill = shape.preset === "line" ? null : SHAPE_DEFAULT_FILL;
+  else fill = shape.preset === "line" && !shape.custom ? null : SHAPE_DEFAULT_FILL;
   // Stroke: explicit (unless none), absent → default.
   let stroke: { color: string; widthPx: number; dash: number[] } | null;
   if (shape.stroke && "none" in shape.stroke) {
