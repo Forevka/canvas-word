@@ -3288,8 +3288,11 @@ export function createEditor(
   });
   const updateBandHover = (clientX: number, clientY: number, buttons: number): void => {
     // Idle pointer only, and never while a band is already open (the story-edit
-    // dimming/boundary is the affordance then) or an object is selected.
-    if (buttons !== 0 || activeStory || selectedObject) {
+    // dimming/boundary is the affordance then) or an object is selected. Also
+    // never in view mode: it's read-only (editing entry points are misleading and
+    // would surface raw field tokens), gated on the LIVE mode. "suggest" mode
+    // still edits (via the review interceptor), so it keeps the affordance.
+    if (buttons !== 0 || activeStory || selectedObject || mode === "view") {
       bandHover.hide();
       return;
     }
