@@ -1858,6 +1858,25 @@ export function setEquationAlignCmd(blockId: string, align: "left" | "center" | 
   };
 }
 
+/** Min/max uniform scale for a display equation (drag-to-resize). Keeps an
+ *  equation readable at the small end and within a page at the large end. */
+export const EQUATION_SCALE_MIN = 0.25;
+export const EQUATION_SCALE_MAX = 4;
+
+/** Set a display equation's uniform size multiplier (drag-to-resize, like an
+ *  image). Clamps to [EQUATION_SCALE_MIN, EQUATION_SCALE_MAX]; a scale of ~1
+ *  clears the field back to the default. Container-aware via locateEquation. */
+export function setEquationScaleCmd(blockId: string, scale: number): Command {
+  return (state) => {
+    const loc = locateEquation(state.doc, blockId);
+    if (!loc) return null;
+    if (!Number.isFinite(scale)) return null;
+    const clamped = Math.min(EQUATION_SCALE_MAX, Math.max(EQUATION_SCALE_MIN, scale));
+    if (clamped === (loc.block.scale ?? 1)) return null; // no-op — don't dirty history
+    return tr([{ type: "setEquationScale", blockId, scale: clamped }], state.selection, "command");
+  };
+}
+
 /** Insert an inline equation (a single U+FFFC run carrying the MathML) at the
  *  caret, in the surrounding text style. Mirrors insertFieldCmd. */
 export function insertInlineEquation(equation: MathEquation): Command {

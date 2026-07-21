@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Drag-to-resize equations.** Display equations can now be resized like images — select one and drag
+  its frame handles; the whole equation (glyphs, fractions, spacing) scales uniformly. Backed by a new
+  `EquationBlock.scale` field (default 1, clamped to [0.25, 4]), a `setEquationScale` op + container-aware
+  `setEquationScaleCmd`, and a one-line layout change (the equation is measured at `baseSize · scale`, so
+  its box tracks the resize with no extra geometry). The scale round-trips through `.docx`: it rides on the
+  equation paragraph's run font size (`w:pPr/w:rPr/w:sz`), schema-valid and read back on import (an unscaled
+  equation emits byte-identical XML to before). Also exposed on the `DocumentBuilder` (`equation(latex,
+  { scale })`) and the C# bindings (`EquationOptions.Scale`). Resolves the deferred equation-resize follow-up
+  from the contextual-toolbars work.
 - **Footnote/endnote context toolbar.** A new **note** bar (priority 24 — between the comment and
   TOC bars) appears when the caret sits on a footnote/endnote reference marker: **Go to note** jumps
   the caret into the note body and scrolls it into view, **Delete** removes the marker *and* its body

@@ -47,6 +47,8 @@ export interface ListOptions {
 export interface EquationOptions {
   /** Horizontal placement of the display equation (default "center"). */
   align?: EquationBlock["align"];
+  /** Uniform size multiplier (drag-to-resize), default 1. Clamped to [0.25, 4]. */
+  scale?: number;
 }
 
 export class StoryBuilder {
@@ -146,13 +148,13 @@ export class StoryBuilder {
   /** A display (block) equation from a LaTeX source (e.g. `\frac{a}{b}`) — its own
    *  centered line. Uses the same LaTeX→math parser as the visual editor. */
   equation(latex: string, opts: EquationOptions = {}): this {
-    this.push(this.ctx.equation(equationFromLatex(latex, true), opts.align));
+    this.push(this.ctx.equation(equationFromLatex(latex, true), opts.align, opts.scale));
     return this;
   }
 
   /** A display (block) equation from a presentation-MathML string. */
   equationMathml(mathml: string, opts: EquationOptions = {}): this {
-    this.push(this.ctx.equation(equationFromMathml(mathml, true), opts.align));
+    this.push(this.ctx.equation(equationFromMathml(mathml, true), opts.align, opts.scale));
     return this;
   }
 

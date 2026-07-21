@@ -87,8 +87,9 @@ const symRun = (font: string, charHex: string): Run => {
 /** A display equation block from a MathML string. Stored as the MathML AST (the
  *  canonical form); typeset by the layout engine and round-tripped to .docx as
  *  OMML. `display: true` centers it on its own line like Word's block math. */
-const eq = (mathml: string, align: EquationBlock["align"] = "center"): EquationBlock => ({
+const eq = (mathml: string, align: EquationBlock["align"] = "center", scale?: number): EquationBlock => ({
   kind: "equation", id: id(), revision: 0, equation: { ...parseMathml(mathml), display: true }, align,
+  ...(scale !== undefined ? { scale } : {}),
 });
 /** Caption + monospace MathML source, so the demo SHOWS the MathML behind a render. */
 const mathmlSource = (xml: string): Run => run(xml, { fontFamily: "Consolas, monospace", fontSizePx: 11, color: "#5f6368" });
@@ -680,8 +681,8 @@ export function sampleDoc(): Document {
     para([run("The Gaussian integral — super/subscript bounds on the integral and a nested exponential:", { color: "#3c4043" })], { spaceBeforePx: 10, spaceAfterPx: 6 }),
     eq(MATH_INTEGRAL),
 
-    para([run("Euler's identity — the most beautiful equation in mathematics:", { color: "#3c4043" })], { spaceBeforePx: 10, spaceAfterPx: 6 }),
-    eq(MATH_EULER),
+    para([run("Euler's identity — the most beautiful equation in mathematics, shown enlarged (select it and drag a handle to resize like an image):", { color: "#3c4043" })], { spaceBeforePx: 10, spaceAfterPx: 6 }),
+    eq(MATH_EULER, "center", 1.5),
 
     para([run("A delimited matrix, laid out as a grid (the 2×2 identity):", { color: "#3c4043" })], { spaceBeforePx: 10, spaceAfterPx: 6 }),
     eq(MATH_MATRIX),

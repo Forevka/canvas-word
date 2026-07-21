@@ -80,6 +80,49 @@ describe("setEquationAlign op", () => {
   });
 });
 
+describe("setEquationScale op", () => {
+  it("sets the scale and inverts to the prior value (default 1)", () => {
+    const doc = docWith(eq("1")); // no scale field → treated as 1
+    const r = applyOp(doc, { type: "setEquationScale", blockId: "e1", scale: 1.5 });
+    expect((r.doc.blocks[0] as EquationBlock).scale).toBe(1.5);
+    expect((r.doc.blocks[0] as EquationBlock).revision).toBe(1);
+    const back = applyOp(r.doc, r.inverse).doc.blocks[0] as EquationBlock;
+    expect(back.scale ?? 1).toBe(1);
+  });
+
+  it("inverts back to an explicit prior scale", () => {
+    const doc = docOf([{ ...equationBlock("e1", eq("1")), scale: 2 }]);
+    const r = applyOp(doc, { type: "setEquationScale", blockId: "e1", scale: 0.5 });
+    expect((r.doc.blocks[0] as EquationBlock).scale).toBe(0.5);
+    const back = applyOp(r.doc, r.inverse).doc.blocks[0] as EquationBlock;
+    expect(back.scale).toBe(2);
+  });
+
+  it("normalizes scale 1 away (drops the field, like setTableAlign drops \"left\")", () => {
+    const doc = docOf([{ ...equationBlock("e1", eq("1")), scale: 2 }]);
+    const r = applyOp(doc, { type: "setEquationScale", blockId: "e1", scale: 1 });
+    expect((r.doc.blocks[0] as EquationBlock)).not.toHaveProperty("scale");
+    // Inverse restores the explicit prior scale.
+    const back = applyOp(r.doc, r.inverse).doc.blocks[0] as EquationBlock;
+    expect(back.scale).toBe(2);
+  });
+
+  it("throws for a non-equation block id", () => {
+    const doc = docWith(eq("1"));
+    expect(() => applyOp(doc, { type: "setEquationScale", blockId: "missing", scale: 2 })).toThrow();
+  });
+
+  it("scales an equation inside a table cell and inverts", () => {
+    const doc = docOf([tableWith("t1", [equationBlock("e1", eq("1"))])]);
+    const r = applyOp(doc, { type: "setEquationScale", blockId: "e1", scale: 1.25 });
+    const cell = (r.doc.blocks[0] as TableBlock).rows[0]!.cells[0]!;
+    expect((cell.blocks[0] as EquationBlock).scale).toBe(1.25);
+    expect((r.doc.blocks[0] as TableBlock).revision).toBe(1);
+    const back = applyOp(r.doc, r.inverse).doc;
+    expect((back.blocks[0] as TableBlock).rows[0]!.cells[0]!.blocks[0] as EquationBlock).not.toHaveProperty("scale", 1.25);
+  });
+});
+
 describe("nested equations (table cells / header-footer bands)", () => {
   /** The first block of the first body table's single cell, as an equation. */
   const cellEquationOf = (doc: Document): EquationBlock =>

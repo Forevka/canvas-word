@@ -21,6 +21,14 @@ describe("equations", () => {
     expect(eq.equation.root.children.some((n) => n.type === "frac")).toBe(true);
   });
 
+  it("equation(latex, {scale}) sets a clamped uniform scale; scale 1 is omitted", () => {
+    const doc = DocumentBuilder.create().equation("x", { scale: 1.5 }).equation("y", { scale: 99 }).equation("z", { scale: 1 }).build();
+    const eqs = doc.blocks.filter((b): b is EquationBlock => b.kind === "equation");
+    expect(eqs[0]!.scale).toBe(1.5);
+    expect(eqs[1]!.scale).toBe(4); // clamped to the max
+    expect(eqs[2]!.scale).toBeUndefined(); // default size carries no field
+  });
+
   it("equationMathml builds the same AST from a MathML string", () => {
     const doc = DocumentBuilder.create().equationMathml(FRAC_ML).build();
     const eq = doc.blocks.find((b): b is EquationBlock => b.kind === "equation")!;

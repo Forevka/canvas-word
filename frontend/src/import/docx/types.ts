@@ -554,6 +554,10 @@ export interface IRMath {
   display: boolean;
   /** m:oMathParaPr/m:jc — mapped onto EquationBlock.align. */
   align?: "left" | "center" | "right";
+  /** Uniform size multiplier from the equation paragraph's run font size
+   *  (w:pPr/w:rPr/w:sz relative to the base display size) — mapped onto
+   *  EquationBlock.scale. Absent when the equation is at its default size. */
+  scale?: number;
   /** Custom-field result membership — mapped onto Block.fieldId. */
   fieldId?: string;
   /** Block-level content-control ancestry — mapped onto Block.sdtPath. */

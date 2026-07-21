@@ -93,6 +93,7 @@ export type Op =
   | { type: "setImageProps"; blockId: string; patch: ImagePropsPatch }
   | { type: "setEquation"; blockId: string; equation: MathEquation }
   | { type: "setEquationAlign"; blockId: string; align: "left" | "center" | "right" }
+  | { type: "setEquationScale"; blockId: string; scale: number }
   | { type: "setCustomBlockData"; blockId: string; data: unknown }
   | { type: "setTableRow"; tableId: string; rowIndex: number; row: TableRow }
   | { type: "setTableStructure"; tableId: string; rows: TableRow[]; colFractions?: number[] }
@@ -850,6 +851,24 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       return {
         doc: replaceLocatedBlock(doc, loc, updated),
         inverse: { type: "setEquationAlign", blockId: op.blockId, align: old },
+        mapPosition: identity,
+        dirtyBlockIds: [op.blockId],
+      };
+    }
+
+    case "setEquationScale": {
+      const loc = locateEquation(doc, op.blockId);
+      if (!loc) throw new Error(`equation ${op.blockId} not found`);
+      const old = loc.block.scale ?? 1;
+      // Normalize the default away (like setTableAlign drops "left") so scale 1 is
+      // never persisted — keeps the model tree clean and the unscaled-export path
+      // byte-identical. The inverse restores the prior effective scale.
+      const updated: EquationBlock = { ...loc.block, revision: loc.block.revision + 1 };
+      if (op.scale === 1) delete updated.scale;
+      else updated.scale = op.scale;
+      return {
+        doc: replaceLocatedBlock(doc, loc, updated),
+        inverse: { type: "setEquationScale", blockId: op.blockId, scale: old },
         mapPosition: identity,
         dirtyBlockIds: [op.blockId],
       };

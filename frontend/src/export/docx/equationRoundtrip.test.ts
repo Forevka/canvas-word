@@ -84,6 +84,36 @@ describe("equation docx round-trip", () => {
     expect(eq?.align).toBe("right");
   });
 
+  it("preserves a drag-resized equation's scale through export then import", async () => {
+    const doc: Document = {
+      section: { pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } },
+      blocks: [
+        { kind: "equation", id: "e1", revision: 0, align: "center", equation: { ...parseMathml(FRAC), display: true }, scale: 1.5 } satisfies EquationBlock,
+      ],
+    };
+    const { bytes } = await runExport(doc, "docx");
+    // The scale rides on the equation paragraph's run font size (w:pPr/w:rPr/w:sz).
+    const xml = strFromU8(unzipSync(bytes)["word/document.xml"]!);
+    expect(xml).toMatch(/<w:p><w:pPr><w:rPr><w:sz w:val="\d+"\/><w:szCs w:val="\d+"\/><\/w:rPr><\/w:pPr><m:oMathPara/);
+
+    const { doc: back } = runImport(bytes);
+    const eq = back.blocks.find((b): b is EquationBlock => b.kind === "equation");
+    expect(eq?.scale).toBeCloseTo(1.5, 1); // half-point rounding tolerates ~1%
+  });
+
+  it("emits no w:pPr/w:sz for an unscaled equation (scale 1 stays byte-identical)", async () => {
+    const doc: Document = {
+      section: { pageWidthPx: 816, pageHeightPx: 1056, marginPx: { top: 96, right: 96, bottom: 96, left: 96 } },
+      blocks: [{ kind: "equation", id: "e1", revision: 0, align: "center", equation: { ...parseMathml(FRAC), display: true } } satisfies EquationBlock],
+    };
+    const { bytes } = await runExport(doc, "docx");
+    const xml = strFromU8(unzipSync(bytes)["word/document.xml"]!);
+    expect(xml).toContain("<w:p><m:oMathPara"); // no w:pPr inserted
+    const { doc: back } = runImport(bytes);
+    const eq = back.blocks.find((b): b is EquationBlock => b.kind === "equation");
+    expect(eq?.scale).toBeUndefined();
+  });
+
   it("preserves munderover, a double-struck variant, and mspace through the full pipeline", async () => {
     const mathml =
       "<math display=\"block\">" +
