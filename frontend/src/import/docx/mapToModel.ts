@@ -29,6 +29,7 @@ import type {
   SectionProps,
   ShapeBlock,
   ShapeDash,
+  ShapePath,
   ShapePreset,
   ShapeStroke,
   TabAlign,
@@ -56,6 +57,7 @@ import type {
   IRPageBorders,
   IRParaProps,
   IRParagraph,
+  IRShapeGroup,
   IRRunProps,
   IRSdtProps,
   IRSection,
@@ -802,6 +804,101 @@ export function createMapper(
   const KNOWN_PRESETS = new Set<ShapePreset>(["rect", "roundRect", "ellipse", "triangle", "diamond", "rightArrow", "leftArrow", "line"]);
   const KNOWN_DASHES = new Set<ShapeDash>(["solid", "dash", "dot", "dashDot", "lgDash"]);
 
+  /** The geometry/style fields shared by a leaf shape and a group member — enough to
+   *  build a `ShapeBlock` (id, geometry, size, rotation, fill, stroke, text, and a
+   *  nested `group`). Size/anchor/wrap/drawingId that only a top-level shape carries
+   *  are added by {@link mapShape}. */
+  interface ShapeCoreParts {
+    preset: string;
+    adjust?: Record<string, number>;
+    custom?: ShapePath;
+    widthEmu?: number;
+    heightEmu?: number;
+    rotationDeg?: number;
+    fill?: { color: string } | { none: true };
+    stroke?: { color: string; widthPt: number; dash?: string } | { none: true };
+    text?: IRBlock[];
+    group?: IRShapeGroup;
+  }
+
+  /** Build a `ShapeBlock` (leaf or group container) from the shared geometry/style
+   *  parts. A group container maps its members recursively (nested groups included),
+   *  each positioned by its child-space rect. */
+  function buildShapeCore(parts: ShapeCoreParts, align: ShapeBlock["align"], media: MediaStore, resolveLink: LinkResolver): ShapeBlock {
+    // Recognized presets map through; any other maps to rect (a box) so the shape
+    // still round-trips its size/fill/stroke. A group container uses a placeholder
+    // rect (never painted) — don't warn about it.
+    let preset: ShapePreset = "rect";
+    if (KNOWN_PRESETS.has(parts.preset as ShapePreset)) preset = parts.preset as ShapePreset;
+    else if (!parts.group) warnings.add("shape-preset-unsupported", `An unsupported shape preset "${parts.preset}" was imported as a rectangle.`);
+    const geometry: ShapeBlock["geometry"] = { preset };
+    // Adjust handles are only meaningful for the geometry that owns them, so keep
+    // them only when the preset mapped through (a rect fallback has none).
+    if (parts.adjust && preset === parts.preset) geometry.adjust = parts.adjust;
+    // Freeform custom geometry (a:custGeom) — the escape hatch; the preset stays as
+    // a schema fallback but the painters/export use this path (PR 7, issue #220).
+    if (parts.custom) geometry.custom = parts.custom;
+    const shape: ShapeBlock = {
+      kind: "shape",
+      id: id(),
+      revision: 0,
+      geometry,
+      widthPx: round2(emuToPx(parts.widthEmu ?? 0)),
+      heightPx: round2(emuToPx(parts.heightEmu ?? 0)),
+      align,
+    };
+    if (parts.rotationDeg !== undefined) shape.rotation = round2(parts.rotationDeg);
+    if (parts.fill) shape.fill = parts.fill;
+    if (parts.stroke) {
+      if ("none" in parts.stroke) {
+        shape.stroke = parts.stroke;
+      } else {
+        const stroke: ShapeStroke = { color: parts.stroke.color, widthPt: round2(parts.stroke.widthPt) };
+        if (parts.stroke.dash && KNOWN_DASHES.has(parts.stroke.dash as ShapeDash) && parts.stroke.dash !== "solid") {
+          stroke.dash = parts.stroke.dash as ShapeDash;
+        }
+        shape.stroke = stroke;
+      }
+    }
+    // Text box body (wps:txbx → w:txbxContent). The model text body is a paragraph
+    // flow (like a table cell); map the nested blocks and keep the paragraphs. A
+    // nested table inside a text box is out of scope — drop it with a warning rather
+    // than silently, so the loss is visible.
+    if (parts.text && parts.text.length > 0) {
+      const mapped = mapBlocks(parts.text, media, resolveLink);
+      const paras = mapped.filter((b): b is Paragraph => b.kind === "paragraph");
+      if (paras.length < mapped.length) {
+        warnings.add("shape-text-nonpara-dropped", "A text box contained non-paragraph content (e.g. a nested table) that was dropped — only paragraphs are supported.");
+      }
+      if (paras.length > 0) shape.text = { blocks: paras };
+    }
+    // Group container (wpg:wgp): map the child coordinate space + members recursively.
+    // A member without an explicit a:xfrm/a:ext has a zero-size rect — skip it (with a
+    // warning) rather than emitting an invisible 0×0 shape, mirroring the unsized guard
+    // in mapShape for a top-level shape.
+    if (parts.group) {
+      const g = parts.group;
+      shape.group = {
+        childOffsetXPx: round2(emuToPx(g.childOffXEmu)),
+        childOffsetYPx: round2(emuToPx(g.childOffYEmu)),
+        childExtentXPx: round2(emuToPx(g.childExtXEmu)),
+        childExtentYPx: round2(emuToPx(g.childExtYEmu)),
+        children: g.children.flatMap((c) => {
+          if (!c.widthEmu || !c.heightEmu) {
+            warnings.add("shape-group-child-unsized", "A grouped shape member without explicit dimensions (no a:xfrm/a:ext) was skipped.");
+            return [];
+          }
+          return [{
+            xPx: round2(emuToPx(c.xEmu)),
+            yPx: round2(emuToPx(c.yEmu)),
+            shape: buildShapeCore(c, "left", media, resolveLink),
+          }];
+        }),
+      };
+    }
+    return shape;
+  }
+
   function mapShape(
     inline: Extract<IRInline, { kind: "shape" }>,
     paraAlign: ParaStyle["align"],
@@ -812,52 +909,8 @@ export function createMapper(
       warnings.add("shapes-unsized", "A drawing shape without explicit dimensions was skipped.");
       return undefined;
     }
-    // Recognized presets map through; any other maps to rect (a box) so the shape
-    // still round-trips its size/fill/stroke — the preset set grows with later PRs.
-    let preset: ShapePreset = "rect";
-    if (KNOWN_PRESETS.has(inline.preset as ShapePreset)) preset = inline.preset as ShapePreset;
-    else warnings.add("shape-preset-unsupported", `An unsupported shape preset "${inline.preset}" was imported as a rectangle.`);
-    const geometry: ShapeBlock["geometry"] = { preset };
-    // Adjust handles are only meaningful for the geometry that owns them, so keep
-    // them only when the preset mapped through (a rect fallback has none).
-    if (inline.adjust && preset === inline.preset) geometry.adjust = inline.adjust;
-    // Freeform custom geometry (a:custGeom) — the escape hatch; the preset stays as
-    // a schema fallback but the painters/export use this path (PR 7, issue #220).
-    if (inline.custom) geometry.custom = inline.custom;
-    const shape: ShapeBlock = {
-      kind: "shape",
-      id: id(),
-      revision: 0,
-      geometry,
-      widthPx: round2(emuToPx(inline.widthEmu)),
-      heightPx: round2(emuToPx(inline.heightEmu)),
-      align: inline.anchorAlign ?? (paraAlign === "justify" ? "left" : paraAlign),
-    };
-    if (inline.rotationDeg !== undefined) shape.rotation = round2(inline.rotationDeg);
-    if (inline.fill) shape.fill = inline.fill;
-    if (inline.stroke) {
-      if ("none" in inline.stroke) {
-        shape.stroke = inline.stroke;
-      } else {
-        const stroke: ShapeStroke = { color: inline.stroke.color, widthPt: round2(inline.stroke.widthPt) };
-        if (inline.stroke.dash && KNOWN_DASHES.has(inline.stroke.dash as ShapeDash) && inline.stroke.dash !== "solid") {
-          stroke.dash = inline.stroke.dash as ShapeDash;
-        }
-        shape.stroke = stroke;
-      }
-    }
-    // Text box body (wps:txbx → w:txbxContent). The model text body is a paragraph
-    // flow (like a table cell); map the nested blocks and keep the paragraphs. A
-    // nested table inside a text box is out of PR-3 scope — drop it with a warning
-    // rather than silently, so the loss is visible.
-    if (inline.text && inline.text.length > 0) {
-      const mapped = mapBlocks(inline.text, media, resolveLink);
-      const paras = mapped.filter((b): b is Paragraph => b.kind === "paragraph");
-      if (paras.length < mapped.length) {
-        warnings.add("shape-text-nonpara-dropped", "A text box contained non-paragraph content (e.g. a nested table) that was dropped — only paragraphs are supported.");
-      }
-      if (paras.length > 0) shape.text = { blocks: paras };
-    }
+    const align = inline.anchorAlign ?? (paraAlign === "justify" ? "left" : paraAlign);
+    const shape = buildShapeCore(inline, align, media, resolveLink);
     // Anchored square/tight wrap → an honest float (text flows beside it).
     if (inline.anchored && inline.anchorWrap === "square") shape.wrap = "square";
     // wrapNone anchor → absolutely-positioned behind/in-front shape: no flow height,

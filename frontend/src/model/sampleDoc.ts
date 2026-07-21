@@ -113,6 +113,30 @@ const STAR_PATH: ShapePath = {
   ],
 };
 
+/** A grouped-shapes container (OOXML wpg:wgp) — member shapes positioned in the
+ *  group box's own pixel space (childOffset 0, childExtent = w×h), so they move and
+ *  scale as one selectable object. #221 grouped-shapes round-trip. */
+type GroupChild = { preset: ShapePreset; xPx: number; yPx: number; w: number; h: number; fill?: ShapeFill; stroke?: ShapeStroke; rotation?: number; text?: string[] };
+const shapeGroup = (
+  w: number, h: number, align: ShapeBlock["align"], kids: GroupChild[],
+): ShapeBlock => ({
+  kind: "shape", id: id(), revision: 0, geometry: { preset: "rect" },
+  widthPx: w, heightPx: h, align,
+  group: {
+    childOffsetXPx: 0, childOffsetYPx: 0, childExtentXPx: w, childExtentYPx: h,
+    children: kids.map((c) => ({
+      xPx: c.xPx, yPx: c.yPx,
+      shape: {
+        kind: "shape" as const, id: id(), revision: 0,
+        geometry: { preset: c.preset }, widthPx: c.w, heightPx: c.h, align: "left" as const,
+        ...(c.fill ? { fill: c.fill } : {}), ...(c.stroke ? { stroke: c.stroke } : {}),
+        ...(c.rotation ? { rotation: c.rotation } : {}),
+        ...(c.text ? { text: { blocks: c.text.map((line) => para([run(line)])) } } : {}),
+      },
+    })),
+  },
+});
+
 // --- symbols (w:sym) -----------------------------------------------------------
 /** A symbol-font glyph run (OOXML w:sym): font + hex code point, decoded to the
  *  glyph and painted in that font (e.g. Wingdings). Round-trips as a real w:sym. */
@@ -569,6 +593,13 @@ export function sampleDoc(): Document {
       anchor: { behind: false, offsetXPx: 230, offsetYPx: 110, relFromH: "margin", relFromV: "paragraph", z: 3 },
     }),
     para([run("Anchored shapes do not occupy vertical flow space, so this line follows the previous paragraph directly while the shapes float over/under it. " + LOREM.repeat(2))], { spaceBeforePx: 4 }),
+
+    para([run("A grouped drawing (OOXML wpg:wgp) bundles several shapes into one object — selecting, moving or resizing the group transforms every member together. This group is a small flow diagram: two labelled boxes joined by an arrow.")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
+    shapeGroup(360, 96, "center", [
+      { preset: "roundRect", xPx: 0, yPx: 20, w: 130, h: 56, fill: { color: "#d9ead3" }, stroke: { color: "#38761d", widthPt: 1.5 }, text: ["Input"] },
+      { preset: "rightArrow", xPx: 140, yPx: 36, w: 80, h: 24, fill: { color: "#fff2cc" }, stroke: { color: "#bf9000", widthPt: 1 } },
+      { preset: "roundRect", xPx: 230, yPx: 20, w: 130, h: 56, fill: { color: "#c9daf8" }, stroke: { color: "#3d85c6", widthPt: 1.5 }, text: ["Output"] },
+    ]),
 
     para([run("Multilevel numbered list:")], { spaceBeforePx: 8, spaceAfterPx: 4 }),
     para([run("Model — invertible ops")], { list: { listId: DEFAULT_NUMBER_LIST_ID, level: 0 }, spaceAfterPx: 2 }),

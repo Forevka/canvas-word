@@ -45,6 +45,7 @@ export const WML_NS = {
   "xmlns:a": "http://schemas.openxmlformats.org/drawingml/2006/main",
   "xmlns:pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",
   "xmlns:wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
+  "xmlns:wpg": "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup",
   "xmlns:w14": "http://schemas.microsoft.com/office/word/2010/wordml",
   "xmlns:wp14": "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing",
   "xmlns:mc": "http://schemas.openxmlformats.org/markup-compatibility/2006",

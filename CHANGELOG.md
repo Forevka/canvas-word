@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Drawing shapes — grouped shapes (issue #206, Part 8 / #221).** A `ShapeBlock` can now be a
+  **group container** (`ShapeBlock.group` — OOXML `wpg:wgp`): a box that draws its **member shapes**
+  composed under a shared group transform instead of a preset path. The members live in the group's
+  child coordinate space (`a:chOff` / `a:chExt`), so selecting, dragging or **resizing the group moves
+  and scales every member as one object** — it reuses the shape selection / resize / wrap / anchor /
+  z-order machinery verbatim (the group *is* a shape). **Nested groups** are supported (a member may
+  itself be a group, emitted as `wpg:grpSp`). Import parses `wpg:wgp` (recursively); export emits bare
+  DrawingML `wpg:wgp` (no VML / `mc:AlternateContent`), **schema-validated** by the `ooxml-validate`
+  gate. Authorable from the `DocumentBuilder` (`.shapeGroup({ widthPx, heightPx, children: [...] })`)
+  and the C# bindings (`.ShapeGroup(new ShapeGroupOptions { … })`), and demonstrated by a small
+  two-box-and-arrow flow-diagram group in the default in-editor document and the C# showcase. It
+  round-trips losslessly to `.docx` (member geometry, position, fill/outline and text boxes all
+  survive). Entering a group to select an individual member is a follow-up.
 - **Drawing shapes — legacy VML import (issue #206, Part 5 / #218).** Older `.docx` files that predate
   DrawingML draw their shapes with `w:pict` → VML (`v:rect` / `v:oval` / `v:roundrect` / `v:line` /
   `v:shape` + `v:textbox`) instead of `w:drawing` → `wps:wsp`. These used to be **dropped**; they now

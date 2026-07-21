@@ -278,6 +278,9 @@ export type IRInline =
       /** wps:txbx → w:txbxContent block flow (the text box body) — mapped to
        *  ShapeBlock.text (paragraphs only; PR 3). Absent = no text box. */
       text?: IRBlock[];
+      /** wpg:wgp group container — the member drawings in their child coordinate
+       *  space. Maps to ShapeBlock.group (mapShape). Absent = a leaf shape. */
+      group?: IRShapeGroup;
       /** True when the shape lives in a wp:anchor (out-of-flow), false for wp:inline. */
       anchored?: boolean;
       /** For wp:anchor: square = text wraps around (maps to ShapeBlock.wrap); block =
@@ -301,6 +304,37 @@ export type IRInline =
       anchorId?: string;
       editId?: string;
     };
+
+/** wpg:wgp / wpg:grpSp group container in the IR — the group's child coordinate
+ *  space (a:chOff/a:chExt, EMU) and its member drawings. Maps to ShapeBlock.group. */
+export interface IRShapeGroup {
+  childOffXEmu: number;
+  childOffYEmu: number;
+  childExtXEmu: number;
+  childExtYEmu: number;
+  children: IRShapeChild[];
+}
+
+/** One member of an {@link IRShapeGroup}: a shape at its local rect (a:xfrm
+ *  a:off/a:ext in the child coordinate space), which may itself be a nested group. */
+export interface IRShapeChild {
+  /** a:off x/y in the child coordinate space (EMU). */
+  xEmu: number;
+  yEmu: number;
+  preset: string;
+  adjust?: Record<string, number>;
+  /** a:custGeom freeform path (normalized) when this member is a custom shape. */
+  custom?: ShapePath;
+  /** a:ext cx/cy in the child coordinate space (EMU). */
+  widthEmu: number;
+  heightEmu: number;
+  rotationDeg?: number;
+  fill?: { color: string } | { none: true };
+  stroke?: { color: string; widthPt: number; dash?: string } | { none: true };
+  text?: IRBlock[];
+  /** Set when this member is itself a nested group. */
+  group?: IRShapeGroup;
+}
 
 export interface IRParaProps {
   /** w:pStyle reference — recorded now, resolved when StyleResolver lands. */

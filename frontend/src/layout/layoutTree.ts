@@ -115,6 +115,13 @@ export interface PlacedShape {
    *  wps:bodyPr left inset plus the vertical-center offset — then paint each block
    *  and clip to the box. Absent = no text box. */
   text?: { blocks: PlacedBlock[]; offsetX: number; offsetY: number };
+  /** Group container (ShapeBlock.group / OOXML wpg:wgp): the member drawings, each
+   *  already mapped through the group transform into this shape's LOCAL box —
+   *  `x`/`y` is the child's top-left offset within the box and `shape` its placed
+   *  form (recursively, so a nested group carries its own `children`). When present
+   *  the painters draw the children (and skip the container's own preset path).
+   *  Absent = an ordinary preset/text shape. (issue #221) */
+  children?: { x: number; y: number; shape: PlacedShape }[];
   /** Behind-text anchored shape (ShapeBlock.anchor.behind): painted under the text
    *  and ignored by foreground hit-testing so the text on top stays selectable.
    *  Mirrors PlacedImage.behind (issue #217). */

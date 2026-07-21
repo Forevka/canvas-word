@@ -737,6 +737,74 @@ public sealed record ShapeOptions
     }
 }
 
+/// <summary>One member of a <c>.ShapeGroup()</c> — a preset shape at its local rect
+/// (X/Y/Width/Height, px) within the group box, with the same optional fill, outline,
+/// rotation, adjust guides and text a standalone shape takes.</summary>
+public sealed record ShapeGroupChild
+{
+    public required ShapePreset Preset { get; init; }
+    public required double XPx { get; init; }
+    public required double YPx { get; init; }
+    public required double WidthPx { get; init; }
+    public required double HeightPx { get; init; }
+    public ShapeFill? Fill { get; init; }
+    public ShapeStroke? Stroke { get; init; }
+    public double? Rotation { get; init; }
+    public IReadOnlyDictionary<string, double>? Adjust { get; init; }
+    public IReadOnlyList<string>? Text { get; init; }
+
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        Js.Set(o, "preset", EnumJs.ShapePreset(Preset));
+        Js.Set(o, "xPx", XPx);
+        Js.Set(o, "yPx", YPx);
+        Js.Set(o, "widthPx", WidthPx);
+        Js.Set(o, "heightPx", HeightPx);
+        if (Fill is { } f) Js.Set(o, "fill", f.ToJs(e));
+        if (Stroke is { } s) Js.Set(o, "stroke", s.ToJs(e));
+        if (Rotation is { } r) Js.Set(o, "rotation", r);
+        if (Adjust is { Count: > 0 })
+        {
+            var adj = Js.Obj(e);
+            foreach (var kv in Adjust) Js.Set(adj, kv.Key, kv.Value);
+            Js.Set(o, "adjust", adj);
+        }
+        if (Text is { Count: > 0 } t) Js.Set(o, "text", Js.ToArray(e, t.Select(x => (object?)x)));
+        return o;
+    }
+}
+
+/// <summary>Options for <c>.ShapeGroup()</c> — the group box (the resize lever) plus
+/// the member shapes, each positioned by its local rect within the box. Resizing/moving
+/// the group transforms the members as one object (OOXML wpg:wgp).</summary>
+public sealed record ShapeGroupOptions
+{
+    public required double WidthPx { get; init; }
+    public required double HeightPx { get; init; }
+    public TextAlign? Align { get; init; }
+    /// <summary>Text-wrap mode: Block (own line, default) or Square (floats per align).</summary>
+    public ImageWrap? Wrap { get; init; }
+    /// <summary>The member shapes (≥1), each at its local rect within the group box.</summary>
+    public required IReadOnlyList<ShapeGroupChild> Children { get; init; }
+
+    internal ScriptObject ToJs(WordCanvasEngine e)
+    {
+        var o = Js.Obj(e);
+        Js.Set(o, "widthPx", WidthPx);
+        Js.Set(o, "heightPx", HeightPx);
+        if (Align is { } a)
+        {
+            if (a == TextAlign.Justify)
+                throw new ArgumentOutOfRangeException(nameof(Align), "Shape group align supports left/center/right only (not Justify).");
+            Js.Set(o, "align", EnumJs.Align(a));
+        }
+        if (Wrap is { } w) Js.Set(o, "wrap", EnumJs.Wrap(w));
+        Js.Set(o, "children", Js.ToArray(e, (Children ?? Array.Empty<ShapeGroupChild>()).Select(c => (object?)c.ToJs(e))));
+        return o;
+    }
+}
+
 public sealed record ListItem(string Text, int? Level = null, CharStyle? Style = null)
 {
     internal ScriptObject ToJs(WordCanvasEngine e)

@@ -20,6 +20,8 @@ import type {
   SdtProps,
   SectionPatch,
   SectionProps,
+  ShapeGroup,
+  ShapeGroupChild,
   TableBlock,
   TableBorders,
   TableCell,
@@ -1017,17 +1019,21 @@ function custGeomXml(path: import("@cw/shared").ShapePath): string {
   );
 }
 
-/** A drawing shape as a paragraph: reuse the image wp:inline wrapper + drawingId
- *  plumbing, swapping the graphic payload for a bare DrawingML wps:wsp (no
- *  mc:AlternateContent / VML — modern Word reads it and it validates against the
- *  OOXML schema). Emits an in-flow (inline) rect/ellipse/line with solid fill +
- *  solid outline and an optional wps:txbx text box body; wrap/anchor/rotation are
- *  later shape PRs. */
-function shapeParagraphXml(shape: Extract<Block, { kind: "shape" }>, ctx: PartCtx): string {
-  const idAttrs = drawingIdAttrs(shape.drawingId, ctx);
-  const cx = pxToEmu(shape.widthPx);
-  const cy = pxToEmu(shape.heightPx);
+const WPS_URI = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape";
+const WPG_URI = "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup";
 
+/** One DrawingML preset shape as a `wps:wsp` with an explicit a:xfrm (a:off/a:ext in
+ *  EMU): the shape geometry (a:prstGeom + a:avLst), fill (a:solidFill/a:noFill),
+ *  outline (a:ln + a:prstDash) and an optional wps:txbx text body. Used for a
+ *  top-level shape (off 0,0) and for a group member (its child-space rect). */
+function wspXml(
+  shape: Extract<Block, { kind: "shape" }> | ShapeGroupChild["shape"],
+  ctx: PartCtx,
+  offX: number,
+  offY: number,
+  extCx: number,
+  extCy: number,
+): string {
   // Fill: solid → a:solidFill; explicit none → a:noFill; absent → omit (default).
   let fillXml = "";
   if (shape.fill) {
@@ -1068,7 +1074,7 @@ function shapeParagraphXml(shape: Extract<Block, { kind: "shape" }>, ctx: PartCt
   const spPr = el(
     "wps:spPr",
     undefined,
-    el("a:xfrm", xfrmAttrs, el("a:off", { x: 0, y: 0 }) + el("a:ext", { cx, cy })) +
+    el("a:xfrm", xfrmAttrs, el("a:off", { x: offX, y: offY }) + el("a:ext", { cx: extCx, cy: extCy })) +
       geomXml +
       fillXml +
       lnXml,
@@ -1081,7 +1087,7 @@ function shapeParagraphXml(shape: Extract<Block, { kind: "shape" }>, ctx: PartCt
     const inner = shape.text.blocks.length > 0 ? emitBlocks(shape.text.blocks, 0, ctx) : el("w:p");
     txbxXml = el("wps:txbx", undefined, el("w:txbxContent", undefined, inner));
   }
-  const wsp = el(
+  return el(
     "wps:wsp",
     undefined,
     el("wps:cNvPr", { id: ctx.nextId(), name: "Shape" }) +
@@ -1090,14 +1096,78 @@ function shapeParagraphXml(shape: Extract<Block, { kind: "shape" }>, ctx: PartCt
       txbxXml +
       el("wps:bodyPr", { rot: 0, anchor: "ctr" }),
   );
+}
+
+/** A group member: a nested group (its own `wpg:grpSp`) when it carries children,
+ *  otherwise a leaf `wps:wsp`. Positioned by its child-space rect (a:off = x/y,
+ *  a:ext = the child's widthPx/heightPx). */
+function groupChildXml(child: ShapeGroupChild, ctx: PartCtx): string {
+  const s = child.shape;
+  const offX = pxToEmu(child.xPx);
+  const offY = pxToEmu(child.yPx);
+  const cx = pxToEmu(s.widthPx);
+  const cy = pxToEmu(s.heightPx);
+  if (s.group) return groupShapeXml("wpg:grpSp", s, s.group, ctx, offX, offY, cx, cy);
+  return wspXml(s, ctx, offX, offY, cx, cy);
+}
+
+/** A grouped-shapes container (`wpg:wgp` at the top level, `wpg:grpSp` when nested):
+ *  the non-visual props, the group transform (a:xfrm off/ext + a:chOff/a:chExt child
+ *  coordinate space) and the member drawings. Mirrors CT_WordprocessingGroup. */
+function groupShapeXml(
+  tag: "wpg:wgp" | "wpg:grpSp",
+  shape: Extract<Block, { kind: "shape" }> | ShapeGroupChild["shape"],
+  group: ShapeGroup,
+  ctx: PartCtx,
+  offX: number,
+  offY: number,
+  extCx: number,
+  extCy: number,
+): string {
+  const rotAttrs = shape.rotation ? { rot: Math.round(((((shape.rotation % 360) + 360) % 360)) * 60000) } : undefined;
+  const grpSpPr = el(
+    "wpg:grpSpPr",
+    undefined,
+    el(
+      "a:xfrm",
+      rotAttrs,
+      el("a:off", { x: offX, y: offY }) +
+        el("a:ext", { cx: extCx, cy: extCy }) +
+        el("a:chOff", { x: pxToEmu(group.childOffsetXPx), y: pxToEmu(group.childOffsetYPx) }) +
+        el("a:chExt", { cx: pxToEmu(group.childExtentXPx), cy: pxToEmu(group.childExtentYPx) }),
+    ),
+  );
+  const children = group.children.map((c) => groupChildXml(c, ctx)).join("");
+  return el(
+    tag,
+    undefined,
+    el("wpg:cNvPr", { id: ctx.nextId(), name: "Group" }) +
+      el("wpg:cNvGrpSpPr") +
+      grpSpPr +
+      children,
+  );
+}
+
+/** A drawing shape as a paragraph: reuse the image wp:inline wrapper + drawingId
+ *  plumbing, swapping the graphic payload for a bare DrawingML wps:wsp — or, for a
+ *  group (ShapeBlock.group), a wpg:wgp of member shapes (no mc:AlternateContent /
+ *  VML — modern Word reads it and it validates against the OOXML schema). The
+ *  inline / wp:anchor float / wp:wrapSquare wrapping is identical for a leaf shape
+ *  and a group, so the positioning code below is shared. */
+function shapeParagraphXml(shape: Extract<Block, { kind: "shape" }>, ctx: PartCtx): string {
+  const idAttrs = drawingIdAttrs(shape.drawingId, ctx);
+  const cx = pxToEmu(shape.widthPx);
+  const cy = pxToEmu(shape.heightPx);
+
+  // The graphic payload: a group (wpg:wgp) or a single shape (wps:wsp). Its own
+  // a:xfrm carries the rotation; the outer wp:anchor/inline carries the position.
+  const payload = shape.group
+    ? groupShapeXml("wpg:wgp", shape, shape.group, ctx, 0, 0, cx, cy)
+    : wspXml(shape, ctx, 0, 0, cx, cy);
   const graphic = el(
     "a:graphic",
     undefined,
-    el(
-      "a:graphicData",
-      { uri: "http://schemas.microsoft.com/office/word/2010/wordprocessingShape" },
-      wsp,
-    ),
+    el("a:graphicData", { uri: shape.group ? WPG_URI : WPS_URI }, payload),
   );
   const align = shape.align === "center" ? "center" : shape.align === "right" ? "right" : "left";
 

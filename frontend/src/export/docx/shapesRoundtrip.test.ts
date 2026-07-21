@@ -5,7 +5,7 @@
 // Exercised both from a hand-written wps:wsp docx (the importer is the oracle) and
 // through a model → writeDocx → re-import cycle.
 import { describe, expect, it } from "vitest";
-import type { Document, Paragraph, SectionProps, ShapeBlock, ShapePath } from "@cw/shared";
+import type { Document, Paragraph, SectionProps, ShapeBlock, ShapeGroupChild, ShapePath } from "@cw/shared";
 import { DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE } from "@cw/shared";
 import { runImport } from "../../import/docx/pipeline";
 import { simpleDocx } from "../../import/docx/fixture";
@@ -303,6 +303,169 @@ describe("drawing shapes — DrawingML wps:wsp round-trip", () => {
     const out = firstShape(roundTrip(docOf(s)));
     expect(out.anchor?.behind).toBe(false);
     expect(out.anchor?.z).toBe(4);
+  });
+
+  // --- Grouped shapes (issue #221): wpg:wgp -----------------------------------
+  const groupChild = (patch: Partial<ShapeBlock> & Pick<ShapeBlock, "widthPx" | "heightPx">): ShapeBlock => ({
+    kind: "shape", id: `g${n++}`, revision: 0, geometry: { preset: "rect" }, align: "left", ...patch,
+  });
+  const groupShape = (children: ShapeGroupChild[], patch: Partial<ShapeBlock> = {}): ShapeBlock => ({
+    kind: "shape", id: `grp${n++}`, revision: 0, geometry: { preset: "rect" },
+    widthPx: 300, heightPx: 100, align: "center",
+    group: { childOffsetXPx: 0, childOffsetYPx: 0, childExtentXPx: 300, childExtentYPx: 100, children },
+    ...patch,
+  });
+
+  it("round-trips a flat group (members' preset/rect/fill/stroke survive wpg:wgp)", () => {
+    const s = groupShape([
+      { xPx: 0, yPx: 20, shape: groupChild({ geometry: { preset: "roundRect" }, widthPx: 120, heightPx: 56, fill: { color: "#d9ead3" }, stroke: { color: "#38761d", widthPt: 1.5 } }) },
+      { xPx: 140, yPx: 40, shape: groupChild({ geometry: { preset: "rightArrow" }, widthPx: 60, heightPx: 20 }) },
+      { xPx: 210, yPx: 20, shape: groupChild({ geometry: { preset: "ellipse" }, widthPx: 90, heightPx: 56, fill: { color: "#c9daf8" } }) },
+    ]);
+    const out = firstShape(roundTrip(docOf(s)));
+    expect(out.group).toBeDefined();
+    expect(out.widthPx).toBe(300);
+    expect(out.heightPx).toBe(100);
+    expect(out.group!.childExtentXPx).toBe(300);
+    expect(out.group!.childExtentYPx).toBe(100);
+    const kids = out.group!.children;
+    expect(kids.length).toBe(3);
+    expect(kids.map((c) => c.shape.geometry.preset)).toEqual(["roundRect", "rightArrow", "ellipse"]);
+    expect(kids[0]).toMatchObject({ xPx: 0, yPx: 20 });
+    expect(kids[0]!.shape).toMatchObject({ widthPx: 120, heightPx: 56, fill: { color: "#d9ead3" }, stroke: { color: "#38761d", widthPt: 1.5 } });
+    expect(kids[1]).toMatchObject({ xPx: 140, yPx: 40 });
+    expect(kids[2]!.shape.fill).toEqual({ color: "#c9daf8" });
+  });
+
+  it("emits bare DrawingML wpg:wgp with a:chOff/a:chExt and member wps:wsp (no VML)", () => {
+    const s = groupShape([
+      { xPx: 10, yPx: 10, shape: groupChild({ geometry: { preset: "rect" }, widthPx: 80, heightPx: 40 }) },
+      { xPx: 120, yPx: 10, shape: groupChild({ geometry: { preset: "ellipse" }, widthPx: 80, heightPx: 40 }) },
+    ]);
+    const xml = exportedDocXml(docOf(s));
+    expect(xml).toContain("<wpg:wgp>");
+    expect(xml).toContain('uri="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"');
+    expect(xml).toContain("<a:chOff");
+    expect(xml).toContain("<a:chExt");
+    expect(xml).toContain('xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"');
+    // two members, each a wps:wsp inside the group.
+    expect((xml.match(/<wps:wsp>/g) ?? []).length).toBe(2);
+    expect(xml).not.toContain("mc:AlternateContent");
+    expect(xml).not.toContain("<v:");
+  });
+
+  it("round-trips a group member's text box body", () => {
+    const s = groupShape([
+      { xPx: 0, yPx: 0, shape: groupChild({ geometry: { preset: "roundRect" }, widthPx: 130, heightPx: 56, text: { blocks: [txtPara("Boxed member")] } }) },
+    ]);
+    const out = firstShape(roundTrip(docOf(s)));
+    expect(out.group!.children[0]!.shape.text?.blocks[0]?.runs.map((r) => r.text).join("")).toBe("Boxed member");
+  });
+
+  it("round-trips a nested group (a group inside a group)", () => {
+    const inner = groupShape([
+      { xPx: 0, yPx: 0, shape: groupChild({ geometry: { preset: "ellipse" }, widthPx: 40, heightPx: 40, fill: { color: "#ead1dc" } }) },
+      { xPx: 50, yPx: 0, shape: groupChild({ geometry: { preset: "triangle" }, widthPx: 40, heightPx: 40 }) },
+    ], { widthPx: 100, heightPx: 40 });
+    const outer = groupShape([
+      { xPx: 0, yPx: 0, shape: groupChild({ geometry: { preset: "rect" }, widthPx: 120, heightPx: 60, stroke: { color: "#333333", widthPt: 1 } }) },
+      { xPx: 130, yPx: 10, shape: inner },
+    ]);
+    const out = firstShape(roundTrip(docOf(outer)));
+    expect(out.group!.children.length).toBe(2);
+    const nested = out.group!.children[1]!.shape;
+    expect(nested.group).toBeDefined();
+    expect(nested.group!.children.map((c) => c.shape.geometry.preset)).toEqual(["ellipse", "triangle"]);
+    // export emits a nested wpg:grpSp for the inner group.
+    expect(exportedDocXml(docOf(outer))).toContain("<wpg:grpSp>");
+  });
+
+  it("round-trips a rotated group (a:xfrm@rot on wpg:grpSpPr)", () => {
+    const s = groupShape([
+      { xPx: 0, yPx: 0, shape: groupChild({ geometry: { preset: "rect" }, widthPx: 120, heightPx: 60, fill: { color: "#d9ead3" } }) },
+      { xPx: 140, yPx: 20, shape: groupChild({ geometry: { preset: "ellipse" }, widthPx: 100, heightPx: 60 }) },
+    ], { rotation: 15 });
+    // export puts the rotation on the group's a:xfrm (60000ths of a degree).
+    expect(exportedDocXml(docOf(s))).toContain('<a:xfrm rot="900000">');
+    const out = firstShape(roundTrip(docOf(s)));
+    expect(out.rotation).toBe(15);
+    expect(out.group!.children.length).toBe(2);
+  });
+
+  it("round-trips a rotated nested group", () => {
+    const inner = groupShape([
+      { xPx: 0, yPx: 0, shape: groupChild({ geometry: { preset: "triangle" }, widthPx: 40, heightPx: 40 }) },
+    ], { widthPx: 60, heightPx: 40, rotation: 30 });
+    const outer = groupShape([
+      { xPx: 0, yPx: 0, shape: groupChild({ geometry: { preset: "rect" }, widthPx: 80, heightPx: 60 }) },
+      { xPx: 100, yPx: 0, shape: inner },
+    ]);
+    const out = firstShape(roundTrip(docOf(outer)));
+    expect(out.group!.children[1]!.shape.rotation).toBe(30);
+  });
+
+  it("skips a group member without an a:xfrm/a:ext (unsized) with a warning", () => {
+    const drawing = `<w:p><w:r><w:drawing>
+      <wp:inline><wp:extent cx="2743200" cy="914400"/><wp:docPr id="1" name="Group"/>
+        <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup">
+          <wpg:wgp>
+            <wpg:cNvGrpSpPr/>
+            <wpg:grpSpPr><a:xfrm>
+              <a:off x="0" y="0"/><a:ext cx="2743200" cy="914400"/>
+              <a:chOff x="0" y="0"/><a:chExt cx="2743200" cy="914400"/>
+            </a:xfrm></wpg:grpSpPr>
+            <wps:wsp><wps:cNvSpPr/><wps:spPr>
+              <a:xfrm><a:off x="0" y="0"/><a:ext cx="1143000" cy="533400"/></a:xfrm>
+              <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+            </wps:spPr><wps:bodyPr/></wps:wsp>
+            <wps:wsp><wps:cNvSpPr/><wps:spPr>
+              <a:prstGeom prst="ellipse"><a:avLst/></a:prstGeom>
+            </wps:spPr><wps:bodyPr/></wps:wsp>
+          </wpg:wgp>
+        </a:graphicData></a:graphic>
+      </wp:inline>
+    </w:drawing></w:r></w:p>`;
+    const res = runImport(simpleDocx(drawing));
+    const out = firstShape(res.doc);
+    // the unsized second member is dropped; only the sized rect survives.
+    expect(out.group!.children.length).toBe(1);
+    expect(out.group!.children[0]!.shape.geometry.preset).toBe("rect");
+    expect(res.warnings.some((w) => w.code === "shape-group-child-unsized")).toBe(true);
+  });
+
+  it("imports a hand-written wpg:wgp group (the importer as oracle)", () => {
+    const drawing = `<w:p><w:r><w:drawing>
+      <wp:inline><wp:extent cx="2743200" cy="914400"/><wp:docPr id="1" name="Group"/>
+        <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup">
+          <wpg:wgp>
+            <wpg:cNvGrpSpPr/>
+            <wpg:grpSpPr>
+              <a:xfrm>
+                <a:off x="0" y="0"/><a:ext cx="2743200" cy="914400"/>
+                <a:chOff x="0" y="0"/><a:chExt cx="2743200" cy="914400"/>
+              </a:xfrm>
+            </wpg:grpSpPr>
+            <wps:wsp><wps:cNvSpPr/><wps:spPr>
+              <a:xfrm><a:off x="0" y="0"/><a:ext cx="1143000" cy="533400"/></a:xfrm>
+              <a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom>
+              <a:solidFill><a:srgbClr val="d9ead3"/></a:solidFill>
+            </wps:spPr><wps:bodyPr/></wps:wsp>
+            <wps:wsp><wps:cNvSpPr/><wps:spPr>
+              <a:xfrm><a:off x="1600200" y="0"/><a:ext cx="1143000" cy="533400"/></a:xfrm>
+              <a:prstGeom prst="ellipse"><a:avLst/></a:prstGeom>
+              <a:solidFill><a:srgbClr val="c9daf8"/></a:solidFill>
+            </wps:spPr><wps:bodyPr/></wps:wsp>
+          </wpg:wgp>
+        </a:graphicData></a:graphic>
+      </wp:inline>
+    </w:drawing></w:r></w:p>`;
+    const out = firstShape(runImport(simpleDocx(drawing)).doc);
+    expect(out.group).toBeDefined();
+    expect(out.widthPx).toBe(288); // 2743200 EMU / 9525
+    expect(out.group!.children.map((c) => c.shape.geometry.preset)).toEqual(["roundRect", "ellipse"]);
+    expect(out.group!.children[0]!.xPx).toBe(0);
+    expect(out.group!.children[1]!.xPx).toBe(168); // 1600200 / 9525
+    expect(out.group!.children[0]!.shape.fill).toEqual({ color: "#d9ead3" });
   });
 
   it("maps a genuinely unsupported preset to a rectangle (+ warning), dropping its adjust", () => {

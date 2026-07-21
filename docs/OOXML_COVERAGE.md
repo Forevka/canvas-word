@@ -362,6 +362,13 @@ w:drawing → wp:inline / wp:anchor → a:graphicData @uri=…/wordprocessingSha
 ├─ wp:anchor + wp:wrapSquare (float) .... ✅ ShapeBlock.wrap="square" — text flows beside (Part 4, #217)
 ├─ wp:anchor + wp:wrapNone (behind/front) ✅ ShapeBlock.anchor {behind, offsetX/Y, relFromH/V, z} (Part 4)
 └─ @relativeHeight / @behindDoc (z-order) ✅ shared z-space with images; bring-to-front / send-to-back
+
+Grouped shapes (issue #221, Part 8):
+a:graphicData @uri=…/wordprocessingGroup → wpg:wgp ✅ ShapeBlock.group (a shape that draws its children)
+├─ wpg:grpSpPr / a:xfrm a:off/a:ext ..... ✅ the group box (widthPx/heightPx) — one selectable/resizable object
+├─ a:chOff / a:chExt (child coord space) . ✅ ShapeGroup.childOffset/childExtent — children map through it (resize scales members)
+├─ wps:wsp (member shapes) .............. ✅ ShapeGroupChild {xPx, yPx, shape} — each with its own a:xfrm off/ext, geometry/fill/stroke/text
+└─ wpg:grpSp (nested group) ............. ✅ recursive — a member may itself be a group
 ```
 
 > **Known limitation — rotation + text.** A shape's `rotation` and its text body
@@ -372,8 +379,8 @@ w:drawing → wp:inline / wp:anchor → a:graphicData @uri=…/wordprocessingSha
 > is unaffected (both fields survive) — this is a paint-only gap in the canvas and
 > PDF painters.
 
-> Parts 6–9 (editable text boxes, freeform/grouped shapes, polish) are tracked in
-> [SHAPES_PLAN.md](./SHAPES_PLAN.md).
+> The remaining shape parts (editable text boxes, freeform custom geometry, polish)
+> are tracked in [SHAPES_PLAN.md](./SHAPES_PLAN.md).
 
 ### Legacy VML shapes (w:pict) — issue #218 (import-only)
 
