@@ -198,8 +198,10 @@ none) and outline (colour, width, dash), rotation, **editable text boxes**
 behind/in-front float with z-order, and **grouped / nested-group** drawings
 (`wpg:wgp`) that move and scale as one object. Insert from the ribbon shapes
 gallery; edit via the floating shape toolbar, the ribbon Shape group, or the
-right-click menu. Everything round-trips losslessly to `.docx` and is authorable
-from the JS `DocumentBuilder` and the C# builder. Legacy `w:pict` **VML** shapes
+right-click menu. Everything round-trips to `.docx` — losslessly, save two
+documented corners: a rotated shape renders its text upright, and a builder-only
+center + square-wrap shape re-imports as in-flow — and is authorable from the JS
+`DocumentBuilder` and the C# builder. Legacy `w:pict` **VML** shapes
 and text boxes import (read-only) and re-export as modern DrawingML.
 
 **Headers/footers** — rich `Block[]` stories laid out per page with field
