@@ -1643,7 +1643,7 @@ function layoutDocument(
       case "line": oy = y; break; // current flow position
       default: oy = sec.marginPx.top; break; // margin
     }
-    const placedImage: PlacedImage = { src: img.src, width: img.widthPx, height: img.heightPx, z: a.z ?? 0, ...(img.crop ? { crop: img.crop } : {}) };
+    const placedImage: PlacedImage = { src: img.src, width: img.widthPx, height: img.heightPx, z: a.z ?? 0, ...(img.crop ? { crop: img.crop } : {}), ...(img.rotation ? { rotation: img.rotation } : {}) };
     if (a.behind) placedImage.behind = true;
     else placedImage.front = true;
     page.blocks.push({
@@ -1669,7 +1669,7 @@ function layoutDocument(
       y,
       firstLineIndex: 0,
       lines: [],
-      image: { src: img.src, width: img.widthPx, height: img.heightPx, ...(img.crop ? { crop: img.crop } : {}) },
+      image: { src: img.src, width: img.widthPx, height: img.heightPx, ...(img.crop ? { crop: img.crop } : {}), ...(img.rotation ? { rotation: img.rotation } : {}) },
     });
     if (floating) {
       // Text flows beside the image: register the float, do NOT advance y.
@@ -2673,7 +2673,7 @@ function layoutBand(
         y,
         firstLineIndex: 0,
         lines: [],
-        image: { src: b.src, width: b.widthPx, height: b.heightPx, ...(b.crop ? { crop: b.crop } : {}) },
+        image: { src: b.src, width: b.widthPx, height: b.heightPx, ...(b.crop ? { crop: b.crop } : {}), ...(b.rotation ? { rotation: b.rotation } : {}) },
       });
       y += b.heightPx;
     } else if (b.kind === "equation") {
@@ -3354,13 +3354,13 @@ function placeTable(
               // Anchored (behind/in-front) image: positioned from the cell's content
               // origin by its offsets, carrying behind/front/z — it does NOT advance
               // the stack cursor, mirroring the horizontal cell path.
-              const placedImage: PlacedImage = { src: it.block.src, width: it.block.widthPx, height: it.block.heightPx, z: anchor.z ?? 0 };
+              const placedImage: PlacedImage = { src: it.block.src, width: it.block.widthPx, height: it.block.heightPx, z: anchor.z ?? 0, ...(it.block.rotation ? { rotation: it.block.rotation } : {}) };
               if (anchor.behind) placedImage.behind = true;
               else placedImage.front = true;
               blocks.push({ blockId: it.block.id, x: anchor.offsetXPx, y: anchor.offsetYPx, firstLineIndex: 0, lines: [], image: placedImage });
               continue;
             }
-            blocks.push({ blockId: it.block.id, x: 0, y: ly, firstLineIndex: 0, lines: [], image: { src: it.block.src, width: it.width, height: it.height } });
+            blocks.push({ blockId: it.block.id, x: 0, y: ly, firstLineIndex: 0, lines: [], image: { src: it.block.src, width: it.width, height: it.height, ...(it.block.rotation ? { rotation: it.block.rotation } : {}) } });
             ly += it.height + CELL_BLOCK_GAP;
           } else if (it.kind === "equation") {
             blocks.push({ blockId: it.block.id, x: 0, y: ly, firstLineIndex: 0, lines: [], equation: { box: it.box, width: it.width, height: it.height, baseline: it.box.ascent } });
@@ -3447,6 +3447,7 @@ function placeTable(
               width: it.block.widthPx,
               height: it.block.heightPx,
               z: anchor.z ?? 0,
+              ...(it.block.rotation ? { rotation: it.block.rotation } : {}),
             };
             if (anchor.behind) placedImage.behind = true;
             else placedImage.front = true;
@@ -3476,7 +3477,7 @@ function placeTable(
               y: iy0 + (innerH - h) / 2,
               firstLineIndex: 0,
               lines: [],
-              image: { src: it.block.src, width: w, height: h, clip: { x: ix0, y: iy0, width: innerWidth, height: innerH } },
+              image: { src: it.block.src, width: w, height: h, clip: { x: ix0, y: iy0, width: innerWidth, height: innerH }, ...(it.block.rotation ? { rotation: it.block.rotation } : {}) },
             });
             py += it.height + CELL_BLOCK_GAP;
           } else {
@@ -3490,7 +3491,7 @@ function placeTable(
               y: py,
               firstLineIndex: 0,
               lines: [],
-              image: { src: it.block.src, width: it.width, height: it.height },
+              image: { src: it.block.src, width: it.width, height: it.height, ...(it.block.rotation ? { rotation: it.block.rotation } : {}) },
             });
             py += it.height + CELL_BLOCK_GAP;
           }

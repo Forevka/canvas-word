@@ -228,6 +228,8 @@ export type IRInline =
       /** a:srcRect crop insets, each a 0..1 fraction of the source trimmed off that
        *  edge (OOXML stores 1/1000 of a percent; the parser normalizes to a fraction). */
       crop?: { left: number; top: number; right: number; bottom: number };
+      /** pic spPr a:xfrm@rot in degrees (OOXML stores 60000ths) → ImageBlock.rotation. */
+      rotationDeg?: number;
       anchored: boolean;
       /** For wp:anchor: square = text wraps around (maps to ImageBlock.wrap);
        *  block = wrap mode the model can't express (none/topAndBottom). */

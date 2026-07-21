@@ -515,6 +515,34 @@ describe("engine — image cover fill", () => {
   });
 });
 
+// --- image rotation (ImageBlock.rotation → PlacedImage.rotation) -----------
+
+describe("engine — image rotation", () => {
+  it("carries an in-flow image's rotation onto its placed block", () => {
+    const img: ImageBlock = { ...image(120, 80), rotation: 30 };
+    const pb = placedOf(layout(doc([img])), img.id)!.pb;
+    expect(pb.image!.rotation).toBe(30);
+  });
+
+  it("carries rotation onto an image placed inside a table cell", () => {
+    // Regression: the cell image-placement paths dropped ImageBlock.rotation, so a
+    // rotated in-cell image rendered upright. A caption paragraph keeps the cell off
+    // the lone-image cover-fill path so this exercises the ordinary flow placement.
+    const rotated: ImageBlock = { ...image(60, 40), rotation: 45 };
+    const imgCell: TableCell = { id: fresh(), blocks: [rotated, para("caption")] };
+    const t = table([[imgCell, cell("x")]], [0.5, 0.5]);
+    const placed = placedOf(layout(doc([t])), t.id)!.pb.table!;
+    const imgBlock = placed.rows[0]!.cells[0]!.blocks.find((b) => b.image)!;
+    expect(imgBlock.image!.rotation).toBe(45);
+  });
+
+  it("leaves an unrotated image's placed block without a rotation", () => {
+    const img = image(120, 80);
+    const pb = placedOf(layout(doc([img])), img.id)!.pb;
+    expect(pb.image!.rotation).toBeUndefined();
+  });
+});
+
 // --- tab stops ------------------------------------------------------------
 
 describe("engine — tab stops", () => {

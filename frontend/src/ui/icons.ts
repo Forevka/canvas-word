@@ -53,6 +53,9 @@ export const ICONS = {
   image: svg(
     `<rect x="2" y="3" width="12" height="10" rx="1"/><circle cx="5.5" cy="6.5" r="1.2"/><path d="M2 11l3.5-3 3 2.5L11 8l3 3"/>`,
   ),
+  // Arc-arrow (rotation): a ~300° clockwise arc with an arrowhead at the top — the
+  // object rotate handle glyph.
+  rotate: svg(`<path d="M12.5 5.2A5 5 0 1 0 13.4 9"/><path d="M13.7 2.8 12.7 5.6l-2.9-.7"/>`),
   shapes: svg(`<rect x="1.5" y="8" width="6" height="6" rx=".8"/><circle cx="11" cy="5" r="3.5"/>`),
   shapeRect: svg(`<rect x="2" y="4" width="12" height="8" rx="1"/>`),
   shapeRoundRect: svg(`<rect x="2" y="4" width="12" height="8" rx="3"/>`),

@@ -45,6 +45,9 @@ export interface ImagePropsPatch {
   widthPx?: number;
   heightPx?: number;
   align?: ImageBlock["align"];
+  /** Clockwise rotation in degrees (a:xfrm@rot). `null` clears it (mirrors the
+   *  shape rotation patch). */
+  rotation?: number | null;
   wrap?: ImageBlock["wrap"] | null;
   anchor?: ImageBlock["anchor"] | null;
   /** Crop insets (a:srcRect 0..1 fractions). `null` clears the crop. */
@@ -831,6 +834,7 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       if (op.patch.widthPx !== undefined) oldPatch.widthPx = block.widthPx;
       if (op.patch.heightPx !== undefined) oldPatch.heightPx = block.heightPx;
       if (op.patch.align !== undefined) oldPatch.align = block.align;
+      if (op.patch.rotation !== undefined) oldPatch.rotation = block.rotation ?? null;
       if (op.patch.wrap !== undefined) oldPatch.wrap = block.wrap ?? null;
       if (op.patch.anchor !== undefined) oldPatch.anchor = block.anchor ?? null;
       if (op.patch.crop !== undefined) oldPatch.crop = block.crop ?? null;
@@ -838,6 +842,10 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       if (op.patch.widthPx !== undefined) updated.widthPx = op.patch.widthPx;
       if (op.patch.heightPx !== undefined) updated.heightPx = op.patch.heightPx;
       if (op.patch.align !== undefined) updated.align = op.patch.align;
+      if (op.patch.rotation !== undefined) {
+        if (op.patch.rotation === null) delete updated.rotation;
+        else updated.rotation = op.patch.rotation;
+      }
       if (op.patch.wrap !== undefined) {
         if (op.patch.wrap === null) delete updated.wrap;
         else updated.wrap = op.patch.wrap;

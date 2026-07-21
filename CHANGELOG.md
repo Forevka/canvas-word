@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Object rotate handle + image rotation (issue #236).** The object selection frame now carries a
+  **rotate handle** — an arc-arrow pinned just outside the frame's right edge (shapes **and** images).
+  Dragging it rotates the object about its center: the angle tracks the pointer, **Shift** snaps to 15°
+  increments, and **Escape** cancels. The whole drag previews via a CSS `transform: rotate()` on the
+  frame (no per-frame relayout) and commits **one** undoable op on pointer-up (`setShapeProps` /
+  `setImageProps` `{ rotation }`). Shapes already supported `rotation`; **images gain rotation as a
+  net-new field** (`ImageBlock.rotation`, degrees) with a **full round-trip**: the canvas + PDF painters
+  rotate the bitmap about its box center (composing with crop/clip), export emits `pic:spPr` `a:xfrm@rot`
+  (degrees → 60000ths) and import reads it back. Authorable from the `DocumentBuilder`
+  (`.image(src, { …, rotation })`) and the C# bindings (`ImageOptions.Rotation`), and demonstrated by a
+  rotated image in the default in-editor document and the C# showcase.
 - **Drawing shapes — grouped shapes (issue #206, Part 8 / #221).** A `ShapeBlock` can now be a
   **group container** (`ShapeBlock.group` — OOXML `wpg:wgp`): a box that draws its **member shapes**
   composed under a shared group transform instead of a preset path. The members live in the group's

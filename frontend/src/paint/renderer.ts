@@ -1264,6 +1264,18 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
         ctx.rect(clip.x, clip.y, clip.width, clip.height);
         ctx.clip();
       }
+      // Rotate the bitmap about its box center (ImageBlock.rotation) — paint-only,
+      // like the shape rotation transform. Composes with the crop draw below (the
+      // source window still maps onto the same destination box, now rotated) and
+      // with the cover clip above. The PDF painter mirrors this.
+      const rot = block.image.rotation;
+      if (rot) {
+        ctx.save();
+        const cx = block.x + block.image.width / 2, cy = block.y + block.image.height / 2;
+        ctx.translate(cx, cy);
+        ctx.rotate((rot * Math.PI) / 180);
+        ctx.translate(-cx, -cy);
+      }
       if (img.complete && img.naturalWidth > 0) {
         const crop = block.image.crop;
         if (crop) {
@@ -1281,6 +1293,7 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
         ctx.fillStyle = theme.imagePlaceholder;
         ctx.fillRect(block.x, block.y, block.image.width, block.image.height);
       }
+      if (rot) ctx.restore();
       if (clip) ctx.restore();
       return;
     }

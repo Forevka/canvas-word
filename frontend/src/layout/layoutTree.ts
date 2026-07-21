@@ -64,6 +64,9 @@ export interface PlacedImage {
   /** Source crop insets (ImageBlock.crop, OOXML a:srcRect) as 0..1 fractions —
    *  paint shows only [left,1-right]×[top,1-bottom] of the source. Absent = none. */
   crop?: { left: number; top: number; right: number; bottom: number };
+  /** Clockwise rotation in degrees (ImageBlock.rotation); the painters rotate the
+   *  bitmap about the box center. Absent = none. Mirrors PlacedShape.rotation. */
+  rotation?: number;
   /** Behind-text anchored image (ImageBlock.anchor.behind): painted under the
    *  text and ignored by hit-testing so the text beneath stays selectable. */
   behind?: boolean;

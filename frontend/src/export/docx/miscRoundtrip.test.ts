@@ -98,6 +98,47 @@ describe("image crop — a:srcRect", () => {
   });
 });
 
+// ── image rotation — pic spPr a:xfrm@rot (issue #236) ─────────────────────────
+const rotatedDrawing = (rot: number): string =>
+  `<w:drawing><wp:inline><wp:extent cx="914400" cy="914400"/>` +
+  `<a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed="rId10"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+  `<pic:spPr><a:xfrm rot="${rot}"><a:off x="0" y="0"/><a:ext cx="914400" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>` +
+  `</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`;
+
+describe("image rotation — a:xfrm@rot", () => {
+  it("parses pic spPr a:xfrm@rot (60000ths) into degrees", () => {
+    const r = runImport(docxWithImage(`<w:p><w:r>${rotatedDrawing(1200000)}</w:r></w:p>`)).doc;
+    expect(firstImage(r).rotation).toBe(20);
+  });
+
+  it("ignores rot=0 (no rotation)", () => {
+    const r = runImport(docxWithImage(`<w:p><w:r>${rotatedDrawing(0)}</w:r></w:p>`)).doc;
+    expect(firstImage(r).rotation).toBeUndefined();
+  });
+
+  it("emits a:xfrm@rot on export and round-trips the rotation (degrees ↔ 60000ths)", () => {
+    const img: ImageBlock = { kind: "image", id: "img0", revision: 0, src: "img1", widthPx: 120, heightPx: 90, align: "left", rotation: 20 };
+    const doc: Document = { section: SECTION, blocks: [img] };
+    expect(exportedDocXml(doc, { img1: PNG_1PX })).toContain('<a:xfrm rot="1200000">');
+    expect(firstImage(roundTrip(doc, { img1: PNG_1PX })).rotation).toBe(20);
+  });
+
+  it("omits the rot attribute when the image is unrotated", () => {
+    const img: ImageBlock = { kind: "image", id: "img0", revision: 0, src: "img1", widthPx: 120, heightPx: 90, align: "left" };
+    const xml = exportedDocXml({ section: SECTION, blocks: [img] }, { img1: PNG_1PX });
+    expect(xml).toContain("<a:xfrm>");
+    expect(xml).not.toContain("<a:xfrm rot=");
+  });
+
+  it("round-trips a rotated image inside a table cell", () => {
+    const cellImg: ImageBlock = { kind: "image", id: "ci0", revision: 0, src: "img1", widthPx: 96, heightPx: 48, align: "left", rotation: 30 };
+    const tbl: TableBlock = { kind: "table", id: "T0", revision: 0, colFractions: [1], rows: [{ cells: [{ id: "c0", blocks: [cellImg] }] }] };
+    const out = firstTable(roundTrip({ section: SECTION, blocks: [tbl] }, { img1: PNG_1PX }));
+    const img = out.rows[0]!.cells[0]!.blocks.find((b): b is ImageBlock => b.kind === "image");
+    expect(img!.rotation).toBe(30);
+  });
+});
+
 // ── inline image paragraph spacing (#198) ────────────────────────────────────
 describe("inline image paragraph spacing", () => {
   const inlineImage = (): ImageBlock => ({ kind: "image", id: "img0", revision: 0, src: "img1", widthPx: 150, heightPx: 110, align: "left" });

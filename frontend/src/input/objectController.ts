@@ -8,6 +8,38 @@
 // composition, so a whole drag is a single undo step.
 
 import type { Rect } from "../layout/geometry";
+import { ICONS } from "../ui/icons";
+
+// ── rotate-handle angle math (pure, unit-tested) ─────────────────────────────
+
+/** Normalize an angle in degrees to the [0, 360) range. */
+export function normalizeDeg(deg: number): number {
+  return ((deg % 360) + 360) % 360;
+}
+
+/** Snap a rotation (deg) to the nearest `step`° grid when `snap` is held (Shift
+ *  snaps to 15° increments), else return it unchanged. */
+export function snapRotation(deg: number, snap: boolean, step = 15): number {
+  return snap ? Math.round(deg / step) * step : deg;
+}
+
+/** Clockwise angle (deg) from a center to a point in y-down (screen) space —
+ *  atan2(dy, dx). The rotate handle drives the object rotation off this. */
+export function pointerAngleDeg(cx: number, cy: number, px: number, py: number): number {
+  return (Math.atan2(py - cy, px - cx) * 180) / Math.PI;
+}
+
+/** New object rotation (deg, normalized to [0,360)) for a rotate-handle drag: the
+ *  rotation at drag start plus the angle the pointer swept about the object center,
+ *  snapped to 15° when Shift is held. */
+export function rotationFromDrag(
+  startRotation: number,
+  startPointerDeg: number,
+  curPointerDeg: number,
+  snap: boolean,
+): number {
+  return normalizeDeg(snapRotation(startRotation + (curPointerDeg - startPointerDeg), snap));
+}
 
 /** Image crop insets — 0..1 fractions trimmed off each edge of the source (OOXML
  *  a:srcRect). The visible source window is [left,1-right] × [top,1-bottom]. */
@@ -70,6 +102,10 @@ export interface ObjectFrameDeps {
   /** Final size on mouseup (one undoable op). The whole drag is previewed purely
    *  in the DOM overlay (no model ops, no relayout) — this is the ONLY mutation. */
   onResizeCommit(width: number, height: number): void;
+  /** Final rotation (degrees, normalized to [0,360)) on pointer-up of a rotate-handle
+   *  drag — one undoable op. The drag previews purely via a CSS transform on the frame
+   *  (no model op, no relayout), mirroring the resize ghost; this is the only mutation. */
+  onRotateCommit(deg: number): void;
   /** Live crop preview: fired when a crop handle is released, with the new insets.
    *  The wiring writes them as a TRANSIENT op (so the model tracks the crop live)
    *  and reverts + commits once on exit — the drag-to-resize-row-height protocol. */
@@ -83,7 +119,15 @@ export interface ObjectFrame {
    *  (in-flow images re-align on resize): "left" for left-aligned / anchored
    *  images, "center" / "right" for those alignments — so the ghost tracks the
    *  committed position instead of jumping on mouseup. */
-  show(rect: Rect, maxWidth: number, src?: string, anchor?: ResizeAnchor, resizable?: boolean): void;
+  show(
+    rect: Rect,
+    maxWidth: number,
+    src?: string,
+    anchor?: ResizeAnchor,
+    resizable?: boolean,
+    rotatable?: boolean,
+    rotationDeg?: number,
+  ): void;
   hide(): void;
   /** Enter crop mode for the image at `rect` (its displayed box) with the given
    *  current crop. Shows the faded full source behind a bright draggable window
@@ -162,7 +206,31 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     return el;
   });
 
-  let current: { rect: Rect; maxWidth: number; anchor: ResizeAnchor } | null = null;
+  // Rotate handle: an arc-arrow button pinned just outside the RIGHT edge, vertically
+  // centered (shapes + images only). Drag rotates the object about its center; the
+  // whole drag previews via a CSS `transform: rotate()` on the frame (no model op,
+  // no relayout) and commits ONCE on pointer-up — the resize-ghost protocol.
+  const rotateHandle = document.createElement("div");
+  rotateHandle.className = "cw-obj-handle";
+  rotateHandle.dataset["rotate"] = "1";
+  rotateHandle.setAttribute("role", "button");
+  rotateHandle.setAttribute("aria-label", "Rotate");
+  rotateHandle.style.cssText =
+    "position:absolute;display:none;box-sizing:border-box;width:18px;height:18px;" +
+    "background:#fff;border:1.5px solid #1a73e8;border-radius:50%;pointer-events:auto;" +
+    "cursor:grab;color:#1a73e8;align-items:center;justify-content:center;" +
+    "left:calc(100% + 8px);top:calc(50% - 9px);";
+  rotateHandle.innerHTML = ICONS.rotate;
+  {
+    const glyph = rotateHandle.querySelector("svg");
+    if (glyph) {
+      glyph.style.width = "12px";
+      glyph.style.height = "12px";
+    }
+  }
+  frame.appendChild(rotateHandle);
+
+  let current: { rect: Rect; maxWidth: number; anchor: ResizeAnchor; rotation: number } | null = null;
   let drag: {
     spec: HandleSpec;
     startX: number;
@@ -339,6 +407,101 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
 
   for (const el of handleEls) el.addEventListener("pointerdown", onHandleDown);
 
+  // ---- rotate handle -----------------------------------------------------
+  // The object center is captured in CLIENT coords at drag start (the object doesn't
+  // move while rotating, so a fixed center is correct); the swept pointer angle drives
+  // the new rotation. Preview is a CSS transform on the frame; commit fires on pointer-up.
+  let rotDrag: { centerX: number; centerY: number; startPointerDeg: number; startRotation: number } | null = null;
+  let rotDragEl: HTMLElement | null = null;
+  let rotPointerId = 0;
+
+  const applyRotatePreview = (deg: number): void => {
+    // transform-origin defaults to the frame's own center, which equals the object
+    // center (the frame is inset −2px and grown +4px symmetrically). Paint-only.
+    frame.style.transform = `rotate(${deg}deg)`;
+  };
+
+  const endRotateDrag = (): void => {
+    if (!rotDragEl) return;
+    rotDragEl.removeEventListener("pointermove", onRotateMove);
+    rotDragEl.removeEventListener("pointerup", onRotateUp);
+    rotDragEl.removeEventListener("pointercancel", onRotateCancel);
+    try {
+      rotDragEl.releasePointerCapture(rotPointerId);
+    } catch {
+      /* pointer already released */
+    }
+    rotateHandle.style.cursor = "grab";
+    rotDragEl = null;
+    window.removeEventListener("keydown", onRotateKey, true);
+  };
+
+  const cancelRotateDrag = (): void => {
+    if (!rotDrag) return;
+    rotDrag = null;
+    endRotateDrag();
+    frame.style.transform = ""; // drop the preview; the object keeps its prior rotation
+  };
+
+  const degFromEvent = (ev: PointerEvent): number => {
+    const d = rotDrag!;
+    const cur = pointerAngleDeg(d.centerX, d.centerY, ev.clientX, ev.clientY);
+    return rotationFromDrag(d.startRotation, d.startPointerDeg, cur, ev.shiftKey);
+  };
+
+  function onRotateMove(ev: PointerEvent): void {
+    if (!rotDrag) return;
+    applyRotatePreview(degFromEvent(ev));
+  }
+
+  function onRotateUp(ev: PointerEvent): void {
+    if (!rotDrag) return;
+    const deg = degFromEvent(ev);
+    rotDrag = null;
+    endRotateDrag();
+    frame.style.transform = ""; // the committed relayout repaints the object rotated
+    deps.onRotateCommit(deg);
+  }
+
+  function onRotateCancel(): void {
+    cancelRotateDrag();
+  }
+
+  const onRotateKey = (ev: KeyboardEvent): void => {
+    // Escape cancels an in-flight rotate drag (capture phase so it wins over other
+    // Escape handlers) — the object snaps back to its pre-drag rotation.
+    if (ev.key === "Escape" && rotDrag) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      cancelRotateDrag();
+    }
+  };
+
+  const onRotateHandleDown = (ev: PointerEvent): void => {
+    if (!current) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const box = frame.getBoundingClientRect(); // pre-transform: object center in client px
+    const centerX = box.left + box.width / 2;
+    const centerY = box.top + box.height / 2;
+    rotDrag = {
+      centerX,
+      centerY,
+      startPointerDeg: pointerAngleDeg(centerX, centerY, ev.clientX, ev.clientY),
+      startRotation: current.rotation,
+    };
+    rotateHandle.style.cursor = "grabbing";
+    rotDragEl = rotateHandle;
+    rotPointerId = ev.pointerId;
+    rotateHandle.setPointerCapture(ev.pointerId);
+    rotateHandle.addEventListener("pointermove", onRotateMove);
+    rotateHandle.addEventListener("pointerup", onRotateUp);
+    rotateHandle.addEventListener("pointercancel", onRotateCancel);
+    window.addEventListener("keydown", onRotateKey, true);
+  };
+
+  rotateHandle.addEventListener("pointerdown", onRotateHandleDown);
+
   // ---- crop mode ---------------------------------------------------------
   // A separate overlay (independent of the resize frame above) that mirrors the
   // resize handle protocol: the whole crop session previews purely in the DOM —
@@ -512,13 +675,26 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
   for (const el of cropHandleEls) el.addEventListener("pointerdown", onCropHandleDown);
 
   return {
-    show(rect: Rect, maxWidth: number, src?: string, anchor: ResizeAnchor = "left", resizable = true): void {
+    show(
+      rect: Rect,
+      maxWidth: number,
+      src?: string,
+      anchor: ResizeAnchor = "left",
+      resizable = true,
+      rotatable = false,
+      rotationDeg = 0,
+    ): void {
       const host = deps.getPageElement(rect.pageIndex);
       if (!host) return;
-      current = { rect, maxWidth, anchor };
+      current = { rect, maxWidth, anchor, rotation: rotationDeg };
       ghostSrc = src;
       // Non-resizable objects (equations) get a plain selection box — no handles.
       for (const el of handleEls) el.style.display = resizable ? "block" : "none";
+      // Only shapes + images get the rotate handle (not equations / plain objects).
+      rotateHandle.style.display = rotatable ? "flex" : "none";
+      // Clear any stale rotate-preview transform (a prior committed drag) so the
+      // freshly positioned frame isn't left spun; a live drag keeps its transform.
+      if (!rotDrag) frame.style.transform = "";
       if (frame.parentElement !== host) {
         host.appendChild(frame);
         // Re-parenting the frame detaches it from the document for an instant.
@@ -529,6 +705,15 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
         if (drag && dragEl) {
           try {
             dragEl.setPointerCapture(dragPointerId);
+          } catch {
+            /* pointer no longer active */
+          }
+        }
+        // Same for an in-flight rotate drag: the detach releases the rotate handle's
+        // capture, so re-acquire it or the rotation silently dies mid-drag.
+        if (rotDrag && rotDragEl) {
+          try {
+            rotDragEl.setPointerCapture(rotPointerId);
           } catch {
             /* pointer no longer active */
           }
@@ -544,6 +729,8 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     hide(): void {
       current = null;
       ghostSrc = undefined;
+      cancelRotateDrag(); // drop any in-flight rotate + its preview transform
+      frame.style.transform = "";
       frame.style.display = "none";
       hideGhost();
     },
@@ -582,6 +769,7 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     },
     destroy(): void {
       cancelPendingMove(); // drop any in-flight resize frame so it can't fire post-teardown
+      cancelRotateDrag(); // release a rotate pointer-capture + its keydown listener
       if (cropMoveRaf) cancelAnimationFrame(cropMoveRaf);
       hideGhost();
       ghost.remove();

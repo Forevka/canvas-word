@@ -132,10 +132,17 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
 
   if (block.image) {
     const bytes = ctx.image(block.image.src);
-    const { width, height, clip, crop } = block.image;
+    const { width, height, clip, crop, rotation } = block.image;
     if (clip) {
       doc.save();
       doc.rect(clip.x, clip.y, clip.width, clip.height).clip();
+    }
+    // Rotate the image about its box center (ImageBlock.rotation) — paint-only, the
+    // PDF mirror of the canvas renderer. pdfkit rotates in DEGREES about the given
+    // origin; composes with the crop clip/draw below and the cover clip above.
+    if (rotation) {
+      doc.save();
+      doc.rotate(rotation, { origin: [block.x + width / 2, block.y + height / 2] });
     }
     if (bytes) {
       try {
@@ -167,6 +174,7 @@ export function paintBlock(ctx: PaintCtx, block: PlacedBlock): void {
     } else {
       placeholderBox(ctx, block.x, block.y, width, height);
     }
+    if (rotation) doc.restore();
     if (clip) doc.restore();
     return;
   }
