@@ -1001,26 +1001,38 @@ function shapeParagraphXml(shape: Extract<Block, { kind: "shape" }>, ctx: PartCt
   if (shape.fill) {
     fillXml = "none" in shape.fill ? el("a:noFill") : el("a:solidFill", undefined, el("a:srgbClr", { val: hex(shape.fill.color) }));
   }
-  // Outline: a:ln with a width + solidFill; explicit none → a:noFill inside a:ln;
-  // absent → omit (default). w (EMU) rounds the model's point width.
+  // Outline: a:ln with a width + solidFill + an optional a:prstDash; explicit none →
+  // a:noFill inside a:ln; absent → omit (default). w (EMU) rounds the point width.
   let lnXml = "";
   if (shape.stroke) {
     if ("none" in shape.stroke) {
       lnXml = el("a:ln", undefined, el("a:noFill"));
     } else {
+      // a:ln children are an ordered sequence: fill, then a:prstDash.
+      const dashXml = shape.stroke.dash ? el("a:prstDash", { val: shape.stroke.dash }) : "";
       lnXml = el(
         "a:ln",
         { w: Math.round(shape.stroke.widthPt * EMU_PER_PT) },
-        el("a:solidFill", undefined, el("a:srgbClr", { val: hex(shape.stroke.color) })),
+        el("a:solidFill", undefined, el("a:srgbClr", { val: hex(shape.stroke.color) })) + dashXml,
       );
     }
   }
 
+  // a:avLst — the parametric adjust guides (name → `val N` formula); empty when none.
+  const avLstXml = el(
+    "a:avLst",
+    undefined,
+    Object.entries(shape.geometry.adjust ?? {})
+      .map(([name, v]) => el("a:gd", { name, fmla: `val ${Math.round(v)}` }))
+      .join(""),
+  );
+  // a:xfrm@rot — clockwise rotation in 60000ths of a degree (normalized to 0..360).
+  const xfrmAttrs = shape.rotation ? { rot: Math.round(((((shape.rotation % 360) + 360) % 360)) * 60000) } : undefined;
   const spPr = el(
     "wps:spPr",
     undefined,
-    el("a:xfrm", undefined, el("a:off", { x: 0, y: 0 }) + el("a:ext", { cx, cy })) +
-      el("a:prstGeom", { prst: shape.geometry.preset }, el("a:avLst")) +
+    el("a:xfrm", xfrmAttrs, el("a:off", { x: 0, y: 0 }) + el("a:ext", { cx, cy })) +
+      el("a:prstGeom", { prst: shape.geometry.preset }, avLstXml) +
       fillXml +
       lnXml,
   );

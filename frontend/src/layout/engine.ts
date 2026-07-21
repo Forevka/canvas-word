@@ -2594,6 +2594,7 @@ function placedShapeOf(sb: ShapeBlock, width = sb.widthPx, height = sb.heightPx)
   const shape: PlacedShape = { preset: sb.geometry.preset, width, height };
   if (sb.fill) shape.fill = sb.fill;
   if (sb.stroke) shape.stroke = sb.stroke;
+  if (sb.rotation) shape.rotation = sb.rotation;
   return shape;
 }
 

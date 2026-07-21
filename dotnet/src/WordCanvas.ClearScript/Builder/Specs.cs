@@ -37,8 +37,10 @@ public enum SectionBreakType { NextPage, EvenPage, OddPage }
 /// <summary>When line numbering restarts (OOXML w:lnNumType/@w:restart).</summary>
 public enum LineNumberRestart { Continuous, NewPage, NewSection }
 public enum ImageWrap { Block, Square }
-/// <summary>Drawing-shape preset geometry (OOXML a:prstGeom@prst). PR 1 set.</summary>
-public enum ShapePreset { Rect, Ellipse, Line }
+/// <summary>Drawing-shape preset geometry (OOXML a:prstGeom@prst).</summary>
+public enum ShapePreset { Rect, RoundRect, Ellipse, Triangle, Diamond, RightArrow, LeftArrow, Line }
+/// <summary>Drawing-shape outline dash pattern (OOXML a:prstDash@val).</summary>
+public enum ShapeDash { Solid, Dash, Dot, DashDot, LgDash }
 public enum PageSizeName { Letter, Legal, A4, A3, Tabloid }
 /// <summary>Block/inline equation horizontal placement (display equations only).</summary>
 public enum EquationAlign { Left, Center, Right }
@@ -93,9 +95,22 @@ internal static class EnumJs
     public static string Wrap(ImageWrap w) => w == ImageWrap.Square ? "square" : "block";
     public static string ShapePreset(ShapePreset p) => p switch
     {
+        WordCanvas.ClearScript.Builder.ShapePreset.RoundRect => "roundRect",
         WordCanvas.ClearScript.Builder.ShapePreset.Ellipse => "ellipse",
+        WordCanvas.ClearScript.Builder.ShapePreset.Triangle => "triangle",
+        WordCanvas.ClearScript.Builder.ShapePreset.Diamond => "diamond",
+        WordCanvas.ClearScript.Builder.ShapePreset.RightArrow => "rightArrow",
+        WordCanvas.ClearScript.Builder.ShapePreset.LeftArrow => "leftArrow",
         WordCanvas.ClearScript.Builder.ShapePreset.Line => "line",
         _ => "rect",
+    };
+    public static string ShapeDash(ShapeDash d) => d switch
+    {
+        WordCanvas.ClearScript.Builder.ShapeDash.Dash => "dash",
+        WordCanvas.ClearScript.Builder.ShapeDash.Dot => "dot",
+        WordCanvas.ClearScript.Builder.ShapeDash.DashDot => "dashDot",
+        WordCanvas.ClearScript.Builder.ShapeDash.LgDash => "lgDash",
+        _ => "solid",
     };
     public static string Orient(Orientation o) => o == Orientation.Landscape ? "landscape" : "portrait";
     public static string BreakType(SectionBreakType t) => t switch
@@ -593,7 +608,10 @@ public sealed record ShapeStroke
     public string? Color { get; init; }
     public double WidthPt { get; init; } = 1;
     public bool None { get; init; }
+    /// <summary>Dash pattern (OOXML a:prstDash). Solid = a plain line (no key emitted).</summary>
+    public ShapeDash Dash { get; init; } = ShapeDash.Solid;
     public static ShapeStroke Solid(string color, double widthPt = 1) => new() { Color = color, WidthPt = widthPt };
+    public static ShapeStroke Dashed(string color, ShapeDash dash, double widthPt = 1) => new() { Color = color, WidthPt = widthPt, Dash = dash };
     public static ShapeStroke NoOutline => new() { None = true };
 
     internal ScriptObject ToJs(WordCanvasEngine e)
@@ -607,6 +625,7 @@ public sealed record ShapeStroke
         {
             Js.Set(o, "color", c);
             Js.Set(o, "widthPt", WidthPt);
+            if (Dash != ShapeDash.Solid) Js.Set(o, "dash", EnumJs.ShapeDash(Dash));
         }
         else
         {
@@ -618,7 +637,8 @@ public sealed record ShapeStroke
 }
 
 /// <summary>Options for <c>.Shape()</c> — the box the preset geometry is drawn into
-/// (required, like an image), plus an optional alignment, fill and outline.</summary>
+/// (required, like an image), plus an optional alignment, fill, outline, clockwise
+/// rotation (degrees) and raw a:avLst adjust guides (name → number).</summary>
 public sealed record ShapeOptions
 {
     public required double WidthPx { get; init; }
@@ -626,6 +646,10 @@ public sealed record ShapeOptions
     public TextAlign? Align { get; init; }
     public ShapeFill? Fill { get; init; }
     public ShapeStroke? Stroke { get; init; }
+    /// <summary>Clockwise rotation in degrees (a:xfrm@rot). Null = none.</summary>
+    public double? Rotation { get; init; }
+    /// <summary>Raw a:avLst adjust guides (guide name → value) for parametric presets.</summary>
+    public IReadOnlyDictionary<string, double>? Adjust { get; init; }
 
     internal ScriptObject ToJs(WordCanvasEngine e)
     {
@@ -640,6 +664,13 @@ public sealed record ShapeOptions
         }
         if (Fill is { } f) Js.Set(o, "fill", f.ToJs(e));
         if (Stroke is { } s) Js.Set(o, "stroke", s.ToJs(e));
+        if (Rotation is { } r) Js.Set(o, "rotation", r);
+        if (Adjust is { Count: > 0 })
+        {
+            var adj = Js.Obj(e);
+            foreach (var kv in Adjust) Js.Set(adj, kv.Key, kv.Value);
+            Js.Set(o, "adjust", adj);
+        }
         return o;
     }
 }

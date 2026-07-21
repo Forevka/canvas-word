@@ -91,8 +91,13 @@ export interface ShapeOptions {
   align?: "left" | "center" | "right";
   /** Solid fill (CSS hex) or explicit no-fill; omit for the theme-neutral default. */
   fill?: ShapeFill;
-  /** Solid outline (CSS hex + point width) or explicit no-outline; omit for default. */
+  /** Solid outline (CSS hex + point width, optional `dash`) or explicit no-outline;
+   *  omit for default. */
   stroke?: ShapeStroke;
+  /** Clockwise rotation in degrees (a:xfrm@rot); omit for none. */
+  rotation?: number;
+  /** Raw a:avLst adjust guides (name → number) for parametric presets. */
+  adjust?: Record<string, number>;
 }
 
 export interface ListItem {

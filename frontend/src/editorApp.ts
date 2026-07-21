@@ -5,6 +5,7 @@ import { mediaIdsOf, mediaStore, mediaUrl, pruneOrphanMedia, registerMediaBytes,
 import { SyncClient } from "./sync/SyncClient";
 import { createEditor, type CurrentFormat, type EditMode, type InspectorProbe, type ReviewOpEnvelope } from "./index";
 import type { Command } from "./editor/state";
+import type { ShapeDash, ShapePreset } from "@cw/shared";
 import { createLayoutEngine } from "./layout/engine";
 import { sampleDoc } from "./model/sampleDoc";
 import { stressDoc } from "./model/stressDoc";
@@ -61,6 +62,7 @@ import {
   insertImage,
   insertImageInCell,
   insertShape,
+  setShapeProps,
   insertEquation,
   insertInlineEquation,
   insertSymbolCmd,
@@ -681,6 +683,12 @@ let openFind: () => void = () => {};
 const toolbar = shell.toolbar;
 const showToolbar = !readonly && (runtime.view?.toolbar ?? true);
 if (!showToolbar) toolbar.style.display = "none";
+// Drawing-shape fill/outline pickers: defined inside the ribbon block (they reuse
+// its colour-popover machinery) but also called from the floating shape context
+// toolbar registered further below, so their handles are hoisted here. No-ops until
+// the ribbon block assigns them (a doc with no ribbon has no popover chrome anyway).
+let shapeFillPopover: (anchor: HTMLElement) => void = () => {};
+let shapeOutlinePopover: (anchor: HTMLElement) => void = () => {};
 if (toolbar) {
   // ===== Word-style tabbed ribbon ==========================================
   // A tab strip drives a stack of panels (one visible at a time). Each panel
@@ -1026,6 +1034,114 @@ if (toolbar) {
     wrap.appendChild(more);
     openPop(anchor, wrap);
   };
+
+  // --- drawing-shape fill / outline pickers (both surfaces share these) --------
+  const SHAPE_STROKE_WIDTHS = [0.5, 1, 1.5, 2, 3, 4.5, 6];
+  const SHAPE_DASHES: { dash: ShapeDash; name: string }[] = [
+    { dash: "solid", name: "Solid" },
+    { dash: "dash", name: "Dash" },
+    { dash: "dot", name: "Dot" },
+    { dash: "dashDot", name: "Dash-dot" },
+    { dash: "lgDash", name: "Long dash" },
+  ];
+  const dispatchShape = (id: string, patch: Parameters<typeof setShapeProps>[1]): void => {
+    editor.dispatch(setShapeProps(id, patch));
+    editor.focus();
+  };
+  /** Fill picker for the selected shape — the shared colour popover + a "No fill"
+   *  row (reuses the exact picker font-colour / highlight use). */
+  shapeFillPopover = (anchor: HTMLElement): void => {
+    const id = editor.getSelectedObject();
+    const shape = editor.getSelectedShape();
+    if (!id || !shape) return;
+    const last = shape.fill && "color" in shape.fill ? shape.fill.color : "#bcd6ef";
+    colorPopover(
+      anchor,
+      last,
+      "No fill",
+      (c) => dispatchShape(id, { fill: { color: c } }),
+      () => dispatchShape(id, { fill: { none: true } }),
+    );
+  };
+  /** Outline picker for the selected shape: colour swatches + width + dash selectors
+   *  + a "No outline" row. Each control keeps the shape's other outline facets. */
+  shapeOutlinePopover = (anchor: HTMLElement): void => {
+    const id = editor.getSelectedObject();
+    const shape = editor.getSelectedShape();
+    if (!id || !shape) return;
+    // The concrete outline the controls edit (defaults when the shape has none).
+    const cur = shape.stroke && "color" in shape.stroke ? shape.stroke : null;
+    const base = (): { color: string; widthPt: number; dash?: ShapeDash } => ({
+      color: cur?.color ?? "#41719c",
+      widthPt: cur?.widthPt ?? 1,
+      ...(cur?.dash ? { dash: cur.dash } : {}),
+    });
+    const wrap = el("div");
+    const grid = el("div", "cw-swatches");
+    for (const c of PALETTE) {
+      const s = el("button");
+      s.style.background = c;
+      s.title = c;
+      s.addEventListener("click", () => {
+        closePop();
+        dispatchShape(id, { stroke: { ...base(), color: c } });
+      });
+      grid.appendChild(s);
+    }
+    wrap.appendChild(grid);
+    // Width + dash rows: a labelled <select> each, applied on change.
+    const mkRow = (labelText: string, sel: HTMLSelectElement): void => {
+      const row = el("div", "pop-row");
+      row.style.cssText = "display:flex;align-items:center;gap:6px;padding:4px 2px;";
+      const lab = el("span");
+      lab.textContent = labelText;
+      lab.style.cssText = "min-width:52px;font-size:12px;color:#605e5c;";
+      sel.style.cssText = "flex:1;height:24px;";
+      row.append(lab, sel);
+      wrap.appendChild(row);
+    };
+    const widthSel = el("select");
+    for (const w of SHAPE_STROKE_WIDTHS) {
+      const o = el("option");
+      o.value = String(w);
+      o.textContent = `${w} pt`;
+      if (Math.abs(w - (cur?.widthPt ?? 1)) < 1e-6) o.selected = true;
+      widthSel.appendChild(o);
+    }
+    widthSel.addEventListener("change", () => {
+      dispatchShape(id, { stroke: { ...base(), widthPt: Number(widthSel.value) } });
+    });
+    mkRow("Width", widthSel);
+    const dashSel = el("select");
+    for (const d of SHAPE_DASHES) {
+      const o = el("option");
+      o.value = d.dash;
+      o.textContent = d.name;
+      if ((cur?.dash ?? "solid") === d.dash) o.selected = true;
+      dashSel.appendChild(o);
+    }
+    dashSel.addEventListener("change", () => {
+      const b = base();
+      const dash = dashSel.value as ShapeDash;
+      dispatchShape(id, { stroke: dash === "solid" ? { color: b.color, widthPt: b.widthPt } : { color: b.color, widthPt: b.widthPt, dash } });
+    });
+    mkRow("Dash", dashSel);
+    const none = el("button", "pop-action");
+    none.textContent = "No outline";
+    none.addEventListener("click", () => {
+      closePop();
+      dispatchShape(id, { stroke: { none: true } });
+    });
+    wrap.appendChild(none);
+    const more = el("button", "pop-action");
+    more.textContent = "More colours…";
+    more.addEventListener("click", () => {
+      closePop();
+      pickColor(base().color, (c) => dispatchShape(id, { stroke: { ...base(), color: c } }));
+    });
+    wrap.appendChild(more);
+    openPop(anchor, wrap);
+  };
   /** Word's split colour button: the face applies the last colour, the caret
    *  opens a palette popover. `clearLabel`/`onClear` add a "No Color"/"Automatic"
    *  row; `active` wires the face into the pressed-state sync (highlight toggles). */
@@ -1154,18 +1270,22 @@ if (toolbar) {
     openPop(anchor, wrap);
   };
 
-  /** Shapes gallery: a small preset picker (rect / ellipse / line) that inserts the
-   *  chosen shape at the caret. Mirrors the table grid picker's popover pattern; the
-   *  gallery grows with the preset set in PR 2. */
+  /** Shapes gallery: a preset picker that inserts the chosen shape at the caret.
+   *  Mirrors the table grid picker's popover pattern. */
   const shapesPopover = (anchor: HTMLElement): void => {
     const wrap = el("div");
     const grid = el("div", "cw-grid");
-    grid.style.gridTemplateColumns = "repeat(3, 28px)";
+    grid.style.gridTemplateColumns = "repeat(4, 28px)";
     const label = el("div", "cw-grid-label");
     label.textContent = "Insert shape";
-    const presets: { preset: "rect" | "ellipse" | "line"; icon: string; name: string }[] = [
+    const presets: { preset: ShapePreset; icon: string; name: string }[] = [
       { preset: "rect", icon: ICONS.shapeRect, name: "Rectangle" },
+      { preset: "roundRect", icon: ICONS.shapeRoundRect, name: "Rounded rectangle" },
       { preset: "ellipse", icon: ICONS.shapeEllipse, name: "Ellipse" },
+      { preset: "triangle", icon: ICONS.shapeTriangle, name: "Triangle" },
+      { preset: "diamond", icon: ICONS.shapeDiamond, name: "Diamond" },
+      { preset: "rightArrow", icon: ICONS.shapeRightArrow, name: "Right arrow" },
+      { preset: "leftArrow", icon: ICONS.shapeLeftArrow, name: "Left arrow" },
       { preset: "line", icon: ICONS.shapeLine, name: "Line" },
     ];
     for (const p of presets) {
@@ -1796,7 +1916,11 @@ if (toolbar) {
     (f) => f.imageSelected,
     "select an image first",
   );
-  group(insert, "Shape"); // acts on the selected shape (fill/outline arrive in PR 2)
+  group(insert, "Shape"); // acts on the selected shape
+  const shapeFillBtn = btn(ICONS.shapeFill, "Shape fill", () => shapeFillPopover(shapeFillBtn), true);
+  enable(shapeFillBtn, (f) => f.shapeSelected, "select a shape first");
+  const shapeOutlineBtn = btn(ICONS.outline, "Shape outline (colour, width, dash)", () => shapeOutlinePopover(shapeOutlineBtn), true);
+  enable(shapeOutlineBtn, (f) => f.shapeSelected, "select a shape first");
   enable(
     btn(ICONS.trash, "Delete shape", () => {
       if (editor.getSelectedObject()) {
@@ -3344,6 +3468,8 @@ if (!readonly) {
     createShapeContextToolbar({
       anchorRect: () => editor.getSelectedShapeRect(),
       actions: {
+        fill: (btn) => shapeFillPopover(btn),
+        outline: (btn) => shapeOutlinePopover(btn),
         alignLeft: () => editor.align("left"),
         alignCenter: () => editor.align("center"),
         alignRight: () => editor.align("right"),

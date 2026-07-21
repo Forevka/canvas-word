@@ -80,6 +80,17 @@ describe("setShapeProps", () => {
     expect(shapeOf(restored, "a").stroke).toEqual({ color: "#445566", widthPt: 2 });
   });
 
+  it("sets rotation and geometry (preset + adjust); the op inverse restores them", () => {
+    const base = docOf(shape("a"));
+    const trn = trnOf({ doc: base, selection: null }, setShapeProps("a", { geometry: { preset: "roundRect", adjust: { adj: 18000 } }, rotation: 20 }));
+    const res = applyOp(base, trn.ops[0]!);
+    expect(shapeOf(res.doc, "a").geometry).toEqual({ preset: "roundRect", adjust: { adj: 18000 } });
+    expect(shapeOf(res.doc, "a").rotation).toBe(20);
+    const undone = applyOp(res.doc, res.inverse).doc;
+    expect(shapeOf(undone, "a").geometry).toEqual({ preset: "rect" });
+    expect(shapeOf(undone, "a").rotation).toBeUndefined();
+  });
+
   it("returns null (no-op) for a missing shape id", () => {
     expect(setShapeProps("nope", { widthPx: 10 })({ doc: docOf(shape("a")), selection: null })).toBeNull();
   });

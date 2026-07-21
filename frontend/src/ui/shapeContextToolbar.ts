@@ -1,14 +1,19 @@
-// Shape context toolbar (Word's drawing-shape hover bar): align + delete, shown
-// above a selected drawing shape. Mirrors imageContextToolbar as a ContextToolbar so
-// the shared manager coordinates it with the image/text/link bars. Priority 31 — just
-// above the image bar (30), so a selected shape always wins. Fill/outline controls
-// arrive in PR 2 (the group is intentionally left extendable).
+// Shape context toolbar (Word's drawing-shape hover bar): fill, outline, align +
+// delete, shown above a selected drawing shape. Mirrors imageContextToolbar as a
+// ContextToolbar so the shared manager coordinates it with the image/text/link bars.
+// Priority 31 — just above the image bar (30), so a selected shape always wins. Fill
+// and Outline open the host's shared colour popover (anchored to their button), the
+// same picker font-colour / highlight use — no new colour UI.
 
 import { ICONS } from "./icons";
 import { createFloatingBar, type ContextToolbar } from "./contextToolbar";
 import type { AnchorRect } from "./floatingBarPosition";
 
 export interface ShapeContextToolbarActions {
+  /** Open the fill picker anchored to `anchor` (the Fill button). */
+  fill(anchor: HTMLElement): void;
+  /** Open the outline picker (colour + width + dash) anchored to `anchor`. */
+  outline(anchor: HTMLElement): void;
   alignLeft(): void;
   alignCenter(): void;
   alignRight(): void;
@@ -25,12 +30,12 @@ export interface ShapeContextToolbarDeps {
 export function createShapeContextToolbar(deps: ShapeContextToolbarDeps): ContextToolbar {
   const fb = createFloatingBar({ className: "cw-img-toolbar", ariaLabel: "Shape" });
 
-  const ibtn = (icon: string, title: string, onClick: () => void, cls = ""): void => {
+  const ibtn = (icon: string, title: string, onClick: (btn: HTMLButtonElement) => void, cls = ""): void => {
     const b = document.createElement("button");
     if (cls) b.className = cls;
     b.innerHTML = icon;
     b.title = title;
-    b.addEventListener("click", onClick);
+    b.addEventListener("click", () => onClick(b));
     fb.el.appendChild(b);
   };
   const sep = (): void => {
@@ -39,6 +44,9 @@ export function createShapeContextToolbar(deps: ShapeContextToolbarDeps): Contex
     fb.el.appendChild(s);
   };
 
+  ibtn(ICONS.shapeFill, "Fill colour", (b) => deps.actions.fill(b));
+  ibtn(ICONS.outline, "Outline (colour, width, dash)", (b) => deps.actions.outline(b));
+  sep();
   ibtn(ICONS.alignLeft, "Align left", () => deps.actions.alignLeft());
   ibtn(ICONS.alignCenter, "Align center", () => deps.actions.alignCenter());
   ibtn(ICONS.alignRight, "Align right", () => deps.actions.alignRight());

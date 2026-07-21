@@ -51,17 +51,20 @@ export interface ImagePropsPatch {
   crop?: ImageBlock["crop"] | null;
 }
 
-/** setShapeProps payload — the drawing-shape analog of ImagePropsPatch. `fill`
- *  and `stroke` accept `null` as an explicit "clear this field" sentinel (plain
- *  `undefined` means "leave unchanged", which exactOptionalPropertyTypes needs to
- *  keep distinguishable). PR 1 uses widthPx/heightPx (drag-resize) + align; fill /
- *  stroke are wired through for the PR 2 fill/outline UI. */
+/** setShapeProps payload — the drawing-shape analog of ImagePropsPatch. `fill`,
+ *  `stroke` and `rotation` accept `null` as an explicit "clear this field" sentinel
+ *  (plain `undefined` means "leave unchanged", which exactOptionalPropertyTypes
+ *  needs to keep distinguishable). widthPx/heightPx (drag-resize) + align come from
+ *  PR 1; fill / stroke drive the PR 2 fill/outline UI; geometry (preset + adjust)
+ *  and rotation let a shape's kind/orientation change in place. */
 export interface ShapePropsPatch {
   widthPx?: number;
   heightPx?: number;
   align?: ShapeBlock["align"];
+  geometry?: ShapeBlock["geometry"];
   fill?: ShapeBlock["fill"] | null;
   stroke?: ShapeBlock["stroke"] | null;
+  rotation?: number | null;
 }
 
 /** setTableProps payload — table-LEVEL fields (w:tblPr): indent + the cascade
@@ -843,12 +846,15 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       if (op.patch.widthPx !== undefined) oldPatch.widthPx = block.widthPx;
       if (op.patch.heightPx !== undefined) oldPatch.heightPx = block.heightPx;
       if (op.patch.align !== undefined) oldPatch.align = block.align;
+      if (op.patch.geometry !== undefined) oldPatch.geometry = block.geometry;
       if (op.patch.fill !== undefined) oldPatch.fill = block.fill ?? null;
       if (op.patch.stroke !== undefined) oldPatch.stroke = block.stroke ?? null;
+      if (op.patch.rotation !== undefined) oldPatch.rotation = block.rotation ?? null;
       const updated: ShapeBlock = { ...block, revision: block.revision + 1 };
       if (op.patch.widthPx !== undefined) updated.widthPx = op.patch.widthPx;
       if (op.patch.heightPx !== undefined) updated.heightPx = op.patch.heightPx;
       if (op.patch.align !== undefined) updated.align = op.patch.align;
+      if (op.patch.geometry !== undefined) updated.geometry = op.patch.geometry;
       if (op.patch.fill !== undefined) {
         if (op.patch.fill === null) delete updated.fill;
         else updated.fill = op.patch.fill;
@@ -856,6 +862,10 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
       if (op.patch.stroke !== undefined) {
         if (op.patch.stroke === null) delete updated.stroke;
         else updated.stroke = op.patch.stroke;
+      }
+      if (op.patch.rotation !== undefined) {
+        if (op.patch.rotation === null) delete updated.rotation;
+        else updated.rotation = op.patch.rotation;
       }
       return {
         doc: replaceLocatedBlock(doc, loc, updated),

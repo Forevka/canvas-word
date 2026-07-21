@@ -74,36 +74,86 @@ function paintBulletShape(ctx: CanvasRenderingContext2D, shape: BulletShape, col
   ctx.restore();
 }
 
+/** Trace a preset geometry into the current path of `ctx`, inside the box (x,y,w,h).
+ *  The polygon presets share one helper; ellipse/roundRect/line are special-cased.
+ *  Constant-for-constant mirror of the PDF painter's shapePathPdf so a shape looks
+ *  identical on screen and in the export. */
+function traceShapePath(ctx: CanvasRenderingContext2D, preset: PlacedShape["preset"], x: number, y: number, w: number, h: number): void {
+  ctx.beginPath();
+  const poly = (pts: [number, number][]): void => {
+    ctx.moveTo(pts[0]![0], pts[0]![1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]![0], pts[i]![1]);
+    ctx.closePath();
+  };
+  switch (preset) {
+    case "ellipse":
+      ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+      return;
+    case "line":
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + w, y + h);
+      return;
+    case "roundRect": {
+      const r = Math.min(w, h) * 0.18;
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+      return;
+    }
+    case "triangle":
+      poly([[x + w / 2, y], [x + w, y + h], [x, y + h]]);
+      return;
+    case "diamond":
+      poly([[x + w / 2, y], [x + w, y + h / 2], [x + w / 2, y + h], [x, y + h / 2]]);
+      return;
+    case "rightArrow": {
+      const head = Math.min(0.4 * w, w);
+      const t = y + h * 0.25, b = y + h * 0.75;
+      poly([[x, t], [x + w - head, t], [x + w - head, y], [x + w, y + h / 2], [x + w - head, y + h], [x + w - head, b], [x, b]]);
+      return;
+    }
+    case "leftArrow": {
+      const head = Math.min(0.4 * w, w);
+      const t = y + h * 0.25, b = y + h * 0.75;
+      poly([[x + w, t], [x + head, t], [x + head, y], [x, y + h / 2], [x + head, y + h], [x + head, b], [x + w, b]]);
+      return;
+    }
+    default: // rect
+      ctx.rect(x, y, w, h);
+  }
+}
+
 /** Draw a placed drawing shape's preset geometry into its box at (x,y): the fill
- *  path, then the stroke. Constant-for-constant mirror of the PDF shape painter
- *  (export/pdf/paintBlock.ts). Line is the box diagonal (OOXML prst="line"). */
+ *  path, then the (optionally dashed) stroke, about the box center when rotated.
+ *  Constant-for-constant mirror of the PDF shape painter (export/pdf/paintBlock.ts).
+ *  Line is the box diagonal (OOXML prst="line"). */
 function paintShapeCanvas(ctx: CanvasRenderingContext2D, shape: PlacedShape, x: number, y: number): void {
   const { fill, stroke } = resolveShapePaint(shape);
   const w = shape.width;
   const h = shape.height;
   ctx.save();
-  const tracePath = (): void => {
-    ctx.beginPath();
-    if (shape.preset === "ellipse") {
-      ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
-    } else if (shape.preset === "line") {
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + w, y + h);
-    } else {
-      ctx.rect(x, y, w, h);
-    }
-  };
+  if (shape.rotation) {
+    const cx = x + w / 2, cy = y + h / 2;
+    ctx.translate(cx, cy);
+    ctx.rotate((shape.rotation * Math.PI) / 180);
+    ctx.translate(-cx, -cy);
+  }
   // A line has no interior to fill.
   if (fill && shape.preset !== "line") {
-    tracePath();
+    traceShapePath(ctx, shape.preset, x, y, w, h);
     ctx.fillStyle = fill;
     ctx.fill();
   }
   if (stroke) {
-    tracePath();
+    traceShapePath(ctx, shape.preset, x, y, w, h);
     ctx.lineWidth = stroke.widthPx;
     ctx.strokeStyle = stroke.color;
+    ctx.setLineDash(stroke.dash);
     ctx.stroke();
+    ctx.setLineDash([]);
   }
   ctx.restore();
 }
