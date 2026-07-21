@@ -46,6 +46,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`ShapeOptions.Path` + the `ShapePathSegment.MoveTo/LineTo/CubicBezierTo/Close` factories); the default
   in-editor document and the C# showcase demonstrate a five-pointed star drawn as a freeform path. Presets
   remain the common case — custom geometry is opt-in.
+- **Drawing shapes — editable text boxes (issue #206, Part 6 / #219).** A shape's text box body
+  (`ShapeBlock.text`) is now **editable**: **double-click** a text box — or select the shape and press
+  **Enter** — to drop the caret inside, then type, select, and format exactly like body text. **Escape**
+  pops back to selecting the shape as an object; clicking outside the box commits. The box is a **closed
+  sub-flow**: arrow keys, Home/End, Ctrl+A, and click-to-caret stay within it (they never wander into or
+  out of the box), mirroring how a table cell scopes its own content. All the existing paragraph/run ops
+  (insert / delete / **Enter to split** / **Backspace to merge** / formatting) target the nested
+  `wps:txbx` paragraphs by addressing them through their location path, so **undo/redo round-trips** and
+  edits **persist losslessly** back through `wps:txbx` on save. Caret and selection geometry route into
+  the box through a scoped layout index that shifts the box's nested paragraphs (laid out in the shape's
+  local frame) into absolute page coordinates. The default in-editor document's text box is now editable.
 - **Drawing shapes — positioning parity (issue #206, Part 4 / #217).** Shapes gain the image's
   positioning surface: **square text-wrap** (the shape floats at the left/right margin per its align and
   text flows around it), **absolute float anchoring** (a `wp:anchor` shape that sits **behind** or **in

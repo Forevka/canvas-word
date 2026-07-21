@@ -157,7 +157,7 @@ describe("default showcase doc: export → open → export fidelity", () => {
       tables: 11,
       cells: 203,
       images: 4,
-      chars: 24936,
+      chars: 24996,
       sectionBreaks: 2,
       equations: 5,
       shapes: 27,

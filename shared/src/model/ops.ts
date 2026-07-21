@@ -418,6 +418,21 @@ function replaceCellBlocks(
   return withContainerBlocks(doc, where, blocks);
 }
 
+/** Path-clone a top-level drawing shape (body or band) replacing its text box
+ *  body's paragraph list (revision bumped). Mirrors replaceCellBlocks for the
+ *  wps:txbx sub-flow — editable text boxes (issue #219). */
+function replaceShapeTextBlocks(
+  doc: Document,
+  where: Container,
+  bi: number,
+  textBlocks: Paragraph[],
+): Document {
+  const blocks = containerBlocks(doc, where).slice();
+  const shape = blocks[bi] as ShapeBlock;
+  blocks[bi] = { ...shape, text: { ...shape.text!, blocks: textBlocks }, revision: shape.revision + 1 };
+  return withContainerBlocks(doc, where, blocks);
+}
+
 /** First caret-capable paragraph in a set of rows (cells may start with images). */
 export function firstParagraphInRows(rows: TableRow[]): Paragraph | undefined {
   for (const row of rows) {
@@ -674,6 +689,12 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
         const paras = doc.endnotes![loc.noteId]!.slice();
         paras.splice(loc.pi, 1, head, tail);
         next = { ...doc, endnotes: { ...doc.endnotes, [loc.noteId]: paras } };
+      } else if (loc.kind === "shape") {
+        // Split a paragraph inside a shape's text box body (wps:txbx sub-flow).
+        const shape = containerBlocks(doc, loc.where)[loc.bi] as ShapeBlock;
+        const textBlocks = shape.text!.blocks.slice();
+        textBlocks.splice(loc.pi, 1, head, tail);
+        next = replaceShapeTextBlocks(doc, loc.where, loc.bi, textBlocks);
       } else {
         const where: Container = loc.kind === "band" ? loc.band : "body";
         const blocks = containerBlocks(doc, where).slice();
@@ -711,6 +732,11 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
         const candidate = doc.endnotes![loc.noteId]![loc.pi + 1];
         if (!candidate) throw new Error("mergeParagraphs: no next paragraph in endnote");
         nextPara = candidate;
+      } else if (loc.kind === "shape") {
+        const shape = containerBlocks(doc, loc.where)[loc.bi] as ShapeBlock;
+        const candidate = shape.text!.blocks[loc.pi + 1];
+        if (!candidate) throw new Error("mergeParagraphs: no next paragraph in shape text");
+        nextPara = candidate;
       } else {
         const where: Container = loc.kind === "band" ? loc.band : "body";
         const candidate = containerBlocks(doc, where)[loc.bi + 1];
@@ -738,6 +764,11 @@ export function applyOp(doc: Document, op: Op): ApplyResult {
         const paras = doc.endnotes![loc.noteId]!.slice();
         paras.splice(loc.pi, 2, merged);
         next = { ...doc, endnotes: { ...doc.endnotes, [loc.noteId]: paras } };
+      } else if (loc.kind === "shape") {
+        const shape = containerBlocks(doc, loc.where)[loc.bi] as ShapeBlock;
+        const textBlocks = shape.text!.blocks.slice();
+        textBlocks.splice(loc.pi, 2, merged);
+        next = replaceShapeTextBlocks(doc, loc.where, loc.bi, textBlocks);
       } else {
         const where: Container = loc.kind === "band" ? loc.band : "body";
         const blocks = containerBlocks(doc, where).slice();

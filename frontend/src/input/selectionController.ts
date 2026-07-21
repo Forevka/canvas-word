@@ -42,6 +42,7 @@ import {
   type ColumnBoundaryHit,
   type RowBoundaryHit,
   type GeoScope,
+  type BandScope,
 } from "../layout/geometry";
 import type { ColumnGuide, RowGuide, PagePoint } from "../paint/renderer";
 import type { CellSelection } from "../editor/state";
@@ -67,9 +68,9 @@ export interface SelectionControllerDeps {
   /** Delete the current selection (Ctrl+X after the copy half). */
   onDeleteSelection(): void;
   /** Story-edit scope (header/footer mode). Null = editing the body. */
-  getStory(): GeoScope | null;
+  getStory(): BandScope | null;
   /** Enter (band+page) or exit (null) story mode; triggers relayout + dimming. */
-  setStory(scope: GeoScope | null): void;
+  setStory(scope: BandScope | null): void;
   /** An interactive embedder decoration is at this client point (its source-spec
    *  index), or null. Drives the hover cursor. */
   decorationAt(clientX: number, clientY: number): number | null;
@@ -104,6 +105,26 @@ export interface SelectionControllerDeps {
    *  press (checkbox toggle); false lets the caret place normally (dropdown /
    *  date popups open beside the caret). */
   onSdtPress(pos: DocPosition): boolean;
+
+  // ---- shape text box editing (issue #219) ------------------------------
+  /** The drawing shape whose text box body is being caret-edited, or null. */
+  getActiveShapeText(): string | null;
+  /** The geometry scope for the active shape text box (null when not editing). */
+  getShapeScope(): GeoScope | null;
+  /** The shape's text box paragraphs, in order (the box's closed nav sub-flow). */
+  getShapeTextParagraphs(shapeId: string): Paragraph[];
+  /** The shape's placed box rect (for in-box hit routing), or null. */
+  shapeTextRect(shapeId: string): { pageIndex: number; x: number; y: number; width: number; height: number } | null;
+  /** Does this shape carry an editable text box body? */
+  shapeHasText(shapeId: string): boolean;
+  /** Enter a shape's text box, placing the caret at `pos` inside it. */
+  enterShapeText(shapeId: string, pos: DocPosition): void;
+  /** Leave the active text box: `toObject` pops back to selecting the shape
+   *  (Escape); false just clears the session (a click outside commits). */
+  exitShapeText(toObject: boolean): void;
+  /** Enter the currently-selected shape's text box (Enter on a selected shape).
+   *  Returns true when it did. */
+  enterSelectedShapeText(): boolean;
 }
 
 export interface SelectionController {
@@ -161,12 +182,16 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
 
   // ---- model text helpers ----------------------------------------------
 
-  const scope = (): GeoScope | undefined => deps.getStory() ?? undefined;
+  const scope = (): GeoScope | undefined => deps.getStory() ?? deps.getShapeScope() ?? undefined;
 
   // Navigation-order paragraphs for the ACTIVE story: while story-editing,
   // the variant CONTAINER that renders on the story's page (first/even bands
   // override the default); otherwise the body (including table cells).
   const paragraphs = (): Paragraph[] => {
+    // Editing a shape text box: the box is a CLOSED sub-flow — the caret navigates
+    // only its own paragraphs and stops at the box edges (#219).
+    const shapeId = deps.getActiveShapeText();
+    if (shapeId) return deps.getShapeTextParagraphs(shapeId);
     const story = deps.getStory();
     if (story) {
       const pg = deps.getTree().pages[story.pageIndex];
@@ -362,12 +387,26 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
       // A resize handle runs its own pointer-capture loop; the synthetic mousedown
       // it also emits must not re-run selection/caret logic here.
       if ((ev.target as HTMLElement | null)?.classList?.contains("cw-obj-handle")) return;
+      // Editing a shape text box: a click INSIDE the box moves the caret there (it
+      // must not re-grab the shape as an object); a click OUTSIDE commits and falls
+      // through to normal body handling (#219).
+      const editingShape = deps.getActiveShapeText();
+      let stayInBox = false;
+      if (editingShape) {
+        const r = deps.shapeTextRect(editingShape);
+        stayInBox =
+          !!r &&
+          pt.pageIndex === r.pageIndex &&
+          pt.x >= r.x && pt.x < r.x + r.width &&
+          pt.y >= r.y && pt.y < r.y + r.height;
+        if (!stayInBox) deps.exitShapeText(false);
+      }
       // Try to grab an object ONLY for a click genuinely inside the page (a gray-
       // area click is clamped onto the edge and must never "hit" a background
       // there — it should deselect, like Word). A background/floating image that
       // overlaps the header/footer margin still selects, since that's inside the
       // page. A double-click in a band falls through to enter the band story.
-      if (pt.inside && !(band && ev.detail >= 2)) {
+      if (pt.inside && !stayInBox && !(band && ev.detail >= 2)) {
         // Column/row grips live only in the body content area, never the margins.
         // Columns are tested FIRST so a cell-corner pixel prefers the column grip.
         if (!band) {
@@ -389,6 +428,16 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
         const objHit = hitTestSelectableObject(deps.getTree(), pt.pageIndex, pt.x, pt.y, scope());
         if (objHit) {
           ev.preventDefault();
+          // A double-click on a shape carrying a text box enters it (caret inside),
+          // instead of just (re)selecting the object — like Word (#219).
+          if (ev.detail >= 2 && deps.shapeHasText(objHit.blockId)) {
+            const sc: GeoScope = { shape: objHit.blockId, pageIndex: pt.pageIndex };
+            const inside = hitTest(deps.getTree(), pt.pageIndex, pt.x, pt.y, sc);
+            if (inside) {
+              deps.enterShapeText(objHit.blockId, inside);
+              return;
+            }
+          }
           deps.selectObject(objHit.blockId);
           // Anchored images/shapes can be dragged to reposition: arm a move here.
           const mv = movableObject(objHit.blockId);
@@ -416,8 +465,10 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
       }
       // Nothing grabbed the click (empty space, off-page, or a band region) → drop
       // any object selection. The body then falls through to caret placement; a
-      // band double-click proceeds to enter the band story below.
-      deps.selectObject(null);
+      // band double-click proceeds to enter the band story below. (When staying in
+      // an active text box, keep the caret there — don't clear the object, there is
+      // none, and don't disturb the editing session.)
+      if (!stayInBox) deps.selectObject(null);
     }
     if (story) {
       if (band === story.band) {
@@ -676,6 +727,12 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
     const sc = scope();
 
     if (ev.key === "Escape") {
+      // Editing a text box: Escape pops back to selecting the shape object (#219).
+      if (deps.getActiveShapeText()) {
+        deps.exitShapeText(true);
+        ev.preventDefault();
+        return;
+      }
       if (deps.hasSelectedObject()) {
         deps.selectObject(null);
         ev.preventDefault();
@@ -691,6 +748,14 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
       deps.deleteSelectedObject();
       ev.preventDefault();
       return;
+    }
+    // Enter on a selected shape carrying a text box enters it (caret inside) — the
+    // keyboard mirror of the double-click-to-edit gesture (#219).
+    if (ev.key === "Enter" && !ctrl && !ev.shiftKey && deps.hasSelectedObject()) {
+      if (deps.enterSelectedShapeText()) {
+        ev.preventDefault();
+        return;
+      }
     }
     if (ev.key === "Tab" && !ctrl) {
       if (deps.onTab(ev.shiftKey)) {

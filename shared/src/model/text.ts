@@ -2,7 +2,7 @@
 // boundaries (Intl.Segmenter — the same segmentation pretext breaks lines on),
 // and style-at-position for Word-style inheritance when typing.
 
-import type { BandContainer, Block, CharStyle, Document, Paragraph, Run } from "./document";
+import type { BandContainer, Block, CharStyle, Document, Paragraph, Run, ShapeBlock } from "./document";
 import { BAND_CONTAINERS } from "./document";
 
 export const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
@@ -46,6 +46,11 @@ const paragraphsInBlocks = (blocks: Block[], includeCells: boolean): Paragraph[]
       for (const row of b.rows) {
         for (const cell of row.cells) out.push(...paragraphsInBlocks(cell.blocks, includeCells));
       }
+    } else if (b.kind === "shape" && includeCells && b.text) {
+      // A drawing shape's text box body is a nested paragraph sub-flow (like a
+      // table cell). Include it so the caret can reach it and content ops locate
+      // its paragraphs (editable text boxes — issue #219).
+      out.push(...b.text.blocks);
     }
   }
   return out;
@@ -149,6 +154,34 @@ export const bandParagraphIds = (doc: Document): ReadonlySet<string> => {
   return s;
 };
 
+/** Ids of every paragraph nested in a drawing shape's text box body (wps:txbx),
+ *  memoized per document identity. Such paragraphs ARE in `paragraphsOf` (so ops
+ *  locate them and find/replace reaches them) but are a CLOSED sub-flow: body
+ *  caret navigation must skip them (the caret enters a box only on double-click /
+ *  Enter, then navigates the box in its own scope). Same WeakMap-on-identity
+ *  invalidation as the band-id set. #219. */
+const shapeTextIdCache = new WeakMap<Document, ReadonlySet<string>>();
+const collectShapeTextIds = (blocks: Block[], into: Set<string>): void => {
+  for (const b of blocks) {
+    if (b.kind === "shape" && b.text) {
+      for (const p of b.text.blocks) into.add(p.id);
+    } else if (b.kind === "table") {
+      for (const row of b.rows) for (const cell of row.cells) collectShapeTextIds(cell.blocks, into);
+    }
+  }
+};
+export const shapeTextParagraphIds = (doc: Document): ReadonlySet<string> => {
+  let s = shapeTextIdCache.get(doc);
+  if (!s) {
+    const built = new Set<string>();
+    collectShapeTextIds(doc.blocks, built);
+    for (const band of BAND_CONTAINERS) collectShapeTextIds(doc.section[band] ?? [], built);
+    s = built;
+    shapeTextIdCache.set(doc, s);
+  }
+  return s;
+};
+
 /** Body navigation order: the paragraphs the caret can reach while editing the
  *  body — `paragraphsOf` minus band paragraphs (they belong to their own header/
  *  footer story) and hidden (w:vanish) paragraphs (never laid out, so the caret
@@ -162,7 +195,10 @@ export const navigableParagraphs = (doc: Document): Paragraph[] => {
   let list = navCache.get(doc);
   if (!list) {
     const bandIds = bandParagraphIds(doc);
-    list = paragraphsOf(doc).filter((p) => !bandIds.has(p.id) && !isHiddenParagraph(p));
+    const shapeIds = shapeTextParagraphIds(doc);
+    list = paragraphsOf(doc).filter(
+      (p) => !bandIds.has(p.id) && !shapeIds.has(p.id) && !isHiddenParagraph(p),
+    );
     navCache.set(doc, list);
   }
   return list;
@@ -222,7 +258,11 @@ export type ParaLocation =
   | { kind: "cell"; where: "body" | BandContainer; bi: number; ri: number; ci: number; pi: number }
   | { kind: "band"; band: BandContainer; bi: number }
   | { kind: "footnote"; noteId: string; pi: number }
-  | { kind: "endnote"; noteId: string; pi: number };
+  | { kind: "endnote"; noteId: string; pi: number }
+  // A paragraph inside a top-level drawing shape's text box body (wps:txbx). `pi`
+  // indexes shape.text.blocks. Nested one level deep, like a table cell — shapes
+  // inside table cells keep read-only text (the walk goes one level down). #219.
+  | { kind: "shape"; where: "body" | BandContainer; bi: number; pi: number };
 
 /** Top-level block list of a container ("body" or a band story). */
 export const containerListOf = (doc: Document, where: "body" | BandContainer): Block[] =>
@@ -260,6 +300,11 @@ function buildLocIndex(doc: Document): Map<string, ParaLocation> {
             }
           }
         }
+      } else if (b.kind === "shape" && b.text) {
+        // Text box body: its paragraphs are editable, addressed one level deep.
+        for (let pi = 0; pi < b.text.blocks.length; pi++) {
+          set(b.text.blocks[pi]!.id, { kind: "shape", where, bi, pi });
+        }
       }
     }
   };
@@ -288,6 +333,10 @@ export function paragraphAt(doc: Document, loc: ParaLocation): Paragraph {
   if (loc.kind === "band") return doc.section[loc.band]![loc.bi] as Paragraph;
   if (loc.kind === "footnote") return doc.footnotes![loc.noteId]![loc.pi]!;
   if (loc.kind === "endnote") return doc.endnotes![loc.noteId]![loc.pi]!;
+  if (loc.kind === "shape") {
+    const shape = containerListOf(doc, loc.where)[loc.bi] as ShapeBlock;
+    return shape.text!.blocks[loc.pi]!;
+  }
   const table = containerListOf(doc, loc.where)[loc.bi] as Extract<Block, { kind: "table" }>;
   return table.rows[loc.ri]!.cells[loc.ci]!.blocks[loc.pi] as Paragraph;
 }
@@ -313,6 +362,15 @@ export function replaceParagraphAt(doc: Document, loc: ParaLocation, p: Paragrap
     const blocks = doc.blocks.slice();
     blocks[loc.bi] = p;
     return { ...doc, blocks };
+  }
+  if (loc.kind === "shape") {
+    const blocks = containerListOf(doc, loc.where).slice();
+    const shape = blocks[loc.bi] as ShapeBlock;
+    const textBlocks = shape.text!.blocks.slice();
+    textBlocks[loc.pi] = p;
+    blocks[loc.bi] = { ...shape, text: { ...shape.text!, blocks: textBlocks }, revision: shape.revision + 1 };
+    if (loc.where === "body") return { ...doc, blocks };
+    return { ...doc, section: { ...doc.section, [loc.where]: blocks } };
   }
   const blocks = containerListOf(doc, loc.where).slice();
   const table = blocks[loc.bi] as Extract<Block, { kind: "table" }>;
