@@ -494,6 +494,11 @@ export interface ImageBlock {
    *  Paint scales+clips to show only the window; export re-emits a:srcRect. */
   crop?: { left: number; top: number; right: number; bottom: number };
   align: "left" | "center" | "right";
+  /** Clockwise rotation in degrees (a:xfrm@rot on the pic, stored there as
+   *  60000ths of a degree). Paint-only — the image occupies its axis-aligned box
+   *  in flow and the painters rotate the bitmap about the box center. Mirrors
+   *  ShapeBlock.rotation. Absent ⇒ no rotation. */
+  rotation?: number;
   /** 'block' (default): occupies vertical space like a paragraph.
    *  'square': floats at the left/right margin (per align) and following text
    *  flows around it — pretext's per-line maxWidth makes this affordable. */

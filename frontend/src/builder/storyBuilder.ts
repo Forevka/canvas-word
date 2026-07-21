@@ -22,6 +22,8 @@ export interface ImageOptions {
   /** Crop insets (OOXML a:srcRect), each a 0..1 fraction trimmed off that edge —
    *  so widthPx/heightPx describe the cropped box. Absent = no crop. */
   crop?: { left: number; top: number; right: number; bottom: number };
+  /** Clockwise rotation in degrees (OOXML a:xfrm@rot); omit for none. */
+  rotation?: number;
   /** Linked ("Link to File") image: `src` must be an http(s) URL whose bytes stay
    *  OUTSIDE the document. Export re-emits it as `a:blip r:link` + an External
    *  relationship rather than packing bytes into word/media. Ignored for raw-byte
@@ -159,7 +161,7 @@ export class StoryBuilder {
     const url = typeof src === "string" ? src : bytesToDataUrl(src.data, src.mime);
     // Linked only makes sense for an external URL source (raw bytes are embedded).
     const externalSrc = opts.linked && typeof src === "string" ? url : undefined;
-    this.push(this.ctx.image(url, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.wrap, opts.crop, externalSrc));
+    this.push(this.ctx.image(url, opts.widthPx, opts.heightPx, opts.align ?? "left", opts.wrap, opts.crop, externalSrc, opts.rotation));
     return this;
   }
 

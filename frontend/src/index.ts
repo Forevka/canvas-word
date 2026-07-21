@@ -1205,6 +1205,19 @@ export function createEditor(
       }
       dispatch(setImageProps(selectedObject, { widthPx: w, heightPx: h }));
     },
+    // Rotate-handle drag: previews via a CSS transform on the frame (no model op),
+    // commits ONCE here on pointer-up. Shapes and images only (0 clears the field).
+    onRotateCommit: (deg) => {
+      if (!selectedObject) return;
+      const rotation = deg === 0 ? null : deg;
+      if (locateShape(doc, selectedObject)) {
+        dispatch(setShapeProps(selectedObject, { rotation }));
+        return;
+      }
+      if (locateImage(doc, selectedObject)) {
+        dispatch(setImageProps(selectedObject, { rotation }));
+      }
+    },
     // Live crop preview: each crop-handle release writes the crop field as a
     // TRANSIENT op (outside undo). exitCropMode reverts it and commits once.
     onCropPreview: (crop) => {
@@ -1244,7 +1257,7 @@ export function createEditor(
       // remaining slack), so the ghost must hold the same edge fixed; anchored
       // images are offset-positioned and keep their left edge.
       const anchor = img.anchor ? "left" : img.align;
-      objectFrame.show(rect, maxW, img.src, anchor, true);
+      objectFrame.show(rect, maxW, img.src, anchor, true, true, img.rotation ?? 0);
       return;
     }
     // Display equations resize too (uniform scale) — same 8-handle frame, but no
@@ -1265,7 +1278,7 @@ export function createEditor(
     if (shp) {
       const maxW = shp.anchor ? doc.section.pageWidthPx : contentWidth();
       const anchor = shp.anchor ? "left" : shp.align;
-      objectFrame.show(rect, maxW, undefined, anchor, true);
+      objectFrame.show(rect, maxW, undefined, anchor, true, true, shp.rotation ?? 0);
       return;
     }
     // Any other selectable object (e.g. a custom block) is selectable but NOT

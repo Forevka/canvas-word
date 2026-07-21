@@ -82,6 +82,12 @@ export interface ImageOptions {
   heightPx: number;
   align?: "left" | "center" | "right";
   wrap?: "block" | "square";
+  /** Crop insets (OOXML a:srcRect), each a 0..1 fraction trimmed off that edge. */
+  crop?: { left: number; top: number; right: number; bottom: number };
+  /** Clockwise rotation in degrees (OOXML a:xfrm@rot); omit for none. */
+  rotation?: number;
+  /** Linked ("Link to File") image — bytes stay outside the document (a:blip r:link). */
+  linked?: boolean;
 }
 
 export interface ShapeOptions {

@@ -1643,7 +1643,7 @@ function layoutDocument(
       case "line": oy = y; break; // current flow position
       default: oy = sec.marginPx.top; break; // margin
     }
-    const placedImage: PlacedImage = { src: img.src, width: img.widthPx, height: img.heightPx, z: a.z ?? 0, ...(img.crop ? { crop: img.crop } : {}) };
+    const placedImage: PlacedImage = { src: img.src, width: img.widthPx, height: img.heightPx, z: a.z ?? 0, ...(img.crop ? { crop: img.crop } : {}), ...(img.rotation ? { rotation: img.rotation } : {}) };
     if (a.behind) placedImage.behind = true;
     else placedImage.front = true;
     page.blocks.push({
@@ -1669,7 +1669,7 @@ function layoutDocument(
       y,
       firstLineIndex: 0,
       lines: [],
-      image: { src: img.src, width: img.widthPx, height: img.heightPx, ...(img.crop ? { crop: img.crop } : {}) },
+      image: { src: img.src, width: img.widthPx, height: img.heightPx, ...(img.crop ? { crop: img.crop } : {}), ...(img.rotation ? { rotation: img.rotation } : {}) },
     });
     if (floating) {
       // Text flows beside the image: register the float, do NOT advance y.
@@ -2673,7 +2673,7 @@ function layoutBand(
         y,
         firstLineIndex: 0,
         lines: [],
-        image: { src: b.src, width: b.widthPx, height: b.heightPx, ...(b.crop ? { crop: b.crop } : {}) },
+        image: { src: b.src, width: b.widthPx, height: b.heightPx, ...(b.crop ? { crop: b.crop } : {}), ...(b.rotation ? { rotation: b.rotation } : {}) },
       });
       y += b.heightPx;
     } else if (b.kind === "equation") {

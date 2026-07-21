@@ -790,6 +790,10 @@ function parseDrawing(drawing: XmlNode, ctx: ParseCtx): IRInline | undefined {
       image.crop = crop;
     }
   }
+  // pic spPr a:xfrm@rot — clockwise rotation in 60000ths of a degree → degrees.
+  const picSpPr = findDeep(container, "pic:spPr");
+  const picRot = numAttr(picSpPr && el(picSpPr, "a:xfrm"), "rot");
+  if (picRot !== undefined && picRot !== 0) image.rotationDeg = picRot / 60000;
   if (anchor) {
     const ap = parseAnchorProps(anchor);
     image.anchorWrap = ap.wrap;

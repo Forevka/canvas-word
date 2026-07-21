@@ -68,8 +68,8 @@ const heading = (text: string, level: 1 | 2 | 3): Paragraph => {
 // SVG-in-export support is tracked in issue #116.
 const TILE_PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAACgCAIAAAC9uXYyAAAEU0lEQVR42u3cQW7jRgBFwdY/Rq6ZS+cWzEKWLY+MWUyAAHoorwSqabLlgtEQmu/219//nHNu55zrnHPdzsfP7Xq8ONfLkXPOda7zNfhx+uPd8/Tu9XLkPv5p8Ncv/3Hwdb+FPzv9nOv7nd/HX9+OXI9Jfc3l6f5/OP23k71+e62n018ud718zudc17eJf1zuT0//ZfDLZH/8s/5HFf8nqtFMc0bzOWc005zRfDtnNNOc0XzOGc00ZzQ/lhw005zQfLvOaKY5o/m+5KCZ5ojmc67RTHNG8+18Ljlopvn9NT+WHDTTnNB8rjOaac5oflpy0Ezz+2t+/ZaDZprfWPM5ZzTTnNF8O9dopjmj+VxnNNOc0fy5l4Nmmgua799y0ExzRPO574emmeaG5u/bR2mm+c01P+/loJnmt9f860OyNNP81pq/PSRLM83vrvnrIVmaaQ5o/nhIlmaaG5o/90PTTPNpJIdGM80ZzR//oWmmORPQGs00l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysGNZppLObjRTHMpBzeaaS7l4EYzzaUc3GimuZSDG800l3Jwo5nmUg5uNNNcysH9C3YjxNIK1Tm9AAAAAElFTkSuQmCC";
-const image = (w: number, h: number, align: ImageBlock["align"], wrap?: "block" | "square"): ImageBlock => ({
-  kind: "image", id: id(), revision: 0, src: TILE_PNG, widthPx: w, heightPx: h, align, ...(wrap ? { wrap } : {}) });
+const image = (w: number, h: number, align: ImageBlock["align"], wrap?: "block" | "square", rotation?: number): ImageBlock => ({
+  kind: "image", id: id(), revision: 0, src: TILE_PNG, widthPx: w, heightPx: h, align, ...(wrap ? { wrap } : {}), ...(rotation ? { rotation } : {}) });
 /** A cropped image (OOXML a:srcRect): the same tile, with crop insets so only the
  *  inner window shows — demonstrating the #63 image-crop round-trip. */
 const croppedImage = (w: number, h: number, crop: NonNullable<ImageBlock["crop"]>): ImageBlock => ({
@@ -540,6 +540,8 @@ export function sampleDoc(): Document {
       run("A square-wrapped image floats and text flows around it. " + LOREM.repeat(3)),
     ]),
     image(150, 110, "left", "square"),
+    para([run("A rotated image (18°) — the rotate handle spins it and a:xfrm@rot round-trips:")], { spaceBeforePx: 6, spaceAfterPx: 4 }),
+    image(150, 110, "center", "block", 18),
 
     // --- Drawing shapes (DrawingML wps:wsp) ------------------------------------
     heading("Drawing shapes", 2),

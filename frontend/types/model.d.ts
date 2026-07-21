@@ -129,6 +129,8 @@ export interface ImageBlock {
   widthPx: number;
   heightPx: number;
   align: "left" | "center" | "right";
+  /** Clockwise rotation in degrees (a:xfrm@rot); absent = none. */
+  rotation?: number;
   /** 'block' (default): own line. 'square': floats per align, text wraps. */
   wrap?: "block" | "square";
 }

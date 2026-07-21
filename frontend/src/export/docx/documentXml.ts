@@ -908,6 +908,9 @@ function imageParagraphXml(img: Extract<Block, { kind: "image" }>, ctx: PartCtx)
   const idAttrs = drawingIdAttrs(img.drawingId, ctx);
   const cx = pxToEmu(img.widthPx);
   const cy = pxToEmu(img.heightPx);
+  // a:xfrm@rot — clockwise rotation in 60000ths of a degree (normalized to 0..360),
+  // on the pic's spPr transform. Mirrors the shape rotation emit. Omitted for none.
+  const xfrmAttrs = img.rotation ? { rot: Math.round(((img.rotation % 360) + 360) % 360 * 60000) } : undefined;
   // a:srcRect crop (insets as 1/1000 of a percent); omitted when there's no crop.
   const pct = (frac: number): number => Math.round(frac * 100000);
   const srcRect = img.crop
@@ -931,7 +934,7 @@ function imageParagraphXml(img: Extract<Block, { kind: "image" }>, ctx: PartCtx)
           el(
             "pic:spPr",
             undefined,
-            el("a:xfrm", undefined, el("a:off", { x: 0, y: 0 }) + el("a:ext", { cx, cy })) +
+            el("a:xfrm", xfrmAttrs, el("a:off", { x: 0, y: 0 }) + el("a:ext", { cx, cy })) +
               el("a:prstGeom", { prst: "rect" }, el("a:avLst")),
           ),
       ),

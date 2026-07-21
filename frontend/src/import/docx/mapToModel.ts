@@ -774,6 +774,8 @@ export function createMapper(
         right: round4(inline.crop.right), bottom: round4(inline.crop.bottom),
       };
     }
+    // a:xfrm@rot rotation (degrees), rounded like the shape rotation.
+    if (inline.rotationDeg !== undefined) image.rotation = round2(inline.rotationDeg);
     // Anchored with square/tight wrap → an honest float; the model flows
     // following text around it.
     if (inline.anchored && inline.anchorWrap === "square") image.wrap = "square";

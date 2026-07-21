@@ -188,7 +188,9 @@ span-aware ops, row-level page breaks, and content-driven autofit (AutoFit to
 Contents/Window; `w:tcW`/`w:tblLayout`/`w:tblW` round-trip).
 
 **Images** — insert in body or cells, 8-handle select frame, proportional
-resize with live reflow, alignment, square text-wrap (float left/right).
+resize with live reflow, alignment, square text-wrap (float left/right), and a
+**rotate handle** (drag the arc-arrow on the right; hold Shift to snap to 15°) —
+rotation round-trips as `a:xfrm@rot`.
 
 **Shapes** — DrawingML vector shapes (OOXML `wps:wsp`): a preset gallery
 (rectangle, rounded rectangle, ellipse, triangle, diamond, right/left arrow,
