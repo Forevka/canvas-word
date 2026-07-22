@@ -112,12 +112,15 @@ export interface PlacedShape {
   /** Clockwise rotation in degrees (ShapeBlock.rotation); the painters rotate the
    *  geometry about the box center. Absent = none. */
   rotation?: number;
-  /** Read-only text box body (ShapeBlock.text), laid out as a nested paragraph
-   *  sub-flow in the shape's LOCAL frame: `blocks` sit at (0,0)-relative coords,
-   *  and painters translate by (blockX + offsetX, blockY + offsetY) — the
-   *  wps:bodyPr left inset plus the vertical-center offset — then paint each block
-   *  and clip to the box. Absent = no text box. */
-  text?: { blocks: PlacedBlock[]; offsetX: number; offsetY: number };
+  /** Text box body (ShapeBlock.text) — editable for a top-level shape, read-only
+   *  when cell-nested (#235) — laid out as a nested paragraph sub-flow in the
+   *  shape's LOCAL frame: `blocks` sit at (0,0)-relative coords, and painters
+   *  translate by (blockX + offsetX, blockY + offsetY) — the wps:bodyPr left inset
+   *  plus the vertical-center offset — then paint each block and clip to the box.
+   *  `overflow` is true when the laid-out text is taller than the box (clipped);
+   *  the canvas painter draws a small indicator so hidden text isn't invisible
+   *  (F3). Absent = no text box. */
+  text?: { blocks: PlacedBlock[]; offsetX: number; offsetY: number; overflow?: boolean };
   /** Group container (ShapeBlock.group / OOXML wpg:wgp): the member drawings, each
    *  already mapped through the group transform into this shape's LOCAL box —
    *  `x`/`y` is the child's top-left offset within the box and `shape` its placed

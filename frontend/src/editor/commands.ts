@@ -1813,16 +1813,80 @@ export function toggleCharStyle(
   };
 }
 
-/** Insert an atomic block (image/table) at a collapsed top-level caret: split
- *  the paragraph there and slot the block between head and tail. */
+/** A structured region the caret sits inside that insert-at-caret must NOT split:
+ *  a TOC, a block-level field, or a block-level content control (SDT). Returns a
+ *  stable key — contiguous blocks sharing it form the region — or null. Inline
+ *  (run-level) field/SDT membership is handled separately by `caretInlineFieldKey`.
+ *  (A2 — splitting one of these corrupts it, as reproduced live for the TOC.) */
+function protectedBlockKey(doc: EditorState["doc"], block: Block): string | null {
+  if (block.kind === "paragraph") {
+    // A populated TOC's entries carry `tocEntry`; an empty/placeholder TOC is just
+    // the `tocAnchorBlockId` paragraph — treat both as one "toc" region.
+    if (block.style.tocEntry) return "toc";
+    if (doc.tocAnchorBlockId !== undefined && block.id === doc.tocAnchorBlockId) return "toc";
+  }
+  if (block.fieldId !== undefined) return "field:" + block.fieldId;
+  const sdt = block.sdtPath;
+  if (sdt && sdt.length > 0) return "sdt:" + sdt[0];
+  return null;
+}
+
+/** The run covering the character at `charIndex` (0-based) in a paragraph, or null
+ *  when out of range. */
+function runAtCharIndex(runs: Run[], charIndex: number): Run | null {
+  if (charIndex < 0) return null;
+  let acc = 0;
+  for (const r of runs) {
+    const len = r.text.length;
+    if (charIndex < acc + len) return r;
+    acc += len;
+  }
+  return null;
+}
+
+/** The inline field/SDT the caret is strictly INSIDE, or null. The caret is inside
+ *  a field when the characters on BOTH sides of it belong to the same field/SDT —
+ *  so a caret at a field's outer edge (where a split is safe) is NOT flagged. (A2) */
+function caretInlineFieldKey(block: Block, offset: number): string | null {
+  if (block.kind !== "paragraph") return null;
+  const keyOf = (r: Run | null): string | null =>
+    r?.style.fieldId !== undefined
+      ? "field:" + r.style.fieldId
+      : r?.style.sdtPath && r.style.sdtPath.length > 0
+        ? "sdt:" + r.style.sdtPath[0]
+        : null;
+  const before = keyOf(runAtCharIndex(block.runs, offset - 1));
+  const after = keyOf(runAtCharIndex(block.runs, offset));
+  return before !== null && before === after ? before : null;
+}
+
+/** Insert an atomic block (image/shape/table/equation) at a collapsed top-level
+ *  caret: split the paragraph there and slot the block between head and tail. When
+ *  the caret sits inside a field/TOC/SDT, splitting would corrupt it (A2), so the
+ *  block is REDIRECTED to just after the whole region instead of splitting the flow. */
 function insertBlockAtCaret(state: EditorState, makeBlock: () => Block): Transaction | null {
   const sel = state.selection;
   if (!sel || !isCollapsed(sel)) return null;
   const at = sel.focus;
-  const bi = state.doc.blocks.findIndex((b) => b.id === at.blockId);
+  const blocks = state.doc.blocks;
+  const bi = blocks.findIndex((b) => b.id === at.blockId);
   if (bi < 0) return null; // inside a cell
-  const tailId = freshBlockId();
   const block = makeBlock();
+
+  // A2 guard: never split a field/TOC/SDT — insert past the end of the region.
+  const regionKey = protectedBlockKey(state.doc, blocks[bi]!) ?? caretInlineFieldKey(blocks[bi]!, at.offset);
+  if (regionKey !== null) {
+    let end = bi;
+    while (end + 1 < blocks.length && protectedBlockKey(state.doc, blocks[end + 1]!) === regionKey) end++;
+    const after = blocks[end + 1];
+    // Land the caret at the start of the body paragraph after the region. If the region
+    // ends the document, or the next block isn't a paragraph (a table/image/shape can't
+    // hold a text caret), keep the caret where it was — the block still lands correctly.
+    const nextSel = after?.kind === "paragraph" ? caret(after.id, 0) : sel;
+    return tr([{ type: "insertBlock", index: end + 1, block }], nextSel, "command");
+  }
+
+  const tailId = freshBlockId();
   const ops: Op[] = [
     { type: "splitParagraph", at, newBlockId: tailId },
     { type: "insertBlock", index: bi + 1, block },
@@ -1856,13 +1920,15 @@ export const SHAPE_DEFAULT_HEIGHT_PX = 120;
 /** Insert a drawing shape (preset geometry) as its own block at the caret. Seeds a
  *  solid fill + solid outline so the shape is visible and immediately editable. A
  *  "line" preset gets no fill — OOXML prst="line" is the box diagonal, a stroke-only
- *  geometry — but keeps a full box so it stays selectable/resizable. */
-export function insertShape(preset: ShapePreset): Command {
+ *  geometry — but keeps a full box so it stays selectable/resizable. The host may
+ *  pass an explicit `shapeId` so it can select + reveal the new shape after dispatch
+ *  (A1); omitted, one is minted. */
+export function insertShape(preset: ShapePreset, shapeId?: string): Command {
   return (state) =>
     insertBlockAtCaret(state, (): ShapeBlock => {
       const shape: ShapeBlock = {
         kind: "shape",
-        id: freshBlockId(),
+        id: shapeId ?? freshBlockId(),
         revision: 0,
         geometry: { preset },
         widthPx: SHAPE_DEFAULT_WIDTH_PX,
@@ -2718,10 +2784,35 @@ export function sendShapeToBack(blockId: string): Command {
   };
 }
 
+/** Keep at least this much of a dragged object on-page so it can never be pushed
+ *  fully past the page edge and lost (F2). */
+export const OFF_PAGE_KEEP_PX = 24;
+
+/** Clamp a committed anchor offset so the object keeps a grabbable sliver on-page
+ *  (F2). `origin` is the anchor's reference position in page coords, `size` the
+ *  object box, `page` the page box; returns the clamped offset. Pure: the host
+ *  derives `origin` from the object's CURRENT laid-out rect minus its current
+ *  offset (a consistent pair), so this works for any relativeFrom frame without
+ *  re-running layout. Applied on the committed drop only — the live preview drags
+ *  freely. */
+export function clampAnchorOffsetToPage(
+  origin: { x: number; y: number },
+  offset: { x: number; y: number },
+  size: { width: number; height: number },
+  page: { width: number; height: number },
+  keep = OFF_PAGE_KEEP_PX,
+): { x: number; y: number } {
+  const clamp = (v: number, lo: number, hi: number): number => Math.min(Math.max(v, lo), hi);
+  const placedX = clamp(origin.x + offset.x, keep - size.width, page.width - keep);
+  const placedY = clamp(origin.y + offset.y, keep - size.height, page.height - keep);
+  return { x: placedX - origin.x, y: placedY - origin.y };
+}
+
 /** Reposition an anchored shape to absolute anchor offsets (drag-move). Pass origin
  *  "transient" for the live drag preview and "command" for the committed drop — the
- *  same revert-then-commit dance as resize keeps a drag = one undo step. Mirrors
- *  moveAnchoredImage. */
+ *  same revert-then-commit dance as resize keeps a drag = one undo step. The host
+ *  clamps the committed offset to the page (F2, `clampAnchorOffsetToPage`) before
+ *  calling this. Mirrors moveAnchoredImage. */
 export function moveAnchoredShape(
   blockId: string,
   offsetXPx: number,

@@ -556,9 +556,10 @@ function paintShapePdf(doc: PDFKit.PDFDocument, shape: PlacedShape, x: number, y
 
 /** Paint a placed drawing shape at (x,y): a GROUP container (PlacedShape with
  *  `children`) recurses into its members (each already offset into the box); a leaf
- *  paints its preset geometry and its read-only text box body (clipped + translated
- *  into the local text frame). Recursive so nested groups compose. Mirrors the
- *  canvas painter (paint/renderer.ts). */
+ *  paints its preset geometry and its text box body — editable for a top-level shape,
+ *  read-only when cell-nested — (clipped + translated into the local text frame).
+ *  Recursive so nested groups compose. Mirrors the canvas painter (paint/renderer.ts),
+ *  minus the on-screen overflow indicator (an editor hint, not printed output). */
 function paintPlacedShapePdf(ctx: PaintCtx, shape: PlacedShape, x: number, y: number): void {
   const { doc } = ctx;
   if (shape.children) {
@@ -570,7 +571,8 @@ function paintPlacedShapePdf(ctx: PaintCtx, shape: PlacedShape, x: number, y: nu
     return;
   }
   paintShapePdf(doc, shape, x, y);
-  // Read-only text box body (mirrors canvas). When the shape is rotated, the text
+  // Text box body — editable for a top-level shape, read-only when cell-nested
+  // (mirrors canvas). When the shape is rotated, the text
   // rotates WITH the geometry about the box center (same transform paintShapePdf
   // applies) — the sub-flow layout stays in the local frame; rotation is paint-only.
   const text = shape.text;

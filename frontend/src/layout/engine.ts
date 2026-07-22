@@ -2706,6 +2706,22 @@ function layoutBand(
 const SHAPE_TEXT_INSET_X = 9.6;
 const SHAPE_TEXT_INSET_Y = 4.8;
 
+/** The bottom of the last PAINTED content in a laid-out band (shape text sub-flow):
+ *  the deepest line/object bottom, in the band's local frame. Unlike the band's
+ *  returned height it excludes trailing paragraph spacing (which paints nothing), so
+ *  the overflow check doesn't fire on a box whose glyphs actually fit. */
+function bandContentBottom(blocks: PlacedBlock[]): number {
+  let bottom = 0;
+  for (const pb of blocks) {
+    for (const l of pb.lines) bottom = Math.max(bottom, pb.y + l.y + l.height);
+    if (pb.image) bottom = Math.max(bottom, pb.y + pb.image.height);
+    if (pb.shape) bottom = Math.max(bottom, pb.y + pb.shape.height);
+    if (pb.equation) bottom = Math.max(bottom, pb.y + pb.equation.height);
+    if (pb.table) for (const row of pb.table.rows) for (const cell of row.cells) bottom = Math.max(bottom, bandContentBottom(cell.blocks));
+  }
+  return bottom;
+}
+
 /** Build the PlacedShape payload for a shape block (shared by the main flow layout
  *  and the band/cell layout paths). `width`/`height` default to the block's box but
  *  can be overridden when a cell scales the shape down to fit. */
@@ -2736,16 +2752,25 @@ function placedShapeOf(sb: ShapeBlock, width = sb.widthPx, height = sb.heightPx)
   if (sb.fill) shape.fill = sb.fill;
   if (sb.stroke) shape.stroke = sb.stroke;
   if (sb.rotation) shape.rotation = sb.rotation;
-  // Read-only text box body: lay the paragraphs out as a fixed-width sub-flow
-  // inside the box (minus the bodyPr insets), reusing the band/cell sub-flow
-  // layout, then vertically center them (wps:bodyPr anchor="ctr", which the export
-  // emits). Coords stay LOCAL to the shape box; painters translate into place.
+  // Text box body (editable for a top-level shape, read-only when cell-nested,
+  // #235): lay the paragraphs out as a fixed-width sub-flow inside the box (minus
+  // the bodyPr insets), reusing the band/cell sub-flow layout, then vertically
+  // center them (wps:bodyPr anchor="ctr", which the export emits). Coords stay LOCAL
+  // to the shape box; painters translate into place. When the text is taller than
+  // the box it's hard-clipped — flag `overflow` so the canvas painter can show an
+  // indicator (F3), since there's no shrink-to-fit / auto-grow.
   if (sb.text && sb.text.blocks.length > 0) {
     const innerW = Math.max(1, width - 2 * SHAPE_TEXT_INSET_X);
     const { placed, height: textH } = layoutBand(sb.text.blocks, innerW, 0, 1, 1, new PrepareCache(), true);
     const avail = height - 2 * SHAPE_TEXT_INSET_Y;
     const offsetY = SHAPE_TEXT_INSET_Y + Math.max(0, (avail - textH) / 2);
-    shape.text = { blocks: placed, offsetX: SHAPE_TEXT_INSET_X, offsetY };
+    // Overflow = the PAINTED text is clipped by the box (painters clip to the full box,
+    // [0, height]). Measure the last painted line's bottom — not `textH`, which also
+    // counts trailing paragraph spacing that paints nothing — so a box whose glyphs fit
+    // (but whose text height, incl. that spacing, exceeds the box) shows no false
+    // indicator. The epsilon absorbs float noise at the edge.
+    const clipped = offsetY + bandContentBottom(placed) > height + 0.5;
+    shape.text = { blocks: placed, offsetX: SHAPE_TEXT_INSET_X, offsetY, ...(clipped ? { overflow: true } : {}) };
   }
   return shape;
 }

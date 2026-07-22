@@ -77,7 +77,8 @@ const croppedImage = (w: number, h: number, crop: NonNullable<ImageBlock["crop"]
 
 // --- drawing shapes (DrawingML wps:wsp) ----------------------------------------
 /** A preset drawing shape (OOXML wps:wsp / a:prstGeom) with an optional fill,
- *  outline (with dash), rotation, and a read-only text box body (wps:txbx) — the
+ *  outline (with dash), rotation, and a text box body (wps:txbx; editable at top
+ *  level, read-only when cell-nested) — the
  *  #206 shape round-trip. PR 1 rect/ellipse/line; PR 2 breadth+dash+rotation;
  *  PR 3 the text body. */
 const shape = (

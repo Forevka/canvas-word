@@ -1178,6 +1178,50 @@ describe("engine — centered square-wrap shape float", () => {
   });
 });
 
+// --- shape text-box overflow flag (F3) ------------------------------------
+
+describe("engine — shape text overflow flag", () => {
+  const shapeWithText = (widthPx: number, heightPx: number, text: string): ShapeBlock => ({
+    kind: "shape", id: fresh(), revision: 0, geometry: { preset: "rect" },
+    widthPx, heightPx, align: "left", text: { blocks: [para(text)] },
+  });
+
+  it("flags overflow when the laid-out text is taller than the box", () => {
+    const s = shapeWithText(120, 28, "word ".repeat(60).trim());
+    const pb = placedOf(layout(doc([s])), s.id)!.pb;
+    expect(pb.shape!.text!.overflow).toBe(true);
+  });
+
+  it("leaves overflow unset when the text fits", () => {
+    const s = shapeWithText(240, 200, "hi");
+    const pb = placedOf(layout(doc([s])), s.id)!.pb;
+    expect(pb.shape!.text!.overflow).toBeUndefined();
+  });
+
+  it("does NOT flag text that is taller than the inset-available height but still fits the box", () => {
+    // One 24px line in a 30px box: taller than avail (30 - 9.6 = 20.4) but the glyphs
+    // (top inset 4.8 + 24 = 28.8) sit inside the 30px box, so it's not clipped — the
+    // flag must not fire, else the showcase text boxes would show a false indicator.
+    const s = shapeWithText(240, 30, "hi");
+    const pb = placedOf(layout(doc([s])), s.id)!.pb;
+    expect(pb.shape!.text!.overflow).toBeUndefined();
+  });
+
+  it("ignores trailing paragraph spacing — only PAINTED lines count toward overflow", () => {
+    // Two 24px lines (bottom = 48) plus 20px of trailing space on the last paragraph
+    // inflate the band height to ~68, but the painted glyphs (top inset 4.8 + 48 =
+    // 52.8) sit inside a 60px box. This is the showcase text-box case: the flag must
+    // key on the painted bottom, not the spacing-inflated text height.
+    const s: ShapeBlock = {
+      kind: "shape", id: fresh(), revision: 0, geometry: { preset: "rect" },
+      widthPx: 240, heightPx: 60, align: "left",
+      text: { blocks: [para("line one"), para("line two", { spaceAfterPx: 20 })] },
+    };
+    const pb = placedOf(layout(doc([s])), s.id)!.pb;
+    expect(pb.shape!.text!.overflow).toBeUndefined();
+  });
+});
+
 // --- behind-text anchored images (wrapNone backgrounds) -------------------
 
 describe("engine — behind-text anchored images", () => {
