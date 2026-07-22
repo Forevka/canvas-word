@@ -487,6 +487,16 @@ export function createMapper(
       // Does THIS paragraph end a (page-type) section?
       if (irBlock.kind === "paragraph" && irBlock.props.sectionBreak === "page") {
         const props = irBlock.props;
+        // Break THIS closing section's own title when it's titled — covers the
+        // heading-led page section the forward `pending` misses behind a preceding
+        // "continuous" break (e.g. FLOOD MAP / ZONING sit behind a continuous sectPr,
+        // yet their section closes with a page-type break). Runs for BOTH a
+        // materialized (distinct) and a flowed break: a distinct closing break used to
+        // skip this and stranded the title at the bottom of the previous page. Never
+        // the document's first section (it can't break).
+        if (sectionStartBi > 0 && sectionFirstVisible && isHeadingLedSection(sectionStartBi - 1)) {
+          sectionFirstVisible.style.pageBreakBefore = true;
+        }
         if (sectionIsDistinct(props) || sectionOwnBleeds(props, bi)) {
           // Apply the section's geometry: sectionBreak sits on the paragraph that
           // ENDS the section (engine pages at the next block).
@@ -510,12 +520,6 @@ export function createMapper(
           // section opens with a real title (heading style / TOC-bookmarked) —
           // Word's Next Page behavior for titled sections (TOC, Flood Map, …).
           pendingForce = (!seenPageSection && coverHasContent) || isHeadingLedSection(bi);
-          // …and break THIS closing section's own title when it's titled — covers the
-          // heading-led page section the forward `pending` misses behind a preceding
-          // continuous break. Never the document's first section (it can't break).
-          if (sectionStartBi > 0 && sectionFirstVisible && isHeadingLedSection(sectionStartBi - 1)) {
-            sectionFirstVisible.style.pageBreakBefore = true;
-          }
         }
         seenPageSection = true;
       }

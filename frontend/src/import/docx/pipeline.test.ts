@@ -195,6 +195,36 @@ describe("docx pipeline — lossy policies emit warnings", () => {
     expect(para(r.doc.blocks[floodIdx - 1]!).style.pageBreakBefore).toBeUndefined();
   });
 
+  it("page-breaks a titled section that sits behind a continuous break and closes with a DISTINCT break", () => {
+    // FLOOD MAP / ZONING regression: these titles are opened by a "continuous"
+    // section break (so the forward pending mechanism never sees them) and their
+    // section closes with a page-type break carrying distinct geometry (landscape /
+    // page-number restart), which materializes as a section carrier. The
+    // backward-attribution that page-breaks such a title used to run only for a
+    // FLOWED closing break, so a distinct one left the title stranded at the bottom
+    // of the previous page.
+    const pageSect = `<w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:pPr></w:p>`;
+    const contSect = `<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:pPr></w:p>`;
+    const landscapeSect = `<w:p><w:pPr><w:sectPr><w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/></w:sectPr></w:pPr></w:p>`;
+    const hiddenAnchor =
+      `<w:p><w:bookmarkStart w:id="9" w:name="_Part_y"/><w:r><w:rPr><w:vanish/></w:rPr><w:t>hidden</w:t></w:r></w:p>`;
+    const r = importBody(
+      `<w:p><w:r><w:t>COVER</w:t></w:r></w:p>` + pageSect + // cover -> body
+        `<w:p><w:r><w:t>chapter body</w:t></w:r></w:p>` + contSect + // continuous: opens the titled section
+        hiddenAnchor +
+        `<w:p><w:bookmarkStart w:id="2" w:name="_Toc0000000022"/><w:r><w:rPr><w:b/></w:rPr><w:t>FLOOD MAP</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>According to the flood maps…</w:t></w:r></w:p>` +
+        landscapeSect + // DISTINCT page break closes the FLOOD MAP section
+        `<w:p><w:r><w:t>after</w:t></w:r></w:p>`,
+    );
+    const find = (t: string): Paragraph =>
+      para(r.doc.blocks.find((b) => para(b).runs.some((rn) => rn.text === t))!);
+    expect(find("FLOOD MAP").style.pageBreakBefore).toBe(true); // titled section -> new page
+    // The break landed on the title, not on the flowed hidden anchor above it.
+    const floodIdx = r.doc.blocks.indexOf(find("FLOOD MAP"));
+    expect(para(r.doc.blocks[floodIdx - 1]!).style.pageBreakBefore).toBeUndefined();
+  });
+
   it("keeps a heading with a closely-following figure so it isn't stranded above it", () => {
     const styles = stylesPartXml(`<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style>`);
     const fig = `<w:tbl><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>map</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
