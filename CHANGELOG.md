@@ -27,6 +27,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     bars also pick up the shared dark-theme treatment for free.
   - **Popover select styling (D2).** The outline popover's width/dash `<select>`s use the popover's own
     class system (`.cw-pop .pop-row`) instead of inline styles, so they match the swatch grid.
+- **Drawing shapes — precision authoring: angle readout + Size & Position dialog (issue #244, B1/B2).**
+  Two precision affordances for selected shapes. (1) **Live angle readout while rotating (B1):** dragging
+  the rotate handle now shows a small badge above the object with the current angle in whole degrees; it
+  turns **green** when the angle lands on a **15° multiple** (the Shift-snap grid, or any free-drag round
+  angle), so hitting an exact angle no longer means eyeballing it. (2) **“Size & Position…” dialog (B2):**
+  a draggable, non-blocking panel (reusing the Page-Layout dialog shell) with numeric **width / height**,
+  **rotation**, and — for a floating (anchored) shape — **X / Y offset** fields, in inches or cm. Apply
+  commits **one** undoable `setShapeProps` (size + rotation + anchor offset folded into a single op). It's
+  reachable from the ribbon **Shape** group **and** the shape **right-click menu** (via a new
+  `onEditShapeSizePosition` editor hook); X/Y stay disabled with an explanatory note for in-line shapes,
+  whose position is layout-driven.
 - **Object rotate handle + image rotation (issue #236).** The object selection frame now carries a
   **rotate handle** — an arc-arrow pinned just outside the frame's right edge (shapes **and** images).
   Dragging it rotates the object about its center: the angle tracks the pointer, **Shift** snaps to 15°
@@ -244,6 +255,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **de-dups** so a copy/pasted image never repeats an id.
 
 ### Fixed
+- **Drawing shapes — rotate handle avoids the right-edge collision (issue #244, B3).** The rotate handle
+  is pinned just outside the frame's **right** edge, so a shape hard against the **right page margin**
+  pushed it off-page and on top of the `e` midpoint handle. It now **flips to the left** edge when the
+  right-side handle would spill past the page, keeping it on-page and clear. (The shape floating-toolbar
+  was already page- and ribbon-clamped by `placeSelectionBar`.)
+- **Drawing shapes — selection handles adapt to tiny shapes (issue #244, B4).** A sub-~24px shape or
+  image used to be **smothered by its own resize handles** — nothing lower-bounds a shape/image's size on
+  insert or import, so the eight 8px handles piled on top of each other and the box vanished underneath.
+  The selection frame now **thins the handle set to fit the box** (purely in the overlay, no model change):
+  the crowded **edge-midpoint handles drop out per axis** — the `n`/`s` pair when the box is too narrow,
+  the `e`/`w` pair when it's too short — leaving the four corners, and on a box tiny on either axis the
+  **corner handles shift diagonally outward** so the shape itself stays visible and grabbable. Handles
+  re-expand to the full eight as the box grows back past the thresholds.
 - **Drawing shapes — rotated text bodies and lossless centered square wrap (issue #206 fidelity / #232).**
   Two documented corners of the shapes feature now close. (1) A **rotated** shape used to paint its
   geometry tilted but its text-box body **upright** — the canvas and PDF painters now apply the same

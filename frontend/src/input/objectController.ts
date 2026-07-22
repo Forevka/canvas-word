@@ -168,6 +168,77 @@ const HANDLES: HandleSpec[] = [
 
 const MIN_SIZE_PX = 16;
 
+// ── tiny-shape handle adaptation (pure, unit-tested) ─────────────────────────
+// The 8 resize handles are 8px dots pinned at the box edges (corners + edge
+// midpoints). On a large box they sit comfortably apart, but a sub-~24px shape
+// (nothing lower-bounds shape/image size on insert or import) ends up smothered
+// by its own handles — the midpoint dot lands on top of the corner dots, and on a
+// truly tiny box all four corners pile into the middle. Word thins the handle set
+// out for small objects; we do the same, per axis, purely in the overlay.
+
+/** Corner handle names (always shown). Edge-midpoint handles drop out first. */
+const CORNER_HANDLES = new Set(["nw", "ne", "se", "sw"]);
+
+/** Below this on-screen box dimension (px) an edge-midpoint handle would collide
+ *  with the corner handles on that axis, so it's dropped. A midpoint sits at the
+ *  box center; its neighbouring corner is half the box away, so it needs ~1.5
+ *  handle-widths of half-span to clear — 8px handle → ~12px half → ~24px box. */
+const MIDPOINT_MIN_PX = 24;
+
+/** At/below this on-screen box dimension (px) even the four corner handles pile
+ *  into the shape's interior, so they're pushed diagonally OUTWARD by
+ *  {@link CORNER_OUTSET_PX} to leave the tiny box itself visible/grabbable. */
+const CORNER_OUTSET_AT_PX = MIN_SIZE_PX;
+
+/** Outward diagonal offset (px) applied to each corner handle on a tiny box. */
+const CORNER_OUTSET_PX = 6;
+
+export interface HandleAdaptation {
+  /** Handle names to render; the rest are hidden to avoid crowding a tiny box. */
+  visible: Set<string>;
+  /** Px each corner handle is pushed diagonally OUTWARD from its corner (0 when
+   *  the box is big enough that on-corner handles don't smother it). */
+  cornerOutset: number;
+}
+
+/** Which resize handles a box of the given on-screen size should show, and how far
+ *  to push the corners out. Edge-midpoint handles drop per axis (the horizontal
+ *  pair `n`/`s` when the box is too NARROW, the vertical pair `e`/`w` when it's too
+ *  SHORT); corners always stay but move outward once the box is tiny on either
+ *  axis. Pure so the thresholds are unit-tested without a DOM. */
+export function adaptiveHandles(boxWpx: number, boxHpx: number): HandleAdaptation {
+  const visible = new Set<string>();
+  for (const h of HANDLES) {
+    if (CORNER_HANDLES.has(h.name)) {
+      visible.add(h.name);
+      continue;
+    }
+    // Edge midpoints: horizontal-centered (n/s, dx 0.5) crowd when NARROW;
+    // vertical-centered (e/w, dy 0.5) crowd when SHORT.
+    const tooTight = h.dx === 0.5 ? boxWpx < MIDPOINT_MIN_PX : boxHpx < MIDPOINT_MIN_PX;
+    if (!tooTight) visible.add(h.name);
+  }
+  const cornerOutset = Math.min(boxWpx, boxHpx) <= CORNER_OUTSET_AT_PX ? CORNER_OUTSET_PX : 0;
+  return { visible, cornerOutset };
+}
+
+// ── rotate-handle geometry + collision (B3) ──────────────────────────────────
+// The rotate handle normally sits just outside the frame's RIGHT edge. On a shape
+// hard against the right page margin that pushes the handle off-page (and onto the
+// `e` midpoint handle); there it flips to the LEFT edge instead.
+
+/** Rotate-handle diameter (px) — matches the handle's inline width/height. */
+const ROTATE_SIZE_PX = 18;
+/** Gap (px) between the frame edge and the rotate handle. */
+const ROTATE_GAP_PX = 8;
+
+/** Whether the rotate handle should flip to the frame's LEFT side: true when the
+ *  handle on the right (frame right + gap + its own width) would spill past the
+ *  page's right edge. Pure so the threshold is unit-tested without a DOM. */
+export function flipRotateLeft(frameRightPx: number, pageWidthPx: number, reservePx = ROTATE_GAP_PX + ROTATE_SIZE_PX + 2): boolean {
+  return frameRightPx + reservePx > pageWidthPx;
+}
+
 export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
   const frame = document.createElement("div");
   frame.style.cssText =
@@ -229,6 +300,26 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     }
   }
   frame.appendChild(rotateHandle);
+
+  // Live angle readout (B1): a small badge above the object showing the current
+  // rotation in whole degrees during a rotate drag, turning GREEN when the angle
+  // lands on a 15° multiple (the Shift-snap grid, and any free-drag round angle).
+  // Body-level + position:fixed so it neither rotates with the frame nor is clipped
+  // by the page; the object center is fixed during a rotate, so it stays put.
+  const ROTATE_BADGE_BASE = "#1a73e8";
+  const ROTATE_BADGE_SNAP = "#137333";
+  const rotateBadge = document.createElement("div");
+  rotateBadge.style.cssText =
+    "position:fixed;display:none;transform:translate(-50%,-100%);pointer-events:none;" +
+    "z-index:2147483646;padding:2px 6px;border-radius:4px;color:#fff;white-space:nowrap;" +
+    `font:600 11px/1.4 Arial,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.3);background:${ROTATE_BADGE_BASE};`;
+
+  /** Paint the badge for `deg` — text + snap highlight. Pure of the frame transform. */
+  const paintBadge = (deg: number): void => {
+    const d = Math.round(normalizeDeg(deg));
+    rotateBadge.textContent = `${d}°`;
+    rotateBadge.style.background = d % 15 === 0 ? ROTATE_BADGE_SNAP : ROTATE_BADGE_BASE;
+  };
 
   let current: { rect: Rect; maxWidth: number; anchor: ResizeAnchor; rotation: number } | null = null;
   let drag: {
@@ -419,6 +510,7 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     // transform-origin defaults to the frame's own center, which equals the object
     // center (the frame is inset −2px and grown +4px symmetrically). Paint-only.
     frame.style.transform = `rotate(${deg}deg)`;
+    paintBadge(deg);
   };
 
   const endRotateDrag = (): void => {
@@ -433,6 +525,7 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     }
     rotateHandle.style.cursor = "grab";
     rotDragEl = null;
+    rotateBadge.style.display = "none"; // drag over — retire the angle readout
     window.removeEventListener("keydown", onRotateKey, true);
   };
 
@@ -490,6 +583,13 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
       startPointerDeg: pointerAngleDeg(centerX, centerY, ev.clientX, ev.clientY),
       startRotation: current.rotation,
     };
+    // Anchor the angle badge just above the (fixed) object box and seed it with the
+    // current rotation — subsequent moves repaint it via applyRotatePreview.
+    rotateBadge.style.left = `${centerX}px`;
+    rotateBadge.style.top = `${box.top - 8}px`;
+    if (rotateBadge.parentElement !== document.body) document.body.appendChild(rotateBadge);
+    paintBadge(current.rotation);
+    rotateBadge.style.display = "block";
     rotateHandle.style.cursor = "grabbing";
     rotDragEl = rotateHandle;
     rotPointerId = ev.pointerId;
@@ -688,8 +788,23 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
       if (!host) return;
       current = { rect, maxWidth, anchor, rotation: rotationDeg };
       ghostSrc = src;
-      // Non-resizable objects (equations) get a plain selection box — no handles.
-      for (const el of handleEls) el.style.display = resizable ? "block" : "none";
+      // Handle set adapts to the box's on-screen size so a tiny shape isn't
+      // smothered by its own handles: drop the crowded edge-midpoint handles and
+      // push the corners outward below the thresholds. Non-resizable objects
+      // (equations' "other" fallback) get a plain selection box — no handles.
+      const z0 = deps.getZoom();
+      const adapt = adaptiveHandles(rect.width * z0, rect.height * z0);
+      for (let i = 0; i < handleEls.length; i++) {
+        const el = handleEls[i]!;
+        const h = HANDLES[i]!;
+        const shown = resizable && adapt.visible.has(h.name);
+        el.style.display = shown ? "block" : "none";
+        // Only corners take an outward offset (edge midpoints keep their edge).
+        el.style.transform =
+          shown && adapt.cornerOutset > 0 && CORNER_HANDLES.has(h.name)
+            ? `translate(${h.dx === 0 ? -adapt.cornerOutset : adapt.cornerOutset}px, ${h.dy === 0 ? -adapt.cornerOutset : adapt.cornerOutset}px)`
+            : "";
+      }
       // Only shapes + images get the rotate handle (not equations / plain objects).
       rotateHandle.style.display = rotatable ? "flex" : "none";
       // Clear any stale rotate-preview transform (a prior committed drag) so the
@@ -725,6 +840,13 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
       frame.style.top = `${rect.y * z - 2}px`;
       frame.style.width = `${rect.width * z + 4}px`;
       frame.style.height = `${rect.height * z + 4}px`;
+      // Rotate-handle collision (B3): keep it just outside the RIGHT edge, but flip
+      // it to the LEFT when the shape sits against the right page margin and the
+      // right-side handle would spill off the page (and onto the `e` handle).
+      if (rotatable && !rotDrag) {
+        const flip = flipRotateLeft(rect.x * z + rect.width * z, host.clientWidth);
+        rotateHandle.style.left = flip ? `${-(ROTATE_GAP_PX + ROTATE_SIZE_PX)}px` : `calc(100% + ${ROTATE_GAP_PX}px)`;
+      }
     },
     hide(): void {
       current = null;
@@ -774,6 +896,7 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
       hideGhost();
       ghost.remove();
       sizeGhost.remove();
+      rotateBadge.remove();
       frame.remove();
       cropFull.remove();
       cropDim.remove();
