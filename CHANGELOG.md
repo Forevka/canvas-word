@@ -302,6 +302,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **de-dups** so a copy/pasted image never repeats an id.
 
 ### Fixed
+- **Import — a geometry-identical section break no longer page-breaks just because a downstream
+  "continuous" break restarts numbering (Effective Age table).** A footer-only Next Page break flows
+  (doesn't page) unless the following section is genuinely distinct. The "would this section's own
+  property (page-number restart / line numbering) bleed backward if we flow the break?" check scanned to
+  the next section break of *any* type — including a `continuous` one whose properties we drop anyway. A
+  downstream continuous page-number restart therefore forced an earlier, geometry-identical break to
+  materialize and page-break, pushing the following content (e.g. the **Effective Age and Economic Life**
+  table) onto its own page — off the Flood Map page where Word keeps it. The bleed check now considers only
+  page-type breaks (the only ones whose properties are actually retained), so the earlier break flows.
 - **Import — a titled section behind a "continuous" break now starts a new page (Flood Map / Zoning).**
   Generated reports open some chapter titles (e.g. **FLOOD MAP**, **ZONING**) with a `w:sectPr` of type
   `continuous` and close them with a page-type break that carries distinct geometry (landscape / page-number
