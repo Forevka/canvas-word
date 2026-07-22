@@ -485,6 +485,7 @@ table.cmp td.us{ background:rgba(91,70,217,.05); }
     <span class="chip">Track changes &amp; comments</span>
     <span class="chip">Right-to-left &amp; CJK</span>
     <span class="chip">Math equations (MathML)</span>
+    <span class="chip">Drawing shapes &amp; text boxes</span>
     <span class="chip">Headless on Node</span>
   </div>
 </div>
@@ -673,7 +674,12 @@ editor.<span class="c-fn">on</span>(<span class="c-str">"ready"</span>, () =&gt;
       <div class="feat"><div class="ic">🖨️</div><h3>Page-accurate PDF</h3><p>Export print-ready PDF that matches the on-screen document, in-browser or headless.</p></div>
       <div class="feat"><div class="ic">👥</div><h3>Live collaboration</h3><p>Opt-in backend adds multi-user editing, presence, carets, and one-click share links.</p></div>
       <div class="feat"><div class="ic">✍️</div><h3>Track changes &amp; comments</h3><p>Review workflows with suggestions and comment threads built into the editor.</p></div>
-      <div class="feat"><div class="ic">📊</div><h3>Tables, fields, TOC &amp; styles</h3><p>Span-aware tables, PAGE/NUMPAGES/DATE fields, generated tables of contents, and a full style manager.</p></div>
+      <div class="feat"><div class="ic">📊</div><h3>Tables, fields, TOC &amp; styles</h3><p>Span-aware tables, PAGE/NUMPAGES/DATE/IF plus custom fields, generated tables of contents, and a full style manager.</p></div>
+      <div class="feat"><div class="ic">🔷</div><h3>Drawing shapes &amp; text boxes</h3><p>Insert preset shapes — rectangles, ellipses, arrows and more. Edit fill, outline colour, width and dash, add an <strong>editable text box</strong> inside, and import legacy VML shapes from older files. <strong>Freeform custom geometry</strong> and <strong>grouped shapes</strong> round-trip losslessly to <code>.docx</code> too — authored via the document builder or imported from existing files.</p></div>
+      <div class="feat"><div class="ic">🔄</div><h3>Rotate &amp; position objects</h3><p>A <strong>rotate handle</strong> spins any shape or image about its center (Shift snaps to 15°). Float objects with square text-wrap, anchor them behind or in front of the text, and reorder with bring-to-front / send-to-back — images and shapes share one stacking order. Rotation round-trips too.</p></div>
+      <div class="feat"><div class="ic">🔎</div><h3>Query, edit &amp; merge — headless</h3><p>A <code>@forevka/wordcanvas/query</code> API finds text, sections, pages and content controls; a <code>DocumentEditor</code> fills controls, runs find-and-replace, moves blocks, and merges or appends whole documents — with undo/redo, no editor UI required.</p></div>
+      <div class="feat"><div class="ic">📑</div><h3>Flexible page layout</h3><p>Custom page size and margins, unequal columns with separators, header/footer distances, page colour and page borders — editable from a page-layout dialog and round-tripped through <code>.docx</code> and PDF.</p></div>
+      <div class="feat"><div class="ic">🎨</div><h3>Theming &amp; per-instance config</h3><p>Constructor options theme the chrome, override default styles, and toggle behaviours per instance. Build the config live, then copy the exact <code>new WordCanvas({…})</code> snippet into your app.</p></div>
       <div class="feat"><div class="ic">🌍</div><h3>Right-to-left, bidi &amp; CJK</h3><p>Full Unicode bidi (UAX#9) with multi-run caret and selection, RTL <code>.docx</code> round-trip, and out-of-the-box CJK line-breaking with kinsoku rules.</p></div>
       <div class="feat"><div class="ic">∑</div><h3>Math equations</h3><p>MathML-native equations typeset with the bundled STIX Two Math font — fractions, radicals, scripts, growing delimiters, big operators and matrices. Insert via a visual editor (MathML or LaTeX) with a live preview; equations are selectable and editable, and round-trip to <code>.docx</code> as OMML.</p></div>
       <div class="feat"><div class="ic">🪆</div><h3>Nested content controls</h3><p>Content controls inside content controls — to any depth, with complex Word fields nested inside — round-trip through <code>.docx</code> intact. No other browser-native editor keeps the nesting; generated report section→field structure survives editing.</p></div>
@@ -725,6 +731,16 @@ editor.<span class="c-fn">on</span>(<span class="c-str">"ready"</span>, () =&gt;
       <p>Each one is the real editor, deployed and runnable. Open it, poke around, then read the source on GitHub.</p>
     </div>
     <div class="examples-grid">
+      <a class="ex-card lead" href="https://doc-editor.forevka.dev/live" target="_blank" rel="noopener">
+        <div class="ex-body">
+          <span class="ex-tag">Collaboration</span>
+          <h3>Online editing with live collaboration</h3>
+          <p>The full editor wired to the backend: multi-user editing, live presence and carets, and one-click share links — the same build you get by passing a single <code>backendUrl</code>.</p>
+          <div class="ex-open">Open example ↗</div>
+        </div>
+        <span class="btn btn-primary ex-lead-btn">Try it live →</span>
+      </a>
+
       <a class="ex-card" href="https://doc-editor.forevka.dev/examples/offline" target="_blank" rel="noopener">
         <span class="ex-tag">No-build</span>
         <h3>Minimal offline embed</h3>
@@ -757,6 +773,13 @@ editor.<span class="c-fn">on</span>(<span class="c-str">"ready"</span>, () =&gt;
         <span class="ex-tag">Config builder</span>
         <h3>Constructor config builder</h3>
         <p>Toggle any constructor option, preview it live, and copy the exact <code>new WordCanvas({…})</code> snippet to paste into your app.</p>
+        <div class="ex-open">Open example ↗</div>
+      </a>
+
+      <a class="ex-card" href="https://doc-editor.forevka.dev/examples/custom-fonts" target="_blank" rel="noopener">
+        <span class="ex-tag">Fonts</span>
+        <h3>Bring your own fonts</h3>
+        <p>Register self-hosted font faces through the <code>fonts</code> option, hide a built-in, and export a <code>.docx</code>/PDF with the font embedded — WYSIWYG on screen and in the file.</p>
         <div class="ex-open">Open example ↗</div>
       </a>
     </div>
