@@ -1879,9 +1879,10 @@ function insertBlockAtCaret(state: EditorState, makeBlock: () => Block): Transac
     let end = bi;
     while (end + 1 < blocks.length && protectedBlockKey(state.doc, blocks[end + 1]!) === regionKey) end++;
     const after = blocks[end + 1];
-    // Land the caret in the body paragraph after the region; if the region ends the
-    // document, keep the caret where it was (the block still lands at the end).
-    const nextSel = after ? caret(after.id, 0) : sel;
+    // Land the caret at the start of the body paragraph after the region. If the region
+    // ends the document, or the next block isn't a paragraph (a table/image/shape can't
+    // hold a text caret), keep the caret where it was — the block still lands correctly.
+    const nextSel = after?.kind === "paragraph" ? caret(after.id, 0) : sel;
     return tr([{ type: "insertBlock", index: end + 1, block }], nextSel, "command");
   }
 

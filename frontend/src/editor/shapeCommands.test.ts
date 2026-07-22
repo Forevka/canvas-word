@@ -118,6 +118,19 @@ describe("insertShape field/TOC/SDT guard (A2)", () => {
     const trn = trnOf({ doc: base, selection: caret("p1", 2) }, insertShape("rect"));
     expect(trn.ops.some((o) => o.type === "splitParagraph")).toBe(true);
   });
+
+  it("keeps the original selection when the block after the region isn't a paragraph", () => {
+    // A TOC entry immediately followed by an image (a non-paragraph block can't hold a
+    // text caret): the redirect must not land an invalid caret on it — fall back to the
+    // caret's original position.
+    const img = { kind: "image" as const, id: "im1", revision: 0, src: "blob:x", widthPx: 10, heightPx: 10, align: "left" as const };
+    const base: Document = { section: SECTION, blocks: [tocPara("t1"), img] };
+    const trn = trnOf({ doc: base, selection: caret("t1", 2) }, insertShape("rect"));
+    expect(trn.ops.every((o) => o.type !== "splitParagraph")).toBe(true);
+    // Selection stays on the TOC entry (offset 2), NOT on the image block.
+    expect(trn.selectionAfter?.focus.blockId).toBe("t1");
+    expect(trn.selectionAfter?.focus.offset).toBe(2);
+  });
 });
 
 describe("clampAnchorOffsetToPage (F2)", () => {
