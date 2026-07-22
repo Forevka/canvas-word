@@ -1216,10 +1216,16 @@ function layoutDocument(
   // Measured at each block's OWN section width (the section pointer advances
   // through the same block order the walk uses).
   const measured: Measured[] = [];
+  // Doc-block index for each measured entry. Hidden-layout-skip paragraphs are
+  // dropped below, so measured[] is SHORTER than doc.blocks — its indices no
+  // longer align with the doc-index-based section boundaries (sections[].endBlock).
+  // The placement walk reads this to advance sections at the right block.
+  const measuredDoc: number[] = [];
   let secIdx = 0;
   for (let bi = 0; bi < doc.blocks.length; bi++) {
     while (bi > sections[secIdx]!.endBlock) applySection(sections[++secIdx]!.props);
     const block = doc.blocks[bi]!;
+    const beforeLen = measured.length;
     if (block.kind === "paragraph") {
       if (isHiddenLayoutSkip(block)) continue; // fully-hidden anchor: contributes no layout
       // Indented paragraphs (quotes, list levels) measure at the narrowed width;
@@ -1247,6 +1253,7 @@ function layoutDocument(
       const t = measureTableCached(block, colWidth, getLines, cellListCtx);
       measured.push({ kind: "table", block, ...t });
     }
+    if (measured.length > beforeLen) measuredDoc.push(bi);
   }
   secIdx = 0;
   applySection(sections[0]!.props);
@@ -2029,9 +2036,13 @@ function layoutDocument(
     cur.block.style.namedStyle === adj.block.style.namedStyle;
 
   for (let bi = 0; bi < measured.length; bi++) {
-    // Crossing into a new section: swap geometry, force its first page.
-    if (bi > sections[secIdx]!.endBlock) {
-      while (bi > sections[secIdx]!.endBlock) applySection(sections[++secIdx]!.props);
+    // Crossing into a new section: swap geometry, force its first page. Compare
+    // the entry's DOC index (not the measured index bi — hidden-skip paragraphs
+    // make the two diverge) against the doc-index-based section boundaries, or the
+    // break fires late and strands the section's first block on its own page (#TOC).
+    const di = measuredDoc[bi]!;
+    if (di > sections[secIdx]!.endBlock) {
+      while (di > sections[secIdx]!.endBlock) applySection(sections[++secIdx]!.props);
       startSectionPage(sections[secIdx]!.breakType);
     }
     const m = measured[bi]!;
