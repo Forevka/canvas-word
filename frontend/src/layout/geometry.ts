@@ -1153,6 +1153,17 @@ export interface RowBoundaryHit {
 
 const ROW_GRIP_PX = 6;
 
+/** A thin row must keep a clickable caret band in its middle — otherwise the grips
+ *  of its top and bottom boundaries meet and there's nowhere left to place the caret
+ *  on the text. Reserve this many pixels at a row's centre; the grip reaches into a
+ *  row by at most (rowHeight − ROW_CARET_BAND_PX) / 2 from each of its two edges. */
+const ROW_CARET_BAND_PX = 6;
+
+/** How far a boundary grip may reach INTO an adjacent row of the given height,
+ *  shrinking from {@link ROW_GRIP_PX} on thin rows so the centre stays caret-clickable. */
+const rowGripInto = (rowHeight: number): number =>
+  Math.min(ROW_GRIP_PX, Math.max(0, (rowHeight - ROW_CARET_BAND_PX) / 2));
+
 /** Horizontal boundary (a row's bottom edge) of a body table within grip distance
  *  of a point. Mirrors {@link hitTestColumnBoundary}; the caller checks columns
  *  FIRST so a cell-corner pixel prefers the column grip. Every row's bottom edge is
@@ -1175,7 +1186,14 @@ export function hitTestRowBoundary(
     for (let ri = 0; ri < t.rows.length; ri++) {
       const row = t.rows[ri]!;
       const edge = row.y + row.height;
-      if (Math.abs(y - edge) <= ROW_GRIP_PX) {
+      // The grip reaches UP into this row and DOWN into the next, each clamped so a
+      // thin row keeps a caret band in its centre. Below the last placed row there is
+      // no competing text, so the downward reach keeps the full grip.
+      const nextRow = t.rows[ri + 1];
+      const upExtent = rowGripInto(row.height);
+      const downExtent = nextRow ? rowGripInto(nextRow.height) : ROW_GRIP_PX;
+      const within = y <= edge ? edge - y <= upExtent : y - edge <= downExtent;
+      if (within) {
         return {
           tableId: block.blockId,
           rowIndex: block.firstLineIndex + ri,

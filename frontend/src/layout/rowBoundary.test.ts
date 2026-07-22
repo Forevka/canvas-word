@@ -6,7 +6,7 @@ import { describe, it, expect } from "vitest";
 import type { Block, CharStyle, Document, ParaStyle, Paragraph, SectionProps, TableBlock, TableCell, TableRow } from "@cw/shared";
 import { createLayoutEngine } from "./engine";
 import { hitTestColumnBoundary, hitTestRowBoundary } from "./geometry";
-import type { PlacedBlock } from "./layoutTree";
+import type { LayoutTree, PlacedBlock } from "./layoutTree";
 
 const CHAR: CharStyle = { fontFamily: "Georgia, serif", fontSizePx: 16, bold: false, italic: false, underline: false, strikethrough: false, color: "#000" };
 const PARA: ParaStyle = { align: "left", lineHeight: 1, spaceBeforePx: 0, spaceAfterPx: 0, indentFirstLinePx: 0, indentLeftPx: 0 };
@@ -64,6 +64,50 @@ describe("hitTestRowBoundary", () => {
     const corner = { x: pt.x + pt.colWidths[0]!, y: pt.rows[0]!.y + pt.rows[0]!.height };
     expect(hitTestColumnBoundary(tree, page, corner.x, corner.y)).not.toBeNull();
     expect(hitTestRowBoundary(tree, page, corner.x, corner.y)).not.toBeNull();
+  });
+});
+
+describe("hitTestRowBoundary — thin rows keep a caret band", () => {
+  // A synthetic placed table with exact per-row heights stacked from y=100. Built
+  // directly (not via the engine) so we can pin heights thinner than any content
+  // would ever lay out — the case where the top and bottom grips would otherwise
+  // meet and leave nowhere to click the caret.
+  const stacked = (heights: number[], x = 100, width = 200): LayoutTree => {
+    let y = 100;
+    const rows = heights.map((h) => {
+      const r = { y, height: h, cells: [] };
+      y += h;
+      return r;
+    });
+    const table = { x, y: 100, width, height: y - 100, rows, colWidths: [width] };
+    const block = { blockId: "tbl", x, y: 100, firstLineIndex: 0, lines: [], table };
+    return { pages: [{ index: 0, blocks: [block] }] } as unknown as LayoutTree;
+  };
+  const X = 200; // inside [x, x+width]
+
+  it("leaves the centre of a thin row caret-clickable (no boundary swallows it)", () => {
+    // Middle row is 10px tall (y 140..150). The grips of its top edge (y=140) and
+    // bottom edge (y=150) each reach in only (10−6)/2 = 2px, so the 6px centre band
+    // stays free.
+    const tree = stacked([40, 10, 40]);
+    expect(hitTestRowBoundary(tree, 0, X, 145)).toBeNull(); // dead centre → caret
+    expect(hitTestRowBoundary(tree, 0, X, 143)).toBeNull(); // just inside the band
+    expect(hitTestRowBoundary(tree, 0, X, 147)).toBeNull();
+    // The edges themselves still resize.
+    expect(hitTestRowBoundary(tree, 0, X, 140)?.rowIndex).toBe(0); // top edge
+    expect(hitTestRowBoundary(tree, 0, X, 141)?.rowIndex).toBe(0); // within 2px reach
+    expect(hitTestRowBoundary(tree, 0, X, 150)?.rowIndex).toBe(1); // bottom edge
+    expect(hitTestRowBoundary(tree, 0, X, 149)?.rowIndex).toBe(1);
+  });
+
+  it("keeps the full 6px grip reach on tall rows", () => {
+    // Two 40px rows: the shared boundary at y=140 still grabs the full ±6px, so
+    // ordinary rows are no harder to grab than before.
+    const tree = stacked([40, 40]);
+    expect(hitTestRowBoundary(tree, 0, X, 134)?.rowIndex).toBe(0); // 6px above edge → hit
+    expect(hitTestRowBoundary(tree, 0, X, 133)).toBeNull(); // 7px above → caret
+    expect(hitTestRowBoundary(tree, 0, X, 146)?.rowIndex).toBe(0); // 6px below → still row 0's edge
+    expect(hitTestRowBoundary(tree, 0, X, 147)).toBeNull(); // 7px below → caret
   });
 });
 

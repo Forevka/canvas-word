@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-07-22
+
 ### Added
 - **Drawing shapes — control-surface parity (issue #244, C1–C4 / D2).** A pass over the UX-analysis
   findings so every shape action is reachable from the ribbon **and** the floating toolbar **and** the
@@ -302,6 +304,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **de-dups** so a copy/pasted image never repeats an id.
 
 ### Fixed
+- **Tables — the row-resize grip no longer steals the caret in a thin row.** The drag-to-resize hit zone
+  was a fixed ±6px band around every row's bottom edge, so in a short row the grips of its top and bottom
+  boundaries met in the middle and left nowhere to click a caret onto the text. Each grip now reaches into
+  an adjacent row by at most `(rowHeight − 6) / 2`, reserving a 6px caret band at the row's centre; tall
+  rows keep the full ±6px reach, so ordinary rows are no harder to grab.
 - **Import — a geometry-identical section break no longer page-breaks just because a downstream
   "continuous" break restarts numbering (Effective Age table).** A footer-only Next Page break flows
   (doesn't page) unless the following section is genuinely distinct. The "would this section's own
@@ -2104,6 +2111,7 @@ implementation history in [README.md](./README.md)):
   docId, integration tokens for third-party `/upload`, and session webhooks.
 - Mobile/touch input and a responsive ribbon.
 
+[0.11.0]: https://github.com/Forevka/canvas-word/releases/tag/v0.11.0
 [0.10.2]: https://github.com/Forevka/canvas-word/releases/tag/v0.10.2
 [0.10.0]: https://github.com/Forevka/canvas-word/releases/tag/v0.10.0
 [0.8.0]: https://github.com/Forevka/canvas-word/releases/tag/v0.8.0
