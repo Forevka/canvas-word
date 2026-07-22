@@ -17,6 +17,13 @@ public sealed class WordCanvasEngineOptions
     /// reports allocate a lot of layout state; bump this if you hit OOM.</summary>
     public uint MaxHeapSizeMb { get; init; } = 0;
 
+    /// <summary>Custom fonts to register on the engine at construction, so a document
+    /// that references their <see cref="CustomFont.Family"/> is measured and embedded
+    /// as itself (not substituted). Preferred over
+    /// <see cref="WordCanvasEngine.RegisterCustomFont"/> for pooled/prewarmed engines:
+    /// every engine built from these options gets the same fonts. Empty by default.</summary>
+    public IList<CustomFont> CustomFonts { get; init; } = new List<CustomFont>();
+
     /// <summary>
     /// Resolves the bundle + fonts next to the assembly, or from the
     /// <c>WORDCANVAS_BUNDLE</c> / <c>WORDCANVAS_FONTS</c> env vars when set (handy
