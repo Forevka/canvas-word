@@ -9,26 +9,74 @@
     <RootNamespace>WordCanvas.ClearScript</RootNamespace>
   </PropertyGroup>
 
+  <!-- ── NuGet package metadata ─────────────────────────────────────────────
+       Packed via dotnet/publish-nuget.ps1, which builds the JS bundle first and
+       stamps -Version. Runtime assets (the esbuild bundle + fonts) ship at the
+       package root under assets\ / fonts\ and are copied next to the consumer's
+       assembly by build\WordCanvas.ClearScript.targets. -->
+  <PropertyGroup>
+    <PackageId>WordCanvas.ClearScript</PackageId>
+    <Version>0.11.0</Version>
+    <Authors>Bohdan Lushchyk</Authors>
+    <Company>Bohdan Lushchyk</Company>
+    <Product>WordCanvas.ClearScript</Product>
+    <Title>WordCanvas.ClearScript — headless DOCX/PDF pipeline for .NET</Title>
+    <Description>Run the canvas-word headless layout / import / export pipeline from C# — DOCX import, page-accurate PDF export, DOCX export, a fluent DocumentBuilder, and headless TOC/field recalculation — with no browser, Node process, or engine port. The exact JavaScript the editor and Node backend run is hosted inside a V8 isolate via ClearScript. A fast, low-allocation alternative to Syncfusion DocIO for DOCX-to-PDF. Windows x64.</Description>
+    <PackageTags>docx;pdf;word;ooxml;clearscript;v8;document;pdf-generation;toc;syncfusion-alternative;headless</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/Forevka/canvas-word</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Forevka/canvas-word.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Non-standard package folders (assets\, fonts\) are intentional — the .targets
+         file copies them. NU5100 flags that; NU5128 flags content-only TFM groups. -->
+    <NoWarn>$(NoWarn);NU5100;NU5128;CS1591</NoWarn>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.ClearScript.V8" Version="7.5.1" />
     <PackageReference Include="Microsoft.ClearScript.V8.Native.win-x64" Version="7.5.1" />
   </ItemGroup>
 
-  <!-- The headless JS bundle (esbuild output) copied next to the assembly. -->
+  <!-- The headless JS bundle (esbuild output). Copied next to THIS assembly for the
+       bench/examples/tests, and packed to the NuGet at assets\ for consumers. -->
   <ItemGroup>
     <None Include="assets\wordcanvas.clearscript.js" Condition="Exists('assets\wordcanvas.clearscript.js')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>assets\wordcanvas.clearscript.js</Link>
+      <Pack>true</Pack>
+      <PackagePath>assets\</PackagePath>
     </None>
   </ItemGroup>
 
   <!-- Bundled metric-clone + math fonts, linked from the frontend source of truth
-       (not duplicated in git) and copied to output/fonts for host injection. -->
+       (not duplicated in git) and copied to output/fonts for host injection; packed
+       to the NuGet at fonts\ for consumers. -->
   <ItemGroup>
     <None Include="..\..\..\frontend\src\export\shared\fonts\*.ttf">
       <Link>fonts\%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+      <PackagePath>fonts\</PackagePath>
     </None>
   </ItemGroup>
+
+  <!-- The consumer-side copy targets (into build\ + buildTransitive\) and the
+       package README (rendered on nuget.org). Neither is part of the build output. -->
+  <ItemGroup>
+    <None Include="build\WordCanvas.ClearScript.targets" Pack="true" PackagePath="build\;buildTransitive\" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+  <!-- Fail fast when packing without the generated bundle rather than shipping a
+       broken package (the bundle is gitignored — build it before packing). -->
+  <Target Name="EnsureClearScriptBundle" BeforeTargets="Pack">
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\assets\wordcanvas.clearscript.js')"
+           Text="The ClearScript JS bundle (assets\wordcanvas.clearscript.js) is missing. Run 'node frontend/scripts/build-clearscript.mjs' before packing (dotnet/publish-nuget.ps1 does this for you)." />
+  </Target>
 
 </Project>
