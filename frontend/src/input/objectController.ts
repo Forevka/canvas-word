@@ -136,6 +136,10 @@ export interface ObjectFrame {
   /** Re-pin the crop overlay after a zoom/relayout (the live window is held in
    *  crop fractions, so it survives the rescale). No-op when not cropping. */
   refreshCrop(rect: Rect): void;
+  /** Give the selection frame an accessible name (E4): with a name it becomes a
+   *  `role="img"` node carrying the shape's label + text in the a11y tree; `null`
+   *  clears it back to a decorative, unnamed box (e.g. for a non-shape object). */
+  setAccessibleName(name: string | null): void;
   /** Whether crop mode is active. */
   isCropping(): boolean;
   /** Leave crop mode and return the final insets the caller should commit — `null`
@@ -854,7 +858,18 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
       cancelRotateDrag(); // drop any in-flight rotate + its preview transform
       frame.style.transform = "";
       frame.style.display = "none";
+      frame.removeAttribute("role"); // drop the stale accessible name with the frame
+      frame.removeAttribute("aria-label");
       hideGhost();
+    },
+    setAccessibleName(name: string | null): void {
+      if (name) {
+        frame.setAttribute("role", "img");
+        frame.setAttribute("aria-label", name);
+      } else {
+        frame.removeAttribute("role");
+        frame.removeAttribute("aria-label");
+      }
     },
     beginCrop(rect: Rect, src: string, crop?: CropInsets | null): void {
       showCropOverlay(rect, src, crop ?? NO_CROP);

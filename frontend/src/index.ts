@@ -67,6 +67,7 @@ import { showTocProperties } from "./ui/tocProperties";
 import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
 import { showTableProperties, type BorderStyleName, type CellTextDir, type TablePropertiesHandle } from "./ui/tableProperties";
 import { createA11yMirror } from "./a11y/mirror";
+import { shapeAccessibleName, describeShapeSelected, describeShapeMoved, describeShapeRotated } from "./a11y/shapeAnnounce";
 import {
   changeListLevel,
   applyTableStyle,
@@ -1236,8 +1237,10 @@ export function createEditor(
     onRotateCommit: (deg) => {
       if (!selectedObject) return;
       const rotation = deg === 0 ? null : deg;
-      if (locateShape(doc, selectedObject)) {
+      const shp = locateShape(doc, selectedObject)?.block;
+      if (shp) {
         dispatch(setShapeProps(selectedObject, { rotation }));
+        mirror.announce(describeShapeRotated(shp, deg)); // E4: speak the new angle
         return;
       }
       if (locateImage(doc, selectedObject)) {
@@ -1284,6 +1287,7 @@ export function createEditor(
       // images are offset-positioned and keep their left edge.
       const anchor = img.anchor ? "left" : img.align;
       objectFrame.show(rect, maxW, img.src, anchor, true, true, img.rotation ?? 0);
+      objectFrame.setAccessibleName(null); // shape-scoped naming only (E4)
       return;
     }
     // Display equations resize too (uniform scale) — same 8-handle frame, but no
@@ -1294,6 +1298,7 @@ export function createEditor(
     if (eq) {
       const anchor = eq.align === "right" ? "right" : eq.align === "left" ? "left" : "center";
       objectFrame.show(rect, contentWidth(), undefined, anchor, true);
+      objectFrame.setAccessibleName(null);
       return;
     }
     // Drawing shapes resize like images (raw width/height, no aspect lock) — the
@@ -1305,11 +1310,15 @@ export function createEditor(
       const maxW = shp.anchor ? doc.section.pageWidthPx : contentWidth();
       const anchor = shp.anchor ? "left" : shp.align;
       objectFrame.show(rect, maxW, undefined, anchor, true, true, shp.rotation ?? 0);
+      // E4: give the selection frame the shape's accessible name (preset + text) so
+      // it's a named node in the a11y tree, not an anonymous box.
+      objectFrame.setAccessibleName(shapeAccessibleName(shp));
       return;
     }
     // Any other selectable object (e.g. a custom block) is selectable but NOT
     // resizable — a plain selection box with no handles.
     objectFrame.show(rect, contentWidth(), undefined, "left", false);
+    objectFrame.setAccessibleName(null);
   };
 
   /** Is the current object selection an image (vs an equation / other block)? */
@@ -1345,6 +1354,12 @@ export function createEditor(
     // may be null). Previously only the select path refreshed.
     refreshSelectionVisuals();
     refreshObjectFrame();
+    // E4: speak the newly-selected shape (label + text) into the a11y live region —
+    // shapes are canvas-painted and otherwise announce nothing to a screen reader.
+    if (blockId) {
+      const shp = locateShape(doc, blockId)?.block;
+      if (shp) mirror.announce(describeShapeSelected(shp));
+    }
     notifyChange(); // object selection drives the floating image toolbar
   };
 
@@ -2395,12 +2410,13 @@ export function createEditor(
     applyObjectMove: (blockId, x, y, transient) => {
       let ox = x;
       let oy = y;
+      const shp = locateShape(doc, blockId)?.block;
       // F2: clamp the committed drop to the page so a shape can never be dragged
       // fully off-page and lost. The live preview (transient) drags freely; only the
       // final "command" is clamped. Derive the anchor origin from the CURRENT laid-out
       // rect minus its current offset (a consistent pair) so any relativeFrom frame works.
       if (!transient) {
-        const anchor = locateShape(doc, blockId)?.block.anchor ?? locateImage(doc, blockId)?.image.anchor;
+        const anchor = shp?.anchor ?? locateImage(doc, blockId)?.image.anchor;
         const rect = objectRect(tree, blockId);
         const pg = rect ? tree.pages[rect.pageIndex] : undefined;
         if (anchor && rect && pg) {
@@ -2415,13 +2431,12 @@ export function createEditor(
         }
       }
       dispatch(
-        (locateShape(doc, blockId) ? moveAnchoredShape : moveAnchoredImage)(
-          blockId,
-          ox,
-          oy,
-          transient ? "transient" : "command",
-        ),
+        (shp ? moveAnchoredShape : moveAnchoredImage)(blockId, ox, oy, transient ? "transient" : "command"),
       );
+      // E4: announce once on the move COMMIT (not the per-frame transient previews),
+      // and only for an anchored shape — moveAnchoredShape no-ops otherwise. Announce
+      // the CLAMPED final position (ox/oy), matching what F2 actually committed.
+      if (!transient && shp?.anchor) mirror.announce(describeShapeMoved(shp, ox, oy));
     },
     onTab: tabInTable,
     onSdtPress: sdtPopupCtl.handlePress,

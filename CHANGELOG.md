@@ -38,6 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reachable from the ribbon **Shape** group **and** the shape **right-click menu** (via a new
   `onEditShapeSizePosition` editor hook); X/Y stay disabled with an explanatory note for in-line shapes,
   whose position is layout-driven.
+- **Drawing shapes — screen-reader announcements + accessible name (issue #244, E4).** Shapes are
+  painted on the canvas and so were invisible to assistive tech: selecting, moving, or rotating one
+  announced **nothing** and no shape carried an accessible name. Now the editor speaks a **live-region
+  announcement** on shape **select** (`"Rectangle: Title, selected"`), **move** (`"Rectangle moved to
+  120, 80 pixels"` — once, on the drag/nudge **commit**), and **rotate** (`"Rectangle rotated to 45
+  degrees"`, or `"rotation removed"` at 0°); and the selection frame becomes a **named `role="img"`
+  node** carrying the shape's **accessible name** — its friendly geometry label (`Rectangle`, `Rounded
+  rectangle`, `Right arrow`, `Group of 3 shapes`, or a generic `Shape` for freeform geometry) plus any
+  **text-box text** (capped). Editor-a11y only — no model/OOXML change; the full DOM-selection canvas
+  mirror stays a milestone-6 item.
 - **Object rotate handle + image rotation (issue #236).** The object selection frame now carries a
   **rotate handle** — an arc-arrow pinned just outside the frame's right edge (shapes **and** images).
   Dragging it rotates the object about its center: the angle tracks the pointer, **Shift** snaps to 15°
