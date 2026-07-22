@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-07-22
+
 ### Added
 - **Custom fonts for the `WordCanvas.ClearScript` .NET host.** The C# ClearScript bindings can now
   register custom fonts, so a document that references a non-bundled family is measured and
