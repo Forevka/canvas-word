@@ -687,14 +687,20 @@ var brandDoc = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Let
     .Paragraph("Custom Fonts", p => p.WithStyle("Heading1"))
     .Paragraph("This line is rendered in the host-registered \"Brand Demo\" family.", p => p.Font("Brand Demo"))
     .Build();
+// Pin the export date so the two self-check PDFs below differ ONLY by their embedded
+// font (deterministic mode fixes the dates + content-derived /ID); otherwise live
+// timestamps would make them differ regardless of the font and the check would lie.
+engine.SetExportDate(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
 var brandPdf = brandDoc.ExportPdf();
 var brandDocx = brandDoc.ExportDocx();
 File.WriteAllBytes(Path.Combine(outDir, "showcase-customfont.pdf"), brandPdf);
 File.WriteAllBytes(Path.Combine(outDir, "showcase-customfont.docx"), brandDocx);
 // Self-check: the SAME document exported with the family unregistered substitutes to
-// a bundled clone, so the embedded face — and thus the PDF bytes — must differ.
+// a bundled clone, so the embedded face — and thus the PDF bytes — must differ. With
+// the date pinned, that difference is attributable to the font alone.
 engine.ClearCustomFonts();
 var substitutedPdf = brandDoc.ExportPdf();
+engine.SetExportDate(null); // restore live dates
 var embedsCustom = !brandPdf.AsSpan().SequenceEqual(substitutedPdf);
 Console.WriteLine("Custom fonts:");
 Console.WriteLine($"  registered     : \"Brand Demo\" (regular only) → showcase-customfont.pdf ({brandPdf.Length / 1024} KB), .docx ({brandDocx.Length / 1024} KB)");

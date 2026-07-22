@@ -135,7 +135,21 @@ public sealed class WordCanvasEngine : IDisposable
             throw new WordCanvasException($"CustomFont \"{font.Family}\" has invalid sizing (need Ascent > 0, Descent >= 0).");
         if (font.Regular is not { Length: > 0 })
             throw new WordCanvasException($"CustomFont \"{font.Family}\" requires the Regular face bytes (TTF/OTF).");
+        RejectWoff(font.Family, font.Regular);
+        RejectWoff(font.Family, font.Bold);
+        RejectWoff(font.Family, font.Italic);
+        RejectWoff(font.Family, font.BoldItalic);
         _customFonts.Add(font);
+    }
+
+    // WOFF/WOFF2 are compressed SFNT wrappers; fontkit (measuring) and pdfkit
+    // (embedding) both need raw uncompressed TTF/OTF, so reject them up front by magic
+    // signature — "wOFF" (WOFF) or "wOF2" (WOFF2) — rather than fail cryptically later.
+    private static void RejectWoff(string family, byte[]? face)
+    {
+        if (face is not { Length: >= 4 }) return;
+        if (face[0] == 0x77 && face[1] == 0x4F && face[2] == 0x46 && (face[3] == 0x46 || face[3] == 0x32))
+            throw new WordCanvasException($"CustomFont \"{family}\": WOFF/WOFF2 is not supported — use TTF/OTF.");
     }
 
     /// <summary>Marshal the registered fonts into the JS <c>CustomFontPayload</c> the

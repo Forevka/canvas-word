@@ -56,4 +56,11 @@ describe("buildFontPayload", () => {
     const bad = { family: "X", ascent: 0.9, descent: 0.25 } as unknown as CustomFontSpec;
     expect(() => buildFontPayload([bad])).toThrow(/regular face bytes/);
   });
+
+  it("rejects WOFF/WOFF2 bytes by signature", () => {
+    const woff = new Uint8Array([0x77, 0x4f, 0x46, 0x46, 0, 0, 0, 0]); // "wOFF"
+    const woff2 = new Uint8Array([0x77, 0x4f, 0x46, 0x32, 0, 0, 0, 0]); // "wOF2"
+    expect(() => buildFontPayload([{ ...regularOnly, regular: woff }])).toThrow(/WOFF/);
+    expect(() => buildFontPayload([{ ...regularOnly, bold: woff2 }])).toThrow(/WOFF/);
+  });
 });

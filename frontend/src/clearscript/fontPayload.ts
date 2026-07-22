@@ -37,6 +37,13 @@ const STYLE_BYTES: [FontStyleName, keyof CustomFontSpec][] = [
   ["BoldItalic", "boldItalic"],
 ];
 
+/** True if the bytes start with the WOFF ("wOFF") or WOFF2 ("wOF2") signature —
+ *  compressed SFNT wrappers fontkit/pdfkit can't consume (they need raw TTF/OTF). The
+ *  browser/Node path rejects these by URL extension; the byte path checks the magic. */
+function isWoffBytes(b: Uint8Array): boolean {
+  return b.length >= 4 && b[0] === 0x77 && b[1] === 0x4f && b[2] === 0x46 && (b[3] === 0x46 || b[3] === 0x32);
+}
+
 /** Build the {@link CustomFontPayload} from host specs. `defs.fonts[].faces` carries
  *  synthetic (never-fetched) markers just so each def validates + resolves as a custom
  *  family; the actual bytes travel in `faces`, keyed by family+style exactly as the
@@ -52,6 +59,12 @@ export function buildFontPayload(specs: CustomFontSpec[]): CustomFontPayload {
     // through and then silently substitute at resolve time.
     if (!(spec.regular instanceof Uint8Array) || spec.regular.length === 0) {
       throw new Error(`custom font "${spec.family}" requires the regular face bytes (TTF/OTF)`);
+    }
+    for (const [, key] of STYLE_BYTES) {
+      const faceBytes = spec[key] as Uint8Array | undefined;
+      if (faceBytes && isWoffBytes(faceBytes)) {
+        throw new Error(`custom font "${spec.family}": WOFF/WOFF2 is not supported — use TTF/OTF`);
+      }
     }
     // Synthetic marker per present face — non-empty + non-WOFF so isRegistrableFontDef
     // accepts it; never dereferenced (bare V8 doesn't fetch), the bytes are in `faces`.

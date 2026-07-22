@@ -512,11 +512,12 @@ Differences to keep in mind when reading the numbers:
   doc.ExportPdf(ms);                                // pooled copy; returns bytes written
   await ms.CopyToAsync(httpResponse.Body);
   ```
-- **Fonts.** Out of the box only the bundled Latin metric clones (+ STIX math) are
-  embedded, matching the Node export; other families are substituted. Register your own
-  with **[Custom fonts](#custom-fonts)** to embed them as themselves. CJK / complex
-  scripts render as tofu in PDF unless a face is registered (same gap as the backend).
-  The model keeps original family names.
+- **Fonts.** The bundle embeds the Latin metric clones, STIX math, and Noto fallbacks
+  for CJK (Simplified Chinese), Arabic, and Hebrew — matching the Node export; other
+  families are substituted to the nearest of these. Register your own with **[Custom
+  fonts](#custom-fonts)** to embed them as themselves. Scripts with no bundled fallback
+  (or glyphs outside a fallback's coverage) still render as tofu until a covering font
+  is registered. The model keeps original family names.
 - **PDF bytes are byte-identical to the Node host** (same bundle) in deterministic
   mode. `WordCanvasEngine.SetExportDate(fixedDate)` pins the `CreationDate`/`ModDate`
   and the trailer `/ID` (the latter is otherwise host-divergent — pdfkit derives it
