@@ -61,6 +61,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Editor-a11y / input only — no model/OOXML change; the full DOM-selection canvas mirror stays a
   milestone-6 item.
+- **Drawing shapes — multi-select → Group / Ungroup (issue #244, F5).** Grouped shapes could be
+  rendered and round-tripped but never *authored* in the editor. Now: **Shift/Ctrl-click** a second (and
+  further) shape to build a multi-selection — the newest is the handle-bearing primary, the rest show a
+  dashed outline — then **Group** collapses them into one `ShapeGroup` container (OOXML `wpg:wgp`) whose
+  box is their bounding box, with each member mapped into the group's child coordinate space so moving or
+  **resizing the group transforms every member as one**. **Ungroup** flattens a group back into its child
+  shapes at their exact page positions and sizes. Both are single, fully-reversible undo steps, and both
+  are reachable from **every** surface — the ribbon **Shape** group, the right-click menu, and the shape's
+  floating toolbar (the PR #9 reachability bar). Group authoring reuses the existing shape
+  select/resize/anchor/z-order machinery (the group *is* a shape); no new model or OOXML — it produces the
+  same `wpg:wgp` the importer/builder already handle.
+- **Drawing shapes — widened preset gallery with categories + recently-used (issue #244, A3).** The Insert
+  → Shapes gallery grew from a flat 8-item grid into **categorised** sections — **Lines**, **Basic Shapes**
+  and **Block Arrows** — and gained seven presets: **pentagon, hexagon, 5-point star, parallelogram,
+  trapezoid, up arrow, down arrow** (all standard DrawingML `a:prstGeom` presets, so they round-trip
+  losslessly). A **"Recently used"** row (persisted) surfaces the last shapes you inserted. Each preset is
+  drawn faithfully by the canvas **and** PDF painters, imported (whitelisted so its `a:avLst` adjust
+  survives), authorable from the `DocumentBuilder` and the C# bindings (`ShapePreset` enum), and shown in
+  the default document + C# showcase (schema-validated by `ooxml-validate`).
+- **Colour pickers — theme colours + recent colours (issue #244, D1).** The shared colour popover (shape
+  fill, shape outline, font colour, highlight) now shows a **Theme colours** row and a persisted **Recent
+  colours** row beneath the standard palette, for parity with the rest of the editor's pickers. (The theme
+  row is the Office **default** theme; surfacing an imported document's own `a:clrScheme` palette needs
+  runtime plumbing and is deferred.)
 - **Object rotate handle + image rotation (issue #236).** The object selection frame now carries a
   **rotate handle** — an arc-arrow pinned just outside the frame's right edge (shapes **and** images).
   Dragging it rotates the object about its center: the angle tracks the pointer, **Shift** snaps to 15°

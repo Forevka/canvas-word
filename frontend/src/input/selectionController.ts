@@ -88,6 +88,9 @@ export interface SelectionControllerDeps {
   onDecorationClick(clientX: number, clientY: number): boolean;
   /** Select an image object (null clears). */
   selectObject(blockId: string | null): void;
+  /** Add/remove a drawing shape to/from the F5 multi-select (Shift/Ctrl-click); a
+   *  non-shape object falls back to a plain single selection (issue #244). */
+  toggleObjectSelection(blockId: string): void;
   /** True when an object is selected (Delete/Backspace/Escape route to it). */
   hasSelectedObject(): boolean;
   /** Move the object selection to the next (or previous, `backward`) selectable
@@ -450,6 +453,13 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
         const objHit = hitTestSelectableObject(deps.getTree(), pt.pageIndex, pt.x, pt.y, scope());
         if (objHit) {
           ev.preventDefault();
+          // Shift/Ctrl-click toggles a shape in the F5 multi-select (for grouping),
+          // instead of replacing the selection (#244). Single-click only — a modified
+          // double-click still just toggles.
+          if (ev.shiftKey || ev.ctrlKey || ev.metaKey) {
+            deps.toggleObjectSelection(objHit.blockId);
+            return;
+          }
           // A double-click on a shape carrying a text box enters it (caret inside),
           // instead of just (re)selecting the object — like Word (#219). A double-
           // click on a top-level text-LESS shape starts a body and enters it (#235).

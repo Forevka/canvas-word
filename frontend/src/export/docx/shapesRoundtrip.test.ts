@@ -40,8 +40,8 @@ describe("drawing shapes — DrawingML wps:wsp round-trip", () => {
     expect(out.stroke).toEqual({ color: "#41719c", widthPt: 1.5 });
   });
 
-  it("round-trips every preset in the Part 2 set", () => {
-    for (const preset of ["rect", "roundRect", "ellipse", "triangle", "diamond", "rightArrow", "leftArrow", "line"] as const) {
+  it("round-trips every preset in the gallery set (incl. the issue #244 widening)", () => {
+    for (const preset of ["rect", "roundRect", "ellipse", "triangle", "diamond", "rightArrow", "leftArrow", "line", "pentagon", "hexagon", "star5", "parallelogram", "trapezoid", "upArrow", "downArrow"] as const) {
       expect(firstShape(roundTrip(docOf(shape({ geometry: { preset } })))).geometry.preset).toBe(preset);
     }
   });
@@ -517,7 +517,7 @@ describe("drawing shapes — DrawingML wps:wsp round-trip", () => {
       <wp:inline><wp:extent cx="914400" cy="914400"/><wp:docPr id="1" name="Shape"/>
         <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
           <wps:wsp><wps:cNvSpPr/><wps:spPr>
-            <a:prstGeom prst="star5"><a:avLst><a:gd name="adj" fmla="val 19000"/></a:avLst></a:prstGeom>
+            <a:prstGeom prst="cloud"><a:avLst><a:gd name="adj" fmla="val 19000"/></a:avLst></a:prstGeom>
             <a:solidFill><a:srgbClr val="d9e2f0"/></a:solidFill>
           </wps:spPr><wps:bodyPr/></wps:wsp>
         </a:graphicData></a:graphic>

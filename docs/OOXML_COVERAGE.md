@@ -350,7 +350,7 @@ Decoded in `documentParser.ts` (`parseShapeWsp`), emitted by `shapeParagraphXml`
 
 ```
 w:drawing → wp:inline / wp:anchor → a:graphicData @uri=…/wordprocessingShape → wps:wsp ✅ ShapeBlock
-├─ wps:spPr / a:prstGeom @prst .......... ✅ rect/roundRect/ellipse/triangle/diamond/right|leftArrow/line; other presets → rect + warning
+├─ wps:spPr / a:prstGeom @prst .......... ✅ rect/roundRect/ellipse/triangle/diamond/right|leftArrow/line/pentagon/hexagon/star5/parallelogram/trapezoid/up|downArrow; other presets → rect + warning
 ├─ a:custGeom / a:pathLst / a:path ...... ✅ freeform geometry → geometry.custom (moveTo/lnTo/cubicBezTo/close; normalized 0–1 path); arc/quadBez/extra sub-paths → custom-path-simplified warning (Part 7, #220)
 ├─ wp:extent (@cx/@cy) → widthPx/heightPx ✅
 ├─ a:solidFill / a:noFill (shape fill) .. ✅ hex color / explicit none (absent = default)

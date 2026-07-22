@@ -506,6 +506,42 @@ function shapePathPdf(doc: PDFKit.PDFDocument, preset: PlacedShape["preset"], x:
       poly([[x + w, t], [x + head, t], [x + head, y], [x, y + h / 2], [x + head, y + h], [x + head, b], [x + w, b]]);
       return;
     }
+    case "pentagon":
+      poly([[x + w / 2, y], [x + w, y + h * 0.38], [x + w * 0.82, y + h], [x + w * 0.18, y + h], [x, y + h * 0.38]]);
+      return;
+    case "hexagon":
+      poly([[x + w * 0.25, y], [x + w * 0.75, y], [x + w, y + h / 2], [x + w * 0.75, y + h], [x + w * 0.25, y + h], [x, y + h / 2]]);
+      return;
+    case "star5": {
+      const cx = x + w / 2, cy = y + h / 2;
+      const pts: [number, number][] = [];
+      for (let i = 0; i < 10; i++) {
+        const ang = -Math.PI / 2 + (i * Math.PI) / 5;
+        const rx = (i % 2 === 0 ? 0.5 : 0.38) * w;
+        const ry = (i % 2 === 0 ? 0.5 : 0.38) * h;
+        pts.push([cx + rx * Math.cos(ang), cy + ry * Math.sin(ang)]);
+      }
+      poly(pts);
+      return;
+    }
+    case "parallelogram":
+      poly([[x + w * 0.25, y], [x + w, y], [x + w * 0.75, y + h], [x, y + h]]);
+      return;
+    case "trapezoid":
+      poly([[x + w * 0.25, y], [x + w * 0.75, y], [x + w, y + h], [x, y + h]]);
+      return;
+    case "upArrow": {
+      const head = Math.min(0.4 * h, h);
+      const l = x + w * 0.25, r = x + w * 0.75;
+      poly([[l, y + h], [l, y + head], [x, y + head], [x + w / 2, y], [x + w, y + head], [r, y + head], [r, y + h]]);
+      return;
+    }
+    case "downArrow": {
+      const head = Math.min(0.4 * h, h);
+      const l = x + w * 0.25, r = x + w * 0.75;
+      poly([[l, y], [l, y + h - head], [x, y + h - head], [x + w / 2, y + h], [x + w, y + h - head], [r, y + h - head], [r, y]]);
+      return;
+    }
     default: doc.rect(x, y, w, h);
   }
 }

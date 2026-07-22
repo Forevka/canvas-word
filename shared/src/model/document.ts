@@ -548,7 +548,18 @@ export type ShapePreset =
   | "diamond"
   | "rightArrow"
   | "leftArrow"
-  | "line";
+  | "line"
+  // Widened gallery (issue #244, A3): more Basic-Shapes + Block-Arrows presets. Each
+  // is a standard DrawingML a:prstGeom@prst name, so export stays a pass-through and
+  // import whitelists them; the painters trace a faithful default (fixed-proportion)
+  // path for each — a:avLst adjust guides still only round-trip, they don't reshape.
+  | "pentagon"
+  | "hexagon"
+  | "star5"
+  | "parallelogram"
+  | "trapezoid"
+  | "upArrow"
+  | "downArrow";
 
 /** Outline dash pattern (a:prstDash@val). Each value is the raw OOXML preset-dash
  *  name, so import/export is a pass-through. Absent = a solid line. */
