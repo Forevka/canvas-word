@@ -990,6 +990,30 @@ export function objectRect(tree: LayoutTree, blockId: string): Rect | null {
   return null;
 }
 
+/** Every object-selectable block (image / drawing shape / display equation /
+ *  custom) in page + reading order, including those nested in table cells and the
+ *  behind-text layer — the order the keyboard object-focus cycle (Tab / F6, E3)
+ *  steps through. De-duplicated (an object never splits across pages, but the scan
+ *  is defensive) so each object appears once. */
+export function listSelectableObjects(tree: LayoutTree): string[] {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  const push = (id: string): void => {
+    if (!seen.has(id)) {
+      seen.add(id);
+      ids.push(id);
+    }
+  };
+  const scan = (blocks: PlacedBlock[]): void => {
+    for (const block of blocks) {
+      if (block.image || block.shape || block.equation || block.custom) push(block.blockId);
+      if (block.table) for (const row of block.table.rows) for (const cell of row.cells) scan(cell.blocks);
+    }
+  };
+  for (const page of tree.pages) scan(page.blocks);
+  return ids;
+}
+
 function scanEquationRect(blocks: PlacedBlock[], blockId: string, pageIndex: number): Rect | null {
   for (const block of blocks) {
     if (block.equation && block.blockId === blockId) {

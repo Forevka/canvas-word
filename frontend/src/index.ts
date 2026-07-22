@@ -24,6 +24,7 @@ import {
   hitTestSelectableObject,
   linkAt,
   objectRect,
+  listSelectableObjects,
   selectionRects,
   type ColumnBoundaryHit,
   type RowBoundaryHit,
@@ -1363,6 +1364,56 @@ export function createEditor(
     notifyChange(); // object selection drives the floating image toolbar
   };
 
+  /** Keyboard object-focus cycle (E3): move the object selection to the next (or
+   *  previous, `backward`) selectable object — image / shape / equation / custom —
+   *  in document order, wrapping. With nothing selected it enters the cycle at the
+   *  first (or last) object. Scrolls the target into view. Returns false (a no-op)
+   *  only when the document has no selectable objects. */
+  const cycleObjectFocus = (backward: boolean): boolean => {
+    if (readonly) return false;
+    const ids = listSelectableObjects(tree);
+    if (ids.length === 0) return false;
+    const cur = selectedObject ? ids.indexOf(selectedObject) : -1;
+    // From an unselected state, forward starts at 0 and backward at the last object;
+    // from a selected object, step one with wraparound.
+    const next =
+      cur < 0 ? (backward ? ids.length - 1 : 0) : (cur + (backward ? -1 : 1) + ids.length) % ids.length;
+    const id = ids[next]!;
+    selectObject(id);
+    const rect = objectRect(tree, id);
+    if (rect) paint.ensureVisible(rect, "center");
+    return true;
+  };
+
+  /** Arrow-key nudge (E2): move the selected ANCHORED shape by `dxPx`/`dyPx`
+   *  (1px, or 10px with Shift — the caller decides), clamping so the box stays on
+   *  its page bar a small overhang. Returns true when the selection is a nudgeable
+   *  anchored shape (so the key is consumed even at the clamp edge), false so the
+   *  arrow falls through to text navigation otherwise. */
+  const nudgeSelectedObject = (dxPx: number, dyPx: number): boolean => {
+    if (readonly || !selectedObject) return false;
+    const shp = locateShape(doc, selectedObject)?.block;
+    if (!shp?.anchor) return false; // only anchored shapes move (moveAnchoredShape no-ops otherwise)
+    const rect = objectRect(tree, selectedObject);
+    if (!rect) return false;
+    const page = tree.pages[rect.pageIndex];
+    const pageW = page?.widthPx ?? doc.section.pageWidthPx;
+    const pageH = page?.heightPx ?? doc.section.pageHeightPx;
+    const OVERHANG = 24; // how far past a page edge a shape may be nudged before it's pinned
+    const clampAxis = (pos: number, size: number, extent: number): number =>
+      Math.max(-OVERHANG, Math.min(extent - size + OVERHANG, pos));
+    // Clamp the resulting page position, then apply the achievable delta to the
+    // anchor offset (offset px and page px share a scale, so the delta transfers 1:1).
+    const appliedDx = clampAxis(rect.x + dxPx, rect.width, pageW) - rect.x;
+    const appliedDy = clampAxis(rect.y + dyPx, rect.height, pageH) - rect.y;
+    if (appliedDx === 0 && appliedDy === 0) return true; // pinned at the edge — consumed, no move
+    const nx = shp.anchor.offsetXPx + appliedDx;
+    const ny = shp.anchor.offsetYPx + appliedDy;
+    dispatch(moveAnchoredShape(selectedObject, nx, ny, "command"));
+    mirror.announce(describeShapeMoved(shp, nx, ny));
+    return true;
+  };
+
   // ---- shape text box editing (issue #219) --------------------------------
   // A drawing shape's text body is a nested paragraph sub-flow (wps:txbx). The
   // caret enters it on double-click / Enter and edits it exactly like body text
@@ -2402,6 +2453,8 @@ export function createEditor(
     onDecorationClick: (x, y) => dispatchDecorationClick(x, y),
     selectObject,
     hasSelectedObject: () => selectedObject !== null,
+    cycleObjectFocus,
+    nudgeSelectedObject,
     deleteSelectedObject: deleteSelectedObjectInternal,
     startColumnDrag,
     setColumnGuide: (guide) => paint.setColumnGuide(guide),

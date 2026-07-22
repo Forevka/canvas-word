@@ -48,6 +48,15 @@ import type { ColumnGuide, RowGuide, PagePoint } from "../paint/renderer";
 import type { CellSelection } from "../editor/state";
 import { extractFragment, fragmentToHtml, fragmentToPlainText, tableRectToClipboard } from "./clipboard";
 
+/** Unit nudge direction (x, y in document px, y-down) per arrow key — the E2
+ *  object-nudge multiplies these by 1px (or 10px with Shift). */
+const ARROW_DELTA: Record<string, [number, number] | undefined> = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+};
+
 export interface SelectionControllerDeps {
   container: HTMLElement;
   getTree(): LayoutTree;
@@ -81,6 +90,15 @@ export interface SelectionControllerDeps {
   selectObject(blockId: string | null): void;
   /** True when an object is selected (Delete/Backspace/Escape route to it). */
   hasSelectedObject(): boolean;
+  /** Move the object selection to the next (or previous, `backward`) selectable
+   *  object in document order, wrapping; from nothing selected it enters at the
+   *  first/last. The keyboard object-focus cycle (Tab while an object is selected,
+   *  and F6 from anywhere — E3). Returns false only when there are no objects. */
+  cycleObjectFocus(backward: boolean): boolean;
+  /** Arrow-key nudge (E2): move the selected anchored shape by `dxPx`/`dyPx`
+   *  (page-clamped). Returns true when the selection is a nudgeable anchored shape
+   *  (the arrow is then consumed), false so the arrow falls through otherwise. */
+  nudgeSelectedObject(dxPx: number, dyPx: number): boolean;
   deleteSelectedObject(): void;
   /** Begin a table column-boundary drag (wiring owns the transient/commit loop). */
   startColumnDrag(hit: ColumnBoundaryHit, ev: MouseEvent): void;
@@ -758,10 +776,28 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
       ev.preventDefault();
       return;
     }
+    // F6 (Shift+F6 backward): step the keyboard focus into the drawing-object layer
+    // and cycle through every selectable object — the "reach the objects" gesture a
+    // canvas gives no other keyboard path to (E3). Works from a text caret too.
+    if (ev.key === "F6" && !ctrl && !ev.altKey && !deps.getActiveShapeText()) {
+      if (deps.cycleObjectFocus(ev.shiftKey)) {
+        ev.preventDefault();
+        return;
+      }
+    }
     // Enter on a selected shape carrying a text box enters it (caret inside) — the
     // keyboard mirror of the double-click-to-edit gesture (#219).
     if (ev.key === "Enter" && !ctrl && !ev.shiftKey && deps.hasSelectedObject()) {
       if (deps.enterSelectedShapeText()) {
+        ev.preventDefault();
+        return;
+      }
+    }
+    // Once in the object layer, Tab / Shift+Tab walk to the next / previous object
+    // (so a keyboard user can move between drawings, then nudge/rotate/delete them —
+    // E3). Plain Tab elsewhere keeps its cell-navigation / default behaviour.
+    if (ev.key === "Tab" && !ctrl && deps.hasSelectedObject()) {
+      if (deps.cycleObjectFocus(ev.shiftKey)) {
         ev.preventDefault();
         return;
       }
@@ -777,6 +813,18 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
       if (edges) deps.setSelection({ anchor: edges.start, focus: edges.end });
       ev.preventDefault();
       return;
+    }
+    // Arrow-nudge a selected object (E2): a selected object clears the text
+    // selection (sel is null), so this must run BEFORE the text-navigation guard.
+    // 1px per press, 10px with Shift; the wiring clamps to the page and only an
+    // anchored shape actually moves (returns true → the arrow is consumed).
+    if (deps.hasSelectedObject() && !ctrl && ARROW_DELTA[ev.key]) {
+      const [ux, uy] = ARROW_DELTA[ev.key]!;
+      const step = ev.shiftKey ? 10 : 1;
+      if (deps.nudgeSelectedObject(ux * step, uy * step)) {
+        ev.preventDefault();
+        return;
+      }
     }
     if (!sel) return;
 

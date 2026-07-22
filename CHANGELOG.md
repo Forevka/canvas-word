@@ -38,16 +38,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reachable from the ribbon **Shape** group **and** the shape **right-click menu** (via a new
   `onEditShapeSizePosition` editor hook); X/Y stay disabled with an explanatory note for in-line shapes,
   whose position is layout-driven.
-- **Drawing shapes — screen-reader announcements + accessible name (issue #244, E4).** Shapes are
-  painted on the canvas and so were invisible to assistive tech: selecting, moving, or rotating one
-  announced **nothing** and no shape carried an accessible name. Now the editor speaks a **live-region
-  announcement** on shape **select** (`"Rectangle: Title, selected"`), **move** (`"Rectangle moved to
-  120, 80 pixels"` — once, on the drag/nudge **commit**), and **rotate** (`"Rectangle rotated to 45
-  degrees"`, or `"rotation removed"` at 0°); and the selection frame becomes a **named `role="img"`
-  node** carrying the shape's **accessible name** — its friendly geometry label (`Rectangle`, `Rounded
-  rectangle`, `Right arrow`, `Group of 3 shapes`, or a generic `Shape` for freeform geometry) plus any
-  **text-box text** (capped). Editor-a11y only — no model/OOXML change; the full DOM-selection canvas
-  mirror stays a milestone-6 item.
+- **Drawing shapes — keyboard operation & screen-reader support (issue #244, E1–E4).** The drawing-shape
+  suite is now usable without a mouse and audible to assistive tech:
+  - **E1 — keyboard-operable Insert-shape gallery.** The Shapes preset picker's cells are now
+    `role="button"` with a **roving tabindex**: the gallery is one Tab stop, **arrow keys** move focus
+    among the cells (Home/End jump to the ends), and **Enter/Space** inserts. Opening the popover moves
+    focus onto the first cell so it's drivable straight away.
+  - **E2 — arrow-key nudge.** With a shape object selected, the **arrow keys** move it **1px** per press
+    (**10px** with **Shift**) via `moveAnchoredShape`, **clamped to the page** (a small overhang is
+    allowed). Anchored shapes only; the arrows still navigate text when no object is selected.
+  - **E3 — object focus cycle.** **F6** (**Shift+F6** backward) steps a keyboard user **into the drawing
+    layer** and cycles through every selectable object (image / shape / equation / custom) in document
+    order; once in the layer, **Tab / Shift+Tab** walk between objects, from where they can be
+    nudged (E2), rotated, or deleted. **Escape** returns to the text.
+  - **E4 — screen-reader announcements + accessible name.** The editor speaks a **live-region
+    announcement** on shape **select** (`"Rectangle: Title, selected"`), **move** (`"Rectangle moved to
+    120, 80 pixels"` — once, on the drag/nudge **commit**), and **rotate** (`"Rectangle rotated to 45
+    degrees"`, or `"rotation removed"` at 0°); and the selection frame becomes a **named `role="img"`
+    node** carrying the shape's **accessible name** — its friendly geometry label (`Rectangle`, `Rounded
+    rectangle`, `Right arrow`, `Group of 3 shapes`, or a generic `Shape` for freeform geometry) plus any
+    **text-box text** (capped).
+
+  Editor-a11y / input only — no model/OOXML change; the full DOM-selection canvas mirror stays a
+  milestone-6 item.
 - **Object rotate handle + image rotation (issue #236).** The object selection frame now carries a
   **rotate handle** — an arc-arrow pinned just outside the frame's right edge (shapes **and** images).
   Dragging it rotates the object about its center: the angle tracks the pointer, **Shift** snaps to 15°
