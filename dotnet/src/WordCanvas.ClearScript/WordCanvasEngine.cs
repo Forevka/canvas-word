@@ -23,6 +23,10 @@ public sealed class WordCanvasEngine : IDisposable
     private readonly ScriptObject _newArr;
     private readonly ScriptObject _runAsync;
     private readonly ScriptObject _drainMacro;
+    private readonly List<CustomFont> _customFonts = new();
+    // Cached JS CustomFontPayload (null when no custom fonts) threaded into every
+    // export; rebuilt whenever the registered set changes.
+    private object? _customFontPayload;
     private bool _disposed;
 
     public WordCanvasEngine(WordCanvasEngineOptions? options = null)
@@ -66,6 +70,10 @@ public sealed class WordCanvasEngine : IDisposable
             _drainMacro = (ScriptObject)GetGlobal("__wc_drainMacro");
 
             InstallFonts(options.FontsDirectory);
+
+            foreach (var font in options.CustomFonts)
+                AddCustomFontInternal(font);
+            RebuildCustomFontPayload();
         }
         catch
         {
@@ -88,6 +96,86 @@ public sealed class WordCanvasEngine : IDisposable
             var bytes = File.ReadAllBytes(file);
             _api.InvokeMethod("installFont", Path.GetFileName(file), AllocBytes(bytes));
         }
+    }
+
+    // ---- custom fonts -------------------------------------------------------
+
+    /// <summary>
+    /// Register a <see cref="CustomFont"/> on this engine so a document that references
+    /// its <see cref="CustomFont.Family"/> is measured and PDF-subset-embedded as
+    /// itself (not substituted to a bundled clone). Takes effect for every subsequent
+    /// export on this engine.
+    /// <para>Prefer <see cref="WordCanvasEngineOptions.CustomFonts"/> for pooled engines:
+    /// a font registered here persists on THIS engine across pool leases, so a later,
+    /// unrelated caller would inherit it. Setting them via options applies the same set
+    /// to every engine the pool builds.</para>
+    /// </summary>
+    public void RegisterCustomFont(CustomFont font)
+    {
+        ThrowIfDisposed();
+        AddCustomFontInternal(font);
+        RebuildCustomFontPayload();
+    }
+
+    /// <summary>Drop every custom font registered on this engine (subsequent exports
+    /// substitute those families to the bundled clones again).</summary>
+    public void ClearCustomFonts()
+    {
+        ThrowIfDisposed();
+        _customFonts.Clear();
+        _customFontPayload = null;
+    }
+
+    private void AddCustomFontInternal(CustomFont font)
+    {
+        ArgumentNullException.ThrowIfNull(font);
+        if (string.IsNullOrWhiteSpace(font.Family))
+            throw new WordCanvasException("CustomFont.Family must be non-empty.");
+        if (!(font.Sizing.Ascent > 0 && font.Sizing.Descent >= 0))
+            throw new WordCanvasException($"CustomFont \"{font.Family}\" has invalid sizing (need Ascent > 0, Descent >= 0).");
+        if (font.Regular is not { Length: > 0 })
+            throw new WordCanvasException($"CustomFont \"{font.Family}\" requires the Regular face bytes (TTF/OTF).");
+        RejectWoff(font.Family, font.Regular);
+        RejectWoff(font.Family, font.Bold);
+        RejectWoff(font.Family, font.Italic);
+        RejectWoff(font.Family, font.BoldItalic);
+        _customFonts.Add(font);
+    }
+
+    // WOFF/WOFF2 are compressed SFNT wrappers; fontkit (measuring) and pdfkit
+    // (embedding) both need raw uncompressed TTF/OTF, so reject them up front by magic
+    // signature — "wOFF" (WOFF) or "wOF2" (WOFF2) — rather than fail cryptically later.
+    private static void RejectWoff(string family, byte[]? face)
+    {
+        if (face is not { Length: >= 4 }) return;
+        if (face[0] == 0x77 && face[1] == 0x4F && face[2] == 0x46 && (face[3] == 0x46 || face[3] == 0x32))
+            throw new WordCanvasException($"CustomFont \"{family}\": WOFF/WOFF2 is not supported — use TTF/OTF.");
+    }
+
+    /// <summary>Marshal the registered fonts into the JS <c>CustomFontPayload</c> the
+    /// export pipeline consumes, caching the result (null when none are registered).</summary>
+    private void RebuildCustomFontPayload()
+    {
+        if (_customFonts.Count == 0)
+        {
+            _customFontPayload = null;
+            return;
+        }
+        var specs = (ScriptObject)NewArray();
+        foreach (var font in _customFonts)
+        {
+            var spec = (ScriptObject)NewObject();
+            spec.SetProperty("family", font.Family);
+            spec.SetProperty("ascent", font.Sizing.Ascent);
+            spec.SetProperty("descent", font.Sizing.Descent);
+            if (!string.IsNullOrEmpty(font.Label)) spec.SetProperty("label", font.Label);
+            spec.SetProperty("regular", AllocBytes(font.Regular));
+            if (font.Bold is { Length: > 0 }) spec.SetProperty("bold", AllocBytes(font.Bold));
+            if (font.Italic is { Length: > 0 }) spec.SetProperty("italic", AllocBytes(font.Italic));
+            if (font.BoldItalic is { Length: > 0 }) spec.SetProperty("boldItalic", AllocBytes(font.BoldItalic));
+            specs.InvokeMethod("push", spec);
+        }
+        _customFontPayload = _api.InvokeMethod("buildFontPayload", specs);
     }
 
     // ---- binary marshalling -------------------------------------------------
@@ -230,7 +318,9 @@ public sealed class WordCanvasEngine : IDisposable
     {
         ThrowIfDisposed();
         var method = pdf ? "exportPdf" : "exportDocx";
-        return ResolveValue(_api.InvokeMethod(method, doc, images ?? (object)Undefined.Value), method);
+        return ResolveValue(
+            _api.InvokeMethod(method, doc, images ?? (object)Undefined.Value, _customFontPayload ?? (object)Undefined.Value),
+            method);
     }
 
     internal byte[] ExportBytes(bool pdf, object doc, object? images) => ReadBytes(ExportValue(pdf, doc, images));

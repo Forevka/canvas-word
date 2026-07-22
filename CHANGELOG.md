@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Custom fonts for the `WordCanvas.ClearScript` .NET host.** The C# ClearScript bindings can now
+  register custom fonts, so a document that references a non-bundled family is measured and
+  PDF-subset-embedded as *itself* instead of being substituted to a bundled metric clone — parity with
+  the browser/Node `fonts` config. Because bare V8 can't fetch face URLs, the host supplies the raw
+  TTF/OTF **bytes** directly (the same model as the bundled fonts): a `CustomFont` carries the family,
+  required vertical metrics (`FontSizing` — ascent/descent, so layout/pagination stays deterministic),
+  and per-style bytes (`Regular` required; `Bold`/`Italic`/`BoldItalic` optional, falling back to
+  regular). Register them via `WordCanvasEngineOptions.CustomFonts` (preferred — applied to every engine
+  a `WordCanvasEnginePool` builds) or `WordCanvasEngine.RegisterCustomFont` / `ClearCustomFonts`. PDF and
+  DOCX export both honour them (the DOCX path uses them for TOC page-number pagination). WOFF/WOFF2 is
+  not supported (fontkit/pdfkit need uncompressed SFNT bytes), matching the browser path.
+
 ## [0.11.0] — 2026-07-22
 
 ### Added

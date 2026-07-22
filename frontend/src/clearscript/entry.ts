@@ -52,6 +52,7 @@ import {
 import { mergeBridge, replaceSdtContentBridge } from "./mergeBridge";
 import type { MergeOptions } from "@cw/shared";
 import type { CustomFontPayload } from "../fonts/customRegistry";
+import { buildFontPayload } from "./fontPayload";
 import type { CjkExportConfig } from "../export/pipeline";
 import type { ImageBytes } from "../export/types";
 
@@ -272,8 +273,10 @@ async function exportPdf(
   return res.bytes;
 }
 
-async function exportDocx(doc: Document, images?: ImageBytes): Promise<Uint8Array> {
-  const res = await runExport(doc, "docx", withDataUrlImages(doc, images));
+async function exportDocx(doc: Document, images?: ImageBytes, fonts?: CustomFontPayload): Promise<Uint8Array> {
+  // fonts feed the TOC layout pass so cached page numbers paginate under the custom
+  // font (matching the PDF path); the DOCX text itself references families by name.
+  const res = await runExport(doc, "docx", withDataUrlImages(doc, images), fonts);
   return res.bytes;
 }
 
@@ -331,6 +334,9 @@ const api = {
   bytesToDataUrl,
   // Host font injection — call once after the engine loads, before any export.
   installFont,
+  // Build the custom-font payload (family + sizing + per-style bytes) the export
+  // pipeline threads through; the host caches it and passes it to export{Pdf,Docx}.
+  buildFontPayload,
   // Pipelines.
   importDocx,
   exportPdf,

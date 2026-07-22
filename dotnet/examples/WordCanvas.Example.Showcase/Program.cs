@@ -669,6 +669,43 @@ File.WriteAllBytes(Path.Combine(outDir, "showcase-footer.docx"), footerDocx);
 Console.WriteLine("Section footer:");
 Console.WriteLine($"  applied        : content footer (table + logo + PAGE) to body section {lastSection} → showcase-footer.docx ({footerDocx.Length / 1024} KB)");
 
+// ---- Custom fonts (host-supplied bytes) -------------------------------------
+// Register a custom family from raw TTF/OTF bytes and render a paragraph in it. Bare
+// V8 can't fetch face URLs like the browser/Node paths, so the host hands the bytes
+// straight in; the family then measures + PDF-subset-embeds as ITSELF (never
+// substituted to a bundled clone). Vertical metrics are required (see FontSizing) so
+// layout/pagination is deterministic. We reuse a bundled .ttf as the "brand" face so
+// the demo has real, valid bytes without shipping an extra font.
+var brandFace = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fonts", "Carlito-Regular.ttf"));
+engine.RegisterCustomFont(new CustomFont
+{
+    Family = "Brand Demo",
+    Sizing = new FontSizing(0.9, 0.25),
+    Regular = brandFace,
+});
+var brandDoc = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Letter })
+    .Paragraph("Custom Fonts", p => p.WithStyle("Heading1"))
+    .Paragraph("This line is rendered in the host-registered \"Brand Demo\" family.", p => p.Font("Brand Demo"))
+    .Build();
+// Pin the export date so the two self-check PDFs below differ ONLY by their embedded
+// font (deterministic mode fixes the dates + content-derived /ID); otherwise live
+// timestamps would make them differ regardless of the font and the check would lie.
+engine.SetExportDate(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+var brandPdf = brandDoc.ExportPdf();
+var brandDocx = brandDoc.ExportDocx();
+File.WriteAllBytes(Path.Combine(outDir, "showcase-customfont.pdf"), brandPdf);
+File.WriteAllBytes(Path.Combine(outDir, "showcase-customfont.docx"), brandDocx);
+// Self-check: the SAME document exported with the family unregistered substitutes to
+// a bundled clone, so the embedded face — and thus the PDF bytes — must differ. With
+// the date pinned, that difference is attributable to the font alone.
+engine.ClearCustomFonts();
+var substitutedPdf = brandDoc.ExportPdf();
+engine.SetExportDate(null); // restore live dates
+var embedsCustom = !brandPdf.AsSpan().SequenceEqual(substitutedPdf);
+Console.WriteLine("Custom fonts:");
+Console.WriteLine($"  registered     : \"Brand Demo\" (regular only) → showcase-customfont.pdf ({brandPdf.Length / 1024} KB), .docx ({brandDocx.Length / 1024} KB)");
+Console.WriteLine($"  embeds custom  : {embedsCustom} (PDF differs from the substituted export)");
+
 Console.WriteLine($"Output written to: {outDir}");
 
 static string Trunc(string s) => s.Length <= 60 ? s : s[..57] + "...";

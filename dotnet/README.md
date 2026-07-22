@@ -255,6 +255,62 @@ empty TOC field's entries from the current headings without a docx round-trip), 
 WordDocument updated = doc.UpdateFields();      // or engine.UpdateFields(doc, opts)
 ```
 
+## Custom fonts
+
+By default the engine embeds only the bundled Latin metric clones (+ STIX math + a
+CJK fallback); any other family a document references is **substituted** to the
+closest clone. Register your own fonts so that family is measured and PDF-subset-
+embedded as *itself* — parity with the editor's / Node backend's `fonts` config.
+
+Bare V8 has no `fetch`, so the host supplies the raw **TTF/OTF bytes** directly (the
+same model as the bundled fonts — not URLs). A `CustomFont` carries the family, its
+**required** vertical metrics (`FontSizing` — ascent & descent as fractions of em, so
+measurement, layout, and both exports paginate identically), and the per-style bytes
+(`Regular` required; `Bold` / `Italic` / `BoldItalic` optional, each falling back to
+`Regular`):
+
+```csharp
+using WordCanvas.ClearScript;
+
+var options = new WordCanvasEngineOptions
+{
+    BundlePath     = WordCanvasEngineOptions.Default().BundlePath,
+    FontsDirectory = WordCanvasEngineOptions.Default().FontsDirectory,
+    CustomFonts =                                   // applied to every engine built from these options
+    {
+        new CustomFont
+        {
+            Family  = "Brand Sans",
+            Sizing  = new FontSizing(ascent: 0.9, descent: 0.25),   // required
+            Regular = File.ReadAllBytes("BrandSans-Regular.ttf"),   // required
+            Bold    = File.ReadAllBytes("BrandSans-Bold.ttf"),      // optional
+            Italic  = File.ReadAllBytes("BrandSans-Italic.ttf"),    // optional
+        },
+    },
+};
+using var engine = new WordCanvasEngine(options);
+
+WordDocument doc = engine.NewBuilder()
+    .Paragraph("Rendered in Brand Sans", p => p.Font("Brand Sans"))
+    .Build();
+
+byte[] pdf = doc.ExportPdf();   // Brand Sans measured + subset-embedded, not substituted
+```
+
+- **Family matching** is case- and quote-insensitive: the run's font family (builder
+  `.Font("Brand Sans")`, or a family an imported `.docx` already references) just has
+  to name the registered `Family`.
+- **Both PDF and DOCX export honour registered fonts.** PDF measures + embeds them;
+  DOCX uses them for TOC page-number pagination (the text itself references families
+  by name, as OOXML always does).
+- **TTF/OTF only.** WOFF/WOFF2 is rejected — both fontkit (measuring) and pdfkit
+  (embedding) need uncompressed SFNT bytes (same limit as the browser).
+- **Pooling.** Prefer `WordCanvasEngineOptions.CustomFonts` so every engine a
+  `WordCanvasEnginePool` builds gets the same set. `engine.RegisterCustomFont(...)` /
+  `engine.ClearCustomFonts()` mutate one engine at runtime, but a font registered that
+  way **persists on that engine across pool leases**, so an unrelated later caller
+  would inherit it — use options for the pooled case.
+
 ## Hosting in a multi-threaded app (ASP.NET Core)
 
 A `WordCanvasEngine` owns one V8 isolate and is **not thread-safe** — two threads
@@ -456,9 +512,12 @@ Differences to keep in mind when reading the numbers:
   doc.ExportPdf(ms);                                // pooled copy; returns bytes written
   await ms.CopyToAsync(httpResponse.Body);
   ```
-- **Fonts.** Only the bundled Latin metric clones (+ STIX math) are embedded, matching
-  the Node export. CJK / complex scripts render as tofu in PDF (same gap as the
-  backend). The model keeps original family names.
+- **Fonts.** The bundle embeds the Latin metric clones, STIX math, and Noto fallbacks
+  for CJK (Simplified Chinese), Arabic, and Hebrew — matching the Node export; other
+  families are substituted to the nearest of these. Register your own with **[Custom
+  fonts](#custom-fonts)** to embed them as themselves. Scripts with no bundled fallback
+  (or glyphs outside a fallback's coverage) still render as tofu until a covering font
+  is registered. The model keeps original family names.
 - **PDF bytes are byte-identical to the Node host** (same bundle) in deterministic
   mode. `WordCanvasEngine.SetExportDate(fixedDate)` pins the `CreationDate`/`ModDate`
   and the trailer `/ID` (the latter is otherwise host-divergent — pdfkit derives it

@@ -1,0 +1,31 @@
+<!--
+  Imported automatically into any project that references the WordCanvas.ClearScript
+  NuGet package (NuGet's build/ + buildTransitive/ convention). It copies the two
+  runtime assets the V8 host loads — the esbuild JS bundle and the bundled .ttf
+  fonts — next to the consumer's output assembly, into assets\ and fonts\, which is
+  exactly where WordCanvasEngineOptions.Default() looks (AppContext.BaseDirectory).
+
+  $(MSBuildThisFileDirectory) is the build\ (or buildTransitive\) folder inside the
+  restored package; ..\assets and ..\fonts are the package-root folders the .csproj
+  packs those files into.
+-->
+<Project>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\assets\wordcanvas.clearscript.js"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\assets\wordcanvas.clearscript.js')">
+      <Link>assets\wordcanvas.clearscript.js</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>false</Visible>
+      <Pack>false</Pack>
+    </None>
+
+    <None Include="$(MSBuildThisFileDirectory)..\fonts\*.ttf">
+      <Link>fonts\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>false</Visible>
+      <Pack>false</Pack>
+    </None>
+  </ItemGroup>
+
+</Project>
