@@ -803,7 +803,7 @@ export function createMapper(
     return image;
   }
 
-  const KNOWN_PRESETS = new Set<ShapePreset>(["rect", "roundRect", "ellipse", "triangle", "diamond", "rightArrow", "leftArrow", "line"]);
+  const KNOWN_PRESETS = new Set<ShapePreset>(["rect", "roundRect", "ellipse", "triangle", "diamond", "rightArrow", "leftArrow", "line", "pentagon", "hexagon", "star5", "parallelogram", "trapezoid", "upArrow", "downArrow"]);
   const KNOWN_DASHES = new Set<ShapeDash>(["solid", "dash", "dot", "dashDot", "lgDash"]);
 
   /** The geometry/style fields shared by a leaf shape and a group member — enough to

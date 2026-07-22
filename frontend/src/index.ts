@@ -127,6 +127,8 @@ import {
   bringShapeToFront,
   sendShapeToBack,
   moveAnchoredShape,
+  groupShapes,
+  ungroupShape,
   insertTextBox as insertTextBoxCmd,
   insertShape as insertShapeCmd,
   clampAnchorOffsetToPage,
@@ -221,6 +223,10 @@ export interface CurrentFormat {
   imageSelected: boolean;
   /** A drawing shape is object-selected (gates the contextual Shape ribbon group). */
   shapeSelected: boolean;
+  /** ≥2 drawing shapes are selected (F5) ⇒ the "Group" action is enabled. */
+  multipleShapesSelected: boolean;
+  /** The selected shape is a group container (F5) ⇒ the "Ungroup" action is enabled. */
+  groupSelected: boolean;
   inTable: boolean;
   inContentControl: boolean;
 }
@@ -284,6 +290,14 @@ export interface Editor {
   /** The object-selected drawing shape (fill/stroke/geometry for the shape toolbar
    *  + ribbon Shape group), or null when the selection is not a shape. */
   getSelectedShape(): ShapeBlock | null;
+  /** F5 group authoring (issue #244). `groupShapes` collapses the ≥2 selected shapes
+   *  into one group container and selects it; `ungroupShape` flattens the selected
+   *  group back into its child shapes; the `can*` getters gate the ribbon/menu/toolbar
+   *  entries. */
+  groupShapes(): void;
+  ungroupShape(): void;
+  canGroupShapes(): boolean;
+  canUngroupShape(): boolean;
   dispatch(cmd: Command): void;
   toggleStyle(key: StyleKey): void;
   /** Absolute char patch: range -> restyle runs; collapsed -> pending style. */
@@ -1200,9 +1214,43 @@ export function createEditor(
   // ---- object selection (images): frame, resize, alignment, delete --------
 
   let selectedObject: string | null = null;
+  // F5 multi-select (issue #244): additional drawing-shape ids selected alongside
+  // the primary `selectedObject`, for group authoring. Only shapes participate. The
+  // primary keeps the resize/rotate frame; the co-selected shapes get a lightweight
+  // dashed outline (below). Cleared by any single (non-modifier) selection.
+  let coSelected: string[] = [];
   // Crop session baseline: the image's crop when crop mode was entered (to revert
   // the live transient preview on exit) + whether any live preview was written.
   const cropOrigin = { crop: null as NonNullable<ImageBlock["crop"]> | null, previewed: false };
+
+  // Dashed-outline overlay for co-selected shapes — a reused pool of absolutely
+  // positioned divs pinned onto the page elements (mirrors the object frame's
+  // page-element + zoom positioning). No handles: only the primary shape is resized.
+  const coSelectOverlay: HTMLDivElement[] = [];
+  const refreshMultiSelectOverlay = (): void => {
+    for (const d of coSelectOverlay) d.style.display = "none";
+    coSelected.forEach((id, i) => {
+      const rect = objectRect(tree, id);
+      if (!rect) return;
+      const host = paint.getPageElement(rect.pageIndex);
+      if (!host) return;
+      let d = coSelectOverlay[i];
+      if (!d) {
+        d = document.createElement("div");
+        d.style.cssText =
+          "position:absolute;box-sizing:border-box;pointer-events:none;z-index:2;" +
+          "border:2px dashed #1a73e8;background:rgba(26,115,232,0.06);";
+        coSelectOverlay[i] = d;
+      }
+      if (d.parentElement !== host) host.appendChild(d);
+      const z = paint.getZoom();
+      d.style.left = `${rect.x * z - 2}px`;
+      d.style.top = `${rect.y * z - 2}px`;
+      d.style.width = `${rect.width * z + 4}px`;
+      d.style.height = `${rect.height * z + 4}px`;
+      d.style.display = "block";
+    });
+  };
 
   const contentWidth = (): number =>
     doc.section.pageWidthPx - doc.section.marginPx.left - doc.section.marginPx.right;
@@ -1328,15 +1376,22 @@ export function createEditor(
   /** Is the current object selection a drawing shape? */
   const selectedIsShape = (): boolean => !!selectedObject && locateShape(doc, selectedObject) !== null;
 
-  /** Delete the selected object — image or equation — and clear the selection. */
+  /** Delete the selected object(s) and clear the selection. With an F5 multi-select
+   *  active, EVERY selected shape is deleted (not just the primary). */
   const deleteSelectedObjectInternal = (): void => {
     if (!selectedObject) return;
-    const id = selectedObject;
+    // Snapshot the full selection before clearing it (selectObject wipes both sets).
+    const ids = allSelectedObjectIds();
     selectObject(null);
-    dispatch(locateImage(doc, id) ? deleteImage(id) : removeBlockObject(id));
+    for (const id of ids) {
+      dispatch(locateImage(doc, id) ? deleteImage(id) : removeBlockObject(id));
+    }
   };
 
-  const selectObject = (blockId: string | null): void => {
+  /** Set the PRIMARY object selection (the one bearing the resize/rotate frame)
+   *  WITHOUT touching the F5 multi-select set — the shared core of `selectObject`
+   *  and the multi-select toggle. */
+  const setPrimaryObject = (blockId: string | null): void => {
     // View-only: never raise the image frame (resize handles) — clearing (null)
     // still runs so any stale frame can be torn down.
     if (readonly && blockId !== null) return;
@@ -1426,6 +1481,88 @@ export function createEditor(
     dispatch(moveAnchoredShape(selectedObject, nx, ny, "command"));
     announceNudgeDebounced(describeShapeMoved(shp, nx, ny)); // coalesce a held-arrow burst
     return true;
+  };
+
+  const selectObject = (blockId: string | null): void => {
+    // A plain (non-modifier) selection collapses any F5 multi-select to this object.
+    if (coSelected.length) {
+      coSelected = [];
+      refreshMultiSelectOverlay();
+    }
+    setPrimaryObject(blockId);
+  };
+
+  /** Every object currently selected (primary + F5 co-selected), primary last so it
+   *  stays the handle-bearing one. */
+  const allSelectedObjectIds = (): string[] =>
+    selectedObject ? [...coSelected, selectedObject] : [...coSelected];
+
+  /** The selected DRAWING SHAPES (the group-authoring candidates). */
+  const selectedShapeIds = (): string[] => allSelectedObjectIds().filter((id) => !!locateShape(doc, id));
+
+  /** ≥2 shapes selected ⇒ "Group" is offered. */
+  const canGroupSelection = (): boolean => selectedShapeIds().length >= 2;
+
+  /** The primary selection is a group container ⇒ "Ungroup" is offered. */
+  const selectedIsGroup = (): boolean => !!selectedObject && !!locateShape(doc, selectedObject)?.block.group;
+
+  /** Add/remove a drawing shape to/from the F5 multi-select (Shift/Ctrl-click). A
+   *  non-shape object falls back to a plain single selection. The most-recently
+   *  toggled shape becomes the primary (keeps the resize/rotate frame). */
+  const toggleObjectSelection = (blockId: string): void => {
+    if (!locateShape(doc, blockId)) {
+      selectObject(blockId);
+      return;
+    }
+    const selected = new Set(allSelectedObjectIds());
+    if (selected.has(blockId)) {
+      // Deselect it. If it was the primary, promote a co-selected shape (if any).
+      if (blockId === selectedObject) {
+        const promote = coSelected[coSelected.length - 1] ?? null;
+        coSelected = coSelected.filter((x) => x !== promote);
+        setPrimaryObject(promote);
+      } else {
+        coSelected = coSelected.filter((x) => x !== blockId);
+      }
+    } else {
+      // Add it as the new primary; demote the current primary into the co-selected set.
+      if (selectedObject && locateShape(doc, selectedObject)) coSelected = [...coSelected, selectedObject];
+      setPrimaryObject(blockId);
+    }
+    refreshMultiSelectOverlay();
+    notifyChange();
+  };
+
+  /** Group the selected shapes into one {@link ShapeGroup} container (F5). Resolves
+   *  each shape's current page rect from layout (in-flow shapes have no stored
+   *  absolute position), mints the group id, dispatches, and selects the new group. */
+  const groupSelectedShapes = (): void => {
+    if (readonly) return;
+    const ids = selectedShapeIds();
+    if (ids.length < 2) return;
+    const rects = ids.map((id) => ({ id, rect: objectRect(tree, id) }));
+    if (rects.some((r) => !r.rect)) return;
+    // Grouping is only meaningful within one page's coordinate space.
+    const page = rects[0]!.rect!.pageIndex;
+    if (rects.some((r) => r.rect!.pageIndex !== page)) return;
+    const members = rects.map((r) => ({ blockId: r.id, xPx: r.rect!.x, yPx: r.rect!.y }));
+    const groupId = freshId();
+    coSelected = [];
+    refreshMultiSelectOverlay();
+    dispatch(groupShapes(members, groupId));
+    // Only select the group if it actually materialized (the command no-ops when a
+    // guard fails, e.g. a member isn't a top-level body shape).
+    if (locateShape(doc, groupId)) selectObject(groupId);
+  };
+
+  /** Ungroup the selected group container back into its child shapes (F5). */
+  const ungroupSelectedShape = (): void => {
+    if (readonly || !selectedObject) return;
+    if (!locateShape(doc, selectedObject)?.block.group) return;
+    const rect = objectRect(tree, selectedObject);
+    if (!rect) return;
+    dispatch(ungroupShape(selectedObject, rect.x, rect.y));
+    selectObject(null);
   };
 
   // ---- shape text box editing (issue #219) --------------------------------
@@ -1834,6 +1971,7 @@ export function createEditor(
     cellSelection = null; // grid coords are invalidated by any structural change
     refreshSelectionVisuals();
     refreshObjectFrame(); // images move/resize with reflow; frame follows
+    refreshMultiSelectOverlay(); // co-selected outlines follow the reflow too
     if (searchQuery && !transient) {
       runSearch(); // live re-search while the find bar is open
       paintSearch();
@@ -2466,6 +2604,7 @@ export function createEditor(
     decorationAt: (x, y) => paint.decorationAt(x, y),
     onDecorationClick: (x, y) => dispatchDecorationClick(x, y),
     selectObject,
+    toggleObjectSelection,
     hasSelectedObject: () => selectedObject !== null,
     cycleObjectFocus,
     nudgeSelectedObject,
@@ -3319,6 +3458,10 @@ export function createEditor(
         ...(locateShape(doc, shapeId)?.kind === "top"
           ? [item(shapeHasEditableText(shapeId) ? "Edit Text" : "Add Text", () => startShapeText(shapeId), { icon: ICONS.shapeRect })]
           : [item("Text editing unavailable inside a table cell", () => {}, { icon: ICONS.shapeRect, disabled: true })]),
+        // F5 group authoring (issue #244): Group when ≥2 shapes are selected;
+        // Ungroup when this shape is a group container.
+        ...(canGroupSelection() ? [item("Group", () => groupSelectedShapes(), { icon: ICONS.group })] : []),
+        ...(locateShape(doc, shapeId)?.block.group ? [item("Ungroup", () => ungroupSelectedShape(), { icon: ICONS.ungroup })] : []),
         item("Bring to Front", () => dispatch(bringShapeToFront(shapeId))),
         item("Send to Back", () => dispatch(sendShapeToBack(shapeId))),
         // Numeric size/position/rotation authoring — only when the host wired the
@@ -3624,7 +3767,9 @@ export function createEditor(
       // background image there (mirrors the left-click rule).
       const imageId = pt.inside ? hitTestSelectableObject(tree, pt.pageIndex, pt.x, pt.y, scope())?.blockId ?? null : null;
       if (imageId) {
-        selectObject(imageId);
+        // Preserve an F5 multi-select when the right-click lands on one of its
+        // members, so "Group" stays reachable from the menu; otherwise select it.
+        if (!(coSelected.length && allSelectedObjectIds().includes(imageId))) selectObject(imageId);
         caretIntoImageCell(imageId); // lets the Table section act on the image's cell
       } else {
         selectObject(null);
@@ -3742,6 +3887,7 @@ export function createEditor(
     const after = paint.getZoom();
     if (after === before) return;
     refreshObjectFrame(); // the selection frame's geometry is zoom-scaled
+    refreshMultiSelectOverlay(); // co-selected outlines are zoom-scaled too
     bandHover.hide(); // the affordance is zoom-scaled too; it re-shows on the next hover
     // Keep the anchored point (cursor, or viewport center) stationary.
     const rect = container.getBoundingClientRect();
@@ -3874,6 +4020,10 @@ export function createEditor(
     getSelectedShape(): ShapeBlock | null {
       return selectedObject ? (locateShape(doc, selectedObject)?.block ?? null) : null;
     },
+    groupShapes: groupSelectedShapes,
+    ungroupShape: ungroupSelectedShape,
+    canGroupShapes: canGroupSelection,
+    canUngroupShape: selectedIsGroup,
     getChangeLog(): Change[] {
       return recorder.changes();
     },
@@ -3963,6 +4113,8 @@ export function createEditor(
         listKind,
         imageSelected: selectedIsImage(),
         shapeSelected: selectedIsShape(),
+        multipleShapesSelected: canGroupSelection(),
+        groupSelected: selectedIsGroup(),
         inTable: !!cellSelection || (focus ? locateParagraph(doc, focus.blockId)?.kind === "cell" : false),
         // A selected image inside a control counts too (its caret is cleared), so
         // the Controls ribbon group lights up instead of leaving the user no clue.

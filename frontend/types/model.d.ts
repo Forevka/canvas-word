@@ -145,7 +145,14 @@ export type ShapePreset =
   | "diamond"
   | "rightArrow"
   | "leftArrow"
-  | "line";
+  | "line"
+  | "pentagon"
+  | "hexagon"
+  | "star5"
+  | "parallelogram"
+  | "trapezoid"
+  | "upArrow"
+  | "downArrow";
 export type ShapeDash = "solid" | "dash" | "dot" | "dashDot" | "lgDash";
 export type ShapeFill = { color: string } | { none: true };
 export type ShapeStroke = { color: string; widthPt: number; dash?: ShapeDash } | { none: true };

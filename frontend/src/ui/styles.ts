@@ -412,6 +412,7 @@ const CSS = `
 .cw-grid .cell { width: 15px; height: 15px; border: 1px solid #c8c6c4; background: #fff; }
 .cw-grid .cell.on { background: #cfe3fb; border-color: #2b579a; }
 .cw-grid-label { text-align: center; font-size: 12px; color: #605e5c; padding: 4px 0 6px; }
+.cw-grid-cat { font-size: 11px; font-weight: 600; color: #605e5c; padding: 6px 8px 0; }
 .cw-dialog { display: flex; flex-direction: column; gap: 8px; padding: 10px; min-width: 248px; }
 .cw-dialog label { font-size: 12px; color: #605e5c; display: flex; flex-direction: column; gap: 3px; }
 .cw-dialog input { height: 28px; border: 1px solid #c8c6c4; border-radius: 4px; padding: 0 8px; font: inherit; font-size: 13px; }

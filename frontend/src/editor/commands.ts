@@ -1,7 +1,7 @@
 // Commands: pure (state) -> Transaction | null. The keymap, the IME proxy, and
 // (later) toolbar buttons all dispatch through these.
 
-import type { Block, CellBorder, CellBorders, CharStyle, EquationBlock, FieldDef, FieldSpec, GridSlot, ImageBlock, MathEquation, ParaStyle, Paragraph, Run, RowProps, SdtProps, SdtType, ShapeBlock, ShapePreset, ShapeTextBody, TableBlock, TableCell, TableGrid, TableRow, TableStyle, TocOptions, TocSwitches } from "@cw/shared";
+import type { Block, CellBorder, CellBorders, CharStyle, EquationBlock, FieldDef, FieldSpec, GridSlot, ImageBlock, MathEquation, ParaStyle, Paragraph, Run, RowProps, SdtProps, SdtType, ShapeBlock, ShapeGroupChild, ShapePreset, ShapeTextBody, TableBlock, TableCell, TableGrid, TableRow, TableStyle, TocOptions, TocSwitches } from "@cw/shared";
 import { bakeTableStyleRows, DEFAULT_TBL_LOOK, DEFAULT_CHAR_STYLE, DEFAULT_PARA_STYLE } from "@cw/shared";
 import { buildTocParagraphs, buildTocInstruction, buildInstruction, evaluateField } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, GridRect } from "@cw/shared";
@@ -2824,6 +2824,111 @@ export function moveAnchoredShape(
     if (!loc?.block.anchor) return null; // only anchored (out-of-flow) shapes move
     const anchor: ImageAnchor = { ...loc.block.anchor, offsetXPx, offsetYPx };
     return tr([{ type: "setShapeProps", blockId, patch: { anchor } }], state.selection, origin);
+  };
+}
+
+/** One member of a to-be-grouped selection: the shape's block id plus its CURRENT
+ *  absolute page-coordinate top-left (px). In-flow shapes have no stored absolute
+ *  position, so the host resolves these from layout (objectRect) and passes them in
+ *  — keeping the command a pure function of its inputs. */
+export interface GroupMemberRect {
+  blockId: string;
+  xPx: number;
+  yPx: number;
+}
+
+/** Group 2+ top-level body shapes into a single {@link ShapeGroup} container
+ *  (OOXML wpg:wgp) — the F5 authoring gesture (issue #244). The members are removed
+ *  and replaced by ONE anchored (floating, in-front) group shape whose box is their
+ *  union bounding box; each member becomes a child positioned in the group's child
+ *  coordinate space with an IDENTITY mapping (childOffset 0, childExtent = group
+ *  extent), so the round-trip group→ungroup is exact and resizing the group scales
+ *  every child as one object (the group reuses the shape select/resize/anchor/z-order
+ *  machinery verbatim — it *is* a shape). The caller mints `groupId` so it can select
+ *  the new group after dispatch (mirrors insertTextBox). Returns null unless every
+ *  member is a distinct top-level body shape and there are at least two. */
+export function groupShapes(members: GroupMemberRect[], groupId: string): Command {
+  return (state) => {
+    if (members.length < 2) return null;
+    const ids = new Set(members.map((m) => m.blockId));
+    if (ids.size !== members.length) return null; // no duplicates
+    const rects = members.map((m) => {
+      const loc = locateShape(state.doc, m.blockId);
+      if (loc?.kind !== "top" || loc.where !== "body") return null;
+      return { x: m.xPx, y: m.yPx, w: loc.block.widthPx, h: loc.block.heightPx, index: loc.index, block: loc.block };
+    });
+    if (rects.some((r) => r === null)) return null;
+    const rs = rects as NonNullable<(typeof rects)[number]>[];
+    const minX = Math.min(...rs.map((r) => r.x));
+    const minY = Math.min(...rs.map((r) => r.y));
+    const maxX = Math.max(...rs.map((r) => r.x + r.w));
+    const maxY = Math.max(...rs.map((r) => r.y + r.h));
+    const gw = Math.max(1, maxX - minX);
+    const gh = Math.max(1, maxY - minY);
+    const children: ShapeGroupChild[] = rs.map((r) => {
+      // A child's anchor/wrap/field/sdt are inert inside a group (model docs); drop
+      // them so the child is a clean member drawing.
+      const child: ShapeBlock = { ...r.block, revision: 0 };
+      delete child.anchor;
+      delete child.wrap;
+      delete child.fieldId;
+      delete child.sdtPath;
+      return { xPx: r.x - minX, yPx: r.y - minY, shape: child };
+    });
+    const group: ShapeBlock = {
+      kind: "shape",
+      id: groupId,
+      revision: 0,
+      geometry: { preset: "rect" },
+      group: { children, childOffsetXPx: 0, childOffsetYPx: 0, childExtentXPx: gw, childExtentYPx: gh },
+      widthPx: gw,
+      heightPx: gh,
+      align: "left",
+      anchor: { behind: false, offsetXPx: minX, offsetYPx: minY, relFromH: "page", relFromV: "page" },
+    };
+    // Insert the group at the lowest member index, then remove each member. removeBlock
+    // resolves its target by id (index-independent), so the insert's shift is harmless
+    // and the whole thing is one undo step.
+    const insertIndex = Math.min(...rs.map((r) => r.index));
+    const ops: Op[] = [
+      { type: "insertBlock", index: insertIndex, block: group, where: "body" },
+      ...members.map((m): Op => ({ type: "removeBlock", blockId: m.blockId })),
+    ];
+    return tr(ops, null, "command");
+  };
+}
+
+/** Ungroup a {@link ShapeGroup} container back into its DIRECT children as top-level
+ *  anchored shapes (issue #244) — the inverse authoring gesture. Each child is placed
+ *  at its absolute page position (the group's page origin + the child's mapped local
+ *  rect) and sized by the group's child→box scale, so the shapes stay exactly where
+ *  they were drawn. Only one level is flattened (a nested-group child becomes a
+ *  top-level group shape, matching Word). The host resolves the group's current page
+ *  origin from layout and passes it in. Returns null if `blockId` isn't a top-level
+ *  body group shape. */
+export function ungroupShape(blockId: string, groupPageXPx: number, groupPageYPx: number): Command {
+  return (state) => {
+    const loc = locateShape(state.doc, blockId);
+    if (loc?.kind !== "top" || loc.where !== "body" || !loc.block.group) return null;
+    const g = loc.block.group;
+    const sx = loc.block.widthPx / (g.childExtentXPx || 1);
+    const sy = loc.block.heightPx / (g.childExtentYPx || 1);
+    const insertAt = loc.index;
+    const ops: Op[] = [];
+    g.children.forEach((c, i) => {
+      const pageX = groupPageXPx + (c.xPx - g.childOffsetXPx) * sx;
+      const pageY = groupPageYPx + (c.yPx - g.childOffsetYPx) * sy;
+      const child: ShapeBlock = {
+        ...c.shape,
+        revision: 0,
+        widthPx: Math.max(1, c.shape.widthPx * sx),
+        heightPx: Math.max(1, c.shape.heightPx * sy),
+        anchor: { behind: false, offsetXPx: pageX, offsetYPx: pageY, relFromH: "page", relFromV: "page" },
+      };
+      ops.push({ type: "insertBlock", index: insertAt + i, block: child, where: "body" });
+    });
+    ops.push({ type: "removeBlock", blockId });
+    return tr(ops, null, "command");
   };
 }
 

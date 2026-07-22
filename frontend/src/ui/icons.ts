@@ -65,7 +65,18 @@ export const ICONS = {
   shapeRightArrow: svg(`<path d="M2 6h7V3.5L14 8 9 12.5V10H2z"/>`),
   shapeLeftArrow: svg(`<path d="M14 6H7V3.5L2 8l5 4.5V10h7z"/>`),
   shapeLine: svg(`<path d="M2.5 13.5 13.5 2.5"/>`),
+  shapePentagon: svg(`<path d="M8 2 14 7 11.7 14 4.3 14 2 7z"/>`),
+  shapeHexagon: svg(`<path d="M5 2 11 2 14 8 11 14 5 14 2 8z"/>`),
+  shapeStar5: svg(`<path d="M8 2 9.4 6.1 13.7 6.2 10.3 8.7 11.5 12.9 8 10.4 4.5 12.9 5.7 8.7 2.3 6.2 6.6 6.1z"/>`),
+  shapeParallelogram: svg(`<path d="M5 3 14 3 11 13 2 13z"/>`),
+  shapeTrapezoid: svg(`<path d="M5 3 11 3 14 13 2 13z"/>`),
+  shapeUpArrow: svg(`<path d="M8 2 13 7 10 7 10 14 6 14 6 7 3 7z"/>`),
+  shapeDownArrow: svg(`<path d="M8 14 13 9 10 9 10 2 6 2 6 9 3 9z"/>`),
   shapeTextBox: svg(`<rect x="2" y="4" width="12" height="8" rx="1"/><path d="M5 7h6M5 9.3h4"/>`),
+  // Group: two overlapping shapes bound by corner selection ticks. Ungroup: the same
+  // pair pulled apart (F5 authoring, issue #244).
+  group: svg(`<rect x="4.5" y="4.5" width="7" height="7" rx="1"/><path d="M1.5 3.5v-2h2M12.5 1.5h2v2M14.5 12.5v2h-2M3.5 14.5h-2v-2"/>`),
+  ungroup: svg(`<rect x="1.5" y="6" width="6" height="6" rx="1"/><rect x="8.5" y="2" width="6" height="6" rx="1"/>`),
   shapeFill: svg(`<path d="M6 2.5 12.5 9 8 13.5a2 2 0 0 1-2.8 0L2.5 10.8a2 2 0 0 1 0-2.8z"/><path d="M12.5 11.5c1 1.2 1.5 2 1.5 2.6a1.2 1.2 0 0 1-2.4 0c0-.6.5-1.4 1.4-2.6z" fill="currentColor" stroke="none"/>`),
   table: svg(
     `<rect x="2" y="2.5" width="12" height="11" rx="1"/><path d="M2 6h12"/><path d="M2 9.7h12"/><path d="M6.5 2.5v11"/><path d="M10.7 2.5v11"/>`,

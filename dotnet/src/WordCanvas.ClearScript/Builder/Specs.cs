@@ -38,7 +38,7 @@ public enum SectionBreakType { NextPage, EvenPage, OddPage }
 public enum LineNumberRestart { Continuous, NewPage, NewSection }
 public enum ImageWrap { Block, Square }
 /// <summary>Drawing-shape preset geometry (OOXML a:prstGeom@prst).</summary>
-public enum ShapePreset { Rect, RoundRect, Ellipse, Triangle, Diamond, RightArrow, LeftArrow, Line }
+public enum ShapePreset { Rect, RoundRect, Ellipse, Triangle, Diamond, RightArrow, LeftArrow, Line, Pentagon, Hexagon, Star5, Parallelogram, Trapezoid, UpArrow, DownArrow }
 /// <summary>Drawing-shape outline dash pattern (OOXML a:prstDash@val).</summary>
 public enum ShapeDash { Solid, Dash, Dot, DashDot, LgDash }
 /// <summary>Anchored-shape horizontal origin (OOXML wp:positionH@relativeFrom).</summary>
@@ -106,6 +106,13 @@ internal static class EnumJs
         WordCanvas.ClearScript.Builder.ShapePreset.RightArrow => "rightArrow",
         WordCanvas.ClearScript.Builder.ShapePreset.LeftArrow => "leftArrow",
         WordCanvas.ClearScript.Builder.ShapePreset.Line => "line",
+        WordCanvas.ClearScript.Builder.ShapePreset.Pentagon => "pentagon",
+        WordCanvas.ClearScript.Builder.ShapePreset.Hexagon => "hexagon",
+        WordCanvas.ClearScript.Builder.ShapePreset.Star5 => "star5",
+        WordCanvas.ClearScript.Builder.ShapePreset.Parallelogram => "parallelogram",
+        WordCanvas.ClearScript.Builder.ShapePreset.Trapezoid => "trapezoid",
+        WordCanvas.ClearScript.Builder.ShapePreset.UpArrow => "upArrow",
+        WordCanvas.ClearScript.Builder.ShapePreset.DownArrow => "downArrow",
         _ => "rect",
     };
     public static string ShapeDash(ShapeDash d) => d switch

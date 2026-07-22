@@ -20,6 +20,13 @@ const PRESET_LABELS: Record<ShapePreset, string> = {
   rightArrow: "Right arrow",
   leftArrow: "Left arrow",
   line: "Line",
+  pentagon: "Pentagon",
+  hexagon: "Hexagon",
+  star5: "5-point star",
+  parallelogram: "Parallelogram",
+  trapezoid: "Trapezoid",
+  upArrow: "Up arrow",
+  downArrow: "Down arrow",
 };
 
 /** Longest text-box excerpt folded into an accessible name before it's truncated —

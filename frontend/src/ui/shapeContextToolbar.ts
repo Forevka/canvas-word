@@ -27,12 +27,19 @@ export interface ShapeContextToolbarActions {
   alignRight(): void;
   bringToFront(): void;
   sendToBack(): void;
+  /** F5 (issue #244): group the ≥2 selected shapes / ungroup the selected group. */
+  group(): void;
+  ungroup(): void;
   remove(): void;
 }
 
 export interface ShapeContextToolbarDeps {
   /** Viewport rect of the selected shape, or null when none is selected. */
   anchorRect(): AnchorRect | null;
+  /** ≥2 shapes selected ⇒ show the Group button. */
+  canGroup(): boolean;
+  /** The selected shape is a group ⇒ show the Ungroup button. */
+  canUngroup(): boolean;
   actions: ShapeContextToolbarActions;
 }
 
@@ -41,13 +48,14 @@ export function createShapeContextToolbar(deps: ShapeContextToolbarDeps): Contex
   injectCtxBarCss();
   const fb = createFloatingBar({ className: "cw-ctxbar cw-iconbar", ariaLabel: "Shape" });
 
-  const ibtn = (icon: string, title: string, onClick: (btn: HTMLButtonElement) => void, cls = ""): void => {
+  const ibtn = (icon: string, title: string, onClick: (btn: HTMLButtonElement) => void, cls = ""): HTMLButtonElement => {
     const b = document.createElement("button");
     if (cls) b.className = cls;
     b.innerHTML = icon;
     b.title = title;
     b.addEventListener("click", () => onClick(b));
     fb.el.appendChild(b);
+    return b;
   };
   const sep = (): void => {
     const s = document.createElement("div");
@@ -74,6 +82,13 @@ export function createShapeContextToolbar(deps: ShapeContextToolbarDeps): Contex
   sep();
   ibtn(ICONS.bringFront, "Bring to front", () => deps.actions.bringToFront());
   ibtn(ICONS.sendBack, "Send to back", () => deps.actions.sendToBack());
+  // F5 (issue #244): Group/Ungroup — shown only when the selection warrants it
+  // (their own separator hides with them so the bar stays tight).
+  const groupSep = document.createElement("div");
+  groupSep.className = "sep";
+  fb.el.appendChild(groupSep);
+  const groupBtn = ibtn(ICONS.group, "Group shapes", () => deps.actions.group());
+  const ungroupBtn = ibtn(ICONS.ungroup, "Ungroup", () => deps.actions.ungroup());
   sep();
   ibtn(ICONS.trash, "Delete shape (Del)", () => deps.actions.remove(), "danger");
 
@@ -81,7 +96,14 @@ export function createShapeContextToolbar(deps: ShapeContextToolbarDeps): Contex
     id: "shape",
     priority: 31,
     resolve: (): AnchorRect | null => deps.anchorRect(),
-    show: (anchor, viewport) => fb.place(anchor, viewport),
+    show: (anchor, viewport) => {
+      const canGroup = deps.canGroup();
+      const canUngroup = deps.canUngroup();
+      groupBtn.style.display = canGroup ? "" : "none";
+      ungroupBtn.style.display = canUngroup ? "" : "none";
+      groupSep.style.display = canGroup || canUngroup ? "" : "none";
+      fb.place(anchor, viewport);
+    },
     hide: () => fb.hide(),
     destroy: () => fb.destroy(),
   };

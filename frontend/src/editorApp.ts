@@ -5,7 +5,7 @@ import { mediaIdsOf, mediaStore, mediaUrl, pruneOrphanMedia, registerMediaBytes,
 import { SyncClient } from "./sync/SyncClient";
 import { createEditor, type CurrentFormat, type EditMode, type InspectorProbe, type ReviewOpEnvelope } from "./index";
 import type { Command } from "./editor/state";
-import type { ShapeDash, ShapePreset } from "@cw/shared";
+import type { ShapeDash } from "@cw/shared";
 import { createLayoutEngine } from "./layout/engine";
 import { sampleDoc } from "./model/sampleDoc";
 import { stressDoc } from "./model/stressDoc";
@@ -117,6 +117,7 @@ import {
 import { defaultStylesheet, styleById, styleType } from "@cw/shared";
 import { bulletListDefinition, numberListDefinition, paragraphsOf, textOfRuns } from "@cw/shared";
 import { ICONS } from "./ui/icons";
+import { readRecent, pushRecent } from "./ui/recentList";
 
 // Dev hook for in-browser verification (break-rule scans, perf probes, and the
 // snapshot/replay round-trip). Assigned near the end of mountEditorApp.
@@ -1007,6 +1008,19 @@ if (toolbar) {
     "#c00000", "#ff0000", "#ffc000", "#ffff00", "#92d050", "#00b050",
     "#00b0f0", "#0070c0", "#002060", "#7030a0", "#e84393", "#a0522d",
   ];
+  // Theme colours (issue #244, D1): the default Office theme slots
+  // (bg1/tx1/bg2/tx2 + accent1..6). NOTE: these are the Office DEFAULT theme, not
+  // (yet) the imported document's own a:clrScheme — surfacing the loaded doc's real
+  // theme palette needs runtime plumbing and is deferred; this gives Word-parity
+  // theme swatches for the common (default-theme) case.
+  const THEME_COLORS = [
+    "#ffffff", "#000000", "#e7e6e6", "#44546a", "#4472c4", "#ed7d31",
+    "#a5a5a5", "#ffc000", "#5b9bd5", "#70ad47",
+  ];
+  // Per-editor "recently used colours", persisted (localStorage) and shared by every
+  // colour picker (fill, outline, font colour, highlight) via `colorPopover`.
+  const COLOR_RECENT_KEY = "cw-color-recent";
+  const recordColor = (c: string): void => { pushRecent(COLOR_RECENT_KEY, c.toLowerCase(), 10); };
 
   // One shared native colour picker, reused for "More colours…". We apply on
   // `change` only (not `input`) so a drag is one undo step.
@@ -1021,7 +1035,30 @@ if (toolbar) {
     colorPicker.onchange = () => onPick(colorPicker.value);
     colorPicker.click();
   };
-  /** Colour palette popover: swatch grid + an optional clear row + "More…". */
+  /** A swatch grid over `colors`; each click closes the popover then calls `pick`. */
+  const swatchGrid = (colors: string[], pick: (c: string) => void): HTMLElement => {
+    const grid = el("div", "cw-swatches");
+    for (const c of colors) {
+      const s = el("button");
+      s.style.background = c;
+      s.title = c;
+      s.addEventListener("click", () => {
+        closePop();
+        pick(c);
+      });
+      grid.appendChild(s);
+    }
+    return grid;
+  };
+  /** Append a labelled swatch row (theme / recent colours) to `wrap`. */
+  const swatchSection = (wrap: HTMLElement, title: string, colors: string[], pick: (c: string) => void): void => {
+    const head = el("div", "cw-grid-cat");
+    head.textContent = title;
+    wrap.append(head, swatchGrid(colors, pick));
+  };
+  /** Colour palette popover: main swatch grid + Theme + Recent rows + an optional
+   *  clear row + "More…". Every pick is recorded into the shared recent-colours list
+   *  (issue #244, D1), so the row grows across all colour surfaces. */
   const colorPopover = (
     anchor: PopoverAnchor,
     last: string,
@@ -1029,19 +1066,12 @@ if (toolbar) {
     onPick: (c: string) => void,
     onClear: (() => void) | null,
   ): void => {
+    const pick = (c: string): void => { recordColor(c); onPick(c); };
     const wrap = el("div");
-    const grid = el("div", "cw-swatches");
-    for (const c of PALETTE) {
-      const s = el("button");
-      s.style.background = c;
-      s.title = c;
-      s.addEventListener("click", () => {
-        closePop();
-        onPick(c);
-      });
-      grid.appendChild(s);
-    }
-    wrap.appendChild(grid);
+    wrap.appendChild(swatchGrid(PALETTE, pick));
+    swatchSection(wrap, "Theme colours", THEME_COLORS, pick);
+    const recent = readRecent(COLOR_RECENT_KEY, 10);
+    if (recent.length) swatchSection(wrap, "Recent colours", recent, pick);
     if (clearLabel && onClear) {
       const clear = el("button", "pop-action");
       clear.textContent = clearLabel;
@@ -1055,7 +1085,7 @@ if (toolbar) {
     more.textContent = "More colours…";
     more.addEventListener("click", () => {
       closePop();
-      pickColor(last, onPick);
+      pickColor(last, pick);
     });
     wrap.appendChild(more);
     openPop(anchor, wrap);
@@ -1103,21 +1133,13 @@ if (toolbar) {
       ...(cur?.dash ? { dash: cur.dash } : {}),
     });
     const wrap = el("div");
-    const grid = el("div", "cw-swatches");
-    for (const c of PALETTE) {
-      const s = el("button");
-      s.style.background = c;
-      s.title = c;
-      s.addEventListener("click", () => {
-        closePop();
-        dispatchShape(id, { stroke: { ...base(), color: c } });
-      });
-      grid.appendChild(s);
-    }
-    wrap.appendChild(grid);
+    const pickStroke = (c: string): void => { recordColor(c); dispatchShape(id, { stroke: { ...base(), color: c } }); };
+    wrap.appendChild(swatchGrid(PALETTE, pickStroke));
+    swatchSection(wrap, "Theme colours", THEME_COLORS, pickStroke);
+    const recentOutline = readRecent(COLOR_RECENT_KEY, 10);
+    if (recentOutline.length) swatchSection(wrap, "Recent colours", recentOutline, pickStroke);
     // Width + dash rows: a labelled <select> each, applied on change. Styled via the
-    // popover's own class system (.cw-pop .pop-row) so they match the swatch grid
-    // instead of drifting on inline styles (issue #244 D2).
+    // popover's own class system (.cw-pop .pop-row) so they match the swatch grid (D2).
     const mkRow = (labelText: string, sel: HTMLSelectElement): void => {
       const row = el("div", "pop-row");
       const lab = el("span", "pop-row-label");
@@ -1162,7 +1184,7 @@ if (toolbar) {
     more.textContent = "More colours…";
     more.addEventListener("click", () => {
       closePop();
-      pickColor(base().color, (c) => dispatchShape(id, { stroke: { ...base(), color: c } }));
+      pickColor(base().color, pickStroke);
     });
     wrap.appendChild(more);
     openPop(anchor, wrap);
@@ -1300,67 +1322,63 @@ if (toolbar) {
   const shapesPopover = (anchor: HTMLElement): void => {
     const wrap = el("div");
     const COLS = 4;
-    const grid = el("div", "cw-grid");
-    grid.style.gridTemplateColumns = `repeat(${COLS}, 28px)`;
-    grid.setAttribute("role", "group");
-    grid.setAttribute("aria-label", "Insert shape");
     const label = el("div", "cw-grid-label");
     label.textContent = "Insert shape";
-    // Each gallery entry is one activatable cell; the Text Box entry seeds an
-    // editable body + enters editing (issue #235) rather than inserting a bare
-    // preset, so it carries its own `activate`.
-    const presets: { preset: ShapePreset; icon: string; name: string }[] = [
-      { preset: "rect", icon: ICONS.shapeRect, name: "Rectangle" },
-      { preset: "roundRect", icon: ICONS.shapeRoundRect, name: "Rounded rectangle" },
-      { preset: "ellipse", icon: ICONS.shapeEllipse, name: "Ellipse" },
-      { preset: "triangle", icon: ICONS.shapeTriangle, name: "Triangle" },
-      { preset: "diamond", icon: ICONS.shapeDiamond, name: "Diamond" },
-      { preset: "rightArrow", icon: ICONS.shapeRightArrow, name: "Right arrow" },
-      { preset: "leftArrow", icon: ICONS.shapeLeftArrow, name: "Left arrow" },
-      { preset: "line", icon: ICONS.shapeLine, name: "Line" },
+    // Every gallery item keyed by a stable id (preset name, or "textbox" for the
+    // special text-box entry). Categories reference these ids, and the "recently
+    // used" row rebuilds cells from them (issue #244, A3). The Text Box entry seeds
+    // an editable body + enters editing (issue #235); presets select+reveal (A1).
+    const items: Record<string, { icon: string; name: string; insert: () => void }> = {
+      line: { icon: ICONS.shapeLine, name: "Line", insert: () => editor.insertShape("line") },
+      rect: { icon: ICONS.shapeRect, name: "Rectangle", insert: () => editor.insertShape("rect") },
+      roundRect: { icon: ICONS.shapeRoundRect, name: "Rounded rectangle", insert: () => editor.insertShape("roundRect") },
+      ellipse: { icon: ICONS.shapeEllipse, name: "Ellipse", insert: () => editor.insertShape("ellipse") },
+      triangle: { icon: ICONS.shapeTriangle, name: "Triangle", insert: () => editor.insertShape("triangle") },
+      diamond: { icon: ICONS.shapeDiamond, name: "Diamond", insert: () => editor.insertShape("diamond") },
+      pentagon: { icon: ICONS.shapePentagon, name: "Pentagon", insert: () => editor.insertShape("pentagon") },
+      hexagon: { icon: ICONS.shapeHexagon, name: "Hexagon", insert: () => editor.insertShape("hexagon") },
+      star5: { icon: ICONS.shapeStar5, name: "5-point star", insert: () => editor.insertShape("star5") },
+      parallelogram: { icon: ICONS.shapeParallelogram, name: "Parallelogram", insert: () => editor.insertShape("parallelogram") },
+      trapezoid: { icon: ICONS.shapeTrapezoid, name: "Trapezoid", insert: () => editor.insertShape("trapezoid") },
+      textbox: { icon: ICONS.shapeTextBox, name: "Text Box", insert: () => editor.insertTextBox() },
+      rightArrow: { icon: ICONS.shapeRightArrow, name: "Right arrow", insert: () => editor.insertShape("rightArrow") },
+      leftArrow: { icon: ICONS.shapeLeftArrow, name: "Left arrow", insert: () => editor.insertShape("leftArrow") },
+      upArrow: { icon: ICONS.shapeUpArrow, name: "Up arrow", insert: () => editor.insertShape("upArrow") },
+      downArrow: { icon: ICONS.shapeDownArrow, name: "Down arrow", insert: () => editor.insertShape("downArrow") },
+    };
+    // Word/PowerPoint-style category grouping so the widened set stays scannable.
+    const categories: { title: string; ids: string[] }[] = [
+      { title: "Lines", ids: ["line"] },
+      { title: "Basic Shapes", ids: ["rect", "roundRect", "ellipse", "triangle", "diamond", "pentagon", "hexagon", "star5", "parallelogram", "trapezoid", "textbox"] },
+      { title: "Block Arrows", ids: ["rightArrow", "leftArrow", "upArrow", "downArrow"] },
     ];
-    const entries: { icon: string; name: string; activate: () => void }[] = presets.map(
-      ({ preset, icon, name }) => ({
-        icon,
-        name,
-        activate: (): void => {
-          closePop();
-          editor.insertShape(preset); // selects + reveals the new shape (A1)
-        },
-      }),
-    );
-    entries.push({
-      icon: ICONS.shapeTextBox,
-      name: "Text Box",
-      activate: (): void => {
-        closePop();
-        editor.insertTextBox();
-      },
-    });
-    // Keyboard-operable gallery (E4/E1): each cell is a role="button" with a roving
-    // tabindex — arrows move focus (roving), Home/End jump to the ends, Enter/Space
-    // activate. Only the focused cell is in the tab order, so the whole gallery is
-    // one Tab stop that then navigates with the arrows.
+    const RECENT_KEY = "cw-shape-recent";
+    // Keyboard-operable gallery (E1): every cell across every section is a
+    // role="button" in ONE roving-tabindex list — arrows move focus (Home/End jump
+    // to the ends), Enter/Space activate — so the whole gallery is a single Tab stop.
     const cellEls: HTMLElement[] = [];
     const focusCell = (i: number): void => {
       const j = Math.max(0, Math.min(cellEls.length - 1, i));
       cellEls.forEach((c, k) => (c.tabIndex = k === j ? 0 : -1));
       cellEls[j]!.focus();
     };
-    entries.forEach((entry, i) => {
-      const cell = el("div", "cell");
-      cell.style.width = "28px";
-      cell.style.height = "28px";
-      cell.innerHTML = entry.icon;
-      cell.title = entry.name;
-      cell.setAttribute("role", "button");
-      cell.setAttribute("aria-label", entry.name);
-      cell.tabIndex = i === 0 ? 0 : -1; // roving: only the first cell starts tabbable
-      const show = (): void => { label.textContent = entry.name; };
-      cell.addEventListener("mouseenter", show);
-      cell.addEventListener("focus", show);
-      cell.addEventListener("click", entry.activate);
-      cell.addEventListener("keydown", (ev: KeyboardEvent) => {
+    const buildCell = (id: string): HTMLElement => {
+      const it = items[id]!;
+      const i = cellEls.length;
+      const c = el("div", "cell");
+      c.style.width = "28px";
+      c.style.height = "28px";
+      c.innerHTML = it.icon;
+      c.title = it.name;
+      c.setAttribute("role", "button");
+      c.setAttribute("aria-label", it.name);
+      c.tabIndex = i === 0 ? 0 : -1; // roving: only the first cell starts tabbable
+      const show = (): void => { label.textContent = it.name; };
+      const activate = (): void => { pushRecent(RECENT_KEY, id, 8); closePop(); it.insert(); };
+      c.addEventListener("mouseenter", show);
+      c.addEventListener("focus", show);
+      c.addEventListener("click", activate);
+      c.addEventListener("keydown", (ev: KeyboardEvent) => {
         switch (ev.key) {
           case "ArrowRight": focusCell(i + 1); break;
           case "ArrowLeft": focusCell(i - 1); break;
@@ -1368,15 +1386,29 @@ if (toolbar) {
           case "ArrowUp": focusCell(i - COLS); break;
           case "Home": focusCell(0); break;
           case "End": focusCell(cellEls.length - 1); break;
-          case "Enter": case " ": entry.activate(); break;
+          case "Enter": case " ": activate(); break;
           default: return; // let other keys (Escape, Tab) bubble to the popover
         }
         ev.preventDefault();
       });
-      cellEls.push(cell);
-      grid.appendChild(cell);
-    });
-    wrap.append(grid, label);
+      cellEls.push(c);
+      return c;
+    };
+    const section = (title: string, ids: string[]): void => {
+      const head = el("div", "cw-grid-cat");
+      head.textContent = title;
+      const grid = el("div", "cw-grid");
+      grid.setAttribute("role", "group");
+      grid.setAttribute("aria-label", title);
+      grid.style.gridTemplateColumns = `repeat(${COLS}, 28px)`;
+      for (const id of ids) grid.appendChild(buildCell(id));
+      wrap.append(head, grid);
+    };
+    // "Recently used" first (Word parity) — only the ids we still know how to build.
+    const recent = readRecent(RECENT_KEY, 8).filter((id) => id in items);
+    if (recent.length) section("Recently used", recent);
+    for (const c of categories) section(c.title, c.ids);
+    wrap.append(label);
     openPop(anchor, wrap);
     // Move focus into the gallery so the arrows/Enter drive it straight away (the
     // popover keeps editor focus on mouse-open; a keyboard user lands on cell 0).
@@ -2082,6 +2114,17 @@ if (toolbar) {
     }),
     (f) => f.shapeSelected,
     "select a shape first",
+  );
+  // F5 group authoring (issue #244) — Group ≥2 selected shapes / Ungroup a group.
+  enable(
+    btn(ICONS.group, "Group shapes", () => { editor.groupShapes(); editor.focus(); }),
+    (f) => f.multipleShapesSelected,
+    "Shift-click a second shape first",
+  );
+  enable(
+    btn(ICONS.ungroup, "Ungroup shape", () => { editor.ungroupShape(); editor.focus(); }),
+    (f) => f.groupSelected,
+    "select a group first",
   );
   group(insert, "Equation");
   let equationEditorLoading = false; // debounce double-clicks while the chunk loads
@@ -3619,6 +3662,8 @@ if (!readonly) {
   manager.register(
     createShapeContextToolbar({
       anchorRect: () => editor.getSelectedShapeRect(),
+      canGroup: () => editor.canGroupShapes(),
+      canUngroup: () => editor.canUngroupShape(),
       actions: {
         fill: (btn) => shapeFillPopover(btn),
         outline: (btn) => shapeOutlinePopover(btn),
@@ -3632,6 +3677,8 @@ if (!readonly) {
         alignRight: () => editor.align("right"),
         bringToFront: () => withSelectedObject((id) => editor.dispatch(bringShapeToFront(id))),
         sendToBack: () => withSelectedObject((id) => editor.dispatch(sendShapeToBack(id))),
+        group: () => { editor.groupShapes(); editor.focus(); },
+        ungroup: () => { editor.ungroupShape(); editor.focus(); },
         remove: () => {
           editor.deleteSelectedObject();
           editor.focus();
