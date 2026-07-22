@@ -302,6 +302,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **de-dups** so a copy/pasted image never repeats an id.
 
 ### Fixed
+- **Layout — section break no longer fires late after a hidden paragraph (stranded TOC heading).** A
+  fully-hidden paragraph (a `w:vanish` bookmark anchor, common at the top of generated reports) is dropped
+  from the layout measure pass, so the internal `measured[]` array is shorter than the document's block
+  list. The pagination walk advanced sections by comparing the *measured* index against a *document* block
+  index, so every skipped hidden paragraph made the following **Next Page** section break fire one block
+  too late — stranding the section's first block on its own page. The most visible symptom: a
+  "TABLE OF CONTENTS" heading landed alone on one page while its entry list started on the next (Word keeps
+  them together). The walk now advances sections by each measured entry's true document index. Affects both
+  the editor and headless PDF render.
 - **Drawing shapes — rotate handle avoids the right-edge collision (issue #244, B3).** The rotate handle
   is pinned just outside the frame's **right** edge, so a shape hard against the **right page margin**
   pushed it off-page and on top of the `e` midpoint handle. It now **flips to the left** edge when the
