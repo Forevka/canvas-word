@@ -327,6 +327,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   children, read nothing, and defaulted the position to `0`. It now recovers the `mc:Fallback`
   absolute offset (the percentage itself is not yet modeled), so a behind/in-front-of-text float lands
   where Word placed it.
+- **Drawing shapes — insertion & safety UX fixes (issue #244, from the shapes UX analysis).** Seven
+  interaction gaps around inserting and handling shapes now close (editor-only — no model/OOXML change):
+  - **Inserting a shape selects and reveals it (A1).** Insert → Shapes (and the inline ＋ menu) now
+    **selects the new shape and scrolls it into view**, so its resize handles and floating toolbar are
+    armed immediately — previously the shape dropped at the caret unselected and off-screen, reading as
+    "nothing happened."
+  - **Insert-at-caret no longer corrupts a field/TOC/SDT (A2).** Dropping a shape (or any block) with
+    the caret inside a Table-of-Contents, a field, or a content control used to **split and break** it.
+    The insert is now **redirected to just after** the structured region instead of splitting the flow.
+  - **Shapes are reachable from the inline ＋ menu (A4).** The empty-paragraph insert menu gains a
+    **Shape ▸** submenu (the eight presets + Text Box), so inline-menu users discover shapes too.
+  - **Anchored shapes can't be dragged off-page and lost (F2).** A committed drag-move now **clamps to
+    the page**, keeping a grabbable sliver on-screen (applies to anchored images too).
+  - **Clipped shape text shows an overflow indicator (F3).** When a text box's text is taller than its
+    box (hard-clipped, no shrink-to-fit), the canvas draws a small "more below" marker; the check keys on
+    the last **painted** line, so a box whose glyphs fit shows nothing (no false indicator; not printed to PDF).
+  - **Cell-nested shape text explains why it's read-only (F4).** The right-click menu now shows a
+    **disabled** "Text editing unavailable inside a table cell" entry instead of silently omitting it.
+  - **Stale "read-only text box body" comments corrected (F6)** — top-level text boxes are editable
+    (#235); only cell-nested ones are read-only.
 
 ## [0.10.2] — 2026-07-19
 

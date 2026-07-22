@@ -1210,9 +1210,10 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
 
   /** Paint a placed drawing shape at absolute (x,y): a GROUP container (PlacedShape
    *  with `children`) recurses into its members (each already offset into the box);
-   *  a leaf paints its preset geometry and, if it has one, its read-only text box body
-   *  (clipped to the box, translated into the local text frame). Recursive so nested
-   *  groups compose. Mirrors the PDF painter (export/pdf/paintBlock.ts). */
+   *  a leaf paints its preset geometry and, if it has one, its text box body (editable
+   *  for a top-level shape, read-only when cell-nested — clipped to the box, translated
+   *  into the local text frame). Recursive so nested groups compose. Mirrors the PDF
+   *  painter (export/pdf/paintBlock.ts). */
   function paintPlacedShape(ctx: CanvasRenderingContext2D, shape: PlacedShape, x: number, y: number, pageIndex: number): void {
     if (shape.children) {
       // A rotated group turns the whole child cluster about the group-box center.
@@ -1229,12 +1230,13 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       return;
     }
     paintShapeCanvas(ctx, shape, x, y);
-    // Read-only text box body: clip to the box, translate into the local text frame
-    // (bodyPr insets + vertical-center offset), and paint each nested paragraph with
-    // the same paintBlock used for cell content. When the shape is rotated, the text
-    // rotates WITH the geometry about the box center (same transform paintShapeCanvas
-    // applies) — the sub-flow layout stays in the local frame; rotation is paint-only.
-    // The PDF painter mirrors this.
+    // Text box body (editable for a top-level shape, read-only when cell-nested):
+    // clip to the box, translate into the local text frame (bodyPr insets +
+    // vertical-center offset), and paint each nested paragraph with the same
+    // paintBlock used for cell content. When the shape is rotated, the text rotates
+    // WITH the geometry about the box center (same transform paintShapeCanvas applies)
+    // — the sub-flow layout stays in the local frame; rotation is paint-only. The PDF
+    // painter mirrors this (but not the overflow indicator, which is an editor hint).
     const text = shape.text;
     if (text && text.blocks.length > 0) {
       ctx.save();
@@ -1248,10 +1250,39 @@ export function createPaintLayer(container: HTMLElement, opts: PaintLayerOptions
       ctx.rect(x, y, shape.width, shape.height);
       ctx.clip();
       ctx.beginPath(); // clear the clip rect from the current path
+      ctx.save();
       ctx.translate(x + text.offsetX, y + text.offsetY);
       for (const cb of text.blocks) paintBlock(ctx, cb, pageIndex);
       ctx.restore();
+      // F3: text taller than the box is hard-clipped with no shrink-to-fit; mark it
+      // so hidden text isn't invisible. Drawn inside the clip (never spills the box)
+      // and under the rotation transform (rotates with the shape).
+      if (text.overflow) paintShapeTextOverflow(ctx, x, y, shape.width, shape.height);
+      ctx.restore();
     }
+  }
+
+  /** A small "more text below" indicator for a clipped shape text box (F3): a
+   *  translucent disc — so it reads on any fill colour — with a downward chevron,
+   *  tucked into the box's bottom-right corner. */
+  function paintShapeTextOverflow(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
+    const cx = x + w - 8;
+    const cy = y + h - 7;
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.beginPath();
+    ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(60,64,67,0.85)";
+    ctx.lineWidth = 1.25;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx - 2.6, cy - 1.4);
+    ctx.lineTo(cx, cy + 1.4);
+    ctx.lineTo(cx + 2.6, cy - 1.4);
+    ctx.stroke();
+    ctx.restore();
   }
 
   function paintBlock(ctx: CanvasRenderingContext2D, block: PlacedBlock, pageIndex: number): void {

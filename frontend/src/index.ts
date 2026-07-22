@@ -2,7 +2,7 @@
 // One-way data flow: input -> command -> transaction -> applyOp* -> new state
 // -> incremental layout -> paint + caret + proxy reposition (same frame).
 
-import type { Block, CharStyle, Document, EmphasisMark, ImageBlock, ParaStyle, ShapeBlock, TableBlock, UnderlineStyle } from "@cw/shared";
+import type { Block, CharStyle, Document, EmphasisMark, ImageBlock, ParaStyle, ShapeBlock, ShapePreset, TableBlock, UnderlineStyle } from "@cw/shared";
 import { BAND_CONTAINERS, parseTocInstruction } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, UserInfo } from "@cw/shared";
 import { isCollapsed, colorForId, userDisplayName, freshId, DEFAULT_CHAR_STYLE } from "@cw/shared";
@@ -126,6 +126,8 @@ import {
   sendShapeToBack,
   moveAnchoredShape,
   insertTextBox as insertTextBoxCmd,
+  insertShape as insertShapeCmd,
+  clampAnchorOffsetToPage,
   addShapeText,
   setLinkCmd,
   setParaProps,
@@ -363,6 +365,10 @@ export interface Editor {
   /** Insert a text box (rectangle shape with an empty editable body) at the caret
    *  and drop the caret inside it — the Insert → Shapes → Text Box entry. #235. */
   insertTextBox(): void;
+  /** Insert a drawing shape at the caret, then select + reveal it so its handles
+   *  and toolbar are armed immediately (Insert → Shapes gallery and the inline
+   *  insert menu). Redirects out of a field/TOC/SDT rather than splitting it. */
+  insertShape(preset: ShapePreset): void;
   /** Start (or re-enter) the selected top-level shape's text box: the "Add text" /
    *  "Edit text" gesture on the shape toolbar. Returns false when no shape is
    *  selected or it's a cell-nested shape (read-only). #235. */
@@ -1419,6 +1425,23 @@ export function createEditor(
     if (locateShape(doc, shapeId)) enterShapeText(shapeId, { blockId: paraId, offset: 0 });
   };
 
+  /** Insert a drawing shape at the caret, then SELECT and REVEAL it so its resize
+   *  handles and floating toolbar are armed immediately (A1 — Word selects a shape
+   *  the moment it's inserted; before this, insert left `getSelectedShape()` null
+   *  and the viewport unmoved, so it read as "nothing happened"). The insert only
+   *  commits at a collapsed top-level caret (and A2-redirects out of a field/TOC/SDT),
+   *  so select only when the shape actually landed. */
+  const insertShapeAndSelect = (preset: ShapePreset): void => {
+    if (mode === "view") return;
+    const shapeId = freshId();
+    dispatch(insertShapeCmd(preset, shapeId));
+    if (!locateShape(doc, shapeId)) return;
+    selectObject(shapeId);
+    const rect = objectRect(tree, shapeId);
+    if (rect) paint.ensureVisible(rect, "center");
+    proxy.focus(); // arm keyboard (Delete / Escape / Enter-to-edit) on the new object
+  };
+
   // ---- image crop mode -----------------------------------------------------
   // Enter: drag the 8 crop handles to set the visible window. Each handle release
   // writes the crop field LIVE via a transient op (so the model tracks the crop as
@@ -2369,15 +2392,37 @@ export function createEditor(
     setColumnGuide: (guide) => paint.setColumnGuide(guide),
     startRowDrag,
     setRowGuide: (guide) => paint.setRowGuide(guide),
-    applyObjectMove: (blockId, x, y, transient) =>
+    applyObjectMove: (blockId, x, y, transient) => {
+      let ox = x;
+      let oy = y;
+      // F2: clamp the committed drop to the page so a shape can never be dragged
+      // fully off-page and lost. The live preview (transient) drags freely; only the
+      // final "command" is clamped. Derive the anchor origin from the CURRENT laid-out
+      // rect minus its current offset (a consistent pair) so any relativeFrom frame works.
+      if (!transient) {
+        const anchor = locateShape(doc, blockId)?.block.anchor ?? locateImage(doc, blockId)?.image.anchor;
+        const rect = objectRect(tree, blockId);
+        const pg = rect ? tree.pages[rect.pageIndex] : undefined;
+        if (anchor && rect && pg) {
+          const c = clampAnchorOffsetToPage(
+            { x: rect.x - anchor.offsetXPx, y: rect.y - anchor.offsetYPx },
+            { x, y },
+            { width: rect.width, height: rect.height },
+            { width: pg.widthPx, height: pg.heightPx },
+          );
+          ox = c.x;
+          oy = c.y;
+        }
+      }
       dispatch(
         (locateShape(doc, blockId) ? moveAnchoredShape : moveAnchoredImage)(
           blockId,
-          x,
-          y,
+          ox,
+          oy,
           transient ? "transient" : "command",
         ),
-      ),
+      );
+    },
     onTab: tabInTable,
     onSdtPress: sdtPopupCtl.handlePress,
     // ---- shape text box editing (issue #219) ----
@@ -3185,11 +3230,13 @@ export function createEditor(
             { kind: "item", label: "Right", icon: ICONS.alignRight, onClick: () => dispatch(setShapeProps(shapeId, { align: "right" })) },
           ],
         },
-        // Add / edit the text box body — top-level shapes only (a cell-nested
-        // shape's text box stays read-only, #219/#230/#235).
+        // Add / edit the text box body — top-level shapes only. A cell-nested shape's
+        // text box stays read-only (#219/#230/#235): rather than silently omitting the
+        // entry (double-click just did nothing, with no explanation — F4), show it
+        // DISABLED with the reason so the limitation is discoverable.
         ...(locateShape(doc, shapeId)?.kind === "top"
           ? [item(shapeHasEditableText(shapeId) ? "Edit Text" : "Add Text", () => startShapeText(shapeId), { icon: ICONS.shapeRect })]
-          : []),
+          : [item("Text editing unavailable inside a table cell", () => {}, { icon: ICONS.shapeRect, disabled: true })]),
         item("Bring to Front", () => dispatch(bringShapeToFront(shapeId))),
         item("Send to Back", () => dispatch(sendShapeToBack(shapeId))),
         // Numeric size/position/rotation authoring — only when the host wired the
@@ -4002,6 +4049,7 @@ export function createEditor(
       return r ? pageRectToClient(r.pageIndex, r.x, r.y, r.width, r.height) : null;
     },
     insertTextBox: (): void => insertTextBoxAndEdit(),
+    insertShape: (preset: ShapePreset): void => insertShapeAndSelect(preset),
     addTextToSelectedShape: (): boolean => (selectedIsShape() ? startShapeText(selectedObject!) : false),
     editSelectedEquation: (): void => {
       const eq = selectedObject ? locateEquation(doc, selectedObject)?.block : undefined;

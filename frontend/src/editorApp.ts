@@ -62,7 +62,6 @@ import {
   setCustomBlockData as setCustomBlockDataCmd,
   insertImage,
   insertImageInCell,
-  insertShape,
   setShapeProps,
   bringShapeToFront,
   sendShapeToBack,
@@ -1323,8 +1322,7 @@ if (toolbar) {
       cell.addEventListener("mouseenter", () => { label.textContent = p.name; });
       cell.addEventListener("click", () => {
         closePop();
-        editor.dispatch(insertShape(p.preset));
-        editor.focus();
+        editor.insertShape(p.preset); // selects + reveals the new shape (A1)
       });
       grid.appendChild(cell);
     }
@@ -3788,6 +3786,26 @@ if (!readonly) {
           { kind: "item", label: "Page break", onClick: insert(insertPageBreak()) },
           { kind: "item", label: "Table of contents", onClick: insert(insertTocCmd()) },
           { kind: "item", label: "Footnote", onClick: insert(insertFootnoteCmd()) },
+          { kind: "sep" },
+          // Shapes were reachable only from the ribbon Insert → shapes popover; surface
+          // them in the inline ＋ menu too so inline-menu users can discover them (A4).
+          {
+            kind: "submenu",
+            label: "Shape",
+            icon: ICONS.shapeRect,
+            items: [
+              { kind: "item", label: "Rectangle", icon: ICONS.shapeRect, onClick: () => editor.insertShape("rect") },
+              { kind: "item", label: "Rounded rectangle", icon: ICONS.shapeRoundRect, onClick: () => editor.insertShape("roundRect") },
+              { kind: "item", label: "Ellipse", icon: ICONS.shapeEllipse, onClick: () => editor.insertShape("ellipse") },
+              { kind: "item", label: "Triangle", icon: ICONS.shapeTriangle, onClick: () => editor.insertShape("triangle") },
+              { kind: "item", label: "Diamond", icon: ICONS.shapeDiamond, onClick: () => editor.insertShape("diamond") },
+              { kind: "item", label: "Right arrow", icon: ICONS.shapeRightArrow, onClick: () => editor.insertShape("rightArrow") },
+              { kind: "item", label: "Left arrow", icon: ICONS.shapeLeftArrow, onClick: () => editor.insertShape("leftArrow") },
+              { kind: "item", label: "Line", icon: ICONS.shapeLine, onClick: () => editor.insertShape("line") },
+              { kind: "sep" },
+              { kind: "item", label: "Text Box", icon: ICONS.shapeTextBox, onClick: () => editor.insertTextBox() },
+            ],
+          },
         ];
         showContextMenu(r.left, r.bottom + 2, entries);
       },
