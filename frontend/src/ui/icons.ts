@@ -132,6 +132,14 @@ export const ICONS = {
   sendBack: svg(
     `<rect x="6.5" y="6.5" width="7" height="7" rx="1" fill="currentColor" stroke="none"/><rect x="2.5" y="2.5" width="7" height="7" rx="1"/>`,
   ),
+  // Move-behind-text: a receded (dashed) shape with the text lines running in front.
+  behindText: svg(
+    `<rect x="5.5" y="4" width="8" height="8" rx="1" stroke-dasharray="2.3 1.5"/><path d="M2 6.5h10M2 9.5h8.5"/>`,
+  ),
+  // Move-in-front-of-text: a solid shape covering the text lines behind it.
+  inFrontText: svg(
+    `<path d="M2 6.5h6M2 9.5h6"/><rect x="5.5" y="4" width="8" height="8" rx="1" fill="currentColor" stroke="none"/>`,
+  ),
   sdtText: svg(
     `<rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M5 6.2h6"/><path d="M8 6.2v4"/>`,
   ),

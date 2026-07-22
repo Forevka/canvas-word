@@ -24,12 +24,18 @@ const CTX_BAR_CSS = `
 .cw-ctxbar button.danger:hover{background:#fde7e9;color:#a4262c;}
 .cw-ctxbar button svg{width:16px;height:16px;}
 .cw-ctxbar .sep{width:1px;height:18px;background:#e1dfdd;margin:0 3px;flex:0 0 auto;}
+/* Icon-only object bars (image / shape / table) — square 28px buttons instead of the
+   text-pill default; grows to a 34px touch target on coarse pointers (issue #244 C4). */
+.cw-ctxbar.cw-iconbar button{width:28px;height:28px;min-width:0;padding:0;}
 @media (prefers-color-scheme: dark){
   :root[data-theme="dark"] .cw-ctxbar{background:#2b2b2b;border-color:#4a4a4a;color:#e6e6e6;}
   :root[data-theme="dark"] .cw-ctxbar button{color:#e6e6e6;}
   :root[data-theme="dark"] .cw-ctxbar button:hover{background:#3c3c3c;}
   :root[data-theme="dark"] .cw-ctxbar button.active{background:#264b73;border-color:#3d6ba5;}
   :root[data-theme="dark"] .cw-ctxbar .sep{background:#4a4a4a;}
+}
+@media (pointer: coarse), (max-width: 760px){
+  .cw-ctxbar.cw-iconbar button{width:34px;height:34px;}
 }`;
 
 /** Inject the shared context-bar stylesheet once (idempotent). */

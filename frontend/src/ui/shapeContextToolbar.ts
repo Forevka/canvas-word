@@ -6,7 +6,7 @@
 // the same picker font-colour / highlight use — no new colour UI.
 
 import { ICONS } from "./icons";
-import { createFloatingBar, type ContextToolbar } from "./contextToolbar";
+import { createFloatingBar, injectCtxBarCss, type ContextToolbar } from "./contextToolbar";
 import type { AnchorRect } from "./floatingBarPosition";
 
 export interface ShapeContextToolbarActions {
@@ -18,6 +18,10 @@ export interface ShapeContextToolbarActions {
   addText(): void;
   wrapInline(): void;
   wrapSquare(): void;
+  /** Move the shape to the behind-the-text layer. */
+  layerBehind(): void;
+  /** Move the shape to the in-front-of-the-text layer. */
+  layerInFront(): void;
   alignLeft(): void;
   alignCenter(): void;
   alignRight(): void;
@@ -34,7 +38,8 @@ export interface ShapeContextToolbarDeps {
 
 /** The shape bar as a ContextToolbar (priority 31 — above the image bar). */
 export function createShapeContextToolbar(deps: ShapeContextToolbarDeps): ContextToolbar {
-  const fb = createFloatingBar({ className: "cw-img-toolbar", ariaLabel: "Shape" });
+  injectCtxBarCss();
+  const fb = createFloatingBar({ className: "cw-ctxbar cw-iconbar", ariaLabel: "Shape" });
 
   const ibtn = (icon: string, title: string, onClick: (btn: HTMLButtonElement) => void, cls = ""): void => {
     const b = document.createElement("button");
@@ -57,6 +62,11 @@ export function createShapeContextToolbar(deps: ShapeContextToolbarDeps): Contex
   sep();
   ibtn(ICONS.wrapInline, "In line with text", () => deps.actions.wrapInline());
   ibtn(ICONS.wrapSquare, "Wrap text (square)", () => deps.actions.wrapSquare());
+  sep();
+  // Layer vs text — the "behind / in front of text" concept, previously reachable
+  // only from the right-click menu (issue #244 C2).
+  ibtn(ICONS.behindText, "Move behind text", () => deps.actions.layerBehind());
+  ibtn(ICONS.inFrontText, "Move in front of text", () => deps.actions.layerInFront());
   sep();
   ibtn(ICONS.alignLeft, "Align left", () => deps.actions.alignLeft());
   ibtn(ICONS.alignCenter, "Align center", () => deps.actions.alignCenter());
