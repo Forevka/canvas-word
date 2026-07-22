@@ -1385,6 +1385,20 @@ export function createEditor(
     return true;
   };
 
+  // Debounced move announcement for the arrow-nudge (E2). A held arrow fires
+  // `nudgeSelectedObject` on every keypress; announcing each step would flood the
+  // aria-live region, so the announcement is coalesced to a single utterance ~250ms
+  // after the burst settles — the final resting position is spoken once. (The
+  // drag-COMMIT announce in `applyObjectMove` already fires once and is untouched.)
+  let nudgeAnnounceTimer: ReturnType<typeof setTimeout> | null = null;
+  const announceNudgeDebounced = (message: string): void => {
+    if (nudgeAnnounceTimer) clearTimeout(nudgeAnnounceTimer);
+    nudgeAnnounceTimer = setTimeout(() => {
+      nudgeAnnounceTimer = null;
+      mirror.announce(message);
+    }, 250);
+  };
+
   /** Arrow-key nudge (E2): move the selected ANCHORED shape by `dxPx`/`dyPx`
    *  (1px, or 10px with Shift — the caller decides), clamping so the box stays on
    *  its page bar a small overhang. Returns true when the selection is a nudgeable
@@ -1410,7 +1424,7 @@ export function createEditor(
     const nx = shp.anchor.offsetXPx + appliedDx;
     const ny = shp.anchor.offsetYPx + appliedDy;
     dispatch(moveAnchoredShape(selectedObject, nx, ny, "command"));
-    mirror.announce(describeShapeMoved(shp, nx, ny));
+    announceNudgeDebounced(describeShapeMoved(shp, nx, ny)); // coalesce a held-arrow burst
     return true;
   };
 
@@ -4217,6 +4231,7 @@ export function createEditor(
       container.removeEventListener("pointermove", onPinchMove);
       container.removeEventListener("pointerup", onPinchUp);
       container.removeEventListener("pointercancel", onPinchUp);
+      if (nudgeAnnounceTimer) clearTimeout(nudgeAnnounceTimer); // drop a pending nudge announce
       controller.destroy();
       objectFrame.destroy();
       bandHover.destroy();
