@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adaptiveHandles } from "./objectController";
+import { adaptiveHandles, flipRotateLeft } from "./objectController";
 
 // The resize handles drag via pointer-capture, which Playwright can't drive, so —
 // like the rotate/crop angle math — the tiny-shape adaptation is unit-tested as a
@@ -58,5 +58,24 @@ describe("adaptiveHandles — tiny-shape handle adaptation", () => {
     expect(adaptiveHandles(16, 100).cornerOutset).toBeGreaterThan(0); // at the threshold
     expect(adaptiveHandles(10, 100).cornerOutset).toBeGreaterThan(0); // one tiny axis is enough
     expect(adaptiveHandles(12, 12).cornerOutset).toBeGreaterThan(0);
+  });
+});
+
+describe("flipRotateLeft — rotate-handle collision (B3)", () => {
+  // reserve defaults to gap(8) + size(18) + 2 = 28px of right-side room needed.
+  it("keeps the handle on the right when there's room before the page edge", () => {
+    expect(flipRotateLeft(400, 816)).toBe(false); // frame right far from the 816px page edge
+    expect(flipRotateLeft(788, 816)).toBe(false); // 788 + 28 = 816, exactly fits
+  });
+
+  it("flips to the left once the right-side handle would spill off the page", () => {
+    expect(flipRotateLeft(800, 816)).toBe(true); // 800 + 28 > 816
+    expect(flipRotateLeft(816, 816)).toBe(true); // frame flush with the page edge
+  });
+
+  it("honours a custom reserve", () => {
+    expect(flipRotateLeft(800, 816, 10)).toBe(false); // 810 ≤ 816
+    expect(flipRotateLeft(806, 816, 10)).toBe(false); // 816 exactly fits
+    expect(flipRotateLeft(807, 816, 10)).toBe(true); // 817 > 816
   });
 });

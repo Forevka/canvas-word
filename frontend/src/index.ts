@@ -539,6 +539,10 @@ export interface EditorOptions {
    *  page point (caret position, sdt chain, field, cell), or null when off-page.
    *  Only emitted while `setInspectorProbe(true)` — dormant otherwise. */
   onInspectorProbe?: (probe: InspectorProbe | null) => void;
+  /** Host hook: open a "Size & Position" authoring dialog for the currently selected
+   *  drawing shape (numeric width/height/rotation/offset). Wired by the app chrome
+   *  to `showShapeSizePosition`; when absent, the shape context menu omits the entry. */
+  onEditShapeSizePosition?: () => void;
 }
 
 /** Request passed to a custom-field resolver. */
@@ -3188,6 +3192,11 @@ export function createEditor(
           : []),
         item("Bring to Front", () => dispatch(bringShapeToFront(shapeId))),
         item("Send to Back", () => dispatch(sendShapeToBack(shapeId))),
+        // Numeric size/position/rotation authoring — only when the host wired the
+        // dialog hook (B2). The shape is already object-selected on right-click.
+        ...(options.onEditShapeSizePosition
+          ? [item("Size & Position…", () => options.onEditShapeSizePosition?.(), { icon: ICONS.ruler })]
+          : []),
         item("Delete Shape", () => {
           selectObject(null);
           dispatch(removeBlockObject(shapeId));

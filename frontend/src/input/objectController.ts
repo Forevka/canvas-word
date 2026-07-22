@@ -222,6 +222,23 @@ export function adaptiveHandles(boxWpx: number, boxHpx: number): HandleAdaptatio
   return { visible, cornerOutset };
 }
 
+// ── rotate-handle geometry + collision (B3) ──────────────────────────────────
+// The rotate handle normally sits just outside the frame's RIGHT edge. On a shape
+// hard against the right page margin that pushes the handle off-page (and onto the
+// `e` midpoint handle); there it flips to the LEFT edge instead.
+
+/** Rotate-handle diameter (px) — matches the handle's inline width/height. */
+const ROTATE_SIZE_PX = 18;
+/** Gap (px) between the frame edge and the rotate handle. */
+const ROTATE_GAP_PX = 8;
+
+/** Whether the rotate handle should flip to the frame's LEFT side: true when the
+ *  handle on the right (frame right + gap + its own width) would spill past the
+ *  page's right edge. Pure so the threshold is unit-tested without a DOM. */
+export function flipRotateLeft(frameRightPx: number, pageWidthPx: number, reservePx = ROTATE_GAP_PX + ROTATE_SIZE_PX + 2): boolean {
+  return frameRightPx + reservePx > pageWidthPx;
+}
+
 export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
   const frame = document.createElement("div");
   frame.style.cssText =
@@ -283,6 +300,26 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     }
   }
   frame.appendChild(rotateHandle);
+
+  // Live angle readout (B1): a small badge above the object showing the current
+  // rotation in whole degrees during a rotate drag, turning GREEN when the angle
+  // lands on a 15° multiple (the Shift-snap grid, and any free-drag round angle).
+  // Body-level + position:fixed so it neither rotates with the frame nor is clipped
+  // by the page; the object center is fixed during a rotate, so it stays put.
+  const ROTATE_BADGE_BASE = "#1a73e8";
+  const ROTATE_BADGE_SNAP = "#137333";
+  const rotateBadge = document.createElement("div");
+  rotateBadge.style.cssText =
+    "position:fixed;display:none;transform:translate(-50%,-100%);pointer-events:none;" +
+    "z-index:2147483646;padding:2px 6px;border-radius:4px;color:#fff;white-space:nowrap;" +
+    `font:600 11px/1.4 Arial,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.3);background:${ROTATE_BADGE_BASE};`;
+
+  /** Paint the badge for `deg` — text + snap highlight. Pure of the frame transform. */
+  const paintBadge = (deg: number): void => {
+    const d = Math.round(normalizeDeg(deg));
+    rotateBadge.textContent = `${d}°`;
+    rotateBadge.style.background = d % 15 === 0 ? ROTATE_BADGE_SNAP : ROTATE_BADGE_BASE;
+  };
 
   let current: { rect: Rect; maxWidth: number; anchor: ResizeAnchor; rotation: number } | null = null;
   let drag: {
@@ -473,6 +510,7 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     // transform-origin defaults to the frame's own center, which equals the object
     // center (the frame is inset −2px and grown +4px symmetrically). Paint-only.
     frame.style.transform = `rotate(${deg}deg)`;
+    paintBadge(deg);
   };
 
   const endRotateDrag = (): void => {
@@ -487,6 +525,7 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
     }
     rotateHandle.style.cursor = "grab";
     rotDragEl = null;
+    rotateBadge.style.display = "none"; // drag over — retire the angle readout
     window.removeEventListener("keydown", onRotateKey, true);
   };
 
@@ -544,6 +583,13 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
       startPointerDeg: pointerAngleDeg(centerX, centerY, ev.clientX, ev.clientY),
       startRotation: current.rotation,
     };
+    // Anchor the angle badge just above the (fixed) object box and seed it with the
+    // current rotation — subsequent moves repaint it via applyRotatePreview.
+    rotateBadge.style.left = `${centerX}px`;
+    rotateBadge.style.top = `${box.top - 8}px`;
+    if (rotateBadge.parentElement !== document.body) document.body.appendChild(rotateBadge);
+    paintBadge(current.rotation);
+    rotateBadge.style.display = "block";
     rotateHandle.style.cursor = "grabbing";
     rotDragEl = rotateHandle;
     rotPointerId = ev.pointerId;
@@ -794,6 +840,13 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
       frame.style.top = `${rect.y * z - 2}px`;
       frame.style.width = `${rect.width * z + 4}px`;
       frame.style.height = `${rect.height * z + 4}px`;
+      // Rotate-handle collision (B3): keep it just outside the RIGHT edge, but flip
+      // it to the LEFT when the shape sits against the right page margin and the
+      // right-side handle would spill off the page (and onto the `e` handle).
+      if (rotatable && !rotDrag) {
+        const flip = flipRotateLeft(rect.x * z + rect.width * z, host.clientWidth);
+        rotateHandle.style.left = flip ? `${-(ROTATE_GAP_PX + ROTATE_SIZE_PX)}px` : `calc(100% + ${ROTATE_GAP_PX}px)`;
+      }
     },
     hide(): void {
       current = null;
@@ -843,6 +896,7 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
       hideGhost();
       ghost.remove();
       sizeGhost.remove();
+      rotateBadge.remove();
       frame.remove();
       cropFull.remove();
       cropDim.remove();

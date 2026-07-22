@@ -37,6 +37,7 @@ import type { FloatingToolbarButtonSpec, ToolbarContext } from "./config";
 import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
 import { showDevPanel, type DevPanelHandle } from "./ui/devPanel";
 import { showPageLayout, type PageLayoutHandle } from "./ui/pageLayout";
+import { showShapeSizePosition, type ShapeSizePositionHandle } from "./ui/shapeSizePosition";
 import { showOrganizePages, type OrganizePagesHandle } from "./ui/organizePages";
 import { showParagraphDialog, type ParagraphDialogHandle } from "./ui/paragraphDialog";
 // The equation editor pulls in the whole LaTeX toolchain (parser + serializer +
@@ -337,12 +338,18 @@ const runRegisteredCommand = (id: string): boolean => {
   }
   return true;
 };
+// Opens the Size & Position dialog for the selected shape. Assigned once the ribbon
+// machinery is set up (below); the right-click menu reaches it through the editor
+// option hook so both surfaces share one implementation.
+let openShapeSizePosition: () => void = () => {};
 const editorOpts = {
   engine,
   paintOptions: { fontRegistry },
   readonly,
   theme: config.theme,
   behavior: config.behavior,
+  // Right-click "Size & Position…" on a selected shape routes here (B2).
+  onEditShapeSizePosition: () => openShapeSizePosition(),
   ...(runtime.mode ? { mode: runtime.mode } : {}),
   ...(runtime.allowedModes ? { allowedModes: runtime.allowedModes } : {}),
   ...(runtime.user ? { user: runtime.user } : {}),
@@ -1784,8 +1791,18 @@ if (toolbar) {
   let styleMgr: StyleManagerHandle | null = null;
   let devPanel: DevPanelHandle | null = null;
   let pageLayoutDlg: PageLayoutHandle | null = null;
+  let sizePosDlg: ShapeSizePositionHandle | null = null;
   let organizeDlg: OrganizePagesHandle | null = null;
   let symbolPicker: SymbolPickerHandle | null = null;
+
+  // Size & Position dialog (B2), shared by the ribbon Shape group and the shape
+  // right-click menu (via the onEditShapeSizePosition option hook). Toggles: a
+  // second trigger while it's open closes it.
+  openShapeSizePosition = (): void => {
+    if (sizePosDlg) { sizePosDlg.close(); sizePosDlg = null; return; }
+    if (!editor.getSelectedShape()) return;
+    sizePosDlg = showShapeSizePosition({ editor, onClose: () => { sizePosDlg = null; } });
+  };
   // "Show only styles in use" filter. Since import now keeps every defined style
   // (so authored styles round-trip), a heavy imported doc can crowd the gallery —
   // this collapses it to styles actually applied in the document.
@@ -2011,6 +2028,11 @@ if (toolbar) {
       const id = editor.getSelectedObject();
       if (id) { editor.dispatch(sendShapeToBack(id)); editor.focus(); }
     }),
+    (f) => f.shapeSelected,
+    "select a shape first",
+  );
+  enable(
+    btn(ICONS.ruler, "Size & position (exact width, height, rotation, offset)", () => openShapeSizePosition()),
     (f) => f.shapeSelected,
     "select a shape first",
   );
