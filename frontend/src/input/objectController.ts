@@ -168,6 +168,60 @@ const HANDLES: HandleSpec[] = [
 
 const MIN_SIZE_PX = 16;
 
+// ── tiny-shape handle adaptation (pure, unit-tested) ─────────────────────────
+// The 8 resize handles are 8px dots pinned at the box edges (corners + edge
+// midpoints). On a large box they sit comfortably apart, but a sub-~24px shape
+// (nothing lower-bounds shape/image size on insert or import) ends up smothered
+// by its own handles — the midpoint dot lands on top of the corner dots, and on a
+// truly tiny box all four corners pile into the middle. Word thins the handle set
+// out for small objects; we do the same, per axis, purely in the overlay.
+
+/** Corner handle names (always shown). Edge-midpoint handles drop out first. */
+const CORNER_HANDLES = new Set(["nw", "ne", "se", "sw"]);
+
+/** Below this on-screen box dimension (px) an edge-midpoint handle would collide
+ *  with the corner handles on that axis, so it's dropped. A midpoint sits at the
+ *  box center; its neighbouring corner is half the box away, so it needs ~1.5
+ *  handle-widths of half-span to clear — 8px handle → ~12px half → ~24px box. */
+const MIDPOINT_MIN_PX = 24;
+
+/** At/below this on-screen box dimension (px) even the four corner handles pile
+ *  into the shape's interior, so they're pushed diagonally OUTWARD by
+ *  {@link CORNER_OUTSET_PX} to leave the tiny box itself visible/grabbable. */
+const CORNER_OUTSET_AT_PX = MIN_SIZE_PX;
+
+/** Outward diagonal offset (px) applied to each corner handle on a tiny box. */
+const CORNER_OUTSET_PX = 6;
+
+export interface HandleAdaptation {
+  /** Handle names to render; the rest are hidden to avoid crowding a tiny box. */
+  visible: Set<string>;
+  /** Px each corner handle is pushed diagonally OUTWARD from its corner (0 when
+   *  the box is big enough that on-corner handles don't smother it). */
+  cornerOutset: number;
+}
+
+/** Which resize handles a box of the given on-screen size should show, and how far
+ *  to push the corners out. Edge-midpoint handles drop per axis (the horizontal
+ *  pair `n`/`s` when the box is too NARROW, the vertical pair `e`/`w` when it's too
+ *  SHORT); corners always stay but move outward once the box is tiny on either
+ *  axis. Pure so the thresholds are unit-tested without a DOM. */
+export function adaptiveHandles(boxWpx: number, boxHpx: number): HandleAdaptation {
+  const visible = new Set<string>();
+  for (const h of HANDLES) {
+    if (CORNER_HANDLES.has(h.name)) {
+      visible.add(h.name);
+      continue;
+    }
+    // Edge midpoints: horizontal-centered (n/s, dx 0.5) crowd when NARROW;
+    // vertical-centered (e/w, dy 0.5) crowd when SHORT.
+    const tooTight = h.dx === 0.5 ? boxWpx < MIDPOINT_MIN_PX : boxHpx < MIDPOINT_MIN_PX;
+    if (!tooTight) visible.add(h.name);
+  }
+  const cornerOutset = Math.min(boxWpx, boxHpx) <= CORNER_OUTSET_AT_PX ? CORNER_OUTSET_PX : 0;
+  return { visible, cornerOutset };
+}
+
 export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
   const frame = document.createElement("div");
   frame.style.cssText =
@@ -688,8 +742,23 @@ export function createObjectFrame(deps: ObjectFrameDeps): ObjectFrame {
       if (!host) return;
       current = { rect, maxWidth, anchor, rotation: rotationDeg };
       ghostSrc = src;
-      // Non-resizable objects (equations) get a plain selection box — no handles.
-      for (const el of handleEls) el.style.display = resizable ? "block" : "none";
+      // Handle set adapts to the box's on-screen size so a tiny shape isn't
+      // smothered by its own handles: drop the crowded edge-midpoint handles and
+      // push the corners outward below the thresholds. Non-resizable objects
+      // (equations' "other" fallback) get a plain selection box — no handles.
+      const z0 = deps.getZoom();
+      const adapt = adaptiveHandles(rect.width * z0, rect.height * z0);
+      for (let i = 0; i < handleEls.length; i++) {
+        const el = handleEls[i]!;
+        const h = HANDLES[i]!;
+        const shown = resizable && adapt.visible.has(h.name);
+        el.style.display = shown ? "block" : "none";
+        // Only corners take an outward offset (edge midpoints keep their edge).
+        el.style.transform =
+          shown && adapt.cornerOutset > 0 && CORNER_HANDLES.has(h.name)
+            ? `translate(${h.dx === 0 ? -adapt.cornerOutset : adapt.cornerOutset}px, ${h.dy === 0 ? -adapt.cornerOutset : adapt.cornerOutset}px)`
+            : "";
+      }
       // Only shapes + images get the rotate handle (not equations / plain objects).
       rotateHandle.style.display = rotatable ? "flex" : "none";
       // Clear any stale rotate-preview transform (a prior committed drag) so the

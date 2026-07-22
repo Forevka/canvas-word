@@ -244,6 +244,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **de-dups** so a copy/pasted image never repeats an id.
 
 ### Fixed
+- **Drawing shapes — selection handles adapt to tiny shapes (issue #244, B4).** A sub-~24px shape or
+  image used to be **smothered by its own resize handles** — nothing lower-bounds a shape/image's size on
+  insert or import, so the eight 8px handles piled on top of each other and the box vanished underneath.
+  The selection frame now **thins the handle set to fit the box** (purely in the overlay, no model change):
+  the crowded **edge-midpoint handles drop out per axis** — the `n`/`s` pair when the box is too narrow,
+  the `e`/`w` pair when it's too short — leaving the four corners, and on a box tiny on either axis the
+  **corner handles shift diagonally outward** so the shape itself stays visible and grabbable. Handles
+  re-expand to the full eight as the box grows back past the thresholds.
 - **Drawing shapes — rotated text bodies and lossless centered square wrap (issue #206 fidelity / #232).**
   Two documented corners of the shapes feature now close. (1) A **rotated** shape used to paint its
   geometry tilted but its text-box body **upright** — the canvas and PDF painters now apply the same
