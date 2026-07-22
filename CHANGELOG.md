@@ -302,6 +302,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **de-dups** so a copy/pasted image never repeats an id.
 
 ### Fixed
+- **Import — a titled section behind a "continuous" break now starts a new page (Flood Map / Zoning).**
+  Generated reports open some chapter titles (e.g. **FLOOD MAP**, **ZONING**) with a `w:sectPr` of type
+  `continuous` and close them with a page-type break that carries distinct geometry (landscape / page-number
+  restart). The importer's backward-attribution — which page-breaks such a title so it doesn't dangle at the
+  bottom of the previous page — ran only when that closing break *flowed*; a **distinct** closing break
+  (materialized as a section carrier) skipped it, so the title was stranded at the bottom of the preceding
+  page while its body and figure spilled onto near-empty following pages. The page break is now attributed
+  in both cases, so the title opens a fresh page as it does in Word.
 - **Layout — section break no longer fires late after a hidden paragraph (stranded TOC heading).** A
   fully-hidden paragraph (a `w:vanish` bookmark anchor, common at the top of generated reports) is dropped
   from the layout measure pass, so the internal `measured[]` array is shorter than the document's block
