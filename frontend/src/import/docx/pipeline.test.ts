@@ -225,6 +225,30 @@ describe("docx pipeline — lossy policies emit warnings", () => {
     expect(para(r.doc.blocks[floodIdx - 1]!).style.pageBreakBefore).toBeUndefined();
   });
 
+  it("flows a geometry-identical break when only a downstream CONTINUOUS break restarts numbering", () => {
+    // Effective Age table regression: a geometry-preserving Next Page break should
+    // flow (footer-only churn). It was instead materialized because a *continuous*
+    // break further down restarts page numbering — a property we drop with that
+    // continuous break, so it can't actually bleed backward. Materializing the
+    // earlier break page-broke the following content (the table pushed off its page).
+    const pageSect = `<w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:pPr></w:p>`;
+    const contRestart =
+      `<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/><w:pgNumType w:start="1"/><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:pPr></w:p>`;
+    const r = importBody(
+      `<w:p><w:r><w:t>COVER</w:t></w:r></w:p>` + pageSect + // cover -> body (so the next break isn't the cover boundary)
+        `<w:p><w:r><w:t>chapter body</w:t></w:r></w:p>` + pageSect + // geometry-identical -> must FLOW
+        `<w:p><w:r><w:t>table stand-in</w:t></w:r></w:p>` + // must stay on the same page (no break above it)
+        contRestart + // downstream continuous page-number restart (dropped)
+        `<w:p><w:r><w:t>later</w:t></w:r></w:p>`,
+    );
+    const find = (t: string): Paragraph =>
+      para(r.doc.blocks.find((b) => para(b).runs.some((rn) => rn.text === t))!);
+    // The geometry-identical Next Page break flowed: no section carrier materialized,
+    // and the following content carries no page break.
+    expect(r.doc.blocks.some((b) => b.kind === "paragraph" && !!(b as Paragraph).style.sectionBreak)).toBe(false);
+    expect(find("table stand-in").style.pageBreakBefore).toBeUndefined();
+  });
+
   it("keeps a heading with a closely-following figure so it isn't stranded above it", () => {
     const styles = stylesPartXml(`<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style>`);
     const fig = `<w:tbl><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>map</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;

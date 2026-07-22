@@ -398,12 +398,19 @@ export function createMapper(
     // effectiveSection), so if the following section declares one this section
     // lacks it would bleed BACKWARD across the merged boundary (e.g. line numbers
     // appearing on every page before a line-numbered section).
+    //
+    // Only PAGE-type breaks are materialized (a "continuous" break is dropped and
+    // its OWN properties with it), so only a page break's OWN property can actually
+    // bleed backward. Skip continuous breaks here: otherwise a downstream continuous
+    // page-number restart — which we don't even keep — would spuriously force THIS
+    // (geometry-identical) break to materialize and page-break, stranding the next
+    // section's content (e.g. the Effective Age table pushed off the Flood Map page).
     const nextSectionOwn = (
       afterIndex: number,
     ): { lineNumbering?: IRLineNumbering | undefined; pageNumberStart?: number | undefined } => {
       for (let i = afterIndex + 1; i < blocks.length; i++) {
         const b = blocks[i]!;
-        if (b.kind === "paragraph" && b.props.sectionBreak !== undefined) {
+        if (b.kind === "paragraph" && b.props.sectionBreak === "page") {
           return { lineNumbering: b.props.sectionLineNumbering, pageNumberStart: b.props.sectionPageNumberStart };
         }
       }
