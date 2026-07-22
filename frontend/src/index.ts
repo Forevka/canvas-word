@@ -24,6 +24,7 @@ import {
   hitTestSelectableObject,
   linkAt,
   objectRect,
+  listSelectableObjects,
   selectionRects,
   type ColumnBoundaryHit,
   type RowBoundaryHit,
@@ -67,6 +68,7 @@ import { showTocProperties } from "./ui/tocProperties";
 import { showStyleManager, type StyleManagerHandle } from "./ui/styleManager";
 import { showTableProperties, type BorderStyleName, type CellTextDir, type TablePropertiesHandle } from "./ui/tableProperties";
 import { createA11yMirror } from "./a11y/mirror";
+import { shapeAccessibleName, describeShapeSelected, describeShapeMoved, describeShapeRotated } from "./a11y/shapeAnnounce";
 import {
   changeListLevel,
   applyTableStyle,
@@ -1236,8 +1238,10 @@ export function createEditor(
     onRotateCommit: (deg) => {
       if (!selectedObject) return;
       const rotation = deg === 0 ? null : deg;
-      if (locateShape(doc, selectedObject)) {
+      const shp = locateShape(doc, selectedObject)?.block;
+      if (shp) {
         dispatch(setShapeProps(selectedObject, { rotation }));
+        mirror.announce(describeShapeRotated(shp, deg)); // E4: speak the new angle
         return;
       }
       if (locateImage(doc, selectedObject)) {
@@ -1284,6 +1288,7 @@ export function createEditor(
       // images are offset-positioned and keep their left edge.
       const anchor = img.anchor ? "left" : img.align;
       objectFrame.show(rect, maxW, img.src, anchor, true, true, img.rotation ?? 0);
+      objectFrame.setAccessibleName(null); // shape-scoped naming only (E4)
       return;
     }
     // Display equations resize too (uniform scale) — same 8-handle frame, but no
@@ -1294,6 +1299,7 @@ export function createEditor(
     if (eq) {
       const anchor = eq.align === "right" ? "right" : eq.align === "left" ? "left" : "center";
       objectFrame.show(rect, contentWidth(), undefined, anchor, true);
+      objectFrame.setAccessibleName(null);
       return;
     }
     // Drawing shapes resize like images (raw width/height, no aspect lock) — the
@@ -1305,11 +1311,15 @@ export function createEditor(
       const maxW = shp.anchor ? doc.section.pageWidthPx : contentWidth();
       const anchor = shp.anchor ? "left" : shp.align;
       objectFrame.show(rect, maxW, undefined, anchor, true, true, shp.rotation ?? 0);
+      // E4: give the selection frame the shape's accessible name (preset + text) so
+      // it's a named node in the a11y tree, not an anonymous box.
+      objectFrame.setAccessibleName(shapeAccessibleName(shp));
       return;
     }
     // Any other selectable object (e.g. a custom block) is selectable but NOT
     // resizable — a plain selection box with no handles.
     objectFrame.show(rect, contentWidth(), undefined, "left", false);
+    objectFrame.setAccessibleName(null);
   };
 
   /** Is the current object selection an image (vs an equation / other block)? */
@@ -1345,7 +1355,77 @@ export function createEditor(
     // may be null). Previously only the select path refreshed.
     refreshSelectionVisuals();
     refreshObjectFrame();
+    // E4: speak the newly-selected shape (label + text) into the a11y live region —
+    // shapes are canvas-painted and otherwise announce nothing to a screen reader.
+    if (blockId) {
+      const shp = locateShape(doc, blockId)?.block;
+      if (shp) mirror.announce(describeShapeSelected(shp));
+    }
     notifyChange(); // object selection drives the floating image toolbar
+  };
+
+  /** Keyboard object-focus cycle (E3): move the object selection to the next (or
+   *  previous, `backward`) selectable object — image / shape / equation / custom —
+   *  in document order, wrapping. With nothing selected it enters the cycle at the
+   *  first (or last) object. Scrolls the target into view. Returns false (a no-op)
+   *  only when the document has no selectable objects. */
+  const cycleObjectFocus = (backward: boolean): boolean => {
+    if (readonly) return false;
+    const ids = listSelectableObjects(tree);
+    if (ids.length === 0) return false;
+    const cur = selectedObject ? ids.indexOf(selectedObject) : -1;
+    // From an unselected state, forward starts at 0 and backward at the last object;
+    // from a selected object, step one with wraparound.
+    const next =
+      cur < 0 ? (backward ? ids.length - 1 : 0) : (cur + (backward ? -1 : 1) + ids.length) % ids.length;
+    const id = ids[next]!;
+    selectObject(id);
+    const rect = objectRect(tree, id);
+    if (rect) paint.ensureVisible(rect, "center");
+    return true;
+  };
+
+  // Debounced move announcement for the arrow-nudge (E2). A held arrow fires
+  // `nudgeSelectedObject` on every keypress; announcing each step would flood the
+  // aria-live region, so the announcement is coalesced to a single utterance ~250ms
+  // after the burst settles — the final resting position is spoken once. (The
+  // drag-COMMIT announce in `applyObjectMove` already fires once and is untouched.)
+  let nudgeAnnounceTimer: ReturnType<typeof setTimeout> | null = null;
+  const announceNudgeDebounced = (message: string): void => {
+    if (nudgeAnnounceTimer) clearTimeout(nudgeAnnounceTimer);
+    nudgeAnnounceTimer = setTimeout(() => {
+      nudgeAnnounceTimer = null;
+      mirror.announce(message);
+    }, 250);
+  };
+
+  /** Arrow-key nudge (E2): move the selected ANCHORED shape by `dxPx`/`dyPx`
+   *  (1px, or 10px with Shift — the caller decides), clamping so the box stays on
+   *  its page bar a small overhang. Returns true when the selection is a nudgeable
+   *  anchored shape (so the key is consumed even at the clamp edge), false so the
+   *  arrow falls through to text navigation otherwise. */
+  const nudgeSelectedObject = (dxPx: number, dyPx: number): boolean => {
+    if (readonly || !selectedObject) return false;
+    const shp = locateShape(doc, selectedObject)?.block;
+    if (!shp?.anchor) return false; // only anchored shapes move (moveAnchoredShape no-ops otherwise)
+    const rect = objectRect(tree, selectedObject);
+    if (!rect) return false;
+    const page = tree.pages[rect.pageIndex];
+    const pageW = page?.widthPx ?? doc.section.pageWidthPx;
+    const pageH = page?.heightPx ?? doc.section.pageHeightPx;
+    const OVERHANG = 24; // how far past a page edge a shape may be nudged before it's pinned
+    const clampAxis = (pos: number, size: number, extent: number): number =>
+      Math.max(-OVERHANG, Math.min(extent - size + OVERHANG, pos));
+    // Clamp the resulting page position, then apply the achievable delta to the
+    // anchor offset (offset px and page px share a scale, so the delta transfers 1:1).
+    const appliedDx = clampAxis(rect.x + dxPx, rect.width, pageW) - rect.x;
+    const appliedDy = clampAxis(rect.y + dyPx, rect.height, pageH) - rect.y;
+    if (appliedDx === 0 && appliedDy === 0) return true; // pinned at the edge — consumed, no move
+    const nx = shp.anchor.offsetXPx + appliedDx;
+    const ny = shp.anchor.offsetYPx + appliedDy;
+    dispatch(moveAnchoredShape(selectedObject, nx, ny, "command"));
+    announceNudgeDebounced(describeShapeMoved(shp, nx, ny)); // coalesce a held-arrow burst
+    return true;
   };
 
   // ---- shape text box editing (issue #219) --------------------------------
@@ -2387,6 +2467,8 @@ export function createEditor(
     onDecorationClick: (x, y) => dispatchDecorationClick(x, y),
     selectObject,
     hasSelectedObject: () => selectedObject !== null,
+    cycleObjectFocus,
+    nudgeSelectedObject,
     deleteSelectedObject: deleteSelectedObjectInternal,
     startColumnDrag,
     setColumnGuide: (guide) => paint.setColumnGuide(guide),
@@ -2395,12 +2477,13 @@ export function createEditor(
     applyObjectMove: (blockId, x, y, transient) => {
       let ox = x;
       let oy = y;
+      const shp = locateShape(doc, blockId)?.block;
       // F2: clamp the committed drop to the page so a shape can never be dragged
       // fully off-page and lost. The live preview (transient) drags freely; only the
       // final "command" is clamped. Derive the anchor origin from the CURRENT laid-out
       // rect minus its current offset (a consistent pair) so any relativeFrom frame works.
       if (!transient) {
-        const anchor = locateShape(doc, blockId)?.block.anchor ?? locateImage(doc, blockId)?.image.anchor;
+        const anchor = shp?.anchor ?? locateImage(doc, blockId)?.image.anchor;
         const rect = objectRect(tree, blockId);
         const pg = rect ? tree.pages[rect.pageIndex] : undefined;
         if (anchor && rect && pg) {
@@ -2415,13 +2498,12 @@ export function createEditor(
         }
       }
       dispatch(
-        (locateShape(doc, blockId) ? moveAnchoredShape : moveAnchoredImage)(
-          blockId,
-          ox,
-          oy,
-          transient ? "transient" : "command",
-        ),
+        (shp ? moveAnchoredShape : moveAnchoredImage)(blockId, ox, oy, transient ? "transient" : "command"),
       );
+      // E4: announce once on the move COMMIT (not the per-frame transient previews),
+      // and only for an anchored shape — moveAnchoredShape no-ops otherwise. Announce
+      // the CLAMPED final position (ox/oy), matching what F2 actually committed.
+      if (!transient && shp?.anchor) mirror.announce(describeShapeMoved(shp, ox, oy));
     },
     onTab: tabInTable,
     onSdtPress: sdtPopupCtl.handlePress,
@@ -4149,6 +4231,7 @@ export function createEditor(
       container.removeEventListener("pointermove", onPinchMove);
       container.removeEventListener("pointerup", onPinchUp);
       container.removeEventListener("pointercancel", onPinchUp);
+      if (nudgeAnnounceTimer) clearTimeout(nudgeAnnounceTimer); // drop a pending nudge announce
       controller.destroy();
       objectFrame.destroy();
       bandHover.destroy();

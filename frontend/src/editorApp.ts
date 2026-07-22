@@ -1299,10 +1299,16 @@ if (toolbar) {
    *  Mirrors the table grid picker's popover pattern. */
   const shapesPopover = (anchor: HTMLElement): void => {
     const wrap = el("div");
+    const COLS = 4;
     const grid = el("div", "cw-grid");
-    grid.style.gridTemplateColumns = "repeat(4, 28px)";
+    grid.style.gridTemplateColumns = `repeat(${COLS}, 28px)`;
+    grid.setAttribute("role", "group");
+    grid.setAttribute("aria-label", "Insert shape");
     const label = el("div", "cw-grid-label");
     label.textContent = "Insert shape";
+    // Each gallery entry is one activatable cell; the Text Box entry seeds an
+    // editable body + enters editing (issue #235) rather than inserting a bare
+    // preset, so it carries its own `activate`.
     const presets: { preset: ShapePreset; icon: string; name: string }[] = [
       { preset: "rect", icon: ICONS.shapeRect, name: "Rectangle" },
       { preset: "roundRect", icon: ICONS.shapeRoundRect, name: "Rounded rectangle" },
@@ -1313,35 +1319,68 @@ if (toolbar) {
       { preset: "leftArrow", icon: ICONS.shapeLeftArrow, name: "Left arrow" },
       { preset: "line", icon: ICONS.shapeLine, name: "Line" },
     ];
-    for (const p of presets) {
+    const entries: { icon: string; name: string; activate: () => void }[] = presets.map(
+      ({ preset, icon, name }) => ({
+        icon,
+        name,
+        activate: (): void => {
+          closePop();
+          editor.insertShape(preset); // selects + reveals the new shape (A1)
+        },
+      }),
+    );
+    entries.push({
+      icon: ICONS.shapeTextBox,
+      name: "Text Box",
+      activate: (): void => {
+        closePop();
+        editor.insertTextBox();
+      },
+    });
+    // Keyboard-operable gallery (E4/E1): each cell is a role="button" with a roving
+    // tabindex — arrows move focus (roving), Home/End jump to the ends, Enter/Space
+    // activate. Only the focused cell is in the tab order, so the whole gallery is
+    // one Tab stop that then navigates with the arrows.
+    const cellEls: HTMLElement[] = [];
+    const focusCell = (i: number): void => {
+      const j = Math.max(0, Math.min(cellEls.length - 1, i));
+      cellEls.forEach((c, k) => (c.tabIndex = k === j ? 0 : -1));
+      cellEls[j]!.focus();
+    };
+    entries.forEach((entry, i) => {
       const cell = el("div", "cell");
       cell.style.width = "28px";
       cell.style.height = "28px";
-      cell.innerHTML = p.icon;
-      cell.title = p.name;
-      cell.addEventListener("mouseenter", () => { label.textContent = p.name; });
-      cell.addEventListener("click", () => {
-        closePop();
-        editor.insertShape(p.preset); // selects + reveals the new shape (A1)
+      cell.innerHTML = entry.icon;
+      cell.title = entry.name;
+      cell.setAttribute("role", "button");
+      cell.setAttribute("aria-label", entry.name);
+      cell.tabIndex = i === 0 ? 0 : -1; // roving: only the first cell starts tabbable
+      const show = (): void => { label.textContent = entry.name; };
+      cell.addEventListener("mouseenter", show);
+      cell.addEventListener("focus", show);
+      cell.addEventListener("click", entry.activate);
+      cell.addEventListener("keydown", (ev: KeyboardEvent) => {
+        switch (ev.key) {
+          case "ArrowRight": focusCell(i + 1); break;
+          case "ArrowLeft": focusCell(i - 1); break;
+          case "ArrowDown": focusCell(i + COLS); break;
+          case "ArrowUp": focusCell(i - COLS); break;
+          case "Home": focusCell(0); break;
+          case "End": focusCell(cellEls.length - 1); break;
+          case "Enter": case " ": entry.activate(); break;
+          default: return; // let other keys (Escape, Tab) bubble to the popover
+        }
+        ev.preventDefault();
       });
+      cellEls.push(cell);
       grid.appendChild(cell);
-    }
-    // Text Box — a rectangle with an empty editable body; inserting it drops the
-    // caret inside so the user types straight away (issue #235). Distinct from the
-    // presets above (it seeds a text body + enters editing), so it's its own cell.
-    const tb = el("div", "cell");
-    tb.style.width = "28px";
-    tb.style.height = "28px";
-    tb.innerHTML = ICONS.shapeTextBox;
-    tb.title = "Text Box";
-    tb.addEventListener("mouseenter", () => { label.textContent = "Text Box"; });
-    tb.addEventListener("click", () => {
-      closePop();
-      editor.insertTextBox();
     });
-    grid.appendChild(tb);
     wrap.append(grid, label);
     openPop(anchor, wrap);
+    // Move focus into the gallery so the arrows/Enter drive it straight away (the
+    // popover keeps editor focus on mouse-open; a keyboard user lands on cell 0).
+    setTimeout(() => cellEls[0]?.focus(), 0);
   };
 
   /** Hyperlink dialog: URL field + Apply / Remove, applied to the selection.
