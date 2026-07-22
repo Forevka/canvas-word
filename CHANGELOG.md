@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Drawing shapes — control-surface parity (issue #244, C1–C4 / D2).** A pass over the UX-analysis
+  findings so every shape action is reachable from the ribbon **and** the floating toolbar **and** the
+  right-click menu:
+  - **Fill & Outline in the right-click menu (C1).** Recolouring a shape via right-click now works —
+    the menu's **Fill…** / **Outline…** entries open the *same* shared colour popovers the ribbon and
+    floating toolbar use (wired through two host hooks, `onShapeFillMenu` / `onShapeOutlineMenu`,
+    anchored to the shape).
+  - **"Behind / In front of text" everywhere, disambiguated (C2).** The layer-vs-text control (Word's
+    "Behind Text" / "In Front of Text") was reachable *only* from the right-click menu; it's now on the
+    **floating toolbar** and the **ribbon** too. It's relabelled **Move Behind Text** / **Move In Front
+    of Text** to separate it from the shape z-order controls, which are relabelled **Bring to front /
+    Send to back (among shapes)** — the two "depth" concepts no longer read as duplicates.
+  - **Add text on the ribbon (C3).** The **Add or edit text** gesture is now on the ribbon Shape group,
+    matching the floating toolbar and right-click menu.
+  - **Converged floating-bar styling (C4).** The image, shape and table floating bars now share one
+    base class (`cw-ctxbar` + a `cw-iconbar` modifier) instead of drifting on per-bar CSS; the object
+    bars also pick up the shared dark-theme treatment for free.
+  - **Popover select styling (D2).** The outline popover's width/dash `<select>`s use the popover's own
+    class system (`.cw-pop .pop-row`) instead of inline styles, so they match the swatch grid.
 - **Object rotate handle + image rotation (issue #236).** The object selection frame now carries a
   **rotate handle** — an arc-arrow pinned just outside the frame's right edge (shapes **and** images).
   Dragging it rotates the object about its center: the angle tracks the pointer, **Shift** snaps to 15°

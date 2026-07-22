@@ -65,6 +65,7 @@ import {
   setShapeProps,
   bringShapeToFront,
   sendShapeToBack,
+  setShapeLayer,
   insertEquation,
   insertInlineEquation,
   insertSymbolCmd,
@@ -348,6 +349,17 @@ const editorOpts = {
   ...(runtime.knownUsers ? { knownUsers: runtime.knownUsers } : {}),
   ...(runtime.resolveField ? { resolveField: runtime.resolveField } : {}),
   ...(collabId !== null ? { docId: collabId } : {}),
+  // Right-click "Fill…" / "Outline…" for a selected shape open the SAME shared
+  // colour popovers the ribbon and floating toolbar use, anchored to the shape's
+  // on-screen rect (issue #244 C1).
+  onShapeFillMenu: () => {
+    const r = editor.getSelectedShapeRect();
+    if (r) shapeFillPopover(r);
+  },
+  onShapeOutlineMenu: () => {
+    const r = editor.getSelectedShapeRect();
+    if (r) shapeOutlinePopover(r);
+  },
   // In a collab session, ship each recorded local edit to the server.
   onChangeRecorded: (change: Change) => {
     sync?.localEdit(change.ops);
@@ -685,12 +697,16 @@ let openFind: () => void = () => {};
 const toolbar = shell.toolbar;
 const showToolbar = !readonly && (runtime.view?.toolbar ?? true);
 if (!showToolbar) toolbar.style.display = "none";
+// Popover anchor: an element to anchor under (ribbon / floating-toolbar button) or a
+// bare viewport rect (the right-click menu path, where the shape's on-screen rect is
+// the anchor — the menu row is already gone by the time the action runs).
+type PopoverAnchor = HTMLElement | { left: number; top: number; width: number; height: number };
 // Drawing-shape fill/outline pickers: defined inside the ribbon block (they reuse
 // its colour-popover machinery) but also called from the floating shape context
 // toolbar registered further below, so their handles are hoisted here. No-ops until
 // the ribbon block assigns them (a doc with no ribbon has no popover chrome anyway).
-let shapeFillPopover: (anchor: HTMLElement) => void = () => {};
-let shapeOutlinePopover: (anchor: HTMLElement) => void = () => {};
+let shapeFillPopover: (anchor: PopoverAnchor) => void = () => {};
+let shapeOutlinePopover: (anchor: PopoverAnchor) => void = () => {};
 if (toolbar) {
   // ===== Word-style tabbed ribbon ==========================================
   // A tab strip drives a stack of panels (one visible at a time). Each panel
@@ -936,18 +952,20 @@ if (toolbar) {
     }
   };
   /** Open `content` in a popover anchored under `anchor`, clamped on-screen. */
-  const openPop = (anchor: HTMLElement, content: HTMLElement): HTMLElement => {
+  const openPop = (anchor: PopoverAnchor, content: HTMLElement): HTMLElement => {
     closePop();
     const pop = el("div", "cw-pop");
     pop.addEventListener("mousedown", (e) => e.preventDefault()); // keep editor focus
     pop.appendChild(content);
     document.body.appendChild(pop);
-    const r = anchor.getBoundingClientRect();
-    pop.style.left = `${Math.round(r.left)}px`;
-    pop.style.top = `${Math.round(r.bottom + 3)}px`;
+    const b = anchor instanceof HTMLElement ? anchor.getBoundingClientRect() : anchor;
+    const aTop = b.top;
+    const aBottom = "bottom" in b ? b.bottom : b.top + b.height;
+    pop.style.left = `${Math.round(b.left)}px`;
+    pop.style.top = `${Math.round(aBottom + 3)}px`;
     const pr = pop.getBoundingClientRect();
     if (pr.right > window.innerWidth - 6) pop.style.left = `${Math.round(window.innerWidth - pr.width - 6)}px`;
-    if (pr.bottom > window.innerHeight - 6) pop.style.top = `${Math.round(r.top - pr.height - 3)}px`;
+    if (pr.bottom > window.innerHeight - 6) pop.style.top = `${Math.round(aTop - pr.height - 3)}px`;
     activePop = pop;
     setTimeout(() => {
       document.addEventListener("mousedown", onDocDown, true);
@@ -999,7 +1017,7 @@ if (toolbar) {
   };
   /** Colour palette popover: swatch grid + an optional clear row + "More…". */
   const colorPopover = (
-    anchor: HTMLElement,
+    anchor: PopoverAnchor,
     last: string,
     clearLabel: string | null,
     onPick: (c: string) => void,
@@ -1052,7 +1070,7 @@ if (toolbar) {
   };
   /** Fill picker for the selected shape — the shared colour popover + a "No fill"
    *  row (reuses the exact picker font-colour / highlight use). */
-  shapeFillPopover = (anchor: HTMLElement): void => {
+  shapeFillPopover = (anchor: PopoverAnchor): void => {
     const id = editor.getSelectedObject();
     const shape = editor.getSelectedShape();
     if (!id || !shape) return;
@@ -1067,7 +1085,7 @@ if (toolbar) {
   };
   /** Outline picker for the selected shape: colour swatches + width + dash selectors
    *  + a "No outline" row. Each control keeps the shape's other outline facets. */
-  shapeOutlinePopover = (anchor: HTMLElement): void => {
+  shapeOutlinePopover = (anchor: PopoverAnchor): void => {
     const id = editor.getSelectedObject();
     const shape = editor.getSelectedShape();
     if (!id || !shape) return;
@@ -1091,14 +1109,13 @@ if (toolbar) {
       grid.appendChild(s);
     }
     wrap.appendChild(grid);
-    // Width + dash rows: a labelled <select> each, applied on change.
+    // Width + dash rows: a labelled <select> each, applied on change. Styled via the
+    // popover's own class system (.cw-pop .pop-row) so they match the swatch grid
+    // instead of drifting on inline styles (issue #244 D2).
     const mkRow = (labelText: string, sel: HTMLSelectElement): void => {
       const row = el("div", "pop-row");
-      row.style.cssText = "display:flex;align-items:center;gap:6px;padding:4px 2px;";
-      const lab = el("span");
+      const lab = el("span", "pop-row-label");
       lab.textContent = labelText;
-      lab.style.cssText = "min-width:52px;font-size:12px;color:#605e5c;";
-      sel.style.cssText = "flex:1;height:24px;";
       row.append(lab, sel);
       wrap.appendChild(row);
     };
@@ -1937,6 +1954,15 @@ if (toolbar) {
   enable(shapeFillBtn, (f) => f.shapeSelected, "select a shape first");
   const shapeOutlineBtn = btn(ICONS.outline, "Shape outline (colour, width, dash)", () => shapeOutlinePopover(shapeOutlineBtn), true);
   enable(shapeOutlineBtn, (f) => f.shapeSelected, "select a shape first");
+  // Add / edit the shape's text box body — on the ribbon too, not just the floating
+  // toolbar and right-click menu (issue #244 C3). No-ops for a cell-nested shape.
+  enable(
+    btn(ICONS.shapeTextBox, "Add or edit text in shape", () => {
+      editor.addTextToSelectedShape();
+    }),
+    (f) => f.shapeSelected,
+    "select a shape first",
+  );
   enable(
     btn(ICONS.wrapSquare, "Wrap text around shape (square)", () => {
       const id = editor.getSelectedObject();
@@ -1953,8 +1979,27 @@ if (toolbar) {
     (f) => f.shapeSelected,
     "select a shape first",
   );
+  // Layer-vs-text (behind / in front of the body text) — distinct from the z-order
+  // buttons below; exposed on the ribbon so it's reachable from every surface, and
+  // labelled to disambiguate the two "depth" concepts (issue #244 C2).
   enable(
-    btn(ICONS.bringFront, "Bring shape in front of text", () => {
+    btn(ICONS.behindText, "Move shape behind text", () => {
+      const id = editor.getSelectedObject();
+      if (id) { editor.dispatch(setShapeLayer(id, true)); editor.focus(); }
+    }),
+    (f) => f.shapeSelected,
+    "select a shape first",
+  );
+  enable(
+    btn(ICONS.inFrontText, "Move shape in front of text", () => {
+      const id = editor.getSelectedObject();
+      if (id) { editor.dispatch(setShapeLayer(id, false)); editor.focus(); }
+    }),
+    (f) => f.shapeSelected,
+    "select a shape first",
+  );
+  enable(
+    btn(ICONS.bringFront, "Bring shape to front (among shapes)", () => {
       const id = editor.getSelectedObject();
       if (id) { editor.dispatch(bringShapeToFront(id)); editor.focus(); }
     }),
@@ -1962,7 +2007,7 @@ if (toolbar) {
     "select a shape first",
   );
   enable(
-    btn(ICONS.sendBack, "Send shape behind text", () => {
+    btn(ICONS.sendBack, "Send shape to back (among shapes)", () => {
       const id = editor.getSelectedObject();
       if (id) { editor.dispatch(sendShapeToBack(id)); editor.focus(); }
     }),
@@ -3521,6 +3566,8 @@ if (!readonly) {
         addText: () => { editor.addTextToSelectedShape(); },
         wrapInline: () => withSelectedObject((id) => editor.dispatch(setShapeProps(id, { wrap: "block", align: "center", anchor: null }))),
         wrapSquare: () => withSelectedObject((id) => editor.dispatch(setShapeProps(id, { wrap: "square", align: "left", anchor: null }))),
+        layerBehind: () => withSelectedObject((id) => editor.dispatch(setShapeLayer(id, true))),
+        layerInFront: () => withSelectedObject((id) => editor.dispatch(setShapeLayer(id, false))),
         alignLeft: () => editor.align("left"),
         alignCenter: () => editor.align("center"),
         alignRight: () => editor.align("right"),

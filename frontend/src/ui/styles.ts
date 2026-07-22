@@ -402,6 +402,12 @@ const CSS = `
   border-top: 1px solid #edebe9; margin-top: 4px;
 }
 .cw-pop .pop-action:hover { background: #f3f2f1; }
+.cw-pop .pop-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; }
+.cw-pop .pop-row-label { min-width: 52px; font-size: 12px; color: #605e5c; }
+.cw-pop .pop-row select {
+  flex: 1; height: 24px; font: inherit; font-size: 12px; color: #323130;
+  border: 1px solid #c8c6c4; border-radius: 4px; background: #fff; padding: 0 4px; cursor: pointer;
+}
 .cw-grid { display: grid; gap: 2px; padding: 8px 8px 2px; }
 .cw-grid .cell { width: 15px; height: 15px; border: 1px solid #c8c6c4; background: #fff; }
 .cw-grid .cell.on { background: #cfe3fb; border-color: #2b579a; }
@@ -434,20 +440,8 @@ const CSS = `
 .cw-progress { width: 180px; height: 4px; background: #e1dfdd; border-radius: 2px; overflow: hidden; }
 .cw-progress-bar { height: 100%; width: 0%; background: #2b579a; transition: width 0.15s ease; }
 
-/* floating mini-toolbar shown above a selected image */
-.cw-img-toolbar {
-  position: fixed; display: none; align-items: center; gap: 2px; z-index: 40;
-  background: #fff; border: 1px solid #c8c6c4; border-radius: 6px; padding: 3px;
-  box-shadow: 0 3px 12px rgba(0,0,0,0.18);
-}
-.cw-img-toolbar button {
-  width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid transparent; border-radius: 4px; background: transparent; cursor: pointer; color: #323130;
-}
-.cw-img-toolbar button:hover { background: #e1dfdd; }
-.cw-img-toolbar button.danger:hover { background: #fde7e9; color: #a4262c; }
-.cw-img-toolbar button svg { width: 16px; height: 16px; }
-.cw-img-toolbar .sep { width: 1px; height: 18px; background: #e1dfdd; margin: 0 2px; }
+/* The image / shape / table floating object bars now share the cw-ctxbar + cw-iconbar
+   base class (see ui/contextToolbar.ts) — no bespoke .cw-img-toolbar block here. */
 
 /* ===== Mobile / touch responsive layer ============================== */
 /* Activates on touch devices (coarse primary pointer) OR narrow screens.
@@ -480,7 +474,6 @@ const CSS = `
      !important overrides the inline position/size set in editorApp.ts. */
   .cw-float-panel { left: 8px !important; right: 8px !important; top: auto !important; bottom: 8px !important; width: auto !important; max-width: none !important; max-height: 60vh; overflow: auto; }
   .cw-float-drawer { width: 100% !important; }
-  .cw-img-toolbar button { width: 34px; height: 34px; }
 
   /* Image resize handles: 8px dots are unhittable with a finger — an invisible
      ::before pads the touch target to ~24px without changing the visual size. */

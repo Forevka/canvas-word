@@ -515,6 +515,13 @@ export interface EditorOptions {
    *  the "Update Field" context-menu action for a non-built-in field; the result is
    *  imported and spliced in as the field's new result. Absent ⇒ no refresh. */
   resolveField?: FieldResolver;
+  /** Open the host's shape fill picker for the selected shape — wired into the
+   *  right-click "Fill…" entry so it reaches the same popover the ribbon/floating
+   *  toolbar use. The host anchors it (e.g. to the shape). Absent ⇒ no Fill entry. */
+  onShapeFillMenu?: () => void;
+  /** Open the host's shape outline picker (colour + width + dash) for the selected
+   *  shape — wired into the right-click "Outline…" entry. Absent ⇒ no Outline entry. */
+  onShapeOutlineMenu?: () => void;
   /** Paint-surface tuning passed to the canvas layer — e.g. `{ chrome: false }`
    *  to drop page shadow/gaps for an embedded child-document editor. */
   paintOptions?: PaintLayerOptions;
@@ -3141,10 +3148,15 @@ export function createEditor(
       );
     }
 
-    // Drawing shape — mirrors the image menu (Wrap Text / Align / z-order / Delete).
+    // Drawing shape — mirrors the image menu (Fill / Outline / Wrap Text / Align /
+    // z-order / Delete). Fill & Outline reach the host's shared colour popovers via
+    // the onShapeFill/OutlineMenu hooks, so every surface (ribbon / floating toolbar /
+    // menu) exposes them (issue #244 C1).
     if (shapeId) {
       entries.push(
         sep,
+        ...(options.onShapeFillMenu ? [item("Fill…", () => options.onShapeFillMenu!(), { icon: ICONS.shapeFill })] : []),
+        ...(options.onShapeOutlineMenu ? [item("Outline…", () => options.onShapeOutlineMenu!(), { icon: ICONS.outline })] : []),
         {
           kind: "submenu",
           label: "Wrap Text",
@@ -3153,8 +3165,10 @@ export function createEditor(
             { kind: "item", label: "In Line with Text", icon: ICONS.wrapInline, onClick: () => dispatch(setShapeProps(shapeId, { wrap: "block", align: "center", anchor: null })) },
             { kind: "item", label: "Square", icon: ICONS.wrapSquare, onClick: () => dispatch(setShapeProps(shapeId, { wrap: "square", align: "left", anchor: null })) },
             { kind: "sep" },
-            { kind: "item", label: "Behind Text", onClick: () => dispatch(setShapeLayer(shapeId, true)) },
-            { kind: "item", label: "In Front of Text", onClick: () => dispatch(setShapeLayer(shapeId, false)) },
+            // Layer-vs-text — distinct from the "Bring to Front / Send to Back" z-order
+            // items below (relabelled "Move …" to disambiguate the two, issue #244 C2).
+            { kind: "item", label: "Move Behind Text", icon: ICONS.behindText, onClick: () => dispatch(setShapeLayer(shapeId, true)) },
+            { kind: "item", label: "Move In Front of Text", icon: ICONS.inFrontText, onClick: () => dispatch(setShapeLayer(shapeId, false)) },
           ],
         },
         {

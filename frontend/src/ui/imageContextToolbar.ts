@@ -1,10 +1,11 @@
 // Image context toolbar (Word's image hover bar): wrap, align, delete — shown above
 // a selected image. Extracted from the inline block in editorApp into a ContextToolbar
-// so the shared manager coordinates it with the text/link bars. Its `.cw-img-toolbar`
-// CSS lives in the global stylesheet (ui/styles.ts); the host injects the actions.
+// so the shared manager coordinates it with the text/link bars. Shares the common
+// `cw-ctxbar` base class (`cw-iconbar` modifier for the square icon buttons) with the
+// shape/table bars so the three converge on one look (issue #244 C4).
 
 import { ICONS } from "./icons";
-import { createFloatingBar, type ContextToolbar } from "./contextToolbar";
+import { createFloatingBar, injectCtxBarCss, type ContextToolbar } from "./contextToolbar";
 import type { AnchorRect } from "./floatingBarPosition";
 
 export interface ImageContextToolbarActions {
@@ -25,7 +26,8 @@ export interface ImageContextToolbarDeps {
 /** The image bar as a ContextToolbar (priority 30 — the highest, so a selected image
  *  always wins over a text selection). */
 export function createImageContextToolbar(deps: ImageContextToolbarDeps): ContextToolbar {
-  const fb = createFloatingBar({ className: "cw-img-toolbar", ariaLabel: "Image" });
+  injectCtxBarCss();
+  const fb = createFloatingBar({ className: "cw-ctxbar cw-iconbar", ariaLabel: "Image" });
 
   const ibtn = (icon: string, title: string, onClick: () => void, cls = ""): void => {
     const b = document.createElement("button");
