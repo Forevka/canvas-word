@@ -319,6 +319,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **de-dups** so a copy/pasted image never repeats an id.
 
 ### Fixed
+- **TOC — "Update table of contents" in the floating bar now actually updates (and drops the link look).**
+  Two fixes to updating an imported TOC: (1) the floating bar's button called the page-number-only recalc,
+  which looks for a literal `\t<number>` in each entry — but imported entries have that stripped (the
+  number is paint-live), so it silently did nothing. It now runs the same full regeneration as the
+  right-click **Update Field (TOC)** (Word's F9). (2) Regenerating sampled each entry's character style
+  verbatim, including the underline + blue that Word's `Hyperlink` character style puts on TOC entries, so
+  an updated TOC read as underlined blue links. When the sampled run is a link, its underline and link
+  colour are now dropped, so regenerated entries read as normal TOC text — matching a freshly generated
+  TOC.
 - **TOC — the caret inside a Table-of-Contents entry no longer pops the hyperlink toolbar.** A generated
   TOC's entries carry an internal `\l` bookmark hyperlink, so placing the caret in one surfaced the link
   bar (Open / Edit / Copy / Remove) as if it were a user-editable link. That internal link is structural

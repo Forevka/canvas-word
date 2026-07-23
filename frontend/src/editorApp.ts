@@ -105,6 +105,7 @@ import {
   insertPageBreak,
   insertSectionBreak,
   insertTocCmd,
+  updateTocFieldCmd,
   insertFootnoteCmd,
   insertEndnoteCmd,
   deleteNoteCmd,
@@ -3833,7 +3834,11 @@ if (!readonly) {
       hasRangeSelection: isRangeSelection,
       anchorRect: () => editor.getSelectionAnchorRect(),
       update: () => {
-        editor.recalculateToc();
+        // Full regeneration (Word's F9 "update entire table"): re-lists headings and
+        // refreshes entry text, preserving the TOC's look. `recalculateToc` alone only
+        // rewrites a literal "\t<number>", which imported entries don't carry (their
+        // page number is paint-live) — so it would silently do nothing here.
+        editor.dispatch(updateTocFieldCmd());
         editor.focus();
       },
     }),
