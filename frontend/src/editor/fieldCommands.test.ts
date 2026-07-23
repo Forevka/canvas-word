@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Document, Paragraph } from "@cw/shared";
 import { applyOp } from "@cw/shared";
 import { runImport } from "../import/docx/pipeline";
-import { CONTENT_TYPES_XML, documentXml, drawingXml, makeDocx, PNG_1PX, REL_TYPES, relsXml, simpleDocx } from "../import/docx/fixture";
+import { CONTENT_TYPES_XML, documentXml, drawingXml, makeDocx, PNG_1PX, REL_TYPES, relsXml, simpleDocx, styledDocx, stylesPartXml } from "../import/docx/fixture";
 import { parseOoxmlFragment } from "../import/docx/fragment";
 import { editFieldCmd, fieldAtBlock, insertFieldCmd, insertTocCmd, replaceFieldResultCmd, setTocSwitchesCmd, updateTocFieldCmd } from "./commands";
 import type { EditorState } from "./state";
@@ -138,14 +138,20 @@ describe("updateTocFieldCmd (Word F9) preserves the imported TOC look", () => {
     expect(tocEntries[0]!.runs[0]!.style.link).toBeUndefined(); // stale #anchor stripped
   });
 
-  it("strips the hyperlink underline + blue from regenerated entries (no underscored links)", () => {
+  it("strips the hyperlink underline + blue + rStyle from regenerated entries (no underscored links)", () => {
     // Word styles TOC entries with the "Hyperlink" character style (underline + blue),
-    // and the entry runs carry the internal `\l` link. Regenerating used to sample that
-    // look verbatim, so an updated TOC read as underlined blue links. The link and its
-    // underline/colour must be dropped so the entry reads as normal TOC text.
+    // applied via BOTH a `w:rStyle` reference (→ CharStyle.charStyleId) and the direct
+    // formatting it resolves to, plus the internal `\l` link. Regenerating used to
+    // sample that look verbatim, so an updated TOC read as underlined blue links — and a
+    // retained charStyleId would re-emit `w:rStyle` on export so Word reapplies it. The
+    // link, its underline/colour, AND the style reference must all be dropped.
+    const styles = stylesPartXml(
+      `<w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/>` +
+        `<w:rPr><w:u w:val="single"/><w:color w:val="0563C1"/></w:rPr></w:style>`,
+    );
     const linkEntry = (anchor: string, label: string, page: string): string =>
       `<w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr>` +
-      `<w:hyperlink w:anchor="${anchor}"><w:r><w:rPr><w:u w:val="single"/><w:color w:val="0563C1"/></w:rPr><w:t>${label}</w:t></w:r>` +
+      `<w:hyperlink w:anchor="${anchor}"><w:r><w:rPr><w:rStyle w:val="Hyperlink"/><w:u w:val="single"/><w:color w:val="0563C1"/></w:rPr><w:t>${label}</w:t></w:r>` +
       `<w:r><w:tab/></w:r><w:r><w:t>${page}</w:t></w:r></w:hyperlink></w:p>`;
     const body =
       `<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
@@ -155,11 +161,12 @@ describe("updateTocFieldCmd (Word F9) preserves the imported TOC look", () => {
       linkEntry("_Toc2", "Chapter Two", "5") +
       head("_Toc1", "Chapter One") +
       head("_Toc2", "Chapter Two");
-    const doc = runImport(simpleDocx(body)).doc;
-    // Imported entries carry the hyperlink look.
+    const doc = runImport(styledDocx(body, styles)).doc;
+    // Imported entries carry the hyperlink look — direct formatting AND the style ref.
     const imported = doc.blocks.filter((b): b is Paragraph => b.kind === "paragraph" && !!b.style.tocEntry);
     expect(imported[0]!.runs[0]!.style.underline).toBe(true);
     expect(imported[0]!.runs[0]!.style.color.toLowerCase()).toBe("#0563c1");
+    expect(imported[0]!.runs[0]!.style.charStyleId).toBe("Hyperlink");
 
     const out = apply2({ doc, selection: null }, updateTocFieldCmd());
     const regenerated = out.blocks.filter((b): b is Paragraph => b.kind === "paragraph" && !!b.style.tocEntry);
@@ -168,6 +175,7 @@ describe("updateTocFieldCmd (Word F9) preserves the imported TOC look", () => {
       expect(e.runs[0]!.style.underline).toBe(false); // no underline
       expect(e.runs[0]!.style.color.toLowerCase()).not.toBe("#0563c1"); // not the hyperlink blue
       expect(e.runs[0]!.style.link).toBeUndefined(); // no per-run link
+      expect(e.runs[0]!.style.charStyleId).toBeUndefined(); // no "Hyperlink" rStyle reference
     }
   });
 

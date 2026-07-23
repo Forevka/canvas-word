@@ -789,10 +789,13 @@ function tocOptionsFromExisting(doc: EditorState["doc"]): TocOptions {
   // Per-level styling: the first existing entry of each level supplies the look.
   // Strip the run's stale in-document `link` (each entry links to its OWN heading
   // via tocEntry.targetId; a copied "#anchor" would point every entry at one) — and,
-  // when the sample WAS a link, its underline + link color too: those come from the
-  // internal `\l` hyperlink Word applies to TOC entries (imported via rStyle
-  // "Hyperlink"), not an intentional look. Keeping them made a regenerated TOC read
-  // as underlined blue links; dropping them matches a freshly-generated TOC.
+  // when the sample WAS a link, its underline + link color AND its "Hyperlink"
+  // character-style reference too: those come from the internal `\l` hyperlink Word
+  // applies to TOC entries (imported as rStyle "Hyperlink" → both direct formatting
+  // and a `charStyleId`), not an intentional look. Keeping them made a regenerated
+  // TOC read as underlined blue links — and a retained `charStyleId` would re-emit
+  // `w:rStyle` on export so Word reapplies the underline on reopen. Dropping all
+  // three matches a freshly-generated TOC.
   const levels: Record<number, { char?: Partial<CharStyle>; para?: Partial<ParaStyle> }> = {};
   for (const b of blocks) {
     const te = b.style.tocEntry;
@@ -803,6 +806,7 @@ function tocOptionsFromExisting(doc: EditorState["doc"]): TocOptions {
       if (char.link) {
         delete char.underline;
         delete char.color;
+        delete char.charStyleId;
       }
       delete char.link;
     }
