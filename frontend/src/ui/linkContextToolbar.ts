@@ -24,6 +24,11 @@ export interface LinkContextToolbarDeps {
   /** True when a non-empty range is selected — the link bar defers to the format
    *  bar then, so it only appears at a collapsed caret inside a link. */
   hasRangeSelection(): boolean;
+  /** True when the caret sits inside a Table-of-Contents entry. A TOC entry's runs
+   *  carry an internal `\l` bookmark hyperlink, but that link is structural (part of
+   *  the field), not a user-editable link — so the link bar defers to the TOC bar
+   *  ("Update table of contents") rather than offering Open/Edit/Copy/Remove. */
+  inToc?(): boolean;
   /** Anchor rect (caret/selection start line). */
   anchorRect(): AnchorRect | null;
   actions: LinkContextToolbarActions;
@@ -95,6 +100,7 @@ export function createLinkContextToolbar(deps: LinkContextToolbarDeps): ContextT
     priority: 25,
     resolve: (): AnchorRect | null => {
       if (deps.hasRangeSelection()) return null; // a range shows the format bar
+      if (deps.inToc?.()) return null; // a TOC entry's internal link defers to the TOC bar
       return deps.linkUrl() ? deps.anchorRect() : null;
     },
     show: (anchor, viewport) => {
