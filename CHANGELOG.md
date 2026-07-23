@@ -319,6 +319,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **de-dups** so a copy/pasted image never repeats an id.
 
 ### Fixed
+- **TOC — the caret inside a Table-of-Contents entry no longer pops the hyperlink toolbar.** A generated
+  TOC's entries carry an internal `\l` bookmark hyperlink, so placing the caret in one surfaced the link
+  bar (Open / Edit / Copy / Remove) as if it were a user-editable link. That internal link is structural
+  (part of the field), so the link bar now defers to the TOC bar ("Update table of contents") when the
+  caret is inside a TOC entry. Real hyperlinks outside a TOC are unaffected.
 - **Tables — the row-resize grip no longer steals the caret in a thin row.** The drag-to-resize hit zone
   was a fixed ±6px band around every row's bottom edge, so in a short row the grips of its top and bottom
   boundaries met in the middle and left nowhere to click a caret onto the text. Each grip now reaches into

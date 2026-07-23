@@ -3708,6 +3708,7 @@ if (!readonly) {
     createLinkContextToolbar({
       linkUrl: () => editor.linkAtCaret(),
       hasRangeSelection: isRangeSelection,
+      inToc: () => editor.caretInToc(),
       anchorRect: () => editor.getSelectionAnchorRect(),
       actions: {
         open: (url) => window.open(url, "_blank", "noopener,noreferrer"),
