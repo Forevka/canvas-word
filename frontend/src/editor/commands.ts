@@ -788,14 +788,24 @@ function tocOptionsFromExisting(doc: EditorState["doc"]): TocOptions {
 
   // Per-level styling: the first existing entry of each level supplies the look.
   // Strip the run's stale in-document `link` (each entry links to its OWN heading
-  // via tocEntry.targetId; a copied "#anchor" would point every entry at one).
+  // via tocEntry.targetId; a copied "#anchor" would point every entry at one) — and,
+  // when the sample WAS a link, its underline + link color too: those come from the
+  // internal `\l` hyperlink Word applies to TOC entries (imported via rStyle
+  // "Hyperlink"), not an intentional look. Keeping them made a regenerated TOC read
+  // as underlined blue links; dropping them matches a freshly-generated TOC.
   const levels: Record<number, { char?: Partial<CharStyle>; para?: Partial<ParaStyle> }> = {};
   for (const b of blocks) {
     const te = b.style.tocEntry;
     if (!te || levels[te.level]) continue;
     const sampleChar = b.runs[0]?.style;
-    const char = sampleChar ? { ...sampleChar } : undefined;
-    if (char) delete char.link;
+    const char: Partial<CharStyle> | undefined = sampleChar ? { ...sampleChar } : undefined;
+    if (char) {
+      if (char.link) {
+        delete char.underline;
+        delete char.color;
+      }
+      delete char.link;
+    }
     levels[te.level] = { ...(char ? { char } : {}), para: b.style };
   }
   if (Object.keys(levels).length > 0) opts.levels = levels;

@@ -138,6 +138,39 @@ describe("updateTocFieldCmd (Word F9) preserves the imported TOC look", () => {
     expect(tocEntries[0]!.runs[0]!.style.link).toBeUndefined(); // stale #anchor stripped
   });
 
+  it("strips the hyperlink underline + blue from regenerated entries (no underscored links)", () => {
+    // Word styles TOC entries with the "Hyperlink" character style (underline + blue),
+    // and the entry runs carry the internal `\l` link. Regenerating used to sample that
+    // look verbatim, so an updated TOC read as underlined blue links. The link and its
+    // underline/colour must be dropped so the entry reads as normal TOC text.
+    const linkEntry = (anchor: string, label: string, page: string): string =>
+      `<w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr>` +
+      `<w:hyperlink w:anchor="${anchor}"><w:r><w:rPr><w:u w:val="single"/><w:color w:val="0563C1"/></w:rPr><w:t>${label}</w:t></w:r>` +
+      `<w:r><w:tab/></w:r><w:r><w:t>${page}</w:t></w:r></w:hyperlink></w:p>`;
+    const body =
+      `<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+      `<w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" \\h </w:instrText></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="separate"/></w:r></w:p>` +
+      linkEntry("_Toc1", "Chapter One", "3") +
+      linkEntry("_Toc2", "Chapter Two", "5") +
+      head("_Toc1", "Chapter One") +
+      head("_Toc2", "Chapter Two");
+    const doc = runImport(simpleDocx(body)).doc;
+    // Imported entries carry the hyperlink look.
+    const imported = doc.blocks.filter((b): b is Paragraph => b.kind === "paragraph" && !!b.style.tocEntry);
+    expect(imported[0]!.runs[0]!.style.underline).toBe(true);
+    expect(imported[0]!.runs[0]!.style.color.toLowerCase()).toBe("#0563c1");
+
+    const out = apply2({ doc, selection: null }, updateTocFieldCmd());
+    const regenerated = out.blocks.filter((b): b is Paragraph => b.kind === "paragraph" && !!b.style.tocEntry);
+    expect(regenerated.length).toBe(2);
+    for (const e of regenerated) {
+      expect(e.runs[0]!.style.underline).toBe(false); // no underline
+      expect(e.runs[0]!.style.color.toLowerCase()).not.toBe("#0563c1"); // not the hyperlink blue
+      expect(e.runs[0]!.style.link).toBeUndefined(); // no per-run link
+    }
+  });
+
   it("the ribbon insert/update (insertTocCmd, no opts) also preserves the look", () => {
     // Regression: the ribbon "Insert / update table of contents" button calls
     // insertTocCmd() with NO options. Regenerating an existing imported TOC must
