@@ -293,6 +293,10 @@ const CSS = `
 .outline-item.lvl-2 .outline-label { font-weight: 500; font-size: 12.5px; color: #3c4043; }
 .outline-item.lvl-3 .outline-label { font-weight: 400; font-size: 12px; color: #605e5c; }
 .outline-empty { padding: 14px; color: #80868b; font-size: 12px; line-height: 1.4; }
+/* drag-to-reorder (O1): dragged row dims; a blue rule marks the drop position */
+.outline-item.cw-outline-dragging { opacity: 0.4; }
+.cw-outline-drop { position: absolute; left: 6px; right: 6px; height: 2px; background: #2b579a; z-index: 4; pointer-events: none; }
+:root[data-theme="dark"] .cw-outline-drop { background: #7cb0ff; }
 
 /* ===== Review pane (track changes + comments) ======================= */
 .cw-review {

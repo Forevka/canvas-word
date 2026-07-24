@@ -109,6 +109,7 @@ import {
   insertPageBreak,
   insertSectionBreak,
   insertTocCmd,
+  reorderPageGroupCmd,
   updateTocFieldCmd,
   insertFootnoteCmd,
   insertEndnoteCmd,
@@ -2902,6 +2903,38 @@ if (toolbar) {
     };
     const hasChildren = (i: number): boolean => i + 1 < entries.length && entries[i + 1]!.level > entries[i]!.level;
 
+    // Drag-to-reorder (O1): dragging a heading moves its WHOLE section — the
+    // heading plus every block up to the next same-or-shallower heading —
+    // reusing the block-range move that Organize Pages uses (never splits).
+    let dragFromId: string | null = null;
+    const dropLine = el("div", "cw-outline-drop");
+    dropLine.style.display = "none";
+    outlineEl.appendChild(dropLine);
+    const sectionRange = (headingId: string): { firstId: string; lastId: string } | null => {
+      const blocks = editor.getDocument().blocks;
+      const i = entries.findIndex((e) => e.id === headingId);
+      const startIdx = blocks.findIndex((b) => b.id === headingId);
+      if (i < 0 || startIdx < 0) return null;
+      let endIdx = blocks.length;
+      for (let j = i + 1; j < entries.length; j++) {
+        if (entries[j]!.level <= entries[i]!.level) { endIdx = blocks.findIndex((b) => b.id === entries[j]!.id); break; }
+      }
+      return { firstId: blocks[startIdx]!.id, lastId: blocks[endIdx - 1]!.id };
+    };
+    const afterAnchor = (headingId: string): string | null => {
+      const i = entries.findIndex((e) => e.id === headingId);
+      for (let j = i + 1; j < entries.length; j++) if (entries[j]!.level <= entries[i]!.level) return entries[j]!.id;
+      return null;
+    };
+    const performDrop = (targetId: string, after: boolean): void => {
+      if (!dragFromId || dragFromId === targetId) return;
+      const range = sectionRange(dragFromId);
+      if (!range) return;
+      const anchorId = after ? afterAnchor(targetId) : targetId;
+      editor.dispatch(reorderPageGroupCmd(range.firstId, range.lastId, anchorId));
+      editor.focus();
+    };
+
     // Render the visible rows (O2 collapse + O3 filter + O4 level styling + O6
     // page numbers). Structure-only; page numbers/active state patch separately.
     const render = (): void => {
@@ -2951,6 +2984,29 @@ if (toolbar) {
         row.append(chev, label, page);
         row.addEventListener("mousedown", (ev) => ev.preventDefault());
         row.addEventListener("click", () => editor.revealBlock(e.id));
+        // Drag-to-reorder this heading's section.
+        row.draggable = true;
+        row.addEventListener("dragstart", (ev) => {
+          dragFromId = e.id;
+          if (ev.dataTransfer) { ev.dataTransfer.setData("text/plain", e.id); ev.dataTransfer.effectAllowed = "move"; }
+          row.classList.add("cw-outline-dragging");
+        });
+        row.addEventListener("dragend", () => { row.classList.remove("cw-outline-dragging"); dropLine.style.display = "none"; dragFromId = null; });
+        row.addEventListener("dragover", (ev) => {
+          if (!dragFromId || dragFromId === e.id) return;
+          ev.preventDefault();
+          if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
+          const r = row.getBoundingClientRect();
+          const after = ev.clientY > r.top + r.height / 2;
+          row.dataset["dropAfter"] = after ? "1" : "0";
+          dropLine.style.display = "block";
+          dropLine.style.top = `${(after ? r.bottom : r.top) - outlineEl.getBoundingClientRect().top}px`;
+        });
+        row.addEventListener("drop", (ev) => {
+          ev.preventDefault();
+          performDrop(e.id, row.dataset["dropAfter"] === "1");
+          dropLine.style.display = "none";
+        });
         rows.set(e.id, row);
         pageSpans.set(e.id, page);
         list.appendChild(row);

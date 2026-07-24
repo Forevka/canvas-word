@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Drag-to-reorder headings in the Outline (O1).** Dragging a heading in the outline pane now moves its
+  whole section — the heading plus every block up to the next same-or-shallower heading, children
+  included — to the drop position, with a blue drop-line indicator. It reuses the same block-range move
+  Organize Pages uses (`reorderPageGroupCmd`), so it never splits content. Drop in the top half of a
+  heading to place the section before it, the bottom half to place it after.
 - **Keyboard-shortcuts cheat sheet — `Ctrl+/` (A3).** A dialog listing the editor's shortcuts, grouped
   (Formatting, History, Breaks, Clipboard, Lists, Application) with per-platform `⌘`/`⌥`/`⇧` key caps.
   The editing chords are read from `KEYMAP_ENTRIES` — a declarative list co-located with the keymap
