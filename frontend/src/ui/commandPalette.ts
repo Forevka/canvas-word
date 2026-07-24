@@ -27,6 +27,12 @@ const CSS = `
 .cw-palette-item.sel{background:#eef3fb;}
 .cw-palette-item.sel .hint{color:#6b7280;}
 .cw-palette-empty{padding:18px 16px;color:#80868b;font-size:12.5px;}
+:root[data-theme="dark"] .cw-palette{background:#26282c;border-color:#4a4a4a;color:#e6e6e6;}
+:root[data-theme="dark"] .cw-palette-input{background:#26282c;color:#f0f0f0;border-bottom-color:#3a3a3a;}
+:root[data-theme="dark"] .cw-palette-item.sel{background:#2a3f5f;}
+:root[data-theme="dark"] .cw-palette-item .hint{color:#7a808a;}
+:root[data-theme="dark"] .cw-palette-item.sel .hint{color:#aab3c0;}
+:root[data-theme="dark"] .cw-palette-empty{color:#80868b;}
 `;
 
 /** Open the palette over `commands`. Non-blocking; runs the chosen command and

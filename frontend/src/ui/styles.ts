@@ -594,6 +594,90 @@ const CSS = `
 @media (any-pointer: coarse) {
   .cw-obj-handle::before { content: ""; position: absolute; inset: -8px; }
 }
+
+/* ===== Dark mode — the whole chrome, not just the canvas (critique V2). =====
+   Engaged when :root carries data-theme="dark", which editorApp reflects from
+   prefers-color-scheme (a host can also set it). The canvas/page is themed
+   separately by the DARK_THEME paint preset; this styles the shell around it. */
+:root[data-theme="dark"] .cw-app { background: #22252a; }
+/* Ribbon */
+:root[data-theme="dark"] .cw-toolbar { background: #1e1f22; color: #e6e6e6; }
+:root[data-theme="dark"] .rib-tabs { background: #26282c; }
+:root[data-theme="dark"] .rib-tab { color: #c8c8c8; }
+:root[data-theme="dark"] .rib-tab:hover { background: #34373c; }
+:root[data-theme="dark"] .rib-tab.active { background: #1e1f22; color: #7cb0ff; box-shadow: none; }
+:root[data-theme="dark"] .rib-tab.active::after { background: #7cb0ff; }
+:root[data-theme="dark"] .rib-tab.rib-tab-ctx { color: #c58af9; }
+:root[data-theme="dark"] .rib-tab.rib-tab-ctx.active { color: #c58af9; }
+:root[data-theme="dark"] .rib-tab.rib-tab-ctx.active::after { background: #c58af9; }
+:root[data-theme="dark"] .rib-bodies, :root[data-theme="dark"] .rib-panel { background: #1e1f22; }
+:root[data-theme="dark"] .rib-group { border-color: #34373c; }
+:root[data-theme="dark"] .rib-label { color: #9aa0a6; }
+:root[data-theme="dark"] .cw-toolbar button.rib-btn { color: #e0e0e0; }
+:root[data-theme="dark"] .cw-toolbar button.rib-btn:hover { background: #34373c; }
+:root[data-theme="dark"] .cw-toolbar button.rib-btn:active { background: #3c4046; }
+:root[data-theme="dark"] .cw-toolbar button.rib-btn.active { background: #2a3f5f; color: #7cb0ff; border-color: #3d6ba5; }
+:root[data-theme="dark"] .cw-toolbar button.rib-btn.active svg { color: #7cb0ff; }
+:root[data-theme="dark"] .cw-toolbar button.rib-btn:disabled { color: #6a6f76; }
+:root[data-theme="dark"] .cw-toolbar select,
+:root[data-theme="dark"] .cw-toolbar input[type="number"] { background: #2a2c30; color: #e6e6e6; border-color: #4a4a4a; }
+/* Doc identity + save state + quick-access + header controls */
+:root[data-theme="dark"] .cw-doc-title { color: #f0f0f0; }
+:root[data-theme="dark"] .cw-save-text { color: #9aa0a6; }
+:root[data-theme="dark"] .cw-qat { border-color: #34373c; }
+:root[data-theme="dark"] .cw-qat-btn { color: #e0e0e0; }
+:root[data-theme="dark"] .cw-qat-btn:hover:not(:disabled) { background: #34373c; }
+:root[data-theme="dark"] .cw-mode-select { background: #2a2c30; color: #e6e6e6; border-color: #4a4a4a; }
+:root[data-theme="dark"] .cw-header-btn { background: #2a2c30; color: #7cb0ff; border-color: #4a4a4a; }
+:root[data-theme="dark"] .cw-header-btn:hover { background: #34373c; }
+/* Styles gallery */
+:root[data-theme="dark"] .rib-gallery { background: #2a2c30; border-color: #4a4a4a; }
+:root[data-theme="dark"] .style-card { background: #26282c; border-color: #3a3a3a; }
+:root[data-theme="dark"] .style-card .name { color: #9aa0a6; }
+:root[data-theme="dark"] .style-card .preview { color: #e6e6e6; }
+/* Status bar */
+:root[data-theme="dark"] .cw-statusbar { background: #17181b; color: #d0d0d0; }
+/* Outline pane */
+:root[data-theme="dark"] .cw-outline { background: #1e1f22; border-color: #34373c; }
+:root[data-theme="dark"] .cw-outline .outline-head { background: #1e1f22; color: #e6e6e6; border-color: #34373c; }
+:root[data-theme="dark"] .cw-outline .outline-head button { color: #9aa0a6; }
+:root[data-theme="dark"] .cw-outline .outline-head button:hover { background: #34373c; }
+:root[data-theme="dark"] .cw-outline-filter { border-color: #2c2f34; }
+:root[data-theme="dark"] .cw-outline-filter input { background: #2a2c30; color: #e6e6e6; border-color: #4a4a4a; }
+:root[data-theme="dark"] .outline-item { color: #d0d0d0; }
+:root[data-theme="dark"] .outline-item:hover { background: #2c2f34; }
+:root[data-theme="dark"] .outline-item.active { background: #2a3f5f; border-left-color: #7cb0ff; }
+:root[data-theme="dark"] .outline-item.active .outline-label { color: #7cb0ff; }
+:root[data-theme="dark"] .outline-item.lvl-0 .outline-label,
+:root[data-theme="dark"] .outline-item.lvl-1 .outline-label { color: #f0f0f0; }
+:root[data-theme="dark"] .outline-item.lvl-2 .outline-label { color: #c8c8c8; }
+:root[data-theme="dark"] .outline-item.lvl-3 .outline-label { color: #9aa0a6; }
+:root[data-theme="dark"] .outline-page { color: #6b7280; }
+:root[data-theme="dark"] .outline-chevron { color: #80868b; }
+:root[data-theme="dark"] .outline-chevron:hover { background: #34373c; color: #e6e6e6; }
+:root[data-theme="dark"] .outline-empty { color: #80868b; }
+/* Review pane + right-docked drawers */
+:root[data-theme="dark"] .cw-review { background: #1e1f22; border-color: #34373c; color: #d0d0d0; }
+:root[data-theme="dark"] .cw-review-head, :root[data-theme="dark"] .cw-review-tabs { background: #1e1f22; border-color: #34373c; }
+:root[data-theme="dark"] .cw-float-drawer { background: #1e1f22; border-color: #34373c; color: #d0d0d0; }
+/* Shared popovers / menus / dialogs */
+:root[data-theme="dark"] .cw-pop { background: #26282c; border-color: #4a4a4a; color: #e6e6e6; }
+:root[data-theme="dark"] .cw-menu { background: #26282c; border-color: #4a4a4a; color: #e6e6e6; }
+:root[data-theme="dark"] .cw-dialog input,
+:root[data-theme="dark"] .cw-dialog button { background: #2a2c30; color: #e6e6e6; border-color: #4a4a4a; }
+:root[data-theme="dark"] .cw-dialog button.primary { background: #3d6ba5; border-color: #3d6ba5; color: #fff; }
+/* Every dialogShell dialog carries role=dialog on its modal — theme generically. */
+:root[data-theme="dark"] [role="dialog"] { background: #26282c; color: #e6e6e6; border-color: #4a4a4a; }
+:root[data-theme="dark"] [role="dialog"] h2 { color: #f0f0f0; }
+:root[data-theme="dark"] [role="dialog"] input,
+:root[data-theme="dark"] [role="dialog"] select,
+:root[data-theme="dark"] [role="dialog"] textarea { background: #1e1f22; color: #e6e6e6; border-color: #4a4a4a; }
+/* Busy overlay card */
+:root[data-theme="dark"] .cw-loading-card { background: #26282c; border-color: #4a4a4a; color: #e6e6e6; }
+/* Find bar — its box/inputs/buttons are inline-styled, so override with !important. */
+:root[data-theme="dark"] .cw-float-panel { background: #26282c !important; border-color: #4a4a4a !important; color: #e6e6e6; }
+:root[data-theme="dark"] .cw-float-panel input { background: #1e1f22 !important; color: #e6e6e6 !important; border-color: #4a4a4a !important; }
+:root[data-theme="dark"] .cw-float-panel button { color: #d0d0d0 !important; }
 `;
 
 /** Append a <style id> with the given css once per document, keyed by `id`

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Dark mode across the shell chrome (V2).** Emulating `prefers-color-scheme: dark` previously produced
+  a pixel-identical page — the dark rules keyed off `:root[data-theme]`, which nothing ever set. The
+  editor now reflects the OS colour scheme onto `:root[data-theme]` (live, and marked so a host that
+  manages the attribute itself keeps control), and a full dark stylesheet themes the ribbon, tab strip,
+  buttons, style gallery, status bar, outline/review panes, drawers, the command palette, popovers,
+  context menu, and dialogs (generically via `[role="dialog"]`). The page canvas keeps following its own
+  theme preset — dark chrome around a light document, as in Word's dark mode.
 - **Command palette — `Ctrl+K` / `Cmd+K` (Move 1).** A VS-Code-style palette lists every enabled ribbon
   command by name (plus any embedder commands), so all ~145 actions are reachable in one keystroke
   without hunting through tabs — and it doubles as keyboard-first shortcut discovery. Type to filter,

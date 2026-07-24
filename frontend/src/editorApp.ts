@@ -204,6 +204,21 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
   // Container-width compact ribbon observer (assigned in the ribbon block below).
   let compactRO: ResizeObserver | null = null;
 
+  // Dark-mode chrome (critique V2): reflect the OS colour scheme onto
+  // :root[data-theme], which the dark stylesheet keys off. Marks its own writes
+  // with data-theme-auto so a host that sets data-theme itself keeps control.
+  if (typeof matchMedia === "function") {
+    const de = document.documentElement;
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = (): void => {
+      if (de.dataset["theme"] && de.dataset["themeAuto"] !== "1") return; // host-managed
+      de.dataset["theme"] = mq.matches ? "dark" : "light";
+      de.dataset["themeAuto"] = "1";
+    };
+    applyTheme();
+    mq.addEventListener("change", applyTheme, { signal: teardown.signal });
+  }
+
 // Backend base URL gates online features. Present ⇒ sync/publish/share; absent ⇒
 // fully offline editor (the kill-switch).
 const BACKEND_HTTP: string | null = runtime.backendUrl ?? null;

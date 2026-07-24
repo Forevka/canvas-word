@@ -251,7 +251,7 @@ Tick a row only after it is **committed** to `feat/ux-overhaul`.
 - [x] 8 `fix/ui-polish-sweep`
 - [x] 9 `feat/outline-pane-upgrade`
 - [x] 10 `feat/command-palette`
-- [ ] 11 `feat/dark-mode-shell`
+- [x] 11 `feat/dark-mode-shell`
 - [ ] 12 `feat/fit-width-zoom-narrow-layout`
 - [ ] 13 `fix/floating-chip-placement`
 - [ ] 14 `chore/icon-system-a11y-names`

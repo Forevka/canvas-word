@@ -26,6 +26,12 @@ const CSS = `
 .cw-input-foot button{height:30px;padding:0 14px;border-radius:6px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;border:1px solid #c8c6c4;background:#fff;color:#3c4043;}
 .cw-input-foot button.primary{background:#2b579a;border-color:#2b579a;color:#fff;}
 .cw-input-foot button.primary:disabled{opacity:.5;cursor:default;}
+:root[data-theme="dark"] .cw-input-modal{background:#26282c;color:#e6e6e6;border-color:#4a4a4a;}
+:root[data-theme="dark"] .cw-input-head h2{color:#f0f0f0;}
+:root[data-theme="dark"] .cw-input-body label{color:#9aa0a6;}
+:root[data-theme="dark"] .cw-input-body input{background:#1e1f22;color:#e6e6e6;border-color:#4a4a4a;}
+:root[data-theme="dark"] .cw-input-foot button{background:#2a2c30;color:#e6e6e6;border-color:#4a4a4a;}
+:root[data-theme="dark"] .cw-input-foot button.primary{background:#3d6ba5;border-color:#3d6ba5;color:#fff;}
 `;
 
 export interface InputDialogOptions {
