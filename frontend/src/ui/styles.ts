@@ -53,6 +53,11 @@ const CSS = `
 }
 .rib-tab.file { background: #2b579a; color: #fff; font-weight: 600; }
 .rib-tab.file:hover { background: #21457e; }
+/* contextual tab (Table / Picture / Shape Tools): appears only on selection —
+   tinted so it reads as a temporary, selection-scoped tab, not a permanent one */
+.rib-tab.rib-tab-ctx { color: #8250df; }
+.rib-tab.rib-tab-ctx.active { color: #8250df; }
+.rib-tab.rib-tab-ctx.active::after { background: #8250df; }
 
 /* review controls docked in the ribbon header (right of the tab strip) */
 .cw-header-review { margin-left: auto; display: flex; align-items: center; gap: 8px; padding-bottom: 3px; }
@@ -162,18 +167,23 @@ const CSS = `
 }
 .cw-toolbar select:hover, .cw-toolbar input[type="number"]:hover { border-color: #8a8886; }
 
-/* styles gallery */
+/* styles gallery. Width is pinned to a WHOLE number of cards so the horizontal
+   scroll never rests showing a clipped half-card (critique C3): with a 76px card
+   + 4px gap and box-sizing: border-box, the 320px inner width holds exactly four
+   cards (4·76 + 3·4 = 316) with the fifth starting past the edge. scroll-snap
+   keeps scrolled positions on card boundaries too. */
 .rib-gallery {
+  box-sizing: border-box;
   display: flex; align-items: center; gap: 4px; height: 64px; padding: 0 4px;
   border: 1px solid #c8c6c4; border-radius: 4px; background: #fff;
-  overflow-x: auto; max-width: 340px;
+  overflow-x: auto; max-width: 320px; scroll-snap-type: x proximity;
 }
 .rib-gallery::-webkit-scrollbar { height: 8px; }
 .rib-gallery::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
 .style-card {
   flex: 0 0 auto; width: 76px; height: 50px; border: 1px solid #e1dfdd; border-radius: 2px;
   background: #fff; cursor: pointer; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 3px; padding: 2px;
+  align-items: center; justify-content: center; gap: 3px; padding: 2px; scroll-snap-align: start;
 }
 .style-card:hover { border-color: #2b579a; }
 .style-card.active { border-color: #2b579a; box-shadow: inset 0 0 0 1px #2b579a; background: #eef3fb; }

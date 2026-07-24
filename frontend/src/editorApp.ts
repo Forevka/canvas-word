@@ -769,17 +769,26 @@ if (toolbar) {
   toolbar.append(tabsBar, bodies);
   const tabButtons = new Map<string, HTMLButtonElement>();
   const tabPanels = new Map<string, HTMLDivElement>();
+  // Contextual tabs (Table / Picture / Shape Tools): hidden until their predicate
+  // matches the current selection, then revealed — Word's contextual-tab model.
+  // Replaces a permanent Table tab + a graveyard of always-disabled shape/image
+  // buttons on Insert (critique C5). Evaluated in syncToolbar.
+  const contextualTabs: { btn: HTMLButtonElement; pred: (f: CurrentFormat) => boolean }[] = [];
   const showTab = (id: string): void => {
     for (const [tid, b] of tabButtons) b.classList.toggle("active", tid === id);
     for (const [tid, p] of tabPanels) p.classList.toggle("active", tid === id);
     setCollapsed(false); // clicking a tab re-pins a collapsed ribbon (Word)
   };
-  const tab = (id: string, label: string, kind?: "file"): HTMLDivElement => {
-    const t = el("button", "rib-tab" + (kind === "file" ? " file" : ""));
+  const tab = (id: string, label: string, kind?: "file", contextual?: (f: CurrentFormat) => boolean): HTMLDivElement => {
+    const t = el("button", "rib-tab" + (kind === "file" ? " file" : "") + (contextual ? " rib-tab-ctx" : ""));
     t.textContent = label;
     t.dataset["ribbonTab"] = id;
     t.addEventListener("click", () => showTab(id));
     tabButtons.set(id, t);
+    if (contextual) {
+      t.style.display = "none"; // revealed by syncToolbar when the predicate matches
+      contextualTabs.push({ btn: t, pred: contextual });
+    }
     tabScroll.appendChild(t);
     const p = el("div", "rib-panel");
     p.dataset["tab"] = id;
@@ -869,16 +878,6 @@ if (toolbar) {
     b.innerHTML = icon + `<span class="big-cap">${caption}${caret ? CARET : ""}</span>`;
     b.addEventListener("mousedown", (e) => e.preventDefault());
     b.addEventListener("click", onClick);
-    controls.appendChild(b);
-    ribRegister(b, title);
-    return b;
-  };
-  /** Disabled placeholder for a feature the engine/renderer doesn't support. */
-  const stub = (inner: string, title: string): HTMLButtonElement => {
-    const b = el("button", "rib-btn");
-    b.innerHTML = inner;
-    b.title = `${title} — not supported by the engine yet`;
-    b.disabled = true;
     controls.appendChild(b);
     ribRegister(b, title);
     return b;
@@ -1789,7 +1788,6 @@ if (toolbar) {
   sep();
   btn(ICONS.indentDecrease, "Decrease indent", () => editor.dispatch(adjustIndentCmd(-config.behavior.indentStepPx)));
   btn(ICONS.indentIncrease, "Increase indent", () => editor.dispatch(adjustIndentCmd(config.behavior.indentStepPx)));
-  stub(ICONS.sort, "Sort");
   marksToggleBtn();
 
   paraRow();
@@ -2039,7 +2037,13 @@ if (toolbar) {
   btn(ICONS.image, "Insert image from your device", () => pickAndInsertImage());
   const insShapeBtn = btn(ICONS.shapes, "Insert a shape", () => {}, true);
   insShapeBtn.addEventListener("click", () => shapesPopover(insShapeBtn));
-  group(insert, "Picture"); // acts on the selected image
+  // Picture Tools + Shape Tools are contextual tabs — they appear only when an
+  // image / shape is selected, replacing the always-disabled image & shape
+  // buttons that used to sit greyed on the Insert tab (critique C5). "Insert a
+  // shape" stays on Insert (above); acting on a shape moves to Shape Tools.
+  const pictureTab = tab("picture", "Picture Tools", undefined, (f) => f.imageSelected);
+  const shapeTab = tab("shape", "Shape Tools", undefined, (f) => f.shapeSelected || f.multipleShapesSelected || f.groupSelected);
+  group(pictureTab, "Picture"); // acts on the selected image
   enable(
     btn(ICONS.wrapSquare, "Wrap text around image (square)", () => {
       const id = editor.getSelectedObject();
@@ -2056,7 +2060,7 @@ if (toolbar) {
     (f) => f.imageSelected,
     "select an image first",
   );
-  group(insert, "Shape"); // acts on the selected shape
+  group(shapeTab, "Shape"); // acts on the selected shape
   const shapeFillBtn = btn(ICONS.shapeFill, "Shape fill", () => shapeFillPopover(shapeFillBtn), true);
   enable(shapeFillBtn, (f) => f.shapeSelected, "select a shape first");
   const shapeOutlineBtn = btn(ICONS.outline, "Shape outline (colour, width, dash)", () => shapeOutlinePopover(shapeOutlineBtn), true);
@@ -2281,8 +2285,8 @@ if (toolbar) {
     });
   }
 
-  // ===== Table tab (acts on the cell containing the caret) =================
-  const tableTab = tab("table", "Table");
+  // ===== Table Tools — contextual tab (only while the caret is in a table) ==
+  const tableTab = tab("table", "Table Tools", undefined, (f) => f.inTable);
   group(tableTab, "Rows & Columns");
   btn(ICONS.rowAbove, "Insert row above", () => editor.dispatch(insertTableRowCmd("above")));
   btn(ICONS.rowBelow, "Insert row below", () => editor.dispatch(insertTableRowCmd("below")));
@@ -3350,6 +3354,13 @@ if (toolbar) {
       e.el.title = on || !e.hint ? e.title : `${e.title} — ${e.hint}`;
     }
     syncQat(); // grey the quick-access undo/redo to match the stack
+    // Reveal/hide contextual tabs by selection; if the active tab just hid, fall
+    // back to Home so the user is never stranded on an invisible tab.
+    for (const ct of contextualTabs) {
+      const show = ct.pred(f);
+      ct.btn.style.display = show ? "" : "none";
+      if (!show && ct.btn.classList.contains("active")) showTab("home");
+    }
   };
 
   // Reflect the live zoom (also driven by Ctrl+wheel): snap the select to the

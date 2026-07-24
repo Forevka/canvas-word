@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Ribbon cleanup — contextual tabs replace the permanent Table tab and the disabled-button graveyard
+  (C3, C5, C7).** The always-present **Table** tab (ten buttons enabled even in a plain paragraph) and the
+  15 permanently-disabled contextual buttons on **Insert** (13 shape, 2 image) are gone. In their place,
+  three Word-style **contextual tabs** — *Table Tools*, *Picture Tools*, *Shape Tools* — appear only when
+  the caret is in a table or an image/shape is selected, driven by a small predicate wired into
+  `syncToolbar` (tinted so they read as selection-scoped). The disabled `Sort` stub ("not supported by
+  the engine yet") is removed, and the Styles gallery is pinned to a whole number of cards so its
+  horizontal scroll never rests on a clipped half-card.
+
 ### Fixed
 - **Overlapping dialogs / panels / find bar are now arbitrated by one surface manager (L1).** The floating
   dialogs (Font, Paragraph, Page Layout, Style Manager, …) and the find/replace bar had no coordination:

@@ -246,7 +246,7 @@ Tick a row only after it is **committed** to `feat/ux-overhaul`.
 - [x] 3 `feat/quick-access-undo-redo`
 - [x] 4 `feat/canvas-aria-mirror`
 - [x] 5 `feat/surface-arbitration`
-- [ ] 6 `fix/ribbon-cleanup-contextual-tabs`
+- [x] 6 `fix/ribbon-cleanup-contextual-tabs`
 - [ ] 7 `feat/replace-native-prompts`
 - [ ] 8 `fix/ui-polish-sweep`
 - [ ] 9 `feat/outline-pane-upgrade`
