@@ -292,6 +292,7 @@ let refreshStatus: () => void = () => {};
 // before the toolbar block builds the widget) can drive them; they stay no-ops
 // when the ribbon is disabled (chromeless mount).
 let refreshSaveState: () => void = () => {};
+let syncQat: () => void = () => {}; // enable/disable the quick-access undo/redo
 let resetSaveBaseline: () => void = () => {};
 let setDocTitleFromFile: (name: string | null) => void = () => {};
 // Filesystem-safe base name for a downloaded export, derived from the document
@@ -2563,6 +2564,33 @@ if (toolbar) {
   applyTitle();
   refreshSaveState();
 
+  // ---- Quick-access toolbar: undo / redo / save, always visible on any tab ---
+  // Undo & Redo are the two most-used commands in any editor; burying them in
+  // the File tab (critique C1) put them two clicks deep and invisible from the
+  // default tab. Surface them (plus Save) right after the document title.
+  const qat = el("div", "cw-qat");
+  const qatBtn = (icon: string, title: string, onClick: () => void): HTMLButtonElement => {
+    const b = el("button", "cw-qat-btn");
+    b.innerHTML = icon;
+    b.title = title;
+    b.addEventListener("mousedown", (e) => e.preventDefault()); // keep editor focus
+    b.addEventListener("click", () => {
+      onClick();
+      editor.focus();
+    });
+    qat.appendChild(b);
+    return b;
+  };
+  const undoQat = qatBtn(ICONS.undo, "Undo (Ctrl+Z)", () => editor.undo());
+  const redoQat = qatBtn(ICONS.redo, "Redo (Ctrl+Y)", () => editor.redo());
+  qatBtn(ICONS.save, "Save (Ctrl+S)", () => void triggerSave());
+  tabsBar.insertBefore(qat, tabScroll); // between the title and the scrolling tabs
+  // Grey undo/redo when the stack is empty (kept live via syncQat, below).
+  syncQat = (): void => {
+    undoQat.disabled = !editor.canUndo();
+    redoQat.disabled = !editor.canRedo();
+  };
+
   group(view, "Zoom");
   txtBtn("−", "Zoom out", () => editor.setZoom(editor.getZoom() / config.behavior.zoomStep), "font-size:15px;");
   const zoomSel = select("Zoom level", 66);
@@ -3320,6 +3348,7 @@ if (toolbar) {
       e.el.disabled = !on;
       e.el.title = on || !e.hint ? e.title : `${e.title} — ${e.hint}`;
     }
+    syncQat(); // grey the quick-access undo/redo to match the stack
   };
 
   // Reflect the live zoom (also driven by Ctrl+wheel): snap the select to the

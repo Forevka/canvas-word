@@ -434,6 +434,10 @@ export interface Editor {
   searchClear(): void;
   undo(): void;
   redo(): void;
+  /** Whether there is a recorded edit to undo / an undone edit to redo — for
+   *  greying out an Undo/Redo control. */
+  canUndo(): boolean;
+  canRedo(): boolean;
   /** The document-history change log recorded this session (ordered). The base
    *  snapshot taken at load + this log reconstructs the current document. */
   getChangeLog(): Change[];
@@ -4359,6 +4363,8 @@ export function createEditor(
     searchClear,
     undo,
     redo,
+    canUndo: (): boolean => undoMgr.canUndo,
+    canRedo: (): boolean => undoMgr.canRedo,
     destroy(): void {
       cancelFormatPainter();
       searchClear();

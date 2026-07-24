@@ -87,6 +87,20 @@ const CSS = `
 .cw-save-dot.clean { background: #a19f9d; }   /* grey — neutral / no target */
 .cw-save-text { font-size: 12px; color: #605e5c; white-space: nowrap; }
 
+/* quick-access toolbar (undo / redo / save) — pinned between the title and the
+   tab strip so the most-used commands are one click from any tab */
+.cw-qat {
+  flex: 0 0 auto; align-self: flex-end; display: flex; align-items: center; gap: 1px;
+  padding: 0 4px 3px; margin-left: 2px; border-left: 1px solid #d8d6d4;
+}
+.cw-qat-btn {
+  width: 28px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
+  border: none; background: transparent; border-radius: 5px; cursor: pointer; color: #323130; padding: 0;
+}
+.cw-qat-btn:hover:not(:disabled) { background: #eceae9; }
+.cw-qat-btn:disabled { opacity: 0.38; cursor: default; }
+.cw-qat-btn svg { width: 16px; height: 16px; }
+
 /* --- ribbon body: one panel visible at a time --- */
 .rib-bodies {
   background: #fff; border-top: 1px solid #e1dfdd; border-bottom: 1px solid #e1dfdd;

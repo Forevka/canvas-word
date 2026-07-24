@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Quick-access toolbar: Undo / Redo / Save, always visible (C1).** Undo and Redo — the two most-used
+  commands in any editor — were buried in the File tab, two clicks deep and invisible from the default
+  Home tab. They now sit in a small quick-access cluster pinned to the ribbon header (next to the
+  document title), reachable from every tab, alongside a Save button. Undo/Redo grey out when their
+  stacks are empty, driven by two new `Editor.canUndo()` / `Editor.canRedo()` accessors.
 - **Document identity + live save state in the chrome (C2).** The ribbon now shows, pinned top-left, the
   document title and a live save-state indicator (coloured dot + label), so a user can answer "what is
   this file, and is my work safe?" without opening a menu. The title comes from a new `documentTitle`
