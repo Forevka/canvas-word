@@ -69,6 +69,24 @@ const CSS = `
 .cw-header-btn:hover { background: #f3f2f1; }
 .cw-header-btn.active { background: #2b579a; color: #fff; border-color: #2b579a; }
 
+/* document identity + live save state, pinned to the LEFT of the tab strip so
+   "what is this file / is my work safe?" is answerable without opening a menu */
+.cw-doc-ident {
+  flex: 0 0 auto; align-self: flex-end; display: flex; align-items: center;
+  gap: 8px; min-width: 0; max-width: 340px; padding: 0 12px 4px 4px;
+}
+.cw-doc-title {
+  font-size: 13px; font-weight: 600; color: #201f1e; min-width: 0; max-width: 210px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cw-save { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; cursor: default; }
+.cw-save-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: #a19f9d; }
+.cw-save-dot.dirty { background: #c19c00; }   /* amber — unsaved edits */
+.cw-save-dot.saving { background: #2b579a; }  /* blue — in progress */
+.cw-save-dot.saved { background: #2e7d32; }   /* green — saved */
+.cw-save-dot.clean { background: #a19f9d; }   /* grey — neutral / no target */
+.cw-save-text { font-size: 12px; color: #605e5c; white-space: nowrap; }
+
 /* --- ribbon body: one panel visible at a time --- */
 .rib-bodies {
   background: #fff; border-top: 1px solid #e1dfdd; border-bottom: 1px solid #e1dfdd;
@@ -481,6 +499,11 @@ const CSS = `
   .rib-panel { min-height: 0; overflow-x: auto; overflow-y: hidden; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
   .rib-label { display: none; }
   .rib-group { padding: 4px 6px; }
+
+  /* Keep the title + save dot but drop the save-state words so the pinned
+     identity cluster doesn't crowd the tab strip on a phone. */
+  .cw-doc-title { max-width: 120px; }
+  .cw-save-text { display: none; }
 
   /* Outline / Review: overlay the page instead of stealing width on a phone. */
   .cw-outline { position: absolute; left: 0; top: 0; bottom: 0; height: auto; width: min(264px, 80vw); z-index: 30; box-shadow: 2px 0 16px rgba(0,0,0,0.18); }

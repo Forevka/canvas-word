@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Document identity + live save state in the chrome (C2).** The ribbon now shows, pinned top-left, the
+  document title and a live save-state indicator (coloured dot + label), so a user can answer "what is
+  this file, and is my work safe?" without opening a menu. The title comes from a new `documentTitle`
+  option, else the opened `.docx` filename, else "Untitled document". **`Ctrl+S` / `Cmd+S` is now bound**
+  (previously it fired the browser's "Save page" dialog — an actively harmful outcome): with a host
+  `onSave` it saves through that pipeline (`Saving…` → `Saved HH:MM`); offline with no save target it
+  downloads a `.docx` copy and says so; online it reports the automatic sync. When there is no
+  persistence target the indicator degrades honestly ("Not saved" / "Unsaved changes") rather than
+  claiming "Saved". Dirty tracking is driven off the editor's recorded-change head, so caret moves don't
+  mark the document dirty.
+
 ### Fixed
 - **Responsive breakpoint no longer forces the phone layout onto touchscreen laptops (R0/B1/B2).** The
   responsive stylesheet keyed its whole mobile layer on `@media (pointer: coarse), (max-width: 760px)`,

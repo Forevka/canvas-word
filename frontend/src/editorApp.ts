@@ -287,6 +287,16 @@ let syncToolbar: () => void = () => {};
 let syncZoom: (zoom: number) => void = () => {};
 let refreshOutline: () => void = () => {};
 let refreshStatus: () => void = () => {};
+// Document-identity / save-state chrome (top-left of the ribbon). Forward-
+// declared like the refreshers above so replaceDocument() / onChange (defined
+// before the toolbar block builds the widget) can drive them; they stay no-ops
+// when the ribbon is disabled (chromeless mount).
+let refreshSaveState: () => void = () => {};
+let resetSaveBaseline: () => void = () => {};
+let setDocTitleFromFile: (name: string | null) => void = () => {};
+// Filesystem-safe base name for a downloaded export, derived from the document
+// title (assigned in the toolbar block; falls back to "document" when chromeless).
+let currentDocBaseName: () => string = () => "document";
 let refreshRuler: () => void = () => {};
 let toggleRuler: () => boolean = () => false;
 let refreshVRuler: () => void = () => {};
@@ -401,6 +411,7 @@ const editorOpts = {
     syncToolbar();
     refreshOutline();
     refreshStatus();
+    refreshSaveState();
     refreshRuler();
     refreshVRuler();
     refreshContextToolbars();
@@ -615,6 +626,7 @@ const replaceDocument = (next: typeof doc): void => {
   refreshStatus();
   refreshRuler();
   refreshVRuler();
+  resetSaveBaseline(); // fresh editor ⇒ change head is back at 0; re-baseline "clean"
   window.__cw = { doc, tree: undefined, engine, editor, createLayoutEngine, sampleDoc, stressDoc, persist };
 };
 
@@ -667,6 +679,7 @@ const openDocxFile = async (file: File | ArrayBuffer): Promise<void> => {
     });
     reportImport(result, performance.now() - i0);
     replaceDocument(result.doc);
+    setDocTitleFromFile(file instanceof File ? file.name : null); // reflect the opened file's name
     detachCollabSession();
   } catch (e) {
     console.error("[docx-import]", e);
@@ -1521,8 +1534,13 @@ if (toolbar) {
       const url = URL.createObjectURL(blob);
       const a = el("a");
       a.href = url;
-      a.download = `document.${format}`;
+      a.download = `${currentDocBaseName()}.${format}`;
+      // Attach before clicking: a detached <a download> is navigated-to (not
+      // downloaded) in some browsers/headless, which reloads the page.
+      a.style.display = "none";
+      document.body.appendChild(a);
       a.click();
+      a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
       console.error(`[export-${format}] failed`, err);
@@ -2447,6 +2465,103 @@ if (toolbar) {
   reviewBtn.addEventListener("click", () => toggleReview());
   headerReview.append(modeSel, reviewBtn);
   tabsBar.appendChild(headerReview);
+
+  // ---- Document identity + live save state (pinned top-left of the ribbon) ---
+  // Answers "what is this file, and is my work safe?" without opening a menu.
+  // The model has no title field, so the title is presentational: an explicit
+  // `documentTitle`, else the opened .docx filename, else "Untitled document".
+  const docIdent = el("div", "cw-doc-ident");
+  const titleEl = el("span", "cw-doc-title");
+  const saveWrap = el("span", "cw-save");
+  const saveDot = el("span", "cw-save-dot");
+  const saveText = el("span", "cw-save-text");
+  saveWrap.append(saveDot, saveText);
+  docIdent.append(titleEl, saveWrap);
+  tabsBar.insertBefore(docIdent, tabScroll); // leftmost, before the scrolling tabs
+
+  // Where does a save actually go? Host pipeline > online autosync > nowhere.
+  const saveTarget: "host" | "online" | "none" = runtime.onSave ? "host" : online ? "online" : "none";
+  let docTitle = runtime.documentTitle?.trim() || "Untitled document";
+  let savedHead = editor.getChangeHead(); // "clean" baseline (changes recorded since load)
+  let lastSavedAt: number | null = null;
+  let lastDownloadAt: number | null = null;
+  let saving = false;
+
+  const stripExt = (n: string): string => n.replace(/\.[^.]+$/, "").trim() || n;
+  const fmtTime = (ts: number): string => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const isDirty = (): boolean => editor.getChangeHead() !== savedHead;
+  const applyTitle = (): void => {
+    titleEl.textContent = docTitle;
+    titleEl.title = docTitle;
+  };
+
+  refreshSaveState = (): void => {
+    const dirty = isDirty();
+    let cls: string;
+    let text: string;
+    let tip: string;
+    if (saving) {
+      cls = "saving"; text = "Saving…"; tip = "Saving your document…";
+    } else if (saveTarget === "online") {
+      // Online continuously streams every edit to the server — genuinely saved.
+      cls = "saved"; text = "Saved"; tip = "Changes are saved automatically to the server.";
+    } else if (saveTarget === "host") {
+      if (dirty) { cls = "dirty"; text = "Unsaved changes"; tip = "You have unsaved changes. Press Ctrl+S to save."; }
+      else if (lastSavedAt != null) { cls = "saved"; text = `Saved ${fmtTime(lastSavedAt)}`; tip = "All changes saved."; }
+      else { cls = "clean"; text = "No unsaved changes"; tip = "Press Ctrl+S to save."; }
+    } else {
+      // "none": nothing persists this session — be honest, never claim "Saved".
+      if (dirty) { cls = "dirty"; text = "Unsaved changes"; tip = "This document isn't connected to storage. Press Ctrl+S to download a .docx copy."; }
+      else if (lastDownloadAt != null) { cls = "clean"; text = `Copy downloaded ${fmtTime(lastDownloadAt)}`; tip = "A .docx copy was downloaded. The live document still isn't connected to storage."; }
+      else { cls = "clean"; text = "Not saved"; tip = "This document isn't connected to storage. Press Ctrl+S to download a .docx copy."; }
+    }
+    saveDot.className = "cw-save-dot " + cls;
+    saveText.textContent = text;
+    saveWrap.title = tip;
+  };
+  resetSaveBaseline = (): void => {
+    savedHead = editor.getChangeHead();
+    lastSavedAt = null;
+    lastDownloadAt = null;
+    refreshSaveState();
+  };
+  setDocTitleFromFile = (name: string | null): void => {
+    if (name) { docTitle = stripExt(name); applyTitle(); }
+  };
+  // Downloaded exports are named after the document title (filesystem-safe).
+  currentDocBaseName = (): string => docTitle.replace(/[\\/:*?"<>|]+/g, "_").trim() || "document";
+
+  // Ctrl+S / Cmd+S — bound so the browser's "Save page" dialog never fires. With
+  // a host onSave it saves through that pipeline; offline it downloads a .docx
+  // copy; online it's already autosynced, so it just re-affirms the state.
+  const triggerSave = async (): Promise<void> => {
+    if (saving) return;
+    if (saveTarget === "online") { refreshSaveState(); return; }
+    saving = true;
+    refreshSaveState();
+    try {
+      await exportAs("docx"); // honors runtime.onSave; else triggers the .docx download
+      savedHead = editor.getChangeHead();
+      if (saveTarget === "host") lastSavedAt = Date.now();
+      else lastDownloadAt = Date.now();
+    } catch (e) {
+      console.error("[save]", e);
+    } finally {
+      saving = false;
+      refreshSaveState();
+    }
+  };
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== "s") return;
+      e.preventDefault(); // suppress the browser Save-Page dialog in every mode
+      void triggerSave();
+    },
+    { signal: teardown.signal },
+  );
+  applyTitle();
+  refreshSaveState();
 
   group(view, "Zoom");
   txtBtn("−", "Zoom out", () => editor.setZoom(editor.getZoom() / config.behavior.zoomStep), "font-size:15px;");

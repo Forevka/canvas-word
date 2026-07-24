@@ -242,7 +242,7 @@ Depends on rows 10 and 23. Last for a reason — do not start it early.
 Tick a row only after it is **committed** to `feat/ux-overhaul`.
 
 - [x] 1 `fix/responsive-breakpoint`
-- [ ] 2 `feat/doc-identity-save-state`
+- [x] 2 `feat/doc-identity-save-state`
 - [ ] 3 `feat/quick-access-undo-redo`
 - [ ] 4 `feat/canvas-aria-mirror`
 - [ ] 5 `feat/surface-arbitration`

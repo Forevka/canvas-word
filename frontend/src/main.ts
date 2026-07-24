@@ -43,6 +43,13 @@ if (viewParam) {
   }
 }
 
+// `?onSave=1` wires a demo host save hook (records the last save on
+// window.__saved) so the dev page can exercise the "host pipeline" save-state
+// path; production embedders pass their own `onSave`. `?title=` sets an
+// explicit document title.
+const useOnSave = params.get("onSave") === "1";
+const titleParam = params.get("title");
+
 // Online (a backend is configured): ask who you are so edits/carets are
 // attributed. Offline: no identity needed.
 const user = backend ? await showIdentityPopup() : undefined;
@@ -62,6 +69,14 @@ const editor = new WordCanvas({
   ...(collab ? { collabId: collab } : {}),
   ...(user ? { user } : {}),
   ...(view ? { view } : {}),
+  ...(titleParam ? { documentTitle: titleParam } : {}),
+  ...(useOnSave
+    ? {
+        onSave: (e: { format: string; bytes: Uint8Array }) => {
+          (window as unknown as { __saved?: unknown }).__saved = { format: e.format, size: e.bytes.length, at: Date.now() };
+        },
+      }
+    : {}),
   // `?devMode=true` reveals the Developer tab + Document-tree inspector.
   ...(params.get("devMode") === "true" ? { develop: true } : {}),
   knownUsers,

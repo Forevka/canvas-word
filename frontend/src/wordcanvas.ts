@@ -55,6 +55,10 @@ export interface WordCanvasOptions {
    *  to keep the default download behaviour. (For a fully custom button, call
    *  `exportDocx()` / `exportPdf()` on the instance or its EditorHandle.) */
   onSave?: SaveHandler;
+  /** Human-readable document name shown in the chrome (top-left of the ribbon,
+   *  next to the live save-state indicator). Falls back to the opened .docx
+   *  filename, then "Untitled document". Presentational only. */
+  documentTitle?: string;
   /** Mount as a view-only viewer: the document renders and stays selectable and
    *  copyable, but the editing chrome is hidden and every mutation is a no-op.
    *  In an online session a read-only client still receives live remote edits.
@@ -206,6 +210,7 @@ export class WordCanvas {
         user: opts.user,
         onShareLink: opts.onShareLink,
         onSave: opts.onSave,
+        documentTitle: opts.documentTitle,
         readonly: opts.readonly,
         mode: opts.mode,
         allowedModes: opts.allowedModes,
