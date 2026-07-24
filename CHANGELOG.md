@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Off-screen ARIA text mirror of the document for screen readers (A1).** Canvas-rendered text was
+  invisible to assistive technology — the editor exposed only the IME proxy (an empty
+  `role=textbox "Document editor"`), so a screen-reader user could not read a word. The editor now
+  maintains a visually-hidden DOM mirror of the whole document: one node per paragraph (with
+  `role=heading` + `aria-level` for headings and nested `table`/`row`/`cell` structure), kept in sync
+  with the model. The editable textbox `aria-owns` the mirror and points `aria-activedescendant` at the
+  paragraph under the caret; a non-collapsed selection marks the covered nodes `aria-selected` and a
+  debounced `aria-live` announcement summarises it. Typing patches only the affected node, so the mirror
+  adds no per-keystroke full rebuild.
 - **Quick-access toolbar: Undo / Redo / Save, always visible (C1).** Undo and Redo — the two most-used
   commands in any editor — were buried in the File tab, two clicks deep and invisible from the default
   Home tab. They now sit in a small quick-access cluster pinned to the ribbon header (next to the

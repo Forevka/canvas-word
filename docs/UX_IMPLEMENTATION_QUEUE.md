@@ -244,7 +244,7 @@ Tick a row only after it is **committed** to `feat/ux-overhaul`.
 - [x] 1 `fix/responsive-breakpoint`
 - [x] 2 `feat/doc-identity-save-state`
 - [x] 3 `feat/quick-access-undo-redo`
-- [ ] 4 `feat/canvas-aria-mirror`
+- [x] 4 `feat/canvas-aria-mirror`
 - [ ] 5 `feat/surface-arbitration`
 - [ ] 6 `fix/ribbon-cleanup-contextual-tabs`
 - [ ] 7 `feat/replace-native-prompts`
