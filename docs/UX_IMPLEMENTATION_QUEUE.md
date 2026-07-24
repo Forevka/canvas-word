@@ -249,7 +249,7 @@ Tick a row only after it is **committed** to `feat/ux-overhaul`.
 - [x] 6 `fix/ribbon-cleanup-contextual-tabs`
 - [x] 7 `feat/replace-native-prompts`
 - [x] 8 `fix/ui-polish-sweep`
-- [ ] 9 `feat/outline-pane-upgrade`
+- [x] 9 `feat/outline-pane-upgrade`
 - [ ] 10 `feat/command-palette`
 - [ ] 11 `feat/dark-mode-shell`
 - [ ] 12 `feat/fit-width-zoom-narrow-layout`

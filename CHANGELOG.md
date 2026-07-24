@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Outline pane upgrade (O2–O6).** The navigation pane was a flat list of buttons that expressed depth
+  only through indentation. It now has: collapse/expand chevrons on any heading with a sub-tree; a live
+  filter box; real level styling (H1–H3+ differ in weight, size, and colour, not just indent); a page
+  number for every heading (via a new `Editor.getBlockPage()`); a current-section highlight; and a
+  drag-to-resize right edge, so long headings are never unrecoverably truncated (full text also on hover).
+
 ### Fixed
 - **UI polish sweep (V3, V4, V5, L6).**
   - **Selection highlight** was too pale to locate (opacity 0.24) — raised to 0.36.

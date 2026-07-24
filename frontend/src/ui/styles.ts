@@ -235,13 +235,16 @@ const CSS = `
 .cw-ruler .ruler-first { top: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid #5b6b8c; }
 
 /* ===== Outline / Navigation drawer ================================== */
+/* Column: head + filter are fixed; only the list scrolls, so the drag-resize
+   handle (position:absolute) stays pinned to the right edge (O5). */
 .cw-outline {
-  flex: 0 0 264px; width: 264px; min-height: 0; overflow-y: auto;
+  position: relative; flex: 0 0 264px; width: 264px; min-height: 0;
   background: #fff; border-right: 1px solid #e1dfdd; display: none;
+  flex-direction: column; overflow: hidden;
 }
-.cw-outline.open { display: block; }
+.cw-outline.open { display: flex; }
 .cw-outline .outline-head {
-  position: sticky; top: 0; background: #fff; z-index: 1;
+  flex: 0 0 auto; background: #fff;
   display: flex; align-items: center; justify-content: space-between;
   padding: 9px 8px 9px 14px; border-bottom: 1px solid #e1dfdd;
   font-size: 13px; font-weight: 600; color: #323130;
@@ -251,15 +254,37 @@ const CSS = `
   width: 24px; height: 24px; border-radius: 4px; font-size: 17px; line-height: 1;
 }
 .cw-outline .outline-head button:hover { background: #f3f2f1; }
-.cw-outline-list { padding: 4px 0 12px; }
+.cw-outline-filter { flex: 0 0 auto; padding: 6px 10px; border-bottom: 1px solid #f0eeee; }
+.cw-outline-filter input {
+  width: 100%; box-sizing: border-box; height: 26px; border: 1px solid #d2d0ce;
+  border-radius: 5px; padding: 0 8px; font: inherit; font-size: 12.5px; color: #323130;
+}
+.cw-outline-filter input:focus { outline: none; border-color: #2b579a; box-shadow: 0 0 0 1px #2b579a; }
+.cw-outline-list { flex: 1 1 auto; overflow-y: auto; padding: 4px 0 12px; }
+.cw-outline-resize {
+  position: absolute; top: 0; right: 0; width: 6px; height: 100%; cursor: col-resize; z-index: 3;
+}
+.cw-outline-resize:hover { background: linear-gradient(90deg, transparent, rgba(43,87,154,0.25)); }
 .outline-item {
-  display: block; width: 100%; box-sizing: border-box; text-align: left;
+  display: flex; align-items: center; gap: 4px; width: 100%; box-sizing: border-box; text-align: left;
   border: none; border-left: 3px solid transparent; background: transparent; cursor: pointer;
-  padding: 4px 12px; color: #323130; font-size: 13px; line-height: 1.35;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  padding: 3px 10px 3px 0; color: #323130; line-height: 1.3;
 }
 .outline-item:hover { background: #f3f2f1; }
-.outline-item.active { background: #eef3fb; border-left-color: #2b579a; color: #2b579a; font-weight: 600; }
+.outline-item.active { background: #eef3fb; border-left-color: #2b579a; }
+.outline-item.active .outline-label { color: #2b579a; }
+.outline-chevron {
+  flex: 0 0 auto; width: 16px; height: 16px; border: none; background: transparent; cursor: pointer;
+  color: #80868b; font-size: 9px; line-height: 1; padding: 0; border-radius: 3px;
+}
+.outline-chevron:hover { background: #e6e4e2; color: #323130; }
+.outline-chevron.leaf { visibility: hidden; }
+.outline-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.outline-page { flex: 0 0 auto; color: #a19f9d; font-size: 11px; font-variant-numeric: tabular-nums; padding-left: 6px; }
+/* Level styling (O4): weight/size/colour differentiate H1..H3+, not just indent. */
+.outline-item.lvl-0 .outline-label, .outline-item.lvl-1 .outline-label { font-weight: 600; font-size: 13px; color: #201f1e; }
+.outline-item.lvl-2 .outline-label { font-weight: 500; font-size: 12.5px; color: #3c4043; }
+.outline-item.lvl-3 .outline-label { font-weight: 400; font-size: 12px; color: #605e5c; }
 .outline-empty { padding: 14px; color: #80868b; font-size: 12px; line-height: 1.4; }
 
 /* ===== Review pane (track changes + comments) ======================= */

@@ -352,6 +352,9 @@ export interface Editor {
   /** Move the caret to a block's start and scroll it into view (outline pane,
    *  navigation). No-op if the block id isn't in the current document. */
   revealBlock(blockId: string): void;
+  /** 1-based page number of a block in the CURRENT layout, or null when it isn't
+   *  placed (e.g. not yet laid out). Used for the outline's page-number column. */
+  getBlockPage(blockId: string): number | null;
   /** Select a bookmark's range and scroll it into view (Bookmarks panel "Go To").
    *  No-op if the bookmark is missing or anchored in hidden/unplaced content. */
   revealBookmark(name: string): void;
@@ -4203,6 +4206,10 @@ export function createEditor(
       setSelection({ anchor: { blockId, offset: 0 }, focus: { blockId, offset: 0 } });
       const rect = caretRect(tree, { blockId, offset: 0 });
       if (rect) paint.ensureVisible(rect, "center");
+    },
+    getBlockPage: (blockId: string): number | null => {
+      const rect = caretRect(tree, { blockId, offset: 0 });
+      return rect ? rect.pageIndex + 1 : null;
     },
     revealBookmark: (name: string): void => {
       const range = doc.bookmarks?.[name];

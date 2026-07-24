@@ -2751,9 +2751,39 @@ if (toolbar) {
     closeBtn.innerHTML = "×";
     closeBtn.title = "Close";
     head.append(title, closeBtn);
+    // Filter box (O3): live substring filter over the heading text.
+    const filterWrap = el("div", "cw-outline-filter");
+    const filterInput = el("input");
+    filterInput.type = "text";
+    filterInput.placeholder = "Filter headings…";
+    filterInput.setAttribute("aria-label", "Filter headings");
+    filterWrap.appendChild(filterInput);
     const list = el("div");
     list.className = "cw-outline-list";
-    outlineEl.append(head, list);
+    outlineEl.append(head, filterWrap, list);
+    // Drag-to-resize handle on the pane's right edge (O5).
+    const resizer = el("div", "cw-outline-resize");
+    resizer.title = "Drag to resize";
+    outlineEl.appendChild(resizer);
+    resizer.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = outlineEl.getBoundingClientRect().width;
+      const onMove = (ev: MouseEvent): void => {
+        const w = Math.max(180, Math.min(520, startW + (ev.clientX - startX)));
+        outlineEl.style.flex = `0 0 ${w}px`;
+        outlineEl.style.width = `${w}px`;
+      };
+      const onUp = (): void => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+
+    const collapsed = new Set<string>(); // heading ids whose sub-tree is collapsed
+    let filterText = "";
 
     // Detect a heading + its outline level. Real .docx files name their styles
     // "Heading 1" but keep an OPAQUE styleId (e.g. "Style27"), so we resolve the
@@ -2783,54 +2813,111 @@ if (toolbar) {
       }
       return level;
     };
-    type Entry = { id: string; index: number; level: number };
+    type Entry = { id: string; index: number; level: number; text: string };
     let entries: Entry[] = [];
-    const buttons = new Map<string, HTMLButtonElement>();
-    let lastSig = "\0"; // sentinel — guarantees the first build runs
+    const rows = new Map<string, HTMLElement>();
+    const pageSpans = new Map<string, HTMLElement>();
+    let lastSig = "\0"; // sentinel — guarantees the first render runs
 
     const updateActive = (): void => {
       const caret = editor.getSelection()?.focus.blockId ?? null;
       const ci = caret ? editor.getDocument().blocks.findIndex((b) => b.id === caret) : -1;
       let activeId: string | null = null;
       for (const e of entries) if (ci >= 0 && e.index <= ci) activeId = e.id; // nearest heading at/above caret
-      for (const [id, b] of buttons) b.classList.toggle("active", id === activeId);
+      for (const [id, r] of rows) r.classList.toggle("active", id === activeId);
+    };
+    const updatePages = (): void => {
+      for (const [id, span] of pageSpans) {
+        const p = editor.getBlockPage(id);
+        span.textContent = p != null ? String(p) : "";
+      }
+    };
+    const hasChildren = (i: number): boolean => i + 1 < entries.length && entries[i + 1]!.level > entries[i]!.level;
+
+    // Render the visible rows (O2 collapse + O3 filter + O4 level styling + O6
+    // page numbers). Structure-only; page numbers/active state patch separately.
+    const render = (): void => {
+      list.textContent = "";
+      rows.clear();
+      pageSpans.clear();
+      if (entries.length === 0) {
+        const empty = el("div", "outline-empty");
+        empty.textContent = "No headings yet. Apply a Heading style (Heading 1–9) to build an outline.";
+        list.appendChild(empty);
+        return;
+      }
+      const q = filterText.trim().toLowerCase();
+      let collapseLevel: number | null = null; // while set, hide entries deeper than it
+      entries.forEach((e, i) => {
+        let visible: boolean;
+        if (q) visible = e.text.toLowerCase().includes(q); // filter is flat, ignores collapse
+        else if (collapseLevel !== null && e.level > collapseLevel) visible = false;
+        else {
+          collapseLevel = null;
+          visible = true;
+          if (collapsed.has(e.id) && hasChildren(i)) collapseLevel = e.level;
+        }
+        if (!visible) return;
+        const row = el("div", `outline-item lvl-${Math.min(e.level, 3)}`);
+        row.style.paddingLeft = `${6 + e.level * 12}px`;
+        const chev = el("button", "outline-chevron");
+        chev.setAttribute("aria-hidden", "true");
+        if (hasChildren(i) && !q) {
+          const isCol = collapsed.has(e.id);
+          chev.textContent = isCol ? "▸" : "▾";
+          chev.title = isCol ? "Expand section" : "Collapse section";
+          chev.addEventListener("mousedown", (ev) => ev.preventDefault());
+          chev.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            if (collapsed.has(e.id)) collapsed.delete(e.id);
+            else collapsed.add(e.id);
+            build();
+          });
+        } else {
+          chev.classList.add("leaf");
+        }
+        const label = el("span", "outline-label");
+        label.textContent = e.text;
+        label.title = e.text; // full text on hover — truncation is never unrecoverable (O5)
+        const page = el("span", "outline-page");
+        row.append(chev, label, page);
+        row.addEventListener("mousedown", (ev) => ev.preventDefault());
+        row.addEventListener("click", () => editor.revealBlock(e.id));
+        rows.set(e.id, row);
+        pageSpans.set(e.id, page);
+        list.appendChild(row);
+      });
     };
 
     const build = (): void => {
-      const collected: { entry: Entry; text: string }[] = [];
+      const collected: Entry[] = [];
       editor.getDocument().blocks.forEach((b, index) => {
         if (b.kind !== "paragraph") return;
         const level = headingLevel(b.style.namedStyle);
         if (level === null) return;
         const text = b.runs.map((r) => r.text).join("").trim();
         if (text === "") return; // skip empty heading-styled paragraphs (structural artifacts)
-        collected.push({ entry: { id: b.id, index, level }, text });
+        collected.push({ id: b.id, index, level, text });
       });
-      const sig = collected.map((c) => `${c.entry.id}|${c.entry.level}|${c.text}`).join("\n");
+      entries = collected;
+      // Re-render only when the heading set / collapse / filter changed, so
+      // typing (which fires refreshOutline) doesn't reset the pane's scroll.
+      const sig =
+        collected.map((c) => `${c.id}|${c.level}|${c.text}`).join("\n") +
+        "" + [...collapsed].sort().join(",") +
+        "" + filterText.trim().toLowerCase();
       if (sig !== lastSig) {
         lastSig = sig;
-        entries = collected.map((c) => c.entry);
-        list.textContent = "";
-        buttons.clear();
-        if (collected.length === 0) {
-          const empty = el("div", "outline-empty");
-          empty.textContent = "No headings yet. Apply a Heading style (Heading 1–9) to build an outline.";
-          list.appendChild(empty);
-        } else {
-          for (const c of collected) {
-            const item = el("button", "outline-item");
-            item.style.paddingLeft = `${12 + c.entry.level * 14}px`;
-            item.textContent = c.text;
-            item.title = c.text;
-            item.addEventListener("mousedown", (e) => e.preventDefault());
-            item.addEventListener("click", () => editor.revealBlock(c.entry.id));
-            buttons.set(c.entry.id, item);
-            list.appendChild(item);
-          }
-        }
+        render();
       }
+      updatePages();
       updateActive();
     };
+
+    filterInput.addEventListener("input", () => {
+      filterText = filterInput.value;
+      build();
+    });
 
     let open = false;
     const setOpen = (v: boolean): void => {
