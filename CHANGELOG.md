@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Overlapping dialogs / panels / find bar are now arbitrated by one surface manager (L1).** The floating
+  dialogs (Font, Paragraph, Page Layout, Style Manager, …) and the find/replace bar had no coordination:
+  each dialog installed its own capture-phase Escape and each surface chose its own z-index, so opening
+  Manage Styles, then Ctrl+F (the find bar appeared **behind** it at z-index 10), then Review left three
+  surfaces mutually occluding, with ambiguous Escape behavior. A new `ui/surfaceManager` (mirroring how
+  `contextToolbar` arbitrates the floating bars) now owns z-order (newest on top), exclusivity (opening
+  one dialog evicts any other open dialog), and a single Escape that closes the topmost surface. Wired in
+  at the shared `dialogShell` and the find bar, so every dialog is covered.
+
 ### Added
 - **Off-screen ARIA text mirror of the document for screen readers (A1).** Canvas-rendered text was
   invisible to assistive technology — the editor exposed only the IME proxy (an empty

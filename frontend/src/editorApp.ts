@@ -22,6 +22,7 @@ import { ensureWordCanvasStyles } from "./ui/styles";
 import { showContextMenu, type MenuEntry } from "./ui/contextMenu";
 import { createFloatingFormatBar } from "./ui/floatingFormatBar";
 import { createContextToolbarManager } from "./ui/contextToolbar";
+import { openSurface, type SurfaceHandle } from "./ui/surfaceManager";
 import { createImageContextToolbar } from "./ui/imageContextToolbar";
 import { createShapeContextToolbar } from "./ui/shapeContextToolbar";
 import { createLinkContextToolbar } from "./ui/linkContextToolbar";
@@ -4128,9 +4129,12 @@ if (!readonly) {
       counter.textContent += ` (${n} replaced)`;
     });
   }
+  let findSurface: SurfaceHandle | null = null;
   const close = (): void => {
     bar.style.display = "none";
     editor.searchClear();
+    findSurface?.release();
+    findSurface = null;
     editor.focus();
   };
   mkBtn("×", "Close (Esc)", close);
@@ -4138,10 +4142,14 @@ if (!readonly) {
   detachables.push(bar);
 
   openFind = (): void => {
+    const wasOpen = bar.style.display === "flex";
     bar.style.display = "flex";
     findInput.select();
     findInput.focus();
     reSearch();
+    // Register with the surface manager so the bar stacks ABOVE any open dialog
+    // (it used to be z-index 10, behind them) and shares the one Escape handler.
+    if (!wasOpen) findSurface = openSurface({ el: bar, close, kind: "overlay" });
   };
 
   findInput.addEventListener("input", reSearch);
@@ -4149,10 +4157,8 @@ if (!readonly) {
     if (ev.key === "Enter") {
       update(editor.searchNav(ev.shiftKey ? -1 : 1));
       ev.preventDefault();
-    } else if (ev.key === "Escape") {
-      close();
-      ev.preventDefault();
     }
+    // Escape is handled centrally by the surface manager (closes the topmost).
     ev.stopPropagation(); // typing in the bar never reaches the editor keymap
   });
   window.addEventListener("keydown", (ev) => {
