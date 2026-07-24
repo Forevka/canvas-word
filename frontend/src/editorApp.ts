@@ -888,6 +888,7 @@ if (toolbar) {
     const b = el("button", "rib-btn");
     b.innerHTML = icon + (caret ? CARET : "");
     b.title = title;
+    b.setAttribute("aria-label", title); // explicit, unique accessible name (C6/A2)
     b.addEventListener("mousedown", (e) => e.preventDefault()); // keep IME-proxy focus
     b.addEventListener("click", onClick);
     controls.appendChild(b);
@@ -898,7 +899,11 @@ if (toolbar) {
   const txtBtn = (label: string, title: string, onClick: () => void, style = "", caret = false): HTMLButtonElement => {
     const b = el("button", "rib-btn");
     b.title = title;
+    // The visible glyph ("A", "AB", "LTR"…) is decorative — the accessible name
+    // is the descriptive title, so no two buttons announce as the same "A" (C6).
+    b.setAttribute("aria-label", title);
     const s = el("span");
+    s.setAttribute("aria-hidden", "true");
     s.textContent = label;
     if (style) s.style.cssText = style;
     b.appendChild(s);
@@ -913,6 +918,7 @@ if (toolbar) {
   const bigBtn = (icon: string, caption: string, title: string, onClick: () => void, caret = false): HTMLButtonElement => {
     const b = el("button", "rib-btn rib-big");
     b.title = title;
+    b.setAttribute("aria-label", title); // unique accessible name (C6/A2)
     b.innerHTML = icon + `<span class="big-cap">${caption}${caret ? CARET : ""}</span>`;
     b.addEventListener("mousedown", (e) => e.preventDefault());
     b.addEventListener("click", onClick);
@@ -1259,7 +1265,8 @@ if (toolbar) {
     wrap.style.cssText = "display:flex;align-items:stretch;";
     const main = el("button", "rib-btn rib-swatch");
     main.title = cfg.title;
-    main.innerHTML = `<span class="row">${cfg.face}</span><span class="bar" style="background:${last}"></span>`;
+    main.setAttribute("aria-label", cfg.title); // not the bare "A"/highlight glyph (C6)
+    main.innerHTML = `<span class="row" aria-hidden="true">${cfg.face}</span><span class="bar" style="background:${last}"></span>`;
     const bar = main.querySelector(".bar") as HTMLElement;
     main.addEventListener("mousedown", (e) => e.preventDefault());
     main.addEventListener("click", () => {
@@ -1268,6 +1275,7 @@ if (toolbar) {
     });
     const more = el("button", "rib-btn");
     more.title = `${cfg.title} — choose colour`;
+    more.setAttribute("aria-label", more.title);
     more.style.cssText = "min-width:14px;padding:0;";
     more.innerHTML = CARET;
     more.addEventListener("mousedown", (e) => e.preventDefault());
@@ -1303,6 +1311,7 @@ if (toolbar) {
     wrap.style.cssText = "display:flex;align-items:stretch;";
     const main = el("button", "rib-btn");
     main.title = title;
+    main.setAttribute("aria-label", title);
     main.innerHTML = icon;
     main.addEventListener("mousedown", (e) => e.preventDefault());
     main.addEventListener("click", () => {
@@ -1312,6 +1321,7 @@ if (toolbar) {
     toggleButtons.push({ el: main, active });
     const more = el("button", "rib-btn");
     more.title = `${title} — choose style`;
+    more.setAttribute("aria-label", more.title);
     more.style.cssText = "min-width:14px;padding:0;";
     more.innerHTML = CARET;
     more.addEventListener("mousedown", (e) => e.preventDefault());
@@ -1719,6 +1729,7 @@ if (toolbar) {
   sizeWrap.style.cssText = "display:inline-flex;align-items:stretch;";
   const sizeCaret = el("button", "rib-btn");
   sizeCaret.title = "Font size presets";
+  sizeCaret.setAttribute("aria-label", "Font size presets");
   sizeCaret.innerHTML = CARET;
   sizeCaret.style.cssText = "padding:0 1px;min-width:14px;";
   sizeCaret.addEventListener("mousedown", (e) => e.preventDefault());
@@ -3353,6 +3364,7 @@ if (toolbar) {
         b.appendChild(s);
       }
       if (spec.tooltip) b.title = spec.tooltip;
+      b.setAttribute("aria-label", spec.tooltip || spec.label || spec.id); // accessible name for custom buttons
       b.dataset["ribbonItem"] = spec.id;
       b.addEventListener("mousedown", (e) => e.preventDefault());
       b.addEventListener("click", () => {
@@ -3599,7 +3611,9 @@ if (toolbar) {
     for (const e of enableButtons) {
       const on = e.enabled(f);
       e.el.disabled = !on;
-      e.el.title = on || !e.hint ? e.title : `${e.title} — ${e.hint}`;
+      const t = on || !e.hint ? e.title : `${e.title} — ${e.hint}`;
+      e.el.title = t;
+      e.el.setAttribute("aria-label", t); // keep the accessible name in step with the tooltip
     }
     syncQat(); // grey the quick-access undo/redo to match the stack
     // Reveal/hide contextual tabs by selection; if the active tab just hid, fall

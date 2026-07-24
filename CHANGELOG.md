@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Ribbon buttons have unique, descriptive accessible names (C6/A2).** The a11y tree contained three
+  buttons named "A", two named "ab", and glyph-as-icon buttons (`AB`/`Ab`/`ab`, `LTR`/`RTL`) whose only
+  accessible name was the ambiguous glyph. Every ribbon button (icon, text-glyph, colour swatch,
+  split-button, custom) now carries an explicit `aria-label` set to its descriptive tooltip, and the
+  decorative glyph spans are `aria-hidden`; the enable-loop keeps the name in step with the tooltip. All
+  104 ribbon buttons now have a non-empty, meaningful name (e.g. the two "A" buttons announce "Grow font"
+  / "Shrink font", the two "ab" buttons "Strikethrough" / "Double strikethrough"). The visual size-tier /
+  single-icon-family redesign (V6) is left as a separate design pass.
 - **Floating chip / menu placement (L3–L5).** The right-click context menu could grow taller than the
   viewport and run off the bottom with unreachable items — it now caps its height to the viewport and
   scrolls (L5). The empty-paragraph "＋ Insert" chip was centered above the caret, overlapping the line
