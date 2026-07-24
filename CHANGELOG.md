@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Floating chip / menu placement (L3–L5).** The right-click context menu could grow taller than the
+  viewport and run off the bottom with unreachable items — it now caps its height to the viewport and
+  scrolls (L5). The empty-paragraph "＋ Insert" chip was centered above the caret, overlapping the line
+  of body text above it; it now sits in the left margin gutter beside the empty line (new "gutter"
+  placement mode) (L4). The TOC "Update table of contents" chip's sticky behaviour (surviving caret
+  changes / Escape) was already resolved — confirmed it now dismisses when the caret leaves the TOC or on
+  Escape (L3).
+
 ### Added
 - **Fit-width zoom + responsive narrow layout (R1–R4).** The editor defaulted to 100% zoom regardless of
   viewport and had no handling for the 760–1100px band. Now: the zoom defaults to **fit-width** whenever

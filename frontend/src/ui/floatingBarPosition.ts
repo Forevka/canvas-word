@@ -37,13 +37,24 @@ export function placeSelectionBar(
   anchor: AnchorRect,
   bar: BarSize,
   viewport: Viewport,
-  opts: { gap?: number; margin?: number; topGuard?: number } = {},
+  opts: { gap?: number; margin?: number; topGuard?: number; mode?: "above" | "gutter" } = {},
 ): Placement {
   const gap = opts.gap ?? 8;
   const margin = opts.margin ?? 8;
   // Keep clear of the content-area top (below a fixed ribbon): flipping above must
   // not collide with it, and the placed bar must never sit above it.
   const topGuard = Math.max(opts.topGuard ?? 56, viewport.top ?? 0);
+
+  // Gutter mode (the empty-paragraph "＋ Insert" chip, critique L4): sit in the
+  // LEFT margin beside the caret's line rather than centered above it — so it
+  // never overlaps the body text on the line above. Falls back to hugging the
+  // viewport margin if the gutter is too narrow.
+  if (opts.mode === "gutter") {
+    const left = Math.max(margin, anchor.left - bar.width - gap);
+    const rawTop = anchor.top + anchor.height / 2 - bar.height / 2; // vertically centered on the line
+    const top = Math.min(Math.max(topGuard, rawTop), Math.max(topGuard, viewport.height - bar.height - margin));
+    return { left: Math.round(left), top: Math.round(top) };
+  }
 
   const centered = anchor.left + anchor.width / 2 - bar.width / 2;
   const maxLeft = Math.max(margin, viewport.width - bar.width - margin);
