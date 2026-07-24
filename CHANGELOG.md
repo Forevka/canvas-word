@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Keyboard-shortcuts cheat sheet — `Ctrl+/` (A3).** A dialog listing the editor's shortcuts, grouped
+  (Formatting, History, Breaks, Clipboard, Lists, Application) with per-platform `⌘`/`⌥`/`⇧` key caps.
+  The editing chords are read from `KEYMAP_ENTRIES` — a declarative list co-located with the keymap
+  handler — so the sheet can't silently drift from what the keys do; embedder commands with a keybinding
+  are appended live. Surface-managed (Escape/×-closable), dark-mode themed.
+
 ### Fixed
 - **Ribbon buttons have unique, descriptive accessible names (C6/A2).** The a11y tree contained three
   buttons named "A", two named "ab", and glyph-as-icon buttons (`AB`/`Ab`/`ab`, `LTR`/`RTL`) whose only

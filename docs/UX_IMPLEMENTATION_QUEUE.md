@@ -255,7 +255,7 @@ Tick a row only after it is **committed** to `feat/ux-overhaul`.
 - [x] 12 `feat/fit-width-zoom-narrow-layout`
 - [x] 13 `fix/floating-chip-placement`
 - [x] 14 `chore/icon-system-a11y-names`
-- [ ] 15 `feat/shortcuts-cheatsheet`
+- [x] 15 `feat/shortcuts-cheatsheet`
 - [ ] 16 `feat/outline-drag-reorder`
 - [ ] 17 `feat/navigator-rail`
 - [ ] 18 `feat/bookmark-crossref-links`

@@ -25,6 +25,7 @@ import { createContextToolbarManager } from "./ui/contextToolbar";
 import { openSurface, type SurfaceHandle } from "./ui/surfaceManager";
 import { showInputDialog } from "./ui/inputDialog";
 import { showCommandPalette, type PaletteCommand } from "./ui/commandPalette";
+import { showShortcutsCheatsheet } from "./ui/shortcutsCheatsheet";
 import { createImageContextToolbar } from "./ui/imageContextToolbar";
 import { createShapeContextToolbar } from "./ui/shapeContextToolbar";
 import { createLinkContextToolbar } from "./ui/linkContextToolbar";
@@ -226,6 +227,21 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
     applyTheme();
     mq.addEventListener("change", applyTheme, { signal: teardown.signal });
   }
+
+  // Ctrl+/ — keyboard shortcuts cheat sheet (critique A3). Embedder commands with
+  // a keybinding are appended live, so the sheet reflects the actual keymap.
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key !== "/") return;
+      e.preventDefault();
+      const cmds = (runtime.commands ?? [])
+        .filter((c) => c.keybinding && c.label)
+        .map((c) => ({ chord: (Array.isArray(c.keybinding) ? c.keybinding[0] : c.keybinding) as string, label: c.label as string }));
+      showShortcutsCheatsheet(cmds.length ? [{ title: "Commands", items: cmds }] : []);
+    },
+    { signal: teardown.signal },
+  );
 
 // Backend base URL gates online features. Present ⇒ sync/publish/share; absent ⇒
 // fully offline editor (the kill-switch).
