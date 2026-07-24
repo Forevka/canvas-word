@@ -23,6 +23,7 @@ import { showContextMenu, type MenuEntry } from "./ui/contextMenu";
 import { createFloatingFormatBar } from "./ui/floatingFormatBar";
 import { createContextToolbarManager } from "./ui/contextToolbar";
 import { openSurface, type SurfaceHandle } from "./ui/surfaceManager";
+import { showInputDialog } from "./ui/inputDialog";
 import { createImageContextToolbar } from "./ui/imageContextToolbar";
 import { createShapeContextToolbar } from "./ui/shapeContextToolbar";
 import { createLinkContextToolbar } from "./ui/linkContextToolbar";
@@ -245,7 +246,7 @@ if (collabId !== null && BACKEND_HTTP) {
     // Dead/invalid link — don't hang the whole load. Drop collab state, strip
     // ?collab (so a reload doesn't re-fail), and fall back to a blank editor.
     console.error("[collab] load failed", e);
-    alert(`Could not open the shared document: ${e instanceof Error ? e.message : String(e)}`);
+    showNotice(`Could not open the shared document: ${e instanceof Error ? e.message : String(e)}`, "warning");
     collabId = null;
     shareLink = null;
     try {
@@ -409,6 +410,18 @@ const editorOpts = {
   // otherwise) — route the hovered block id to the tree for the reverse highlight.
   onInspectorHover: (blockId: string | null) => inspectorHoverSink(blockId),
   onInspectorProbe: (probe: InspectorProbe | null) => inspectorProbeSink(probe),
+  // Right-click "Insert/Edit Hyperlink" routes here so it opens the SAME styled
+  // link popover the ribbon uses (critique 2.8: no more native prompt(), and one
+  // link UI instead of two). Anchored at the caret via a transient element.
+  onEditLink: (current: string | null): void => {
+    const r = editor.getSelectionAnchorRect();
+    const anchor = document.createElement("div");
+    anchor.style.cssText = `position:fixed;left:${Math.round(r?.left ?? 120)}px;top:${Math.round(r?.top ?? 90)}px;` +
+      `width:${Math.round(r?.width ?? 0)}px;height:${Math.round(r?.height ?? 16)}px;pointer-events:none;`;
+    document.body.appendChild(anchor);
+    openLinkDialog(anchor, current ?? ""); // openPop reads the rect synchronously
+    anchor.remove();
+  },
   onChange: () => {
     syncToolbar();
     refreshOutline();
@@ -686,7 +699,7 @@ const openDocxFile = async (file: File | ArrayBuffer): Promise<void> => {
   } catch (e) {
     console.error("[docx-import]", e);
     const name = file instanceof File ? file.name : "document";
-    alert(`Could not open "${name}": ${e instanceof Error ? e.message : String(e)}`);
+    showNotice(`Could not open "${name}": ${e instanceof Error ? e.message : String(e)}`, "warning");
   } finally {
     busy.done();
   }
@@ -1605,7 +1618,7 @@ if (toolbar) {
   if (online) {
     group(fileTab, "Share");
     bigBtn(ICONS.share, "Share<br>Link", "Publish & get a shareable link", () => {
-      void goOnlineWithCurrentDoc().catch((e) => alert(`Share failed: ${e instanceof Error ? e.message : String(e)}`));
+      void goOnlineWithCurrentDoc().catch((e) => showNotice(`Share failed: ${e instanceof Error ? e.message : String(e)}`, "warning"));
     });
   }
 
@@ -2234,15 +2247,22 @@ if (toolbar) {
     editor.focus();
   });
   btn(ICONS.sdtDropdown, "Drop-down list content control", () => {
-    const raw = prompt("List items (comma-separated):", "Yes, No, N/A");
-    if (raw === null) return;
-    const listItems = raw
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0)
-      .map((s) => ({ display: s, value: s }));
-    editor.dispatch(insertContentControl("dropDown", { alias: "Drop-Down List", listItems }));
-    editor.focus();
+    showInputDialog({
+      title: "Drop-down list",
+      label: "List items (comma-separated)",
+      initial: "Yes, No, N/A",
+      okLabel: "Insert",
+      validate: (v) => (v.split(",").some((s) => s.trim().length > 0) ? null : "Enter at least one item."),
+      onSubmit: (raw) => {
+        const listItems = raw
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0)
+          .map((s) => ({ display: s, value: s }));
+        editor.dispatch(insertContentControl("dropDown", { alias: "Drop-Down List", listItems }));
+        editor.focus();
+      },
+    });
   });
   btn(ICONS.sdtDate, "Date picker content control", () => {
     editor.dispatch(insertContentControl("date", { alias: "Date", dateFormat: "M/d/yyyy" }));
@@ -2250,7 +2270,7 @@ if (toolbar) {
   });
   enable(
     btn(ICONS.sdtProps, "Content control properties & content (inspect the control at the caret)", () => {
-      if (!editor.inspectContentControl()) alert("Place the caret inside a content control first.");
+      if (!editor.inspectContentControl()) showNotice("Place the caret inside a content control first.", "info");
     }),
     (f) => f.inContentControl,
     "place the caret in a content control",
@@ -2845,6 +2865,18 @@ if (toolbar) {
     panel.append(head, list);
     shell.workarea.appendChild(panel);
 
+    // OOXML bookmark-name rules — a native prompt() could neither enforce nor
+    // explain these (critique B5). Returns an error message, or null when valid.
+    const bookmarkNameError = (raw: string, self?: string): string | null => {
+      const n = raw.trim();
+      if (n === "") return "Enter a name.";
+      if (n.length > 40) return "Use 40 characters or fewer.";
+      if (/\s/.test(n)) return "No spaces — use letters, digits, or underscores.";
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(n)) return "Start with a letter or _, then letters, digits, or _.";
+      if (n !== self && Object.prototype.hasOwnProperty.call(editor.getDocument().bookmarks ?? {}, n)) return `"${n}" already exists.`;
+      return null;
+    };
+
     const build = (): void => {
       const names = Object.keys(editor.getDocument().bookmarks ?? {}).sort((a, b) => a.localeCompare(b));
       list.textContent = "";
@@ -2873,11 +2905,17 @@ if (toolbar) {
           return b;
         };
         const renameB = iconBtn("✎", "Rename bookmark", () => {
-          const next = prompt("Rename bookmark:", name);
-          if (next && next.trim() && next !== name) {
-            editor.dispatch(renameBookmarkCmd(name, next.trim()));
-            editor.focus();
-          }
+          showInputDialog({
+            title: "Rename bookmark",
+            label: "Bookmark name",
+            initial: name,
+            okLabel: "Rename",
+            validate: (v) => bookmarkNameError(v, name),
+            onSubmit: (next) => {
+              if (next.trim() !== name) editor.dispatch(renameBookmarkCmd(name, next.trim()));
+              editor.focus();
+            },
+          });
         });
         const delB = iconBtn("🗑", "Delete bookmark", () => {
           editor.dispatch(removeBookmarkCmd(name));
@@ -2896,12 +2934,18 @@ if (toolbar) {
       if (v) build();
     };
     addBtn.addEventListener("click", () => {
-      const name = prompt("Bookmark name:");
-      if (name && name.trim()) {
-        editor.dispatch(addBookmarkCmd(name.trim()));
-        editor.focus();
-        build();
-      }
+      showInputDialog({
+        title: "Add bookmark",
+        label: "Bookmark name",
+        placeholder: "e.g. Introduction",
+        okLabel: "Add",
+        validate: (v) => bookmarkNameError(v),
+        onSubmit: (name) => {
+          editor.dispatch(addBookmarkCmd(name.trim()));
+          editor.focus();
+          build();
+        },
+      });
     });
     closeBtn.addEventListener("click", () => setOpen(false));
     toggleBookmarks = (): void => setOpen(!open);

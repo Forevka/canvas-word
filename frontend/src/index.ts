@@ -510,6 +510,11 @@ export interface EditorOptions {
   onChangeRecorded?: ChangeSink;
   /** Fires whenever the local selection/caret moves (for presence broadcast). */
   onSelectionChange?: (selection: DocSelection | null) => void;
+  /** Request the host's styled hyperlink editor for the current selection (the
+   *  same popover the ribbon/context-toolbar use). Lets the right-click menu open
+   *  it instead of a native prompt(). `currentUrl` is the existing link, or null
+   *  when inserting. The host applies the result to the selection itself. */
+  onEditLink?: (currentUrl: string | null) => void;
   /** View-only mode: the document renders and stays selectable/copyable, but
    *  every mutation (typing, paste, undo/redo, structural edits) is a no-op.
    *  Remote collaborator edits still apply — a read-only client tracks a live
@@ -3236,8 +3241,8 @@ export function createEditor(
         sep,
         item("Open Hyperlink", () => window.open(linkUrl, "_blank", "noopener"), { icon: ICONS.link }),
         item("Edit Hyperlink…", () => {
-          const u = prompt("Link URL:", linkUrl);
-          if (u !== null) dispatch(setLinkCmd(u.trim() === "" ? null : u.trim()));
+          if (options.onEditLink) options.onEditLink(linkUrl);
+          else dispatch(setLinkCmd(linkUrl)); // no host editor wired — leave as-is
         }),
         item("Remove Hyperlink", () => dispatch(setLinkCmd(null)), { danger: true }),
       );
@@ -3526,10 +3531,7 @@ export function createEditor(
         item("Bullets", () => dispatch(toggleList("bullet")), { icon: ICONS.bullets }),
         item("Numbering", () => dispatch(toggleList("decimal")), { icon: ICONS.numbering }),
         sep,
-        item("Insert Hyperlink…", () => {
-          const u = prompt("Link URL:");
-          if (u !== null && u.trim() !== "") dispatch(setLinkCmd(u.trim()));
-        }, { icon: ICONS.link }),
+        item("Insert Hyperlink…", () => options.onEditLink?.(null), { icon: ICONS.link }),
         {
           kind: "submenu",
           label: "Insert Content Control",

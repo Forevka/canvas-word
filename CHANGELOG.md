@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **No more native `prompt()` / `alert()` (2.8, B5).** The six browser modals that broke the editor illusion
+  are replaced with real in-app UI. Bookmark **add** and **rename** now use a styled dialog with live
+  validation of the OOXML name rules (start with a letter or `_`, then letters/digits/`_`, ≤ 40 chars,
+  unique) — a `prompt()` could neither enforce nor explain them. The drop-down content-control's list
+  items use the same dialog. Right-click **Insert / Edit Hyperlink** now opens the *same* styled link
+  popover the ribbon uses (via a new `onEditLink` editor hook), so there is one hyperlink UI instead of
+  two. Share-failure, document-open-failure, and "place the caret in a content control first" messages
+  now surface through the non-blocking notice toast instead of `alert()`. New reusable `ui/inputDialog`
+  (built on the surface-managed dialog shell).
 - **Ribbon cleanup — contextual tabs replace the permanent Table tab and the disabled-button graveyard
   (C3, C5, C7).** The always-present **Table** tab (ten buttons enabled even in a plain paragraph) and the
   15 permanently-disabled contextual buttons on **Insert** (13 shape, 2 image) are gone. In their place,
