@@ -203,6 +203,14 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
   const detachables: Element[] = [];
   // Container-width compact ribbon observer (assigned in the ribbon block below).
   let compactRO: ResizeObserver | null = null;
+  // Responsive layout state (row 12 / critique R1-R4). autoFit = keep the page
+  // fit-to-width until the user manually zooms; the outline auto-collapse below
+  // narrow widths is remembered so it reopens when there's room again.
+  let autoFit = false;
+  let applyingFit = false; // true only while WE call setZoom, so onZoomChange can tell manual zoom apart
+  let autoCollapsedOutline = false;
+  let setOutlineOpen: (v: boolean) => void = () => {};
+  let isOutlineOpen: () => boolean = () => false;
 
   // Dark-mode chrome (critique V2): reflect the OS colour scheme onto
   // :root[data-theme], which the dark stylesheet keys off. Marks its own writes
@@ -450,6 +458,7 @@ const editorOpts = {
     refreshDevPanel();
   },
   onZoomChange: (z: number) => {
+    if (!applyingFit) autoFit = false; // a manual zoom (controls / Ctrl+wheel) exits fit-width mode
     syncZoom(z);
     refreshStatus();
     refreshRuler();
@@ -2508,6 +2517,22 @@ if (toolbar) {
   reviewBtn.addEventListener("mousedown", (e) => e.preventDefault());
   reviewBtn.addEventListener("click", () => toggleReview());
   headerReview.append(modeSel, reviewBtn);
+  // Tab-strip overflow (critique R3): when the tabs don't fit, this button appears
+  // and opens a menu of them, so Table/View/Developer never silently vanish.
+  const tabOverflowBtn = el("button", "rib-tab-overflow");
+  tabOverflowBtn.textContent = "⋯";
+  tabOverflowBtn.title = "More tabs";
+  tabOverflowBtn.style.display = "none";
+  tabOverflowBtn.addEventListener("mousedown", (e) => e.preventDefault());
+  tabOverflowBtn.addEventListener("click", () => {
+    const items: { label: string; onClick: () => void }[] = [];
+    for (const [id, b] of tabButtons) {
+      if (b.style.display === "none") continue; // skip hidden contextual tabs
+      items.push({ label: b.textContent ?? id, onClick: () => showTab(id) });
+    }
+    openPop(tabOverflowBtn, menu(items));
+  });
+  tabsBar.appendChild(tabOverflowBtn);
   tabsBar.appendChild(headerReview);
 
   // ---- Document identity + live save state (pinned top-left of the ribbon) ---
@@ -2942,11 +2967,13 @@ if (toolbar) {
       outlineBtn.classList.toggle("active", v);
       if (v) build();
     };
-    closeBtn.addEventListener("click", () => setOpen(false));
-    outlineToggle = (): void => setOpen(!open);
+    closeBtn.addEventListener("click", () => { setOpen(false); autoCollapsedOutline = false; }); // manual close cancels auto-reopen
+    outlineToggle = (): void => { setOpen(!open); autoCollapsedOutline = false; };
     refreshOutline = (): void => {
       if (open) build();
     };
+    setOutlineOpen = setOpen; // for the responsive auto-collapse (row 12)
+    isOutlineOpen = (): boolean => open;
     setOpen(runtime.view?.outline ?? true); // visible by default; embedder can start it closed
   }
 
@@ -3440,6 +3467,22 @@ if (toolbar) {
     // (wired to editor onChange + the initial sync below).
   }
 
+  // Fit-to-width zoom: the largest zoom (≤100%) at which the page fits the scroll
+  // area's width. Only shrinks — a page that already fits stays at 100% (R2).
+  const fitWidthZoom = (): number => {
+    const pageW = editor.getDocument().section.pageWidthPx;
+    const avail = app.clientWidth - 40; // small gutter + scrollbar allowance
+    if (pageW <= 0 || avail <= 0) return editor.getZoom();
+    return Math.max(0.3, Math.min(1, avail / pageW));
+  };
+  const applyFitWidth = (): void => {
+    const z = fitWidthZoom();
+    if (Math.abs(z - editor.getZoom()) < 0.005) return;
+    applyingFit = true;
+    editor.setZoom(z);
+    applyingFit = false;
+  };
+
   // Container-width-driven compact ribbon: when the EDITOR itself is narrow (not
   // just the viewport — so it also works embedded in a narrow pane on a wide page),
   // switch the body to a dense, single horizontally-scrollable row. Mirrors the
@@ -3447,15 +3490,40 @@ if (toolbar) {
   if (typeof ResizeObserver !== "undefined") {
     const COMPACT_ON = 720;
     const COMPACT_OFF = 760;
-    const applyCompact = (w: number): void => {
+    // Below this the outline pane + a 100%-zoom page no longer fit side by side.
+    const COLLAPSE_ON = 1000;
+    const COLLAPSE_OFF = 1120;
+    const applyResponsive = (w: number): void => {
+      // Compact ribbon (existing hysteresis).
       const on = toolbar.classList.contains("compact");
       if (!on && w < COMPACT_ON) toolbar.classList.add("compact");
       else if (on && w >= COMPACT_OFF) toolbar.classList.remove("compact");
+      // Auto-collapse the outline when it and the page can't share the width
+      // (R1/R4). Remembered, so it reopens once there's room — unless the user
+      // toggled it manually in between (which clears the flag).
+      if (w < COLLAPSE_ON && isOutlineOpen() && !autoCollapsedOutline) {
+        autoCollapsedOutline = true;
+        setOutlineOpen(false);
+      } else if (w >= COLLAPSE_OFF && autoCollapsedOutline) {
+        autoCollapsedOutline = false;
+        setOutlineOpen(true);
+      }
+      // Keep the page fit-to-width while in auto-fit mode (R2).
+      if (autoFit) applyFitWidth();
+      // Tab-strip overflow indicator (R3).
+      tabOverflowBtn.style.display = tabScroll.scrollWidth > tabScroll.clientWidth + 2 ? "" : "none";
     };
     compactRO = new ResizeObserver((entries) => {
-      for (const e of entries) applyCompact(e.contentRect.width);
+      for (const e of entries) applyResponsive(e.contentRect.width);
     });
     compactRO.observe(shell.root);
+    // Initial fit-width: default the zoom to fit the page when the viewport can't
+    // hold it at 100% and the embedder didn't pin a zoom (R2).
+    if (runtime.view?.zoom == null && fitWidthZoom() < 1) {
+      autoFit = true;
+      applyFitWidth();
+    }
+    applyResponsive(shell.root.getBoundingClientRect().width);
   }
 
   showTab("home");

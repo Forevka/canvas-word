@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Fit-width zoom + responsive narrow layout (R1–R4).** The editor defaulted to 100% zoom regardless of
+  viewport and had no handling for the 760–1100px band. Now: the zoom defaults to **fit-width** whenever
+  the page can't fit at 100% (and stays fit-to-width as you resize until you zoom manually); the **outline
+  pane auto-collapses** below ~1000px so it and the page stop fighting for width (and reopens, with
+  hysteresis, once there's room — unless you toggled it yourself); and the **tab strip gains an overflow
+  "⋯" menu** when the tabs don't fit, so Table/View/Developer never silently vanish.
 - **Dark mode across the shell chrome (V2).** Emulating `prefers-color-scheme: dark` previously produced
   a pixel-identical page — the dark rules keyed off `:root[data-theme]`, which nothing ever set. The
   editor now reflects the OS colour scheme onto `:root[data-theme]` (live, and marked so a host that

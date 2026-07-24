@@ -59,6 +59,13 @@ const CSS = `
 .rib-tab.rib-tab-ctx.active { color: #8250df; }
 .rib-tab.rib-tab-ctx.active::after { background: #8250df; }
 
+/* tab-strip overflow "⋯" — appears when the tabs don't fit (critique R3) */
+.rib-tab-overflow {
+  flex: 0 0 auto; align-self: flex-end; border: none; background: transparent; cursor: pointer;
+  color: #605e5c; font-size: 16px; line-height: 1; padding: 3px 8px 7px; border-radius: 4px;
+}
+.rib-tab-overflow:hover { background: #eceae9; }
+
 /* review controls docked in the ribbon header (right of the tab strip) */
 .cw-header-review { margin-left: auto; display: flex; align-items: center; gap: 8px; padding-bottom: 3px; }
 .cw-mode-select {
@@ -613,6 +620,8 @@ const CSS = `
 :root[data-theme="dark"] .rib-bodies, :root[data-theme="dark"] .rib-panel { background: #1e1f22; }
 :root[data-theme="dark"] .rib-group { border-color: #34373c; }
 :root[data-theme="dark"] .rib-label { color: #9aa0a6; }
+:root[data-theme="dark"] .rib-tab-overflow { color: #c8c8c8; }
+:root[data-theme="dark"] .rib-tab-overflow:hover { background: #34373c; }
 :root[data-theme="dark"] .cw-toolbar button.rib-btn { color: #e0e0e0; }
 :root[data-theme="dark"] .cw-toolbar button.rib-btn:hover { background: #34373c; }
 :root[data-theme="dark"] .cw-toolbar button.rib-btn:active { background: #3c4046; }
