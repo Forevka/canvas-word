@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **UI polish sweep (V3, V4, V5, L6).**
+  - **Selection highlight** was too pale to locate (opacity 0.24) — raised to 0.36.
+  - **Locale decimal commas** no longer leak into numeric fields: Chromium localizes `type="number"`
+    display/parse by the OS locale, so a fractional font size or page width showed `10,5` / `8,5` and
+    rejected a typed `.` in comma-decimal locales. The ribbon font-size input and every dialog (via the
+    shared dialog shell) now carry `lang="en"`, forcing a dot decimal everywhere.
+  - **Style-gallery previews** flashed blank sample rows before their canvas painted — each card now shows
+    a plain-text `AaBbCc` fallback that the async canvas sample overlays.
+  - **Find bar:** the inputs were unlabelled and the whole-word toggle read as a literal `⌈W⌋`. Inputs get
+    accessible names, the match-case/whole-word buttons are real `aria-pressed` toggles (and `W` instead
+    of `⌈W⌋`), the match counter is an `aria-live` region reading "No matches" instead of `0/0`, and on
+    narrow screens the bar sits above the status bar instead of over it.
+
 ### Changed
 - **No more native `prompt()` / `alert()` (2.8, B5).** The six browser modals that broke the editor illusion
   are replaced with real in-app UI. Bookmark **add** and **rename** now use a styled dialog with live

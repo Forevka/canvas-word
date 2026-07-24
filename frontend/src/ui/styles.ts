@@ -187,7 +187,17 @@ const CSS = `
 }
 .style-card:hover { border-color: #2b579a; }
 .style-card.active { border-color: #2b579a; box-shadow: inset 0 0 0 1px #2b579a; background: #eef3fb; }
-.style-card .preview { font-size: 13px; line-height: 1; color: #323130; }
+/* position: relative + a fixed box so the canvas sample (rendered async by the
+   child document) can overlay a plain-text fallback — no flash of blank rows
+   before the canvas paints (critique V5). */
+.style-card .preview {
+  position: relative; width: 70px; height: 24px; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; line-height: 1; color: #323130;
+}
+/* the child-document canvas host sets an inline position:relative, so override
+   it (!important beats the inline style) to overlay the text fallback. */
+.style-card .preview > div { position: absolute !important; inset: 0; }
 .style-card .name { font-size: 10px; color: #605e5c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 72px; }
 
 /* work area: optional outline drawer + ruler + the scrolling page canvas.
@@ -536,7 +546,7 @@ const CSS = `
   /* Floating panels (Page Setup, Find) → bottom sheet; drawer fills the pane
      (still inside .cw-workarea, so still below the ribbon).
      !important overrides the inline position/size set in editorApp.ts. */
-  .cw-float-panel { left: 8px !important; right: 8px !important; top: auto !important; bottom: 8px !important; width: auto !important; max-width: none !important; max-height: 60vh; overflow: auto; }
+  .cw-float-panel { left: 8px !important; right: 8px !important; top: auto !important; bottom: 44px !important; width: auto !important; max-width: none !important; max-height: 60vh; overflow: auto; }
   .cw-float-drawer { width: 100%; }
 }
 

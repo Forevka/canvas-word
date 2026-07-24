@@ -59,6 +59,10 @@ export function createDialogShell(o: DialogShellOptions): DialogShell {
     return d;
   };
   const backdrop = div(`${o.prefix}-backdrop`);
+  // Force en number formatting for descendant <input type="number"> so fractional
+  // measurements (8.5", 10.5pt) render and parse with a DOT, not the OS-locale
+  // comma that Chromium would otherwise use (critique V4 — a parsing hazard).
+  backdrop.lang = "en";
   const modal = div(`${o.prefix}-modal`);
   // role="dialog" + a title reference for assistive tech. Deliberately NO
   // aria-modal: these are non-blocking floating panels (the page under them

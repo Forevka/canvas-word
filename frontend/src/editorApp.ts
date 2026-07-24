@@ -1671,6 +1671,7 @@ if (toolbar) {
   const ptToPx = (pt: number): number => sharedPtToPx(pt);
   const sizeInput = el("input");
   sizeInput.type = "number";
+  sizeInput.lang = "en"; // dot decimal for 10.5pt regardless of OS locale (V4)
   sizeInput.min = "1";
   sizeInput.max = "72";
   sizeInput.step = "0.5";
@@ -1924,6 +1925,7 @@ if (toolbar) {
     c.innerHTML = `<span class="preview"></span><span class="name"></span>`;
     (c.querySelector(".name") as HTMLElement).textContent = isChar ? `${name} ⓐ` : name; // ⓐ marks a character style
     const prev = c.querySelector(".preview") as HTMLElement;
+    prev.textContent = "AaBbCc"; // plain-text fallback shown until the canvas sample paints (V5)
     galleryChild?.render(prev, { kind: "styleSample", styleId: id, sampleText: "AaBbCc" }, { fit: true, widthPx: 70, maxHeightPx: 24 });
     c.addEventListener("mousedown", (e) => e.preventDefault());
     c.addEventListener("click", () => {
@@ -4123,6 +4125,7 @@ if (!readonly) {
   const mkInput = (placeholder: string, width: number): HTMLInputElement => {
     const i = document.createElement("input");
     i.placeholder = placeholder;
+    i.setAttribute("aria-label", placeholder); // the field had no accessible name (L6)
     i.style.cssText = `width:${width}px;height:24px;border:1px solid #dadce0;border-radius:4px;padding:0 6px;font-size:13px;`;
     bar.appendChild(i);
     return i;
@@ -4140,9 +4143,11 @@ if (!readonly) {
   const counter = document.createElement("span");
   counter.style.cssText = "color:#80868b;min-width:40px;text-align:center;";
   counter.textContent = "";
+  counter.setAttribute("aria-live", "polite"); // announce the match count to AT (L6)
+  counter.setAttribute("aria-label", "Match count");
   bar.appendChild(counter);
   const update = (s: { index: number; total: number }): void => {
-    counter.textContent = s.total > 0 ? `${s.index}/${s.total}` : findInput.value ? "0/0" : "";
+    counter.textContent = s.total > 0 ? `${s.index}/${s.total}` : findInput.value ? "No matches" : "";
   };
   // Match-case / whole-word toggles (editor.search already accepts these).
   let matchCase = false;
@@ -4154,9 +4159,11 @@ if (!readonly) {
     const b = document.createElement("button");
     b.textContent = label;
     b.title = title;
+    b.setAttribute("aria-label", title); // a real name, not just the "Aa"/"W" glyph (L6)
     b.style.cssText = "height:24px;min-width:26px;border:1px solid transparent;border-radius:4px;background:transparent;cursor:pointer;font-size:13px;font-weight:600;";
     const paint = (): void => {
       const on = get();
+      b.setAttribute("aria-pressed", String(on)); // it's a toggle — expose its state
       b.style.background = on ? "#cfe3fb" : "transparent";
       b.style.borderColor = on ? "#b3d3f5" : "transparent";
       b.style.color = on ? "#0b57d0" : "#3c4043";
@@ -4171,7 +4178,7 @@ if (!readonly) {
     bar.appendChild(b);
   };
   optBtn("Aa", "Match case", () => matchCase, (v) => (matchCase = v));
-  optBtn("⌈W⌋", "Match whole word only", () => wholeWord, (v) => (wholeWord = v));
+  optBtn("W", "Match whole word only", () => wholeWord, (v) => (wholeWord = v));
   mkBtn("‹", "Previous (Shift+Enter)", () => update(editor.searchNav(-1)));
   mkBtn("›", "Next (Enter)", () => update(editor.searchNav(1)));
   // Replace is an edit — only in editable mode. Find/navigate stay for the viewer.
