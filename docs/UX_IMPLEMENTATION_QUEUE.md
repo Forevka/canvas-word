@@ -1,8 +1,8 @@
 # UX implementation queue
 
 Working queue for the findings in [UX_CRITIQUE.md](./UX_CRITIQUE.md). One row =
-one branch = one PR. Work **strictly top to bottom**; do not start the next row
-until the current one is dispositioned.
+one commit on the shared `feat/ux-overhaul` branch. Work **strictly top to
+bottom**; each row is committed before the next begins.
 
 Follow [SDLC.md](./SDLC.md) for everything not stated here.
 
@@ -10,19 +10,24 @@ Follow [SDLC.md](./SDLC.md) for everything not stated here.
 
 ## Rules of engagement
 
-1. **One row at a time.** Branch off a fresh `main`. Never stack branches.
-2. **Implement, then verify, then STOP.** When the row's acceptance criteria are
-   met and the gates below are green, **do not open a PR.** Post a summary and
-   wait for the operator to review the working code. The operator opens the gate.
-3. **On approval**, open the PR per SDLC.md (detailed body, `Closes #NNN` if an
-   issue exists), let CodeRabbit review, address every actionable finding,
-   squash-merge when CI is green, `git checkout main && git pull --ff-only`,
-   then tick the row here and start the next one.
-4. **If a row turns out to be bigger than one PR**, split it and say so in the
-   summary rather than shipping a partial as if it were whole.
-5. **Report honestly.** If a gate could not be run, say which and why. See the
+1. **One long-lived branch.** All 24 rows land on a single local branch,
+   `feat/ux-overhaul`. Never branch per row, never switch off it. (Logical PR
+   branches are sliced out of specific commits later, together.)
+2. **One commit per row.** Work strictly top to bottom; each row is a single,
+   self-contained commit with a Conventional Commits message.
+3. **Every commit is green on its own.** `npm run typecheck`, `npm run test` and
+   `npm run build` must pass at that exact SHA — no commit may depend on a later
+   fix, because commits are sliced into logical branches after the fact.
+4. **Local only.** Do not push, open a PR, or merge. Everything stays on the
+   branch until the full set is reviewed together.
+5. **No stopping between rows.** After a row is committed, post a short summary of
+   what changed and what was verified, then immediately start the next row,
+   straight through to row 24.
+6. **Report honestly.** If a gate could not be run, say which and why. See the
    known harness constraints in SDLC.md — Playwright cannot drive pointer-capture
    drags, so verify those by op/command unit tests plus structural checks.
+7. **Never commit** the scratchpad (`scratchpad/`, git-ignored) or the
+   pre-existing `README.md` modification.
 
 ### Gates for every row
 
@@ -234,7 +239,7 @@ Depends on rows 10 and 23. Last for a reason — do not start it early.
 
 ## Progress
 
-Tick a row only after it is **merged**.
+Tick a row only after it is **committed** to `feat/ux-overhaul`.
 
 - [ ] 1 `fix/responsive-breakpoint`
 - [ ] 2 `feat/doc-identity-save-state`

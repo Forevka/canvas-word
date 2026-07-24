@@ -5,6 +5,7 @@ dist/
 # local agent state / scratch
 .omc/
 .agents/
+scratchpad/
 shots/
 .playwright-mcp/
 *.docx
