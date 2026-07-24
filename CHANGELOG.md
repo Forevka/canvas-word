@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Responsive breakpoint no longer forces the phone layout onto touchscreen laptops (R0/B1/B2).** The
+  responsive stylesheet keyed its whole mobile layer on `@media (pointer: coarse), (max-width: 760px)`,
+  and the coarse arm had no width bound — so any device whose primary pointer is coarse (touchscreen
+  ThinkPad/XPS/Surface/iPad-with-keyboard, at any resolution) got the phone layout: ribbon captions
+  hidden, the ribbon overflowing horizontally, the Outline overlaying the page, and — worst — opening
+  the Bookmarks/Activity drawer painted an opaque `position: fixed` panel over the **entire viewport**
+  that swallowed all pointer events until the tiny `×` was found. The layer is now split by concern:
+  layout collapse keys on viewport **width** only (`max-width: 760px`, plus the existing container-width
+  `.compact` ribbon path), while touch **hit-target** growth keys on `any-pointer: coarse` bounded to
+  small screens. So a wide touchscreen laptop now renders the full desktop layout.
+- **Right-docked drawers (Bookmarks, Activity) are scoped to the editor pane.** They were
+  `position: fixed` to the window, covering the ribbon's Editing-mode select and Review button and — in
+  an embed — the host page's own chrome. They are now `position: absolute` inside the work area, below
+  the ribbon and above the status bar.
+
 ## [0.12.0] — 2026-07-22
 
 ### Added

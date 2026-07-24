@@ -2459,10 +2459,8 @@ if (toolbar) {
   // ---- Activity panel (who created/edited, when) — online only ------------
   if (online) {
     const panel = el("div");
-    panel.className = "cw-float-drawer";
-    panel.style.cssText =
-      "position:fixed;top:0;right:0;width:300px;height:100%;z-index:45;background:#fff;border-left:1px solid #e1dfdd;" +
-      "box-shadow:-4px 0 16px rgba(0,0,0,0.08);display:none;flex-direction:column;font-size:13px;";
+    panel.className = "cw-float-drawer"; // positioning/scoping lives in the class
+    panel.style.display = "none";
     const ahead = el("div");
     ahead.style.cssText =
       "flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #e1dfdd;font-weight:600;color:#323130;";
@@ -2477,7 +2475,7 @@ if (toolbar) {
     const alist = el("div");
     alist.style.cssText = "flex:1 1 auto;overflow-y:auto;padding:2px 0;";
     panel.append(ahead, ameta, alist);
-    document.body.appendChild(panel);
+    shell.workarea.appendChild(panel);
 
     const nameOf = (f: string, l: string): string => `${f} ${l}`.trim() || "Unknown";
     const kindLabel = (origin: string): string =>
@@ -2681,10 +2679,8 @@ if (toolbar) {
 
   // ---- Bookmarks panel (list + Go To + add/rename/delete) -----------------
   {
-    const panel = el("div", "cw-float-drawer");
-    panel.style.cssText =
-      "position:fixed;top:0;right:0;width:300px;height:100%;z-index:45;background:#fff;border-left:1px solid #e1dfdd;" +
-      "box-shadow:-4px 0 16px rgba(0,0,0,0.08);display:none;flex-direction:column;font-size:13px;";
+    const panel = el("div", "cw-float-drawer"); // positioning/scoping lives in the class
+    panel.style.display = "none";
     const head = el("div", "outline-head");
     const title = el("span");
     title.textContent = "Bookmarks";
@@ -2699,7 +2695,7 @@ if (toolbar) {
     const list = el("div");
     list.style.cssText = "flex:1 1 auto;overflow-y:auto;padding:2px 0;";
     panel.append(head, list);
-    document.body.appendChild(panel);
+    shell.workarea.appendChild(panel);
 
     const build = (): void => {
       const names = Object.keys(editor.getDocument().bookmarks ?? {}).sort((a, b) => a.localeCompare(b));

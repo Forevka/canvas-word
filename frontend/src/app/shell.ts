@@ -6,6 +6,10 @@
 export interface EditorShell {
   root: HTMLDivElement;
   toolbar: HTMLDivElement;
+  /** The flex row between toolbar and status bar (outline · editor pane ·
+   *  review). `position: relative`, so right-docked drawers can be scoped to it
+   *  instead of the window. */
+  workarea: HTMLDivElement;
   outline: HTMLElement;
   ruler: HTMLDivElement;
   /** Vertical ruler down the left of the scroll area, mirroring `ruler`. */
@@ -52,5 +56,5 @@ export function buildShell(container: HTMLElement): EditorShell {
   root.append(toolbar, workarea, statusbar);
   container.appendChild(root);
 
-  return { root, toolbar, outline, ruler, vruler, app, review, statusbar };
+  return { root, toolbar, workarea, outline, ruler, vruler, app, review, statusbar };
 }

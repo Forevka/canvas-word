@@ -148,8 +148,11 @@ const CSS = `
 .style-card .preview { font-size: 13px; line-height: 1; color: #323130; }
 .style-card .name { font-size: 10px; color: #605e5c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 72px; }
 
-/* work area: optional outline drawer + ruler + the scrolling page canvas */
-.cw-workarea { flex: 1 1 auto; min-height: 0; display: flex; }
+/* work area: optional outline drawer + ruler + the scrolling page canvas.
+   position: relative anchors the right-docked drawers (.cw-float-drawer) to this
+   row, so they sit below the ribbon and above the status bar rather than over
+   the window / an embedding host page. */
+.cw-workarea { flex: 1 1 auto; min-height: 0; display: flex; position: relative; }
 .cw-editorpane { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 /* touch-action: keep one/two-finger PAN (scroll) but disable the browser's
    native pinch-zoom and double-tap-zoom on the document, so our own
@@ -246,6 +249,21 @@ const CSS = `
 .cw-review-body { flex: 1 1 auto; overflow-y: auto; padding: 10px 12px; }
 .cw-review-empty { padding: 28px 16px; text-align: center; color: #80868b; font-size: 12.5px; line-height: 1.5; }
 .cw-review-empty .cw-review-empty-ico { font-size: 26px; display: block; margin-bottom: 8px; opacity: .6; }
+
+/* ===== Right-docked drawers (Bookmarks / Activity) ================== */
+/* Absolutely positioned inside .cw-workarea (which is position: relative), so a
+   drawer overlays the editor pane but stays BELOW the ribbon and ABOVE the
+   status bar — and, in an embed, never paints over the host page. Visibility is
+   toggled via the inline display style (none / flex) in editorApp.ts. Was
+   previously a position:fixed window overlay that covered the ribbon and, on
+   coarse pointers, the whole viewport. */
+.cw-float-drawer {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  width: min(300px, 92%); z-index: 40;
+  background: #fff; border-left: 1px solid #e1dfdd;
+  box-shadow: -4px 0 16px rgba(0,0,0,0.08);
+  flex-direction: column; font-size: 13px;
+}
 
 /* buttons */
 .cw-btn {
@@ -444,40 +462,54 @@ const CSS = `
 /* The image / shape / table floating object bars now share the cw-ctxbar + cw-iconbar
    base class (see ui/contextToolbar.ts) — no bespoke .cw-img-toolbar block here. */
 
-/* ===== Mobile / touch responsive layer ============================== */
-/* Activates on touch devices (coarse primary pointer) OR narrow screens.
-   Desktop is untouched outside this block. Strategy: collapse the ribbon to one
-   horizontally-scrollable row, hide group captions, grow touch targets to ~40px,
-   turn the 264px outline into an overlay drawer, and clamp floating panels to
-   the viewport (a bottom sheet) so they never render off-screen. */
-@media (pointer: coarse), (max-width: 760px) {
+/* ===== Responsive: narrow-viewport layout + touch hit targets ======== */
+/* Two independent concerns, deliberately kept apart. They were once conflated
+   under a single @media (pointer: coarse), (max-width: 760px) query whose
+   unbounded coarse arm forced the phone layout onto every touchscreen laptop at
+   any resolution (opening a drawer then covered the whole viewport). The split:
+     • LAYOUT collapse keys on WIDTH only — a touchscreen laptop keeps the
+       desktop layout. (The ribbon body ALSO collapses via the container-width
+       .compact class driven by the ResizeObserver in editorApp, which covers
+       narrow embeds on a wide page.)
+     • HIT-TARGET growth keys on any-pointer: coarse — touch capability, not
+       screen size — but is bounded to small screens, so a wide mouse-driven
+       touchscreen laptop stays compact and the ribbon does not overflow. */
+
+/* Layout: genuinely narrow viewports only. */
+@media (max-width: 760px) {
   /* Ribbon body: single scrollable row instead of a tall multi-group block. */
   .rib-panel { min-height: 0; overflow-x: auto; overflow-y: hidden; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
   .rib-label { display: none; }
   .rib-group { padding: 4px 6px; }
-  /* Touch targets (Apple/Material guideline is ~40-48px). */
+
+  /* Outline / Review: overlay the page instead of stealing width on a phone. */
+  .cw-outline { position: absolute; left: 0; top: 0; bottom: 0; height: auto; width: min(264px, 80vw); z-index: 30; box-shadow: 2px 0 16px rgba(0,0,0,0.18); }
+  .cw-review { position: absolute; right: 0; top: 0; bottom: 0; height: auto; width: min(320px, 88vw); z-index: 31; box-shadow: -2px 0 16px rgba(0,0,0,0.18); }
+
+  /* Floating panels (Page Setup, Find) → bottom sheet; drawer fills the pane
+     (still inside .cw-workarea, so still below the ribbon).
+     !important overrides the inline position/size set in editorApp.ts. */
+  .cw-float-panel { left: 8px !important; right: 8px !important; top: auto !important; bottom: 8px !important; width: auto !important; max-width: none !important; max-height: 60vh; overflow: auto; }
+  .cw-float-drawer { width: 100%; }
+}
+
+/* Touch hit targets: coarse-pointer devices on small screens (phones / small
+   tablets). Bounded by width so a wide touchscreen laptop keeps mouse-sized
+   controls and the ribbon does not widen into an overflow. */
+@media (any-pointer: coarse) and (max-width: 760px) {
   .cw-toolbar button.rib-btn { min-width: 40px; height: 40px; }
   .cw-toolbar button.rib-btn svg { width: 18px; height: 18px; }
   .rib-tab { padding: 9px 14px; font-size: 14px; }
   .cw-toolbar select, .cw-toolbar input[type="number"] { height: 36px; font-size: 14px; }
-
-  /* Outline: overlay the page instead of stealing 264px of a ~360px screen. */
-  .cw-workarea { position: relative; }
-  .cw-outline { position: absolute; left: 0; top: 0; bottom: 0; height: auto; width: min(264px, 80vw); z-index: 30; box-shadow: 2px 0 16px rgba(0,0,0,0.18); }
-  .cw-review { position: absolute; right: 0; top: 0; bottom: 0; height: auto; width: min(320px, 88vw); z-index: 31; box-shadow: -2px 0 16px rgba(0,0,0,0.18); }
-
-  /* Status bar: tappable zoom controls. */
   .cw-statusbar { height: 36px; }
   .cw-statusbar button.sb-btn { width: 32px; height: 30px; font-size: 17px; }
   .cw-statusbar input[type="range"] { width: 96px; }
+}
 
-  /* Floating panels (Page Setup, Find) → bottom sheet; Activity → full-width.
-     !important overrides the inline position/size set in editorApp.ts. */
-  .cw-float-panel { left: 8px !important; right: 8px !important; top: auto !important; bottom: 8px !important; width: auto !important; max-width: none !important; max-height: 60vh; overflow: auto; }
-  .cw-float-drawer { width: 100% !important; }
-
-  /* Image resize handles: 8px dots are unhittable with a finger — an invisible
-     ::before pads the touch target to ~24px without changing the visual size. */
+/* Touch capability at any size: pad the tiny image/shape resize handles so they
+   are hittable with a finger. Width-independent and layout-neutral — an
+   invisible ::before grows the touch target without changing the visual size. */
+@media (any-pointer: coarse) {
   .cw-obj-handle::before { content: ""; position: absolute; inset: -8px; }
 }
 `;
