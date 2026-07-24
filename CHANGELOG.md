@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Command palette — `Ctrl+K` / `Cmd+K` (Move 1).** A VS-Code-style palette lists every enabled ribbon
+  command by name (plus any embedder commands), so all ~145 actions are reachable in one keystroke
+  without hunting through tabs — and it doubles as keyboard-first shortcut discovery. Type to filter,
+  arrow keys to move, Enter to run; each entry shows which tab it lives on. Registered with the surface
+  manager, so it shares the one Escape / z-order.
 - **Outline pane upgrade (O2–O6).** The navigation pane was a flat list of buttons that expressed depth
   only through indentation. It now has: collapse/expand chevrons on any heading with a sub-tree; a live
   filter box; real level styling (H1–H3+ differ in weight, size, and colour, not just indent); a page

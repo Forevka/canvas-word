@@ -24,6 +24,7 @@ import { createFloatingFormatBar } from "./ui/floatingFormatBar";
 import { createContextToolbarManager } from "./ui/contextToolbar";
 import { openSurface, type SurfaceHandle } from "./ui/surfaceManager";
 import { showInputDialog } from "./ui/inputDialog";
+import { showCommandPalette, type PaletteCommand } from "./ui/commandPalette";
 import { createImageContextToolbar } from "./ui/imageContextToolbar";
 import { createShapeContextToolbar } from "./ui/shapeContextToolbar";
 import { createLinkContextToolbar } from "./ui/linkContextToolbar";
@@ -3445,6 +3446,37 @@ if (toolbar) {
   showTab("home");
   // After showTab (which re-pins), honor the embedder's initial collapsed choice.
   if (runtime.view?.ribbonCollapsed) setCollapsed(true);
+
+  // ---- Command palette (Ctrl/Cmd+K) — every ribbon command reachable by name.
+  // Gathers the live ribbon controls (enabled buttons only) plus any embedder
+  // commands, so all ~145 actions are one keystroke away (critique Move 1).
+  const gatherPaletteCommands = (): PaletteCommand[] => {
+    const out: PaletteCommand[] = [];
+    const seen = new Set<string>();
+    for (const [id, item] of ribItemsById) {
+      const el = item.el;
+      if (!(el instanceof HTMLButtonElement) || el.disabled) continue;
+      const label = (el.title || el.textContent || "").trim();
+      if (!label) continue;
+      if (seen.has(label)) continue; // the same command often sits on two tabs
+      seen.add(label);
+      const tabId = ribGroupsById.get(item.groupId)?.tabId;
+      const hint = (tabId ? ribTabsById.get(tabId)?.btn.textContent : "") ?? "";
+      out.push({ id, label, hint, run: () => el.click() });
+    }
+    for (const [id, cmd] of commandRegistry) out.push({ id, label: cmd.label ?? id, hint: "Command", run: () => runRegisteredCommand(id) });
+    out.sort((a, b) => a.label.localeCompare(b.label));
+    return out;
+  };
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== "k") return;
+      e.preventDefault();
+      showCommandPalette(gatherPaletteCommands());
+    },
+    { signal: teardown.signal },
+  );
 
   // ---- toolbar controls mirror the caret formatting -----------------------
   let lastStylesheet = editor.getDocument().stylesheet ?? null;
