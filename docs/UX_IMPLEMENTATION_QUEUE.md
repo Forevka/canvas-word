@@ -261,6 +261,24 @@ migrations keep it.
 
 Depends on rows 10 and 23. Last for a reason — do not start it early.
 
+> **LANDED (`249f21a`).** `chrome: 'ribbon' | 'minimal'` shipped. `'minimal'` hides
+> the ribbon body + tab strip and shows a quiet ~44px header bar: identity + save
+> state and quick-access undo/redo (already there) plus a compact cluster — style
+> picker, the six core formatting commands, an insert `＋` menu (table / picture /
+> page break / TOC / footnote / more…) and a `⋯` overflow that opens the command
+> palette. Everything else reaches the user via the contextual bar, the Inspector
+> and the palette (all chrome-independent). The full ribbon is still built (all
+> command wiring, popovers, syncToolbar state stay live) — the preset is a pure
+> skin swap. Verified in the browser at `?chrome=minimal` (1300/500/390px + dark).
+>
+> **Default left at `'ribbon'` by deliberate decision.** Move 1 frames minimal as
+> the default, but this is a *published library* (`@forevka/wordcanvas`): silently
+> changing the default chrome on upgrade is a breaking behaviour change for every
+> embedder and belongs to a deliberate major-version bump, not a side effect of
+> this branch (which lands local-only and is reviewed together). The minimal preset
+> is fully implemented, recommended, and one option away; flipping the default is a
+> one-line change in `resolveConfig` the maintainer can make when they choose to.
+
 ---
 
 ## Progress
@@ -291,7 +309,8 @@ Tick a row only after it is **committed** to `feat/ux-overhaul`.
 - [x] 22 `feat/input-rules-slash-menu`
 - [x] 23 `feat/inspector-panel` — shell + Text/Paragraph (`2092ca0`), Page/Section (`bb59957`),
   Table (`646c763`), Object (`a0b9ae9`); dialogs retained as advanced fallback per the parity rule
-- [ ] 24 `feat/quiet-chrome-preset`
+- [x] 24 `feat/quiet-chrome-preset` (`249f21a`) — `chrome: 'ribbon' | 'minimal'` switchable skin;
+  minimal fully implemented, default left at `'ribbon'` by deliberate decision (see row 24 note)
 
 ### Out-of-band fixes (folded in during rows 23–24)
 
