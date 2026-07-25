@@ -215,6 +215,17 @@ codebase and are not surfaced in the build at all. Selection → `⌘K` → natu
 language. It operates on the document *model*, not a DOM, so it can restructure
 tables, rewrite fields and regenerate a TOC. Clearest leapfrog available.
 
+> **SKIPPED (blocked on merge).** Only the WebMCP agent *tools*
+> (`frontend/src/agent/webmcp.ts`, for external agents) are in `main`/this branch.
+> The in-editor agent panel this row surfaces (`agentChat` / `chatPanel.tsx` /
+> `agentClient.ts` + the backend `agent.routes.ts` LLM proxy) lives on the
+> **unmerged `feat/document-agent` branch** (~8.2k lines, backend-dependent).
+> Surfacing it here would mean pulling that subsystem onto the single overhaul
+> branch (breaking the one-branch discipline) and depending on a live LLM
+> backend + key that the gates can't verify. Do this row once
+> `feat/document-agent` lands on `main`; then it is genuinely a "surface what
+> exists" change. Deferred by explicit decision on 2026-07-25.
+
 ### 22. `feat/input-rules-slash-menu`
 Critique: **S4** — `##␣` → Heading 2, `-␣` → bullet, `1.␣` → numbered, `/` opens
 the block inserter. The `+ Insert` chip is already the menu; this is the keyboard
@@ -266,7 +277,7 @@ Tick a row only after it is **committed** to `feat/ux-overhaul`.
 - [x] 18 `feat/bookmark-crossref-links`
 - [x] 19 `feat/fidelity-panel`
 - [x] 20 `feat/styles-panel`
-- [ ] 21 `feat/ai-selection-agent`
+- [ ] 21 `feat/ai-selection-agent` — **skipped, blocked on `feat/document-agent` merge** (see row 21 note)
 - [ ] 22 `feat/input-rules-slash-menu`
 - [ ] 23 `feat/inspector-panel`
 - [ ] 24 `feat/quiet-chrome-preset`
