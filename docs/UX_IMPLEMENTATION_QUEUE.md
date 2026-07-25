@@ -203,6 +203,20 @@ plain-language list. Drive it from the existing coverage tracking
 (`OOXML_COVERAGE.md`, the reverse-builder's uncovered-field report). This is the
 one thing no browser competitor can show, because none of them keep the fidelity.
 
+> **Success half dropped by design (post-landing change).** The permanent
+> `✓ Word-faithful` badge was removed: a standing success indicator asserts the
+> default assumption still holds, which trains the eye to skip that region and makes
+> the warning state *less* noticeable — and it was unearned (`importWarnings`
+> initialised to `[]`, so a document that was never imported rendered a green check
+> for a check that never ran). Now `importWarnings` is `null` until an import
+> actually completes, and the badge renders **nothing** (no element, no header
+> width — which also helps the 390px overflow) for a never-imported doc *and* for a
+> clean import. Only `⚠ N notes` and its click-through panel are ever shown; the
+> panel's `✓ Word-faithful` clean-state branch was deleted as dead (unreachable once
+> the badge only exists in the warning state). No toast/replacement — silence is the
+> intended signal on a clean import. Verified: no badge on the sample and after a
+> clean export→import round-trip.
+
 ### 20. `feat/styles-panel`
 Critique: **S2** — styles as a first-class panel, not a 24-field property sheet.
 Hover to live-preview on the document, click to apply, right-click for *Select

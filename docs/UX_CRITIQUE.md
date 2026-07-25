@@ -457,7 +457,7 @@ element-by-element coverage (`OOXML_COVERAGE.md`) and you already have a
 reverse-builder that reports uncovered fields. Turn that into a user-facing
 trust signal:
 
-- **On import**, a passive badge: `✓ Word-faithful` — or
+- **On import**, a passive badge — but only in its *warning* half:
   `⚠ 3 features preserved but not editable`, expanding to a plain-language list
   (*"SmartArt diagram on page 4 — kept exactly as-is, can't be edited here"*).
 - **A round-trip guarantee statement** in that panel: what is preserved
@@ -467,6 +467,17 @@ trust signal:
 No competitor in the browser can show this, because none of them keep the
 fidelity. It converts your hardest engineering work into the reason someone
 picks you.
+
+> **Update (implementation): the `✓ Word-faithful` success half was deliberately
+> dropped.** A permanent success indicator is chrome asserting that the default
+> assumption still holds — it trains the eye to ignore that region, which makes the
+> *warning* state less noticeable, not more; and it was unearned (a never-imported
+> document showed a green check for a check that never ran). The badge now renders
+> **nothing** — no element, so it occupies no header width — for a never-imported
+> document and for a clean import; it appears **only** as `⚠ N notes` when an import
+> actually preserved-but-adapted something. Silence is the intended signal on a
+> clean import — no toast, no replacement confirmation. (The `⚠ N` state and its
+> click-through panel are unchanged.)
 
 ### Supporting moves
 

@@ -353,9 +353,14 @@ let refreshStatus: () => void = () => {};
 // when the ribbon is disabled (chromeless mount).
 let refreshSaveState: () => void = () => {};
 // Import fidelity (Move 3): the lossy/adapted-mapping warnings from the last .docx
-// open, surfaced as a passive chrome badge. Empty for the in-memory sample (no
-// import) → "Word-faithful". Set in openDocxFile; the badge reads it via refreshFidelity.
-let importWarnings: ImportResult["warnings"] = [];
+// open, surfaced as a passive chrome badge — but ONLY in its warning state. `null`
+// means no import has happened yet (the in-memory sample, a blank doc); an array
+// (possibly empty) means an import completed. The badge renders nothing for `null`
+// or an empty array (a clean import is silent by design — a permanent "faithful"
+// check would be unearned chrome and would train the eye to ignore this region);
+// it appears only when there are warnings to show. Set in openDocxFile; read via
+// refreshFidelity.
+let importWarnings: ImportResult["warnings"] | null = null;
 let refreshFidelity: () => void = () => {};
 let syncQat: () => void = () => {}; // enable/disable the quick-access undo/redo
 let resetSaveBaseline: () => void = () => {};
@@ -2677,15 +2682,19 @@ if (toolbar) {
   docIdent.append(titleEl, saveWrap);
   tabsBar.insertBefore(docIdent, tabScroll); // leftmost, before the scrolling tabs
 
-  // ---- Import fidelity badge (Move 3): the moat made visible. "✓ Word-faithful"
-  // when the last import dropped/adapted nothing (and for the in-memory sample,
-  // which round-trips to .docx faithfully); otherwise "⚠ N compatibility notes"
-  // that expands to a plain-language list of what was preserved-but-adapted.
+  // ---- Import fidelity badge (Move 3): the moat made visible — but only its
+  // WARNING half. "⚠ N notes" appears when a .docx import preserved-but-adapted
+  // something, expanding to a plain-language list. A clean import (or no import at
+  // all) shows NOTHING: the badge is not in the DOM, so it doesn't even occupy
+  // header width. The old permanent "✓ Word-faithful" success state was dropped by
+  // design — a standing success indicator asserts the default assumption still
+  // holds, which trains the eye to ignore this region and makes the warning state
+  // less noticeable, not more (and it was unearned for never-imported documents).
   const fidelityBtn = el("button", "cw-fidelity");
   fidelityBtn.type = "button";
   fidelityBtn.setAttribute("aria-haspopup", "true");
   fidelityBtn.setAttribute("aria-expanded", "false");
-  docIdent.append(fidelityBtn);
+  // NOT appended here — refreshFidelity attaches it only in the warning state.
   let fidelitySurface: SurfaceHandle | null = null;
   let fidelityPanelEl: HTMLElement | null = null;
   let fidelityOutside: ((e: MouseEvent) => void) | null = null;
@@ -2698,24 +2707,25 @@ if (toolbar) {
     fidelityBtn.setAttribute("aria-expanded", "false");
   };
   const openFidelityPanel = (): void => {
-    const n = importWarnings.length;
+    // The badge only exists in the warning state, so the panel is only ever opened
+    // with warnings present — the old "✓ Word-faithful" clean-state branch is gone.
+    const warnings = importWarnings ?? [];
+    const n = warnings.length;
+    if (n === 0) return;
     const panel = el("div", "cw-fidelity-panel");
     const head = el("div", "cw-fidelity-head");
-    head.textContent = n === 0 ? "✓ Word-faithful" : `⚠ ${n} feature${n === 1 ? "" : "s"} preserved but adapted`;
+    head.textContent = `⚠ ${n} feature${n === 1 ? "" : "s"} preserved but adapted`;
     const sub = el("div", "cw-fidelity-sub");
-    sub.textContent = n === 0
-      ? "Everything in this document is fully modeled and round-trips to Word (.docx) faithfully."
-      : "These were kept when the document opened, but adapted or simplified for editing here. Everything else round-trips faithfully.";
+    sub.textContent =
+      "These were kept when the document opened, but adapted or simplified for editing here. Everything else round-trips faithfully.";
     panel.append(head, sub);
-    if (n > 0) {
-      const ul = el("ul", "cw-fidelity-list");
-      for (const w of importWarnings) {
-        const li = el("li");
-        li.textContent = w.message;
-        ul.append(li);
-      }
-      panel.append(ul);
+    const ul = el("ul", "cw-fidelity-list");
+    for (const w of warnings) {
+      const li = el("li");
+      li.textContent = w.message;
+      ul.append(li);
     }
+    panel.append(ul);
     const r = fidelityBtn.getBoundingClientRect();
     panel.style.left = `${Math.round(Math.min(r.left, window.innerWidth - 340))}px`;
     panel.style.top = `${Math.round(r.bottom + 5)}px`;
@@ -2736,15 +2746,21 @@ if (toolbar) {
     else openFidelityPanel();
   });
   refreshFidelity = (): void => {
-    const n = importWarnings.length;
-    fidelityBtn.className = "cw-fidelity " + (n === 0 ? "faithful" : "notes");
-    fidelityBtn.textContent = n === 0 ? "✓ Word-faithful" : `⚠ ${n} note${n === 1 ? "" : "s"}`;
-    fidelityBtn.title = n === 0
-      ? "Word-faithful — nothing was dropped or adapted; the document round-trips to .docx faithfully."
-      : `${n} feature${n === 1 ? " was" : "s were"} preserved but adapted on import. Click for details.`;
+    const n = importWarnings ? importWarnings.length : 0;
+    // Clean import or no import at all → render nothing (detach the element so it
+    // occupies no header width). Only the warning state is ever visible.
+    if (n === 0) {
+      fidelityBtn.remove();
+      if (fidelityPanelEl) closeFidelityPanel();
+      return;
+    }
+    if (!fidelityBtn.isConnected) docIdent.append(fidelityBtn);
+    fidelityBtn.className = "cw-fidelity notes";
+    fidelityBtn.textContent = `⚠ ${n} note${n === 1 ? "" : "s"}`;
+    fidelityBtn.title = `${n} feature${n === 1 ? " was" : "s were"} preserved but adapted on import. Click for details.`;
     if (fidelityPanelEl) { closeFidelityPanel(); } // stale content — reopen on demand
   };
-  refreshFidelity(); // initial state (sample doc → "✓ Word-faithful")
+  refreshFidelity(); // initial state: no import yet → nothing rendered
 
   // Where does a save actually go? Host pipeline > online autosync > nowhere.
   const saveTarget: "host" | "online" | "none" = runtime.onSave ? "host" : online ? "online" : "none";

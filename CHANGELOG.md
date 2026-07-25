@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Import fidelity badge: the permanent `✓ Word-faithful` success state was dropped (Move 3).** A standing
+  success indicator asserts the default assumption still holds, which trains the eye to ignore that region
+  and makes the *warning* state less noticeable — and it was unearned (a never-imported document showed a
+  green check for a check that never ran). The badge now renders **nothing** (no element, so it occupies no
+  header width) for a never-imported document and for a clean import; it appears **only** as `⚠ N notes`
+  (with its unchanged click-through panel) when an import actually preserved-but-adapted something. Silence
+  is the intended signal on a clean import — there is no toast or replacement confirmation. Internally,
+  `importWarnings` is now `null` until an import completes, distinguishing "no import yet" from "clean
+  import".
 - **Navigator: one panel with a 48px icon rail replaces four navigation surfaces (S1).** The Outline
   (in-flow pane), Bookmarks (window-fixed drawer), page organizer (modal) and object lists were four
   different UIs in three paradigms. They are now one left-docked Navigator with a rail of four tabs:
