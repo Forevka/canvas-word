@@ -27,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   viewports) and is dark-mode themed. Table, Page/Section and Object sections — and the retirement of the
   matching dialogs — follow in subsequent changes; until each Inspector section reaches parity, the existing
   dialog stays as the advanced fallback.
+- **Inspector — Page/Section section.** When the caret is in body text the Inspector now also shows a **Page**
+  section: paper size (Letter/A4/Legal/Custom), orientation, one-tap margin presets (Normal/Narrow/Wide),
+  numeric page margins in inches, and column count (1–3) — all applied live to the caret's section as one
+  undoable edit. The Page Layout dialog remains the advanced fallback for page borders, page colour,
+  header/footer distance and line numbering.
 - **Markdown input rules + `/` block inserter (S4).** Fast writers can shape a document from the keyboard:
   typing `# ` / `## ` / `### ` (up to `######`) at the start of a paragraph converts it to Heading 1–6,
   `- ` or `* ` starts a bulleted list, and `1. ` / `1) ` starts a numbered list — the prefix is consumed

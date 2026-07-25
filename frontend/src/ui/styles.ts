@@ -397,7 +397,9 @@ const CSS = `
 .cw-insp-row:last-child { margin-bottom: 0; }
 .cw-insp-label { flex: 0 0 74px; font-size: 12px; color: #5f6368; }
 .cw-insp-row > select, .cw-insp-row > input[type="number"], .cw-insp-row > input[type="text"] { flex: 1 1 auto; min-width: 0; height: 28px; border: 1px solid #d0d4d9; border-radius: 6px; padding: 0 8px; font: inherit; font-size: 12.5px; }
-.cw-insp-btns { display: inline-flex; gap: 2px; flex: 1 1 auto; }
+.cw-insp-btns { display: inline-flex; gap: 2px; flex: 1 1 auto; flex-wrap: wrap; }
+.cw-insp-pair { display: flex; gap: 6px; flex: 1 1 auto; min-width: 0; }
+.cw-insp-pair > input { flex: 1 1 0; min-width: 0; height: 28px; border: 1px solid #d0d4d9; border-radius: 6px; padding: 0 8px; font: inherit; font-size: 12.5px; }
 .cw-insp-tgl { min-width: 30px; height: 28px; border: 1px solid #d0d4d9; background: #fff; cursor: pointer; font: inherit; font-size: 12.5px; border-radius: 6px; color: #3c4043; padding: 0 6px; }
 .cw-insp-tgl.on { background: #eef3fb; border-color: #2b579a; color: #2b579a; }
 .cw-insp-tgl:hover:not(.on) { background: #f3f2f1; }
@@ -406,7 +408,7 @@ const CSS = `
 :root[data-theme="dark"] .cw-inspector { background: #202124; border-color: #34373c; color: #e6e6e6; }
 :root[data-theme="dark"] .cw-insp-head { background: #26282c; border-color: #34373c; }
 :root[data-theme="dark"] .cw-insp-section { border-color: #34373c; }
-:root[data-theme="dark"] .cw-insp-row > select, :root[data-theme="dark"] .cw-insp-row > input { background: #2a2c30; color: #e6e6e6; border-color: #4a4a4a; }
+:root[data-theme="dark"] .cw-insp-row > select, :root[data-theme="dark"] .cw-insp-row > input, :root[data-theme="dark"] .cw-insp-pair > input { background: #2a2c30; color: #e6e6e6; border-color: #4a4a4a; }
 :root[data-theme="dark"] .cw-insp-tgl { background: #2a2c30; color: #e0e0e0; border-color: #4a4a4a; }
 :root[data-theme="dark"] .cw-insp-tgl.on { background: #2c3340; color: #7cb0ff; border-color: #7cb0ff; }
 :root[data-theme="dark"] .cw-insp-label, :root[data-theme="dark"] .cw-insp-title { color: #c8ccd0; }

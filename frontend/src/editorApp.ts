@@ -3765,9 +3765,9 @@ if (toolbar) {
   }
 
   // ---- Inspector (Move 2): right-docked, selection-aware property sheet ------
-  // Font + Paragraph sections for now; every control applies LIVE as one undoable
-  // edit (no Apply button). Table / Page / Object sections land in later commits;
-  // until each reaches parity the matching dialog stays as the advanced fallback.
+  // Text + Paragraph + Page sections; every control applies LIVE as one undoable
+  // edit (no Apply button). Table / Object sections land in later commits; until
+  // each reaches parity the matching dialog stays as the advanced fallback.
   {
     const inspectorEl = shell.inspector;
     const head = el("div", "cw-insp-head");
@@ -3812,6 +3812,20 @@ if (toolbar) {
       i.value = String(value);
       i.addEventListener("change", () => { const n = Number(i.value); if (Number.isFinite(n)) onCommit(n); editor.focus(); });
       return i;
+    };
+    // A decimal-stepped numeric input (page margins in inches etc.).
+    const insDecimal = (value: number, min: number, max: number, step: number, onCommit: (n: number) => void): HTMLInputElement => {
+      const i = document.createElement("input");
+      i.type = "number"; i.min = String(min); i.max = String(max); i.step = String(step);
+      i.value = String(value);
+      i.addEventListener("change", () => { const n = Number(i.value); if (Number.isFinite(n)) onCommit(n); editor.focus(); });
+      return i;
+    };
+    // Two controls side-by-side in one row cell (e.g. Top/Bottom margins).
+    const insPair = (a: HTMLElement, b: HTMLElement): HTMLElement => {
+      const w = el("div", "cw-insp-pair");
+      w.append(a, b);
+      return w;
     };
     const insToggles = (defs: { label: string; title: string; on: boolean; onClick: () => void }[]): HTMLElement => {
       const wrap = el("div", "cw-insp-btns");
@@ -3867,6 +3881,67 @@ if (toolbar) {
       insRow(sec, "After (pt)", insNumber(toPt(ps?.spaceAfterPx ?? 0), 0, 200, (pt) => editor.dispatch(setParaProps({ spaceAfterPx: fromPt(Math.max(0, pt)) }))));
     };
 
+    // ---- Page / Section (live page-setup levers) ----------------------------
+    // The common levers, applied live (no Apply); size/orientation/margins/columns.
+    // The Page Layout dialog stays the advanced fallback (borders, page colour,
+    // header/footer distance, line numbering) per the parity rule.
+    const PL_SIZES: Record<string, { w: number; h: number }> = {
+      Letter: { w: 816, h: 1056 },
+      A4: { w: 794, h: 1123 },
+      Legal: { w: 816, h: 1344 },
+    };
+    const PL_MARGINS: Record<string, number> = { Normal: 96, Narrow: 48, Wide: 144 };
+    const applyPage = (mut: (g: ReturnType<typeof pageSetupAt>) => void): void => {
+      const base = pageSetupAt({ doc: editor.getDocument(), selection: editor.getSelection() });
+      mut(base);
+      editor.dispatch(applyPageSetup(base));
+    };
+    const buildPageSection = (): void => {
+      const geo = pageSetupAt({ doc: editor.getDocument(), selection: editor.getSelection() });
+      const sec = insSection("Page");
+      const landscape = geo.pageWidthPx > geo.pageHeightPx;
+      const sizeName =
+        Object.keys(PL_SIZES).find((k) => {
+          const s = PL_SIZES[k]!;
+          return (s.w === geo.pageWidthPx && s.h === geo.pageHeightPx) || (s.h === geo.pageWidthPx && s.w === geo.pageHeightPx);
+        }) ?? "Custom";
+      insRow(sec, "Size", insSelect(
+        [...Object.keys(PL_SIZES).map((k) => ({ value: k, label: k })), { value: "Custom", label: "Custom" }],
+        sizeName,
+        (v) => {
+          const s = PL_SIZES[v];
+          if (!s) return;
+          applyPage((g) => { g.pageWidthPx = landscape ? s.h : s.w; g.pageHeightPx = landscape ? s.w : s.h; });
+        },
+      ));
+      insRow(sec, "Orient", insToggles([
+        { label: "Portrait", title: "Portrait", on: !landscape, onClick: () => { if (landscape) applyPage((g) => { [g.pageWidthPx, g.pageHeightPx] = [g.pageHeightPx, g.pageWidthPx]; }); } },
+        { label: "Landscape", title: "Landscape", on: landscape, onClick: () => { if (!landscape) applyPage((g) => { [g.pageWidthPx, g.pageHeightPx] = [g.pageHeightPx, g.pageWidthPx]; }); } },
+      ]));
+      insRow(sec, "Margins", insToggles(Object.keys(PL_MARGINS).map((k) => ({
+        label: k, title: `${k} margins`, on: false,
+        onClick: () => { const m = PL_MARGINS[k]!; applyPage((g) => { g.marginPx = { top: m, right: m, bottom: m, left: m }; }); },
+      }))));
+      const inch = (px: number): number => Math.round((px / PX_PER_INCH) * 100) / 100;
+      insRow(sec, "Top / Btm", insPair(
+        insDecimal(inch(geo.marginPx.top), 0, 6, 0.1, (v) => applyPage((g) => { g.marginPx = { ...g.marginPx, top: Math.round(v * PX_PER_INCH) }; })),
+        insDecimal(inch(geo.marginPx.bottom), 0, 6, 0.1, (v) => applyPage((g) => { g.marginPx = { ...g.marginPx, bottom: Math.round(v * PX_PER_INCH) }; })),
+      ));
+      insRow(sec, "Left / Rt", insPair(
+        insDecimal(inch(geo.marginPx.left), 0, 6, 0.1, (v) => applyPage((g) => { g.marginPx = { ...g.marginPx, left: Math.round(v * PX_PER_INCH) }; })),
+        insDecimal(inch(geo.marginPx.right), 0, 6, 0.1, (v) => applyPage((g) => { g.marginPx = { ...g.marginPx, right: Math.round(v * PX_PER_INCH) }; })),
+      ));
+      const colCount = geo.columns?.count ?? 1;
+      insRow(sec, "Columns", insSelect(
+        [1, 2, 3].map((n) => ({ value: String(n), label: String(n) })),
+        String(Math.min(3, colCount)),
+        (v) => {
+          const n = Number(v);
+          applyPage((g) => { g.columns = n <= 1 ? null : { count: n, gapPx: g.columns?.gapPx ?? 36, sep: g.columns?.sep ?? false }; });
+        },
+      ));
+    };
+
     const insEmpty = (text: string): void => {
       const e = el("div", "cw-insp-empty");
       e.textContent = text;
@@ -3885,6 +3960,7 @@ if (toolbar) {
       title.textContent = "Inspector";
       buildTextSection(f);
       buildParagraphSection(f);
+      buildPageSection();
     };
     refreshInspector = (): void => {
       if (!inspOpen) return;
