@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   numeric page margins in inches, and column count (1–3) — all applied live to the caret's section as one
   undoable edit. The Page Layout dialog remains the advanced fallback for page borders, page colour,
   header/footer distance and line numbering.
+- **Inspector — Table section.** When the caret sits in a table the Inspector adds a **Table** section:
+  cell vertical alignment, cell text direction (horizontal / rotate 90° / 270°), row height (auto / at
+  least / exactly), the two row flags (keep together, repeat as header), table preferred width (full /
+  percent / inches), table alignment and table indent — each applied live to the caret's cell or its table
+  as one undoable edit. The Borders & Shading dialog remains the advanced fallback for cell/table borders
+  and shading.
 - **Markdown input rules + `/` block inserter (S4).** Fast writers can shape a document from the keyboard:
   typing `# ` / `## ` / `### ` (up to `######`) at the start of a paragraph converts it to Heading 1–6,
   `- ` or `* ` starts a bulleted list, and `1. ` / `1) ` starts a numbered list — the prefix is consumed

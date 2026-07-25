@@ -84,6 +84,11 @@ import {
   setTableWidthModeAtSelectionCmd,
   setTablePreferredWidthAtSelectionCmd,
   setTableAlignAtSelectionCmd,
+  setCellVAlignCmd,
+  setCellTextDirectionCmd,
+  setRowHeightAtSelectionCmd,
+  setRowPropsCmd,
+  setTablePropsAtSelectionCmd,
   tableAtSelection,
   setImageProps,
   applyNamedStyle,
@@ -127,6 +132,8 @@ import {
 } from "./editor/commands";
 import { defaultStylesheet, styleById, styleType } from "@cw/shared";
 import { bulletListDefinition, numberListDefinition, paragraphsOf, textOfRuns } from "@cw/shared";
+import { containerListOf, locateParagraph } from "@cw/shared";
+import type { RowProps, TableBlock, TableCell } from "@cw/shared";
 import { ICONS } from "./ui/icons";
 import { readRecent, pushRecent } from "./ui/recentList";
 
@@ -3765,9 +3772,9 @@ if (toolbar) {
   }
 
   // ---- Inspector (Move 2): right-docked, selection-aware property sheet ------
-  // Text + Paragraph + Page sections; every control applies LIVE as one undoable
-  // edit (no Apply button). Table / Object sections land in later commits; until
-  // each reaches parity the matching dialog stays as the advanced fallback.
+  // Text + Paragraph + Table + Page sections; every control applies LIVE as one
+  // undoable edit (no Apply button). The Object section lands in a later commit;
+  // until each reaches parity the matching dialog stays as the advanced fallback.
   {
     const inspectorEl = shell.inspector;
     const head = el("div", "cw-insp-head");
@@ -3942,6 +3949,84 @@ if (toolbar) {
       ));
     };
 
+    // ---- Table (live cell / row / table levers) -----------------------------
+    // Shown when the caret is in a table cell: cell vertical alignment + text
+    // direction, row height + flags, and table width / alignment / indent — each
+    // applied live to the caret's cell or its table. Borders & Shading stays in the
+    // dialog (advanced fallback) per the parity rule.
+    const buildTableSection = (): void => {
+      const doc = editor.getDocument();
+      const sel = editor.getSelection();
+      const loc = sel ? locateParagraph(doc, sel.focus.blockId) : null;
+      if (!loc || loc.kind !== "cell") return;
+      const table = containerListOf(doc, loc.where)[loc.bi] as TableBlock | undefined;
+      if (!table || table.kind !== "table") return;
+      const row: { cells: TableCell[]; props?: RowProps } | undefined = table.rows[loc.ri];
+      const cell: TableCell | undefined = row?.cells[loc.ci];
+      const sec = insSection("Table");
+
+      // Cell vertical alignment (top = clear, since it's the default).
+      const vAlign = cell?.vAlign ?? "top";
+      insRow(sec, "Cell", insToggles((["top", "center", "bottom"] as const).map((a) => ({
+        label: a.charAt(0).toUpperCase() + a.slice(1), title: `Vertical align ${a}`, on: vAlign === a,
+        onClick: () => editor.dispatch(setCellVAlignCmd(a === "top" ? null : a)),
+      }))));
+
+      // Cell text direction (horizontal = clear).
+      const dirRaw = cell?.textDirection;
+      const dir = dirRaw === "tbRl" || dirRaw === "btLr" ? dirRaw : "lrTb";
+      insRow(sec, "Direction", insSelect(
+        [{ value: "lrTb", label: "Horizontal" }, { value: "tbRl", label: "Rotate 90°" }, { value: "btLr", label: "Rotate 270°" }],
+        dir,
+        (v) => editor.dispatch(setCellTextDirectionCmd(v === "lrTb" ? null : (v as "tbRl" | "btLr"))),
+      ));
+
+      // Row height rule + value.
+      const h = row?.props?.height ?? null;
+      insRow(sec, "Row height", insSelect(
+        [{ value: "none", label: "Auto" }, { value: "atLeast", label: "At least" }, { value: "exact", label: "Exactly" }],
+        h ? h.rule : "none",
+        (v) => {
+          if (v === "none") editor.dispatch(setRowHeightAtSelectionCmd(null));
+          else editor.dispatch(setRowHeightAtSelectionCmd({ value: h && h.value > 0 ? h.value : 40, rule: v as "atLeast" | "exact" }));
+        },
+      ));
+      if (h) insRow(sec, "Height (px)", insNumber(Math.round(h.value), 1, 2000, (n) => {
+        if (n > 0) editor.dispatch(setRowHeightAtSelectionCmd({ value: n, rule: h.rule }));
+      }));
+
+      // Row flags.
+      insRow(sec, "Row", insToggles([
+        { label: "Keep", title: "Keep row together (don't split across pages)", on: !!row?.props?.cantSplit, onClick: () => editor.dispatch(setRowPropsCmd({ cantSplit: !row?.props?.cantSplit })) },
+        { label: "Header", title: "Repeat as header row on every page", on: !!row?.props?.repeatHeader, onClick: () => editor.dispatch(setRowPropsCmd({ repeatHeader: !row?.props?.repeatHeader })) },
+      ]));
+
+      // Table preferred width.
+      const pw = table.preferredWidth ?? null;
+      const wUnit = pw ? (pw.type === "pct" ? "pct" : "in") : "full";
+      insRow(sec, "Width", insSelect(
+        [{ value: "full", label: "Full width" }, { value: "pct", label: "% of page" }, { value: "in", label: "Inches" }],
+        wUnit,
+        (v) => {
+          if (v === "full") editor.dispatch(setTablePreferredWidthAtSelectionCmd(null));
+          else if (v === "pct") editor.dispatch(setTablePreferredWidthAtSelectionCmd({ type: "pct", value: pw?.type === "pct" ? pw.value : 50 }));
+          else editor.dispatch(setTablePreferredWidthAtSelectionCmd({ type: "px", value: pw?.type === "px" ? pw.value : PX_PER_INCH * 4 }));
+        },
+      ));
+      if (pw?.type === "pct") insRow(sec, "Width %", insNumber(Math.round(pw.value), 5, 100, (n) => editor.dispatch(setTablePreferredWidthAtSelectionCmd({ type: "pct", value: Math.min(100, Math.max(5, n)) }))));
+      else if (pw?.type === "px") insRow(sec, "Width (in)", insDecimal(Math.round((pw.value / PX_PER_INCH) * 100) / 100, 0.5, 20, 0.1, (n) => editor.dispatch(setTablePreferredWidthAtSelectionCmd({ type: "px", value: Math.round(n * PX_PER_INCH) }))));
+
+      // Table alignment.
+      const tAlign = table.align ?? "left";
+      insRow(sec, "Align", insToggles((["left", "center", "right"] as const).map((a) => ({
+        label: a.charAt(0).toUpperCase(), title: `Table ${a}`, on: tAlign === a,
+        onClick: () => editor.dispatch(setTableAlignAtSelectionCmd(a)),
+      }))));
+
+      // Table indent from the leading edge.
+      insRow(sec, "Indent (px)", insNumber(Math.round(table.indentPx ?? 0), 0, 400, (n) => editor.dispatch(setTablePropsAtSelectionCmd({ indentPx: n > 0 ? n : null }))));
+    };
+
     const insEmpty = (text: string): void => {
       const e = el("div", "cw-insp-empty");
       e.textContent = text;
@@ -3960,6 +4045,7 @@ if (toolbar) {
       title.textContent = "Inspector";
       buildTextSection(f);
       buildParagraphSection(f);
+      if (f.inTable) buildTableSection();
       buildPageSection();
     };
     refreshInspector = (): void => {
