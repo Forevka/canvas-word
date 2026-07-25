@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Navigator` with shortcuts that open the Navigator on the Headings or Marks tab.
 
 ### Added
+- **Markdown input rules + `/` block inserter (S4).** Fast writers can shape a document from the keyboard:
+  typing `# ` / `## ` / `### ` (up to `######`) at the start of a paragraph converts it to Heading 1–6,
+  `- ` or `* ` starts a bulleted list, and `1. ` / `1) ` starts a numbered list — the prefix is consumed
+  and the block transforms. Heading rules fire only when that heading style exists, so text is never
+  stripped without a conversion. Pressing **`/` on an empty paragraph** opens the same `＋ Insert` block
+  menu (headings, lists, table, page break, TOC, footnote, shapes) — the keyboard door into the inserter —
+  while a `/` typed mid-text or in a form field is left alone.
 - **Styles as a first-class panel (S2).** A new **Styles** tab in the Navigator rail lists every paragraph
   and character style as a live card (a real swatch rendered in the document's fonts, plus a usage count).
   **Hover a style to preview it on the document** — the caret's paragraph(s) restyle live and revert exactly

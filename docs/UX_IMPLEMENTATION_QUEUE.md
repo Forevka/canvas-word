@@ -278,6 +278,6 @@ Tick a row only after it is **committed** to `feat/ux-overhaul`.
 - [x] 19 `feat/fidelity-panel`
 - [x] 20 `feat/styles-panel`
 - [ ] 21 `feat/ai-selection-agent` — **skipped, blocked on `feat/document-agent` merge** (see row 21 note)
-- [ ] 22 `feat/input-rules-slash-menu`
+- [x] 22 `feat/input-rules-slash-menu`
 - [ ] 23 `feat/inspector-panel`
 - [ ] 24 `feat/quiet-chrome-preset`

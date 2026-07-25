@@ -4720,12 +4720,9 @@ if (!readonly) {
   );
 
   // Empty-paragraph insert menu (priority 16) — Notion-style ＋ on an empty line.
-  manager.register(
-    createInsertMenuToolbar({
-      onEmptyParagraph: () => editor.caretInEmptyParagraph(),
-      anchorRect: () => editor.getSelectionAnchorRect(),
-      openMenu: (anchorEl) => {
-        const r = anchorEl.getBoundingClientRect();
+  // Reusable so both the ＋ chip and the "/" keyboard shortcut (S4) open it.
+  const openInsertMenuAt = (clientX: number, clientY: number): void => {
+    {
         const insert = (cmd: Command): (() => void) => () => dispatchFocus(cmd);
         const entries: MenuEntry[] = [
           { kind: "item", label: "Heading 1", onClick: insert(applyNamedStyle("Heading1")) },
@@ -4760,10 +4757,32 @@ if (!readonly) {
             ],
           },
         ];
-        showContextMenu(r.left, r.bottom + 2, entries);
+        showContextMenu(clientX, clientY, entries);
+    }
+  };
+  manager.register(
+    createInsertMenuToolbar({
+      onEmptyParagraph: () => editor.caretInEmptyParagraph(),
+      anchorRect: () => editor.getSelectionAnchorRect(),
+      openMenu: (anchorEl) => {
+        const r = anchorEl.getBoundingClientRect();
+        openInsertMenuAt(r.left, r.bottom + 2);
       },
     }),
   );
+
+  // "/" at the start of an empty paragraph opens the block inserter — the keyboard
+  // door into the ＋ Insert menu (S4). Skipped while a form control (filter box,
+  // dialog input) has focus so it never hijacks a literal slash typed there.
+  app.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT")) return;
+    if (!editor.caretInEmptyParagraph()) return;
+    e.preventDefault();
+    const r = editor.getSelectionAnchorRect();
+    if (r) openInsertMenuAt(r.left, r.top + r.height + 4);
+  });
 
   for (const spec of config.contextToolbars) {
     manager.register(createCustomContextToolbar(spec, { context: buildContext, runButton: runCustomButton }));

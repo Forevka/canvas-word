@@ -3,7 +3,7 @@
 // -> incremental layout -> paint + caret + proxy reposition (same frame).
 
 import type { Block, CharStyle, Document, EmphasisMark, ImageBlock, ParaStyle, ShapeBlock, ShapePreset, TableBlock, UnderlineStyle } from "@cw/shared";
-import { BAND_CONTAINERS, parseTocInstruction } from "@cw/shared";
+import { BAND_CONTAINERS, defaultStylesheet, parseTocInstruction, styleById } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, UserInfo } from "@cw/shared";
 import { isCollapsed, colorForId, userDisplayName, freshId, DEFAULT_CHAR_STYLE } from "@cw/shared";
 import type { ResolvedBehavior, ResolvedTheme } from "./config";
@@ -142,6 +142,7 @@ import {
   setTableColFractionsCmd,
   setTableWidthModeCmd,
   splitParagraph,
+  applyNamedStyle,
   toggleCharStyle,
   toggleList,
   toggleSdtCheckbox,
@@ -2311,6 +2312,34 @@ export function createEditor(
         if (/\(c$/i.test(prev)) return dispatch(replaceBackAndInsert(2, "©"));
         if (/\(r$/i.test(prev)) return dispatch(replaceBackAndInsert(2, "®"));
         if (/\(tm$/i.test(prev)) return dispatch(replaceBackAndInsert(3, "™"));
+      }
+    }
+    // Markdown-style input rules on a space at the paragraph start (S4): a prefix
+    // that IS the whole text before the caret converts the block — "#"/"##"/"###…"
+    // → Heading 1..6, "-"/"*" → bullet list, "1."/"1)" → numbered list. The prefix
+    // is deleted and the space is swallowed. Heading rules only fire when that
+    // heading style exists, so nothing is stripped without a conversion.
+    if (data === " " && !sdt && selection && isCollapsed(selection)) {
+      const block = blockById(doc, selection.focus.blockId);
+      if (block && block.kind === "paragraph") {
+        const prev = textOfRuns(block.runs).slice(0, selection.focus.offset);
+        const sheet = doc.stylesheet ?? defaultStylesheet();
+        const h = /^(#{1,6})$/.exec(prev);
+        if (h && styleById(sheet, `Heading${h[1]!.length}`)) {
+          dispatch(replaceBackAndInsert(prev.length, ""));
+          dispatch(applyNamedStyle(`Heading${h[1]!.length}`));
+          return;
+        }
+        if (prev === "-" || prev === "*") {
+          dispatch(replaceBackAndInsert(prev.length, ""));
+          dispatch(toggleList("bullet"));
+          return;
+        }
+        if (/^\d+[.)]$/.test(prev)) {
+          dispatch(replaceBackAndInsert(prev.length, ""));
+          dispatch(toggleList("decimal"));
+          return;
+        }
       }
     }
     dispatch(insertText(data));
