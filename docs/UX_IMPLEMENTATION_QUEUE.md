@@ -265,7 +265,7 @@ Tick a row only after it is **committed** to `feat/ux-overhaul`.
 - [x] 17 `feat/navigator-rail`
 - [x] 18 `feat/bookmark-crossref-links`
 - [x] 19 `feat/fidelity-panel`
-- [ ] 20 `feat/styles-panel`
+- [x] 20 `feat/styles-panel`
 - [ ] 21 `feat/ai-selection-agent`
 - [ ] 22 `feat/input-rules-slash-menu`
 - [ ] 23 `feat/inspector-panel`

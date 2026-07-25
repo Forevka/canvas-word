@@ -18,6 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Navigator` with shortcuts that open the Navigator on the Headings or Marks tab.
 
 ### Added
+- **Styles as a first-class panel (S2).** A new **Styles** tab in the Navigator rail lists every paragraph
+  and character style as a live card (a real swatch rendered in the document's fonts, plus a usage count).
+  **Hover a style to preview it on the document** — the caret's paragraph(s) restyle live and revert exactly
+  when the pointer leaves, without ever touching the undo stack (a "transient" apply + a snapshot restore).
+  **Click to apply** (one undoable edit). **Right-click** for *Select all instances* (jumps to the first and
+  flashes every occurrence), *Update to match selection* (redefine the style from the caret), and *Rename
+  everywhere*. When the caret sits on locally-formatted text, a **"Direct formatting" chip** offers to clear
+  the overrides back to the paragraph's style. Built on new command/query primitives (`applyNamedStyle`/
+  `applyCharStyle` gained a transaction-origin arg; `restoreParagraphsCmd`, `styleInstanceRanges`,
+  `hasDirectFormattingAt`).
 - **Import fidelity badge (Move 3).** The moat — that a .docx goes in and comes out faithfully — is now
   visible. A passive badge sits with the save state in the ribbon: **✓ Word-faithful** when the document
   round-trips with nothing dropped or adapted (including the in-memory sample), or **⚠ N notes** when

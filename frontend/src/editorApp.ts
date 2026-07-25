@@ -89,6 +89,11 @@ import {
   applyNamedStyle,
   applyCharStyle,
   updateStyleToSelection,
+  renameNamedStyle,
+  restoreParagraphsCmd,
+  styleInstanceRanges,
+  hasDirectFormattingAt,
+  type ParaSnapshot,
   setParaProps,
   addBookmarkCmd,
   removeBookmarkCmd,
@@ -2979,6 +2984,7 @@ if (toolbar) {
     const headingsPanel = mkPanel("headings");
     const pagesPanel = mkPanel("pages");
     const objectsPanel = mkPanel("objects");
+    const stylesPanel = mkPanel("styles");
     const marksPanel = mkPanel("marks");
     navMarksPanel = marksPanel;
     // Headings tab content: filter + the outline list (rows 9/16).
@@ -2991,14 +2997,16 @@ if (toolbar) {
     const list = el("div", "cw-outline-list");
     headingsPanel.append(filterWrap, list);
     // Rail tabs.
-    const NAV_LABELS: Record<string, string> = { headings: "Headings", pages: "Pages", objects: "Objects", marks: "Marks" };
+    const NAV_LABELS: Record<string, string> = { headings: "Headings", pages: "Pages", objects: "Objects", styles: "Styles", marks: "Marks" };
     const railBtns = new Map<string, HTMLButtonElement>();
     const setNav = (id: string): void => {
+      if (id !== "styles") endStylesPreview(); // leaving the Styles tab drops any live preview
       title.textContent = NAV_LABELS[id] ?? "";
       for (const [k, b] of railBtns) b.classList.toggle("active", k === id);
       for (const p of Array.from(panels.children)) (p as HTMLElement).classList.toggle("active", (p as HTMLElement).dataset["nav"] === id);
       if (id === "objects") buildObjects();
       if (id === "pages") buildPages();
+      if (id === "styles") buildStyles();
       if (id === "marks") refreshBookmarks();
     };
     navShow = setNav;
@@ -3015,6 +3023,7 @@ if (toolbar) {
     railBtn("headings", ICONS.outline, "Headings");
     railBtn("pages", ICONS.organizePages, "Pages");
     railBtn("objects", ICONS.shapes, "Objects");
+    railBtn("styles", ICONS.styleNew, "Styles");
     railBtn("marks", ICONS.bookmark, "Marks");
 
     const openOrganize = (): void => {
@@ -3076,6 +3085,143 @@ if (toolbar) {
         row.addEventListener("mousedown", (e) => e.preventDefault());
         if (target) row.addEventListener("click", () => editor.revealBlock(target));
         pagesPanel.appendChild(row);
+      }
+    };
+    // Styles tab (S2): a live styles panel — hover to preview, click to apply,
+    // right-click for select-all-instances / update-to-match / rename-everywhere.
+    // A chip surfaces the caret's direct-formatting overrides. Preview uses the
+    // "transient" apply + restoreParagraphsCmd primitives (no undo pollution).
+    let stylesChild: ReturnType<typeof editor.createChild> | null = null;
+    let stylesPreviewSnap: ParaSnapshot[] | null = null;
+    const endStylesPreview = (): void => {
+      if (stylesPreviewSnap) { editor.dispatch(restoreParagraphsCmd(stylesPreviewSnap)); stylesPreviewSnap = null; }
+    };
+    const buildStyles = (): void => {
+      endStylesPreview();
+      stylesPanel.textContent = "";
+      stylesChild?.destroy();
+      stylesChild = editor.createChild();
+      const child = stylesChild;
+      const doc = editor.getDocument();
+      const sheet = doc.stylesheet ?? defaultStylesheet();
+      const caret = editor.getSelection()?.focus ?? null;
+
+      if (caret && hasDirectFormattingAt(doc, caret)) {
+        const chip = el("div", "cw-styles-chip");
+        const txt = el("span");
+        txt.textContent = "Direct formatting on this text";
+        const clearBtn = el("button", "cw-styles-chip-clear");
+        clearBtn.textContent = "Clear";
+        clearBtn.title = "Reset this text to its paragraph style";
+        clearBtn.addEventListener("mousedown", (e) => e.preventDefault());
+        clearBtn.addEventListener("click", () => {
+          const s = editor.getSelection();
+          if (!s) return;
+          const collapsed = s.anchor.blockId === s.focus.blockId && s.anchor.offset === s.focus.offset;
+          const orig = s.focus;
+          // clearCharFormatting no-ops on a collapsed caret — expand to the whole
+          // paragraph so "Clear" always does something, then re-bake its named style
+          // (clear resets to raw defaults; the style re-application restores it).
+          if (collapsed) {
+            const b = editor.getDocument().blocks.find((x) => x.id === s.focus.blockId);
+            const len = b && b.kind === "paragraph" ? b.runs.reduce((nn, r) => nn + r.text.length, 0) : 0;
+            editor.setSelection({ anchor: { blockId: s.focus.blockId, offset: 0 }, focus: { blockId: s.focus.blockId, offset: len } });
+          }
+          editor.dispatch(clearCharFormatting());
+          const sid = editor.currentFormat().styleId;
+          if (sid) editor.dispatch(applyNamedStyle(sid));
+          editor.setSelection({ anchor: orig, focus: orig });
+          editor.focus();
+          buildStyles();
+        });
+        chip.append(txt, clearBtn);
+        stylesPanel.appendChild(chip);
+      }
+
+      const listEl = el("div", "cw-styles-list");
+      stylesPanel.appendChild(listEl);
+      const currentId = editor.currentFormat().styleId;
+
+      // Paragraphs the apply would touch — snapshotted before a transient preview.
+      const affectedParas = (): ParaSnapshot[] => {
+        const s = editor.getSelection();
+        if (!s) return [];
+        const blocks = editor.getDocument().blocks;
+        const ai = blocks.findIndex((b) => b.id === s.anchor.blockId);
+        const fi = blocks.findIndex((b) => b.id === s.focus.blockId);
+        if (ai < 0 || fi < 0) return []; // not top-level (e.g. a table cell) — skip preview
+        const [lo, hi] = ai <= fi ? [ai, fi] : [fi, ai];
+        const out: ParaSnapshot[] = [];
+        for (const b of blocks.slice(lo, hi + 1)) if (b.kind === "paragraph") out.push({ id: b.id, style: b.style, runs: b.runs });
+        return out;
+      };
+
+      const selectAllInstances = (styleId: string): void => {
+        const ranges = styleInstanceRanges(editor.getDocument(), styleId);
+        if (!ranges.length) return;
+        const first = ranges[0]!;
+        editor.setSelection({ anchor: { blockId: first.blockId, offset: first.start }, focus: { blockId: first.blockId, offset: first.end } });
+        editor.revealBlock(first.blockId);
+        editor.setDecorations(ranges.map((r) => ({
+          type: "highlight" as const, color: "#1a73e8", opacity: 0.26,
+          range: { anchor: { blockId: r.blockId, offset: r.start }, focus: { blockId: r.blockId, offset: r.end } },
+        })));
+        window.setTimeout(() => editor.setDecorations([]), 4000); // flash all instances, don't linger
+        editor.focus();
+      };
+
+      const renameStyle = (styleId: string, currentName: string): void => {
+        showInputDialog({
+          title: "Rename style", label: "Style name", initial: currentName, okLabel: "Rename",
+          validate: (v) => (v.trim() === "" ? "Enter a name." : null),
+          onSubmit: (next) => { if (next.trim() !== currentName) editor.dispatch(renameNamedStyle(styleId, next.trim())); editor.focus(); buildStyles(); },
+        });
+      };
+
+      for (const st of sheet.styles) {
+        const isChar = styleType(st) === "character";
+        const count = styleInstanceRanges(doc, st.id).length;
+        const card = el("button", "cw-style-card");
+        if (st.id === currentId) card.classList.add("current");
+        const swatch = el("span", "cw-style-swatch");
+        const name = el("span", "cw-style-name");
+        name.textContent = st.name + (isChar ? " ⓐ" : "");
+        const cnt = el("span", "cw-style-count");
+        cnt.textContent = count > 0 ? String(count) : "";
+        card.append(swatch, name, cnt);
+        card.title = `Apply "${st.name}"${count ? ` · ${count} in use` : ""}`;
+        child.render(swatch, { kind: "styleSample", styleId: st.id, sampleText: "AaBbCc" }, { fit: true, widthPx: 88, maxHeightPx: 24 });
+        card.addEventListener("mousedown", (e) => e.preventDefault());
+        card.addEventListener("mouseenter", () => {
+          endStylesPreview();
+          const snap = affectedParas();
+          if (!snap.length) return;
+          stylesPreviewSnap = snap;
+          editor.dispatch(isChar ? applyCharStyle(st.id, "transient") : applyNamedStyle(st.id, "transient"));
+        });
+        card.addEventListener("mouseleave", endStylesPreview);
+        card.addEventListener("click", () => {
+          endStylesPreview();
+          editor.dispatch(isChar ? applyCharStyle(st.id) : applyNamedStyle(st.id));
+          editor.focus();
+          buildStyles();
+        });
+        card.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          endStylesPreview();
+          const entries: MenuEntry[] = [
+            { kind: "item", label: "Select all instances", disabled: count === 0, onClick: () => selectAllInstances(st.id) },
+            { kind: "item", label: "Update to match selection", onClick: () => { editor.dispatch(updateStyleToSelection(st.id)); editor.focus(); buildStyles(); } },
+            { kind: "item", label: "Rename everywhere…", onClick: () => renameStyle(st.id, st.name) },
+          ];
+          showContextMenu(e.clientX, e.clientY, entries);
+        });
+        listEl.appendChild(card);
+      }
+      if (sheet.styles.length === 0) {
+        const empty = el("div", "outline-empty");
+        empty.textContent = "No styles defined.";
+        stylesPanel.appendChild(empty);
       }
     };
     setNav("headings"); // default tab

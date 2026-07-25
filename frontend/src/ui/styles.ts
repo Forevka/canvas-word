@@ -349,6 +349,35 @@ const CSS = `
 :root[data-theme="dark"] .cw-nav-tab.active { background: #1e1f22; color: #7cb0ff; box-shadow: inset 2px 0 0 #7cb0ff; }
 :root[data-theme="dark"] .cw-nav-action { background: #2a2c30; color: #7cb0ff; border-color: #4a4a4a; }
 
+/* Styles tab (S2): live style cards — hover-preview, click-apply, right-click */
+.cw-styles-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 6px 8px; display: flex; flex-direction: column; gap: 2px; }
+.cw-style-card {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  border: 1px solid transparent; border-radius: 6px; background: none; cursor: pointer;
+  padding: 4px 8px; font: inherit; color: #201f1e;
+}
+.cw-style-card:hover { background: #eef3fb; border-color: #cfe0fa; }
+.cw-style-card.current { background: #eef3fb; border-color: #2b579a; }
+.cw-style-swatch { flex: 0 0 auto; width: 88px; height: 24px; overflow: hidden; border-radius: 3px; }
+.cw-style-name { flex: 1 1 auto; min-width: 0; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cw-style-count { flex: 0 0 auto; font-size: 11px; color: #80868b; min-width: 14px; text-align: right; }
+.cw-styles-chip {
+  flex: 0 0 auto; margin: 8px 8px 4px; display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; border-radius: 6px; background: #fdf1dc; border: 1px solid #f0d199; font-size: 11.5px; color: #8a5300;
+}
+.cw-styles-chip span { flex: 1 1 auto; }
+.cw-styles-chip-clear {
+  flex: 0 0 auto; border: 1px solid #e0b866; border-radius: 5px; background: #fff; cursor: pointer;
+  font: inherit; font-size: 11px; padding: 2px 8px; color: #8a5300;
+}
+.cw-styles-chip-clear:hover { background: #fbe9c8; }
+:root[data-theme="dark"] .cw-style-card { color: #e6e6e6; }
+:root[data-theme="dark"] .cw-style-card:hover { background: #2c3340; border-color: #3a4a63; }
+:root[data-theme="dark"] .cw-style-card.current { background: #2c3340; border-color: #7cb0ff; }
+:root[data-theme="dark"] .cw-style-count { color: #9aa0a6; }
+:root[data-theme="dark"] .cw-styles-chip { background: #2e2517; border-color: #5a4a2a; color: #e6bd73; }
+:root[data-theme="dark"] .cw-styles-chip-clear { background: #26282c; border-color: #5a4a2a; color: #e6bd73; }
+
 /* ===== Review pane (track changes + comments) ======================= */
 .cw-review {
   flex: 0 0 320px; width: 320px; min-height: 0; display: none;
