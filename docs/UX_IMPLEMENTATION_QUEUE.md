@@ -290,5 +290,15 @@ Tick a row only after it is **committed** to `feat/ux-overhaul`.
 - [x] 20 `feat/styles-panel`
 - [ ] 21 `feat/ai-selection-agent` — **skipped, blocked on `feat/document-agent` merge** (see row 21 note)
 - [x] 22 `feat/input-rules-slash-menu`
-- [ ] 23 `feat/inspector-panel`
+- [ ] 23 `feat/inspector-panel` — shell + Text/Paragraph (`2092ca0`) **+ Page/Section (`bb59957`)** landed;
+  Table + Object sections remain
 - [ ] 24 `feat/quiet-chrome-preset`
+
+### Out-of-band fixes (folded in during rows 23–24)
+
+- [x] `fix/responsive-header-overflow` (`7db28de`) — QA pass found the ribbon header row + status bar
+  overflowed the viewport ~300px at phone widths (rows 2/3/19/23 each added a non-shrinking header cluster
+  with no narrow-width rule). Contained inside the `max-width:760px` block; verified
+  `root.scrollWidth == clientWidth` at 390/500px at both pointer types. **Note:** a *separate*, pre-existing
+  ribbon-*body* overflow at ~1000–1279px (the Home-tab groups exceed the viewport before `.compact` engages)
+  was observed but left alone — it belongs to row 12's 760–1100 band, not this header-cluster fix.
