@@ -379,6 +379,40 @@ const CSS = `
 :root[data-theme="dark"] .cw-styles-chip-clear { background: #26282c; border-color: #5a4a2a; color: #e6bd73; }
 
 /* ===== Review pane (track changes + comments) ======================= */
+/* ===== Inspector: right-docked, selection-aware property sheet (Move 2) ===== */
+.cw-inspector {
+  flex: 0 0 300px; width: 300px; min-height: 0; display: none;
+  flex-direction: column; background: #f7f8fa; border-left: 1px solid #e1dfdd;
+  font-size: 13px; color: #202124;
+}
+.cw-inspector.open { display: flex; }
+.cw-insp-head { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 14px; background: #fff; border-bottom: 1px solid #e8eaed; }
+.cw-insp-title { font-size: 14px; font-weight: 600; flex: 1 1 auto; }
+.cw-insp-close { border: none; background: transparent; cursor: pointer; color: #5f6368; width: 28px; height: 28px; border-radius: 50%; font-size: 18px; line-height: 1; }
+.cw-insp-close:hover { background: #f1f3f4; }
+.cw-insp-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 0 12px; }
+.cw-insp-section { border-bottom: 1px solid #e8eaed; padding: 10px 14px 12px; }
+.cw-insp-section h3 { margin: 0 0 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #80868b; }
+.cw-insp-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.cw-insp-row:last-child { margin-bottom: 0; }
+.cw-insp-label { flex: 0 0 74px; font-size: 12px; color: #5f6368; }
+.cw-insp-row > select, .cw-insp-row > input[type="number"], .cw-insp-row > input[type="text"] { flex: 1 1 auto; min-width: 0; height: 28px; border: 1px solid #d0d4d9; border-radius: 6px; padding: 0 8px; font: inherit; font-size: 12.5px; }
+.cw-insp-btns { display: inline-flex; gap: 2px; flex: 1 1 auto; }
+.cw-insp-tgl { min-width: 30px; height: 28px; border: 1px solid #d0d4d9; background: #fff; cursor: pointer; font: inherit; font-size: 12.5px; border-radius: 6px; color: #3c4043; padding: 0 6px; }
+.cw-insp-tgl.on { background: #eef3fb; border-color: #2b579a; color: #2b579a; }
+.cw-insp-tgl:hover:not(.on) { background: #f3f2f1; }
+.cw-insp-color { width: 34px; height: 28px; padding: 0; border: 1px solid #d0d4d9; border-radius: 6px; cursor: pointer; background: #fff; }
+.cw-insp-empty { padding: 24px 16px; color: #80868b; font-size: 12.5px; line-height: 1.5; text-align: center; }
+:root[data-theme="dark"] .cw-inspector { background: #202124; border-color: #34373c; color: #e6e6e6; }
+:root[data-theme="dark"] .cw-insp-head { background: #26282c; border-color: #34373c; }
+:root[data-theme="dark"] .cw-insp-section { border-color: #34373c; }
+:root[data-theme="dark"] .cw-insp-row > select, :root[data-theme="dark"] .cw-insp-row > input { background: #2a2c30; color: #e6e6e6; border-color: #4a4a4a; }
+:root[data-theme="dark"] .cw-insp-tgl { background: #2a2c30; color: #e0e0e0; border-color: #4a4a4a; }
+:root[data-theme="dark"] .cw-insp-tgl.on { background: #2c3340; color: #7cb0ff; border-color: #7cb0ff; }
+:root[data-theme="dark"] .cw-insp-label, :root[data-theme="dark"] .cw-insp-title { color: #c8ccd0; }
+:root[data-theme="dark"] .cw-insp-close { color: #9aa0a6; }
+:root[data-theme="dark"] .cw-insp-close:hover { background: #34373c; }
+
 .cw-review {
   flex: 0 0 320px; width: 320px; min-height: 0; display: none;
   flex-direction: column; background: #f7f8fa; border-left: 1px solid #e1dfdd;
@@ -658,6 +692,7 @@ const CSS = `
   /* Outline / Review: overlay the page instead of stealing width on a phone. */
   .cw-outline { position: absolute; left: 0; top: 0; bottom: 0; height: auto; width: min(264px, 80vw); z-index: 30; box-shadow: 2px 0 16px rgba(0,0,0,0.18); }
   .cw-review { position: absolute; right: 0; top: 0; bottom: 0; height: auto; width: min(320px, 88vw); z-index: 31; box-shadow: -2px 0 16px rgba(0,0,0,0.18); }
+  .cw-inspector { position: absolute; right: 0; top: 0; bottom: 0; height: auto; width: min(300px, 88vw); z-index: 31; box-shadow: -2px 0 16px rgba(0,0,0,0.18); }
 
   /* Floating panels (Page Setup, Find) → bottom sheet; drawer fills the pane
      (still inside .cw-workarea, so still below the ribbon).

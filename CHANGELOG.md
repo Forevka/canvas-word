@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Navigator` with shortcuts that open the Navigator on the Headings or Marks tab.
 
 ### Added
+- **Inspector — a right-docked, selection-aware property sheet (Move 2, in progress).** A new **Inspector**
+  panel (toggle in the ribbon's right cluster) edits the selection's properties **live**, with no Apply
+  button — every control is one undoable edit. This first instalment ships the **Text** section (font family,
+  size, bold/italic/underline/strikethrough, all-caps/small-caps) and the **Paragraph** section (alignment,
+  line spacing, space before/after), reading current values from the caret and swapping to an "object
+  selected" note when an image/shape is picked. It docks in-flow like the Review pane (overlays on narrow
+  viewports) and is dark-mode themed. Table, Page/Section and Object sections — and the retirement of the
+  matching dialogs — follow in subsequent changes; until each Inspector section reaches parity, the existing
+  dialog stays as the advanced fallback.
 - **Markdown input rules + `/` block inserter (S4).** Fast writers can shape a document from the keyboard:
   typing `# ` / `## ` / `### ` (up to `######`) at the start of a paragraph converts it to Heading 1–6,
   `- ` or `* ` starts a bulleted list, and `1. ` / `1) ` starts a numbered list — the prefix is consumed

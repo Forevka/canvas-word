@@ -367,6 +367,10 @@ let refreshBookmarks: () => void = () => {};
 let toggleBookmarks: () => void = () => {};
 let refreshReview: () => void = () => {};
 let toggleReview: () => void = () => {};
+// Inspector (Move 2): a right-docked, selection-aware property sheet. Forward-
+// declared so the header button and the selection/change hooks can drive it.
+let toggleInspector: () => void = () => {};
+let refreshInspector: () => void = () => {};
 let syncMode: () => void = () => {};
 // Develop-mode Document-tree inspector hooks (assigned when the panel is open;
 // no-ops otherwise, so non-develop mounts pay nothing). refreshDevPanel re-reads
@@ -459,6 +463,7 @@ const editorOpts = {
     // Coalesced (rAF) because this fires continuously during a drag and refresh reads
     // layout; onChange stays synchronous for typing/caret immediacy.
     scheduleRefreshContextToolbars();
+    refreshInspector();
     refreshDevPanel();
   },
   // Develop mode only: the inspector turns this signal on while open (dormant
@@ -486,6 +491,7 @@ const editorOpts = {
     refreshVRuler();
     refreshContextToolbars();
     refreshBookmarks();
+    refreshInspector();
     refreshDevPanel();
   },
   onZoomChange: (z: number) => {
@@ -2616,12 +2622,17 @@ if (toolbar) {
   syncMode = (): void => {
     modeSel.value = editor.getMode();
   };
+  const inspectorBtn = el("button", "cw-header-btn");
+  inspectorBtn.textContent = "Inspector";
+  inspectorBtn.title = "Inspector — edit the selection's font & paragraph properties live";
+  inspectorBtn.addEventListener("mousedown", (e) => e.preventDefault());
+  inspectorBtn.addEventListener("click", () => toggleInspector());
   const reviewBtn = el("button", "cw-header-btn");
   reviewBtn.textContent = "Review";
   reviewBtn.title = "Suggestions & comments — review, accept, reject";
   reviewBtn.addEventListener("mousedown", (e) => e.preventDefault());
   reviewBtn.addEventListener("click", () => toggleReview());
-  headerReview.append(modeSel, reviewBtn);
+  headerReview.append(modeSel, inspectorBtn, reviewBtn);
   // Tab-strip overflow (critique R3): when the tabs don't fit, this button appears
   // and opens a menu of them, so Table/View/Developer never silently vanish.
   const tabOverflowBtn = el("button", "rib-tab-overflow");
@@ -3751,6 +3762,145 @@ if (toolbar) {
       if (open) build();
     };
     if (runtime.view?.reviewPane) setOpen(true); // closed by default; embedder can open it
+  }
+
+  // ---- Inspector (Move 2): right-docked, selection-aware property sheet ------
+  // Font + Paragraph sections for now; every control applies LIVE as one undoable
+  // edit (no Apply button). Table / Page / Object sections land in later commits;
+  // until each reaches parity the matching dialog stays as the advanced fallback.
+  {
+    const inspectorEl = shell.inspector;
+    const head = el("div", "cw-insp-head");
+    const title = el("span", "cw-insp-title");
+    title.textContent = "Inspector";
+    const closeBtn = el("button", "cw-insp-close");
+    closeBtn.innerHTML = "×";
+    closeBtn.title = "Close inspector";
+    closeBtn.setAttribute("aria-label", "Close inspector");
+    closeBtn.addEventListener("click", () => toggleInspector());
+    head.append(title, closeBtn);
+    const bodyEl = el("div", "cw-insp-body");
+    inspectorEl.append(head, bodyEl);
+
+    const toPt = (px: number): number => Math.round(sharedPxToPt(px) * 2) / 2;
+    const fromPt = (pt: number): number => sharedPtToPx(pt);
+
+    const insSection = (label: string): HTMLElement => {
+      const s = el("div", "cw-insp-section");
+      const h = document.createElement("h3");
+      h.textContent = label;
+      s.append(h);
+      bodyEl.append(s);
+      return s;
+    };
+    const insRow = (parent: HTMLElement, label: string | null, ...controls: HTMLElement[]): void => {
+      const r = el("div", "cw-insp-row");
+      if (label !== null) { const l = el("span", "cw-insp-label"); l.textContent = label; r.append(l); }
+      for (const c of controls) r.append(c);
+      parent.append(r);
+    };
+    const insSelect = (opts: { value: string; label: string }[], value: string, onChange: (v: string) => void): HTMLSelectElement => {
+      const s = document.createElement("select");
+      for (const o of opts) { const op = document.createElement("option"); op.value = o.value; op.textContent = o.label; s.append(op); }
+      s.value = value;
+      s.addEventListener("change", () => { onChange(s.value); editor.focus(); });
+      return s;
+    };
+    const insNumber = (value: number, min: number, max: number, onCommit: (n: number) => void): HTMLInputElement => {
+      const i = document.createElement("input");
+      i.type = "number"; i.min = String(min); i.max = String(max); i.step = "1";
+      i.value = String(value);
+      i.addEventListener("change", () => { const n = Number(i.value); if (Number.isFinite(n)) onCommit(n); editor.focus(); });
+      return i;
+    };
+    const insToggles = (defs: { label: string; title: string; on: boolean; onClick: () => void }[]): HTMLElement => {
+      const wrap = el("div", "cw-insp-btns");
+      for (const d of defs) {
+        const b = el("button", "cw-insp-tgl");
+        b.textContent = d.label;
+        b.title = d.title;
+        if (d.on) b.classList.add("on");
+        b.addEventListener("mousedown", (e) => e.preventDefault());
+        b.addEventListener("click", () => { d.onClick(); editor.focus(); });
+        wrap.append(b);
+      }
+      return wrap;
+    };
+
+    const buildTextSection = (f: ReturnType<typeof editor.currentFormat>): void => {
+      const sec = insSection("Text");
+      const fams = toolbarFonts(config.fonts).map((x) => ({ value: x.value, label: x.label }));
+      const famVal = fams.find((x) => x.value.toLowerCase() === (f.fontFamily ?? "").toLowerCase())?.value ?? f.fontFamily ?? fams[0]?.value ?? "";
+      insRow(sec, "Font", insSelect(fams, famVal, (v) => editor.setCharStyle({ fontFamily: v })));
+      insRow(sec, "Size (pt)", insNumber(toPt(f.fontSizePx ?? 16), 6, 72, (pt) => editor.setCharStyle({ fontSizePx: Math.min(96, Math.max(6, fromPt(pt))) })));
+      insRow(sec, "Style", insToggles([
+        { label: "B", title: "Bold", on: f.bold, onClick: () => editor.toggleStyle("bold") },
+        { label: "I", title: "Italic", on: f.italic, onClick: () => editor.toggleStyle("italic") },
+        { label: "U", title: "Underline", on: f.underline, onClick: () => editor.toggleStyle("underline") },
+        { label: "S", title: "Strikethrough", on: f.strikethrough, onClick: () => editor.toggleStyle("strikethrough") },
+      ]));
+      insRow(sec, "Caps", insToggles([
+        { label: "AB", title: "All caps", on: f.caps, onClick: () => editor.setCharStyle({ caps: !f.caps }) },
+        { label: "Ab", title: "Small caps", on: f.smallCaps, onClick: () => editor.setCharStyle({ smallCaps: !f.smallCaps }) },
+      ]));
+    };
+
+    const buildParagraphSection = (f: ReturnType<typeof editor.currentFormat>): void => {
+      const ps = editor.currentParaStyle();
+      const sec = insSection("Paragraph");
+      const aligns = (["left", "center", "right", "justify"] as const);
+      insRow(sec, "Align", insToggles(aligns.map((a) => ({
+        label: a.charAt(0).toUpperCase(), title: a.charAt(0).toUpperCase() + a.slice(1), on: f.align === a, onClick: () => editor.align(a),
+      }))));
+      const lh = ps?.lineHeight ?? 1;
+      insRow(sec, "Line", insSelect(
+        [{ value: "1", label: "Single" }, { value: "1.15", label: "1.15" }, { value: "1.5", label: "1.5" }, { value: "2", label: "Double" }],
+        String(lh),
+        (v) => {
+          // Clearing lineRule/lineHeightPx via Object.assign (exactOptionalPropertyTypes).
+          const patch: Partial<ParaStyle> = { lineHeight: Number(v) };
+          Object.assign(patch, { lineRule: undefined, lineHeightPx: undefined });
+          editor.dispatch(setParaProps(patch));
+        },
+      ));
+      insRow(sec, "Before (pt)", insNumber(toPt(ps?.spaceBeforePx ?? 0), 0, 200, (pt) => editor.dispatch(setParaProps({ spaceBeforePx: fromPt(Math.max(0, pt)) }))));
+      insRow(sec, "After (pt)", insNumber(toPt(ps?.spaceAfterPx ?? 0), 0, 200, (pt) => editor.dispatch(setParaProps({ spaceAfterPx: fromPt(Math.max(0, pt)) }))));
+    };
+
+    const insEmpty = (text: string): void => {
+      const e = el("div", "cw-insp-empty");
+      e.textContent = text;
+      bodyEl.append(e);
+    };
+
+    let inspOpen = false;
+    const rebuild = (): void => {
+      bodyEl.textContent = "";
+      const f = editor.currentFormat();
+      if (f.imageSelected || f.shapeSelected) {
+        title.textContent = f.shapeSelected ? "Shape" : "Image";
+        insEmpty("Use the object's floating toolbar or right-click menu to size, wrap and arrange it. A dedicated Object section is coming to the Inspector.");
+        return;
+      }
+      title.textContent = "Inspector";
+      buildTextSection(f);
+      buildParagraphSection(f);
+    };
+    refreshInspector = (): void => {
+      if (!inspOpen) return;
+      // Don't clobber a field the user is mid-edit in; toggle buttons rebuild fine.
+      const ae = document.activeElement;
+      if (ae && inspectorEl.contains(ae) && (ae.tagName === "INPUT" || ae.tagName === "SELECT")) return;
+      rebuild();
+    };
+    const setInspectorOpen = (v: boolean): void => {
+      inspOpen = v;
+      inspectorEl.classList.toggle("open", v);
+      inspectorBtn.classList.toggle("active", v);
+      if (v) rebuild();
+    };
+    toggleInspector = (): void => setInspectorOpen(!inspOpen);
+    // Closed by default; opened via the Inspector header button.
   }
 
   // Collapse / expand the ribbon body (keeps the tab strip). A pinned chevron

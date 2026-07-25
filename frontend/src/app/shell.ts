@@ -18,6 +18,9 @@ export interface EditorShell {
   /** Right-docked review pane (track changes + comments) — in-flow like the
    *  outline drawer, so it shrinks the editor rather than overlaying it. */
   review: HTMLElement;
+  /** Right-docked Inspector (selection-aware property sheet — Font/Paragraph/…).
+   *  In-flow like the review pane, shown via the `.open` class. */
+  inspector: HTMLElement;
   statusbar: HTMLDivElement;
 }
 
@@ -47,14 +50,15 @@ export function buildShell(container: HTMLElement): EditorShell {
   const vruler = div("cw-vruler") as HTMLDivElement;
   const app = div("cw-app") as HTMLDivElement;
   const review = div("cw-review", "aside");
+  const inspector = div("cw-inspector", "aside");
   const statusbar = div("cw-statusbar") as HTMLDivElement;
 
   rulerRow.append(rulerCorner, ruler);
   mainRow.append(vruler, app);
   editorpane.append(rulerRow, mainRow);
-  workarea.append(outline, editorpane, review);
+  workarea.append(outline, editorpane, inspector, review);
   root.append(toolbar, workarea, statusbar);
   container.appendChild(root);
 
-  return { root, toolbar, workarea, outline, ruler, vruler, app, review, statusbar };
+  return { root, toolbar, workarea, outline, ruler, vruler, app, review, inspector, statusbar };
 }
