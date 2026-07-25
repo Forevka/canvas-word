@@ -293,6 +293,18 @@ export interface Editor {
   /** The object-selected drawing shape (fill/stroke/geometry for the shape toolbar
    *  + ribbon Shape group), or null when the selection is not a shape. */
   getSelectedShape(): ShapeBlock | null;
+  /** Normalized geometry of the object-selected image OR drawing shape — size,
+   *  alignment, wrap and rotation — or null when the selection is neither. Seeds
+   *  the Inspector's Object section (there is no other public getter for a selected
+   *  image's model size/wrap). */
+  getSelectedObjectProps(): {
+    kind: "image" | "shape";
+    widthPx: number;
+    heightPx: number;
+    align: "left" | "center" | "right";
+    wrap: "block" | "square";
+    rotation: number;
+  } | null;
   /** F5 group authoring (issue #244). `groupShapes` collapses the ≥2 selected shapes
    *  into one group container and selects it; `ungroupShape` flattens the selected
    *  group back into its child shapes; the `can*` getters gate the ribbon/menu/toolbar
@@ -4068,6 +4080,14 @@ export function createEditor(
     },
     getSelectedShape(): ShapeBlock | null {
       return selectedObject ? (locateShape(doc, selectedObject)?.block ?? null) : null;
+    },
+    getSelectedObjectProps() {
+      if (!selectedObject) return null;
+      const shp = locateShape(doc, selectedObject)?.block;
+      if (shp) return { kind: "shape" as const, widthPx: shp.widthPx, heightPx: shp.heightPx, align: shp.align, wrap: shp.wrap ?? "block", rotation: shp.rotation ?? 0 };
+      const img = locateImage(doc, selectedObject)?.image;
+      if (img) return { kind: "image" as const, widthPx: img.widthPx, heightPx: img.heightPx, align: img.align, wrap: img.wrap ?? "block", rotation: img.rotation ?? 0 };
+      return null;
     },
     groupShapes: groupSelectedShapes,
     ungroupShape: ungroupSelectedShape,

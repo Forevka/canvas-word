@@ -38,6 +38,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   percent / inches), table alignment and table indent — each applied live to the caret's cell or its table
   as one undoable edit. The Borders & Shading dialog remains the advanced fallback for cell/table borders
   and shading.
+- **Inspector — Object (image / shape) section.** Selecting an image or drawing shape now fills the
+  Inspector with an **Image** / **Shape** section: size (width × height in px), wrap (inline vs. float),
+  alignment and rotation — each applied live to the selected object as one undoable edit, routed to
+  `setImageProps` / `setShapeProps` by kind. Backed by a new `editor.getSelectedObjectProps()` accessor
+  (normalized size/align/wrap/rotation for the selected image or shape). Fill, stroke and geometry stay on
+  the object's floating toolbar, and the Shape Size & Position dialog remains the advanced fallback for
+  exact anchor offsets. With this, all four Inspector section families (Text/Paragraph, Table, Page/Section,
+  Object) are in place.
 - **Markdown input rules + `/` block inserter (S4).** Fast writers can shape a document from the keyboard:
   typing `# ` / `## ` / `### ` (up to `######`) at the start of a paragraph converts it to Heading 1–6,
   `- ` or `* ` starts a bulleted list, and `1. ` / `1) ` starts a numbered list — the prefix is consumed

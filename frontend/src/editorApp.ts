@@ -3772,9 +3772,11 @@ if (toolbar) {
   }
 
   // ---- Inspector (Move 2): right-docked, selection-aware property sheet ------
-  // Text + Paragraph + Table + Page sections; every control applies LIVE as one
-  // undoable edit (no Apply button). The Object section lands in a later commit;
-  // until each reaches parity the matching dialog stays as the advanced fallback.
+  // Text + Paragraph + Table + Page + Object (image/shape) sections; every control
+  // applies LIVE as one undoable edit (no Apply button). Each section covers the
+  // common levers; the matching dialog stays as the advanced fallback (colour,
+  // effects, borders, page background, anchor offsets) per the parity rule, so no
+  // dialog is deleted.
   {
     const inspectorEl = shell.inspector;
     const head = el("div", "cw-insp-head");
@@ -4027,6 +4029,38 @@ if (toolbar) {
       insRow(sec, "Indent (px)", insNumber(Math.round(table.indentPx ?? 0), 0, 400, (n) => editor.dispatch(setTablePropsAtSelectionCmd({ indentPx: n > 0 ? n : null }))));
     };
 
+    // ---- Object (selected image / shape: size, wrap, align, rotation) --------
+    // Live size/wrap/align/rotation for the object-selected image or drawing shape,
+    // routed to setImageProps / setShapeProps by kind. Fill/stroke/geometry stay on
+    // the object's floating toolbar; the Shape Size & Position dialog remains the
+    // advanced fallback for exact anchor offsets.
+    const applyObject = (patch: { widthPx?: number; heightPx?: number; align?: "left" | "center" | "right"; wrap?: "block" | "square"; rotation?: number }): void => {
+      const id = editor.getSelectedObject();
+      const props = editor.getSelectedObjectProps();
+      if (!id || !props) return;
+      editor.dispatch(props.kind === "shape" ? setShapeProps(id, patch) : setImageProps(id, patch));
+    };
+    const buildObjectSection = (kind: "image" | "shape"): void => {
+      const p = editor.getSelectedObjectProps();
+      if (!p) {
+        insEmpty("Use the object's floating toolbar or right-click menu to work with this selection.");
+        return;
+      }
+      const sec = insSection(kind === "shape" ? "Shape" : "Image");
+      insRow(sec, "Size (px)", insPair(
+        insNumber(Math.round(p.widthPx), 8, 4000, (n) => applyObject({ widthPx: Math.max(8, n) })),
+        insNumber(Math.round(p.heightPx), 8, 4000, (n) => applyObject({ heightPx: Math.max(8, n) })),
+      ));
+      insRow(sec, "Wrap", insToggles([
+        { label: "Inline", title: "In line with text", on: p.wrap === "block", onClick: () => applyObject({ wrap: "block" }) },
+        { label: "Float", title: "Float — text wraps around (square)", on: p.wrap === "square", onClick: () => applyObject({ wrap: "square" }) },
+      ]));
+      insRow(sec, "Align", insToggles((["left", "center", "right"] as const).map((a) => ({
+        label: a.charAt(0).toUpperCase(), title: `Align ${a}`, on: p.align === a, onClick: () => applyObject({ align: a }),
+      }))));
+      insRow(sec, "Rotation°", insNumber(Math.round(p.rotation), 0, 359, (n) => applyObject({ rotation: ((Math.round(n) % 360) + 360) % 360 })));
+    };
+
     const insEmpty = (text: string): void => {
       const e = el("div", "cw-insp-empty");
       e.textContent = text;
@@ -4039,7 +4073,7 @@ if (toolbar) {
       const f = editor.currentFormat();
       if (f.imageSelected || f.shapeSelected) {
         title.textContent = f.shapeSelected ? "Shape" : "Image";
-        insEmpty("Use the object's floating toolbar or right-click menu to size, wrap and arrange it. A dedicated Object section is coming to the Inspector.");
+        buildObjectSection(f.shapeSelected ? "shape" : "image");
         return;
       }
       title.textContent = "Inspector";
