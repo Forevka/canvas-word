@@ -33,6 +33,7 @@ import {
   type Rect,
 } from "./layout/geometry";
 import type { LayoutTree, Page, PlacedBlock } from "./layout/layoutTree";
+import { pageOfBlock } from "./layout/pages";
 import { computeTocEdits } from "./recalc/recalcToc";
 import { createSdtPopup } from "./editor/sdtPopup";
 import { createCommentController } from "./editor/commentController";
@@ -97,6 +98,7 @@ import {
   setEquationAlignCmd,
   setEquationScaleCmd,
   updateFieldCmd,
+  type CrossRefResolvers,
   updateTocFieldCmd,
   setTocSwitchesCmd,
   mergeCellsCmd,
@@ -2941,10 +2943,19 @@ export function createEditor(
     const child = createChildDocument({ getStyleContext, makeEditor: createEditor });
     showFieldConstructor({
       ...config,
+      bookmarks: Object.keys(doc.bookmarks ?? {}).sort((a, b) => a.localeCompare(b)),
       renderResult: (host, runs) => child.render(host, { kind: "runs", runs }),
       onClose: () => child.destroy(),
     });
   };
+  /** Layout-backed PAGEREF page resolver (REF text resolves purely in the command).
+   *  Threaded into insert/edit/update so a cross-reference shows a real page. */
+  const crossRefResolvers = (): CrossRefResolvers => ({
+    pageRef: (bm) => {
+      const start = doc.bookmarks?.[bm]?.start.blockId;
+      return start ? pageOfBlock(doc, start) ?? undefined : undefined;
+    },
+  });
   /** The innermost content-control id at the caret OR around the selected image —
    *  the single "active control" the ribbon's inspect/remove buttons act on. */
   const activeSdtId = (): string | null => {
@@ -3310,14 +3321,14 @@ export function createEditor(
       const spec = def.spec!;
       const f = focus;
       entries.push(sep, item(`Edit Field (${def.name})…`, () =>
-        openFieldConstructor({ initial: spec, baseStyle: caretStyle(f), onApply: (s) => dispatch(editFieldCmd(def.id, s)) }),
+        openFieldConstructor({ initial: spec, baseStyle: caretStyle(f), onApply: (s) => dispatch(editFieldCmd(def.id, s, crossRefResolvers())) }),
       ));
       if (spec.type !== "PAGE" && spec.type !== "NUMPAGES") {
-        entries.push(item(`Update Field (${def.name})`, () => dispatch(updateFieldCmd(def.id))));
+        entries.push(item(`Update Field (${def.name})`, () => dispatch(updateFieldCmd(def.id, crossRefResolvers()))));
       }
     } else if (focus) {
       entries.push(sep, item("Insert Field…", () =>
-        openFieldConstructor({ baseStyle: caretStyle(focus), onApply: (s) => dispatch(insertFieldCmd(s)) }),
+        openFieldConstructor({ baseStyle: caretStyle(focus), onApply: (s) => dispatch(insertFieldCmd(s, crossRefResolvers())) }),
       ));
     }
 

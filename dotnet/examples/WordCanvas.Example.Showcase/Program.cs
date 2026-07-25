@@ -79,6 +79,15 @@ var builder = engine.NewBuilder(new CreateOptions { PageSize = PageSizeName.Lett
         .Text(", and a ")
         .Text("hyperlink", new CharStyle { Link = "https://forevka.dev", Color = "#0b57d0", Underline = true })
         .Text("."))
+    // Cross-references + in-document links give the bookmark above a consumer.
+    .Paragraph(p => p
+        .Text("Cross-reference — the bookmark above is referable: ")
+        .CrossReference("sample")
+        .Text(" (REF) on page ")
+        .CrossReference("sample", pageRef: true)
+        .Text(" (PAGEREF). It is also an in-document link target: ")
+        .Text("jump to it", new CharStyle { Link = "#sample", Color = "#0b57d0", Underline = true })
+        .Text("."))
     // Underline styles + colors (w:u val + color) — double/dotted/dashed/wave/thick.
     .Paragraph(p => p
         .Text("Underlines carry a ").Text("style", new CharStyle { Italic = true })

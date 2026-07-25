@@ -10,6 +10,9 @@ import { createDialogShell } from "./dialogShell";
 export interface FieldConstructorOptions {
   /** Pre-fill for editing an existing field; omit to insert a new one. */
   initial?: FieldSpec;
+  /** Bookmark names in the document — the targets a REF/PAGEREF can point at. When
+   *  empty, the cross-reference types are offered but explain that none exist yet. */
+  bookmarks?: string[];
   /** Base run style for the result preview (and IF result text). */
   baseStyle: CharStyle;
   /** "now" for the DATE/TIME preview. */
@@ -34,6 +37,8 @@ const TYPES: { value: FieldType; label: string }[] = [
   { value: "DATE", label: "Date (DATE)" },
   { value: "TIME", label: "Time (TIME)" },
   { value: "IF", label: "Conditional (IF)" },
+  { value: "REF", label: "Cross-reference — text (REF)" },
+  { value: "PAGEREF", label: "Cross-reference — page (PAGEREF)" },
 ];
 const NUM_FMTS: { value: PageNumFmt; label: string }[] = [
   { value: "arabic", label: "1, 2, 3" },
@@ -72,7 +77,9 @@ const CSS = `
 .cw-fc-btn{height:30px;padding:0 14px;border:1px solid #d0d4d9;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;color:#3c4043;}
 .cw-fc-btn:hover{background:#f1f3f4;}
 .cw-fc-btn.primary{border-color:#1a73e8;background:#1a73e8;color:#fff;}
-.cw-fc-btn.primary:hover{background:#1864cc;}`;
+.cw-fc-btn.primary:hover{background:#1864cc;}
+.cw-fc-btn:disabled{opacity:.5;cursor:not-allowed;}
+.cw-fc-btn.primary:disabled:hover{background:#1a73e8;}`;
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -177,12 +184,29 @@ export function showFieldConstructor(opts: FieldConstructorOptions): FieldConstr
     });
   };
 
+  const refForm = (type: "REF" | "PAGEREF"): (() => FieldSpec) => {
+    const bookmarks = opts.bookmarks ?? [];
+    const sel = el("select");
+    for (const b of bookmarks) sel.append(option(b, b));
+    const init = opts.initial;
+    if (init && (init.type === "REF" || init.type === "PAGEREF") && bookmarks.includes(init.bookmark)) sel.value = init.bookmark;
+    sel.disabled = bookmarks.length === 0;
+    sel.addEventListener("change", refresh);
+    formHost.append(labelled("Bookmark", sel));
+    if (bookmarks.length === 0) {
+      const hint = el("div", "cw-fc-note", "No bookmarks in this document yet. Add one from Navigator ▸ Marks, then reference it here.");
+      formHost.append(hint);
+    }
+    return () => ({ type, bookmark: sel.value });
+  };
+
   function rebuildForm(): void {
     formHost.replaceChildren();
     const type = typeSel.value as FieldType;
     readSpec =
       type === "PAGE" || type === "NUMPAGES" ? numFmtForm(type)
       : type === "DATE" || type === "TIME" ? dateForm(type)
+      : type === "REF" || type === "PAGEREF" ? refForm(type)
       : ifForm();
     refresh();
   }
@@ -198,6 +222,10 @@ export function showFieldConstructor(opts: FieldConstructorOptions): FieldConstr
       case "DATE":
       case "TIME":
         return [{ text: formatFieldDate(now, spec.format) || "(empty format)", style: { ...opts.baseStyle } }];
+      case "REF":
+        return [{ text: spec.bookmark || "(no bookmark)", style: { ...opts.baseStyle } }];
+      case "PAGEREF":
+        return [{ text: spec.bookmark ? "1" : "(no bookmark)", style: { ...opts.baseStyle } }];
       default: {
         const runs = evaluateIf(spec);
         return runs.length ? runs : [{ text: "(empty)", style: { ...opts.baseStyle } }];
@@ -215,7 +243,12 @@ export function showFieldConstructor(opts: FieldConstructorOptions): FieldConstr
       spec.type === "PAGE" ? "Live — resolves to the current page per page (i, I, a, A per format)."
       : spec.type === "NUMPAGES" ? "Live — resolves to the document's total page count."
       : spec.type === "DATE" || spec.type === "TIME" ? "Materialized now; refresh with Update Field."
+      : spec.type === "REF" ? "Shows the bookmarked text; refresh with Update Field."
+      : spec.type === "PAGEREF" ? "Shows the bookmark's page number; refresh with Update Field."
       : "Materialized from the comparison; refresh with Update Field.";
+    // A cross-reference with no target bookmark can't be inserted.
+    const noTarget = (spec.type === "REF" || spec.type === "PAGEREF") && spec.bookmark === "";
+    apply.disabled = noTarget;
   }
 
   typeSel.addEventListener("change", rebuildForm);

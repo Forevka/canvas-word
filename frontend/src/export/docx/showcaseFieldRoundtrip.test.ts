@@ -25,10 +25,12 @@ describe("showcase field objects round-trip", () => {
     const orig = sampleDoc();
     const want = fieldTypes(orig);
     // The showcase has 3×DATE, 4×PAGE, 1×IF (body inline, inside table cells, and
-    // in the CJK/RTL section's bidi table cell + RTL field paragraph).
+    // in the CJK/RTL section's bidi table cell + RTL field paragraph), plus a
+    // REF/PAGEREF cross-reference pair pointing at the "sample" bookmark.
     expect(want).toEqual([
       "builtin:DATE", "builtin:DATE", "builtin:DATE", "builtin:IF",
       "builtin:PAGE", "builtin:PAGE", "builtin:PAGE", "builtin:PAGE",
+      "builtin:PAGEREF", "builtin:REF",
     ]);
 
     const r1 = runImport((await runExport(orig, "docx")).bytes).doc;

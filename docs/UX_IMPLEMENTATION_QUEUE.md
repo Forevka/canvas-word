@@ -263,7 +263,7 @@ Tick a row only after it is **committed** to `feat/ux-overhaul`.
 - [x] 15 `feat/shortcuts-cheatsheet`
 - [x] 16 `feat/outline-drag-reorder`
 - [x] 17 `feat/navigator-rail`
-- [ ] 18 `feat/bookmark-crossref-links`
+- [x] 18 `feat/bookmark-crossref-links`
 - [ ] 19 `feat/fidelity-panel`
 - [ ] 20 `feat/styles-panel`
 - [ ] 21 `feat/ai-selection-agent`

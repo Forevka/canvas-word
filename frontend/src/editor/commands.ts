@@ -1094,10 +1094,40 @@ export function fieldAtPosition(doc: EditorState["doc"], pos: DocPosition): stri
 
 const runsTextLen = (runs: Run[]): number => runs.reduce((n, r) => n + r.text.length, 0);
 
+/** Resolvers a cross-reference field needs to materialize its result. REF text is
+ *  pure (read from the model); PAGEREF's page needs layout, so the editor supplies
+ *  it — absent, PAGEREF shows a "?" placeholder until Update Field. */
+export interface CrossRefResolvers {
+  refText?: (bookmark: string) => string | undefined;
+  pageRef?: (bookmark: string) => number | undefined;
+}
+
+/** The text a bookmark currently spans — a REF cross-reference's live result.
+ *  Resolves single-block bookmarks exactly; a cross-block bookmark yields its
+ *  start block's tail (best effort). Undefined → caller falls back to the name. */
+function bookmarkText(doc: EditorState["doc"], name: string): string | undefined {
+  const range = doc.bookmarks?.[name];
+  if (!range) return undefined;
+  const block = blockById(doc, range.start.blockId);
+  if (!block || block.kind !== "paragraph") return undefined;
+  const full = textOfRuns(block.runs);
+  const end = range.end.blockId === range.start.blockId ? range.end.offset : full.length;
+  const text = full.slice(range.start.offset, end);
+  return text.length > 0 ? text : undefined;
+}
+
+/** Field-eval context that always resolves REF text from `doc`, plus any
+ *  editor-supplied resolvers (e.g. a layout-backed PAGEREF page lookup). */
+const fieldEvalCtx = (doc: EditorState["doc"], resolvers?: CrossRefResolvers) => ({
+  now: new Date(),
+  refText: (bm: string) => bookmarkText(doc, bm),
+  ...resolvers,
+});
+
 /** Evaluate a field spec to its result runs, all tagged with the field id (a
- *  `{token}` run for PAGE/NUMPAGES, materialized text for DATE/TIME/IF). */
-function fieldResultRuns(spec: FieldSpec, baseStyle: CharStyle, id: string): Run[] {
-  const res = evaluateField(spec, baseStyle, { now: new Date() });
+ *  `{token}` run for PAGE/NUMPAGES, materialized text for DATE/TIME/IF/REF/PAGEREF). */
+function fieldResultRuns(spec: FieldSpec, baseStyle: CharStyle, id: string, doc: EditorState["doc"], resolvers?: CrossRefResolvers): Run[] {
+  const res = evaluateField(spec, baseStyle, fieldEvalCtx(doc, resolvers));
   const runs = res.kind === "token" ? [{ text: res.token, style: baseStyle }] : res.runs;
   return runs.map((r) => ({ text: r.text, style: { ...r.style, fieldId: id } }));
 }
@@ -1109,7 +1139,7 @@ const fieldBaseStyle = (doc: EditorState["doc"], blockId: string, offset: number
 
 /** Insert a built-in field at the caret: register its FieldDef and insert the
  *  fieldId-tagged result runs. */
-export function insertFieldCmd(spec: FieldSpec): Command {
+export function insertFieldCmd(spec: FieldSpec, resolvers?: CrossRefResolvers): Command {
   return (state) => {
     const base = withSelectionDeleted(state);
     if (!base) return null;
@@ -1117,7 +1147,7 @@ export function insertFieldCmd(spec: FieldSpec): Command {
     if (!baseStyle) return null;
     const id = freshBlockId();
     const def: FieldDef = { id, instruction: buildInstruction(spec), name: spec.type, kind: "builtin", spec };
-    const runs = fieldResultRuns(spec, baseStyle, id);
+    const runs = fieldResultRuns(spec, baseStyle, id, state.doc, resolvers);
     if (runs.length === 0) return null;
     base.ops.push({ type: "setField", id, def }, { type: "insertRuns", at: base.at, runs });
     return tr(base.ops, caret(base.at.blockId, base.at.offset + runsTextLen(runs)), "command");
@@ -1125,7 +1155,7 @@ export function insertFieldCmd(spec: FieldSpec): Command {
 }
 
 /** Re-define an existing inline field and replace its result in place. */
-export function editFieldCmd(fieldId: string, spec: FieldSpec): Command {
+export function editFieldCmd(fieldId: string, spec: FieldSpec, resolvers?: CrossRefResolvers): Command {
   return (state) => {
     const ranges = findFieldRanges(state.doc, fieldId);
     if (ranges.length === 0) return null;
@@ -1136,7 +1166,7 @@ export function editFieldCmd(fieldId: string, spec: FieldSpec): Command {
     const baseStyle = fieldBaseStyle(state.doc, blockId, start);
     if (!baseStyle) return null;
     const def: FieldDef = { id: fieldId, instruction: buildInstruction(spec), name: spec.type, kind: "builtin", spec };
-    const runs = fieldResultRuns(spec, baseStyle, fieldId);
+    const runs = fieldResultRuns(spec, baseStyle, fieldId, state.doc, resolvers);
     const ops: Op[] = [
       { type: "setField", id: fieldId, def },
       { type: "deleteRange", blockId, start, end },
@@ -1147,12 +1177,13 @@ export function editFieldCmd(fieldId: string, spec: FieldSpec): Command {
 }
 
 /** Recompute an existing field's result (Word's F9): DATE/TIME refresh to now, IF
- *  re-evaluates. PAGE/NUMPAGES are layout-resolved per page, so they're a no-op. */
-export function updateFieldCmd(fieldId: string): Command {
+ *  re-evaluates, REF/PAGEREF re-resolve their bookmark. PAGE/NUMPAGES are
+ *  layout-resolved per page, so they're a no-op. */
+export function updateFieldCmd(fieldId: string, resolvers?: CrossRefResolvers): Command {
   return (state) => {
     const def = state.doc.fields?.[fieldId];
     if (!def?.spec || def.spec.type === "PAGE" || def.spec.type === "NUMPAGES") return null;
-    return editFieldCmd(fieldId, def.spec)(state);
+    return editFieldCmd(fieldId, def.spec, resolvers)(state);
   };
 }
 

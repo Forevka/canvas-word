@@ -470,6 +470,14 @@ export function sampleDoc(): Document {
       run("highlight", { highlightColor: "#fff3a3" }), run(", "), run("x", {}), run("2", { verticalAlign: "super", fontSizePx: 11 }),
       run(", and a "), run("hyperlink", { link: "https://forevka.dev", color: "#0b57d0", underline: true }), run("."),
     ]),
+    // Cross-references give bookmarks a consumer (B7): REF echoes the bookmarked
+    // text, PAGEREF resolves its page. Both are real REF/PAGEREF fields — right-click
+    // ▸ Update Field to refresh, and the hyperlink dialog can link "#sample" too.
+    para([
+      run("Cross-reference — the "), run("bookmarked text", { italic: true, link: "#sample", color: "#0b57d0", underline: true }),
+      run(" above is now referable: "), fieldRun({ type: "REF", bookmark: "sample" }, "bookmarked text", { italic: true }),
+      run(" (REF) on page "), fieldRun({ type: "PAGEREF", bookmark: "sample" }, "1"), run(" (PAGEREF)."),
+    ]),
     // Underline styles + colors (w:u val + color) — double/dotted/dashed/wave/thick.
     para([
       run("Underlines carry a "), run("style", { italic: true }), run(" and an optional "), run("color", { italic: true }), run(": "),

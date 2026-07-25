@@ -18,6 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Navigator` with shortcuts that open the Navigator on the Headings or Marks tab.
 
 ### Added
+- **Bookmark cross-references + in-document links (B7).** Bookmarks finally have a consumer. The
+  hyperlink dialog gains a **"This document"** mode — a bookmark picker that writes an `#anchor` link
+  (round-tripping as `w:hyperlink w:anchor`) — so you can link to a place in the document, not just a URL.
+  And two new cross-reference fields join the field constructor (right-click ▸ Insert Field): **REF**
+  (shows the bookmarked text) and **PAGEREF** (shows the bookmark's page). They are first-class typed
+  fields — `FieldSpec` gains `REF`/`PAGEREF` variants — so they export as real complex fields, re-import
+  faithfully (a TOC entry's own `_Toc…` PAGEREF stays a regenerable TOC entry, not a frozen reference),
+  and refresh via **Update Field** (REF re-reads the bookmark text, PAGEREF re-resolves its page through
+  layout). The `DocumentBuilder.crossReference()` / C# `CrossReference()` composer and the flagship sample
+  document both demonstrate them.
 - **Drag-to-reorder headings in the Outline (O1).** Dragging a heading in the outline pane now moves its
   whole section — the heading plus every block up to the next same-or-shallower heading, children
   included — to the drop position, with a blue drop-line indicator. It reuses the same block-range move

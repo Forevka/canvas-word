@@ -1499,19 +1499,74 @@ if (toolbar) {
     setTimeout(() => cellEls[0]?.focus(), 0);
   };
 
-  /** Hyperlink dialog: URL field + Apply / Remove, applied to the selection.
-   *  `url` pre-fills the field (the hyperlink context toolbar's Edit passes the
-   *  existing address). */
+  /** Hyperlink dialog: a web address OR a place in this document (a bookmark, via
+   *  an `#anchor` link — this is what gives bookmarks a consumer, critique B7).
+   *  `url` pre-fills the field; a leading `#` opens the document-anchor mode with
+   *  that bookmark selected. */
   const linkDialog = (anchor: HTMLElement, url = ""): void => {
+    const bookmarks = Object.keys(editor.getDocument().bookmarks ?? {}).sort((a, b) => a.localeCompare(b));
+    const startInternal = url.startsWith("#");
     const wrap = el("div", "cw-dialog");
+
+    // Mode toggle — Web address / This document.
+    const tabs = el("div", "row");
+    tabs.style.cssText = "gap:4px;margin-bottom:8px;";
+    const TAB_BASE = "flex:1 1 auto;padding:5px 8px;border:1px solid #d0d4d9;border-radius:6px;cursor:pointer;font-size:12px;";
+    const TAB_ACTIVE = TAB_BASE + "border-color:#1a73e8;color:#1a73e8;background:#eef4fe;";
+    const TAB_IDLE = TAB_BASE + "color:#3c4043;background:#fff;";
+    const mkTab = (label: string): HTMLButtonElement => {
+      const b = el("button");
+      b.textContent = label;
+      b.style.cssText = TAB_IDLE;
+      b.addEventListener("mousedown", (e) => e.preventDefault());
+      return b;
+    };
+    const webTab = mkTab("Web address");
+    const docTab = mkTab("This document");
+    tabs.append(webTab, docTab);
+
+    // Web address field.
     const lab = el("label");
     lab.textContent = "Address";
     const input = el("input");
     input.type = "text";
     input.placeholder = "https://example.com";
-    input.value = url;
+    input.value = startInternal ? "" : url;
     input.addEventListener("mousedown", (e) => e.stopPropagation()); // allow focus
     lab.appendChild(input);
+
+    // Bookmark picker (in-document anchor).
+    const bmLab = el("label");
+    bmLab.textContent = "Bookmark";
+    const bmSel = el("select");
+    bmSel.style.cssText = "width:100%;height:28px;border:1px solid #d0d4d9;border-radius:6px;padding:0 6px;";
+    for (const b of bookmarks) {
+      const o = document.createElement("option");
+      o.value = b;
+      o.textContent = b;
+      bmSel.append(o);
+    }
+    if (startInternal) bmSel.value = url.slice(1);
+    bmSel.disabled = bookmarks.length === 0;
+    bmSel.addEventListener("mousedown", (e) => e.stopPropagation());
+    bmLab.appendChild(bmSel);
+    const bmNote = el("div");
+    bmNote.style.cssText = "font-size:11px;color:#9aa0a6;margin-top:4px;";
+    bmNote.textContent = "No bookmarks yet — add one from Navigator ▸ Marks.";
+
+    let mode: "web" | "doc" = startInternal && bookmarks.length > 0 ? "doc" : "web";
+    const applyMode = (): void => {
+      const web = mode === "web";
+      lab.style.display = web ? "" : "none";
+      bmLab.style.display = web ? "none" : "";
+      bmNote.style.display = !web && bookmarks.length === 0 ? "" : "none";
+      webTab.style.cssText = web ? TAB_ACTIVE : TAB_IDLE;
+      docTab.style.cssText = web ? TAB_IDLE : TAB_ACTIVE;
+      apply.disabled = !web && bookmarks.length === 0;
+    };
+    webTab.addEventListener("click", () => { mode = "web"; applyMode(); setTimeout(() => input.focus(), 0); });
+    docTab.addEventListener("click", () => { mode = "doc"; applyMode(); });
+
     const row = el("div", "row");
     const remove = el("button", "danger");
     remove.textContent = "Remove";
@@ -1523,9 +1578,12 @@ if (toolbar) {
     const apply = el("button", "primary");
     apply.textContent = "Apply";
     const doApply = (): void => {
-      const u = input.value.trim();
+      const target = mode === "doc"
+        ? (bmSel.value ? `#${bmSel.value}` : null)
+        : (input.value.trim() === "" ? null : input.value.trim());
+      if (mode === "doc" && bookmarks.length === 0) return;
       closePop();
-      editor.dispatch(setLinkCmd(u === "" ? null : u));
+      editor.dispatch(setLinkCmd(target));
       editor.focus();
     };
     apply.addEventListener("click", doApply);
@@ -1534,9 +1592,10 @@ if (toolbar) {
       e.stopPropagation();
     });
     row.append(remove, apply);
-    wrap.append(lab, row);
+    wrap.append(tabs, lab, bmLab, bmNote, row);
+    applyMode();
     openPop(anchor, wrap);
-    setTimeout(() => input.focus(), 0);
+    setTimeout(() => (mode === "web" ? input : bmSel).focus(), 0);
   };
   // Expose the link dialog to the hyperlink context toolbar (built outside this
   // ribbon closure).

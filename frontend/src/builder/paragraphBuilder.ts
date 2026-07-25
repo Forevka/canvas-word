@@ -438,12 +438,20 @@ export class ParagraphBuilder<P extends StoryBuilder> {
     return this.pushRun(this.ctx.run(resultText, { ...this.charPatch, ...opts?.style, fieldId: fid }));
   }
 
-  /** A cross-reference to a bookmark, as a REF/PAGEREF field over customField. */
+  /** A cross-reference to a bookmark, as a typed REF/PAGEREF built-in field. REF
+   *  shows the bookmarked text, PAGEREF its page number; the actual value is
+   *  resolved live in the editor (and refreshed via Update Field), so the builder
+   *  bakes a cached `resultText` (default: the bookmark name / "1"). */
   crossReference(bookmarkName: string, opts?: { kind?: "ref" | "pageRef"; resultText?: string }): this {
     const kind = opts?.kind ?? "ref";
-    const instruction = kind === "pageRef" ? ` PAGEREF ${bookmarkName} \\h ` : ` REF ${bookmarkName} \\h `;
+    const spec: FieldSpec = kind === "pageRef"
+      ? { type: "PAGEREF", bookmark: bookmarkName }
+      : { type: "REF", bookmark: bookmarkName };
     const resultText = opts?.resultText ?? (kind === "pageRef" ? "1" : bookmarkName);
-    return this.customField(instruction, resultText, { name: kind === "pageRef" ? "PAGEREF" : "REF" });
+    const fields = (this.ctx.doc.fields ??= {});
+    const fid = this.ctx.ids.next();
+    fields[fid] = { id: fid, instruction: buildInstruction(spec), name: spec.type, kind: "builtin", spec };
+    return this.pushRun(this.ctx.run(resultText, { ...this.charPatch, fieldId: fid }));
   }
 
   // ---- inline content controls (SDT) ---------------------------------------

@@ -286,9 +286,9 @@ Recognized as first-class field objects:
 ├─ DATE / TIME ......................... ✅
 ├─ IF .................................. ✅
 ├─ TOC ................................. ✅ (instruction + PAGEREF/HYPERLINK anchors → TOC entries)
-├─ PAGEREF ............................. ✅ (anchor tagging)
-└─ HYPERLINK \l ........................ ✅ (anchor extraction)
-Other instructions (REF, AUTHOR, FILENAME, SEQ, STYLEREF, MERGEFIELD, …):
+├─ REF / PAGEREF (cross-reference) ..... ✅ (bookmark cross-refs — REF text, PAGEREF page; `_Toc…` anchors stay TOC entries)
+└─ HYPERLINK \l ........................ ✅ (anchor extraction; the "#name" in-document link the hyperlink UI writes)
+Other instructions (AUTHOR, FILENAME, SEQ, STYLEREF, MERGEFIELD, …):
    → generic "custom field" IF the host registers it (isCustomFieldInstruction),
      ELSE the cached result is imported as static text.  ⚠️ not individually modeled
 ```
