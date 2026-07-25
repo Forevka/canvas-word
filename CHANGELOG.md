@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Navigator: one panel with a 48px icon rail replaces four navigation surfaces (S1).** The Outline
+  (in-flow pane), Bookmarks (window-fixed drawer), page organizer (modal) and object lists were four
+  different UIs in three paradigms. They are now one left-docked Navigator with a rail of four tabs:
+  **Headings** (the full outline — collapse/filter/levels/pages/drag-reorder), **Pages** (jump to a page
+  + open the reorder overlay), **Objects** (images / shapes / tables / equations, click to reveal), and
+  **Marks** (bookmarks, add/rename/delete/go-to). It is resizable, dark-mode-themed, and survives narrow
+  viewports (the rail is only 48px). The Bookmarks drawer is gone; `View ▸ Show` becomes `View ▸
+  Navigator` with shortcuts that open the Navigator on the Headings or Marks tab.
+
 ### Added
 - **Drag-to-reorder headings in the Outline (O1).** Dragging a heading in the outline pane now moves its
   whole section — the heading plus every block up to the next same-or-shallower heading, children

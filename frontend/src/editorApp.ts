@@ -213,6 +213,10 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
   let autoCollapsedOutline = false;
   let setOutlineOpen: (v: boolean) => void = () => {};
   let isOutlineOpen: () => boolean = () => false;
+  // Navigator (row 17): the bookmarks block renders its list into this panel, and
+  // toggleBookmarks switches the rail to the Marks tab, once the rail is built.
+  let navMarksPanel: HTMLElement | null = null;
+  let navShow: (tab: string) => void = () => {};
 
   // Dark-mode chrome (critique V2): reflect the OS colour scheme onto
   // :root[data-theme], which the dark stylesheet keys off. Marks its own writes
@@ -2416,10 +2420,12 @@ if (toolbar) {
 
   // ===== View tab ==========================================================
   const view = tab("view", "View");
-  group(view, "Show");
+  group(view, "Navigator");
   let outlineToggle = (): void => {};
-  const outlineBtn = btn(ICONS.outline, "Outline / navigation pane (jump to any heading)", () => outlineToggle());
-  const bookmarksBtn = btn(ICONS.bookmark, "Bookmarks — list, go to, add, rename, delete", () => toggleBookmarks());
+  // One Navigator (row 17): the rail switches Headings/Pages/Objects/Marks. These
+  // two are just shortcuts to open it (on Headings, or on the Marks/bookmarks tab).
+  const outlineBtn = btn(ICONS.outline, "Navigator — headings, pages, objects & marks", () => outlineToggle());
+  btn(ICONS.bookmark, "Bookmarks (Navigator ▸ Marks)", () => toggleBookmarks());
   const rulerBtn = btn(ICONS.ruler, "Horizontal ruler", () => rulerBtn.classList.toggle("active", toggleRuler()));
   rulerBtn.classList.toggle("active", showHRuler);
   const vrulerBtn = btn(ICONS.rulerV, "Vertical ruler", () => vrulerBtn.classList.toggle("active", toggleVRuler()));
@@ -2813,23 +2819,131 @@ if (toolbar) {
   // the active highlight follows the caret on every change.
   const outlineEl = shell.outline;
   if (outlineEl) {
+    // ===== Navigator: a 48px icon rail + swappable tab panels (critique S1) ===
+    // One panel unifying the Outline, Bookmarks, page organizer and object lists,
+    // in one paradigm: Headings · Pages · Objects · Marks.
+    outlineEl.classList.add("cw-navigator");
+    const rail = el("div", "cw-nav-rail");
+    const content = el("div", "cw-nav-content");
     const head = el("div", "outline-head");
     const title = el("span");
-    title.textContent = "Outline";
     const closeBtn = el("button");
     closeBtn.innerHTML = "×";
-    closeBtn.title = "Close";
+    closeBtn.title = "Close navigator";
+    closeBtn.setAttribute("aria-label", "Close navigator");
     head.append(title, closeBtn);
-    // Filter box (O3): live substring filter over the heading text.
+    const panels = el("div", "cw-nav-panels");
+    content.append(head, panels);
+    outlineEl.append(rail, content);
+    const mkPanel = (id: string): HTMLElement => {
+      const p = el("div", "cw-nav-panel");
+      p.dataset["nav"] = id;
+      panels.appendChild(p);
+      return p;
+    };
+    const headingsPanel = mkPanel("headings");
+    const pagesPanel = mkPanel("pages");
+    const objectsPanel = mkPanel("objects");
+    const marksPanel = mkPanel("marks");
+    navMarksPanel = marksPanel;
+    // Headings tab content: filter + the outline list (rows 9/16).
     const filterWrap = el("div", "cw-outline-filter");
     const filterInput = el("input");
     filterInput.type = "text";
     filterInput.placeholder = "Filter headings…";
     filterInput.setAttribute("aria-label", "Filter headings");
     filterWrap.appendChild(filterInput);
-    const list = el("div");
-    list.className = "cw-outline-list";
-    outlineEl.append(head, filterWrap, list);
+    const list = el("div", "cw-outline-list");
+    headingsPanel.append(filterWrap, list);
+    // Rail tabs.
+    const NAV_LABELS: Record<string, string> = { headings: "Headings", pages: "Pages", objects: "Objects", marks: "Marks" };
+    const railBtns = new Map<string, HTMLButtonElement>();
+    const setNav = (id: string): void => {
+      title.textContent = NAV_LABELS[id] ?? "";
+      for (const [k, b] of railBtns) b.classList.toggle("active", k === id);
+      for (const p of Array.from(panels.children)) (p as HTMLElement).classList.toggle("active", (p as HTMLElement).dataset["nav"] === id);
+      if (id === "objects") buildObjects();
+      if (id === "pages") buildPages();
+      if (id === "marks") refreshBookmarks();
+    };
+    navShow = setNav;
+    const railBtn = (id: string, icon: string, label: string): void => {
+      const b = el("button", "cw-nav-tab");
+      b.innerHTML = icon;
+      b.title = label;
+      b.setAttribute("aria-label", label);
+      b.addEventListener("mousedown", (e) => e.preventDefault());
+      b.addEventListener("click", () => setNav(id));
+      rail.appendChild(b);
+      railBtns.set(id, b);
+    };
+    railBtn("headings", ICONS.outline, "Headings");
+    railBtn("pages", ICONS.organizePages, "Pages");
+    railBtn("objects", ICONS.shapes, "Objects");
+    railBtn("marks", ICONS.bookmark, "Marks");
+
+    const openOrganize = (): void => {
+      if (organizeDlg) { organizeDlg.close(); organizeDlg = null; return; }
+      organizeDlg = showOrganizePages({ editor, fontRegistry, theme: config.theme, onClose: () => { organizeDlg = null; } });
+    };
+
+    // Objects tab: images / shapes / tables / equations, click to reveal.
+    const buildObjects = (): void => {
+      objectsPanel.textContent = "";
+      const blocks = editor.getDocument().blocks;
+      const label = (b: (typeof blocks)[number]): string | null =>
+        b.kind === "image" ? "Image" : b.kind === "shape" ? "Shape" : b.kind === "table" ? "Table" : b.kind === "equation" ? "Equation" : null;
+      let n = 0;
+      const counts: Record<string, number> = {};
+      for (const b of blocks) {
+        const l = label(b);
+        if (!l) continue;
+        counts[l] = (counts[l] ?? 0) + 1;
+        const row = el("button", "outline-item");
+        const lbl = el("span", "outline-label");
+        lbl.textContent = `${l} ${counts[l]}`;
+        row.appendChild(lbl);
+        row.addEventListener("mousedown", (e) => e.preventDefault());
+        row.addEventListener("click", () => editor.revealBlock(b.id));
+        objectsPanel.appendChild(row);
+        n++;
+      }
+      if (n === 0) {
+        const empty = el("div", "outline-empty");
+        empty.textContent = "No images, shapes, tables or equations yet.";
+        objectsPanel.appendChild(empty);
+      }
+    };
+
+    // Pages tab: a page list (jump to a page) + the reorder overlay.
+    const buildPages = (): void => {
+      pagesPanel.textContent = "";
+      if (config.organizePages) {
+        const act = el("button", "cw-nav-action");
+        act.textContent = "Reorder pages…";
+        act.addEventListener("mousedown", (e) => e.preventDefault());
+        act.addEventListener("click", () => openOrganize());
+        pagesPanel.appendChild(act);
+      }
+      const blocks = editor.getDocument().blocks;
+      const lastPage = blocks.length ? editor.getBlockPage(blocks[blocks.length - 1]!.id) ?? 1 : 1;
+      const firstBlockOnPage = new Map<number, string>();
+      for (const b of blocks) {
+        const p = editor.getBlockPage(b.id);
+        if (p != null && !firstBlockOnPage.has(p)) firstBlockOnPage.set(p, b.id);
+      }
+      for (let p = 1; p <= lastPage; p++) {
+        const row = el("button", "outline-item");
+        const lbl = el("span", "outline-label");
+        lbl.textContent = `Page ${p}`;
+        row.appendChild(lbl);
+        const target = firstBlockOnPage.get(p);
+        row.addEventListener("mousedown", (e) => e.preventDefault());
+        if (target) row.addEventListener("click", () => editor.revealBlock(target));
+        pagesPanel.appendChild(row);
+      }
+    };
+    setNav("headings"); // default tab
     // Drag-to-resize handle on the pane's right edge (O5).
     const resizer = el("div", "cw-outline-resize");
     resizer.title = "Drag to resize";
@@ -3062,23 +3176,12 @@ if (toolbar) {
 
   // ---- Bookmarks panel (list + Go To + add/rename/delete) -----------------
   {
-    const panel = el("div", "cw-float-drawer"); // positioning/scoping lives in the class
-    panel.style.display = "none";
-    const head = el("div", "outline-head");
-    const title = el("span");
-    title.textContent = "Bookmarks";
-    const addBtn = el("button");
-    addBtn.textContent = "+";
+    // Bookmarks render into the Navigator's Marks tab (row 17), not a drawer.
+    const addBtn = el("button", "cw-nav-action");
+    addBtn.textContent = "＋ Add bookmark";
     addBtn.title = "Add a bookmark for the current selection";
-    addBtn.style.cssText = "margin-left:auto;border:none;background:transparent;font-size:18px;cursor:pointer;color:#2b579a;";
-    const closeBtn = el("button");
-    closeBtn.innerHTML = "×";
-    closeBtn.title = "Close";
-    head.append(title, addBtn, closeBtn);
-    const list = el("div");
-    list.style.cssText = "flex:1 1 auto;overflow-y:auto;padding:2px 0;";
-    panel.append(head, list);
-    shell.workarea.appendChild(panel);
+    const list = el("div", "cw-outline-list");
+    if (navMarksPanel) navMarksPanel.append(addBtn, list);
 
     // OOXML bookmark-name rules — a native prompt() could neither enforce nor
     // explain these (critique B5). Returns an error message, or null when valid.
@@ -3141,13 +3244,6 @@ if (toolbar) {
       }
     };
 
-    let open = false;
-    const setOpen = (v: boolean): void => {
-      open = v;
-      panel.style.display = v ? "flex" : "none";
-      bookmarksBtn.classList.toggle("active", v);
-      if (v) build();
-    };
     addBtn.addEventListener("click", () => {
       showInputDialog({
         title: "Add bookmark",
@@ -3162,12 +3258,10 @@ if (toolbar) {
         },
       });
     });
-    closeBtn.addEventListener("click", () => setOpen(false));
-    toggleBookmarks = (): void => setOpen(!open);
-    refreshBookmarks = (): void => {
-      if (open) build();
-    };
-    if (runtime.view?.bookmarks) setOpen(true); // closed by default; embedder can open it
+    toggleBookmarks = (): void => { setOutlineOpen(true); navShow("marks"); };
+    refreshBookmarks = (): void => { if (navMarksPanel) build(); };
+    build();
+    if (runtime.view?.bookmarks) { setOutlineOpen(true); navShow("marks"); }
   }
 
   // ---- Review pane (track changes + comments) — docked right, in-shell ----

@@ -298,6 +298,34 @@ const CSS = `
 .cw-outline-drop { position: absolute; left: 6px; right: 6px; height: 2px; background: #2b579a; z-index: 4; pointer-events: none; }
 :root[data-theme="dark"] .cw-outline-drop { background: #7cb0ff; }
 
+/* ===== Navigator: 48px icon rail + swappable tab panels (row 17 / S1) === */
+.cw-outline.cw-navigator { flex-direction: row; }
+.cw-nav-rail {
+  flex: 0 0 48px; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 6px 0; background: #f3f2f1; border-right: 1px solid #e1dfdd;
+}
+.cw-nav-tab {
+  width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center;
+  border: none; background: transparent; border-radius: 6px; cursor: pointer; color: #605e5c; padding: 0;
+}
+.cw-nav-tab svg { width: 18px; height: 18px; }
+.cw-nav-tab:hover { background: #e6e4e2; color: #323130; }
+.cw-nav-tab.active { background: #fff; color: #2b579a; box-shadow: inset 2px 0 0 #2b579a; }
+.cw-nav-content { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.cw-nav-panels { flex: 1 1 auto; min-height: 0; position: relative; }
+.cw-nav-panel { display: none; position: absolute; inset: 0; flex-direction: column; min-height: 0; }
+.cw-nav-panel.active { display: flex; }
+.cw-nav-action {
+  flex: 0 0 auto; margin: 8px 10px 4px; height: 28px; border: 1px solid #d2d0ce; border-radius: 6px;
+  background: #fff; cursor: pointer; font: inherit; font-size: 12.5px; color: #2b579a; font-weight: 600;
+}
+.cw-nav-action:hover { background: #f3f2f1; }
+:root[data-theme="dark"] .cw-nav-rail { background: #26282c; border-color: #34373c; }
+:root[data-theme="dark"] .cw-nav-tab { color: #9aa0a6; }
+:root[data-theme="dark"] .cw-nav-tab:hover { background: #34373c; color: #e6e6e6; }
+:root[data-theme="dark"] .cw-nav-tab.active { background: #1e1f22; color: #7cb0ff; box-shadow: inset 2px 0 0 #7cb0ff; }
+:root[data-theme="dark"] .cw-nav-action { background: #2a2c30; color: #7cb0ff; border-color: #4a4a4a; }
+
 /* ===== Review pane (track changes + comments) ======================= */
 .cw-review {
   flex: 0 0 320px; width: 320px; min-height: 0; display: none;
