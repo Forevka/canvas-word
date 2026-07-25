@@ -241,6 +241,17 @@ Expect to split: land the panel shell plus Font/Paragraph first, then Table, the
 Page/Section, then Object, retiring each dialog as its section lands. Do not
 delete a dialog until its Inspector section is at parity.
 
+> **PARTIALLY LANDED.** Commit 1 (`feat(editor): Inspector panel shell +
+> Font/Paragraph sections`) shipped the right-docked `shell.inspector` region,
+> the header toggle, selection-aware section swap, and the **Text** + **Paragraph**
+> sections (live, no-Apply, undoable). Remaining as follow-on commits: **Object**
+> (needs a `getSelectedObjectProps()` accessor on the editor — no public getter for
+> the selected object's model size/wrap today), **Page/Section** (read section
+> geometry via `ui/pageLayout.ts`'s editor calls), and **Table** (mine
+> `ui/tableProperties.ts` + the cell/table commands). No dialog deleted yet — per
+> the parity rule the Font/Paragraph dialogs remain the advanced fallback. The
+> panel is the dependency row 24 needs, which is why it landed first.
+
 ### 24. `feat/quiet-chrome-preset` — structural redesign
 Critique: **Move 1** — demote the ribbon from architecture to preset. A quiet
 48 px default bar (title + save state · undo/redo · style picker · six formatting
