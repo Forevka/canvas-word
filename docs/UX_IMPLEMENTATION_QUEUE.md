@@ -28,6 +28,11 @@ Follow [SDLC.md](./SDLC.md) for everything not stated here.
    drags, so verify those by op/command unit tests plus structural checks.
 7. **Never commit** the scratchpad (`scratchpad/`, git-ignored) or the
    pre-existing `README.md` modification.
+8. **Hand off cleanly rather than degrade.** If you reach ~80% context, finish and
+   commit the row you are on, then stop and say so. Do **not** begin a new row in a
+   degraded state — the remaining rows are large and multi-layer, and a plausible
+   but wrong restructure costs more than a handoff. A fresh agent resumes from this
+   file plus `git log --oneline main..feat/ux-overhaul`; nothing else is needed.
 
 ### Gates for every row
 
