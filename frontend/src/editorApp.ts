@@ -339,6 +339,11 @@ let refreshStatus: () => void = () => {};
 // before the toolbar block builds the widget) can drive them; they stay no-ops
 // when the ribbon is disabled (chromeless mount).
 let refreshSaveState: () => void = () => {};
+// Import fidelity (Move 3): the lossy/adapted-mapping warnings from the last .docx
+// open, surfaced as a passive chrome badge. Empty for the in-memory sample (no
+// import) → "Word-faithful". Set in openDocxFile; the badge reads it via refreshFidelity.
+let importWarnings: ImportResult["warnings"] = [];
+let refreshFidelity: () => void = () => {};
 let syncQat: () => void = () => {}; // enable/disable the quick-access undo/redo
 let resetSaveBaseline: () => void = () => {};
 let setDocTitleFromFile: (name: string | null) => void = () => {};
@@ -740,6 +745,8 @@ const openDocxFile = async (file: File | ArrayBuffer): Promise<void> => {
     });
     reportImport(result, performance.now() - i0);
     replaceDocument(result.doc);
+    importWarnings = result.warnings; // drive the fidelity badge (Move 3)
+    refreshFidelity();
     setDocTitleFromFile(file instanceof File ? file.name : null); // reflect the opened file's name
     detachCollabSession();
   } catch (e) {
@@ -2640,6 +2647,75 @@ if (toolbar) {
   saveWrap.append(saveDot, saveText);
   docIdent.append(titleEl, saveWrap);
   tabsBar.insertBefore(docIdent, tabScroll); // leftmost, before the scrolling tabs
+
+  // ---- Import fidelity badge (Move 3): the moat made visible. "✓ Word-faithful"
+  // when the last import dropped/adapted nothing (and for the in-memory sample,
+  // which round-trips to .docx faithfully); otherwise "⚠ N compatibility notes"
+  // that expands to a plain-language list of what was preserved-but-adapted.
+  const fidelityBtn = el("button", "cw-fidelity");
+  fidelityBtn.type = "button";
+  fidelityBtn.setAttribute("aria-haspopup", "true");
+  fidelityBtn.setAttribute("aria-expanded", "false");
+  docIdent.append(fidelityBtn);
+  let fidelitySurface: SurfaceHandle | null = null;
+  let fidelityPanelEl: HTMLElement | null = null;
+  let fidelityOutside: ((e: MouseEvent) => void) | null = null;
+  const closeFidelityPanel = (): void => {
+    if (fidelityOutside) { window.removeEventListener("mousedown", fidelityOutside, true); fidelityOutside = null; }
+    fidelitySurface?.release();
+    fidelitySurface = null;
+    fidelityPanelEl?.remove();
+    fidelityPanelEl = null;
+    fidelityBtn.setAttribute("aria-expanded", "false");
+  };
+  const openFidelityPanel = (): void => {
+    const n = importWarnings.length;
+    const panel = el("div", "cw-fidelity-panel");
+    const head = el("div", "cw-fidelity-head");
+    head.textContent = n === 0 ? "✓ Word-faithful" : `⚠ ${n} feature${n === 1 ? "" : "s"} preserved but adapted`;
+    const sub = el("div", "cw-fidelity-sub");
+    sub.textContent = n === 0
+      ? "Everything in this document is fully modeled and round-trips to Word (.docx) faithfully."
+      : "These were kept when the document opened, but adapted or simplified for editing here. Everything else round-trips faithfully.";
+    panel.append(head, sub);
+    if (n > 0) {
+      const ul = el("ul", "cw-fidelity-list");
+      for (const w of importWarnings) {
+        const li = el("li");
+        li.textContent = w.message;
+        ul.append(li);
+      }
+      panel.append(ul);
+    }
+    const r = fidelityBtn.getBoundingClientRect();
+    panel.style.left = `${Math.round(Math.min(r.left, window.innerWidth - 340))}px`;
+    panel.style.top = `${Math.round(r.bottom + 5)}px`;
+    document.body.append(panel);
+    fidelityPanelEl = panel;
+    fidelityBtn.setAttribute("aria-expanded", "true");
+    fidelitySurface = openSurface({ el: panel, close: closeFidelityPanel, kind: "overlay" });
+    // Deferred a tick so the opening click doesn't immediately self-close.
+    fidelityOutside = (e: MouseEvent): void => {
+      const t = e.target as Node;
+      if (panel.contains(t) || fidelityBtn.contains(t)) return;
+      closeFidelityPanel();
+    };
+    setTimeout(() => { if (fidelityOutside) window.addEventListener("mousedown", fidelityOutside, true); }, 0);
+  };
+  fidelityBtn.addEventListener("click", () => {
+    if (fidelityPanelEl) closeFidelityPanel();
+    else openFidelityPanel();
+  });
+  refreshFidelity = (): void => {
+    const n = importWarnings.length;
+    fidelityBtn.className = "cw-fidelity " + (n === 0 ? "faithful" : "notes");
+    fidelityBtn.textContent = n === 0 ? "✓ Word-faithful" : `⚠ ${n} note${n === 1 ? "" : "s"}`;
+    fidelityBtn.title = n === 0
+      ? "Word-faithful — nothing was dropped or adapted; the document round-trips to .docx faithfully."
+      : `${n} feature${n === 1 ? " was" : "s were"} preserved but adapted on import. Click for details.`;
+    if (fidelityPanelEl) { closeFidelityPanel(); } // stale content — reopen on demand
+  };
+  refreshFidelity(); // initial state (sample doc → "✓ Word-faithful")
 
   // Where does a save actually go? Host pipeline > online autosync > nowhere.
   const saveTarget: "host" | "online" | "none" = runtime.onSave ? "host" : online ? "online" : "none";

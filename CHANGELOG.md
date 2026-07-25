@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Navigator` with shortcuts that open the Navigator on the Headings or Marks tab.
 
 ### Added
+- **Import fidelity badge (Move 3).** The moat — that a .docx goes in and comes out faithfully — is now
+  visible. A passive badge sits with the save state in the ribbon: **✓ Word-faithful** when the document
+  round-trips with nothing dropped or adapted (including the in-memory sample), or **⚠ N notes** when
+  opening a .docx adapted something. Clicking it expands a plain-language list of exactly what was
+  preserved-but-adapted (e.g. "Embedded OLE objects are not imported", "Soft line breaks became paragraph
+  breaks"), driven by the importer's existing per-decision warnings (`ImportResult.warnings`). The panel is
+  surface-managed (Escape / outside-click closes) and dark-mode themed. No competitor in the browser can
+  show this, because none keep the fidelity.
 - **Bookmark cross-references + in-document links (B7).** Bookmarks finally have a consumer. The
   hyperlink dialog gains a **"This document"** mode — a bookmark picker that writes an `#anchor` link
   (round-tripping as `w:hyperlink w:anchor`) — so you can link to a place in the document, not just a URL.

@@ -85,7 +85,7 @@ const CSS = `
    "what is this file / is my work safe?" is answerable without opening a menu */
 .cw-doc-ident {
   flex: 0 0 auto; align-self: flex-end; display: flex; align-items: center;
-  gap: 8px; min-width: 0; max-width: 340px; padding: 0 12px 4px 4px;
+  gap: 8px; min-width: 0; max-width: 480px; padding: 0 12px 4px 4px;
 }
 .cw-doc-title {
   font-size: 13px; font-weight: 600; color: #201f1e; min-width: 0; max-width: 210px;
@@ -98,6 +98,29 @@ const CSS = `
 .cw-save-dot.saved { background: #2e7d32; }   /* green — saved */
 .cw-save-dot.clean { background: #a19f9d; }   /* grey — neutral / no target */
 .cw-save-text { font-size: 12px; color: #605e5c; white-space: nowrap; }
+
+/* import fidelity badge (Move 3) — the moat made visible: a passive trust signal
+   sitting with save state. Faithful (green) when nothing was adapted on import;
+   notes (amber) opens a plain-language list of what was preserved-but-adapted. */
+.cw-fidelity {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+  border: 1px solid transparent; border-radius: 11px; padding: 1px 9px;
+  font-size: 11px; font-weight: 600; line-height: 1.6; cursor: pointer;
+  white-space: nowrap; background: none; font-family: inherit;
+}
+.cw-fidelity.faithful { color: #1b6e2e; background: #e6f4ea; border-color: #b7e0c1; }
+.cw-fidelity.notes { color: #8a5300; background: #fdf1dc; border-color: #f0d199; }
+.cw-fidelity:hover { filter: brightness(0.97); }
+.cw-fidelity-panel {
+  position: fixed; z-index: 1200; width: 340px; max-width: 92vw;
+  background: #fff; border: 1px solid #e0e0e0; border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.22); padding: 14px 16px;
+  font-size: 13px; line-height: 1.5; color: #201f1e;
+}
+.cw-fidelity-head { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+.cw-fidelity-sub { font-size: 12px; color: #605e5c; margin-bottom: 8px; }
+.cw-fidelity-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; max-height: 320px; overflow-y: auto; }
+.cw-fidelity-list li { font-size: 12px; color: #3c4043; }
 
 /* quick-access toolbar (undo / redo / save) — pinned between the title and the
    tab strip so the most-used commands are one click from any tab */
@@ -671,6 +694,11 @@ const CSS = `
 :root[data-theme="dark"] .cw-mode-select { background: #2a2c30; color: #e6e6e6; border-color: #4a4a4a; }
 :root[data-theme="dark"] .cw-header-btn { background: #2a2c30; color: #7cb0ff; border-color: #4a4a4a; }
 :root[data-theme="dark"] .cw-header-btn:hover { background: #34373c; }
+:root[data-theme="dark"] .cw-fidelity.faithful { color: #8fd6a4; background: #1a2b1f; border-color: #2f5138; }
+:root[data-theme="dark"] .cw-fidelity.notes { color: #e6bd73; background: #2e2517; border-color: #5a4a2a; }
+:root[data-theme="dark"] .cw-fidelity-panel { background: #26282c; border-color: #3a3d42; color: #e6e6e6; }
+:root[data-theme="dark"] .cw-fidelity-sub { color: #9aa0a6; }
+:root[data-theme="dark"] .cw-fidelity-list li { color: #c8ccd0; }
 /* Styles gallery */
 :root[data-theme="dark"] .rib-gallery { background: #2a2c30; border-color: #4a4a4a; }
 :root[data-theme="dark"] .style-card { background: #26282c; border-color: #3a3a3a; }
