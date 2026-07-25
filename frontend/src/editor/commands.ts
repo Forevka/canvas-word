@@ -3590,7 +3590,7 @@ function restyleOps(block: Paragraph, char: Partial<CharStyle>, para: Partial<Pa
   return ops;
 }
 
-export function applyNamedStyle(styleId: string): Command {
+export function applyNamedStyle(styleId: string, origin: TransactionOrigin = "command"): Command {
   return (state) => {
     const sel = state.selection;
     if (!sel) return null;
@@ -3604,14 +3604,14 @@ export function applyNamedStyle(styleId: string): Command {
       seen.add(s.block.id);
       ops.push(...restyleOps(s.block, char, para, styleId));
     }
-    return ops.length ? tr(ops, sel, "command") : null;
+    return ops.length ? tr(ops, sel, origin) : null;
   };
 }
 
 /** Apply a CHARACTER style to the selected run range only (not the paragraph):
  *  bake the style's resolved char props over the runs and tag them with its id
  *  (w:rStyle). No-op on a collapsed caret or a non-character style. */
-export function applyCharStyle(styleId: string): Command {
+export function applyCharStyle(styleId: string, origin: TransactionOrigin = "command"): Command {
   return (state) => {
     const sel = state.selection;
     if (!sel || isCollapsed(sel)) return null;
@@ -3626,8 +3626,90 @@ export function applyCharStyle(styleId: string): Command {
       blockId: s.block.id,
       runs: applyStylePatchToRuns(s.block.runs, s.start, s.end, patch),
     }));
-    return tr(ops, sel, "command");
+    return tr(ops, sel, origin);
   };
+}
+
+/** A captured paragraph (id + full para style + runs) — the unit a hover style
+ *  preview snapshots before applying transiently, then restores on mouse-out. */
+export interface ParaSnapshot {
+  id: string;
+  style: ParaStyle;
+  runs: Run[];
+}
+
+/** Restore captured paragraphs to their exact pre-preview state. Used to revert a
+ *  non-destructive style hover-preview (dispatched with the "transient" origin so
+ *  it never touches the undo stack). Clears any para key the preview added by first
+ *  unsetting every current key, then re-applying the snapshot's style; `setRuns`
+ *  fully replaces the runs, so the restore is exact. */
+export function restoreParagraphsCmd(snaps: ParaSnapshot[], origin: TransactionOrigin = "transient"): Command {
+  return (state) => {
+    const ops: Op[] = [];
+    for (const snap of snaps) {
+      const cur = blockById(state.doc, snap.id);
+      if (!cur || cur.kind !== "paragraph") continue;
+      const patch: Partial<ParaStyle> = {};
+      for (const key of Object.keys(cur.style) as (keyof ParaStyle)[]) (patch as Record<string, unknown>)[key] = undefined;
+      Object.assign(patch, snap.style);
+      ops.push({ type: "setParaStyle", blockId: snap.id, patch });
+      ops.push({ type: "setRuns", blockId: snap.id, runs: snap.runs });
+    }
+    return ops.length ? tr(ops, state.selection, origin) : null;
+  };
+}
+
+/** Every range referencing a named style, for "select all instances" + counts.
+ *  Paragraph styles → each whole paragraph; character styles → each contiguous
+ *  run range carrying the style's id. Empty when the style is unknown/unused. */
+export function styleInstanceRanges(doc: EditorState["doc"], styleId: string): { blockId: string; start: number; end: number }[] {
+  const sheet = doc.stylesheet ?? defaultStylesheet();
+  const st = styleById(sheet, styleId);
+  if (!st) return [];
+  const out: { blockId: string; start: number; end: number }[] = [];
+  if (styleType(st) === "character") {
+    for (const p of paragraphsOf(doc)) {
+      let offset = 0;
+      let runStart: number | null = null;
+      for (const r of p.runs) {
+        const match = r.style.charStyleId === styleId;
+        if (match && runStart === null) runStart = offset;
+        if (!match && runStart !== null) { out.push({ blockId: p.id, start: runStart, end: offset }); runStart = null; }
+        offset += r.text.length;
+      }
+      if (runStart !== null) out.push({ blockId: p.id, start: runStart, end: offset });
+    }
+  } else {
+    for (const p of paragraphsWithStyle(doc, styleId)) out.push({ blockId: p.id, start: 0, end: textOfRuns(p.runs).length });
+  }
+  return out;
+}
+
+// Char keys that count as "direct formatting" — a run value here that differs from
+// its resolved named/char style is a local override (drives the panel's chip).
+const DIRECT_FORMAT_KEYS: (keyof CharStyle)[] = [
+  "bold", "italic", "underline", "underlineStyle", "strikethrough", "doubleStrikethrough",
+  "color", "fontFamily", "fontSizePx", "highlightColor", "verticalAlign", "smallCaps", "caps",
+];
+
+/** Does the caret/position carry direct character formatting overriding its named
+ *  (+ character) style? Compares the run's concrete style against the style baked
+ *  from the stylesheet. Drives the "direct formatting" override chip. */
+export function hasDirectFormattingAt(doc: EditorState["doc"], pos: DocPosition): boolean {
+  const block = blockById(doc, pos.blockId);
+  if (!block || block.kind !== "paragraph") return false;
+  const runStyle = styleAtRuns(block.runs, pos.offset);
+  if (!runStyle) return false;
+  const sheet = doc.stylesheet ?? defaultStylesheet();
+  const styleId = block.style.namedStyle ?? sheet.defaultStyleId;
+  const charStyleId = runStyle.charStyleId;
+  const base: CharStyle = {
+    ...DEFAULT_CHAR_STYLE,
+    ...resolveStyle(sheet, styleId).char,
+    ...(charStyleId ? resolveCharStyle(sheet, charStyleId) : {}),
+  };
+  const cur: CharStyle = { ...DEFAULT_CHAR_STYLE, ...runStyle };
+  return DIRECT_FORMAT_KEYS.some((k) => cur[k] !== base[k]);
 }
 
 /** Re-patch only the runs of `block` that reference character style `styleId`,

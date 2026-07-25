@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { CharStyle, Document, NamedStyle, Paragraph, ParaStyle, SectionProps, Stylesheet } from "@cw/shared";
-import { applyOp, descendantsOf, locateShape, mergeDuplicateNamedStyles, styleById, styleType, wouldCycle } from "@cw/shared";
+import { applyOp, DEFAULT_CHAR_STYLE, descendantsOf, locateShape, mergeDuplicateNamedStyles, styleById, styleType, wouldCycle } from "@cw/shared";
 import { bulletListDefinition, numberListDefinition } from "@cw/shared";
-import { applyCharStyle, deleteListDefinition, deleteNamedStyle, mergeDuplicateStyles, renameNamedStyle, setDefaultStyle, upsertListDefinition, upsertNamedStyle, type NamedStyleSpec } from "./commands";
+import { applyCharStyle, applyNamedStyle, deleteListDefinition, deleteNamedStyle, hasDirectFormattingAt, mergeDuplicateStyles, renameNamedStyle, restoreParagraphsCmd, setDefaultStyle, styleInstanceRanges, upsertListDefinition, upsertNamedStyle, type NamedStyleSpec, type ParaSnapshot } from "./commands";
 import type { Command, EditorState } from "./state";
 
 const CHAR: CharStyle = { fontFamily: "Georgia, serif", fontSizePx: 14, bold: false, italic: false, underline: false, strikethrough: false, color: "#000" };
@@ -326,5 +326,80 @@ describe("deleteNamedStyle / rename / setDefault", () => {
     const doc: Document = { section: SECTION, blocks: [topShape, table], stylesheet: SHEET };
     expect(locateShape(doc, "cellbox")?.kind).toBe("cell"); // refused by the top-only gate
     expect(locateShape(doc, "topbox")?.kind).toBe("top"); // accepted
+  });
+});
+
+// A sheet with a character style, for char-instance + preview tests.
+const CHAR_SHEET: Stylesheet = {
+  defaultStyleId: "Normal",
+  styles: [
+    { id: "Normal", name: "Normal", type: "paragraph", char: { color: "#202124", fontSizePx: 16 }, para: { align: "left" } },
+    { id: "Heading1", name: "Heading 1", type: "paragraph", basedOn: "Normal", char: { bold: true, fontSizePx: 24 }, para: { spaceBeforePx: 12 } },
+    { id: "Emph", name: "Emphasis", type: "character", char: { italic: true, color: "#c00" }, para: {} },
+  ],
+};
+// A paragraph with an explicit run style (for override / char-style tests).
+const pRun = (text: string, runStyle: Partial<CharStyle>, namedStyle?: string): Paragraph => ({
+  kind: "paragraph", id: `pr${n++}`, revision: 0,
+  runs: [{ text, style: { ...CHAR, ...runStyle } }],
+  style: namedStyle ? { ...PARA, namedStyle } : { ...PARA },
+});
+
+describe("style preview + query primitives (row 20)", () => {
+  it("applyNamedStyle carries the requested transaction origin (transient = no undo)", () => {
+    const a = p("hello", "Normal");
+    const state: EditorState = { doc: docOf(SHEET, a), selection: sel(a) };
+    expect(applyNamedStyle("Heading1")(state)!.origin).toBe("command");
+    expect(applyNamedStyle("Heading1", "transient")(state)!.origin).toBe("transient");
+  });
+
+  it("restoreParagraphsCmd reverts a transient preview to the exact prior state", () => {
+    const a = p("hello", "Normal"); // run: bold false, size 14
+    const snap: ParaSnapshot[] = [{ id: a.id, style: a.style, runs: a.runs }];
+    const state: EditorState = { doc: docOf(SHEET, a), selection: sel(a) };
+    // Preview Heading1 (bold, size 24, namedStyle Heading1) transiently…
+    const previewed = run(state, applyNamedStyle("Heading1", "transient")).doc;
+    const pv = previewed.blocks[0] as Paragraph;
+    expect(pv.style.namedStyle).toBe("Heading1");
+    expect(pv.runs[0]!.style.bold).toBe(true);
+    // …then restore.
+    const restored = run({ doc: previewed, selection: sel(a) }, restoreParagraphsCmd(snap)).doc;
+    const rp = restored.blocks[0] as Paragraph;
+    expect(rp.style.namedStyle).toBe("Normal");
+    expect(rp.runs[0]!.style.bold).toBe(false);
+    expect(rp.runs[0]!.style.fontSizePx).toBe(14);
+  });
+
+  it("styleInstanceRanges finds every paragraph using a paragraph style", () => {
+    const a = p("aaa", "Heading1"), b = p("bbb", "Normal"), c = p("ccc", "Heading1");
+    const doc = docOf(SHEET, a, b, c);
+    expect(styleInstanceRanges(doc, "Heading1")).toEqual([
+      { blockId: a.id, start: 0, end: 3 },
+      { blockId: c.id, start: 0, end: 3 },
+    ]);
+  });
+
+  it("styleInstanceRanges finds run ranges for a character style", () => {
+    const para: Paragraph = {
+      kind: "paragraph", id: "cp", revision: 0, style: { ...PARA },
+      runs: [
+        { text: "plain ", style: { ...CHAR } },
+        { text: "emph", style: { ...CHAR, italic: true, color: "#c00", charStyleId: "Emph" } },
+        { text: " tail", style: { ...CHAR } },
+      ],
+    };
+    const doc: Document = { section: SECTION, blocks: [para], stylesheet: CHAR_SHEET };
+    expect(styleInstanceRanges(doc, "Emph")).toEqual([{ blockId: "cp", start: 6, end: 10 }]);
+  });
+
+  it("hasDirectFormattingAt flags a run that overrides its named style, not one that matches", () => {
+    // A run matching Normal's resolved char exactly → no override.
+    const clean = pRun("clean", { ...DEFAULT_CHAR_STYLE, color: "#202124", fontSizePx: 16 }, "Normal");
+    const cleanDoc: Document = { section: SECTION, blocks: [clean], stylesheet: SHEET };
+    expect(hasDirectFormattingAt(cleanDoc, { blockId: clean.id, offset: 1 })).toBe(false);
+    // Same, but locally bolded → override.
+    const bolded = pRun("bold", { ...DEFAULT_CHAR_STYLE, color: "#202124", fontSizePx: 16, bold: true }, "Normal");
+    const boldDoc: Document = { section: SECTION, blocks: [bolded], stylesheet: SHEET };
+    expect(hasDirectFormattingAt(boldDoc, { blockId: bolded.id, offset: 1 })).toBe(true);
   });
 });
