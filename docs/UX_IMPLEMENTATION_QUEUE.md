@@ -241,16 +241,15 @@ Expect to split: land the panel shell plus Font/Paragraph first, then Table, the
 Page/Section, then Object, retiring each dialog as its section lands. Do not
 delete a dialog until its Inspector section is at parity.
 
-> **PARTIALLY LANDED.** Commit 1 (`feat(editor): Inspector panel shell +
-> Font/Paragraph sections`) shipped the right-docked `shell.inspector` region,
-> the header toggle, selection-aware section swap, and the **Text** + **Paragraph**
-> sections (live, no-Apply, undoable). Remaining as follow-on commits: **Object**
-> (needs a `getSelectedObjectProps()` accessor on the editor — no public getter for
-> the selected object's model size/wrap today), **Page/Section** (read section
-> geometry via `ui/pageLayout.ts`'s editor calls), and **Table** (mine
-> `ui/tableProperties.ts` + the cell/table commands). No dialog deleted yet — per
-> the parity rule the Font/Paragraph dialogs remain the advanced fallback. The
-> panel is the dependency row 24 needs, which is why it landed first.
+> **LANDED (all four section families).** Shell + **Text**/**Paragraph** (`2092ca0`),
+> **Page/Section** (`bb59957`), **Table** (`646c763`) and **Object** (image/shape,
+> `a0b9ae9`) — each live, no-Apply, undoable. The Object section added the
+> `editor.getSelectedObjectProps()` accessor the queue flagged as its prerequisite.
+> **No dialog deleted** — by the parity rule each Inspector section is the
+> common-lever subset and the matching dialog stays as the advanced fallback for
+> the long tail (Font colour/effects; page borders/colour/line-numbering;
+> cell/table borders & shading; exact shape anchor offsets). Full parity + dialog
+> retirement is a later, larger pass. The panel is the dependency row 24 needs.
 
 ### 24. `feat/quiet-chrome-preset` — structural redesign
 Critique: **Move 1** — demote the ribbon from architecture to preset. A quiet
@@ -290,8 +289,8 @@ Tick a row only after it is **committed** to `feat/ux-overhaul`.
 - [x] 20 `feat/styles-panel`
 - [ ] 21 `feat/ai-selection-agent` — **skipped, blocked on `feat/document-agent` merge** (see row 21 note)
 - [x] 22 `feat/input-rules-slash-menu`
-- [ ] 23 `feat/inspector-panel` — shell + Text/Paragraph (`2092ca0`) **+ Page/Section (`bb59957`)** landed;
-  Table + Object sections remain
+- [x] 23 `feat/inspector-panel` — shell + Text/Paragraph (`2092ca0`), Page/Section (`bb59957`),
+  Table (`646c763`), Object (`a0b9ae9`); dialogs retained as advanced fallback per the parity rule
 - [ ] 24 `feat/quiet-chrome-preset`
 
 ### Out-of-band fixes (folded in during rows 23–24)
