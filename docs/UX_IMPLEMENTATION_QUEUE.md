@@ -265,6 +265,25 @@ delete a dialog until its Inspector section is at parity.
 > cell/table borders & shading; exact shape anchor offsets). Full parity + dialog
 > retirement is a later, larger pass. The panel is the dependency row 24 needs.
 
+> **Information-architecture restructure (post-landing).** With all four families
+> present the panel was getting long, so it was restructured: (1) every section is a
+> **collapsible disclosure** whose **collapsed header keeps a live one-line value
+> summary** (Text → `Calibri · 12 · Bold`, Page → `A4 · Portrait · 2.5 cm`, Table →
+> `3×4 · Grid`, Object → `640×480 · Square wrap`) — collapsing costs the controls,
+> never the information; (2) **default expansion is derived from the selection's
+> tightest scope** (text→Text, cell→Table, object→Object, none→Page), so Page hiding
+> itself is a consequence, not a hardcoded flag; (3) a **manual toggle wins and
+> persists** per-section in `localStorage` (`cw:inspector:collapse`, the same
+> convention as the colour/shape recents); (4) sections render **by containment
+> (Page → Table → Paragraph → Text)** under a **breadcrumb scope trail**
+> (`Page › Table › Cell › Paragraph › Text`, applicable levels only) whose crumbs
+> **change the selection to that scope** via the existing `setSelection` primitive
+> (Table crumb → whole table, Paragraph crumb → the paragraph, Page crumb → clear).
+> Verified in both `ribbon` and `minimal` chrome and across 1512/1100/820/500/390px;
+> the R0 phone-width overflow assertion (390/500) still passes and the Inspector adds
+> zero overflow at any width (the pre-existing ~760–1279px ribbon-*body* overflow is
+> unrelated — row 12's band).
+
 ### 24. `feat/quiet-chrome-preset` — structural redesign
 Critique: **Move 1** — demote the ribbon from architecture to preset. A quiet
 48 px default bar (title + save state · undo/redo · style picker · six formatting

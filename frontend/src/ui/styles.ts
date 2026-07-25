@@ -410,9 +410,26 @@ const CSS = `
 .cw-insp-title { font-size: 14px; font-weight: 600; flex: 1 1 auto; }
 .cw-insp-close { border: none; background: transparent; cursor: pointer; color: #5f6368; width: 28px; height: 28px; border-radius: 50%; font-size: 18px; line-height: 1; }
 .cw-insp-close:hover { background: #f1f3f4; }
-.cw-insp-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 0 12px; }
-.cw-insp-section { border-bottom: 1px solid #e8eaed; padding: 10px 14px 12px; }
-.cw-insp-section h3 { margin: 0 0 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #80868b; }
+.cw-insp-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 0 12px; }
+/* Breadcrumb scope trail (Page › Table › Cell › Paragraph › Text). Clicking a
+   crumb changes the selection to that scope. */
+.cw-insp-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 1px; padding: 7px 12px; border-bottom: 1px solid #e8eaed; background: #fbfbfc; }
+.cw-insp-crumb { border: none; background: none; cursor: pointer; color: #2b579a; font: inherit; font-size: 11.5px; padding: 1px 5px; border-radius: 4px; max-width: 100%; }
+.cw-insp-crumb:hover { background: #eef3fb; }
+.cw-insp-crumb.current { color: #201f1e; font-weight: 600; }
+.cw-insp-crumb-sep { color: #b7bcc2; font-size: 11px; user-select: none; }
+/* Collapsible section: a header button (chevron + title + live summary) over a
+   body of controls. Collapsed hides the body but keeps the summary. */
+.cw-insp-section { border-bottom: 1px solid #e8eaed; }
+.cw-insp-sec-head { display: flex; align-items: center; gap: 7px; width: 100%; border: none; background: none; cursor: pointer; padding: 9px 14px; text-align: left; font: inherit; }
+.cw-insp-sec-head:hover { background: #f2f4f7; }
+.cw-insp-chevron { flex: 0 0 auto; display: inline-flex; color: #80868b; transition: transform .12s ease; }
+.cw-insp-section.collapsed .cw-insp-chevron { transform: rotate(-90deg); }
+.cw-insp-sec-title { flex: 0 0 auto; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #80868b; }
+.cw-insp-sec-summary { flex: 1 1 auto; min-width: 0; font-size: 12px; color: #605e5c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.cw-insp-section:not(.collapsed) .cw-insp-sec-summary { display: none; }
+.cw-insp-section.collapsed .cw-insp-sec-body { display: none; }
+.cw-insp-sec-body { padding: 0 14px 12px; }
 .cw-insp-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .cw-insp-row:last-child { margin-bottom: 0; }
 .cw-insp-label { flex: 0 0 74px; font-size: 12px; color: #5f6368; }
@@ -428,6 +445,12 @@ const CSS = `
 :root[data-theme="dark"] .cw-inspector { background: #202124; border-color: #34373c; color: #e6e6e6; }
 :root[data-theme="dark"] .cw-insp-head { background: #26282c; border-color: #34373c; }
 :root[data-theme="dark"] .cw-insp-section { border-color: #34373c; }
+:root[data-theme="dark"] .cw-insp-crumbs { background: #26282c; border-color: #34373c; }
+:root[data-theme="dark"] .cw-insp-crumb { color: #7cb0ff; }
+:root[data-theme="dark"] .cw-insp-crumb:hover { background: #2c3340; }
+:root[data-theme="dark"] .cw-insp-crumb.current { color: #e6e6e6; }
+:root[data-theme="dark"] .cw-insp-sec-head:hover { background: #26282c; }
+:root[data-theme="dark"] .cw-insp-sec-summary { color: #9aa0a6; }
 :root[data-theme="dark"] .cw-insp-row > select, :root[data-theme="dark"] .cw-insp-row > input, :root[data-theme="dark"] .cw-insp-pair > input { background: #2a2c30; color: #e6e6e6; border-color: #4a4a4a; }
 :root[data-theme="dark"] .cw-insp-tgl { background: #2a2c30; color: #e0e0e0; border-color: #4a4a4a; }
 :root[data-theme="dark"] .cw-insp-tgl.on { background: #2c3340; color: #7cb0ff; border-color: #7cb0ff; }

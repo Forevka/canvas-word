@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Inspector information architecture: collapsible sections, live summaries, and a scope breadcrumb
+  (Move 2).** With all four section families present the panel could get long, so it is now structured:
+  every section is a **collapsible disclosure**, and a **collapsed header still shows a live one-line value
+  summary** of its own state (Text → `Calibri · 12 · Bold`, Paragraph → `Left · Single · 0/0 pt`, Page →
+  `A4 · Portrait · 2.5 cm`, Table → `3×4 · Grid`, Object → `640×480 · Square wrap`) — collapsing costs the
+  controls, never the information. **Default expansion follows the selection's tightest scope** (caret in
+  text → Text; caret in a cell → Table; image/shape → Object; nothing → Page), so "Page hidden by default"
+  is a consequence rather than a special case; a **manual toggle wins and persists** (localStorage). Sections
+  render **by containment (Page → Table → Paragraph → Text)** under a **breadcrumb scope trail**
+  (`Page › Table › Cell › Paragraph › Text`, applicable levels only) whose crumbs **change the selection to
+  that scope** (Table → whole table, Paragraph → the paragraph, Page → clear). Verified in both the `ribbon`
+  and `minimal` chrome presets.
 - **Import fidelity badge: the permanent `✓ Word-faithful` success state was dropped (Move 3).** A standing
   success indicator asserts the default assumption still holds, which trains the eye to ignore that region
   and makes the *warning* state less noticeable — and it was unearned (a never-imported document showed a

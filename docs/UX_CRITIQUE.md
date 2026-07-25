@@ -450,6 +450,25 @@ Framer, Notion and current Word Online all behave.
 It also fixes L1 and L2 for free: fewer floating windows, less occlusion, less
 arbitration to build.
 
+> **Update (implementation): information architecture.** With all four section
+> families present the panel can get long, so it is structured rather than stacked:
+>
+> - **Every section is a collapsible disclosure**, and a **collapsed header still
+>   shows a live one-line value summary** of its own state (Text → `Calibri · 12 ·
+>   Bold`, Paragraph → `Left · Single · 0/0 pt`, Page → `A4 · Portrait · 2.5 cm`,
+>   Table → `3×4 · Grid`, Object → `640×480 · Square wrap`). Collapsing costs the
+>   user the *controls*, never the *information* — a title-only accordion would be a
+>   regression. Summaries stay live as the selection and document change.
+> - **Default expansion follows the selection's tightest scope** (caret in text →
+>   Text; caret in a cell → Table; image/shape → Object; nothing → Page), so "Page
+>   hidden by default" falls out as a consequence, not a hardcoded rule. A **manual
+>   toggle wins and persists** (localStorage) so the panel never fights the user.
+> - Sections render **by containment, outer→inner (Page → Table → Paragraph →
+>   Text)**, headed by a **breadcrumb scope trail** (`Page › Table › Cell ›
+>   Paragraph › Text`, only the levels that apply). **Clicking a crumb changes the
+>   selection to that scope** (click *Table* → whole table selected; *Paragraph* →
+>   the paragraph), which then re-derives the expansion.
+
 ### Move 3 — Make the fidelity visible
 
 This is the differentiator and it is currently a secret. You already track

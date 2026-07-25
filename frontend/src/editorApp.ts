@@ -3799,6 +3799,13 @@ if (toolbar) {
   // common levers; the matching dialog stays as the advanced fallback (colour,
   // effects, borders, page background, anchor offsets) per the parity rule, so no
   // dialog is deleted.
+  //
+  // Information architecture: a breadcrumb scope trail (Page › Table › Cell ›
+  // Paragraph › Text) heads the panel; below it the sections render outer→inner and
+  // each is a collapsible disclosure whose collapsed header keeps a live one-line
+  // value summary (collapsing costs the controls, never the information). Default
+  // expansion follows the selection's tightest scope; a manual toggle wins and
+  // persists. See the machinery block below.
   {
     const inspectorEl = shell.inspector;
     const head = el("div", "cw-insp-head");
@@ -3816,14 +3823,61 @@ if (toolbar) {
     const toPt = (px: number): number => Math.round(sharedPxToPt(px) * 2) / 2;
     const fromPt = (pt: number): number => sharedPtToPx(pt);
 
-    const insSection = (label: string): HTMLElement => {
-      const s = el("div", "cw-insp-section");
-      const h = document.createElement("h3");
-      h.textContent = label;
-      s.append(h);
-      bodyEl.append(s);
-      return s;
+    // ---- Information architecture (Move 2 restructure) ----------------------
+    // Every section is a collapsible disclosure. A COLLAPSED header still shows a
+    // live one-line value summary of its own state (Text → "Calibri · 12 · Bold"),
+    // so collapsing costs the user the CONTROLS but never the INFORMATION. Default
+    // expansion follows the selection's tightest scope (so "Page collapsed by
+    // default" falls out as a consequence, not a special case); a manual toggle
+    // wins over that rule and PERSISTS (localStorage — the same convention as the
+    // colour/shape recents) so the panel never fights the user.
+    const OVERRIDE_KEY = "cw:inspector:collapse";
+    const loadOverrides = (): Record<string, boolean> => {
+      try {
+        const raw = localStorage.getItem(OVERRIDE_KEY);
+        const o: unknown = raw ? JSON.parse(raw) : {};
+        return o && typeof o === "object" ? (o as Record<string, boolean>) : {};
+      } catch {
+        return {};
+      }
     };
+    const sectionOverrides = loadOverrides();
+    const persistOverrides = (): void => {
+      try { localStorage.setItem(OVERRIDE_KEY, JSON.stringify(sectionOverrides)); } catch { /* storage optional */ }
+    };
+    // The section whose scope the selection most tightly addresses — set per
+    // rebuild. Its section is expanded by default; ancestors collapse.
+    let tightestSection = "Page";
+    const isExpanded = (name: string): boolean =>
+      name in sectionOverrides ? !!sectionOverrides[name] : name === tightestSection;
+    const toggleSection = (name: string): void => {
+      sectionOverrides[name] = !isExpanded(name);
+      persistOverrides();
+      rebuild();
+    };
+    // A collapsible section. `summary` shows in the header while collapsed; the
+    // returned element is the body the caller appends rows into. Callers early-out
+    // (skip building rows) when `expanded` is false — the summary already carries
+    // the information.
+    const insSection = (name: string, summary: string, expanded: boolean): HTMLElement => {
+      const s = el("div", "cw-insp-section" + (expanded ? "" : " collapsed"));
+      const h = el("button", "cw-insp-sec-head");
+      (h as HTMLButtonElement).type = "button";
+      h.setAttribute("aria-expanded", String(expanded));
+      const chev = el("span", "cw-insp-chevron");
+      chev.innerHTML = chevron(false);
+      const t = el("span", "cw-insp-sec-title");
+      t.textContent = name;
+      const sum = el("span", "cw-insp-sec-summary");
+      sum.textContent = summary;
+      h.append(chev, t, sum);
+      h.addEventListener("click", () => toggleSection(name));
+      const body = el("div", "cw-insp-sec-body");
+      s.append(h, body);
+      bodyEl.append(s);
+      return body;
+    };
+    const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
     const insRow = (parent: HTMLElement, label: string | null, ...controls: HTMLElement[]): void => {
       const r = el("div", "cw-insp-row");
       if (label !== null) { const l = el("span", "cw-insp-label"); l.textContent = label; r.append(l); }
@@ -3872,8 +3926,19 @@ if (toolbar) {
       return wrap;
     };
 
+    const textSummary = (f: ReturnType<typeof editor.currentFormat>): string => {
+      const fam = (f.fontFamily ?? "").split(",")[0]!.trim() || "Default";
+      const flags: string[] = [];
+      if (f.bold) flags.push("Bold");
+      if (f.italic) flags.push("Italic");
+      if (f.underline) flags.push("Underline");
+      if (f.strikethrough) flags.push("Strike");
+      return `${fam} · ${toPt(f.fontSizePx ?? 16)} · ${flags.length ? flags.join(" ") : "Regular"}`;
+    };
     const buildTextSection = (f: ReturnType<typeof editor.currentFormat>): void => {
-      const sec = insSection("Text");
+      const expanded = isExpanded("Text");
+      const sec = insSection("Text", textSummary(f), expanded);
+      if (!expanded) return;
       const fams = toolbarFonts(config.fonts).map((x) => ({ value: x.value, label: x.label }));
       const famVal = fams.find((x) => x.value.toLowerCase() === (f.fontFamily ?? "").toLowerCase())?.value ?? f.fontFamily ?? fams[0]?.value ?? "";
       insRow(sec, "Font", insSelect(fams, famVal, (v) => editor.setCharStyle({ fontFamily: v })));
@@ -3890,9 +3955,17 @@ if (toolbar) {
       ]));
     };
 
+    const lineLabel = (lh: number): string =>
+      lh === 1 ? "Single" : lh === 1.15 ? "1.15" : lh === 1.5 ? "1.5" : lh === 2 ? "Double" : String(lh);
+    const paragraphSummary = (f: ReturnType<typeof editor.currentFormat>, ps: ParaStyle | null): string => {
+      const lh = ps?.lineHeight ?? 1;
+      return `${cap(f.align ?? "left")} · ${lineLabel(lh)} · ${toPt(ps?.spaceBeforePx ?? 0)}/${toPt(ps?.spaceAfterPx ?? 0)} pt`;
+    };
     const buildParagraphSection = (f: ReturnType<typeof editor.currentFormat>): void => {
       const ps = editor.currentParaStyle();
-      const sec = insSection("Paragraph");
+      const expanded = isExpanded("Paragraph");
+      const sec = insSection("Paragraph", paragraphSummary(f, ps), expanded);
+      if (!expanded) return;
       const aligns = (["left", "center", "right", "justify"] as const);
       insRow(sec, "Align", insToggles(aligns.map((a) => ({
         label: a.charAt(0).toUpperCase(), title: a.charAt(0).toUpperCase() + a.slice(1), on: f.align === a, onClick: () => editor.align(a),
@@ -3927,15 +4000,23 @@ if (toolbar) {
       mut(base);
       editor.dispatch(applyPageSetup(base));
     };
+    const pageSizeName = (geo: ReturnType<typeof pageSetupAt>): string =>
+      Object.keys(PL_SIZES).find((k) => {
+        const s = PL_SIZES[k]!;
+        return (s.w === geo.pageWidthPx && s.h === geo.pageHeightPx) || (s.h === geo.pageWidthPx && s.w === geo.pageHeightPx);
+      }) ?? "Custom";
+    const pageSummary = (geo: ReturnType<typeof pageSetupAt>): string => {
+      const orient = geo.pageWidthPx > geo.pageHeightPx ? "Landscape" : "Portrait";
+      const cm = Math.round((geo.marginPx.top / PX_PER_INCH) * 2.54 * 10) / 10;
+      return `${pageSizeName(geo)} · ${orient} · ${cm} cm`;
+    };
     const buildPageSection = (): void => {
       const geo = pageSetupAt({ doc: editor.getDocument(), selection: editor.getSelection() });
-      const sec = insSection("Page");
+      const expanded = isExpanded("Page");
+      const sec = insSection("Page", pageSummary(geo), expanded);
+      if (!expanded) return;
       const landscape = geo.pageWidthPx > geo.pageHeightPx;
-      const sizeName =
-        Object.keys(PL_SIZES).find((k) => {
-          const s = PL_SIZES[k]!;
-          return (s.w === geo.pageWidthPx && s.h === geo.pageHeightPx) || (s.h === geo.pageWidthPx && s.w === geo.pageHeightPx);
-        }) ?? "Custom";
+      const sizeName = pageSizeName(geo);
       insRow(sec, "Size", insSelect(
         [...Object.keys(PL_SIZES).map((k) => ({ value: k, label: k })), { value: "Custom", label: "Custom" }],
         sizeName,
@@ -3987,7 +4068,13 @@ if (toolbar) {
       if (!table || table.kind !== "table") return;
       const row: { cells: TableCell[]; props?: RowProps } | undefined = table.rows[loc.ri];
       const cell: TableCell | undefined = row?.cells[loc.ci];
-      const sec = insSection("Table");
+      const rowCount = table.rows.length;
+      const colCount = table.rows.reduce((m, r) => Math.max(m, r.cells.length), 0);
+      const hasBorders = !!table.defaultBorders ||
+        table.rows.some((r) => r.cells.some((c) => { const b = c.borders; return !!b && !!(b.top || b.bottom || b.left || b.right); }));
+      const expanded = isExpanded("Table");
+      const sec = insSection("Table", `${rowCount}×${colCount} · ${hasBorders ? "Grid" : "No borders"}`, expanded);
+      if (!expanded) return;
 
       // Cell vertical alignment (top = clear, since it's the default).
       const vAlign = cell?.vAlign ?? "top";
@@ -4068,7 +4155,11 @@ if (toolbar) {
         insEmpty("Use the object's floating toolbar or right-click menu to work with this selection.");
         return;
       }
-      const sec = insSection(kind === "shape" ? "Shape" : "Image");
+      const name = kind === "shape" ? "Shape" : "Image";
+      const summary = `${Math.round(p.widthPx)}×${Math.round(p.heightPx)} · ${p.wrap === "square" ? "Square" : "Inline"} wrap`;
+      const expanded = isExpanded(name);
+      const sec = insSection(name, summary, expanded);
+      if (!expanded) return;
       insRow(sec, "Size (px)", insPair(
         insNumber(Math.round(p.widthPx), 8, 4000, (n) => applyObject({ widthPx: Math.max(8, n) })),
         insNumber(Math.round(p.heightPx), 8, 4000, (n) => applyObject({ heightPx: Math.max(8, n) })),
@@ -4089,20 +4180,88 @@ if (toolbar) {
       bodyEl.append(e);
     };
 
+    // --- breadcrumb scope trail + scope-changing selection helpers -----------
+    // Clicking a crumb CHANGES the selection to that scope (via the existing
+    // setSelection primitive), which re-derives the tightest-scope expansion — so
+    // "click Table → whole table selected → Table section expands" falls out.
+    const runsLen = (b: { kind?: string; runs?: { text?: string }[] } | null | undefined): number =>
+      b && b.kind === "paragraph" && b.runs ? b.runs.reduce((n, r) => n + (r.text ? r.text.length : 0), 0) : 0;
+    const firstParaOf = (cell: TableCell | undefined): { id: string } | null =>
+      (cell?.blocks.find((b) => b.kind === "paragraph") as { id: string } | undefined) ?? null;
+    const lastParaOf = (cell: TableCell | undefined): { id: string; kind?: string; runs?: { text?: string }[] } | null => {
+      const ps = cell?.blocks.filter((b) => b.kind === "paragraph") as { id: string; kind?: string; runs?: { text?: string }[] }[] | undefined;
+      return ps && ps.length ? ps[ps.length - 1]! : null;
+    };
+    const selectTable = (table: TableBlock | undefined): void => {
+      if (!table) return;
+      const first = firstParaOf(table.rows[0]?.cells[0]);
+      const lastRow = table.rows[table.rows.length - 1];
+      const last = lastParaOf(lastRow?.cells[(lastRow?.cells.length ?? 1) - 1]);
+      if (!first || !last) return;
+      editor.setSelection({ anchor: { blockId: first.id, offset: 0 }, focus: { blockId: last.id, offset: runsLen(last) } });
+    };
+    const selectCell = (cell: TableCell | undefined): void => {
+      const p = firstParaOf(cell);
+      if (p) editor.setSelection({ anchor: { blockId: p.id, offset: 0 }, focus: { blockId: p.id, offset: 0 } });
+    };
+    const buildBreadcrumb = (
+      scope: "object" | "table" | "text" | "page",
+      f: ReturnType<typeof editor.currentFormat>,
+      doc: Document,
+      loc: ReturnType<typeof locateParagraph> | null,
+    ): void => {
+      const focus = editor.getSelection()?.focus ?? null;
+      const paraBlock = focus ? (paragraphsOf(doc).find((p) => p.id === focus.blockId) ?? null) : null;
+      const crumbs: { label: string; action: (() => void) | null }[] = [];
+      if (scope === "object") {
+        crumbs.push({ label: f.shapeSelected ? "Shape" : "Image", action: null });
+      } else {
+        crumbs.push({ label: "Page", action: () => editor.setSelection(null) });
+        if (scope === "table" && loc?.kind === "cell") {
+          const table = containerListOf(doc, loc.where)[loc.bi] as TableBlock | undefined;
+          crumbs.push({ label: "Table", action: () => selectTable(table) });
+          crumbs.push({ label: "Cell", action: () => selectCell(table?.rows[loc.ri]?.cells[loc.ci]) });
+        }
+        if (paraBlock) {
+          crumbs.push({ label: "Paragraph", action: () => editor.setSelection({ anchor: { blockId: paraBlock.id, offset: 0 }, focus: { blockId: paraBlock.id, offset: runsLen(paraBlock) } }) });
+        }
+        if (focus) crumbs.push({ label: "Text", action: () => editor.setSelection({ anchor: { ...focus }, focus: { ...focus } }) });
+      }
+      const rowEl = el("div", "cw-insp-crumbs");
+      crumbs.forEach((c, i) => {
+        if (i > 0) { const s = el("span", "cw-insp-crumb-sep"); s.textContent = "›"; rowEl.append(s); }
+        const b = el("button", "cw-insp-crumb" + (i === crumbs.length - 1 ? " current" : ""));
+        (b as HTMLButtonElement).type = "button";
+        b.textContent = c.label;
+        if (c.action) {
+          b.addEventListener("mousedown", (e) => e.preventDefault());
+          b.addEventListener("click", () => { c.action?.(); editor.focus(); });
+        }
+        rowEl.append(b);
+      });
+      bodyEl.append(rowEl);
+    };
+
     let inspOpen = false;
     const rebuild = (): void => {
       bodyEl.textContent = "";
       const f = editor.currentFormat();
-      if (f.imageSelected || f.shapeSelected) {
-        title.textContent = f.shapeSelected ? "Shape" : "Image";
-        buildObjectSection(f.shapeSelected ? "shape" : "image");
-        return;
-      }
-      title.textContent = "Inspector";
-      buildTextSection(f);
-      buildParagraphSection(f);
-      if (f.inTable) buildTableSection();
+      const doc = editor.getDocument();
+      const sel = editor.getSelection();
+      const loc = sel ? locateParagraph(doc, sel.focus.blockId) : null;
+      // Tightest scope the selection addresses (drives default expansion + the
+      // breadcrumb). Table wins over text for a caret in a cell, per the IA spec.
+      const scope: "object" | "table" | "text" | "page" =
+        f.imageSelected || f.shapeSelected ? "object" : f.inTable ? "table" : sel ? "text" : "page";
+      tightestSection = scope === "object" ? (f.shapeSelected ? "Shape" : "Image")
+        : scope === "table" ? "Table" : scope === "text" ? "Text" : "Page";
+      title.textContent = scope === "object" ? (f.shapeSelected ? "Shape" : "Image") : "Inspector";
+      buildBreadcrumb(scope, f, doc, loc);
+      if (scope === "object") { buildObjectSection(f.shapeSelected ? "shape" : "image"); return; }
+      // Sections outer → inner: Page, Table, Paragraph, Text (only applicable ones).
       buildPageSection();
+      if (scope === "table") buildTableSection();
+      if (scope === "text" || scope === "table") { buildParagraphSection(f); buildTextSection(f); }
     };
     refreshInspector = (): void => {
       if (!inspOpen) return;
