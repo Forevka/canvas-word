@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Navigator` with shortcuts that open the Navigator on the Headings or Marks tab.
 
 ### Added
+- **Quiet chrome preset — `chrome: 'ribbon' | 'minimal'` (Move 1).** A new constructor option demotes the
+  ribbon from *the* architecture to one switchable skin. `'minimal'` hides the ribbon body + tab strip and
+  shows a quiet ~44px command bar in the header row: the document identity + save state and quick-access
+  undo/redo (already there), plus a compact cluster — style picker, the six core formatting commands
+  (bold / italic / underline / strikethrough / bulleted / numbered), an insert **＋** menu
+  (table / picture / page break / TOC / footnote / more…), and a **⋯** overflow that opens the command
+  palette. Everything else reaches the user through the contextual bar, the Inspector and the command
+  palette. The classic tabbed ribbon remains the **default** (`'ribbon'`) so existing embeds and enterprise
+  migrations are unaffected. The offline example accepts `?chrome=minimal` to preview it.
 - **Inspector — a right-docked, selection-aware property sheet (Move 2, in progress).** A new **Inspector**
   panel (toggle in the ribbon's right cluster) edits the selection's properties **live**, with no Apply
   button — every control is one undoable edit. This first instalment ships the **Text** section (font family,

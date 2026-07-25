@@ -136,6 +136,26 @@ const CSS = `
 .cw-qat-btn:disabled { opacity: 0.38; cursor: default; }
 .cw-qat-btn svg { width: 16px; height: 16px; }
 
+/* Minimal chrome preset (Move 1): a compact command cluster that stands in for the
+   tab strip + ribbon body when chrome:'minimal'. It sits in the header row between
+   the quick-access cluster and the Inspector/Review controls, giving a quiet ~44px
+   bar. Everything else reaches the user via the contextual bar, the Inspector and
+   the command palette. */
+.cw-toolbar.cw-chrome-minimal { border-bottom: 1px solid #e1dfdd; }
+.cw-minibar { display: flex; align-items: center; gap: 3px; align-self: flex-end; padding-bottom: 3px; flex: 0 1 auto; min-width: 0; }
+.cw-minibar-style { height: 26px; max-width: 150px; min-width: 0; border: 1px solid #d2d0ce; border-radius: 5px; background: #fff; font: inherit; font-size: 12.5px; color: #323130; padding: 0 6px; cursor: pointer; }
+.cw-minibar-sep { flex: 0 0 auto; width: 1px; height: 18px; background: #d8d6d4; margin: 0 3px; }
+.cw-minibar-btn { flex: 0 0 auto; min-width: 28px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; border-radius: 5px; cursor: pointer; color: #323130; padding: 0 5px; font: inherit; font-size: 13px; }
+.cw-minibar-btn:hover { background: #eceae9; }
+.cw-minibar-btn.on { background: #eef3fb; color: #2b579a; }
+.cw-minibar-btn svg { width: 16px; height: 16px; }
+:root[data-theme="dark"] .cw-toolbar.cw-chrome-minimal { border-color: #34373c; }
+:root[data-theme="dark"] .cw-minibar-style { background: #2a2c30; color: #e6e6e6; border-color: #4a4a4a; }
+:root[data-theme="dark"] .cw-minibar-sep { background: #34373c; }
+:root[data-theme="dark"] .cw-minibar-btn { color: #e0e0e0; }
+:root[data-theme="dark"] .cw-minibar-btn:hover { background: #34373c; }
+:root[data-theme="dark"] .cw-minibar-btn.on { background: #2c3340; color: #7cb0ff; }
+
 /* --- ribbon body: one panel visible at a time --- */
 .rib-bodies {
   background: #fff; border-top: 1px solid #e1dfdd; border-bottom: 1px solid #e1dfdd;

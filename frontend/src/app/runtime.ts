@@ -7,7 +7,7 @@ import type { DocSelection, Document, Fragment, ReviewLayer, UserInfo } from "@c
 import type { ChildDocument, EditMode, FieldResolver } from "../index";
 import type { DecorationSpec } from "../decorations";
 import type { ExportWarning } from "../export/exportDocument";
-import type { CjkConfig, ContextToolbarSpec, DefaultStyleOverrides, EditorBehavior, EditorTheme, FloatingToolbarConfig, FontsConfig } from "../config";
+import type { ChromePreset, CjkConfig, ContextToolbarSpec, DefaultStyleOverrides, EditorBehavior, EditorTheme, FloatingToolbarConfig, FontsConfig } from "../config";
 import type { CustomizeRibbon } from "../ribbon";
 import type { EditorCommand } from "../commands";
 import type { LoadProgress } from "./loadProgress";
@@ -227,6 +227,8 @@ export interface WordCanvasRuntime {
   develop?: boolean | undefined;
   /** Show the "Organize Pages" reorder-overlay button (Layout tab). Default true. */
   organizePages?: boolean | undefined;
+  /** Chrome preset — `'ribbon'` (default) or the quiet `'minimal'` command bar. */
+  chrome?: ChromePreset | undefined;
   /** Floating mini-toolbar above a text selection: toggle, or customize its
    *  controls / caret behavior. */
   floatingToolbar?: FloatingToolbarConfig | undefined;

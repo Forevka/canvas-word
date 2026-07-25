@@ -170,6 +170,7 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
     ...(runtime.cjk ? { cjk: runtime.cjk } : {}),
     ...(runtime.develop !== undefined ? { develop: runtime.develop } : {}),
     ...(runtime.organizePages !== undefined ? { organizePages: runtime.organizePages } : {}),
+    ...(runtime.chrome !== undefined ? { chrome: runtime.chrome } : {}),
     ...(runtime.floatingToolbar !== undefined ? { floatingToolbar: runtime.floatingToolbar } : {}),
     ...(runtime.contextToolbars !== undefined ? { contextToolbars: runtime.contextToolbars } : {}),
   });
@@ -378,6 +379,9 @@ let toggleReview: () => void = () => {};
 // declared so the header button and the selection/change hooks can drive it.
 let toggleInspector: () => void = () => {};
 let refreshInspector: () => void = () => {};
+// Minimal-chrome command bar (Move 1): reflects the caret's bold/italic/list/style
+// state on its compact buttons. No-op unless chrome === "minimal".
+let refreshMinimalBar: () => void = () => {};
 let syncMode: () => void = () => {};
 // Develop-mode Document-tree inspector hooks (assigned when the panel is open;
 // no-ops otherwise, so non-develop mounts pay nothing). refreshDevPanel re-reads
@@ -471,6 +475,7 @@ const editorOpts = {
     // layout; onChange stays synchronous for typing/caret immediacy.
     scheduleRefreshContextToolbars();
     refreshInspector();
+    refreshMinimalBar();
     refreshDevPanel();
   },
   // Develop mode only: the inspector turns this signal on while open (dormant
@@ -499,6 +504,7 @@ const editorOpts = {
     refreshContextToolbars();
     refreshBookmarks();
     refreshInspector();
+    refreshMinimalBar();
     refreshDevPanel();
   },
   onZoomChange: (z: number) => {
@@ -4365,6 +4371,111 @@ if (toolbar) {
     },
     { signal: teardown.signal },
   );
+
+  // ---- Minimal chrome preset (Move 1) -------------------------------------
+  // `chrome: 'minimal'` demotes the ribbon to a quiet ~44px command bar: hide the
+  // ribbon body + tab strip + collapse chevron (the identity/save, quick-access and
+  // Inspector/Review header clusters stay), and drop a compact command cluster into
+  // the freed space — style picker, the six core formatting commands, an insert ＋
+  // menu, and a ⋯ overflow that opens the command palette. Everything else reaches
+  // the user through the contextual bar, the Inspector and the palette. The full
+  // ribbon is still built (so all command wiring, popovers and syncToolbar state
+  // remain live); only its body/tabs are hidden, so the preset is a pure skin swap.
+  if (config.chrome === "minimal") {
+    toolbar.classList.add("cw-chrome-minimal");
+    bodies.style.display = "none";
+    tabScroll.style.display = "none";
+    tabOverflowBtn.style.display = "none";
+    collapseBtn.style.display = "none";
+
+    const bar = el("div", "cw-minibar");
+
+    const styleSel = document.createElement("select");
+    styleSel.className = "cw-minibar-style";
+    styleSel.title = "Paragraph / character style";
+    styleSel.setAttribute("aria-label", "Style");
+    const fillStyleOptions = (): void => {
+      const cur = styleSel.value;
+      styleSel.textContent = "";
+      for (const s of stylesheet().styles) {
+        const o = document.createElement("option");
+        o.value = s.id;
+        o.textContent = s.name;
+        styleSel.appendChild(o);
+      }
+      if (cur) styleSel.value = cur;
+    };
+    fillStyleOptions();
+    styleSel.addEventListener("mousedown", () => fillStyleOptions()); // stay fresh after an import swaps the stylesheet
+    styleSel.addEventListener("change", () => {
+      const id = styleSel.value;
+      const st = styleById(stylesheet(), id);
+      editor.dispatch(st && styleType(st) === "character" ? applyCharStyle(id) : applyNamedStyle(id));
+      editor.focus();
+    });
+    bar.appendChild(styleSel);
+    bar.appendChild(el("span", "cw-minibar-sep"));
+
+    const glyphBtn = (html: string, title: string, onClick: () => void): HTMLButtonElement => {
+      const b = el("button", "cw-minibar-btn");
+      b.innerHTML = html;
+      b.title = title;
+      b.setAttribute("aria-label", title);
+      b.addEventListener("mousedown", (ev) => ev.preventDefault());
+      b.addEventListener("click", () => { onClick(); editor.focus(); refreshMinimalBar(); });
+      bar.appendChild(b);
+      return b;
+    };
+    const bBold = glyphBtn(`<span style="font-weight:800">B</span>`, "Bold (Ctrl+B)", () => editor.toggleStyle("bold"));
+    const bItalic = glyphBtn(`<span style="font-style:italic;font-weight:600">I</span>`, "Italic (Ctrl+I)", () => editor.toggleStyle("italic"));
+    const bUnder = glyphBtn(`<span style="text-decoration:underline;font-weight:600">U</span>`, "Underline (Ctrl+U)", () => editor.toggleStyle("underline"));
+    const bStrike = glyphBtn(`<span style="text-decoration:line-through;font-weight:600">S</span>`, "Strikethrough", () => editor.toggleStyle("strikethrough"));
+    const bBullet = glyphBtn(ICONS.bullets, "Bulleted list", () => editor.dispatch(toggleList("bullet")));
+    const bNumber = glyphBtn(ICONS.numbering, "Numbered list", () => editor.dispatch(toggleList("decimal")));
+    bar.appendChild(el("span", "cw-minibar-sep"));
+
+    const insertBtn = el("button", "cw-minibar-btn cw-minibar-insert");
+    insertBtn.innerHTML = `<span style="font-size:17px;line-height:1">＋</span>`;
+    insertBtn.title = "Insert";
+    insertBtn.setAttribute("aria-label", "Insert");
+    insertBtn.addEventListener("mousedown", (ev) => ev.preventDefault());
+    insertBtn.addEventListener("click", () => {
+      const r = insertBtn.getBoundingClientRect();
+      const entries: MenuEntry[] = [
+        { kind: "item", label: "Table", onClick: () => editor.dispatch(insertTable(3, 3)) },
+        { kind: "item", label: "Picture…", onClick: () => pickAndInsertImage() },
+        { kind: "item", label: "Page break", onClick: () => editor.dispatch(insertPageBreak()) },
+        { kind: "item", label: "Table of contents", onClick: () => editor.dispatch(insertTocCmd()) },
+        { kind: "item", label: "Footnote", onClick: () => editor.dispatch(insertFootnoteCmd()) },
+        { kind: "sep" },
+        { kind: "item", label: "More commands…", onClick: () => showCommandPalette(gatherPaletteCommands()) },
+      ];
+      showContextMenu(r.left, r.bottom + 2, entries);
+    });
+    bar.appendChild(insertBtn);
+
+    const moreBtn = el("button", "cw-minibar-btn");
+    moreBtn.innerHTML = `<span style="font-size:18px;line-height:1">⋯</span>`;
+    moreBtn.title = "More commands (Ctrl+K)";
+    moreBtn.setAttribute("aria-label", "More commands");
+    moreBtn.addEventListener("mousedown", (ev) => ev.preventDefault());
+    moreBtn.addEventListener("click", () => showCommandPalette(gatherPaletteCommands()));
+    bar.appendChild(moreBtn);
+
+    tabsBar.insertBefore(bar, tabScroll);
+
+    refreshMinimalBar = (): void => {
+      const f = editor.currentFormat();
+      bBold.classList.toggle("on", f.bold);
+      bItalic.classList.toggle("on", f.italic);
+      bUnder.classList.toggle("on", f.underline);
+      bStrike.classList.toggle("on", f.strikethrough);
+      bBullet.classList.toggle("on", f.listKind === "bullet");
+      bNumber.classList.toggle("on", f.listKind === "number");
+      if (f.styleId && Array.from(styleSel.options).some((o) => o.value === f.styleId)) styleSel.value = f.styleId;
+    };
+    refreshMinimalBar();
+  }
 
   // ---- toolbar controls mirror the caret formatting -----------------------
   let lastStylesheet = editor.getDocument().stylesheet ?? null;

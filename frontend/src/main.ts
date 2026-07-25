@@ -79,6 +79,8 @@ const editor = new WordCanvas({
     : {}),
   // `?devMode=true` reveals the Developer tab + Document-tree inspector.
   ...(params.get("devMode") === "true" ? { develop: true } : {}),
+  // `?chrome=minimal` switches to the quiet command bar (Move 1); default ribbon.
+  ...(params.get("chrome") === "minimal" ? { chrome: "minimal" as const } : params.get("chrome") === "ribbon" ? { chrome: "ribbon" as const } : {}),
   knownUsers,
   onLoadProgress,
 });

@@ -32,6 +32,14 @@ import { INDENT_STEP_PX, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from "./uiConstants";
  *  the fallback stylesheet — NOT a loaded .docx's own w:docDefaults / Normal. */
 export type DefaultStyleOverrides = EditorTypography;
 
+/** Chrome preset (critique Move 1). `'ribbon'` is the classic Word-style tabbed
+ *  ribbon; `'minimal'` demotes it to a quiet ~44px command bar (title + save state,
+ *  undo/redo, style picker, the six core formatting commands, an insert `＋`, and an
+ *  overflow that opens the command palette) with everything else reaching the user
+ *  through the contextual bar, the Inspector and the command palette. The ribbon
+ *  ships as a switchable skin so enterprise migrations can keep it. */
+export type ChromePreset = "ribbon" | "minimal";
+
 export type { CustomFontDef, CustomFontFaces, FontsConfig, ResolvedFontsConfig } from "./fonts/customRegistry";
 
 /** Ruler band styling (the strip the horizontal + vertical rulers paint). */
@@ -382,6 +390,9 @@ export interface ResolvedConfig {
   /** Show the "Organize Pages" ribbon button (Layout tab) that opens the visual
    *  page-reorder overlay. Default true; set false to hide it for an embed. */
   organizePages: boolean;
+  /** Chrome preset: the classic tabbed `'ribbon'` or the quiet `'minimal'` command
+   *  bar (critique Move 1). Default `'ribbon'`. */
+  chrome: ChromePreset;
   /** Floating mini-toolbar (quick formatting above a text selection): whether it's
    *  shown, whether it appears at a bare caret, and which controls it carries. */
   floatingToolbar: ResolvedFloatingToolbar;
@@ -401,6 +412,10 @@ export interface EditorConfigInput {
   develop?: boolean | undefined;
   /** Show the "Organize Pages" reorder overlay button. Default true. */
   organizePages?: boolean | undefined;
+  /** Chrome preset — `'ribbon'` (classic tabbed ribbon, default) or `'minimal'`
+   *  (quiet ~44px command bar; everything else via the contextual bar, Inspector
+   *  and command palette). */
+  chrome?: ChromePreset | undefined;
   /** Floating mini-toolbar above a text selection: `true`/`false` to toggle, or an
    *  object to customize which controls appear, their order, and caret behavior. */
   floatingToolbar?: FloatingToolbarConfig | undefined;
@@ -421,6 +436,7 @@ export function resolveConfig(input: EditorConfigInput = {}): ResolvedConfig {
     cjk: resolveCjk(input.cjk),
     develop: input.develop ?? false,
     organizePages: input.organizePages ?? true,
+    chrome: input.chrome ?? "ribbon",
     floatingToolbar: resolveFloatingToolbar(input.floatingToolbar),
     contextToolbars: resolveContextToolbars(input.contextToolbars),
   };

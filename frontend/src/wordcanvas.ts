@@ -12,7 +12,7 @@
 import type { AgentToolsOptions, EditMode, EditorHandle, FieldResolver, Participant, SaveEvent, SaveFormat, SaveHandler, WordCanvasEvent, WordCanvasRuntime, WordCanvasViewOptions } from "./app/runtime";
 import type { ChildContent, ChildDocument, ChildEditorHandle, ChildRenderOptions, FieldResolveRequest, FieldResult } from "./index";
 import type { Document, Fragment, ReviewLayer, UserInfo } from "@cw/shared";
-import type { CjkConfig, ContextToolbarSpec, CustomFontDef, CustomFontFaces, DefaultStyleOverrides, EditorBehavior, EditorTheme, FloatingToolbarButtonSpec, FloatingToolbarConfig, FloatingToolbarItem, FloatingToolbarOptions, FontsConfig, ToolbarContext } from "./config";
+import type { ChromePreset, CjkConfig, ContextToolbarSpec, CustomFontDef, CustomFontFaces, DefaultStyleOverrides, EditorBehavior, EditorTheme, FloatingToolbarButtonSpec, FloatingToolbarConfig, FloatingToolbarItem, FloatingToolbarOptions, FontsConfig, ToolbarContext } from "./config";
 import { darkCanvasTheme } from "./config";
 import type { CustomizeRibbon, RibbonActionContext, RibbonApi, RibbonButtonSpec } from "./ribbon";
 import type { CommandContext, EditorCommand } from "./commands";
@@ -120,6 +120,12 @@ export interface WordCanvasOptions {
    *  reorders whole page-break/section-delimited groups, so content is never
    *  split. Default true; set false to hide it. */
   organizePages?: boolean;
+  /** Chrome preset (critique Move 1): `'ribbon'` (default) is the classic Word-style
+   *  tabbed ribbon; `'minimal'` demotes it to a quiet ~44px command bar (title + save
+   *  state, undo/redo, style picker, six core formatting commands, an insert `＋`, and
+   *  an overflow that opens the command palette), routing everything else through the
+   *  contextual bar, the Inspector and the command palette. */
+  chrome?: ChromePreset;
   /** Floating mini-toolbar above a text selection (Word's selection toolbar) —
    *  quick Bold/Italic/Underline/Strikethrough, font family & size, text colour,
    *  highlight, and clear-formatting, positioned at the selection so common
@@ -223,6 +229,7 @@ export class WordCanvas {
         behavior: opts.behavior,
         develop: opts.develop,
         organizePages: opts.organizePages,
+        chrome: opts.chrome,
         floatingToolbar: opts.floatingToolbar,
         contextToolbars: opts.contextToolbars,
         fonts: opts.fonts,
