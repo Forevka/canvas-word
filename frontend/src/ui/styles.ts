@@ -686,10 +686,34 @@ const CSS = `
   .rib-label { display: none; }
   .rib-group { padding: 4px 6px; }
 
+  /* Header row overflow containment (R0 / P0). The pinned clusters — document
+     identity (rows 2/19), quick-access (row 3) and the review + Inspector controls
+     (row 23) — have a combined min-content wider than a phone. They are all
+     non-shrinking flex children of .rib-tabs, so on a phone .rib-tabs' 690px of
+     content spilled past its 390px box (overflow-x: visible) and dragged the whole
+     wordcanvas-root — status bar and canvas included — sideways. Contain that
+     overflow WITHIN the tab strip: it scrolls horizontally instead of widening the
+     root, so the page below never moves. margin-left:auto on .cw-header-review still
+     pins it right when there IS room (≥ ~700px) and flows into the scroll when there
+     isn't. The identity cluster also shrinks (ellipsis) so the useful left of the
+     strip — title, save state, undo/redo, first tabs — shows without scrolling. */
+  .rib-tabs { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  .rib-tabs::-webkit-scrollbar { display: none; }
+  .cw-doc-ident { flex-shrink: 1; max-width: none; }
+
   /* Keep the title + save dot but drop the save-state words so the pinned
      identity cluster doesn't crowd the tab strip on a phone. */
   .cw-doc-title { max-width: 120px; }
   .cw-save-text { display: none; }
+
+  /* Status bar (same P0 overflow class): the info cluster (page/word counts) plus
+     the zoom + view controls also exceed a phone's width. Let the left info cluster
+     shrink and ellipsize while the zoom/view controls on the right keep their size,
+     and clip the bar so it never widens the root either. */
+  .cw-statusbar { overflow: hidden; }
+  .cw-statusbar .sb-left { flex: 1 1 auto; min-width: 0; overflow: hidden; gap: 10px; }
+  .cw-statusbar .sb-right { flex: 0 0 auto; }
+  .cw-statusbar input[type="range"] { width: 84px; }
 
   /* Outline / Review: overlay the page instead of stealing width on a phone. */
   .cw-outline { position: absolute; left: 0; top: 0; bottom: 0; height: auto; width: min(264px, 80vw); z-index: 30; box-shadow: 2px 0 16px rgba(0,0,0,0.18); }

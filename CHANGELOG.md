@@ -79,6 +79,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are appended live. Surface-managed (Escape/×-closable), dark-mode themed.
 
 ### Fixed
+- **Phone-width horizontal overflow in the ribbon header + status bar (R0/P0).** The header row's pinned
+  clusters — document identity, quick-access undo/redo, and the mode/Inspector/Review controls — were each
+  fixed-width, non-shrinking flex children, so at a phone width their combined ~690px spilled past the
+  strip's box (`overflow-x: visible`) and dragged the whole editor — status bar and canvas included —
+  ~300px sideways. The status bar's info + zoom clusters overflowed the same way. At ≤760px the tab strip
+  now contains that overflow (scrolls horizontally instead of widening the root) with the identity cluster
+  shrinking to an ellipsis, and the status bar lets its info cluster shrink/ellipsize while the zoom + view
+  controls hold their size. `wordcanvas-root.scrollWidth` now equals `clientWidth` at 390 and 500px, at
+  both fine and coarse pointers; desktop (1512) is unchanged.
 - **Ribbon buttons have unique, descriptive accessible names (C6/A2).** The a11y tree contained three
   buttons named "A", two named "ab", and glyph-as-icon buttons (`AB`/`Ab`/`ab`, `LTR`/`RTL`) whose only
   accessible name was the ambiguous glyph. Every ribbon button (icon, text-glyph, colour swatch,
