@@ -378,8 +378,12 @@ Same rules of engagement — one self-contained green commit each, on `feat/ux-o
   - [x] **F2a** — surface + **Appearance ▸ Theme** (Light / Dark / Match system). Precedence user > host > OS;
     persisted `cw:pref:theme`; host `data-theme-auto` path preserved. Browser-verified (theme apply/persist,
     palette reach, user>OS under emulated OS-dark).
-  - [ ] **F2b** — **Appearance ▸ Chrome** (Ribbon / Minimal) + runtime preset switching, preserving all editor
-    state. Isolated as its own commit because runtime chrome rebuild is the main technical risk.
+  - [x] **F2b** — **Appearance ▸ Toolbar** (Ribbon / Minimal) + runtime preset switching. Both ribbon and
+    minibar are always built, so `applyChrome` swaps by pure show/hide and preserves ALL editor state.
+    Browser-verified across a ribbon→minimal→ribbon round-trip: selection, undo/redo history (undo still
+    reverts the pre-switch edit), zoom, scroll, dirty state, open Inspector + its expanded sections, and open
+    Navigator were all identical; persisted `cw:pref:chrome` (overrides embedder `chrome` default unless the
+    pane is hidden). See UX_CRITIQUE.md §6 F2b.
 - [x] **F3 — Keyboard shortcuts broken under non-Latin keyboard layouts (P0).** Every shortcut matched on
   `KeyboardEvent.key` (the layout-produced character), so on a Cyrillic/Greek/… layout the physical Z emits
   `'я'` and Ctrl+Z/Y/S/K/F/A/B/I/U + all embedder chords were dead. Fixed centrally with a hybrid

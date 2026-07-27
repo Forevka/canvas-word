@@ -1,5 +1,5 @@
 import { bakeReview, colorForId, configureIds, deserializeDocument, freshId, reconstruct, serializeDocument, DEFAULT_CHAR_STYLE, DOCX_MIME, PDF_MIME, PX_PER_INCH, ptToPx as sharedPtToPx, pxToPt as sharedPxToPt, type Change, type DocSelection, type Document, type Fragment, type ParaStyle, type ReviewLayer } from "@cw/shared";
-import { resolveConfig } from "./config";
+import { resolveConfig, type ChromePreset } from "./config";
 import { emptyParagraphFor } from "./builder/blockFactory";
 import { mediaIdsOf, mediaStore, mediaUrl, pruneOrphanMedia, registerMediaBytes, registerMediaRetention, rehydrateDocMedia } from "./media/store";
 import { SyncClient } from "./sync/SyncClient";
@@ -220,6 +220,10 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
   const detachables: Element[] = [];
   // Container-width compact ribbon observer (assigned in the ribbon block below).
   let compactRO: ResizeObserver | null = null;
+  // Recomputes width-driven chrome state (compact ribbon, outline auto-collapse, tab
+  // overflow). Assigned in the ResizeObserver block below; hoisted so applyChrome can
+  // re-run it after a runtime preset swap changes the toolbar layout. No-op until then.
+  let applyResponsive: (w: number) => void = () => {};
   // Responsive layout state (row 12 / critique R1-R4). autoFit = keep the page
   // fit-to-width until the user manually zooms; the outline auto-collapse below
   // narrow widths is remembered so it reopens when there's room again.
@@ -280,6 +284,13 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
       applyTheme();
     };
   }
+
+  // Chrome preset (File ▸ Settings ▸ Appearance ▸ Chrome, FIX 2b). Assigned by the
+  // toolbar block's applyChrome wiring below; no-ops until then (a chromeless mount
+  // has no chrome to swap). Runtime switching is a pure show/hide over the always-
+  // built ribbon + minibar, so it preserves all editor state (see applyChrome).
+  let getChromePref: () => ChromePreset = () => config.chrome;
+  let setChromePref: (p: ChromePreset) => void = () => {};
 
   // Ctrl+/ — keyboard shortcuts cheat sheet (critique A3). Embedder commands with
   // a keybinding are appended live, so the sheet reflects the actual keymap.
@@ -1836,25 +1847,35 @@ if (toolbar) {
   // is how it stays reachable under the minimal chrome (which has no File tab).
   const openSettings = (): void => {
     const groups: SettingsGroup[] = [];
+    const appearance: SettingsGroup["rows"] = [];
     if (config.settings.theme) {
-      groups.push({
-        title: "Appearance",
-        rows: [
-          {
-            id: "appearance.theme",
-            label: "Theme",
-            hint: "Match system follows your device's light/dark setting.",
-            options: [
-              { value: "light", label: "Light" },
-              { value: "dark", label: "Dark" },
-              { value: "system", label: "Match system" },
-            ],
-            get: () => getThemePref(),
-            set: (v) => setThemePref(v as ThemePref),
-          },
+      appearance.push({
+        id: "appearance.theme",
+        label: "Theme",
+        hint: "Match system follows your device's light/dark setting.",
+        options: [
+          { value: "light", label: "Light" },
+          { value: "dark", label: "Dark" },
+          { value: "system", label: "Match system" },
         ],
+        get: () => getThemePref(),
+        set: (v) => setThemePref(v as ThemePref),
       });
     }
+    if (config.settings.chrome) {
+      appearance.push({
+        id: "appearance.chrome",
+        label: "Toolbar",
+        hint: "Ribbon is the full tabbed toolbar; Minimal is a quiet command bar.",
+        options: [
+          { value: "ribbon", label: "Ribbon" },
+          { value: "minimal", label: "Minimal" },
+        ],
+        get: () => getChromePref(),
+        set: (v) => setChromePref(v as ChromePreset),
+      });
+    }
+    if (appearance.length > 0) groups.push({ title: "Appearance", rows: appearance });
     showSettingsDialog({ groups });
   };
   if (config.settings.enabled) {
@@ -4557,7 +4578,7 @@ if (toolbar) {
     // Below this the outline pane + a 100%-zoom page no longer fit side by side.
     const COLLAPSE_ON = 1000;
     const COLLAPSE_OFF = 1120;
-    const applyResponsive = (w: number): void => {
+    applyResponsive = (w: number): void => {
       // Compact ribbon (existing hysteresis).
       const on = toolbar.classList.contains("compact");
       if (!on && w < COMPACT_ON) toolbar.classList.add("compact");
@@ -4625,25 +4646,19 @@ if (toolbar) {
     { signal: teardown.signal },
   );
 
-  // ---- Minimal chrome preset (Move 1) -------------------------------------
-  // `chrome: 'minimal'` demotes the ribbon to a quiet ~44px command bar: hide the
-  // ribbon body + tab strip + collapse chevron (the identity/save, quick-access and
-  // Inspector/Review header clusters stay), and drop a compact command cluster into
-  // the freed space — style picker, the six core formatting commands, an insert ＋
-  // menu, and a ⋯ overflow that opens the command palette. Everything else reaches
-  // the user through the contextual bar, the Inspector and the palette. The full
-  // ribbon is still built (so all command wiring, popovers and syncToolbar state
-  // remain live); only its body/tabs are hidden, so the preset is a pure skin swap.
-  if (config.chrome === "minimal") {
-    toolbar.classList.add("cw-chrome-minimal");
-    bodies.style.display = "none";
-    tabScroll.style.display = "none";
-    tabOverflowBtn.style.display = "none";
-    collapseBtn.style.display = "none";
-    // No tab strip in minimal — row 2 is empty, so drop it entirely and let the
-    // identity row (which now hosts the minibar below) be the single compact bar.
-    tabsBar.style.display = "none";
-
+  // ---- Chrome preset: ribbon | minimal (Move 1 / FIX 2b) ------------------
+  // `minimal` demotes the ribbon to a quiet ~44px command bar: hide the ribbon body,
+  // tab strip and collapse chevron (identity/save, quick-access and Inspector/Review
+  // clusters stay) and show a compact command cluster — style picker, the six core
+  // formatting commands, an insert ＋ menu, and a ⋯ overflow that opens the palette.
+  // Everything else reaches the user through the contextual bar, the Inspector and the
+  // palette. The full ribbon is ALWAYS built (all command wiring, popovers, syncToolbar
+  // state stay live) and so is this minibar — the preset is a pure show/hide skin swap.
+  // That is exactly why it can be switched at RUNTIME (File ▸ Settings, FIX 2b) without
+  // touching the editor core: caret/selection, undo history, open Navigator/Inspector
+  // panels + their expanded sections, scroll and zoom all live outside the toolbar and
+  // are left untouched — applyChrome only flips `display` on chrome elements.
+  {
     const bar = el("div", "cw-minibar");
 
     const styleSel = document.createElement("select");
@@ -4730,7 +4745,37 @@ if (toolbar) {
       bNumber.classList.toggle("on", f.listKind === "number");
       if (f.styleId && Array.from(styleSel.options).some((o) => o.value === f.styleId)) styleSel.value = f.styleId;
     };
-    refreshMinimalBar();
+
+    // Apply / swap the preset by show/hide only — nothing is rebuilt, so switching at
+    // runtime preserves all editor state (caret, undo, panels, scroll, zoom, dirty).
+    const CHROME_PREF_KEY = "cw:pref:chrome";
+    let currentChrome: ChromePreset = config.chrome;
+    const applyChrome = (preset: ChromePreset): void => {
+      const minimal = preset === "minimal";
+      toolbar.classList.toggle("cw-chrome-minimal", minimal);
+      // "" (not a fixed value) so the ribbon's `.collapsed` rule still governs the body.
+      bodies.style.display = minimal ? "none" : "";
+      tabScroll.style.display = minimal ? "none" : "";
+      collapseBtn.style.display = minimal ? "none" : "";
+      tabsBar.style.display = minimal ? "none" : ""; // row 2 (tabs) is empty in minimal
+      bar.style.display = minimal ? "" : "none";
+      if (minimal) { tabOverflowBtn.style.display = "none"; refreshMinimalBar(); }
+      currentChrome = preset;
+      // Recompute width-driven state (tab-overflow indicator, compact) for the new layout.
+      applyResponsive(shell.root.getBoundingClientRect().width);
+    };
+    getChromePref = (): ChromePreset => currentChrome;
+    const chromePaneOn = config.settings.enabled && config.settings.chrome;
+    setChromePref = (preset: ChromePreset): void => {
+      if (preset === currentChrome) return;
+      applyChrome(preset);
+      if (chromePaneOn) writePref(CHROME_PREF_KEY, preset);
+      editor.focus();
+    };
+    // Initial preset: a persisted user choice (when the Chrome pane is available)
+    // overrides the embedder's `chrome` default; a hidden pane hands control back to it.
+    const persistedChrome = chromePaneOn ? readPref(CHROME_PREF_KEY, ["ribbon", "minimal"] as const) : null;
+    applyChrome(persistedChrome ?? config.chrome);
   }
 
   // ---- toolbar controls mirror the caret formatting -----------------------

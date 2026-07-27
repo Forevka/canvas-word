@@ -50,9 +50,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "Match system" (the default) keeps live-following the OS via the existing `matchMedia` listener; picking
   Light or Dark pins the theme until the user returns to Match system. Precedence is now **user preference >
   host-set `data-theme` > OS**, and the host-controlled `data-theme-auto` path is preserved. The choice
-  persists in `localStorage` (`cw:pref:theme`). New embedder option **`settings`** (`{ enabled?, theme? }`)
-  hides the whole surface or an individual pane; a hidden pane hands that preference back to the
+  persists in `localStorage` (`cw:pref:theme`). New embedder option **`settings`** (`{ enabled?, theme?,
+  chrome? }`) hides the whole surface or an individual pane; a hidden pane hands that preference back to the
   embedder/OS. The dialog is structured as groups so future preferences slot in without a redesign.
+- **Settings ▸ Appearance ▸ Toolbar — Ribbon / Minimal, switchable at runtime (FIX 2b).** The chrome preset
+  (row 24) was embedder-only, so an end user could never reach the quiet Minimal command bar. It is now a
+  user control in Settings, and — the technical crux — switching applies **at runtime**: the full ribbon and
+  the minibar are both always built, so a swap is a pure show/hide that **preserves all editor state** —
+  caret/selection, undo/redo history, open Navigator and Inspector panels and their expanded sections,
+  scroll position, zoom, and the dirty/save state (verified in the browser across a ribbon→minimal→ribbon
+  round-trip, including that undo still reverts the pre-switch edit). The choice persists (`cw:pref:chrome`)
+  and, when the pane is available, overrides the embedder's `chrome` default; hiding the pane
+  (`settings.chrome: false`) hands the choice back to the embedder. The `chrome` constructor option remains
+  the initial default (still `'ribbon'`).
 - **Quiet chrome preset — `chrome: 'ribbon' | 'minimal'` (Move 1).** A new constructor option demotes the
   ribbon from *the* architecture to one switchable skin. `'minimal'` hides the ribbon body + tab strip and
   shows a quiet ~44px command bar in the header row: the document identity + save state and quick-access

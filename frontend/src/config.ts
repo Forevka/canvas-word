@@ -51,12 +51,15 @@ export interface SettingsSurfaceConfig {
   enabled?: boolean;
   /** Show Appearance ▸ Theme (Light / Dark / Match system). Default true. */
   theme?: boolean;
+  /** Show Appearance ▸ Chrome (Ribbon / Minimal). Default true. */
+  chrome?: boolean;
 }
 
 /** Fully-populated settings-surface config the editor app reads. */
 export interface ResolvedSettings {
   enabled: boolean;
   theme: boolean;
+  chrome: boolean;
 }
 
 /** Normalize the public partial `settings` option (default: everything shown). */
@@ -64,6 +67,7 @@ export function resolveSettings(input?: SettingsSurfaceConfig): ResolvedSettings
   return {
     enabled: input?.enabled ?? true,
     theme: input?.theme ?? true,
+    chrome: input?.chrome ?? true,
   };
 }
 

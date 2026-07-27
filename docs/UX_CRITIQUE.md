@@ -688,11 +688,26 @@ present in the Ctrl+K palette. The host tier (user > host > OS) is preserved by
 the captured-host-pin logic (verified by reasoning; the offline example sets no
 pre-mount `data-theme`).
 
-**F2b — Chrome preset control (next commit).** *Appearance ▸ Chrome: Ribbon /
-Minimal*, making row 24's Move 1 user-facing, with runtime preset switching that
-must preserve editor state (caret/selection, undo history, open panels + their
-expanded sections, scroll, zoom, dirty state). See that commit for the
-state-preservation verification.
+**F2b — Toolbar (chrome) preset control (landed).** *Appearance ▸ Toolbar: Ribbon
+/ Minimal*, making row 24's Move 1 user-facing. The technical risk was runtime
+switching: row 24 read `chrome` only at mount. But row 24 also built the minimal
+preset as a *pure skin swap* over the always-built ribbon, so the fix is to build
+the minibar unconditionally too and expose one `applyChrome(preset)` that toggles
+`display` on the chrome elements only — the ribbon is never rebuilt. Because the
+editor core (document, layout, undo stack), the caret/selection, and the
+Navigator/Inspector panels all live *outside* the toolbar, a swap cannot touch
+them. The persisted choice (`cw:pref:chrome`) overrides the embedder's `chrome`
+default when the pane is available; `settings.chrome: false` hands control back.
+
+*Verified (browser).* A ribbon → minimal → ribbon round-trip with a live edit,
+selection, zoom 1.5, scroll, an open Inspector (with a specific expanded-section
+pattern) and an open Navigator: **every** observable was identical across all
+three states — `getSelection()`, `canUndo`/`canRedo`, `getZoom()`, the scroll
+offset, `getChangeHead()` (dirty), the Inspector open flag + its per-section
+collapsed array, and the outline visibility — and performing undo *after* the
+round-trip still reverted the pre-switch edit (proving the history wasn't
+dropped). Persistence and the two-control dialog (Theme + Toolbar) confirmed. So
+the preset switch shipped rather than being held back.
 
 ### F3 — Keyboard shortcuts under non-Latin layouts (P0)
 
