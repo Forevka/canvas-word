@@ -24,6 +24,8 @@ import { createFloatingFormatBar } from "./ui/floatingFormatBar";
 import { createContextToolbarManager } from "./ui/contextToolbar";
 import { openSurface, type SurfaceHandle } from "./ui/surfaceManager";
 import { showInputDialog } from "./ui/inputDialog";
+import { showSettingsDialog, type SettingsGroup } from "./ui/settingsDialog";
+import { readPref, writePref } from "./ui/prefs";
 import { showCommandPalette, type PaletteCommand } from "./ui/commandPalette";
 import { showShortcutsCheatsheet } from "./ui/shortcutsCheatsheet";
 import { createImageContextToolbar } from "./ui/imageContextToolbar";
@@ -231,19 +233,52 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
   let navMarksPanel: HTMLElement | null = null;
   let navShow: (tab: string) => void = () => {};
 
-  // Dark-mode chrome (critique V2): reflect the OS colour scheme onto
-  // :root[data-theme], which the dark stylesheet keys off. Marks its own writes
-  // with data-theme-auto so a host that sets data-theme itself keeps control.
+  // Dark-mode chrome (critique V2) + the user Theme preference (File ▸ Settings,
+  // FIX 2). :root[data-theme] drives the dark stylesheet. Precedence:
+  //   explicit user choice (Light/Dark)  >  host-pinned data-theme  >  OS scheme.
+  // "Match system" (the default) is *no* user override, so it collapses to the
+  // original behaviour: a host that pinned data-theme keeps control, else follow the
+  // OS live. The user choice persists (localStorage) so it survives reloads.
+  type ThemePref = "light" | "dark" | "system";
+  const THEME_PREFS = ["light", "dark", "system"] as const;
+  const THEME_PREF_KEY = "cw:pref:theme";
+  // Host pin captured BEFORE we write anything: the host set data-theme itself and
+  // did not tag it as our auto write (data-theme-auto). This is the "host keeps
+  // control" path the old guard protected — preserved here, just below the user pin.
+  const de0 = document.documentElement;
+  const hostPinnedTheme =
+    de0.dataset["themeAuto"] == null && de0.dataset["theme"] ? de0.dataset["theme"] : null;
+  // The user preference only applies when its Settings pane is available; a hidden
+  // pane hands theme control back to host/OS (embedder-forced), ignoring any stored
+  // choice — matching the same rule the chrome pane uses.
+  const themePaneOn = config.settings.enabled && config.settings.theme;
+  let themePref: ThemePref = (themePaneOn ? readPref(THEME_PREF_KEY, THEME_PREFS) : null) ?? "system";
+  let setThemePref: (t: ThemePref) => void = (t) => { themePref = t; }; // matchMedia-less fallback
+  const getThemePref = (): ThemePref => themePref;
   if (typeof matchMedia === "function") {
     const de = document.documentElement;
     const mq = matchMedia("(prefers-color-scheme: dark)");
     const applyTheme = (): void => {
-      if (de.dataset["theme"] && de.dataset["themeAuto"] !== "1") return; // host-managed
-      de.dataset["theme"] = mq.matches ? "dark" : "light";
+      if (themePref === "light" || themePref === "dark") { // user pin — wins over host + OS
+        de.dataset["theme"] = themePref;
+        de.dataset["themeAuto"] = "user";
+        return;
+      }
+      if (hostPinnedTheme) { // "system" but the host pinned a theme → host keeps control
+        de.dataset["theme"] = hostPinnedTheme;
+        de.dataset["themeAuto"] = "host";
+        return;
+      }
+      de.dataset["theme"] = mq.matches ? "dark" : "light"; // follow the OS live
       de.dataset["themeAuto"] = "1";
     };
     applyTheme();
     mq.addEventListener("change", applyTheme, { signal: teardown.signal });
+    setThemePref = (t: ThemePref): void => {
+      themePref = t;
+      if (themePaneOn) writePref(THEME_PREF_KEY, t);
+      applyTheme();
+    };
   }
 
   // Ctrl+/ — keyboard shortcuts cheat sheet (critique A3). Embedder commands with
@@ -1791,6 +1826,44 @@ if (toolbar) {
   group(fileTab, "Undo");
   btn(ICONS.undo, "Undo (Ctrl+Z)", () => editor.undo());
   btn(ICONS.redo, "Redo (Ctrl+Y)", () => editor.redo());
+
+  // ---- Settings surface (File ▸ Settings + the "Settings" palette entry, FIX 2) --
+  // The home for application PREFERENCES — things that are NOT document-authoring
+  // commands and so were homeless (theme had no in-UI control at all; the chrome
+  // preset was embedder-only). Word's "File ▸ Options" convention, minus a top-level
+  // ribbon tab. One dialog structured as groups, so future prefs slot in without a
+  // redesign. The File-tab button below is harvested into the Ctrl+K palette, which
+  // is how it stays reachable under the minimal chrome (which has no File tab).
+  const openSettings = (): void => {
+    const groups: SettingsGroup[] = [];
+    if (config.settings.theme) {
+      groups.push({
+        title: "Appearance",
+        rows: [
+          {
+            id: "appearance.theme",
+            label: "Theme",
+            hint: "Match system follows your device's light/dark setting.",
+            options: [
+              { value: "light", label: "Light" },
+              { value: "dark", label: "Dark" },
+              { value: "system", label: "Match system" },
+            ],
+            get: () => getThemePref(),
+            set: (v) => setThemePref(v as ThemePref),
+          },
+        ],
+      });
+    }
+    showSettingsDialog({ groups });
+  };
+  if (config.settings.enabled) {
+    group(fileTab, "Settings");
+    // Title is plain "Settings" so the command palette (which harvests the ribbon by
+    // button title) lists it as exactly "Settings" — the required reach under the
+    // minimal chrome, which has no File tab.
+    bigBtn(ICONS.settings, "Settings", "Settings", () => openSettings());
+  }
 
   // ===== Home tab ==========================================================
   const home = tab("home", "Home");

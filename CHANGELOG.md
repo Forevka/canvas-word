@@ -39,6 +39,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Navigator` with shortcuts that open the Navigator on the Headings or Marks tab.
 
 ### Added
+- **In-editor Settings surface, with a Theme control (FIX 2).** Application *preferences* — as opposed to
+  document-authoring commands — had no home, so each new one (document identity, save state) had been bolted
+  onto the header ad hoc, the same accretion that produced the phone-width overflow. There is now one
+  **Settings** surface, reachable from **File ▸ Settings** (Word's "File ▸ Options" convention — deliberately
+  *not* a top-level ribbon tab, which is for authoring commands) and from the **Ctrl+K command palette** as
+  "Settings" (required because the `minimal` chrome has no File tab). It opens a draggable, surface-managed,
+  dark-mode-aware dialog built on the shared dialog shell. Its first control is **Appearance ▸ Theme —
+  Light / Dark / Match system**: previously dark mode could *only* be reached by changing the OS setting.
+  "Match system" (the default) keeps live-following the OS via the existing `matchMedia` listener; picking
+  Light or Dark pins the theme until the user returns to Match system. Precedence is now **user preference >
+  host-set `data-theme` > OS**, and the host-controlled `data-theme-auto` path is preserved. The choice
+  persists in `localStorage` (`cw:pref:theme`). New embedder option **`settings`** (`{ enabled?, theme? }`)
+  hides the whole surface or an individual pane; a hidden pane hands that preference back to the
+  embedder/OS. The dialog is structured as groups so future preferences slot in without a redesign.
 - **Quiet chrome preset — `chrome: 'ribbon' | 'minimal'` (Move 1).** A new constructor option demotes the
   ribbon from *the* architecture to one switchable skin. `'minimal'` hides the ribbon body + tab strip and
   shows a quiet ~44px command bar in the header row: the document identity + save state and quick-access

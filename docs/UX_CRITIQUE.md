@@ -632,3 +632,53 @@ row 12's 760–1100 band, unchanged by this fix (the identity row and tab strip
 overflow by 0 at those widths). Reproduce: measure `.rib-tab.file` left with the
 default title, then set `.cw-doc-title`/`.cw-save-text` to long strings, force a
 reflow, and re-measure — the two must be equal.
+
+### F2 — A Settings surface for application preferences (theme + chrome)
+
+**Problem.** Two application *preferences* had no home. Dark mode (row 11) shipped
+the dark **styling** but wired the trigger only to the OS `prefers-color-scheme`
+— there was no in-UI theme switcher at all. And the chrome preset (row 24,
+`chrome: 'ribbon' | 'minimal'`) was **embedder-only**, so an end user could never
+reach the quiet Minimal chrome. Both are preferences, not authoring commands, and
+the pattern of bolting each new one onto the header ad hoc is exactly the
+accretion that caused the 390px overflow (R0). They need a single home.
+
+**Placement.** *Not* a top-level ribbon tab: ribbon tabs are document-authoring
+command groups, and a Settings tab would be the only one not about editing
+content, spending prime real estate on a rarely-opened surface. Instead it goes
+in the **File backstage** as a "Settings" entry (Word's *File ▸ Options*
+convention) **and** in the **Ctrl+K command palette** — the palette entry is
+*required*, because the Minimal chrome has no File tab. The dialog reuses the
+established shared shell (`createDialogShell`, as Page Layout / the input dialog
+do): draggable, surface-managed z-order + single-Escape, dark-mode-aware. It is
+structured as groups → rows so future prefs (units, autosave) slot in without a
+redesign, and every control applies **live** (no Apply button), consistent with
+the Inspector.
+
+**F2a — surface + Theme (this commit).** *Appearance ▸ Theme: Light / Dark / Match
+system.* Three states, not a two-way toggle. "Match system" is the default and
+keeps live-following the OS via the existing `matchMedia` listener; Light/Dark pin
+the theme until the user returns to Match system. Precedence becomes **user
+preference > host-set `data-theme` > OS**: the host pin is captured at mount
+(`data-theme` present with no `data-theme-auto` marker) and re-asserted in system
+mode, so the "host keeps control" path the old guard protected is preserved, just
+below an explicit user choice. The choice persists in `localStorage`
+(`cw:pref:theme`, via the new `ui/prefs.ts`, the same convention as the recents /
+inspector-collapse overrides). New embedder option `settings` (`{ enabled?,
+theme? }`) hides the whole surface or the Theme pane; a hidden pane hands theme
+control back to host/OS and ignores any stored user choice.
+
+*Verified (browser):* File ▸ Settings opens the dialog; picking Dark sets
+`data-theme="dark"` / `data-theme-auto="user"` and persists `"dark"`; Match system
+reverts to `data-theme-auto="1"` and follows the OS. With the OS emulated **dark**
+(CDP), pinning **Light** wins (`auto="user"`, theme stays light) and returning to
+**Match system** follows the OS to dark — confirming user > OS. "Settings" is
+present in the Ctrl+K palette. The host tier (user > host > OS) is preserved by
+the captured-host-pin logic (verified by reasoning; the offline example sets no
+pre-mount `data-theme`).
+
+**F2b — Chrome preset control (next commit).** *Appearance ▸ Chrome: Ribbon /
+Minimal*, making row 24's Move 1 user-facing, with runtime preset switching that
+must preserve editor state (caret/selection, undo history, open panels + their
+expanded sections, scroll, zoom, dirty state). See that commit for the
+state-preservation verification.

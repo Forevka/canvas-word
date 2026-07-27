@@ -40,6 +40,33 @@ export type DefaultStyleOverrides = EditorTypography;
  *  ships as a switchable skin so enterprise migrations can keep it. */
 export type ChromePreset = "ribbon" | "minimal";
 
+/** In-editor Settings surface (File ▸ Settings + the "Settings" command-palette
+ *  entry) — the home for application preferences (appearance theme, and later the
+ *  chrome preset). Every field optional; omit to keep it on. An embedder that routes
+ *  preferences through its own UI can hide the whole surface (`enabled: false`) or an
+ *  individual pane (`theme: false`); a hidden pane also means the embedder's own
+ *  `theme`/`chrome` config wins and the user's persisted choice is ignored. */
+export interface SettingsSurfaceConfig {
+  /** Show the Settings surface at all (File ▸ Settings + the palette command). Default true. */
+  enabled?: boolean;
+  /** Show Appearance ▸ Theme (Light / Dark / Match system). Default true. */
+  theme?: boolean;
+}
+
+/** Fully-populated settings-surface config the editor app reads. */
+export interface ResolvedSettings {
+  enabled: boolean;
+  theme: boolean;
+}
+
+/** Normalize the public partial `settings` option (default: everything shown). */
+export function resolveSettings(input?: SettingsSurfaceConfig): ResolvedSettings {
+  return {
+    enabled: input?.enabled ?? true,
+    theme: input?.theme ?? true,
+  };
+}
+
 export type { CustomFontDef, CustomFontFaces, FontsConfig, ResolvedFontsConfig } from "./fonts/customRegistry";
 
 /** Ruler band styling (the strip the horizontal + vertical rulers paint). */
@@ -393,6 +420,8 @@ export interface ResolvedConfig {
   /** Chrome preset: the classic tabbed `'ribbon'` or the quiet `'minimal'` command
    *  bar (critique Move 1). Default `'ribbon'`. */
   chrome: ChromePreset;
+  /** In-editor Settings surface (File ▸ Settings + palette command). */
+  settings: ResolvedSettings;
   /** Floating mini-toolbar (quick formatting above a text selection): whether it's
    *  shown, whether it appears at a bare caret, and which controls it carries. */
   floatingToolbar: ResolvedFloatingToolbar;
@@ -414,8 +443,13 @@ export interface EditorConfigInput {
   organizePages?: boolean | undefined;
   /** Chrome preset — `'ribbon'` (classic tabbed ribbon, default) or `'minimal'`
    *  (quiet ~44px command bar; everything else via the contextual bar, Inspector
-   *  and command palette). */
+   *  and command palette). Also user-selectable at runtime via File ▸ Settings
+   *  (unless that pane is hidden), whose persisted choice then overrides this default. */
   chrome?: ChromePreset | undefined;
+  /** In-editor Settings surface (File ▸ Settings + the "Settings" palette entry).
+   *  Hide the whole surface or an individual pane; a hidden pane hands control of
+   *  that preference back to this config (the user's persisted choice is ignored). */
+  settings?: SettingsSurfaceConfig | undefined;
   /** Floating mini-toolbar above a text selection: `true`/`false` to toggle, or an
    *  object to customize which controls appear, their order, and caret behavior. */
   floatingToolbar?: FloatingToolbarConfig | undefined;
@@ -437,6 +471,7 @@ export function resolveConfig(input: EditorConfigInput = {}): ResolvedConfig {
     develop: input.develop ?? false,
     organizePages: input.organizePages ?? true,
     chrome: input.chrome ?? "ribbon",
+    settings: resolveSettings(input.settings),
     floatingToolbar: resolveFloatingToolbar(input.floatingToolbar),
     contextToolbars: resolveContextToolbars(input.contextToolbars),
   };

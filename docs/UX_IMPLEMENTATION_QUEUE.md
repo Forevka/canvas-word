@@ -369,3 +369,14 @@ Same rules of engagement — one self-contained green commit each, on `feat/ux-o
   1512/1100/820/500/390px and both pointer types; identity row + tab strip add **zero** overflow so R0's
   `root.scrollWidth == clientWidth` at 390/500px still holds. The 820/1100px root overflow (1279) is the
   unchanged pre-existing `.rib-bodies` overflow (row 12's band). See UX_CRITIQUE.md §6 F1.
+- **F2 — Settings surface (theme + chrome preset), split into two commits.** Application preferences had no
+  home: dark mode was OS-only (no in-UI switcher) and the chrome preset was embedder-only (users couldn't
+  reach Minimal). Added one Settings surface — **File ▸ Settings** + a **Ctrl+K "Settings"** entry (required:
+  Minimal has no File tab) — on the shared dialog shell, structured as groups so future prefs slot in, every
+  control live (no Apply). Embedder option `settings` (`{ enabled?, theme?[, chrome?] }`) hides the surface or
+  a pane. See UX_CRITIQUE.md §6 F2.
+  - [x] **F2a** — surface + **Appearance ▸ Theme** (Light / Dark / Match system). Precedence user > host > OS;
+    persisted `cw:pref:theme`; host `data-theme-auto` path preserved. Browser-verified (theme apply/persist,
+    palette reach, user>OS under emulated OS-dark).
+  - [ ] **F2b** — **Appearance ▸ Chrome** (Ribbon / Minimal) + runtime preset switching, preserving all editor
+    state. Isolated as its own commit because runtime chrome rebuild is the main technical risk.
