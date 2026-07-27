@@ -23,6 +23,7 @@ import {
   type BandName,
 } from "@cw/shared";
 import { findTableById } from "../editor/commands";
+import { keyMatches } from "../commands";
 import type { LayoutTree } from "../layout/layoutTree";
 import {
   comparePositions,
@@ -818,7 +819,7 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
         return;
       }
     }
-    if (ctrl && ev.key.toLowerCase() === "a") {
+    if (ctrl && keyMatches("a", ev)) { // hybrid match so Ctrl+A works on non-Latin layouts
       const edges = documentEdges(tree, sc); // scoped: selects the band story
       if (edges) deps.setSelection({ anchor: edges.start, focus: edges.end });
       ev.preventDefault();

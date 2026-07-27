@@ -137,6 +137,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are appended live. Surface-managed (Escape/×-closable), dark-mode themed.
 
 ### Fixed
+- **Keyboard shortcuts were entirely broken under non-Latin keyboard layouts (P0).** Every shortcut matched
+  on `KeyboardEvent.key`, which carries the *layout-produced character*, not the physical key — so on a
+  Ukrainian/Russian/Greek/Hebrew/… layout the physical Z key emits `'я'` and matched nothing, leaving
+  Ctrl+Z/Y (undo/redo), Ctrl+B/I/U, Ctrl+S, Ctrl+K, Ctrl+F, Ctrl+A, Ctrl+/ and **every embedder-registered
+  chord** silently dead. Matching is now a hybrid via a single `keyMatches` helper in `commands.ts` (backing
+  `chordMatches` and every site): the produced character wins when it is **ASCII** (so a deliberate
+  Dvorak/AZERTY remap still gets the keycap letter), falling back to the physical `KeyboardEvent.code`
+  (e.g. `KeyZ`) only when the produced character is **not ASCII**. Named keys (Enter, arrows, F-keys) stay
+  layout-independent; a missing/empty `code` (some virtual keyboards, older browsers) degrades to key-only
+  rather than throwing. Bare character triggers (typing `/` to open the slash menu) remain `key`-based by
+  design. Covered by regression tests synthesising Cyrillic/Dvorak events (`commands.test.ts`,
+  `input/keymap.test.ts`, `input/objectKeyboard.test.ts`), since the bug is invisible on a Latin layout.
 - **Ribbon header split into two rows so the tab strip stops moving.** The document-identity cluster
   (filename + save state + the fidelity `⚠ N notes` chip) and the quick-access undo/redo cluster used to sit
   **inline before** the File/Home tabs, so the tabs' x-position depended on filename length, on

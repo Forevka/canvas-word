@@ -156,3 +156,38 @@ describe("object keyboard routing (E2/E3)", () => {
     expect(nudgeSelectedObject).not.toHaveBeenCalled();
   });
 });
+
+// Ctrl+A select-all must work under non-Latin layouts, where the physical A key
+// emits a non-Latin character (e.g. 'ф' on a Ukrainian layout). The handler matches
+// via the physical code, so the Ctrl+A branch is entered and consumes the event
+// (calls preventDefault) regardless of the produced character. (setSelection needs a
+// real layout tree to fire, which the stub tree doesn't provide, so we assert the
+// branch was reached via preventDefault — the observable that was broken before.)
+describe("Ctrl+A select-all under non-Latin layouts", () => {
+  const kev = (
+    k: string,
+    code: string,
+    mods: Partial<{ shiftKey: boolean; ctrlKey: boolean; altKey: boolean; metaKey: boolean }> = {},
+  ) => ({ key: k, code, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...mods, preventDefault: vi.fn() });
+
+  it("enters the select-all branch when the physical A emits 'ф' (Cyrillic)", async () => {
+    const { keydown } = await setup();
+    const e = kev("ф", "KeyA", { ctrlKey: true });
+    keydown(e);
+    expect(e.preventDefault).toHaveBeenCalled();
+  });
+
+  it("still works for a plain Latin Ctrl+A", async () => {
+    const { keydown } = await setup();
+    const e = kev("a", "KeyA", { ctrlKey: true });
+    keydown(e);
+    expect(e.preventDefault).toHaveBeenCalled();
+  });
+
+  it("ignores a Cyrillic Ctrl-chord on a different physical key", async () => {
+    const { keydown } = await setup();
+    const e = kev("ф", "KeyS", { ctrlKey: true }); // not the physical A position
+    keydown(e);
+    expect(e.preventDefault).not.toHaveBeenCalled();
+  });
+});

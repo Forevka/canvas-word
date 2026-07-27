@@ -62,7 +62,7 @@ import { emitBuilderCode } from "./codegen/emit";
 // (Hoisted here from the toolbar block; ES imports must be top-level, and the
 // toolbar code now lives inside mountEditorApp.)
 import { anchorBeforeId, type RibbonActionContext, type RibbonApi, type RibbonButtonSpec } from "./ribbon";
-import { chordMatches, resolveCommandBindings, type EditorCommand } from "./commands";
+import { chordMatches, keyMatches, resolveCommandBindings, type EditorCommand } from "./commands";
 import {
   insertText as insertTextCmd,
   setCustomBlockData as setCustomBlockDataCmd,
@@ -286,7 +286,7 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
   window.addEventListener(
     "keydown",
     (e) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key !== "/") return;
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || !keyMatches("/", e)) return;
       e.preventDefault();
       const cmds = (runtime.commands ?? [])
         .filter((c) => c.keybinding && c.label)
@@ -2915,7 +2915,7 @@ if (toolbar) {
   window.addEventListener(
     "keydown",
     (e) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== "s") return;
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || !keyMatches("s", e)) return;
       e.preventDefault(); // suppress the browser Save-Page dialog in every mode
       void triggerSave();
     },
@@ -4618,7 +4618,7 @@ if (toolbar) {
   window.addEventListener(
     "keydown",
     (e) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== "k") return;
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || !keyMatches("k", e)) return;
       e.preventDefault();
       showCommandPalette(gatherPaletteCommands());
     },
@@ -5619,7 +5619,7 @@ if (!readonly) {
     ev.stopPropagation(); // typing in the bar never reaches the editor keymap
   });
   window.addEventListener("keydown", (ev) => {
-    if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "f") {
+    if ((ev.ctrlKey || ev.metaKey) && keyMatches("f", ev)) {
       ev.preventDefault();
       openFind();
     }

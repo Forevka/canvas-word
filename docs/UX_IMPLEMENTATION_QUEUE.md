@@ -380,3 +380,11 @@ Same rules of engagement — one self-contained green commit each, on `feat/ux-o
     palette reach, user>OS under emulated OS-dark).
   - [ ] **F2b** — **Appearance ▸ Chrome** (Ribbon / Minimal) + runtime preset switching, preserving all editor
     state. Isolated as its own commit because runtime chrome rebuild is the main technical risk.
+- [x] **F3 — Keyboard shortcuts broken under non-Latin keyboard layouts (P0).** Every shortcut matched on
+  `KeyboardEvent.key` (the layout-produced character), so on a Cyrillic/Greek/… layout the physical Z emits
+  `'я'` and Ctrl+Z/Y/S/K/F/A/B/I/U + all embedder chords were dead. Fixed centrally with a hybrid
+  `keyMatches` helper in `commands.ts` (ASCII char wins → honours Dvorak/AZERTY; fall back to physical
+  `ev.code` when non-ASCII; named keys stay layout-independent; degrade to key-only when `code` is absent).
+  Bare "/" slash-menu trigger left key-based by design. Mandatory regression tests synthesise Cyrillic/Dvorak
+  events (`commands.test.ts`, `keymap.test.ts`, `objectKeyboard.test.ts`); browser-confirmed Cyrillic Ctrl+K
+  and Ctrl+F. Recorded in UX_CRITIQUE.md §2.6 (A5) + §6 F3. Done before resuming F2b.

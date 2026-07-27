@@ -75,13 +75,66 @@ export function parseChord(binding: string): ParsedChord | null {
   return chord.key ? chord : null;
 }
 
-/** A KeyboardEvent-shaped input, so matching stays testable without a real DOM. */
+/** A KeyboardEvent-shaped input, so matching stays testable without a real DOM.
+ *  `code` is the physical-key position (layout-independent); optional so callers
+ *  and older environments that lack it degrade to key-only matching. */
 export interface KeyEventLike {
   key: string;
+  code?: string;
   ctrlKey: boolean;
   altKey: boolean;
   shiftKey: boolean;
   metaKey: boolean;
+}
+
+/** The `KeyboardEvent.code` for a single-character shortcut target at its US-QWERTY
+ *  physical position (letters → `KeyX`, digits → `DigitN`, common punctuation).
+ *  Returns null for a target with no stable physical mapping. */
+function physicalCodeFor(target: string): string | null {
+  if (target >= "a" && target <= "z") return "Key" + target.toUpperCase();
+  if (target >= "0" && target <= "9") return "Digit" + target;
+  const PUNCT: Record<string, string> = {
+    "/": "Slash", ".": "Period", ",": "Comma", ";": "Semicolon", "'": "Quote",
+    "[": "BracketLeft", "]": "BracketRight", "\\": "Backslash",
+    "-": "Minus", "=": "Equal", "`": "Backquote",
+  };
+  return PUNCT[target] ?? null;
+}
+
+/** Does a keyboard event's key match the shortcut target `target` (a lower-cased
+ *  key name — "z", "/", "enter", "arrowup", "f2")? HYBRID layout handling, the
+ *  crux of the fix for non-Latin keyboards:
+ *
+ *  - `KeyboardEvent.key` carries the LAYOUT-PRODUCED character, so on a Cyrillic
+ *    layout the physical Z key yields `key === 'я'` and no ASCII shortcut matches —
+ *    every Ctrl-chord was silently dead for those users.
+ *  - We match the produced character when it is ASCII (a Latin layout, or a
+ *    deliberate remap like Dvorak/AZERTY whose users expect the keycap legend), and
+ *    fall back to the physical position via `event.code` (e.g. 'KeyZ') ONLY when the
+ *    produced character is not ASCII. This is what VS Code / Word do, and why
+ *    Cyrillic/Greek/… keycaps also carry the Latin legend.
+ *  - Named keys (Enter, ArrowUp, F2, …) are layout-independent, so they always match
+ *    on `key` directly.
+ *  - If `code` is missing/empty (some virtual keyboards, older browsers) we degrade
+ *    to key-only matching rather than failing — the exact pre-fix behaviour.
+ *
+ *  Note: this is for MODIFIER shortcuts. A bare character trigger (e.g. typing "/"
+ *  to open the slash menu) must keep matching `key`, because there the user means the
+ *  character they produced, not a physical position. */
+export function keyMatches(target: string, ev: { key: string; code?: string }): boolean {
+  const t = target.toLowerCase();
+  const rawKey = ev.key ?? "";
+  const key = rawKey.toLowerCase();
+  // Named (multi-char) keys are layout-independent — compare directly.
+  if (t.length !== 1) return key === t;
+  // Single-char target: an ASCII produced character is authoritative (do NOT also
+  // consult code, so a remapped 'z' matches key 'z' and not physical KeyZ).
+  if (rawKey.length === 1 && rawKey.charCodeAt(0) < 128) return key === t;
+  // Produced character is non-ASCII (or absent) → use the physical key position.
+  const code = ev.code ?? "";
+  if (!code) return key === t; // no code available → degrade to key-only
+  const want = physicalCodeFor(t);
+  return want !== null && code === want;
 }
 
 /** Resolve `mod` to the concrete modifier the active platform uses: Meta (⌘) on
@@ -99,7 +152,7 @@ function effectiveModifiers(chord: ParsedChord, mac: boolean): { ctrl: boolean; 
  *  `ctrl`/`meta` still require that exact modifier. All four modifiers are matched
  *  exactly, so an extra held modifier never counts as a match. */
 export function chordMatches(chord: ParsedChord, ev: KeyEventLike, mac = false): boolean {
-  if (ev.key.toLowerCase() !== chord.key) return false;
+  if (!keyMatches(chord.key, ev)) return false; // hybrid key/code match (non-Latin layouts)
   if (chord.shift !== ev.shiftKey) return false;
   if (chord.alt !== ev.altKey) return false;
   const { ctrl, meta } = effectiveModifiers(chord, mac);

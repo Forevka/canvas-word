@@ -361,6 +361,17 @@ shortcuts dialog, and the tooltips are the only documentation.
 
 **A4 — The ribbon self-scrolls on focus**, moving controls under the pointer.
 
+**A5 — Keyboard shortcuts were entirely broken under non-Latin keyboard layouts
+(missed by this critique; found post-overhaul).** Every shortcut matched on
+`KeyboardEvent.key`, which is the *layout-produced character*, not the physical
+key: on a Ukrainian/Russian/Greek/… layout the physical Z emits `key === 'я'`
+and matched no shortcut, so Ctrl+Z/Y/S/K/F/A/B/I/U — and every embedder-registered
+chord — were silently dead for a large fraction of the world's users. `.code`
+(the layout-independent physical position) was used *nowhere* for matching. This
+was invisible to anyone testing on a Latin layout, which is exactly why both the
+original build and this critique missed it — keyboard-layout internationalisation
+was never considered. Fixed in F3 (see §6) with a hybrid `key`/`code` matcher.
+
 ### 2.7 Missing table stakes for 2026
 
 No command palette. No `Ctrl+P` / print. No `Ctrl+K` for links. No spell check.
@@ -682,3 +693,37 @@ Minimal*, making row 24's Move 1 user-facing, with runtime preset switching that
 must preserve editor state (caret/selection, undo history, open panels + their
 expanded sections, scroll, zoom, dirty state). See that commit for the
 state-preservation verification.
+
+### F3 — Keyboard shortcuts under non-Latin layouts (P0)
+
+**Problem.** Every keyboard shortcut matched on `KeyboardEvent.key` — the
+character the active layout *produces* — so on any non-Latin layout (Cyrillic,
+Greek, Hebrew, Arabic, Thai, …) the physical Z key emits e.g. `'я'`, matched
+nothing, and Ctrl+Z did nothing. Confirmed dead: Ctrl+Z/Shift+Z/Y (undo/redo),
+Ctrl+B/I/U (`input/keymap.ts`), Ctrl+S (save), Ctrl+K (palette), Ctrl+F (find),
+Ctrl+A (select-all, `selectionController.ts`), Ctrl+/ (cheat sheet), and — via
+`commands.ts`'s generic `chordMatches` — *every embedder-registered chord*.
+`KeyboardEvent.code` (the layout-independent physical position) was used nowhere.
+The bug is permanently invisible on a Latin layout, which is why it survived (see
+A5).
+
+**Fix.** A single hybrid matcher, `keyMatches(target, ev)` in `commands.ts`, now
+backs `chordMatches` and every hardcoded site: match the produced character when
+it is **ASCII** (so a deliberate Dvorak/AZERTY remap still gets the letter on its
+keycap), and fall back to the **physical `ev.code`** (e.g. `'KeyZ'`) only when the
+produced character is **not ASCII**. Named keys (Enter, ArrowUp, F2, …) are
+layout-independent and match on `key` directly; a missing/empty `ev.code` (some
+virtual keyboards, older browsers) degrades to key-only rather than throwing. This
+is the VS Code / Word approach, and the reason Cyrillic keycaps also carry the
+Latin legend. Bare character triggers (typing `/` to open the slash menu) stay
+`key`-based on purpose — there the user means the character, not a position.
+
+**Regression tests (mandatory — the bug is invisible on a Latin layout).**
+`commands.test.ts` covers `keyMatches` (ASCII, Cyrillic-via-code, Dvorak-via-key,
+named keys, punctuation, missing-code) and `chordMatches` under non-Latin layouts;
+`input/keymap.test.ts` asserts `{key:'я', code:'KeyZ', ctrl}` undoes, Ctrl+Shift+Z
+redoes, Ctrl+B/I/U toggle, a Dvorak `{key:'z', code:'KeySemicolon', ctrl}` undoes
+via the key path, and Latin still works; `input/objectKeyboard.test.ts` asserts the
+Ctrl+A branch is entered for `{key:'ф', code:'KeyA', ctrl}`. Live-confirmed in the
+browser too: a Cyrillic Ctrl+K opened the command palette and a Cyrillic Ctrl+F
+opened the find bar (real events carrying `code`).
