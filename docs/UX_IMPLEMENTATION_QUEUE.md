@@ -353,3 +353,19 @@ Tick a row only after it is **committed** to `feat/ux-overhaul`.
   `root.scrollWidth == clientWidth` at 390/500px at both pointer types. **Note:** a *separate*, pre-existing
   ribbon-*body* overflow at ~1000–1279px (the Home-tab groups exceed the viewport before `.compact` engages)
   was observed but left alone — it belongs to row 12's 760–1100 band, not this header-cluster fix.
+
+### Follow-up fixes (post-overhaul, user-reported)
+
+Same rules of engagement — one self-contained green commit each, on `feat/ux-overhaul`.
+
+- [x] **F1 — HEADER: the tab strip must stop moving (two-row header).** The identity cluster (filename +
+  save state + fidelity chip) and quick-access cluster sat inline *before* File/Home in `.rib-tabs`, so the
+  tabs' left edge moved with filename length / `Saved` vs `Unsaved` / whether the fidelity chip was present.
+  Split the header into the Word/Google-Docs two rows: row 1 = identity + save + quick-access (left) and
+  mode controls + fidelity chip (right); row 2 = the tab strip **alone**, File pinned at `x=0` with nothing
+  variable-width before it. Title ellipsises. `minimal` preset keeps its single compact bar (empty tab-strip
+  row dropped, minibar moved onto the identity row). Regression (browser, no-jsdom, per R0's precedent): the
+  File tab's left offset is `0` and identical for short vs long filename and saved vs unsaved, at
+  1512/1100/820/500/390px and both pointer types; identity row + tab strip add **zero** overflow so R0's
+  `root.scrollWidth == clientWidth` at 390/500px still holds. The 820/1100px root overflow (1279) is the
+  unchanged pre-existing `.rib-bodies` overflow (row 12's band). See UX_CRITIQUE.md §6 F1.

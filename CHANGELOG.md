@@ -123,6 +123,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are appended live. Surface-managed (Escape/×-closable), dark-mode themed.
 
 ### Fixed
+- **Ribbon header split into two rows so the tab strip stops moving.** The document-identity cluster
+  (filename + save state + the fidelity `⚠ N notes` chip) and the quick-access undo/redo cluster used to sit
+  **inline before** the File/Home tabs, so the tabs' x-position depended on filename length, on
+  `Saved` vs `Unsaved changes`, and on whether the fidelity chip was present — File and Home are
+  muscle-memory targets, and the document was deciding where they lived. The header is now the Word /
+  Google-Docs two-row structure: **row 1** carries document title + save state and the quick-access cluster
+  on the left, the mode controls (Editing/Suggesting/Viewing, Inspector, Review, collapse chevron) plus the
+  fidelity chip on the right; **row 2** is the tab strip **alone**, with File pinned at the true left edge
+  (`x = 0`) and nothing variable-width before it. The title ellipsises rather than pushing anything.
+  Regression (browser, no-jsdom): the File tab's left offset is `0` and **identical** for a short vs a long
+  filename and for saved vs unsaved state, at every width and both pointer types; the identity row and tab
+  strip each add **zero** horizontal overflow, so `wordcanvas-root.scrollWidth == clientWidth` at 390/500px
+  still holds (R0). The `minimal` chrome preset has no tab strip, so it stays a single compact bar (its
+  now-empty row 2 is dropped and the minibar rides the identity row).
 - **Phone-width horizontal overflow in the ribbon header + status bar (R0/P0).** The header row's pinned
   clusters — document identity, quick-access undo/redo, and the mode/Inspector/Review controls — were each
   fixed-width, non-shrinking flex children, so at a phone width their combined ~690px spilled past the

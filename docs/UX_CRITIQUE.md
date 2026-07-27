@@ -579,3 +579,56 @@ edit affordance. Right now each is bespoke.
 Stop treating "looks like Word" as the design goal and start treating
 "round-trips like Word" as the design goal. The first one is a liability you
 inherited; the second one is the only thing here that nobody else can copy.
+
+## 6. Follow-up fixes (post-overhaul)
+
+Fixes reported by the user after the 24-row overhaul landed. Each is one
+self-contained commit on `feat/ux-overhaul`, held to the same rules.
+
+### F1 — The tab strip must stop moving (two-row header)
+
+**Problem.** Rows 2, 3 and 19 each pinned a cluster to the *left* of the tab
+strip, inline inside `.rib-tabs`: the document-identity cluster (filename +
+`Saved`/`Unsaved changes` + the fidelity `⚠ N notes` chip) followed by the
+quick-access undo/redo cluster, all before the `File`/`Home` tabs. Because those
+clusters are variable-width — the filename length, the save-state wording, and
+whether the fidelity chip is present all change their width — **the tabs' x-
+position moved with document state.** `File` and `Home` are muscle-memory
+targets; the document was deciding where they lived. This is the same left-of-
+tabs pile-up that R0 had to *contain* at phone widths; F1 removes the cause.
+
+**Fix.** Adopt the Word / Google-Docs two-row header. Row 1 (the *identity row*,
+~32px) holds title + save state and the quick-access cluster on the left and the
+mode controls (Editing/Suggesting/Viewing, Inspector, Review, collapse chevron)
+plus the fidelity chip on the right, right-aligned by the existing
+`margin-left:auto` on `.cw-header-review`. Row 2 is the tab strip **alone**:
+`.rib-tabs` now contains only the scrolling tabs + their overflow `⋯`, with
+`padding-left: 0` so `File` sits at the true left edge (`x = 0`) and **nothing
+variable-width precedes it, ever.** The title still ellipsises (it is
+`flex: 0 1 auto` inside a `min-width: 0` row) rather than pushing anything.
+
+**Why two rows and not just "reserve a fixed width for the identity cluster."**
+A fixed reservation would keep the tabs still but would either clip a long
+filename or waste space on a short one, and it would still place document state
+in the tabs' own row — one careless future insertion re-introduces the drift. A
+separate row makes the invariant *structural*: the tab strip's left offset is a
+function of layout only, never of content, so it cannot regress by adding another
+header widget.
+
+**`minimal` preset.** `chrome: 'minimal'` (row 24) has no tab strip, so its row 2
+is empty; it is dropped (`display:none`) and the minibar rides the identity row,
+leaving the single quiet ~44px bar row 24 shipped. Unchanged for the user.
+
+**Regression assertion (browser, no-jsdom — matching R0's precedent).** Measured
+on the running dev server with Playwright, at 1512/1100/820/500/390px and both
+`pointer: fine` and `pointer: coarse` (CDP `Emulation.setEmulatedMedia`): the
+`File` tab's `getBoundingClientRect().left` is `0` and **identical** for a short
+vs a long filename and for `Saved` vs `Unsaved changes` (`fileLeftInvariant:
+true` everywhere); the identity row and the tab strip each report **zero**
+horizontal overflow, so `wordcanvas-root.scrollWidth == clientWidth` at 390/500px
+holds (R0 preserved). The residual root overflow at 820/1100px (`scrollWidth`
+1279) is entirely `.rib-bodies` — the pre-existing Home-tab-groups overflow in
+row 12's 760–1100 band, unchanged by this fix (the identity row and tab strip
+overflow by 0 at those widths). Reproduce: measure `.rib-tab.file` left with the
+default title, then set `.cw-doc-title`/`.cw-save-text` to long strings, force a
+reflow, and re-measure — the two must be equal.

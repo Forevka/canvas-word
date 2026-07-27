@@ -24,13 +24,26 @@ const CSS = `
   background: #f3f2f1; border-bottom: 1px solid #e1dfdd; user-select: none;
 }
 
-/* --- tab strip --- */
+/* --- header row 1: identity + quick-access + mode controls ---
+   The document-state-dependent chrome (title, save words, fidelity chip) lives on
+   THIS row so it never precedes the tab strip below it. Identity + quick-access sit
+   left; the mode/Inspector/Review cluster + collapse chevron are pushed right by the
+   margin-left:auto on .cw-header-review. Fixed ~32px height keeps added chrome minimal. */
+.cw-ident-row {
+  display: flex; align-items: center; gap: 6px; height: 32px;
+  padding: 0 8px 0 4px; background: #f3f2f1; border-bottom: 1px solid #ebe9e7;
+}
+
+/* --- header row 2: the tab strip, ALONE ---
+   File is the first child and nothing variable-width precedes it, so its left edge
+   is invariant to filename length and save state (regression: the whole point of the
+   two-row split). padding-left:0 pins File to the true left edge (x=0). */
 .rib-tabs {
   display: flex; align-items: flex-end; gap: 1px; height: 32px;
-  padding: 4px 8px 0; background: #f3f2f1;
+  padding: 4px 8px 0 0; background: #f3f2f1;
 }
-/* Tab buttons scroll horizontally on overflow; the right-side cluster
-   (.cw-header-review + collapse chevron) stays pinned as siblings of .rib-tabs. */
+/* Tab buttons scroll horizontally on overflow; the overflow "⋯" stays pinned as a
+   sibling of .rib-tab-scroll. (Identity/quick-access/mode controls moved to row 1.) */
 .rib-tab-scroll {
   flex: 1 1 auto; min-width: 0; display: flex; align-items: flex-end; gap: 1px;
   overflow-x: auto; overflow-y: hidden; flex-wrap: nowrap; scrollbar-width: none;
@@ -66,8 +79,8 @@ const CSS = `
 }
 .rib-tab-overflow:hover { background: #eceae9; }
 
-/* review controls docked in the ribbon header (right of the tab strip) */
-.cw-header-review { margin-left: auto; display: flex; align-items: center; gap: 8px; padding-bottom: 3px; }
+/* mode controls docked on the identity row, pushed right by margin-left:auto */
+.cw-header-review { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .cw-mode-select {
   height: 26px; border: 1px solid #d2d0ce; border-radius: 5px; background: #fff;
   font: inherit; font-size: 12.5px; color: #323130; padding: 0 6px; cursor: pointer;
@@ -81,11 +94,12 @@ const CSS = `
 .cw-header-btn:hover { background: #f3f2f1; }
 .cw-header-btn.active { background: #2b579a; color: #fff; border-color: #2b579a; }
 
-/* document identity + live save state, pinned to the LEFT of the tab strip so
-   "what is this file / is my work safe?" is answerable without opening a menu */
+/* document identity + live save state, on the LEFT of the identity row so
+   "what is this file / is my work safe?" is answerable without opening a menu.
+   flex:0 1 auto lets it shrink (title ellipsises) rather than push the row wider. */
 .cw-doc-ident {
-  flex: 0 0 auto; align-self: flex-end; display: flex; align-items: center;
-  gap: 8px; min-width: 0; max-width: 480px; padding: 0 12px 4px 4px;
+  flex: 0 1 auto; display: flex; align-items: center;
+  gap: 8px; min-width: 0; max-width: 480px; padding: 0;
 }
 .cw-doc-title {
   font-size: 13px; font-weight: 600; color: #201f1e; min-width: 0; max-width: 210px;
@@ -125,8 +139,8 @@ const CSS = `
 /* quick-access toolbar (undo / redo / save) — pinned between the title and the
    tab strip so the most-used commands are one click from any tab */
 .cw-qat {
-  flex: 0 0 auto; align-self: flex-end; display: flex; align-items: center; gap: 1px;
-  padding: 0 4px 3px; margin-left: 2px; border-left: 1px solid #d8d6d4;
+  flex: 0 0 auto; display: flex; align-items: center; gap: 1px;
+  padding: 0 4px; margin-left: 2px; border-left: 1px solid #d8d6d4;
 }
 .cw-qat-btn {
   width: 28px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
@@ -142,7 +156,7 @@ const CSS = `
    bar. Everything else reaches the user via the contextual bar, the Inspector and
    the command palette. */
 .cw-toolbar.cw-chrome-minimal { border-bottom: 1px solid #e1dfdd; }
-.cw-minibar { display: flex; align-items: center; gap: 3px; align-self: flex-end; padding-bottom: 3px; flex: 0 1 auto; min-width: 0; }
+.cw-minibar { display: flex; align-items: center; gap: 3px; flex: 0 1 auto; min-width: 0; }
 .cw-minibar-style { height: 26px; max-width: 150px; min-width: 0; border: 1px solid #d2d0ce; border-radius: 5px; background: #fff; font: inherit; font-size: 12.5px; color: #323130; padding: 0 6px; cursor: pointer; }
 .cw-minibar-sep { flex: 0 0 auto; width: 1px; height: 18px; background: #d8d6d4; margin: 0 3px; }
 .cw-minibar-btn { flex: 0 0 auto; min-width: 28px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; border-radius: 5px; cursor: pointer; color: #323130; padding: 0 5px; font: inherit; font-size: 13px; }
@@ -729,17 +743,19 @@ const CSS = `
   .rib-label { display: none; }
   .rib-group { padding: 4px 6px; }
 
-  /* Header row overflow containment (R0 / P0). The pinned clusters — document
+  /* Header overflow containment (R0 / P0). The identity-row clusters — document
      identity (rows 2/19), quick-access (row 3) and the review + Inspector controls
-     (row 23) — have a combined min-content wider than a phone. They are all
-     non-shrinking flex children of .rib-tabs, so on a phone .rib-tabs' 690px of
-     content spilled past its 390px box (overflow-x: visible) and dragged the whole
-     wordcanvas-root — status bar and canvas included — sideways. Contain that
-     overflow WITHIN the tab strip: it scrolls horizontally instead of widening the
-     root, so the page below never moves. margin-left:auto on .cw-header-review still
-     pins it right when there IS room (≥ ~700px) and flows into the scroll when there
-     isn't. The identity cluster also shrinks (ellipsis) so the useful left of the
-     strip — title, save state, undo/redo, first tabs — shows without scrolling. */
+     (row 23) — have a combined min-content wider than a phone. They are non-shrinking
+     flex children of .cw-ident-row, so on a phone that row's ~690px of content would
+     spill past its 390px box (overflow-x: visible) and drag the whole wordcanvas-root
+     — status bar and canvas included — sideways. Contain that overflow WITHIN each
+     header row (identity row AND tab strip) so each scrolls horizontally instead of
+     widening the root, and the page below never moves. margin-left:auto on
+     .cw-header-review still pins it right when there IS room and flows into the scroll
+     when there isn't. The identity cluster also shrinks (ellipsis) so the useful left
+     — title, save state, undo/redo — shows without scrolling. */
+  .cw-ident-row { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  .cw-ident-row::-webkit-scrollbar { display: none; }
   .rib-tabs { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
   .rib-tabs::-webkit-scrollbar { display: none; }
   .cw-doc-ident { flex-shrink: 1; max-width: none; }
@@ -797,6 +813,7 @@ const CSS = `
 :root[data-theme="dark"] .cw-app { background: #22252a; }
 /* Ribbon */
 :root[data-theme="dark"] .cw-toolbar { background: #1e1f22; color: #e6e6e6; }
+:root[data-theme="dark"] .cw-ident-row { background: #26282c; border-bottom-color: #34373c; }
 :root[data-theme="dark"] .rib-tabs { background: #26282c; }
 :root[data-theme="dark"] .rib-tab { color: #c8c8c8; }
 :root[data-theme="dark"] .rib-tab:hover { background: #34373c; }

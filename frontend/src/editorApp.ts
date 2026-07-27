@@ -843,10 +843,15 @@ if (toolbar) {
     return e;
   };
 
+  // Header row 1 (identity row): document title + save state + quick-access on the
+  // left, mode/Inspector/Review controls + collapse chevron on the right. All the
+  // document-state-dependent chrome lives HERE so nothing variable-width precedes the
+  // tab strip below — File/Home stay put regardless of filename length or save state.
+  const identRow = el("div", "cw-ident-row");
+  // Header row 2: the tab strip alone. File is pinned at the true left edge.
   const tabsBar = el("div", "rib-tabs");
   // Tab buttons live in an inner scroll wrapper so they scroll horizontally on
-  // overflow while the right-side cluster (mode select / Review / collapse
-  // chevron) stays pinned as direct children of `.rib-tabs`.
+  // overflow while the tab-overflow "⋯" stays pinned as a sibling of `.rib-tabs`.
   const tabScroll = el("div", "rib-tab-scroll");
   tabsBar.appendChild(tabScroll);
   // Mouse users on a narrow desktop: translate vertical wheel to horizontal scroll
@@ -861,7 +866,7 @@ if (toolbar) {
     { passive: false, signal: teardown.signal },
   );
   const bodies = el("div", "rib-bodies");
-  toolbar.append(tabsBar, bodies);
+  toolbar.append(identRow, tabsBar, bodies);
   const tabButtons = new Map<string, HTMLButtonElement>();
   const tabPanels = new Map<string, HTMLDivElement>();
   // Contextual tabs (Table / Picture / Shape Tools): hidden until their predicate
@@ -2666,8 +2671,8 @@ if (toolbar) {
     }
     openPop(tabOverflowBtn, menu(items));
   });
-  tabsBar.appendChild(tabOverflowBtn);
-  tabsBar.appendChild(headerReview);
+  tabsBar.appendChild(tabOverflowBtn); // row 2 (tabs) — its own overflow control
+  identRow.appendChild(headerReview); // row 1, right side (margin-left:auto pins it)
 
   // ---- Document identity + live save state (pinned top-left of the ribbon) ---
   // Answers "what is this file, and is my work safe?" without opening a menu.
@@ -2680,7 +2685,7 @@ if (toolbar) {
   const saveText = el("span", "cw-save-text");
   saveWrap.append(saveDot, saveText);
   docIdent.append(titleEl, saveWrap);
-  tabsBar.insertBefore(docIdent, tabScroll); // leftmost, before the scrolling tabs
+  identRow.insertBefore(docIdent, headerReview); // leftmost of the identity row
 
   // ---- Import fidelity badge (Move 3): the moat made visible — but only its
   // WARNING half. "⚠ N notes" appears when a .docx import preserved-but-adapted
@@ -2866,7 +2871,7 @@ if (toolbar) {
   const undoQat = qatBtn(ICONS.undo, "Undo (Ctrl+Z)", () => editor.undo());
   const redoQat = qatBtn(ICONS.redo, "Redo (Ctrl+Y)", () => editor.redo());
   qatBtn(ICONS.save, "Save (Ctrl+S)", () => void triggerSave());
-  tabsBar.insertBefore(qat, tabScroll); // between the title and the scrolling tabs
+  identRow.insertBefore(qat, headerReview); // identity row: right after the title/save cluster
   // Grey undo/redo when the stack is empty (kept live via syncQat, below).
   syncQat = (): void => {
     undoQat.disabled = !editor.canUndo();
@@ -4300,7 +4305,7 @@ if (toolbar) {
     }
   }, { signal: teardown.signal });
   setCollapsed(false);
-  tabsBar.appendChild(collapseBtn);
+  identRow.appendChild(collapseBtn); // identity row, far right (after the mode controls)
 
   // ===== customizeRibbon: reorder/remove built-ins + add custom tabs/buttons ===
   if (runtime.customizeRibbon) {
@@ -4562,6 +4567,9 @@ if (toolbar) {
     tabScroll.style.display = "none";
     tabOverflowBtn.style.display = "none";
     collapseBtn.style.display = "none";
+    // No tab strip in minimal — row 2 is empty, so drop it entirely and let the
+    // identity row (which now hosts the minibar below) be the single compact bar.
+    tabsBar.style.display = "none";
 
     const bar = el("div", "cw-minibar");
 
@@ -4637,7 +4645,7 @@ if (toolbar) {
     moreBtn.addEventListener("click", () => showCommandPalette(gatherPaletteCommands()));
     bar.appendChild(moreBtn);
 
-    tabsBar.insertBefore(bar, tabScroll);
+    identRow.insertBefore(bar, headerReview); // between quick-access and the mode controls
 
     refreshMinimalBar = (): void => {
       const f = editor.currentFormat();
