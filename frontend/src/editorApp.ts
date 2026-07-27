@@ -239,10 +239,17 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
 
   // Dark-mode chrome (critique V2) + the user Theme preference (File ▸ Settings,
   // FIX 2). :root[data-theme] drives the dark stylesheet. Precedence:
-  //   explicit user choice (Light/Dark)  >  host-pinned data-theme  >  OS scheme.
-  // "Match system" (the default) is *no* user override, so it collapses to the
-  // original behaviour: a host that pinned data-theme keeps control, else follow the
-  // OS live. The user choice persists (localStorage) so it survives reloads.
+  //   explicit user choice (Light/Dark)  >  host-pinned data-theme  >  default.
+  //
+  // DARK IS NOT OFFERED TO END USERS YET — it needs polish. While THEME_UI_READY is
+  // false the Theme picker is hidden AND the default is Light (not "follow the OS"),
+  // so a dark-OS machine no longer gets an unpolished dark editor out of the box. All
+  // dark-theme CSS stays live (it is keyed on data-theme="dark", which we simply don't
+  // set), and a host can still pin data-theme="dark" deliberately. Flip this one flag
+  // to true to re-enable the Light/Dark/Match-system picker and OS-follow once dark is
+  // ready. Every dark rule — chrome AND the floating context bars — keys on
+  // data-theme="dark", so this flag is the single control point.
+  const THEME_UI_READY = false;
   type ThemePref = "light" | "dark" | "system";
   const THEME_PREFS = ["light", "dark", "system"] as const;
   const THEME_PREF_KEY = "cw:pref:theme";
@@ -252,11 +259,11 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
   const de0 = document.documentElement;
   const hostPinnedTheme =
     de0.dataset["themeAuto"] == null && de0.dataset["theme"] ? de0.dataset["theme"] : null;
-  // The user preference only applies when its Settings pane is available; a hidden
-  // pane hands theme control back to host/OS (embedder-forced), ignoring any stored
-  // choice — matching the same rule the chrome pane uses.
-  const themePaneOn = config.settings.enabled && config.settings.theme;
-  let themePref: ThemePref = (themePaneOn ? readPref(THEME_PREF_KEY, THEME_PREFS) : null) ?? "system";
+  // The Theme picker is shown only when dark is ready AND the embedder hasn't hidden
+  // the surface / pane. When it isn't shown we don't read a stored user choice (dark
+  // must not leak back in via an old cw:pref:theme), so the default holds.
+  const themeUiOffered = THEME_UI_READY && config.settings.enabled && config.settings.theme;
+  let themePref: ThemePref = (themeUiOffered ? readPref(THEME_PREF_KEY, THEME_PREFS) : null) ?? "system";
   let setThemePref: (t: ThemePref) => void = (t) => { themePref = t; }; // matchMedia-less fallback
   const getThemePref = (): ThemePref => themePref;
   if (typeof matchMedia === "function") {
@@ -273,14 +280,16 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
         de.dataset["themeAuto"] = "host";
         return;
       }
-      de.dataset["theme"] = mq.matches ? "dark" : "light"; // follow the OS live
+      // Follow the OS live — but only once dark is offered. Until then default to Light
+      // rather than following the OS into an unpolished dark theme.
+      de.dataset["theme"] = THEME_UI_READY && mq.matches ? "dark" : "light";
       de.dataset["themeAuto"] = "1";
     };
     applyTheme();
     mq.addEventListener("change", applyTheme, { signal: teardown.signal });
     setThemePref = (t: ThemePref): void => {
       themePref = t;
-      if (themePaneOn) writePref(THEME_PREF_KEY, t);
+      if (themeUiOffered) writePref(THEME_PREF_KEY, t);
       applyTheme();
     };
   }
@@ -1848,7 +1857,7 @@ if (toolbar) {
   const openSettings = (): void => {
     const groups: SettingsGroup[] = [];
     const appearance: SettingsGroup["rows"] = [];
-    if (config.settings.theme) {
+    if (themeUiOffered) { // hidden until the dark theme is polished (THEME_UI_READY)
       appearance.push({
         id: "appearance.theme",
         label: "Theme",

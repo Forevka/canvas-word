@@ -45,14 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Settings** surface, reachable from **File ▸ Settings** (Word's "File ▸ Options" convention — deliberately
   *not* a top-level ribbon tab, which is for authoring commands) and from the **Ctrl+K command palette** as
   "Settings" (required because the `minimal` chrome has no File tab). It opens a draggable, surface-managed,
-  dark-mode-aware dialog built on the shared dialog shell. Its first control is **Appearance ▸ Theme —
-  Light / Dark / Match system**: previously dark mode could *only* be reached by changing the OS setting.
-  "Match system" (the default) keeps live-following the OS via the existing `matchMedia` listener; picking
-  Light or Dark pins the theme until the user returns to Match system. Precedence is now **user preference >
-  host-set `data-theme` > OS**, and the host-controlled `data-theme-auto` path is preserved. The choice
-  persists in `localStorage` (`cw:pref:theme`). New embedder option **`settings`** (`{ enabled?, theme?,
-  chrome? }`) hides the whole surface or an individual pane; a hidden pane hands that preference back to the
-  embedder/OS. The dialog is structured as groups so future preferences slot in without a redesign.
+  dark-mode-aware dialog built on the shared dialog shell. It carries an **Appearance ▸ Theme —
+  Light / Dark / Match system** control (precedence **user preference > host-set `data-theme` > OS**,
+  persisted in `localStorage` as `cw:pref:theme`, with the host-controlled `data-theme-auto` path preserved).
+  **The dark theme is not offered to end users yet** — it needs polish — so the Theme control is currently
+  **hidden and the editor defaults to Light** (it no longer follows the OS into an unpolished dark theme). All
+  dark-theme CSS stays live (it keys on `data-theme="dark"`, which is simply not set), a host can still pin
+  `data-theme="dark"` deliberately, and re-enabling the picker + OS-follow is a one-line flag
+  (`THEME_UI_READY`) once dark is ready. New embedder option **`settings`** (`{ enabled?, theme?, chrome? }`)
+  hides the whole surface or an individual pane. The dialog is structured as groups so future preferences
+  slot in without a redesign.
 - **Settings ▸ Appearance ▸ Toolbar — Ribbon / Minimal, switchable at runtime (FIX 2b).** The chrome preset
   (row 24) was embedder-only, so an end user could never reach the quiet Minimal command bar. It is now a
   user control in Settings, and — the technical crux — switching applies **at runtime**: the full ribbon and

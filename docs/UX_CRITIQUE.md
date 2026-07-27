@@ -688,6 +688,21 @@ present in the Ctrl+K palette. The host tier (user > host > OS) is preserved by
 the captured-host-pin logic (verified by reasoning; the offline example sets no
 pre-mount `data-theme`).
 
+**F2a follow-up — dark held back, Light forced (post-decision).** The dark theme
+is not polished enough to offer to end users yet, so by explicit decision the Theme
+control is **hidden** and the editor **defaults to Light** rather than following the
+OS. One flag, `THEME_UI_READY = false`, does both: while false the Theme picker is
+not added to Settings, no stored `cw:pref:theme` is read (so an old `dark` can't leak
+back), and the "system" default resolves to Light instead of `matchMedia`'s dark.
+The whole dark theme — chrome *and* the four floating context bars — keys on
+`data-theme="dark"` (the context bars' `@media (prefers-color-scheme: dark)` blocks
+already inner-gate on `data-theme="dark"`, so not setting it suppresses them too), so
+this one flag is a complete control point; no dark CSS was removed and a host can
+still pin `data-theme="dark"`. Verified: with the OS emulated dark AND a stale
+`cw:pref:theme="dark"` seeded, the editor mounts Light (`data-theme="light"`, light
+toolbar) and Settings shows only the Toolbar control. Re-enabling is flipping the one
+flag once dark is ready.
+
 **F2b — Toolbar (chrome) preset control (landed).** *Appearance ▸ Toolbar: Ribbon
 / Minimal*, making row 24's Move 1 user-facing. The technical risk was runtime
 switching: row 24 read `chrome` only at mount. But row 24 also built the minimal

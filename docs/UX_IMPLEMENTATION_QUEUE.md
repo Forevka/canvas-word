@@ -378,6 +378,10 @@ Same rules of engagement — one self-contained green commit each, on `feat/ux-o
   - [x] **F2a** — surface + **Appearance ▸ Theme** (Light / Dark / Match system). Precedence user > host > OS;
     persisted `cw:pref:theme`; host `data-theme-auto` path preserved. Browser-verified (theme apply/persist,
     palette reach, user>OS under emulated OS-dark).
+    - **Post-decision:** dark theme not polished enough to ship, so the Theme control is **hidden** and the
+      editor **defaults to Light** (gated behind one flag, `THEME_UI_READY = false`; no dark CSS removed; hosts
+      can still pin `data-theme="dark"`; one-line flip to re-enable). Verified Light under emulated OS-dark +
+      a stale `dark` pref, with Settings showing only the Toolbar control. See UX_CRITIQUE.md §6 (F2a follow-up).
   - [x] **F2b** — **Appearance ▸ Toolbar** (Ribbon / Minimal) + runtime preset switching. Both ribbon and
     minibar are always built, so `applyChrome` swaps by pure show/hide and preserves ALL editor state.
     Browser-verified across a ribbon→minimal→ribbon round-trip: selection, undo/redo history (undo still
