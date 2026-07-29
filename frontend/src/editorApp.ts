@@ -1728,7 +1728,11 @@ if (toolbar) {
     });
   };
 
-  const exportAs = async (format: ExportFormat): Promise<void> => {
+  /** Runs the export pipeline. Resolves true when the bytes reached their
+   *  destination (host onSave or download), false when it failed — errors are
+   *  reported here, not thrown, so callers that re-baseline saved state (the Ctrl+S
+   *  indicator) can tell a real save from a swallowed failure. */
+  const exportAs = async (format: ExportFormat): Promise<boolean> => {
     // Rendering (especially PDF) can take a few seconds; show the busy overlay so
     // the app doesn't look hung. Dropped before any onSave dialog / download so it
     // doesn't sit behind a native Save sheet.
@@ -1754,7 +1758,7 @@ if (toolbar) {
       // the host routes it to its own pipeline (upload, persist, custom download).
       if (runtime.onSave) {
         await runtime.onSave({ blob, bytes, format, warnings });
-        return;
+        return true;
       }
       const url = URL.createObjectURL(blob);
       const a = el("a");
@@ -1767,8 +1771,10 @@ if (toolbar) {
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return true;
     } catch (err) {
       console.error(`[export-${format}] failed`, err);
+      return false;
     } finally {
       busy.done(); // idempotent — covers the error path
     }
@@ -2931,10 +2937,14 @@ if (toolbar) {
     saving = true;
     refreshSaveState();
     try {
-      await exportAs("docx"); // honors runtime.onSave; else triggers the .docx download
-      savedHead = editor.getChangeHead();
-      if (saveTarget === "host") lastSavedAt = Date.now();
-      else lastDownloadAt = Date.now();
+      // Only re-baseline on a real save: exportAs reports failures rather than
+      // throwing, so awaiting it alone would flip the indicator to "Saved" over an
+      // export that never wrote anything — the exact state this widget exists to warn about.
+      if (await exportAs("docx")) { // honors runtime.onSave; else triggers the .docx download
+        savedHead = editor.getChangeHead();
+        if (saveTarget === "host") lastSavedAt = Date.now();
+        else lastDownloadAt = Date.now();
+      }
     } catch (e) {
       console.error("[save]", e);
     } finally {
