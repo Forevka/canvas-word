@@ -232,15 +232,16 @@ const CSS = `
 .cw-toolbar select:hover, .cw-toolbar input[type="number"]:hover { border-color: #8a8886; }
 
 /* styles gallery. Width is pinned to a WHOLE number of cards so the horizontal
-   scroll never rests showing a clipped half-card (critique C3): with a 76px card
-   + 4px gap and box-sizing: border-box, the 320px inner width holds exactly four
-   cards (4·76 + 3·4 = 316) with the fifth starting past the edge. scroll-snap
+   scroll never rests showing a clipped half-card (critique C3): a 76px card + 4px
+   gap needs 4·76 + 3·4 = 316px of content for four cards, and box-sizing:
+   border-box counts the 8px padding and 2px border inside max-width, so the box
+   is 316 + 8 + 2 = 326px with the fifth card starting past the edge. scroll-snap
    keeps scrolled positions on card boundaries too. */
 .rib-gallery {
   box-sizing: border-box;
   display: flex; align-items: center; gap: 4px; height: 64px; padding: 0 4px;
   border: 1px solid #c8c6c4; border-radius: 4px; background: #fff;
-  overflow-x: auto; max-width: 320px; scroll-snap-type: x proximity;
+  overflow-x: auto; max-width: 326px; scroll-snap-type: x proximity;
 }
 .rib-gallery::-webkit-scrollbar { height: 8px; }
 .rib-gallery::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
