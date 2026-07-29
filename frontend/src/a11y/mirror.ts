@@ -43,8 +43,9 @@ function labelLevel(label: string | undefined): number | null {
 }
 
 /** Heading level of a paragraph's named style, walking the basedOn chain (a
- *  custom "Section title" based on Heading 2 still reads as level 2). */
-function headingLevelOf(doc: Document, styleId: string | undefined): number | null {
+ *  custom "Section title" based on Heading 2 still reads as level 2). Exported for
+ *  tests: the surrounding mirror needs a DOM, this resolution is pure. */
+export function headingLevelOf(doc: Document, styleId: string | undefined): number | null {
   if (!styleId) return null;
   const sheet = doc.stylesheet;
   let level = labelLevel(styleId);
@@ -96,6 +97,11 @@ function describe(doc: Document, blocks: Block[], out: Node[]): void {
     // Shapes (floating, anchored) and custom blocks are announced through the
     // F6 drawing-object layer, not the in-flow reading mirror.
   }
+  // Scope: body blocks only. Section headers/footers and footnote/endnote bodies
+  // are deliberately outside the mirror — it backs the editable proxy's reading
+  // flow, and those stories are not editable through it. They need their own
+  // landmark/region treatment rather than being spliced into the body sequence,
+  // where a screen reader would read them as part of the document text.
 }
 
 export function createA11yMirror(proxyEl: HTMLElement): A11yMirror {
