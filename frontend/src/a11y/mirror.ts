@@ -221,7 +221,20 @@ export function createA11yMirror(proxyEl: HTMLElement): A11yMirror {
     if (selKey !== lastSelKey) {
       lastSelKey = selKey;
       if (!collapsed && sel) announceSelection(state.doc, sel);
+      else clearAnnouncement(); // collapsing must retire the last "Selected: …"
     }
+  };
+
+  /** Drop any announcement, pending or already rendered. Clearing the text matters
+   *  as much as cancelling the timer: once the 300ms has elapsed the message is in
+   *  the accessibility tree, and a review cursor reaching it later would read a
+   *  selection the user no longer has. */
+  const clearAnnouncement = (): void => {
+    if (announceTimer) {
+      clearTimeout(announceTimer);
+      announceTimer = null;
+    }
+    if (live.textContent !== "") live.textContent = "";
   };
 
   /** Debounced "what is selected" summary (kept off the reading flow so a drag
