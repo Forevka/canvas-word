@@ -51,9 +51,15 @@ describe("builder feature round-trip (.docx)", () => {
     expect(fieldTypes).toContain("builtin:PAGE");
     expect(fieldTypes).toContain("builtin:REF"); // cross-reference (text) survives
     expect(fieldTypes).toContain("builtin:PAGEREF"); // cross-reference (page) survives
-    // The REF/PAGEREF instructions target the bookmark.
-    const xrefInstrs = Object.values(back.fields ?? {}).filter((d) => d.name === "REF" || d.name === "PAGEREF").map((d) => d.instruction);
-    expect(xrefInstrs.every((i) => i.includes("intro"))).toBe(true);
+    // The REF/PAGEREF fields target exactly `intro` — asserted on the parsed spec,
+    // not a substring of the instruction, so a stray `intro2` can't satisfy it. The
+    // length check keeps `every`/Set from passing vacuously on an empty list.
+    const xrefTargets = Object.values(back.fields ?? {})
+      .map((d) => d.spec)
+      .filter((s) => s?.type === "REF" || s?.type === "PAGEREF")
+      .map((s) => (s && (s.type === "REF" || s.type === "PAGEREF") ? s.bookmark : undefined));
+    expect(xrefTargets.length).toBeGreaterThanOrEqual(2); // the REF and the PAGEREF
+    expect(new Set(xrefTargets)).toEqual(new Set(["intro"]));
     expect(Object.keys(back.sdts ?? {}).length).toBe(1); // dropdown control survives
     expect(Object.keys(back.footnotes ?? {}).length).toBe(1); // footnote survives
     expect(Object.keys(back.bookmarks ?? {}).length).toBeGreaterThanOrEqual(1); // bookmark survives
