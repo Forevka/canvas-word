@@ -37,7 +37,13 @@ const CSS = `
 
 /** Open the palette over `commands`. Non-blocking; runs the chosen command and
  *  closes. Only one palette at a time. */
+// The palette registers as an "overlay" surface, and overlays coexist by design —
+// so nothing in the surface manager stops a second Ctrl+K stacking another palette
+// on top of the first. This enforces the one-at-a-time contract above.
+let activePaletteClose: (() => void) | null = null;
+
 export function showCommandPalette(commands: PaletteCommand[]): void {
+  activePaletteClose?.();
   injectCssOnce("cw-palette-styles", CSS);
 
   const backdrop = document.createElement("div");
@@ -69,10 +75,12 @@ export function showCommandPalette(commands: PaletteCommand[]): void {
   const close = (opts: { restoreFocus?: boolean } = {}): void => {
     if (closed) return;
     closed = true;
+    if (activePaletteClose === close) activePaletteClose = null;
     surface?.release();
     backdrop.remove();
     if (opts.restoreFocus !== false && returnFocus?.isConnected) returnFocus.focus();
   };
+  activePaletteClose = close;
   surface = openSurface({ el: backdrop, close, kind: "overlay" });
 
   let filtered: PaletteCommand[] = [];
