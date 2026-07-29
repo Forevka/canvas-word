@@ -31,9 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   import".
 - **Navigator: one panel with a 48px icon rail replaces four navigation surfaces (S1).** The Outline
   (in-flow pane), Bookmarks (window-fixed drawer), page organizer (modal) and object lists were four
-  different UIs in three paradigms. They are now one left-docked Navigator with a rail of four tabs:
+  different UIs in three paradigms. They are now one left-docked Navigator with a rail of five tabs:
   **Headings** (the full outline — collapse/filter/levels/pages/drag-reorder), **Pages** (jump to a page
-  + open the reorder overlay), **Objects** (images / shapes / tables / equations, click to reveal), and
+  + open the reorder overlay), **Objects** (images / shapes / tables / equations, click to reveal),
+  **Styles** (hover-preview, apply, select all instances), and
   **Marks** (bookmarks, add/rename/delete/go-to). It is resizable, dark-mode-themed, and survives narrow
   viewports (the rail is only 48px). The Bookmarks drawer is gone; `View ▸ Show` becomes `View ▸
   Navigator` with shortcuts that open the Navigator on the Headings or Marks tab.
@@ -74,15 +75,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   palette. Everything else reaches the user through the contextual bar, the Inspector and the command
   palette. The classic tabbed ribbon remains the **default** (`'ribbon'`) so existing embeds and enterprise
   migrations are unaffected. The offline example accepts `?chrome=minimal` to preview it.
-- **Inspector — a right-docked, selection-aware property sheet (Move 2, in progress).** A new **Inspector**
+- **Inspector — a right-docked, selection-aware property sheet (Move 2).** A new **Inspector**
   panel (toggle in the ribbon's right cluster) edits the selection's properties **live**, with no Apply
   button — every control is one undoable edit. This first instalment ships the **Text** section (font family,
   size, bold/italic/underline/strikethrough, all-caps/small-caps) and the **Paragraph** section (alignment,
   line spacing, space before/after), reading current values from the caret and swapping to an "object
   selected" note when an image/shape is picked. It docks in-flow like the Review pane (overlays on narrow
-  viewports) and is dark-mode themed. Table, Page/Section and Object sections — and the retirement of the
-  matching dialogs — follow in subsequent changes; until each Inspector section reaches parity, the existing
-  dialog stays as the advanced fallback.
+  viewports) and is dark-mode themed. The **Page/Section**, **Table** and **Object** sections land in the
+  entries below, so this release ships all four families; until each Inspector section reaches parity with
+  its dialog, the existing dialog stays as the advanced fallback.
 - **Inspector — Page/Section section.** When the caret is in body text the Inspector now also shows a **Page**
   section: paper size (Letter/A4/Legal/Custom), orientation, one-tap margin presets (Normal/Narrow/Wide),
   numeric page margins in inches, and column count (1–3) — all applied live to the caret's section as one
@@ -120,9 +121,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `applyCharStyle` gained a transaction-origin arg; `restoreParagraphsCmd`, `styleInstanceRanges`,
   `hasDirectFormattingAt`).
 - **Import fidelity badge (Move 3).** The moat — that a .docx goes in and comes out faithfully — is now
-  visible. A passive badge sits with the save state in the ribbon: **✓ Word-faithful** when the document
-  round-trips with nothing dropped or adapted (including the in-memory sample), or **⚠ N notes** when
-  opening a .docx adapted something. Clicking it expands a plain-language list of exactly what was
+  visible. A passive badge sits with the save state in the ribbon, showing **⚠ N notes** when opening a
+  .docx adapted something. (It originally also carried a standing **✓ Word-faithful** success state; that
+  was dropped later in this same release — see the entry above for why.) Clicking it expands a
+  plain-language list of exactly what was
   preserved-but-adapted (e.g. "Embedded OLE objects are not imported", "Soft line breaks became paragraph
   breaks"), driven by the importer's existing per-decision warnings (`ImportResult.warnings`). The panel is
   surface-managed (Escape / outside-click closes) and dark-mode themed. No competitor in the browser can
@@ -209,11 +211,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "⋯" menu** when the tabs don't fit, so Table/View/Developer never silently vanish.
 - **Dark mode across the shell chrome (V2).** Emulating `prefers-color-scheme: dark` previously produced
   a pixel-identical page — the dark rules keyed off `:root[data-theme]`, which nothing ever set. The
-  editor now reflects the OS colour scheme onto `:root[data-theme]` (live, and marked so a host that
+  editor can now drive `:root[data-theme]` from the OS colour scheme (live, and marked so a host that
   manages the attribute itself keeps control), and a full dark stylesheet themes the ribbon, tab strip,
   buttons, style gallery, status bar, outline/review panes, drawers, the command palette, popovers,
   context menu, and dialogs (generically via `[role="dialog"]`). The page canvas keeps following its own
-  theme preset — dark chrome around a light document, as in Word's dark mode.
+  theme preset — dark chrome around a light document, as in Word's dark mode. **Not user-reachable in
+  this release:** the editor ships defaulting to Light with the Theme control hidden (`THEME_UI_READY`)
+  until dark is polished — see the Settings entry above. A host can still pin `data-theme="dark"` itself.
 - **Command palette — `Ctrl+K` / `Cmd+K` (Move 1).** A VS-Code-style palette lists every enabled ribbon
   command by name (plus any embedder commands), so all ~145 actions are reachable in one keystroke
   without hunting through tabs — and it doubles as keyboard-first shortcut discovery. Type to filter,
