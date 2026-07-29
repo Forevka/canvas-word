@@ -3,7 +3,7 @@
 // -> incremental layout -> paint + caret + proxy reposition (same frame).
 
 import type { Block, CharStyle, Document, EmphasisMark, ImageBlock, ParaStyle, ShapeBlock, ShapePreset, TableBlock, UnderlineStyle } from "@cw/shared";
-import { BAND_CONTAINERS, defaultStylesheet, parseTocInstruction, styleById } from "@cw/shared";
+import { BAND_CONTAINERS, defaultStylesheet, parseTocInstruction, styleById, styleType } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, UserInfo } from "@cw/shared";
 import { isCollapsed, colorForId, userDisplayName, freshId, DEFAULT_CHAR_STYLE } from "@cw/shared";
 import type { ResolvedBehavior, ResolvedTheme } from "./config";
@@ -2338,7 +2338,11 @@ export function createEditor(
         const prev = textOfRuns(block.runs).slice(0, selection.focus.offset);
         const sheet = doc.stylesheet ?? defaultStylesheet();
         const h = /^(#{1,6})$/.exec(prev);
-        if (h && styleById(sheet, `Heading${h[1]!.length}`)) {
+        // styleById spans every style type, so a document defining a CHARACTER
+        // style named Heading1 would otherwise have "# " strip the prefix and
+        // apply it as a paragraph style.
+        const headingStyle = h ? styleById(sheet, `Heading${h[1]!.length}`) : undefined;
+        if (h && headingStyle && styleType(headingStyle) === "paragraph") {
           dispatch(replaceBackAndInsert(prev.length, ""));
           dispatch(applyNamedStyle(`Heading${h[1]!.length}`));
           return;
