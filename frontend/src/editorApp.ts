@@ -1893,7 +1893,10 @@ if (toolbar) {
     if (appearance.length > 0) groups.push({ title: "Appearance", rows: appearance });
     showSettingsDialog({ groups });
   };
-  if (config.settings.enabled) {
+  // Every row is individually gated, so "enabled" alone can still leave nothing to
+  // show — with the Theme row held back by THEME_UI_READY, `settings.chrome: false`
+  // empties the dialog. Don't offer a button that opens a blank surface.
+  if (config.settings.enabled && (themeUiOffered || config.settings.chrome)) {
     group(fileTab, "Settings");
     // Title is plain "Settings" so the command palette (which harvests the ribbon by
     // button title) lists it as exactly "Settings" — the required reach under the
