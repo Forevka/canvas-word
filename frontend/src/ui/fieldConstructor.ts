@@ -191,12 +191,12 @@ export function showFieldConstructor(opts: FieldConstructorOptions): FieldConstr
     const init = opts.initial;
     const prior = init && (init.type === "REF" || init.type === "PAGEREF") ? init.bookmark : undefined;
     if (prior !== undefined && bookmarks.includes(prior)) sel.value = prior;
-    else if (prior) {
-      // The field's target was deleted or renamed. Leaving the <select> on whatever
-      // sorts first would silently retarget the field on Apply, so surface the miss
-      // as a selected placeholder with an empty value — Apply stays disabled (the
-      // no-target check in refresh) until a real bookmark is chosen.
-      const missing = option("", `${prior} — missing`);
+    else if (prior !== undefined) {
+      // The field's target was deleted, renamed, or never resolved. Leaving the
+      // <select> on whatever sorts first would silently retarget the field on Apply,
+      // so surface the miss as a selected placeholder with an empty value — Apply
+      // stays disabled (the no-target check in refresh) until a real bookmark is chosen.
+      const missing = option("", prior === "" ? "(no target)" : `${prior} — missing`);
       sel.prepend(missing);
       sel.value = "";
     }
