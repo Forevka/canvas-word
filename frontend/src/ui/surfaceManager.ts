@@ -48,8 +48,13 @@ function ensureEscape(): void {
   window.addEventListener(
     "keydown",
     (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      // A surface torn down without going through its close() (instance teardown
+      // removing body-level panels, a host detaching the node) never releases its
+      // handle. Drop those first, or Escape is swallowed by a detached entry.
+      while (stack.length > 0 && !stack[stack.length - 1]!.el.isConnected) stack.pop();
       const top = stack[stack.length - 1];
-      if (e.key !== "Escape" || !top) return;
+      if (!top) return;
       e.preventDefault();
       e.stopPropagation();
       top.close();
