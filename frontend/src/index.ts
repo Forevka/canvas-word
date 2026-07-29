@@ -52,6 +52,7 @@ import { importDocx } from "./import/docx/importDocx";
 import { showContextMenu, type ContextMenuHandle, type MenuEntry } from "./ui/contextMenu";
 import { showSdtInspector, type SdtInspectorData, type SdtInspectorHandle } from "./ui/sdtInspector";
 import { showFieldConstructor } from "./ui/fieldConstructor";
+import { showInputDialog } from "./ui/inputDialog";
 // Lazy: the equation editor carries the LaTeX toolchain — load it on the
 // context-menu click, not in the core editor chunk (see editorApp.ts). Guarded
 // against double-invocation while the chunk loads (two fast clicks must not open
@@ -3105,6 +3106,30 @@ export function createEditor(
     return { tableId: table.id, anchor: { row: origin.row, col: origin.col }, focus: { row: origin.row, col: origin.col } };
   };
 
+  /** Open a hyperlink editor for the selection: the host's styled popover when
+   *  `onEditLink` is wired, else the in-app input dialog. The hook is optional, so
+   *  without a fallback the context menu's link entries would be dead for every
+   *  embedder that doesn't supply one. `currentUrl` is null when inserting. */
+  const editLink = (currentUrl: string | null): void => {
+    if (options.onEditLink) {
+      options.onEditLink(currentUrl);
+      return;
+    }
+    const inserting = currentUrl === null;
+    showInputDialog({
+      title: inserting ? "Insert Hyperlink" : "Edit Hyperlink",
+      label: "Link URL",
+      initial: currentUrl ?? "",
+      placeholder: "https://example.com",
+      okLabel: inserting ? "Insert" : "Apply",
+      // Emptying the field clears the link, matching Remove Hyperlink.
+      onSubmit: (v) => {
+        const url = v.trim();
+        dispatch(setLinkCmd(url === "" ? null : url));
+      },
+    });
+  };
+
   /** Seed the modal's border controls from an existing edge, else a 1px black line. */
   const borderSeed = (b: CellBorders | undefined): { color: string; widthPx: number; style: BorderStyleName } => {
     const e = b && (b.top ?? b.right ?? b.bottom ?? b.left);
@@ -3295,10 +3320,7 @@ export function createEditor(
       entries.push(
         sep,
         item("Open Hyperlink", () => window.open(linkUrl, "_blank", "noopener"), { icon: ICONS.link }),
-        item("Edit Hyperlink…", () => {
-          if (options.onEditLink) options.onEditLink(linkUrl);
-          else dispatch(setLinkCmd(linkUrl)); // no host editor wired — leave as-is
-        }),
+        item("Edit Hyperlink…", () => editLink(linkUrl)),
         item("Remove Hyperlink", () => dispatch(setLinkCmd(null)), { danger: true }),
       );
     }
@@ -3586,7 +3608,7 @@ export function createEditor(
         item("Bullets", () => dispatch(toggleList("bullet")), { icon: ICONS.bullets }),
         item("Numbering", () => dispatch(toggleList("decimal")), { icon: ICONS.numbering }),
         sep,
-        item("Insert Hyperlink…", () => options.onEditLink?.(null), { icon: ICONS.link }),
+        item("Insert Hyperlink…", () => editLink(null), { icon: ICONS.link }),
         {
           kind: "submenu",
           label: "Insert Content Control",
