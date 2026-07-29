@@ -2820,6 +2820,10 @@ if (toolbar) {
     fidelityPanelEl = null;
     fidelityBtn.setAttribute("aria-expanded", "false");
   };
+  // The panel lives on document.body, so destroy() with it open would strand the
+  // node, its capture-phase listener and its surface-stack entry. Closing on abort
+  // clears all three at once.
+  teardown.signal.addEventListener("abort", () => closeFidelityPanel(), { once: true });
   const openFidelityPanel = (): void => {
     // The badge only exists in the warning state, so the panel is only ever opened
     // with warnings present — the old "✓ Word-faithful" clean-state branch is gone.
@@ -2853,7 +2857,11 @@ if (toolbar) {
       if (panel.contains(t) || fidelityBtn.contains(t)) return;
       closeFidelityPanel();
     };
-    setTimeout(() => { if (fidelityOutside) window.addEventListener("mousedown", fidelityOutside, true); }, 0);
+    // The abort check covers a destroy() landing inside this tick, which would
+    // otherwise register the listener after teardown had already run.
+    setTimeout(() => {
+      if (fidelityOutside && !teardown.signal.aborted) window.addEventListener("mousedown", fidelityOutside, true);
+    }, 0);
   };
   fidelityBtn.addEventListener("click", () => {
     if (fidelityPanelEl) closeFidelityPanel();
