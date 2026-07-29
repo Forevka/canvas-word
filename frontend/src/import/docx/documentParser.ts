@@ -636,7 +636,10 @@ function handleFldChar(
           // A TOC entry's PAGEREF/REF (auto `_Toc…` anchor) belongs to the
           // tocEntry/pagerefAnchor path below — capturing it as a cross-reference
           // field would freeze the TOC into un-regenerable frozen references.
-          const isTocAnchor = spec !== undefined && (spec.type === "REF" || spec.type === "PAGEREF") && /^_Toc/i.test(spec.bookmark);
+          // Matched on the generated form only (`_Toc` + digits, which is what both
+          // Word and generateTocDocx emit): a bare `_Toc` prefix would also swallow
+          // a hand-made bookmark like `_TocNotes` and strip its editable field.
+          const isTocAnchor = spec !== undefined && (spec.type === "REF" || spec.type === "PAGEREF") && /^_Toc\d+$/i.test(spec.bookmark);
           if (spec && !isTocAnchor) {
             const fid = `field${ft.next.n++}`;
             ft.registry[fid] = { id: fid, instruction: field.instr, name: parsed.name, kind: "builtin", spec };
