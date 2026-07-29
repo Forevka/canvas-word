@@ -116,6 +116,7 @@ function segmented(row: SettingsSegmentedRow): { wrap: HTMLElement; refresh: () 
       else if (e.key === "ArrowLeft" || e.key === "ArrowUp") d = -1;
       else return;
       e.preventDefault();
+      e.stopPropagation(); // else the arrow also moves the caret behind the dialog
       const next = btns[(i + d + btns.length) % btns.length]!;
       row.set(next.dataset["value"]!);
       refresh();
