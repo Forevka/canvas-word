@@ -3337,7 +3337,11 @@ if (toolbar) {
           type: "highlight" as const, color: "#1a73e8", opacity: 0.26,
           range: { anchor: { blockId: r.blockId, offset: r.start }, focus: { blockId: r.blockId, offset: r.end } },
         })));
-        window.setTimeout(() => editor.setDecorations([]), 4000); // flash all instances, don't linger
+        // Guarded: unmounting inside the 4s window would otherwise call into a
+        // destroyed editor.
+        window.setTimeout(() => {
+          if (!teardown.signal.aborted) editor.setDecorations([]);
+        }, 4000); // flash all instances, don't linger
         editor.focus();
       };
 
