@@ -819,7 +819,9 @@ export function createSelectionController(deps: SelectionControllerDeps): Select
         return;
       }
     }
-    if (ctrl && keyMatches("a", ev)) { // hybrid match so Ctrl+A works on non-Latin layouts
+    // !altKey: AltGr is Ctrl+Alt on Windows, so AltGr+A ('ą' on Polish) must type
+    // its character rather than select the document.
+    if (ctrl && !ev.altKey && keyMatches("a", ev)) { // hybrid match so Ctrl+A works on non-Latin layouts
       const edges = documentEdges(tree, sc); // scoped: selects the band story
       if (edges) deps.setSelection({ anchor: edges.start, focus: edges.end });
       ev.preventDefault();

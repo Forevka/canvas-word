@@ -33,7 +33,10 @@ export const KEYMAP_ENTRIES: { chord: string; label: string }[] = [
 export function createKeymapHandler(deps: KeymapDeps): (ev: KeyboardEvent) => void {
   return (ev: KeyboardEvent): void => {
     const ctrl = ev.ctrlKey || ev.metaKey;
-    if (!ctrl) return;
+    // Alt must be absent: Windows reports AltGr as Ctrl+Alt, and the physical-code
+    // fallback below would otherwise read AltGr+Z on a Polish layout (produces 'ż',
+    // code 'KeyZ') as Ctrl+Z — swallowing a character the user meant to type.
+    if (!ctrl || ev.altKey) return;
     // Match via keyMatches (hybrid key/physical-code) so these chords fire under
     // non-Latin keyboard layouts, where ev.key is the produced character (e.g. 'я'
     // for the physical Z), not the Latin letter.

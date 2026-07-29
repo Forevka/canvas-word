@@ -190,4 +190,14 @@ describe("Ctrl+A select-all under non-Latin layouts", () => {
     keydown(e);
     expect(e.preventDefault).not.toHaveBeenCalled();
   });
+
+  // Windows reports AltGr as Ctrl+Alt, so without an altKey guard the physical-code
+  // match above would read AltGr+A ('ą' on a Polish layout) as select-all and eat
+  // the character.
+  it("leaves AltGr+A alone so 'ą' can be typed", async () => {
+    const { keydown } = await setup();
+    const e = kev("ą", "KeyA", { ctrlKey: true, altKey: true });
+    keydown(e);
+    expect(e.preventDefault).not.toHaveBeenCalled();
+  });
 });

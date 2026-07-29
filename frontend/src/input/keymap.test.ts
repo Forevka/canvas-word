@@ -71,3 +71,32 @@ describe("createKeymapHandler under non-Latin keyboard layouts", () => {
     expect(deps.undo).not.toHaveBeenCalled();
   });
 });
+
+// Windows reports AltGr as Ctrl+Alt, so on the layouts that need AltGr to type
+// their own alphabet the physical-position fallback above would claim those
+// keystrokes: AltGr+Z on Polish produces 'ż' with code 'KeyZ' and ctrlKey set,
+// which looks exactly like Ctrl+Z. The character must win — a chord requires
+// Ctrl WITHOUT Alt.
+describe("createKeymapHandler does not claim AltGr keystrokes", () => {
+  it("AltGr+Z typing 'ż' (Polish) neither undoes nor swallows the character", () => {
+    const { handle, deps } = setup();
+    const e = kev("ż", "KeyZ", { ctrlKey: true, altKey: true });
+    handle(e);
+    expect(deps.undo).not.toHaveBeenCalled();
+    expect(e.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("AltGr+B/I/U type their characters instead of toggling formatting", () => {
+    const { handle, deps } = setup();
+    handle(kev("ḃ", "KeyB", { ctrlKey: true, altKey: true }));
+    handle(kev("į", "KeyI", { ctrlKey: true, altKey: true }));
+    handle(kev("ų", "KeyU", { ctrlKey: true, altKey: true }));
+    expect(deps.toggleStyle).not.toHaveBeenCalled();
+  });
+
+  it("still fires a real Ctrl chord when Alt is absent", () => {
+    const { handle, deps } = setup();
+    handle(kev("ż", "KeyZ", { ctrlKey: true }));
+    expect(deps.undo).toHaveBeenCalledTimes(1);
+  });
+});

@@ -5691,7 +5691,7 @@ if (!readonly) {
     ev.stopPropagation(); // typing in the bar never reaches the editor keymap
   });
   window.addEventListener("keydown", (ev) => {
-    if ((ev.ctrlKey || ev.metaKey) && keyMatches("f", ev)) {
+    if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && keyMatches("f", ev)) { // !altKey: AltGr is Ctrl+Alt
       ev.preventDefault();
       openFind();
     }
