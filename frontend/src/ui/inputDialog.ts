@@ -46,9 +46,12 @@ export interface InputDialogOptions {
   onSubmit: (value: string) => void;
 }
 
+// Unique per dialog: the editor is embeddable, so a fixed id could collide with
+// the host page (or a second dialog) and bind the label to the wrong field.
+let nextFieldId = 0;
+
 /** Show the input dialog. Non-blocking (unlike prompt): the caller supplies an
- *  onSubmit callback. Returns the DialogShell in case the caller wants to close
- *  it programmatically. */
+ *  onSubmit callback. */
 export function showInputDialog(o: InputDialogOptions): void {
   const shell = createDialogShell({ prefix: "cw-input", cssId: "cw-input-styles", css: CSS, title: o.title });
 
@@ -56,6 +59,8 @@ export function showInputDialog(o: InputDialogOptions): void {
   label.textContent = o.label;
   const input = document.createElement("input");
   input.type = "text";
+  input.id = `cw-input-field-${nextFieldId++}`;
+  label.htmlFor = input.id;
   input.value = o.initial ?? "";
   if (o.placeholder) input.placeholder = o.placeholder;
   const err = document.createElement("div");
