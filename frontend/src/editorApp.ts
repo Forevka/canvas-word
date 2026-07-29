@@ -3483,9 +3483,18 @@ if (toolbar) {
       if (i < 0 || startIdx < 0) return null;
       let endIdx = blocks.length;
       for (let j = i + 1; j < entries.length; j++) {
-        if (entries[j]!.level <= entries[i]!.level) { endIdx = blocks.findIndex((b) => b.id === entries[j]!.id); break; }
+        if (entries[j]!.level <= entries[i]!.level) {
+          // `entries` is cached from dragstart; an edit landing mid-drag can leave a
+          // heading id the document no longer has. findIndex would return -1 and walk
+          // us off the front of the array — keep the to-end-of-document default instead.
+          const at = blocks.findIndex((b) => b.id === entries[j]!.id);
+          if (at > startIdx) endIdx = at;
+          break;
+        }
       }
-      return { firstId: blocks[startIdx]!.id, lastId: blocks[endIdx - 1]!.id };
+      const lastBlock = blocks[endIdx - 1];
+      if (!lastBlock) return null;
+      return { firstId: blocks[startIdx]!.id, lastId: lastBlock.id };
     };
     const afterAnchor = (headingId: string): string | null => {
       const i = entries.findIndex((e) => e.id === headingId);
