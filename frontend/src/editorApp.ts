@@ -3236,11 +3236,16 @@ if (toolbar) {
         pagesPanel.appendChild(act);
       }
       const blocks = editor.getDocument().blocks;
-      const lastPage = blocks.length ? editor.getBlockPage(blocks[blocks.length - 1]!.id) ?? 1 : 1;
       const firstBlockOnPage = new Map<number, string>();
+      // Highest PLACED page, not the last block's: getBlockPage is null for a block
+      // the current layout hasn't placed, and if that's the final block the list
+      // would fall back to 1 and hide every other page.
+      let lastPage = 1;
       for (const b of blocks) {
         const p = editor.getBlockPage(b.id);
-        if (p != null && !firstBlockOnPage.has(p)) firstBlockOnPage.set(p, b.id);
+        if (p == null) continue;
+        if (!firstBlockOnPage.has(p)) firstBlockOnPage.set(p, b.id);
+        if (p > lastPage) lastPage = p;
       }
       for (let p = 1; p <= lastPage; p++) {
         const row = el("button", "outline-item");
