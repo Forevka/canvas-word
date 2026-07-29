@@ -59,13 +59,19 @@ export function showCommandPalette(commands: PaletteCommand[]): void {
   backdrop.addEventListener("mousedown", (e) => { if (e.target === backdrop) close(); });
   document.body.appendChild(backdrop);
 
+  // Dismissing without running a command has to hand focus back: the palette's
+  // input takes it from the editor's IME proxy, and closing would otherwise leave
+  // it on <body>, where the next keystroke goes nowhere. A command that runs does
+  // its own focusing, so only the dismiss path restores.
+  const returnFocus = document.activeElement as HTMLElement | null;
   let surface: SurfaceHandle | null = null;
   let closed = false;
-  const close = (): void => {
+  const close = (opts: { restoreFocus?: boolean } = {}): void => {
     if (closed) return;
     closed = true;
     surface?.release();
     backdrop.remove();
+    if (opts.restoreFocus !== false && returnFocus?.isConnected) returnFocus.focus();
   };
   surface = openSurface({ el: backdrop, close, kind: "overlay" });
 
@@ -119,7 +125,9 @@ export function showCommandPalette(commands: PaletteCommand[]): void {
 
   const runAt = (i: number): void => {
     const cmd = filtered[i];
-    close();
+    // The command decides where focus belongs (a dialog it opens, the canvas);
+    // restoring first would steal it back.
+    close({ restoreFocus: !cmd });
     cmd?.run();
   };
 
