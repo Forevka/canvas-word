@@ -3240,16 +3240,15 @@ if (toolbar) {
       }
       const blocks = editor.getDocument().blocks;
       const firstBlockOnPage = new Map<number, string>();
-      // Highest PLACED page, not the last block's: getBlockPage is null for a block
-      // the current layout hasn't placed, and if that's the final block the list
-      // would fall back to 1 and hide every other page.
-      let lastPage = 1;
       for (const b of blocks) {
         const p = editor.getBlockPage(b.id);
-        if (p == null) continue;
-        if (!firstBlockOnPage.has(p)) firstBlockOnPage.set(p, b.id);
-        if (p > lastPage) lastPage = p;
+        if (p != null && !firstBlockOnPage.has(p)) firstBlockOnPage.set(p, b.id);
       }
+      // Take the count from the layout, not from the blocks: getBlockPage is null for
+      // any block the layout hasn't placed (in the sample doc, 52 of 184), and a page
+      // can legitimately hold no top-level block at all — the sample's last page is
+      // exactly that, so deriving the count from blocks drops it from the list.
+      const lastPage = Math.max(1, editor.getLayoutInfo().pageCount);
       for (let p = 1; p <= lastPage; p++) {
         const row = el("button", "outline-item");
         const lbl = el("span", "outline-label");
