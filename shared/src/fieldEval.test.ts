@@ -27,6 +27,18 @@ describe("evaluateField", () => {
     const r = evaluateField({ type: "DATE", format: "M/d/yyyy" }, CHAR, ctx);
     expect(r).toEqual({ kind: "runs", runs: [{ text: "6/16/2026", style: CHAR }] });
   });
+  it("REF → bookmarked text via resolver, else the bookmark name", () => {
+    expect(evaluateField({ type: "REF", bookmark: "intro" }, CHAR, { ...ctx, refText: () => "the intro" }))
+      .toEqual({ kind: "runs", runs: [{ text: "the intro", style: CHAR }] });
+    expect(evaluateField({ type: "REF", bookmark: "intro" }, CHAR, ctx))
+      .toEqual({ kind: "runs", runs: [{ text: "intro", style: CHAR }] });
+  });
+  it("PAGEREF → page via resolver, else a '?' placeholder", () => {
+    expect(evaluateField({ type: "PAGEREF", bookmark: "intro" }, CHAR, { ...ctx, pageRef: () => 4 }))
+      .toEqual({ kind: "runs", runs: [{ text: "4", style: CHAR }] });
+    expect(evaluateField({ type: "PAGEREF", bookmark: "intro" }, CHAR, ctx))
+      .toEqual({ kind: "runs", runs: [{ text: "?", style: CHAR }] });
+  });
 });
 
 describe("evaluateIf", () => {
@@ -71,6 +83,12 @@ describe("spec ⇄ instruction round-trip", () => {
       expect(r.trueRuns[0]!.text).toBe("big");
       expect(r.falseRuns[0]!.text).toBe("small");
     }
+  });
+  it("REF / PAGEREF cross-reference to a bookmark", () => {
+    expect(round({ type: "REF", bookmark: "intro" })).toEqual({ type: "REF", bookmark: "intro" });
+    expect(round({ type: "PAGEREF", bookmark: "Chapter1" })).toEqual({ type: "PAGEREF", bookmark: "Chapter1" });
+    // The bookmark is read past the \h switch either order.
+    expect(parseFieldSpec(parseFieldInstruction(" REF intro \\h "), CHAR)).toEqual({ type: "REF", bookmark: "intro" });
   });
   it("custom field → no spec", () => {
     expect(parseFieldSpec(parseFieldInstruction(' MYCHART "x" '), CHAR)).toBeUndefined();

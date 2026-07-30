@@ -16,6 +16,14 @@ import { textOfRuns } from "./model/text";
 export interface FieldEvalCtx {
   /** "Now" for DATE/TIME — passed in so evaluation stays pure/deterministic. */
   now: Date;
+  /** Resolve a REF cross-reference's bookmark to its current display text. Pure
+   *  (reads the model), so the command layer can supply it. Falls back to the
+   *  bookmark name when absent/unresolved. */
+  refText?: (bookmark: string) => string | undefined;
+  /** Resolve a PAGEREF cross-reference's bookmark to its page number. Needs
+   *  layout, so only the editor/render layers supply it; absent → "?" placeholder
+   *  (refreshed with Update Field once layout is available). */
+  pageRef?: (bookmark: string) => number | undefined;
 }
 
 export type FieldEvalResult =
@@ -110,6 +118,11 @@ export function evaluateField(spec: FieldSpec, baseStyle: CharStyle, ctx: FieldE
     case "DATE": return { kind: "runs", runs: [{ text: formatFieldDate(ctx.now, spec.format), style: { ...baseStyle } }] };
     case "TIME": return { kind: "runs", runs: [{ text: formatFieldDate(ctx.now, spec.format), style: { ...baseStyle } }] };
     case "IF": return { kind: "runs", runs: evaluateIf(spec) };
+    case "REF": return { kind: "runs", runs: [{ text: ctx.refText?.(spec.bookmark) ?? spec.bookmark, style: { ...baseStyle } }] };
+    case "PAGEREF": {
+      const page = ctx.pageRef?.(spec.bookmark);
+      return { kind: "runs", runs: [{ text: page != null ? String(page) : "?", style: { ...baseStyle } }] };
+    }
   }
 }
 
@@ -147,6 +160,12 @@ export function parseFieldSpec(parsed: ParsedFieldInstruction, baseStyle: CharSt
         falseRuns: [{ text: falseText ?? "", style: { ...baseStyle } }],
       };
     }
+    case "REF":
+    case "PAGEREF": {
+      // First non-switch argument is the target bookmark (` REF intro \h `).
+      const bookmark = parsed.args.find((a) => !a.startsWith("\\"));
+      return bookmark ? { type: parsed.name, bookmark } : undefined;
+    }
     default: return undefined;
   }
 }
@@ -159,6 +178,8 @@ export function buildInstruction(spec: FieldSpec): string {
     case "DATE": return ` DATE \\@ "${spec.format}" `;
     case "TIME": return ` TIME \\@ "${spec.format}" `;
     case "IF": return ` IF ${spec.operandA} ${spec.op} ${spec.operandB} "${textOfRuns(spec.trueRuns)}" "${textOfRuns(spec.falseRuns)}" `;
+    case "REF": return ` REF ${spec.bookmark} \\h `;
+    case "PAGEREF": return ` PAGEREF ${spec.bookmark} \\h `;
   }
 }
 

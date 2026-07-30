@@ -455,7 +455,7 @@ function injectCaretCss(): void {
     ".cw-rcaret{position:absolute;width:2px;pointer-events:none;z-index:3;}" +
     ".cw-rcaret .flag{position:absolute;top:-13px;left:-1px;height:13px;display:flex;align-items:center;" +
     "font:600 10px/1 'Segoe UI',Roboto,sans-serif;color:#fff;padding:0 4px;border-radius:3px 3px 3px 0;white-space:nowrap;}" +
-    ".cw-rsel{position:absolute;pointer-events:none;z-index:2;opacity:0.24;border-radius:1px;}";
+    ".cw-rsel{position:absolute;pointer-events:none;z-index:2;opacity:0.36;border-radius:1px;}";
   document.head.appendChild(style);
 }
 

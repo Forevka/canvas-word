@@ -7,6 +7,313 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Inspector information architecture: collapsible sections, live summaries, and a scope breadcrumb
+  (Move 2).** With all four section families present the panel could get long, so it is now structured:
+  every section is a **collapsible disclosure**, and a **collapsed header still shows a live one-line value
+  summary** of its own state (Text → `Calibri · 12 · Bold`, Paragraph → `Left · Single · 0/0 pt`, Page →
+  `A4 · Portrait · 2.5 cm`, Table → `3×4 · Grid`, Object → `640×480 · Square wrap`) — collapsing costs the
+  controls, never the information. **Default expansion follows the selection's tightest scope** (caret in
+  text → Text; caret in a cell → Table; image/shape → Object; nothing → Page), so "Page hidden by default"
+  is a consequence rather than a special case; a **manual toggle wins and persists** (localStorage). Sections
+  render **by containment (Page → Table → Paragraph → Text)** under a **breadcrumb scope trail**
+  (`Page › Table › Cell › Paragraph › Text`, applicable levels only) whose crumbs **change the selection to
+  that scope** (Table → whole table, Paragraph → the paragraph, Page → clear). Verified in both the `ribbon`
+  and `minimal` chrome presets.
+- **Import fidelity badge: the permanent `✓ Word-faithful` success state was dropped (Move 3).** A standing
+  success indicator asserts the default assumption still holds, which trains the eye to ignore that region
+  and makes the *warning* state less noticeable — and it was unearned (a never-imported document showed a
+  green check for a check that never ran). The badge now renders **nothing** (no element, so it occupies no
+  header width) for a never-imported document and for a clean import; it appears **only** as `⚠ N notes`
+  (with its unchanged click-through panel) when an import actually preserved-but-adapted something. Silence
+  is the intended signal on a clean import — there is no toast or replacement confirmation. Internally,
+  `importWarnings` is now `null` until an import completes, distinguishing "no import yet" from "clean
+  import".
+- **Navigator: one panel with a 48px icon rail replaces four navigation surfaces (S1).** The Outline
+  (in-flow pane), Bookmarks (window-fixed drawer), page organizer (modal) and object lists were four
+  different UIs in three paradigms. They are now one left-docked Navigator with a rail of five tabs:
+  **Headings** (the full outline — collapse/filter/levels/pages/drag-reorder), **Pages** (jump to a page
+  + open the reorder overlay), **Objects** (images / shapes / tables / equations, click to reveal),
+  **Styles** (hover-preview, apply, select all instances), and
+  **Marks** (bookmarks, add/rename/delete/go-to). It is resizable, dark-mode-themed, and survives narrow
+  viewports (the rail is only 48px). The Bookmarks drawer is gone; `View ▸ Show` becomes `View ▸
+  Navigator` with shortcuts that open the Navigator on the Headings or Marks tab.
+
+### Added
+- **In-editor Settings surface, with a Theme control (FIX 2).** Application *preferences* — as opposed to
+  document-authoring commands — had no home, so each new one (document identity, save state) had been bolted
+  onto the header ad hoc, the same accretion that produced the phone-width overflow. There is now one
+  **Settings** surface, reachable from **File ▸ Settings** (Word's "File ▸ Options" convention — deliberately
+  *not* a top-level ribbon tab, which is for authoring commands) and from the **Ctrl+K command palette** as
+  "Settings" (required because the `minimal` chrome has no File tab). It opens a draggable, surface-managed,
+  dark-mode-aware dialog built on the shared dialog shell. It carries an **Appearance ▸ Theme —
+  Light / Dark / Match system** control (precedence **user preference > host-set `data-theme` > OS**,
+  persisted in `localStorage` as `cw:pref:theme`, with the host-controlled `data-theme-auto` path preserved).
+  **The dark theme is not offered to end users yet** — it needs polish — so the Theme control is currently
+  **hidden and the editor defaults to Light** (it no longer follows the OS into an unpolished dark theme). All
+  dark-theme CSS stays live (it keys on `data-theme="dark"`, which is simply not set), a host can still pin
+  `data-theme="dark"` deliberately, and re-enabling the picker + OS-follow is a one-line flag
+  (`THEME_UI_READY`) once dark is ready. New embedder option **`settings`** (`{ enabled?, theme?, chrome? }`)
+  hides the whole surface or an individual pane. The dialog is structured as groups so future preferences
+  slot in without a redesign.
+- **Settings ▸ Appearance ▸ Toolbar — Ribbon / Minimal, switchable at runtime (FIX 2b).** The chrome preset
+  (row 24) was embedder-only, so an end user could never reach the quiet Minimal command bar. It is now a
+  user control in Settings, and — the technical crux — switching applies **at runtime**: the full ribbon and
+  the minibar are both always built, so a swap is a pure show/hide that **preserves all editor state** —
+  caret/selection, undo/redo history, open Navigator and Inspector panels and their expanded sections,
+  scroll position, zoom, and the dirty/save state (verified in the browser across a ribbon→minimal→ribbon
+  round-trip, including that undo still reverts the pre-switch edit). The choice persists (`cw:pref:chrome`)
+  and, when the pane is available, overrides the embedder's `chrome` default; hiding the pane
+  (`settings.chrome: false`) hands the choice back to the embedder. The `chrome` constructor option remains
+  the initial default (still `'ribbon'`).
+- **Quiet chrome preset — `chrome: 'ribbon' | 'minimal'` (Move 1).** A new constructor option demotes the
+  ribbon from *the* architecture to one switchable skin. `'minimal'` hides the ribbon body + tab strip and
+  shows a quiet ~44px command bar in the header row: the document identity + save state and quick-access
+  undo/redo (already there), plus a compact cluster — style picker, the six core formatting commands
+  (bold / italic / underline / strikethrough / bulleted / numbered), an insert **＋** menu
+  (table / picture / page break / TOC / footnote / more…), and a **⋯** overflow that opens the command
+  palette. Everything else reaches the user through the contextual bar, the Inspector and the command
+  palette. The classic tabbed ribbon remains the **default** (`'ribbon'`) so existing embeds and enterprise
+  migrations are unaffected. The offline example accepts `?chrome=minimal` to preview it.
+- **Inspector — a right-docked, selection-aware property sheet (Move 2).** A new **Inspector**
+  panel (toggle in the ribbon's right cluster) edits the selection's properties **live**, with no Apply
+  button — every control is one undoable edit. This first instalment ships the **Text** section (font family,
+  size, bold/italic/underline/strikethrough, all-caps/small-caps) and the **Paragraph** section (alignment,
+  line spacing, space before/after), reading current values from the caret and swapping to an "object
+  selected" note when an image/shape is picked. It docks in-flow like the Review pane (overlays on narrow
+  viewports) and is dark-mode themed. The **Page/Section**, **Table** and **Object** sections land in the
+  entries below, so this release ships all four families; until each Inspector section reaches parity with
+  its dialog, the existing dialog stays as the advanced fallback.
+- **Inspector — Page/Section section.** When the caret is in body text the Inspector now also shows a **Page**
+  section: paper size (Letter/A4/Legal/Custom), orientation, one-tap margin presets (Normal/Narrow/Wide),
+  numeric page margins in inches, and column count (1–3) — all applied live to the caret's section as one
+  undoable edit. The Page Layout dialog remains the advanced fallback for page borders, page colour,
+  header/footer distance and line numbering.
+- **Inspector — Table section.** When the caret sits in a table the Inspector adds a **Table** section:
+  cell vertical alignment, cell text direction (horizontal / rotate 90° / 270°), row height (auto / at
+  least / exactly), the two row flags (keep together, repeat as header), table preferred width (full /
+  percent / inches), table alignment and table indent — each applied live to the caret's cell or its table
+  as one undoable edit. The Borders & Shading dialog remains the advanced fallback for cell/table borders
+  and shading.
+- **Inspector — Object (image / shape) section.** Selecting an image or drawing shape now fills the
+  Inspector with an **Image** / **Shape** section: size (width × height in px), wrap (inline vs. float),
+  alignment and rotation — each applied live to the selected object as one undoable edit, routed to
+  `setImageProps` / `setShapeProps` by kind. Backed by a new `editor.getSelectedObjectProps()` accessor
+  (normalized size/align/wrap/rotation for the selected image or shape). Fill, stroke and geometry stay on
+  the object's floating toolbar, and the Shape Size & Position dialog remains the advanced fallback for
+  exact anchor offsets. With this, all four Inspector section families (Text/Paragraph, Table, Page/Section,
+  Object) are in place.
+- **Markdown input rules + `/` block inserter (S4).** Fast writers can shape a document from the keyboard:
+  typing `# ` / `## ` / `### ` (up to `######`) at the start of a paragraph converts it to Heading 1–6,
+  `- ` or `* ` starts a bulleted list, and `1. ` / `1) ` starts a numbered list — the prefix is consumed
+  and the block transforms. Heading rules fire only when that heading style exists, so text is never
+  stripped without a conversion. Pressing **`/` on an empty paragraph** opens the same `＋ Insert` block
+  menu (headings, lists, table, page break, TOC, footnote, shapes) — the keyboard door into the inserter —
+  while a `/` typed mid-text or in a form field is left alone.
+- **Styles as a first-class panel (S2).** A new **Styles** tab in the Navigator rail lists every paragraph
+  and character style as a live card (a real swatch rendered in the document's fonts, plus a usage count).
+  **Hover a style to preview it on the document** — the caret's paragraph(s) restyle live and revert exactly
+  when the pointer leaves, without ever touching the undo stack (a "transient" apply + a snapshot restore).
+  **Click to apply** (one undoable edit). **Right-click** for *Select all instances* (jumps to the first and
+  flashes every occurrence), *Update to match selection* (redefine the style from the caret), and *Rename
+  everywhere*. When the caret sits on locally-formatted text, a **"Direct formatting" chip** offers to clear
+  the overrides back to the paragraph's style. Built on new command/query primitives (`applyNamedStyle`/
+  `applyCharStyle` gained a transaction-origin arg; `restoreParagraphsCmd`, `styleInstanceRanges`,
+  `hasDirectFormattingAt`).
+- **Import fidelity badge (Move 3).** The moat — that a .docx goes in and comes out faithfully — is now
+  visible. A passive badge sits with the save state in the ribbon, showing **⚠ N notes** when opening a
+  .docx adapted something. (It originally also carried a standing **✓ Word-faithful** success state; that
+  was dropped later in this same release — see the entry above for why.) Clicking it expands a
+  plain-language list of exactly what was
+  preserved-but-adapted (e.g. "Embedded OLE objects are not imported", "Soft line breaks became paragraph
+  breaks"), driven by the importer's existing per-decision warnings (`ImportResult.warnings`). The panel is
+  surface-managed (Escape / outside-click closes) and dark-mode themed. No competitor in the browser can
+  show this, because none keep the fidelity.
+- **Bookmark cross-references + in-document links (B7).** Bookmarks finally have a consumer. The
+  hyperlink dialog gains a **"This document"** mode — a bookmark picker that writes an `#anchor` link
+  (round-tripping as `w:hyperlink w:anchor`) — so you can link to a place in the document, not just a URL.
+  And two new cross-reference fields join the field constructor (right-click ▸ Insert Field): **REF**
+  (shows the bookmarked text) and **PAGEREF** (shows the bookmark's page). They are first-class typed
+  fields — `FieldSpec` gains `REF`/`PAGEREF` variants — so they export as real complex fields, re-import
+  faithfully (a TOC entry's own `_Toc…` PAGEREF stays a regenerable TOC entry, not a frozen reference),
+  and refresh via **Update Field** (REF re-reads the bookmark text, PAGEREF re-resolves its page through
+  layout). The `DocumentBuilder.crossReference()` / C# `CrossReference()` composer and the flagship sample
+  document both demonstrate them.
+- **Drag-to-reorder headings in the Outline (O1).** Dragging a heading in the outline pane now moves its
+  whole section — the heading plus every block up to the next same-or-shallower heading, children
+  included — to the drop position, with a blue drop-line indicator. It reuses the same block-range move
+  Organize Pages uses (`reorderPageGroupCmd`), so it never splits content. Drop in the top half of a
+  heading to place the section before it, the bottom half to place it after.
+- **Keyboard-shortcuts cheat sheet — `Ctrl+/` (A3).** A dialog listing the editor's shortcuts, grouped
+  (Formatting, History, Breaks, Clipboard, Lists, Application) with per-platform `⌘`/`⌥`/`⇧` key caps.
+  The editing chords are read from `KEYMAP_ENTRIES` — a declarative list co-located with the keymap
+  handler — so the sheet can't silently drift from what the keys do; embedder commands with a keybinding
+  are appended live. Surface-managed (Escape/×-closable), dark-mode themed.
+
+### Fixed
+- **Keyboard shortcuts were entirely broken under non-Latin keyboard layouts (P0).** Every shortcut matched
+  on `KeyboardEvent.key`, which carries the *layout-produced character*, not the physical key — so on a
+  Ukrainian/Russian/Greek/Hebrew/… layout the physical Z key emits `'я'` and matched nothing, leaving
+  Ctrl+Z/Y (undo/redo), Ctrl+B/I/U, Ctrl+S, Ctrl+K, Ctrl+F, Ctrl+A, Ctrl+/ and **every embedder-registered
+  chord** silently dead. Matching is now a hybrid via a single `keyMatches` helper in `commands.ts` (backing
+  `chordMatches` and every site): the produced character wins when it is **ASCII** (so a deliberate
+  Dvorak/AZERTY remap still gets the keycap letter), falling back to the physical `KeyboardEvent.code`
+  (e.g. `KeyZ`) only when the produced character is **not ASCII**. Named keys (Enter, arrows, F-keys) stay
+  layout-independent; a missing/empty `code` (some virtual keyboards, older browsers) degrades to key-only
+  rather than throwing. Bare character triggers (typing `/` to open the slash menu) remain `key`-based by
+  design. Covered by regression tests synthesising Cyrillic/Dvorak events (`commands.test.ts`,
+  `input/keymap.test.ts`, `input/objectKeyboard.test.ts`), since the bug is invisible on a Latin layout.
+- **Ribbon header split into two rows so the tab strip stops moving.** The document-identity cluster
+  (filename + save state + the fidelity `⚠ N notes` chip) and the quick-access undo/redo cluster used to sit
+  **inline before** the File/Home tabs, so the tabs' x-position depended on filename length, on
+  `Saved` vs `Unsaved changes`, and on whether the fidelity chip was present — File and Home are
+  muscle-memory targets, and the document was deciding where they lived. The header is now the Word /
+  Google-Docs two-row structure: **row 1** carries document title + save state and the quick-access cluster
+  on the left, the mode controls (Editing/Suggesting/Viewing, Inspector, Review, collapse chevron) plus the
+  fidelity chip on the right; **row 2** is the tab strip **alone**, with File pinned at the true left edge
+  (`x = 0`) and nothing variable-width before it. The title ellipsises rather than pushing anything.
+  Regression (browser, no-jsdom): the File tab's left offset is `0` and **identical** for a short vs a long
+  filename and for saved vs unsaved state, at every width and both pointer types; the identity row and tab
+  strip each add **zero** horizontal overflow, so `wordcanvas-root.scrollWidth == clientWidth` at 390/500px
+  still holds (R0). The `minimal` chrome preset has no tab strip, so it stays a single compact bar (its
+  now-empty row 2 is dropped and the minibar rides the identity row).
+- **Phone-width horizontal overflow in the ribbon header + status bar (R0/P0).** The header row's pinned
+  clusters — document identity, quick-access undo/redo, and the mode/Inspector/Review controls — were each
+  fixed-width, non-shrinking flex children, so at a phone width their combined ~690px spilled past the
+  strip's box (`overflow-x: visible`) and dragged the whole editor — status bar and canvas included —
+  ~300px sideways. The status bar's info + zoom clusters overflowed the same way. At ≤760px the tab strip
+  now contains that overflow (scrolls horizontally instead of widening the root) with the identity cluster
+  shrinking to an ellipsis, and the status bar lets its info cluster shrink/ellipsize while the zoom + view
+  controls hold their size. `wordcanvas-root.scrollWidth` now equals `clientWidth` at 390 and 500px, at
+  both fine and coarse pointers; desktop (1512) is unchanged.
+- **Ribbon buttons have unique, descriptive accessible names (C6/A2).** The a11y tree contained three
+  buttons named "A", two named "ab", and glyph-as-icon buttons (`AB`/`Ab`/`ab`, `LTR`/`RTL`) whose only
+  accessible name was the ambiguous glyph. Every ribbon button (icon, text-glyph, colour swatch,
+  split-button, custom) now carries an explicit `aria-label` set to its descriptive tooltip, and the
+  decorative glyph spans are `aria-hidden`; the enable-loop keeps the name in step with the tooltip. All
+  104 ribbon buttons now have a non-empty, meaningful name (e.g. the two "A" buttons announce "Grow font"
+  / "Shrink font", the two "ab" buttons "Strikethrough" / "Double strikethrough"). The visual size-tier /
+  single-icon-family redesign (V6) is left as a separate design pass.
+- **Floating chip / menu placement (L3–L5).** The right-click context menu could grow taller than the
+  viewport and run off the bottom with unreachable items — it now caps its height to the viewport and
+  scrolls (L5). The empty-paragraph "＋ Insert" chip was centered above the caret, overlapping the line
+  of body text above it; it now sits in the left margin gutter beside the empty line (new "gutter"
+  placement mode) (L4). The TOC "Update table of contents" chip's sticky behaviour (surviving caret
+  changes / Escape) was already resolved — confirmed it now dismisses when the caret leaves the TOC or on
+  Escape (L3).
+
+### Added
+- **Fit-width zoom + responsive narrow layout (R1–R4).** The editor defaulted to 100% zoom regardless of
+  viewport and had no handling for the 760–1100px band. Now: the zoom defaults to **fit-width** whenever
+  the page can't fit at 100% (and stays fit-to-width as you resize until you zoom manually); the **outline
+  pane auto-collapses** below ~1000px so it and the page stop fighting for width (and reopens, with
+  hysteresis, once there's room — unless you toggled it yourself); and the **tab strip gains an overflow
+  "⋯" menu** when the tabs don't fit, so Table/View/Developer never silently vanish.
+- **Dark mode across the shell chrome (V2).** Emulating `prefers-color-scheme: dark` previously produced
+  a pixel-identical page — the dark rules keyed off `:root[data-theme]`, which nothing ever set. The
+  editor can now drive `:root[data-theme]` from the OS colour scheme (live, and marked so a host that
+  manages the attribute itself keeps control), and a full dark stylesheet themes the ribbon, tab strip,
+  buttons, style gallery, status bar, outline/review panes, drawers, the command palette, popovers,
+  context menu, and dialogs (generically via `[role="dialog"]`). The page canvas keeps following its own
+  theme preset — dark chrome around a light document, as in Word's dark mode. **Not user-reachable in
+  this release:** the editor ships defaulting to Light with the Theme control hidden (`THEME_UI_READY`)
+  until dark is polished — see the Settings entry above. A host can still pin `data-theme="dark"` itself.
+- **Command palette — `Ctrl+K` / `Cmd+K` (Move 1).** A VS-Code-style palette lists every enabled ribbon
+  command by name (plus any embedder commands), so all ~145 actions are reachable in one keystroke
+  without hunting through tabs — and it doubles as keyboard-first shortcut discovery. Type to filter,
+  arrow keys to move, Enter to run; each entry shows which tab it lives on. Registered with the surface
+  manager, so it shares the one Escape / z-order.
+- **Outline pane upgrade (O2–O6).** The navigation pane was a flat list of buttons that expressed depth
+  only through indentation. It now has: collapse/expand chevrons on any heading with a sub-tree; a live
+  filter box; real level styling (H1–H3+ differ in weight, size, and colour, not just indent); a page
+  number for every heading (via a new `Editor.getBlockPage()`); a current-section highlight; and a
+  drag-to-resize right edge, so long headings are never unrecoverably truncated (full text also on hover).
+
+### Fixed
+- **UI polish sweep (V3, V4, V5, L6).**
+  - **Selection highlight** was too pale to locate (opacity 0.24) — raised to 0.36.
+  - **Locale decimal commas** no longer leak into numeric fields: Chromium localizes `type="number"`
+    display/parse by the OS locale, so a fractional font size or page width showed `10,5` / `8,5` and
+    rejected a typed `.` in comma-decimal locales. The ribbon font-size input and every dialog (via the
+    shared dialog shell) now carry `lang="en"`, forcing a dot decimal everywhere.
+  - **Style-gallery previews** flashed blank sample rows before their canvas painted — each card now shows
+    a plain-text `AaBbCc` fallback that the async canvas sample overlays.
+  - **Find bar:** the inputs were unlabelled and the whole-word toggle read as a literal `⌈W⌋`. Inputs get
+    accessible names, the match-case/whole-word buttons are real `aria-pressed` toggles (and `W` instead
+    of `⌈W⌋`), the match counter is an `aria-live` region reading "No matches" instead of `0/0`, and on
+    narrow screens the bar sits above the status bar instead of over it.
+
+### Changed
+- **No more native `prompt()` / `alert()` (2.8, B5).** The six browser modals that broke the editor illusion
+  are replaced with real in-app UI. Bookmark **add** and **rename** now use a styled dialog with live
+  validation of the OOXML name rules (start with a letter or `_`, then letters/digits/`_`, ≤ 40 chars,
+  unique) — a `prompt()` could neither enforce nor explain them. The drop-down content-control's list
+  items use the same dialog. Right-click **Insert / Edit Hyperlink** now opens the *same* styled link
+  popover the ribbon uses (via a new `onEditLink` editor hook), so there is one hyperlink UI instead of
+  two. Share-failure, document-open-failure, and "place the caret in a content control first" messages
+  now surface through the non-blocking notice toast instead of `alert()`. New reusable `ui/inputDialog`
+  (built on the surface-managed dialog shell).
+- **Ribbon cleanup — contextual tabs replace the permanent Table tab and the disabled-button graveyard
+  (C3, C5, C7).** The always-present **Table** tab (ten buttons enabled even in a plain paragraph) and the
+  15 permanently-disabled contextual buttons on **Insert** (13 shape, 2 image) are gone. In their place,
+  three Word-style **contextual tabs** — *Table Tools*, *Picture Tools*, *Shape Tools* — appear only when
+  the caret is in a table or an image/shape is selected, driven by a small predicate wired into
+  `syncToolbar` (tinted so they read as selection-scoped). The disabled `Sort` stub ("not supported by
+  the engine yet") is removed, and the Styles gallery is pinned to a whole number of cards so its
+  horizontal scroll never rests on a clipped half-card.
+
+### Fixed
+- **Overlapping dialogs / panels / find bar are now arbitrated by one surface manager (L1).** The floating
+  dialogs (Font, Paragraph, Page Layout, Style Manager, …) and the find/replace bar had no coordination:
+  each dialog installed its own capture-phase Escape and each surface chose its own z-index, so opening
+  Manage Styles, then Ctrl+F (the find bar appeared **behind** it at z-index 10), then Review left three
+  surfaces mutually occluding, with ambiguous Escape behavior. A new `ui/surfaceManager` (mirroring how
+  `contextToolbar` arbitrates the floating bars) now owns z-order (newest on top), exclusivity (opening
+  one dialog evicts any other open dialog), and a single Escape that closes the topmost surface. Wired in
+  at the shared `dialogShell` and the find bar, so every dialog is covered.
+
+### Added
+- **Off-screen ARIA text mirror of the document for screen readers (A1).** Canvas-rendered text was
+  invisible to assistive technology — the editor exposed only the IME proxy (an empty
+  `role=textbox "Document editor"`), so a screen-reader user could not read a word. The editor now
+  maintains a visually-hidden DOM mirror of the whole document: one node per paragraph (with
+  `role=heading` + `aria-level` for headings and nested `table`/`row`/`cell` structure), kept in sync
+  with the model. The editable textbox `aria-owns` the mirror and points `aria-activedescendant` at the
+  paragraph under the caret; a non-collapsed selection marks the covered nodes `aria-selected` and a
+  debounced `aria-live` announcement summarises it. Typing patches only the affected node, so the mirror
+  adds no per-keystroke full rebuild.
+- **Quick-access toolbar: Undo / Redo / Save, always visible (C1).** Undo and Redo — the two most-used
+  commands in any editor — were buried in the File tab, two clicks deep and invisible from the default
+  Home tab. They now sit in a small quick-access cluster pinned to the ribbon header (next to the
+  document title), reachable from every tab, alongside a Save button. Undo/Redo grey out when their
+  stacks are empty, driven by two new `Editor.canUndo()` / `Editor.canRedo()` accessors.
+- **Document identity + live save state in the chrome (C2).** The ribbon now shows, pinned top-left, the
+  document title and a live save-state indicator (coloured dot + label), so a user can answer "what is
+  this file, and is my work safe?" without opening a menu. The title comes from a new `documentTitle`
+  option, else the opened `.docx` filename, else "Untitled document". **`Ctrl+S` / `Cmd+S` is now bound**
+  (previously it fired the browser's "Save page" dialog — an actively harmful outcome): with a host
+  `onSave` it saves through that pipeline (`Saving…` → `Saved HH:MM`); offline with no save target it
+  downloads a `.docx` copy and says so; online it reports the automatic sync. When there is no
+  persistence target the indicator degrades honestly ("Not saved" / "Unsaved changes") rather than
+  claiming "Saved". Dirty tracking is driven off the editor's recorded-change head, so caret moves don't
+  mark the document dirty.
+
+### Fixed
+- **Responsive breakpoint no longer forces the phone layout onto touchscreen laptops (R0/B1/B2).** The
+  responsive stylesheet keyed its whole mobile layer on `@media (pointer: coarse), (max-width: 760px)`,
+  and the coarse arm had no width bound — so any device whose primary pointer is coarse (touchscreen
+  ThinkPad/XPS/Surface/iPad-with-keyboard, at any resolution) got the phone layout: ribbon captions
+  hidden, the ribbon overflowing horizontally, the Outline overlaying the page, and — worst — opening
+  the Bookmarks/Activity drawer painted an opaque `position: fixed` panel over the **entire viewport**
+  that swallowed all pointer events until the tiny `×` was found. The layer is now split by concern:
+  layout collapse keys on viewport **width** only (`max-width: 760px`, plus the existing container-width
+  `.compact` ribbon path), while touch **hit-target** growth keys on `any-pointer: coarse` bounded to
+  small screens. So a wide touchscreen laptop now renders the full desktop layout.
+- **Right-docked drawers (Bookmarks, Activity) are scoped to the editor pane.** They were
+  `position: fixed` to the window, covering the ribbon's Editing-mode select and Review button and — in
+  an embed — the host page's own chrome. They are now `position: absolute` inside the work area, below
+  the ribbon and above the status bar.
+
 ## [0.12.0] — 2026-07-22
 
 ### Added

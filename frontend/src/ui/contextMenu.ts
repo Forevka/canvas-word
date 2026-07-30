@@ -190,6 +190,10 @@ export function showContextMenu(
 function placeAt(el: HTMLElement, x: number, y: number, avoid?: DOMRect): void {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
+  // A menu taller than the viewport must scroll, not run off the bottom with
+  // unreachable items (critique L5). Cap the height and let it scroll.
+  el.style.maxHeight = `${vh - 12}px`;
+  el.style.overflowY = "auto";
   const r = el.getBoundingClientRect();
   let left = x;
   let top = y;

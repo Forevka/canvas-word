@@ -23,6 +23,11 @@ export interface Participant {
  *  or "view" (read-only). The three are mutually exclusive. */
 export type EditMode = "edit" | "suggest" | "view";
 
+/** Chrome preset: "ribbon" (default) is the Word-style tabbed ribbon; "minimal"
+ *  demotes it to a quiet command bar and routes the rest through the contextual
+ *  bar, the Inspector and the command palette. */
+export type ChromePreset = "ribbon" | "minimal";
+
 /** A selection/caret in the document (offsets are UTF-16 code units into a
  *  block's concatenated run text). `anchor === focus` is a collapsed caret. */
 export interface DocSelection {
@@ -333,6 +338,13 @@ export interface WordCanvasOptions {
    *  while you upload. Omit to keep the default download behaviour. (For a fully
    *  custom button, call `exportDocx()` / `exportPdf()` on the instance.) */
   onSave?: SaveHandler;
+  /** Human-readable document name shown in the chrome (top-left of the ribbon,
+   *  next to the live save-state indicator). Falls back to the opened .docx
+   *  filename, then "Untitled document". Presentational only. */
+  documentTitle?: string;
+  /** Chrome preset — "ribbon" (default) or "minimal". Switchable at runtime from
+   *  File ▸ Settings; this sets the initial value. */
+  chrome?: ChromePreset;
   /** Mount as a view-only viewer: the document renders and stays selectable and
    *  copyable, but the editing chrome is hidden and every mutation is a no-op.
    *  In an online session a read-only client still receives live remote edits.

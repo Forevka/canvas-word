@@ -12,6 +12,7 @@
 
 import { injectCssOnce } from "./styles";
 import { makeFloatingDialog } from "./floatingDialog";
+import { openSurface, type SurfaceHandle } from "./surfaceManager";
 
 export interface DialogShellOptions {
   /** CSS class prefix, e.g. "cw-toc" → `cw-toc-backdrop`, `cw-toc-modal`, … */
@@ -58,6 +59,10 @@ export function createDialogShell(o: DialogShellOptions): DialogShell {
     return d;
   };
   const backdrop = div(`${o.prefix}-backdrop`);
+  // Force en number formatting for descendant <input type="number"> so fractional
+  // measurements (8.5", 10.5pt) render and parse with a DOT, not the OS-locale
+  // comma that Chromium would otherwise use (critique V4 — a parsing hazard).
+  backdrop.lang = "en";
   const modal = div(`${o.prefix}-modal`);
   // role="dialog" + a title reference for assistive tech. Deliberately NO
   // aria-modal: these are non-blocking floating panels (the page under them
@@ -87,25 +92,20 @@ export function createDialogShell(o: DialogShellOptions): DialogShell {
 
   const ac = new AbortController();
   let closed = false;
+  let surface: SurfaceHandle | null = null;
   const close = (): void => {
     if (closed) return;
     closed = true;
+    surface?.release();
     backdrop.remove();
     ac.abort();
     o.onClose?.();
   };
-  // Capture-phase Escape so the dialog wins over the editor's own key handling.
-  window.addEventListener(
-    "keydown",
-    (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") {
-        ev.preventDefault();
-        ev.stopPropagation();
-        close();
-      }
-    },
-    { capture: true, signal: ac.signal },
-  );
+  // Register with the surface manager: it assigns the z-index, evicts any other
+  // open dialog (exclusivity), and owns the single capture-phase Escape that
+  // closes the topmost surface — so dialogs no longer stack and occlude, and the
+  // find bar can never open behind a dialog again (critique L1).
+  surface = openSurface({ el: backdrop, close, kind: "dialog" });
   makeFloatingDialog({
     backdrop,
     modal,

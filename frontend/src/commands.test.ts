@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseChord, chordMatches, normalizeChord, resolveCommandBindings, type EditorCommand, type KeyEventLike } from "./commands";
+import { parseChord, chordMatches, keyMatches, normalizeChord, resolveCommandBindings, type EditorCommand, type KeyEventLike } from "./commands";
 
 const ev = (key: string, mods: Partial<KeyEventLike> = {}): KeyEventLike => ({
   key,
@@ -62,6 +62,61 @@ describe("chordMatches", () => {
   it("rejects when an unwanted modifier is held", () => {
     const c = parseChord("Mod+K")!;
     expect(chordMatches(c, ev("k", { ctrlKey: true, altKey: true }), false)).toBe(false);
+  });
+});
+
+describe("keyMatches (keyboard-layout-independent shortcut matching)", () => {
+  it("matches an ASCII produced character (a Latin layout), case-insensitively", () => {
+    expect(keyMatches("z", { key: "z", code: "KeyZ" })).toBe(true);
+    expect(keyMatches("z", { key: "Z", code: "KeyZ" })).toBe(true);
+    expect(keyMatches("z", { key: "y", code: "KeyY" })).toBe(false);
+  });
+
+  it("falls back to the physical code when the produced char is non-ASCII (Cyrillic)", () => {
+    // Ukrainian layout: the physical Z key emits 'я', the physical A key emits 'ф'.
+    expect(keyMatches("z", { key: "я", code: "KeyZ" })).toBe(true);
+    expect(keyMatches("a", { key: "ф", code: "KeyA" })).toBe(true);
+    expect(keyMatches("z", { key: "я", code: "KeyX" })).toBe(false); // wrong physical key
+  });
+
+  it("trusts the ASCII char for deliberate remaps (Dvorak) and ignores the code", () => {
+    // Dvorak: the physical ';' key produces 'z' — the user expects 'z' shortcuts there.
+    expect(keyMatches("z", { key: "z", code: "KeySemicolon" })).toBe(true);
+    // ...and the physical Z position (now producing ';') is NOT a 'z' shortcut.
+    expect(keyMatches("z", { key: ";", code: "KeyZ" })).toBe(false);
+  });
+
+  it("matches layout-independent named keys directly on key", () => {
+    expect(keyMatches("enter", { key: "Enter", code: "Enter" })).toBe(true);
+    expect(keyMatches("arrowup", { key: "ArrowUp", code: "ArrowUp" })).toBe(true);
+    expect(keyMatches("f2", { key: "F2", code: "F2" })).toBe(true);
+    expect(keyMatches("enter", { key: "Escape", code: "Escape" })).toBe(false);
+  });
+
+  it("recovers punctuation shortcuts by physical position when the char is non-ASCII", () => {
+    expect(keyMatches("/", { key: "/", code: "Slash" })).toBe(true); // ASCII '/', trusted
+    expect(keyMatches("/", { key: "ж", code: "Slash" })).toBe(true); // non-ASCII → physical Slash
+  });
+
+  it("degrades to key-only when code is missing (virtual keyboards / old browsers)", () => {
+    expect(keyMatches("z", { key: "z" })).toBe(true);
+    expect(keyMatches("z", { key: "я" })).toBe(false); // no code → cannot recover; never throws
+    expect(keyMatches("z", { key: "я", code: "" })).toBe(false);
+  });
+});
+
+describe("chordMatches under non-Latin keyboard layouts", () => {
+  it("matches Ctrl+Z when a Cyrillic layout emits 'я' on the physical Z", () => {
+    expect(chordMatches(parseChord("Ctrl+Z")!, ev("я", { ctrlKey: true, code: "KeyZ" }))).toBe(true);
+  });
+  it("matches Ctrl+A when the physical A emits 'ф'", () => {
+    expect(chordMatches(parseChord("Ctrl+A")!, ev("ф", { ctrlKey: true, code: "KeyA" }))).toBe(true);
+  });
+  it("still matches a Dvorak user through the produced ASCII letter", () => {
+    expect(chordMatches(parseChord("Ctrl+Z")!, ev("z", { ctrlKey: true, code: "KeySemicolon" }))).toBe(true);
+  });
+  it("does not match when the physical key is wrong on a non-Latin layout", () => {
+    expect(chordMatches(parseChord("Ctrl+Z")!, ev("я", { ctrlKey: true, code: "KeyX" }))).toBe(false);
   });
 });
 

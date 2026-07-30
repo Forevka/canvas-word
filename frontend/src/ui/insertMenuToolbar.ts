@@ -18,7 +18,9 @@ export interface InsertMenuToolbarDeps {
  *  the built-ins, so any real content context wins). */
 export function createInsertMenuToolbar(deps: InsertMenuToolbarDeps): ContextToolbar {
   injectCtxBarCss();
-  const fb = createFloatingBar({ className: "cw-ctxbar", ariaLabel: "Insert" });
+  // Gutter placement so the chip sits in the left margin beside the empty line,
+  // not centered above it over the previous line's text (critique L4).
+  const fb = createFloatingBar({ className: "cw-ctxbar", ariaLabel: "Insert", place: { mode: "gutter", gap: 6 } });
 
   const b = document.createElement("button");
   b.type = "button";

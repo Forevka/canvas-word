@@ -20,7 +20,7 @@ const buildSample = () =>
     .tableOfContents()
     .paragraph("Overview").withStyle("Heading1")
     .paragraph("Generated ").dateField("MMMM d, yyyy", { now: NOW }).text(", page ").pageField()
-    .paragraph("See ").bookmark("intro", "the intro").text(" — refer to ").crossReference("intro")
+    .paragraph("See ").bookmark("intro", "the intro").text(" — refer to ").crossReference("intro").text(" on page ").crossReference("intro", { kind: "pageRef" })
     .paragraph("Pick: ").dropDown("One", [{ display: "One", value: "1" }, { display: "Two", value: "2" }], { alias: "Choice" })
     .paragraph("With a footnote").footnote("a builder-authored footnote")
     .paragraph("Details").withStyle("Heading2")
@@ -38,7 +38,7 @@ describe("builder feature round-trip (.docx)", () => {
   it("preserves fields, content controls, footnotes, bookmarks and the TOC field", async () => {
     const doc = buildSample();
     // Sanity: the built doc actually has the features.
-    expect(Object.keys(doc.fields ?? {}).length).toBeGreaterThanOrEqual(3); // DATE + PAGE + PAGEREF
+    expect(Object.keys(doc.fields ?? {}).length).toBeGreaterThanOrEqual(4); // DATE + PAGE + REF + PAGEREF
     expect(Object.keys(doc.sdts ?? {}).length).toBe(1);
     expect(Object.keys(doc.footnotes ?? {}).length).toBe(1);
     expect(Object.keys(doc.bookmarks ?? {}).length).toBeGreaterThanOrEqual(1);
@@ -49,6 +49,17 @@ describe("builder feature round-trip (.docx)", () => {
     const fieldTypes = Object.values(back.fields ?? {}).map((d) => (d.kind === "builtin" ? `builtin:${d.spec?.type}` : "custom"));
     expect(fieldTypes).toContain("builtin:DATE");
     expect(fieldTypes).toContain("builtin:PAGE");
+    expect(fieldTypes).toContain("builtin:REF"); // cross-reference (text) survives
+    expect(fieldTypes).toContain("builtin:PAGEREF"); // cross-reference (page) survives
+    // The REF/PAGEREF fields target exactly `intro` — asserted on the parsed spec,
+    // not a substring of the instruction, so a stray `intro2` can't satisfy it. The
+    // length check keeps `every`/Set from passing vacuously on an empty list.
+    const xrefTargets = Object.values(back.fields ?? {})
+      .map((d) => d.spec)
+      .filter((s) => s?.type === "REF" || s?.type === "PAGEREF")
+      .map((s) => (s && (s.type === "REF" || s.type === "PAGEREF") ? s.bookmark : undefined));
+    expect(xrefTargets.length).toBeGreaterThanOrEqual(2); // the REF and the PAGEREF
+    expect(new Set(xrefTargets)).toEqual(new Set(["intro"]));
     expect(Object.keys(back.sdts ?? {}).length).toBe(1); // dropdown control survives
     expect(Object.keys(back.footnotes ?? {}).length).toBe(1); // footnote survives
     expect(Object.keys(back.bookmarks ?? {}).length).toBeGreaterThanOrEqual(1); // bookmark survives

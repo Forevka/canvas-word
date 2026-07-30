@@ -53,6 +53,33 @@ describe("placeSelectionBar", () => {
     const { top } = placeSelectionBar(anchor, { width: 200, height: 30 }, { ...VP, top: 140 });
     expect(top).toBeGreaterThanOrEqual(140);
   });
+
+  describe("gutter mode", () => {
+    it("sits in the left margin, vertically centered on the line", () => {
+      const anchor = { left: 300, top: 400, width: 400, height: 20 };
+      const { left, top } = placeSelectionBar(anchor, { width: 24, height: 24 }, VP, { mode: "gutter" });
+      expect(left).toBe(268); // anchor.left - barW - gap = 300 - 24 - 8
+      expect(top).toBe(398); // 400 + 20/2 - 24/2
+    });
+
+    it("hugs the viewport margin when the gutter is too narrow for the bar", () => {
+      const anchor = { left: 20, top: 400, width: 400, height: 20 };
+      const { left } = placeSelectionBar(anchor, { width: 24, height: 24 }, VP, { mode: "gutter" });
+      expect(left).toBe(8); // 20 - 24 - 8 is negative → clamped to margin
+    });
+
+    it("clamps to the top guard for a line scrolled up behind the ribbon", () => {
+      const anchor = { left: 300, top: 10, width: 400, height: 20 };
+      const { top } = placeSelectionBar(anchor, { width: 24, height: 24 }, { ...VP, top: 140 }, { mode: "gutter" });
+      expect(top).toBe(140); // centered would be 8; topGuard = max(56, viewport.top)
+    });
+
+    it("clamps to the bottom margin for a line below the fold", () => {
+      const anchor = { left: 300, top: 790, width: 400, height: 20 };
+      const { top } = placeSelectionBar(anchor, { width: 24, height: 24 }, VP, { mode: "gutter" });
+      expect(top).toBe(768); // viewport.height - barH - margin = 800 - 24 - 8
+    });
+  });
 });
 
 describe("anchorInView", () => {

@@ -50,11 +50,19 @@ describe("inline fields", () => {
     expect(def.spec).toBeUndefined();
   });
 
-  it("crossReference emits a PAGEREF field over a bookmark", () => {
+  it("crossReference emits a typed PAGEREF field over a bookmark", () => {
     const doc = DocumentBuilder.create().paragraph().crossReference("intro", { kind: "pageRef" }).build();
     const def = doc.fields![para(doc.blocks[0]).runs[0]!.style.fieldId!] as FieldDef;
-    expect(def.kind).toBe("custom");
-    expect(def.instruction).toContain("PAGEREF intro");
+    expect(def.kind).toBe("builtin");
+    expect(def.spec).toEqual({ type: "PAGEREF", bookmark: "intro" });
+    expect(def.instruction.trim()).toBe("PAGEREF intro \\h"); // exact: `intro2` must not satisfy it
+  });
+
+  it("crossReference defaults to a typed REF field", () => {
+    const doc = DocumentBuilder.create().paragraph().crossReference("intro").build();
+    const def = doc.fields![para(doc.blocks[0]).runs[0]!.style.fieldId!] as FieldDef;
+    expect(def.kind).toBe("builtin");
+    expect(def.spec).toEqual({ type: "REF", bookmark: "intro" });
   });
 });
 

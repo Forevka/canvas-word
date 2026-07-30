@@ -32,6 +32,45 @@ import { INDENT_STEP_PX, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from "./uiConstants";
  *  the fallback stylesheet — NOT a loaded .docx's own w:docDefaults / Normal. */
 export type DefaultStyleOverrides = EditorTypography;
 
+/** Chrome preset (critique Move 1). `'ribbon'` is the classic Word-style tabbed
+ *  ribbon; `'minimal'` demotes it to a quiet ~44px command bar (title + save state,
+ *  undo/redo, style picker, the six core formatting commands, an insert `＋`, and an
+ *  overflow that opens the command palette) with everything else reaching the user
+ *  through the contextual bar, the Inspector and the command palette. The ribbon
+ *  ships as a switchable skin so enterprise migrations can keep it. */
+export type ChromePreset = "ribbon" | "minimal";
+
+/** In-editor Settings surface (File ▸ Settings + the "Settings" command-palette
+ *  entry) — the home for application preferences (appearance theme, and later the
+ *  chrome preset). Every field optional; omit to keep it on. An embedder that routes
+ *  preferences through its own UI can hide the whole surface (`enabled: false`) or an
+ *  individual pane (`theme: false`); a hidden pane also means the embedder's own
+ *  `theme`/`chrome` config wins and the user's persisted choice is ignored. */
+export interface SettingsSurfaceConfig {
+  /** Show the Settings surface at all (File ▸ Settings + the palette command). Default true. */
+  enabled?: boolean;
+  /** Show Appearance ▸ Theme (Light / Dark / Match system). Default true. */
+  theme?: boolean;
+  /** Show Appearance ▸ Chrome (Ribbon / Minimal). Default true. */
+  chrome?: boolean;
+}
+
+/** Fully-populated settings-surface config the editor app reads. */
+export interface ResolvedSettings {
+  enabled: boolean;
+  theme: boolean;
+  chrome: boolean;
+}
+
+/** Normalize the public partial `settings` option (default: everything shown). */
+export function resolveSettings(input?: SettingsSurfaceConfig): ResolvedSettings {
+  return {
+    enabled: input?.enabled ?? true,
+    theme: input?.theme ?? true,
+    chrome: input?.chrome ?? true,
+  };
+}
+
 export type { CustomFontDef, CustomFontFaces, FontsConfig, ResolvedFontsConfig } from "./fonts/customRegistry";
 
 /** Ruler band styling (the strip the horizontal + vertical rulers paint). */
@@ -382,6 +421,11 @@ export interface ResolvedConfig {
   /** Show the "Organize Pages" ribbon button (Layout tab) that opens the visual
    *  page-reorder overlay. Default true; set false to hide it for an embed. */
   organizePages: boolean;
+  /** Chrome preset: the classic tabbed `'ribbon'` or the quiet `'minimal'` command
+   *  bar (critique Move 1). Default `'ribbon'`. */
+  chrome: ChromePreset;
+  /** In-editor Settings surface (File ▸ Settings + palette command). */
+  settings: ResolvedSettings;
   /** Floating mini-toolbar (quick formatting above a text selection): whether it's
    *  shown, whether it appears at a bare caret, and which controls it carries. */
   floatingToolbar: ResolvedFloatingToolbar;
@@ -401,6 +445,15 @@ export interface EditorConfigInput {
   develop?: boolean | undefined;
   /** Show the "Organize Pages" reorder overlay button. Default true. */
   organizePages?: boolean | undefined;
+  /** Chrome preset — `'ribbon'` (classic tabbed ribbon, default) or `'minimal'`
+   *  (quiet ~44px command bar; everything else via the contextual bar, Inspector
+   *  and command palette). Also user-selectable at runtime via File ▸ Settings
+   *  (unless that pane is hidden), whose persisted choice then overrides this default. */
+  chrome?: ChromePreset | undefined;
+  /** In-editor Settings surface (File ▸ Settings + the "Settings" palette entry).
+   *  Hide the whole surface or an individual pane; a hidden pane hands control of
+   *  that preference back to this config (the user's persisted choice is ignored). */
+  settings?: SettingsSurfaceConfig | undefined;
   /** Floating mini-toolbar above a text selection: `true`/`false` to toggle, or an
    *  object to customize which controls appear, their order, and caret behavior. */
   floatingToolbar?: FloatingToolbarConfig | undefined;
@@ -421,6 +474,8 @@ export function resolveConfig(input: EditorConfigInput = {}): ResolvedConfig {
     cjk: resolveCjk(input.cjk),
     develop: input.develop ?? false,
     organizePages: input.organizePages ?? true,
+    chrome: input.chrome ?? "ribbon",
+    settings: resolveSettings(input.settings),
     floatingToolbar: resolveFloatingToolbar(input.floatingToolbar),
     contextToolbars: resolveContextToolbars(input.contextToolbars),
   };

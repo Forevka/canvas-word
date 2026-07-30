@@ -3,7 +3,7 @@
 // -> incremental layout -> paint + caret + proxy reposition (same frame).
 
 import type { Block, CharStyle, Document, EmphasisMark, ImageBlock, ParaStyle, ShapeBlock, ShapePreset, TableBlock, UnderlineStyle } from "@cw/shared";
-import { BAND_CONTAINERS, parseTocInstruction } from "@cw/shared";
+import { BAND_CONTAINERS, defaultStylesheet, parseTocInstruction, styleById, styleType } from "@cw/shared";
 import type { BookmarkRange, DocPosition, DocSelection, UserInfo } from "@cw/shared";
 import { isCollapsed, colorForId, userDisplayName, freshId, DEFAULT_CHAR_STYLE } from "@cw/shared";
 import type { ResolvedBehavior, ResolvedTheme } from "./config";
@@ -33,6 +33,7 @@ import {
   type Rect,
 } from "./layout/geometry";
 import type { LayoutTree, Page, PlacedBlock } from "./layout/layoutTree";
+import { pageOfBlock } from "./layout/pages";
 import { computeTocEdits } from "./recalc/recalcToc";
 import { createSdtPopup } from "./editor/sdtPopup";
 import { createCommentController } from "./editor/commentController";
@@ -51,6 +52,7 @@ import { importDocx } from "./import/docx/importDocx";
 import { showContextMenu, type ContextMenuHandle, type MenuEntry } from "./ui/contextMenu";
 import { showSdtInspector, type SdtInspectorData, type SdtInspectorHandle } from "./ui/sdtInspector";
 import { showFieldConstructor } from "./ui/fieldConstructor";
+import { showInputDialog } from "./ui/inputDialog";
 // Lazy: the equation editor carries the LaTeX toolchain — load it on the
 // context-menu click, not in the core editor chunk (see editorApp.ts). Guarded
 // against double-invocation while the chunk loads (two fast clicks must not open
@@ -97,6 +99,7 @@ import {
   setEquationAlignCmd,
   setEquationScaleCmd,
   updateFieldCmd,
+  type CrossRefResolvers,
   updateTocFieldCmd,
   setTocSwitchesCmd,
   mergeCellsCmd,
@@ -140,6 +143,7 @@ import {
   setTableColFractionsCmd,
   setTableWidthModeCmd,
   splitParagraph,
+  applyNamedStyle,
   toggleCharStyle,
   toggleList,
   toggleSdtCheckbox,
@@ -290,6 +294,18 @@ export interface Editor {
   /** The object-selected drawing shape (fill/stroke/geometry for the shape toolbar
    *  + ribbon Shape group), or null when the selection is not a shape. */
   getSelectedShape(): ShapeBlock | null;
+  /** Normalized geometry of the object-selected image OR drawing shape — size,
+   *  alignment, wrap and rotation — or null when the selection is neither. Seeds
+   *  the Inspector's Object section (there is no other public getter for a selected
+   *  image's model size/wrap). */
+  getSelectedObjectProps(): {
+    kind: "image" | "shape";
+    widthPx: number;
+    heightPx: number;
+    align: "left" | "center" | "right";
+    wrap: "block" | "square";
+    rotation: number;
+  } | null;
   /** F5 group authoring (issue #244). `groupShapes` collapses the ≥2 selected shapes
    *  into one group container and selects it; `ungroupShape` flattens the selected
    *  group back into its child shapes; the `can*` getters gate the ribbon/menu/toolbar
@@ -352,6 +368,9 @@ export interface Editor {
   /** Move the caret to a block's start and scroll it into view (outline pane,
    *  navigation). No-op if the block id isn't in the current document. */
   revealBlock(blockId: string): void;
+  /** 1-based page number of a block in the CURRENT layout, or null when it isn't
+   *  placed (e.g. not yet laid out). Used for the outline's page-number column. */
+  getBlockPage(blockId: string): number | null;
   /** Select a bookmark's range and scroll it into view (Bookmarks panel "Go To").
    *  No-op if the bookmark is missing or anchored in hidden/unplaced content. */
   revealBookmark(name: string): void;
@@ -434,6 +453,10 @@ export interface Editor {
   searchClear(): void;
   undo(): void;
   redo(): void;
+  /** Whether there is a recorded edit to undo / an undone edit to redo — for
+   *  greying out an Undo/Redo control. */
+  canUndo(): boolean;
+  canRedo(): boolean;
   /** The document-history change log recorded this session (ordered). The base
    *  snapshot taken at load + this log reconstructs the current document. */
   getChangeLog(): Change[];
@@ -506,6 +529,11 @@ export interface EditorOptions {
   onChangeRecorded?: ChangeSink;
   /** Fires whenever the local selection/caret moves (for presence broadcast). */
   onSelectionChange?: (selection: DocSelection | null) => void;
+  /** Request the host's styled hyperlink editor for the current selection (the
+   *  same popover the ribbon/context-toolbar use). Lets the right-click menu open
+   *  it instead of a native prompt(). `currentUrl` is the existing link, or null
+   *  when inserting. The host applies the result to the selection itself. */
+  onEditLink?: (currentUrl: string | null) => void;
   /** View-only mode: the document renders and stays selectable/copyable, but
    *  every mutation (typing, paste, undo/redo, structural edits) is a no-op.
    *  Remote collaborator edits still apply — a read-only client tracks a live
@@ -2299,6 +2327,38 @@ export function createEditor(
         if (/\(tm$/i.test(prev)) return dispatch(replaceBackAndInsert(3, "™"));
       }
     }
+    // Markdown-style input rules on a space at the paragraph start (S4): a prefix
+    // that IS the whole text before the caret converts the block — "#"/"##"/"###…"
+    // → Heading 1..6, "-"/"*" → bullet list, "1."/"1)" → numbered list. The prefix
+    // is deleted and the space is swallowed. Heading rules only fire when that
+    // heading style exists, so nothing is stripped without a conversion.
+    if (data === " " && !sdt && selection && isCollapsed(selection)) {
+      const block = blockById(doc, selection.focus.blockId);
+      if (block && block.kind === "paragraph") {
+        const prev = textOfRuns(block.runs).slice(0, selection.focus.offset);
+        const sheet = doc.stylesheet ?? defaultStylesheet();
+        const h = /^(#{1,6})$/.exec(prev);
+        // styleById spans every style type, so a document defining a CHARACTER
+        // style named Heading1 would otherwise have "# " strip the prefix and
+        // apply it as a paragraph style.
+        const headingStyle = h ? styleById(sheet, `Heading${h[1]!.length}`) : undefined;
+        if (h && headingStyle && styleType(headingStyle) === "paragraph") {
+          dispatch(replaceBackAndInsert(prev.length, ""));
+          dispatch(applyNamedStyle(`Heading${h[1]!.length}`));
+          return;
+        }
+        if (prev === "-" || prev === "*") {
+          dispatch(replaceBackAndInsert(prev.length, ""));
+          dispatch(toggleList("bullet"));
+          return;
+        }
+        if (/^\d+[.)]$/.test(prev)) {
+          dispatch(replaceBackAndInsert(prev.length, ""));
+          dispatch(toggleList("decimal"));
+          return;
+        }
+      }
+    }
     dispatch(insertText(data));
   };
 
@@ -2929,10 +2989,19 @@ export function createEditor(
     const child = createChildDocument({ getStyleContext, makeEditor: createEditor });
     showFieldConstructor({
       ...config,
+      bookmarks: Object.keys(doc.bookmarks ?? {}).sort((a, b) => a.localeCompare(b)),
       renderResult: (host, runs) => child.render(host, { kind: "runs", runs }),
       onClose: () => child.destroy(),
     });
   };
+  /** Layout-backed PAGEREF page resolver (REF text resolves purely in the command).
+   *  Threaded into insert/edit/update so a cross-reference shows a real page. */
+  const crossRefResolvers = (): CrossRefResolvers => ({
+    pageRef: (bm) => {
+      const start = doc.bookmarks?.[bm]?.start.blockId;
+      return start ? pageOfBlock(doc, start) ?? undefined : undefined;
+    },
+  });
   /** The innermost content-control id at the caret OR around the selected image —
    *  the single "active control" the ribbon's inspect/remove buttons act on. */
   const activeSdtId = (): string | null => {
@@ -3039,6 +3108,30 @@ export function createEditor(
     const origin = gridOriginOfCell(buildTableGrid(table), loc.ri, loc.ci);
     if (!origin) return null;
     return { tableId: table.id, anchor: { row: origin.row, col: origin.col }, focus: { row: origin.row, col: origin.col } };
+  };
+
+  /** Open a hyperlink editor for the selection: the host's styled popover when
+   *  `onEditLink` is wired, else the in-app input dialog. The hook is optional, so
+   *  without a fallback the context menu's link entries would be dead for every
+   *  embedder that doesn't supply one. `currentUrl` is null when inserting. */
+  const editLink = (currentUrl: string | null): void => {
+    if (options.onEditLink) {
+      options.onEditLink(currentUrl);
+      return;
+    }
+    const inserting = currentUrl === null;
+    showInputDialog({
+      title: inserting ? "Insert Hyperlink" : "Edit Hyperlink",
+      label: "Link URL",
+      initial: currentUrl ?? "",
+      placeholder: "https://example.com",
+      okLabel: inserting ? "Insert" : "Apply",
+      // Emptying the field clears the link, matching Remove Hyperlink.
+      onSubmit: (v) => {
+        const url = v.trim();
+        dispatch(setLinkCmd(url === "" ? null : url));
+      },
+    });
   };
 
   /** Seed the modal's border controls from an existing edge, else a 1px black line. */
@@ -3231,10 +3324,7 @@ export function createEditor(
       entries.push(
         sep,
         item("Open Hyperlink", () => window.open(linkUrl, "_blank", "noopener"), { icon: ICONS.link }),
-        item("Edit Hyperlink…", () => {
-          const u = prompt("Link URL:", linkUrl);
-          if (u !== null) dispatch(setLinkCmd(u.trim() === "" ? null : u.trim()));
-        }),
+        item("Edit Hyperlink…", () => editLink(linkUrl)),
         item("Remove Hyperlink", () => dispatch(setLinkCmd(null)), { danger: true }),
       );
     }
@@ -3298,14 +3388,14 @@ export function createEditor(
       const spec = def.spec!;
       const f = focus;
       entries.push(sep, item(`Edit Field (${def.name})…`, () =>
-        openFieldConstructor({ initial: spec, baseStyle: caretStyle(f), onApply: (s) => dispatch(editFieldCmd(def.id, s)) }),
+        openFieldConstructor({ initial: spec, baseStyle: caretStyle(f), onApply: (s) => dispatch(editFieldCmd(def.id, s, crossRefResolvers())) }),
       ));
       if (spec.type !== "PAGE" && spec.type !== "NUMPAGES") {
-        entries.push(item(`Update Field (${def.name})`, () => dispatch(updateFieldCmd(def.id))));
+        entries.push(item(`Update Field (${def.name})`, () => dispatch(updateFieldCmd(def.id, crossRefResolvers()))));
       }
     } else if (focus) {
       entries.push(sep, item("Insert Field…", () =>
-        openFieldConstructor({ baseStyle: caretStyle(focus), onApply: (s) => dispatch(insertFieldCmd(s)) }),
+        openFieldConstructor({ baseStyle: caretStyle(focus), onApply: (s) => dispatch(insertFieldCmd(s, crossRefResolvers())) }),
       ));
     }
 
@@ -3522,10 +3612,7 @@ export function createEditor(
         item("Bullets", () => dispatch(toggleList("bullet")), { icon: ICONS.bullets }),
         item("Numbering", () => dispatch(toggleList("decimal")), { icon: ICONS.numbering }),
         sep,
-        item("Insert Hyperlink…", () => {
-          const u = prompt("Link URL:");
-          if (u !== null && u.trim() !== "") dispatch(setLinkCmd(u.trim()));
-        }, { icon: ICONS.link }),
+        item("Insert Hyperlink…", () => editLink(null), { icon: ICONS.link }),
         {
           kind: "submenu",
           label: "Insert Content Control",
@@ -4020,6 +4107,14 @@ export function createEditor(
     getSelectedShape(): ShapeBlock | null {
       return selectedObject ? (locateShape(doc, selectedObject)?.block ?? null) : null;
     },
+    getSelectedObjectProps() {
+      if (!selectedObject) return null;
+      const shp = locateShape(doc, selectedObject)?.block;
+      if (shp) return { kind: "shape" as const, widthPx: shp.widthPx, heightPx: shp.heightPx, align: shp.align, wrap: shp.wrap ?? "block", rotation: shp.rotation ?? 0 };
+      const img = locateImage(doc, selectedObject)?.image;
+      if (img) return { kind: "image" as const, widthPx: img.widthPx, heightPx: img.heightPx, align: img.align, wrap: img.wrap ?? "block", rotation: img.rotation ?? 0 };
+      return null;
+    },
     groupShapes: groupSelectedShapes,
     ungroupShape: ungroupSelectedShape,
     canGroupShapes: canGroupSelection,
@@ -4198,6 +4293,10 @@ export function createEditor(
       const rect = caretRect(tree, { blockId, offset: 0 });
       if (rect) paint.ensureVisible(rect, "center");
     },
+    getBlockPage: (blockId: string): number | null => {
+      const rect = caretRect(tree, { blockId, offset: 0 });
+      return rect ? rect.pageIndex + 1 : null;
+    },
     revealBookmark: (name: string): void => {
       const range = doc.bookmarks?.[name];
       if (!range || !blockById(doc, range.start.blockId)) return;
@@ -4359,6 +4458,8 @@ export function createEditor(
     searchClear,
     undo,
     redo,
+    canUndo: (): boolean => undoMgr.canUndo,
+    canRedo: (): boolean => undoMgr.canRedo,
     destroy(): void {
       cancelFormatPainter();
       searchClear();

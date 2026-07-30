@@ -7,7 +7,7 @@ import type { DocSelection, Document, Fragment, ReviewLayer, UserInfo } from "@c
 import type { ChildDocument, EditMode, FieldResolver } from "../index";
 import type { DecorationSpec } from "../decorations";
 import type { ExportWarning } from "../export/exportDocument";
-import type { CjkConfig, ContextToolbarSpec, DefaultStyleOverrides, EditorBehavior, EditorTheme, FloatingToolbarConfig, FontsConfig } from "../config";
+import type { ChromePreset, CjkConfig, ContextToolbarSpec, DefaultStyleOverrides, EditorBehavior, EditorTheme, FloatingToolbarConfig, FontsConfig } from "../config";
 import type { CustomizeRibbon } from "../ribbon";
 import type { EditorCommand } from "../commands";
 import type { LoadProgress } from "./loadProgress";
@@ -181,8 +181,14 @@ export interface WordCanvasRuntime {
   /** Override how a share link is surfaced; default shows a built-in dialog. */
   onShareLink?: ((url: string, docId: string) => void) | undefined;
   /** When set, the toolbar Export buttons hand the produced file to this hook
-   *  instead of triggering a browser download — route it to your own pipeline. */
+   *  instead of triggering a browser download — route it to your own pipeline.
+   *  Also makes Ctrl+S / the save-state indicator report a real persistence
+   *  target (see `documentTitle`). */
   onSave?: SaveHandler | undefined;
+  /** Human-readable document name shown in the chrome (top-left of the ribbon).
+   *  Falls back to the opened .docx filename, then "Untitled document". Purely
+   *  presentational — the model has no title field. */
+  documentTitle?: string | undefined;
   /** Mount view-only: hide the editing chrome and make every mutation a no-op
    *  (the document is still selectable, copyable, and live for remote edits). */
   readonly?: boolean | undefined;
@@ -221,6 +227,8 @@ export interface WordCanvasRuntime {
   develop?: boolean | undefined;
   /** Show the "Organize Pages" reorder-overlay button (Layout tab). Default true. */
   organizePages?: boolean | undefined;
+  /** Chrome preset — `'ribbon'` (default) or the quiet `'minimal'` command bar. */
+  chrome?: ChromePreset | undefined;
   /** Floating mini-toolbar above a text selection: toggle, or customize its
    *  controls / caret behavior. */
   floatingToolbar?: FloatingToolbarConfig | undefined;

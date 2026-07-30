@@ -1,5 +1,5 @@
 import { bakeReview, colorForId, configureIds, deserializeDocument, freshId, reconstruct, serializeDocument, DEFAULT_CHAR_STYLE, DOCX_MIME, PDF_MIME, PX_PER_INCH, ptToPx as sharedPtToPx, pxToPt as sharedPxToPt, type Change, type DocSelection, type Document, type Fragment, type ParaStyle, type ReviewLayer } from "@cw/shared";
-import { resolveConfig } from "./config";
+import { resolveConfig, type ChromePreset } from "./config";
 import { emptyParagraphFor } from "./builder/blockFactory";
 import { mediaIdsOf, mediaStore, mediaUrl, pruneOrphanMedia, registerMediaBytes, registerMediaRetention, rehydrateDocMedia } from "./media/store";
 import { SyncClient } from "./sync/SyncClient";
@@ -22,6 +22,12 @@ import { ensureWordCanvasStyles } from "./ui/styles";
 import { showContextMenu, type MenuEntry } from "./ui/contextMenu";
 import { createFloatingFormatBar } from "./ui/floatingFormatBar";
 import { createContextToolbarManager } from "./ui/contextToolbar";
+import { openSurface, type SurfaceHandle } from "./ui/surfaceManager";
+import { showInputDialog } from "./ui/inputDialog";
+import { showSettingsDialog, type SettingsGroup } from "./ui/settingsDialog";
+import { readPref, writePref } from "./ui/prefs";
+import { showCommandPalette, type PaletteCommand } from "./ui/commandPalette";
+import { showShortcutsCheatsheet } from "./ui/shortcutsCheatsheet";
 import { createImageContextToolbar } from "./ui/imageContextToolbar";
 import { createShapeContextToolbar } from "./ui/shapeContextToolbar";
 import { createLinkContextToolbar } from "./ui/linkContextToolbar";
@@ -56,7 +62,7 @@ import { emitBuilderCode } from "./codegen/emit";
 // (Hoisted here from the toolbar block; ES imports must be top-level, and the
 // toolbar code now lives inside mountEditorApp.)
 import { anchorBeforeId, type RibbonActionContext, type RibbonApi, type RibbonButtonSpec } from "./ribbon";
-import { chordMatches, resolveCommandBindings, type EditorCommand } from "./commands";
+import { chordMatches, keyMatches, resolveCommandBindings, type EditorCommand } from "./commands";
 import {
   insertText as insertTextCmd,
   setCustomBlockData as setCustomBlockDataCmd,
@@ -80,11 +86,21 @@ import {
   setTableWidthModeAtSelectionCmd,
   setTablePreferredWidthAtSelectionCmd,
   setTableAlignAtSelectionCmd,
+  setCellVAlignCmd,
+  setCellTextDirectionCmd,
+  setRowHeightAtSelectionCmd,
+  setRowPropsCmd,
+  setTablePropsAtSelectionCmd,
   tableAtSelection,
   setImageProps,
   applyNamedStyle,
   applyCharStyle,
   updateStyleToSelection,
+  renameNamedStyle,
+  restoreParagraphsCmd,
+  styleInstanceRanges,
+  hasDirectFormattingAt,
+  type ParaSnapshot,
   setParaProps,
   addBookmarkCmd,
   removeBookmarkCmd,
@@ -105,6 +121,7 @@ import {
   insertPageBreak,
   insertSectionBreak,
   insertTocCmd,
+  reorderPageGroupCmd,
   updateTocFieldCmd,
   insertFootnoteCmd,
   insertEndnoteCmd,
@@ -117,6 +134,8 @@ import {
 } from "./editor/commands";
 import { defaultStylesheet, styleById, styleType } from "@cw/shared";
 import { bulletListDefinition, numberListDefinition, paragraphsOf, textOfRuns } from "@cw/shared";
+import { containerListOf, locateParagraph } from "@cw/shared";
+import type { RowProps, TableBlock, TableCell } from "@cw/shared";
 import { ICONS } from "./ui/icons";
 import { readRecent, pushRecent } from "./ui/recentList";
 
@@ -153,6 +172,7 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
     ...(runtime.cjk ? { cjk: runtime.cjk } : {}),
     ...(runtime.develop !== undefined ? { develop: runtime.develop } : {}),
     ...(runtime.organizePages !== undefined ? { organizePages: runtime.organizePages } : {}),
+    ...(runtime.chrome !== undefined ? { chrome: runtime.chrome } : {}),
     ...(runtime.floatingToolbar !== undefined ? { floatingToolbar: runtime.floatingToolbar } : {}),
     ...(runtime.contextToolbars !== undefined ? { contextToolbars: runtime.contextToolbars } : {}),
   });
@@ -200,6 +220,101 @@ export async function mountEditorApp(runtime: WordCanvasRuntime): Promise<void> 
   const detachables: Element[] = [];
   // Container-width compact ribbon observer (assigned in the ribbon block below).
   let compactRO: ResizeObserver | null = null;
+  // Recomputes width-driven chrome state (compact ribbon, outline auto-collapse, tab
+  // overflow). Assigned in the ResizeObserver block below; hoisted so applyChrome can
+  // re-run it after a runtime preset swap changes the toolbar layout. No-op until then.
+  let applyResponsive: (w: number) => void = () => {};
+  // Responsive layout state (row 12 / critique R1-R4). autoFit = keep the page
+  // fit-to-width until the user manually zooms; the outline auto-collapse below
+  // narrow widths is remembered so it reopens when there's room again.
+  let autoFit = false;
+  let applyingFit = false; // true only while WE call setZoom, so onZoomChange can tell manual zoom apart
+  let autoCollapsedOutline = false;
+  let setOutlineOpen: (v: boolean) => void = () => {};
+  let isOutlineOpen: () => boolean = () => false;
+  // Navigator (row 17): the bookmarks block renders its list into this panel, and
+  // toggleBookmarks switches the rail to the Marks tab, once the rail is built.
+  let navMarksPanel: HTMLElement | null = null;
+  let navShow: (tab: string) => void = () => {};
+
+  // Dark-mode chrome (critique V2) + the user Theme preference (File ▸ Settings,
+  // FIX 2). :root[data-theme] drives the dark stylesheet. Precedence:
+  //   explicit user choice (Light/Dark)  >  host-pinned data-theme  >  default.
+  //
+  // DARK IS NOT OFFERED TO END USERS YET — it needs polish. While THEME_UI_READY is
+  // false the Theme picker is hidden AND the default is Light (not "follow the OS"),
+  // so a dark-OS machine no longer gets an unpolished dark editor out of the box. All
+  // dark-theme CSS stays live (it is keyed on data-theme="dark", which we simply don't
+  // set), and a host can still pin data-theme="dark" deliberately. Flip this one flag
+  // to true to re-enable the Light/Dark/Match-system picker and OS-follow once dark is
+  // ready. Every dark rule — chrome AND the floating context bars — keys on
+  // data-theme="dark", so this flag is the single control point.
+  const THEME_UI_READY = false;
+  type ThemePref = "light" | "dark" | "system";
+  const THEME_PREFS = ["light", "dark", "system"] as const;
+  const THEME_PREF_KEY = "cw:pref:theme";
+  // Host pin captured BEFORE we write anything: the host set data-theme itself and
+  // did not tag it as our auto write (data-theme-auto). This is the "host keeps
+  // control" path the old guard protected — preserved here, just below the user pin.
+  const de0 = document.documentElement;
+  const hostPinnedTheme =
+    de0.dataset["themeAuto"] == null && de0.dataset["theme"] ? de0.dataset["theme"] : null;
+  // The Theme picker is shown only when dark is ready AND the embedder hasn't hidden
+  // the surface / pane. When it isn't shown we don't read a stored user choice (dark
+  // must not leak back in via an old cw:pref:theme), so the default holds.
+  const themeUiOffered = THEME_UI_READY && config.settings.enabled && config.settings.theme;
+  let themePref: ThemePref = (themeUiOffered ? readPref(THEME_PREF_KEY, THEME_PREFS) : null) ?? "system";
+  let setThemePref: (t: ThemePref) => void = (t) => { themePref = t; }; // matchMedia-less fallback
+  const getThemePref = (): ThemePref => themePref;
+  if (typeof matchMedia === "function") {
+    const de = document.documentElement;
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = (): void => {
+      if (themePref === "light" || themePref === "dark") { // user pin — wins over host + OS
+        de.dataset["theme"] = themePref;
+        de.dataset["themeAuto"] = "user";
+        return;
+      }
+      if (hostPinnedTheme) { // "system" but the host pinned a theme → host keeps control
+        de.dataset["theme"] = hostPinnedTheme;
+        de.dataset["themeAuto"] = "host";
+        return;
+      }
+      // Follow the OS live — but only once dark is offered. Until then default to Light
+      // rather than following the OS into an unpolished dark theme.
+      de.dataset["theme"] = THEME_UI_READY && mq.matches ? "dark" : "light";
+      de.dataset["themeAuto"] = "1";
+    };
+    applyTheme();
+    mq.addEventListener("change", applyTheme, { signal: teardown.signal });
+    setThemePref = (t: ThemePref): void => {
+      themePref = t;
+      if (themeUiOffered) writePref(THEME_PREF_KEY, t);
+      applyTheme();
+    };
+  }
+
+  // Chrome preset (File ▸ Settings ▸ Appearance ▸ Chrome, FIX 2b). Assigned by the
+  // toolbar block's applyChrome wiring below; no-ops until then (a chromeless mount
+  // has no chrome to swap). Runtime switching is a pure show/hide over the always-
+  // built ribbon + minibar, so it preserves all editor state (see applyChrome).
+  let getChromePref: () => ChromePreset = () => config.chrome;
+  let setChromePref: (p: ChromePreset) => void = () => {};
+
+  // Ctrl+/ — keyboard shortcuts cheat sheet (critique A3). Embedder commands with
+  // a keybinding are appended live, so the sheet reflects the actual keymap.
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || !keyMatches("/", e)) return;
+      e.preventDefault();
+      const cmds = (runtime.commands ?? [])
+        .filter((c) => c.keybinding && c.label)
+        .map((c) => ({ chord: (Array.isArray(c.keybinding) ? c.keybinding[0] : c.keybinding) as string, label: c.label as string }));
+      showShortcutsCheatsheet(cmds.length ? [{ title: "Commands", items: cmds }] : []);
+    },
+    { signal: teardown.signal },
+  );
 
 // Backend base URL gates online features. Present ⇒ sync/publish/share; absent ⇒
 // fully offline editor (the kill-switch).
@@ -244,7 +359,7 @@ if (collabId !== null && BACKEND_HTTP) {
     // Dead/invalid link — don't hang the whole load. Drop collab state, strip
     // ?collab (so a reload doesn't re-fail), and fall back to a blank editor.
     console.error("[collab] load failed", e);
-    alert(`Could not open the shared document: ${e instanceof Error ? e.message : String(e)}`);
+    showNotice(`Could not open the shared document: ${e instanceof Error ? e.message : String(e)}`, "warning");
     collabId = null;
     shareLink = null;
     try {
@@ -287,6 +402,27 @@ let syncToolbar: () => void = () => {};
 let syncZoom: (zoom: number) => void = () => {};
 let refreshOutline: () => void = () => {};
 let refreshStatus: () => void = () => {};
+// Document-identity / save-state chrome (top-left of the ribbon). Forward-
+// declared like the refreshers above so replaceDocument() / onChange (defined
+// before the toolbar block builds the widget) can drive them; they stay no-ops
+// when the ribbon is disabled (chromeless mount).
+let refreshSaveState: () => void = () => {};
+// Import fidelity (Move 3): the lossy/adapted-mapping warnings from the last .docx
+// open, surfaced as a passive chrome badge — but ONLY in its warning state. `null`
+// means no import has happened yet (the in-memory sample, a blank doc); an array
+// (possibly empty) means an import completed. The badge renders nothing for `null`
+// or an empty array (a clean import is silent by design — a permanent "faithful"
+// check would be unearned chrome and would train the eye to ignore this region);
+// it appears only when there are warnings to show. Set in openDocxFile; read via
+// refreshFidelity.
+let importWarnings: ImportResult["warnings"] | null = null;
+let refreshFidelity: () => void = () => {};
+let syncQat: () => void = () => {}; // enable/disable the quick-access undo/redo
+let resetSaveBaseline: () => void = () => {};
+let setDocTitleFromFile: (name: string | null) => void = () => {};
+// Filesystem-safe base name for a downloaded export, derived from the document
+// title (assigned in the toolbar block; falls back to "document" when chromeless).
+let currentDocBaseName: () => string = () => "document";
 let refreshRuler: () => void = () => {};
 let toggleRuler: () => boolean = () => false;
 let refreshVRuler: () => void = () => {};
@@ -299,6 +435,13 @@ let refreshBookmarks: () => void = () => {};
 let toggleBookmarks: () => void = () => {};
 let refreshReview: () => void = () => {};
 let toggleReview: () => void = () => {};
+// Inspector (Move 2): a right-docked, selection-aware property sheet. Forward-
+// declared so the header button and the selection/change hooks can drive it.
+let toggleInspector: () => void = () => {};
+let refreshInspector: () => void = () => {};
+// Minimal-chrome command bar (Move 1): reflects the caret's bold/italic/list/style
+// state on its compact buttons. No-op unless chrome === "minimal".
+let refreshMinimalBar: () => void = () => {};
 let syncMode: () => void = () => {};
 // Develop-mode Document-tree inspector hooks (assigned when the panel is open;
 // no-ops otherwise, so non-develop mounts pay nothing). refreshDevPanel re-reads
@@ -391,23 +534,41 @@ const editorOpts = {
     // Coalesced (rAF) because this fires continuously during a drag and refresh reads
     // layout; onChange stays synchronous for typing/caret immediacy.
     scheduleRefreshContextToolbars();
+    refreshInspector();
+    refreshMinimalBar();
     refreshDevPanel();
   },
   // Develop mode only: the inspector turns this signal on while open (dormant
   // otherwise) — route the hovered block id to the tree for the reverse highlight.
   onInspectorHover: (blockId: string | null) => inspectorHoverSink(blockId),
   onInspectorProbe: (probe: InspectorProbe | null) => inspectorProbeSink(probe),
+  // Right-click "Insert/Edit Hyperlink" routes here so it opens the SAME styled
+  // link popover the ribbon uses (critique 2.8: no more native prompt(), and one
+  // link UI instead of two). Anchored at the caret via a transient element.
+  onEditLink: (current: string | null): void => {
+    const r = editor.getSelectionAnchorRect();
+    const anchor = document.createElement("div");
+    anchor.style.cssText = `position:fixed;left:${Math.round(r?.left ?? 120)}px;top:${Math.round(r?.top ?? 90)}px;` +
+      `width:${Math.round(r?.width ?? 0)}px;height:${Math.round(r?.height ?? 16)}px;pointer-events:none;`;
+    document.body.appendChild(anchor);
+    openLinkDialog(anchor, current ?? ""); // openPop reads the rect synchronously
+    anchor.remove();
+  },
   onChange: () => {
     syncToolbar();
     refreshOutline();
     refreshStatus();
+    refreshSaveState();
     refreshRuler();
     refreshVRuler();
     refreshContextToolbars();
     refreshBookmarks();
+    refreshInspector();
+    refreshMinimalBar();
     refreshDevPanel();
   },
   onZoomChange: (z: number) => {
+    if (!applyingFit) autoFit = false; // a manual zoom (controls / Ctrl+wheel) exits fit-width mode
     syncZoom(z);
     refreshStatus();
     refreshRuler();
@@ -615,6 +776,7 @@ const replaceDocument = (next: typeof doc): void => {
   refreshStatus();
   refreshRuler();
   refreshVRuler();
+  resetSaveBaseline(); // fresh editor ⇒ change head is back at 0; re-baseline "clean"
   window.__cw = { doc, tree: undefined, engine, editor, createLayoutEngine, sampleDoc, stressDoc, persist };
 };
 
@@ -667,11 +829,14 @@ const openDocxFile = async (file: File | ArrayBuffer): Promise<void> => {
     });
     reportImport(result, performance.now() - i0);
     replaceDocument(result.doc);
+    importWarnings = result.warnings; // drive the fidelity badge (Move 3)
+    refreshFidelity();
+    setDocTitleFromFile(file instanceof File ? file.name : null); // reflect the opened file's name
     detachCollabSession();
   } catch (e) {
     console.error("[docx-import]", e);
     const name = file instanceof File ? file.name : "document";
-    alert(`Could not open "${name}": ${e instanceof Error ? e.message : String(e)}`);
+    showNotice(`Could not open "${name}": ${e instanceof Error ? e.message : String(e)}`, "warning");
   } finally {
     busy.done();
   }
@@ -733,10 +898,15 @@ if (toolbar) {
     return e;
   };
 
+  // Header row 1 (identity row): document title + save state + quick-access on the
+  // left, mode/Inspector/Review controls + collapse chevron on the right. All the
+  // document-state-dependent chrome lives HERE so nothing variable-width precedes the
+  // tab strip below — File/Home stay put regardless of filename length or save state.
+  const identRow = el("div", "cw-ident-row");
+  // Header row 2: the tab strip alone. File is pinned at the true left edge.
   const tabsBar = el("div", "rib-tabs");
   // Tab buttons live in an inner scroll wrapper so they scroll horizontally on
-  // overflow while the right-side cluster (mode select / Review / collapse
-  // chevron) stays pinned as direct children of `.rib-tabs`.
+  // overflow while the tab-overflow "⋯" stays pinned as a sibling of `.rib-tabs`.
   const tabScroll = el("div", "rib-tab-scroll");
   tabsBar.appendChild(tabScroll);
   // Mouse users on a narrow desktop: translate vertical wheel to horizontal scroll
@@ -751,20 +921,29 @@ if (toolbar) {
     { passive: false, signal: teardown.signal },
   );
   const bodies = el("div", "rib-bodies");
-  toolbar.append(tabsBar, bodies);
+  toolbar.append(identRow, tabsBar, bodies);
   const tabButtons = new Map<string, HTMLButtonElement>();
   const tabPanels = new Map<string, HTMLDivElement>();
+  // Contextual tabs (Table / Picture / Shape Tools): hidden until their predicate
+  // matches the current selection, then revealed — Word's contextual-tab model.
+  // Replaces a permanent Table tab + a graveyard of always-disabled shape/image
+  // buttons on Insert (critique C5). Evaluated in syncToolbar.
+  const contextualTabs: { btn: HTMLButtonElement; pred: (f: CurrentFormat) => boolean }[] = [];
   const showTab = (id: string): void => {
     for (const [tid, b] of tabButtons) b.classList.toggle("active", tid === id);
     for (const [tid, p] of tabPanels) p.classList.toggle("active", tid === id);
     setCollapsed(false); // clicking a tab re-pins a collapsed ribbon (Word)
   };
-  const tab = (id: string, label: string, kind?: "file"): HTMLDivElement => {
-    const t = el("button", "rib-tab" + (kind === "file" ? " file" : ""));
+  const tab = (id: string, label: string, kind?: "file", contextual?: (f: CurrentFormat) => boolean): HTMLDivElement => {
+    const t = el("button", "rib-tab" + (kind === "file" ? " file" : "") + (contextual ? " rib-tab-ctx" : ""));
     t.textContent = label;
     t.dataset["ribbonTab"] = id;
     t.addEventListener("click", () => showTab(id));
     tabButtons.set(id, t);
+    if (contextual) {
+      t.style.display = "none"; // revealed by syncToolbar when the predicate matches
+      contextualTabs.push({ btn: t, pred: contextual });
+    }
     tabScroll.appendChild(t);
     const p = el("div", "rib-panel");
     p.dataset["tab"] = id;
@@ -826,6 +1005,7 @@ if (toolbar) {
     const b = el("button", "rib-btn");
     b.innerHTML = icon + (caret ? CARET : "");
     b.title = title;
+    b.setAttribute("aria-label", title); // explicit, unique accessible name (C6/A2)
     b.addEventListener("mousedown", (e) => e.preventDefault()); // keep IME-proxy focus
     b.addEventListener("click", onClick);
     controls.appendChild(b);
@@ -836,7 +1016,11 @@ if (toolbar) {
   const txtBtn = (label: string, title: string, onClick: () => void, style = "", caret = false): HTMLButtonElement => {
     const b = el("button", "rib-btn");
     b.title = title;
+    // The visible glyph ("A", "AB", "LTR"…) is decorative — the accessible name
+    // is the descriptive title, so no two buttons announce as the same "A" (C6).
+    b.setAttribute("aria-label", title);
     const s = el("span");
+    s.setAttribute("aria-hidden", "true");
     s.textContent = label;
     if (style) s.style.cssText = style;
     b.appendChild(s);
@@ -851,19 +1035,10 @@ if (toolbar) {
   const bigBtn = (icon: string, caption: string, title: string, onClick: () => void, caret = false): HTMLButtonElement => {
     const b = el("button", "rib-btn rib-big");
     b.title = title;
+    b.setAttribute("aria-label", title); // unique accessible name (C6/A2)
     b.innerHTML = icon + `<span class="big-cap">${caption}${caret ? CARET : ""}</span>`;
     b.addEventListener("mousedown", (e) => e.preventDefault());
     b.addEventListener("click", onClick);
-    controls.appendChild(b);
-    ribRegister(b, title);
-    return b;
-  };
-  /** Disabled placeholder for a feature the engine/renderer doesn't support. */
-  const stub = (inner: string, title: string): HTMLButtonElement => {
-    const b = el("button", "rib-btn");
-    b.innerHTML = inner;
-    b.title = `${title} — not supported by the engine yet`;
-    b.disabled = true;
     controls.appendChild(b);
     ribRegister(b, title);
     return b;
@@ -1207,7 +1382,8 @@ if (toolbar) {
     wrap.style.cssText = "display:flex;align-items:stretch;";
     const main = el("button", "rib-btn rib-swatch");
     main.title = cfg.title;
-    main.innerHTML = `<span class="row">${cfg.face}</span><span class="bar" style="background:${last}"></span>`;
+    main.setAttribute("aria-label", cfg.title); // not the bare "A"/highlight glyph (C6)
+    main.innerHTML = `<span class="row" aria-hidden="true">${cfg.face}</span><span class="bar" style="background:${last}"></span>`;
     const bar = main.querySelector(".bar") as HTMLElement;
     main.addEventListener("mousedown", (e) => e.preventDefault());
     main.addEventListener("click", () => {
@@ -1216,6 +1392,7 @@ if (toolbar) {
     });
     const more = el("button", "rib-btn");
     more.title = `${cfg.title} — choose colour`;
+    more.setAttribute("aria-label", more.title);
     more.style.cssText = "min-width:14px;padding:0;";
     more.innerHTML = CARET;
     more.addEventListener("mousedown", (e) => e.preventDefault());
@@ -1251,6 +1428,7 @@ if (toolbar) {
     wrap.style.cssText = "display:flex;align-items:stretch;";
     const main = el("button", "rib-btn");
     main.title = title;
+    main.setAttribute("aria-label", title);
     main.innerHTML = icon;
     main.addEventListener("mousedown", (e) => e.preventDefault());
     main.addEventListener("click", () => {
@@ -1260,6 +1438,7 @@ if (toolbar) {
     toggleButtons.push({ el: main, active });
     const more = el("button", "rib-btn");
     more.title = `${title} — choose style`;
+    more.setAttribute("aria-label", more.title);
     more.style.cssText = "min-width:14px;padding:0;";
     more.innerHTML = CARET;
     more.addEventListener("mousedown", (e) => e.preventDefault());
@@ -1416,19 +1595,74 @@ if (toolbar) {
     setTimeout(() => cellEls[0]?.focus(), 0);
   };
 
-  /** Hyperlink dialog: URL field + Apply / Remove, applied to the selection.
-   *  `url` pre-fills the field (the hyperlink context toolbar's Edit passes the
-   *  existing address). */
+  /** Hyperlink dialog: a web address OR a place in this document (a bookmark, via
+   *  an `#anchor` link — this is what gives bookmarks a consumer, critique B7).
+   *  `url` pre-fills the field; a leading `#` opens the document-anchor mode with
+   *  that bookmark selected. */
   const linkDialog = (anchor: HTMLElement, url = ""): void => {
+    const bookmarks = Object.keys(editor.getDocument().bookmarks ?? {}).sort((a, b) => a.localeCompare(b));
+    const startInternal = url.startsWith("#");
     const wrap = el("div", "cw-dialog");
+
+    // Mode toggle — Web address / This document.
+    const tabs = el("div", "row");
+    tabs.style.cssText = "gap:4px;margin-bottom:8px;";
+    const TAB_BASE = "flex:1 1 auto;padding:5px 8px;border:1px solid #d0d4d9;border-radius:6px;cursor:pointer;font-size:12px;";
+    const TAB_ACTIVE = TAB_BASE + "border-color:#1a73e8;color:#1a73e8;background:#eef4fe;";
+    const TAB_IDLE = TAB_BASE + "color:#3c4043;background:#fff;";
+    const mkTab = (label: string): HTMLButtonElement => {
+      const b = el("button");
+      b.textContent = label;
+      b.style.cssText = TAB_IDLE;
+      b.addEventListener("mousedown", (e) => e.preventDefault());
+      return b;
+    };
+    const webTab = mkTab("Web address");
+    const docTab = mkTab("This document");
+    tabs.append(webTab, docTab);
+
+    // Web address field.
     const lab = el("label");
     lab.textContent = "Address";
     const input = el("input");
     input.type = "text";
     input.placeholder = "https://example.com";
-    input.value = url;
+    input.value = startInternal ? "" : url;
     input.addEventListener("mousedown", (e) => e.stopPropagation()); // allow focus
     lab.appendChild(input);
+
+    // Bookmark picker (in-document anchor).
+    const bmLab = el("label");
+    bmLab.textContent = "Bookmark";
+    const bmSel = el("select");
+    bmSel.style.cssText = "width:100%;height:28px;border:1px solid #d0d4d9;border-radius:6px;padding:0 6px;";
+    for (const b of bookmarks) {
+      const o = document.createElement("option");
+      o.value = b;
+      o.textContent = b;
+      bmSel.append(o);
+    }
+    if (startInternal) bmSel.value = url.slice(1);
+    bmSel.disabled = bookmarks.length === 0;
+    bmSel.addEventListener("mousedown", (e) => e.stopPropagation());
+    bmLab.appendChild(bmSel);
+    const bmNote = el("div");
+    bmNote.style.cssText = "font-size:11px;color:#9aa0a6;margin-top:4px;";
+    bmNote.textContent = "No bookmarks yet — add one from Navigator ▸ Marks.";
+
+    let mode: "web" | "doc" = startInternal && bookmarks.length > 0 ? "doc" : "web";
+    const applyMode = (): void => {
+      const web = mode === "web";
+      lab.style.display = web ? "" : "none";
+      bmLab.style.display = web ? "none" : "";
+      bmNote.style.display = !web && bookmarks.length === 0 ? "" : "none";
+      webTab.style.cssText = web ? TAB_ACTIVE : TAB_IDLE;
+      docTab.style.cssText = web ? TAB_IDLE : TAB_ACTIVE;
+      apply.disabled = !web && bookmarks.length === 0;
+    };
+    webTab.addEventListener("click", () => { mode = "web"; applyMode(); setTimeout(() => input.focus(), 0); });
+    docTab.addEventListener("click", () => { mode = "doc"; applyMode(); });
+
     const row = el("div", "row");
     const remove = el("button", "danger");
     remove.textContent = "Remove";
@@ -1440,9 +1674,12 @@ if (toolbar) {
     const apply = el("button", "primary");
     apply.textContent = "Apply";
     const doApply = (): void => {
-      const u = input.value.trim();
+      const target = mode === "doc"
+        ? (bmSel.value ? `#${bmSel.value}` : null)
+        : (input.value.trim() === "" ? null : input.value.trim());
+      if (mode === "doc" && bookmarks.length === 0) return;
       closePop();
-      editor.dispatch(setLinkCmd(u === "" ? null : u));
+      editor.dispatch(setLinkCmd(target));
       editor.focus();
     };
     apply.addEventListener("click", doApply);
@@ -1451,9 +1688,10 @@ if (toolbar) {
       e.stopPropagation();
     });
     row.append(remove, apply);
-    wrap.append(lab, row);
+    wrap.append(tabs, lab, bmLab, bmNote, row);
+    applyMode();
     openPop(anchor, wrap);
-    setTimeout(() => input.focus(), 0);
+    setTimeout(() => (mode === "web" ? input : bmSel).focus(), 0);
   };
   // Expose the link dialog to the hyperlink context toolbar (built outside this
   // ribbon closure).
@@ -1490,7 +1728,11 @@ if (toolbar) {
     });
   };
 
-  const exportAs = async (format: ExportFormat): Promise<void> => {
+  /** Runs the export pipeline. Resolves true when the bytes reached their
+   *  destination (host onSave or download), false when it failed — errors are
+   *  reported here, not thrown, so callers that re-baseline saved state (the Ctrl+S
+   *  indicator) can tell a real save from a swallowed failure. */
+  const exportAs = async (format: ExportFormat): Promise<boolean> => {
     // Rendering (especially PDF) can take a few seconds; show the busy overlay so
     // the app doesn't look hung. Dropped before any onSave dialog / download so it
     // doesn't sit behind a native Save sheet.
@@ -1516,16 +1758,23 @@ if (toolbar) {
       // the host routes it to its own pipeline (upload, persist, custom download).
       if (runtime.onSave) {
         await runtime.onSave({ blob, bytes, format, warnings });
-        return;
+        return true;
       }
       const url = URL.createObjectURL(blob);
       const a = el("a");
       a.href = url;
-      a.download = `document.${format}`;
+      a.download = `${currentDocBaseName()}.${format}`;
+      // Attach before clicking: a detached <a download> is navigated-to (not
+      // downloaded) in some browsers/headless, which reloads the page.
+      a.style.display = "none";
+      document.body.appendChild(a);
       a.click();
+      a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return true;
     } catch (err) {
       console.error(`[export-${format}] failed`, err);
+      return false;
     } finally {
       busy.done(); // idempotent — covers the error path
     }
@@ -1586,7 +1835,7 @@ if (toolbar) {
   if (online) {
     group(fileTab, "Share");
     bigBtn(ICONS.share, "Share<br>Link", "Publish & get a shareable link", () => {
-      void goOnlineWithCurrentDoc().catch((e) => alert(`Share failed: ${e instanceof Error ? e.message : String(e)}`));
+      void goOnlineWithCurrentDoc().catch((e) => showNotice(`Share failed: ${e instanceof Error ? e.message : String(e)}`, "warning"));
     });
   }
 
@@ -1603,6 +1852,57 @@ if (toolbar) {
   group(fileTab, "Undo");
   btn(ICONS.undo, "Undo (Ctrl+Z)", () => editor.undo());
   btn(ICONS.redo, "Redo (Ctrl+Y)", () => editor.redo());
+
+  // ---- Settings surface (File ▸ Settings + the "Settings" palette entry, FIX 2) --
+  // The home for application PREFERENCES — things that are NOT document-authoring
+  // commands and so were homeless (theme had no in-UI control at all; the chrome
+  // preset was embedder-only). Word's "File ▸ Options" convention, minus a top-level
+  // ribbon tab. One dialog structured as groups, so future prefs slot in without a
+  // redesign. The File-tab button below is harvested into the Ctrl+K palette, which
+  // is how it stays reachable under the minimal chrome (which has no File tab).
+  const openSettings = (): void => {
+    const groups: SettingsGroup[] = [];
+    const appearance: SettingsGroup["rows"] = [];
+    if (themeUiOffered) { // hidden until the dark theme is polished (THEME_UI_READY)
+      appearance.push({
+        id: "appearance.theme",
+        label: "Theme",
+        hint: "Match system follows your device's light/dark setting.",
+        options: [
+          { value: "light", label: "Light" },
+          { value: "dark", label: "Dark" },
+          { value: "system", label: "Match system" },
+        ],
+        get: () => getThemePref(),
+        set: (v) => setThemePref(v as ThemePref),
+      });
+    }
+    if (config.settings.chrome) {
+      appearance.push({
+        id: "appearance.chrome",
+        label: "Toolbar",
+        hint: "Ribbon is the full tabbed toolbar; Minimal is a quiet command bar.",
+        options: [
+          { value: "ribbon", label: "Ribbon" },
+          { value: "minimal", label: "Minimal" },
+        ],
+        get: () => getChromePref(),
+        set: (v) => setChromePref(v as ChromePreset),
+      });
+    }
+    if (appearance.length > 0) groups.push({ title: "Appearance", rows: appearance });
+    showSettingsDialog({ groups });
+  };
+  // Every row is individually gated, so "enabled" alone can still leave nothing to
+  // show — with the Theme row held back by THEME_UI_READY, `settings.chrome: false`
+  // empties the dialog. Don't offer a button that opens a blank surface.
+  if (config.settings.enabled && (themeUiOffered || config.settings.chrome)) {
+    group(fileTab, "Settings");
+    // Title is plain "Settings" so the command palette (which harvests the ribbon by
+    // button title) lists it as exactly "Settings" — the required reach under the
+    // minimal chrome, which has no File tab.
+    bigBtn(ICONS.settings, "Settings", "Settings", () => openSettings());
+  }
 
   // ===== Home tab ==========================================================
   const home = tab("home", "Home");
@@ -1639,6 +1939,7 @@ if (toolbar) {
   const ptToPx = (pt: number): number => sharedPtToPx(pt);
   const sizeInput = el("input");
   sizeInput.type = "number";
+  sizeInput.lang = "en"; // dot decimal for 10.5pt regardless of OS locale (V4)
   sizeInput.min = "1";
   sizeInput.max = "72";
   sizeInput.step = "0.5";
@@ -1661,6 +1962,7 @@ if (toolbar) {
   sizeWrap.style.cssText = "display:inline-flex;align-items:stretch;";
   const sizeCaret = el("button", "rib-btn");
   sizeCaret.title = "Font size presets";
+  sizeCaret.setAttribute("aria-label", "Font size presets");
   sizeCaret.innerHTML = CARET;
   sizeCaret.style.cssText = "padding:0 1px;min-width:14px;";
   sizeCaret.addEventListener("mousedown", (e) => e.preventDefault());
@@ -1769,7 +2071,6 @@ if (toolbar) {
   sep();
   btn(ICONS.indentDecrease, "Decrease indent", () => editor.dispatch(adjustIndentCmd(-config.behavior.indentStepPx)));
   btn(ICONS.indentIncrease, "Increase indent", () => editor.dispatch(adjustIndentCmd(config.behavior.indentStepPx)));
-  stub(ICONS.sort, "Sort");
   marksToggleBtn();
 
   paraRow();
@@ -1893,6 +2194,7 @@ if (toolbar) {
     c.innerHTML = `<span class="preview"></span><span class="name"></span>`;
     (c.querySelector(".name") as HTMLElement).textContent = isChar ? `${name} ⓐ` : name; // ⓐ marks a character style
     const prev = c.querySelector(".preview") as HTMLElement;
+    prev.textContent = "AaBbCc"; // plain-text fallback shown until the canvas sample paints (V5)
     galleryChild?.render(prev, { kind: "styleSample", styleId: id, sampleText: "AaBbCc" }, { fit: true, widthPx: 70, maxHeightPx: 24 });
     c.addEventListener("mousedown", (e) => e.preventDefault());
     c.addEventListener("click", () => {
@@ -2019,7 +2321,13 @@ if (toolbar) {
   btn(ICONS.image, "Insert image from your device", () => pickAndInsertImage());
   const insShapeBtn = btn(ICONS.shapes, "Insert a shape", () => {}, true);
   insShapeBtn.addEventListener("click", () => shapesPopover(insShapeBtn));
-  group(insert, "Picture"); // acts on the selected image
+  // Picture Tools + Shape Tools are contextual tabs — they appear only when an
+  // image / shape is selected, replacing the always-disabled image & shape
+  // buttons that used to sit greyed on the Insert tab (critique C5). "Insert a
+  // shape" stays on Insert (above); acting on a shape moves to Shape Tools.
+  const pictureTab = tab("picture", "Picture Tools", undefined, (f) => f.imageSelected);
+  const shapeTab = tab("shape", "Shape Tools", undefined, (f) => f.shapeSelected || f.multipleShapesSelected || f.groupSelected);
+  group(pictureTab, "Picture"); // acts on the selected image
   enable(
     btn(ICONS.wrapSquare, "Wrap text around image (square)", () => {
       const id = editor.getSelectedObject();
@@ -2036,7 +2344,7 @@ if (toolbar) {
     (f) => f.imageSelected,
     "select an image first",
   );
-  group(insert, "Shape"); // acts on the selected shape
+  group(shapeTab, "Shape"); // acts on the selected shape
   const shapeFillBtn = btn(ICONS.shapeFill, "Shape fill", () => shapeFillPopover(shapeFillBtn), true);
   enable(shapeFillBtn, (f) => f.shapeSelected, "select a shape first");
   const shapeOutlineBtn = btn(ICONS.outline, "Shape outline (colour, width, dash)", () => shapeOutlinePopover(shapeOutlineBtn), true);
@@ -2210,15 +2518,22 @@ if (toolbar) {
     editor.focus();
   });
   btn(ICONS.sdtDropdown, "Drop-down list content control", () => {
-    const raw = prompt("List items (comma-separated):", "Yes, No, N/A");
-    if (raw === null) return;
-    const listItems = raw
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0)
-      .map((s) => ({ display: s, value: s }));
-    editor.dispatch(insertContentControl("dropDown", { alias: "Drop-Down List", listItems }));
-    editor.focus();
+    showInputDialog({
+      title: "Drop-down list",
+      label: "List items (comma-separated)",
+      initial: "Yes, No, N/A",
+      okLabel: "Insert",
+      validate: (v) => (v.split(",").some((s) => s.trim().length > 0) ? null : "Enter at least one item."),
+      onSubmit: (raw) => {
+        const listItems = raw
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0)
+          .map((s) => ({ display: s, value: s }));
+        editor.dispatch(insertContentControl("dropDown", { alias: "Drop-Down List", listItems }));
+        editor.focus();
+      },
+    });
   });
   btn(ICONS.sdtDate, "Date picker content control", () => {
     editor.dispatch(insertContentControl("date", { alias: "Date", dateFormat: "M/d/yyyy" }));
@@ -2226,7 +2541,7 @@ if (toolbar) {
   });
   enable(
     btn(ICONS.sdtProps, "Content control properties & content (inspect the control at the caret)", () => {
-      if (!editor.inspectContentControl()) alert("Place the caret inside a content control first.");
+      if (!editor.inspectContentControl()) showNotice("Place the caret inside a content control first.", "info");
     }),
     (f) => f.inContentControl,
     "place the caret in a content control",
@@ -2261,8 +2576,8 @@ if (toolbar) {
     });
   }
 
-  // ===== Table tab (acts on the cell containing the caret) =================
-  const tableTab = tab("table", "Table");
+  // ===== Table Tools — contextual tab (only while the caret is in a table) ==
+  const tableTab = tab("table", "Table Tools", undefined, (f) => f.inTable);
   group(tableTab, "Rows & Columns");
   btn(ICONS.rowAbove, "Insert row above", () => editor.dispatch(insertTableRowCmd("above")));
   btn(ICONS.rowBelow, "Insert row below", () => editor.dispatch(insertTableRowCmd("below")));
@@ -2317,10 +2632,12 @@ if (toolbar) {
 
   // ===== View tab ==========================================================
   const view = tab("view", "View");
-  group(view, "Show");
+  group(view, "Navigator");
   let outlineToggle = (): void => {};
-  const outlineBtn = btn(ICONS.outline, "Outline / navigation pane (jump to any heading)", () => outlineToggle());
-  const bookmarksBtn = btn(ICONS.bookmark, "Bookmarks — list, go to, add, rename, delete", () => toggleBookmarks());
+  // One Navigator (row 17): the rail switches Headings/Pages/Objects/Marks. These
+  // two are just shortcuts to open it (on Headings, or on the Marks/bookmarks tab).
+  const outlineBtn = btn(ICONS.outline, "Navigator — headings, pages, objects & marks", () => outlineToggle());
+  btn(ICONS.bookmark, "Bookmarks (Navigator ▸ Marks)", () => toggleBookmarks());
   const rulerBtn = btn(ICONS.ruler, "Horizontal ruler", () => rulerBtn.classList.toggle("active", toggleRuler()));
   rulerBtn.classList.toggle("active", showHRuler);
   const vrulerBtn = btn(ICONS.rulerV, "Vertical ruler", () => vrulerBtn.classList.toggle("active", toggleVRuler()));
@@ -2440,13 +2757,250 @@ if (toolbar) {
   syncMode = (): void => {
     modeSel.value = editor.getMode();
   };
+  const inspectorBtn = el("button", "cw-header-btn");
+  inspectorBtn.textContent = "Inspector";
+  inspectorBtn.title = "Inspector — edit the selection's font & paragraph properties live";
+  inspectorBtn.addEventListener("mousedown", (e) => e.preventDefault());
+  inspectorBtn.addEventListener("click", () => toggleInspector());
   const reviewBtn = el("button", "cw-header-btn");
   reviewBtn.textContent = "Review";
   reviewBtn.title = "Suggestions & comments — review, accept, reject";
   reviewBtn.addEventListener("mousedown", (e) => e.preventDefault());
   reviewBtn.addEventListener("click", () => toggleReview());
-  headerReview.append(modeSel, reviewBtn);
-  tabsBar.appendChild(headerReview);
+  headerReview.append(modeSel, inspectorBtn, reviewBtn);
+  // Tab-strip overflow (critique R3): when the tabs don't fit, this button appears
+  // and opens a menu of them, so Table/View/Developer never silently vanish.
+  const tabOverflowBtn = el("button", "rib-tab-overflow");
+  tabOverflowBtn.textContent = "⋯";
+  tabOverflowBtn.title = "More tabs";
+  tabOverflowBtn.style.display = "none";
+  tabOverflowBtn.addEventListener("mousedown", (e) => e.preventDefault());
+  tabOverflowBtn.addEventListener("click", () => {
+    const items: { label: string; onClick: () => void }[] = [];
+    for (const [id, b] of tabButtons) {
+      if (b.style.display === "none") continue; // skip hidden contextual tabs
+      items.push({ label: b.textContent ?? id, onClick: () => showTab(id) });
+    }
+    openPop(tabOverflowBtn, menu(items));
+  });
+  tabsBar.appendChild(tabOverflowBtn); // row 2 (tabs) — its own overflow control
+  identRow.appendChild(headerReview); // row 1, right side (margin-left:auto pins it)
+
+  // ---- Document identity + live save state (pinned top-left of the ribbon) ---
+  // Answers "what is this file, and is my work safe?" without opening a menu.
+  // The model has no title field, so the title is presentational: an explicit
+  // `documentTitle`, else the opened .docx filename, else "Untitled document".
+  const docIdent = el("div", "cw-doc-ident");
+  const titleEl = el("span", "cw-doc-title");
+  const saveWrap = el("span", "cw-save");
+  const saveDot = el("span", "cw-save-dot");
+  const saveText = el("span", "cw-save-text");
+  saveWrap.append(saveDot, saveText);
+  docIdent.append(titleEl, saveWrap);
+  identRow.insertBefore(docIdent, headerReview); // leftmost of the identity row
+
+  // ---- Import fidelity badge (Move 3): the moat made visible — but only its
+  // WARNING half. "⚠ N notes" appears when a .docx import preserved-but-adapted
+  // something, expanding to a plain-language list. A clean import (or no import at
+  // all) shows NOTHING: the badge is not in the DOM, so it doesn't even occupy
+  // header width. The old permanent "✓ Word-faithful" success state was dropped by
+  // design — a standing success indicator asserts the default assumption still
+  // holds, which trains the eye to ignore this region and makes the warning state
+  // less noticeable, not more (and it was unearned for never-imported documents).
+  const fidelityBtn = el("button", "cw-fidelity");
+  fidelityBtn.type = "button";
+  fidelityBtn.setAttribute("aria-haspopup", "true");
+  fidelityBtn.setAttribute("aria-expanded", "false");
+  // NOT appended here — refreshFidelity attaches it only in the warning state.
+  let fidelitySurface: SurfaceHandle | null = null;
+  let fidelityPanelEl: HTMLElement | null = null;
+  let fidelityOutside: ((e: MouseEvent) => void) | null = null;
+  const closeFidelityPanel = (): void => {
+    if (fidelityOutside) { window.removeEventListener("mousedown", fidelityOutside, true); fidelityOutside = null; }
+    fidelitySurface?.release();
+    fidelitySurface = null;
+    fidelityPanelEl?.remove();
+    fidelityPanelEl = null;
+    fidelityBtn.setAttribute("aria-expanded", "false");
+  };
+  // The panel lives on document.body, so destroy() with it open would strand the
+  // node, its capture-phase listener and its surface-stack entry. Closing on abort
+  // clears all three at once.
+  teardown.signal.addEventListener("abort", () => closeFidelityPanel(), { once: true });
+  const openFidelityPanel = (): void => {
+    // The badge only exists in the warning state, so the panel is only ever opened
+    // with warnings present — the old "✓ Word-faithful" clean-state branch is gone.
+    const warnings = importWarnings ?? [];
+    const n = warnings.length;
+    if (n === 0) return;
+    const panel = el("div", "cw-fidelity-panel");
+    const head = el("div", "cw-fidelity-head");
+    head.textContent = `⚠ ${n} feature${n === 1 ? "" : "s"} preserved but adapted`;
+    const sub = el("div", "cw-fidelity-sub");
+    sub.textContent =
+      "These were kept when the document opened, but adapted or simplified for editing here. Everything else round-trips faithfully.";
+    panel.append(head, sub);
+    const ul = el("ul", "cw-fidelity-list");
+    for (const w of warnings) {
+      const li = el("li");
+      li.textContent = w.message;
+      ul.append(li);
+    }
+    panel.append(ul);
+    const r = fidelityBtn.getBoundingClientRect();
+    panel.style.left = `${Math.round(Math.min(r.left, window.innerWidth - 340))}px`;
+    panel.style.top = `${Math.round(r.bottom + 5)}px`;
+    document.body.append(panel);
+    fidelityPanelEl = panel;
+    fidelityBtn.setAttribute("aria-expanded", "true");
+    fidelitySurface = openSurface({ el: panel, close: closeFidelityPanel, kind: "overlay" });
+    // Deferred a tick so the opening click doesn't immediately self-close.
+    fidelityOutside = (e: MouseEvent): void => {
+      const t = e.target as Node;
+      if (panel.contains(t) || fidelityBtn.contains(t)) return;
+      closeFidelityPanel();
+    };
+    // The abort check covers a destroy() landing inside this tick, which would
+    // otherwise register the listener after teardown had already run.
+    setTimeout(() => {
+      if (fidelityOutside && !teardown.signal.aborted) window.addEventListener("mousedown", fidelityOutside, true);
+    }, 0);
+  };
+  fidelityBtn.addEventListener("click", () => {
+    if (fidelityPanelEl) closeFidelityPanel();
+    else openFidelityPanel();
+  });
+  refreshFidelity = (): void => {
+    const n = importWarnings ? importWarnings.length : 0;
+    // Clean import or no import at all → render nothing (detach the element so it
+    // occupies no header width). Only the warning state is ever visible.
+    if (n === 0) {
+      fidelityBtn.remove();
+      if (fidelityPanelEl) closeFidelityPanel();
+      return;
+    }
+    if (!fidelityBtn.isConnected) docIdent.append(fidelityBtn);
+    fidelityBtn.className = "cw-fidelity notes";
+    fidelityBtn.textContent = `⚠ ${n} note${n === 1 ? "" : "s"}`;
+    fidelityBtn.title = `${n} feature${n === 1 ? " was" : "s were"} preserved but adapted on import. Click for details.`;
+    if (fidelityPanelEl) { closeFidelityPanel(); } // stale content — reopen on demand
+  };
+  refreshFidelity(); // initial state: no import yet → nothing rendered
+
+  // Where does a save actually go? Host pipeline > online autosync > nowhere.
+  const saveTarget: "host" | "online" | "none" = runtime.onSave ? "host" : online ? "online" : "none";
+  let docTitle = runtime.documentTitle?.trim() || "Untitled document";
+  let savedHead = editor.getChangeHead(); // "clean" baseline (changes recorded since load)
+  let lastSavedAt: number | null = null;
+  let lastDownloadAt: number | null = null;
+  let saving = false;
+
+  const stripExt = (n: string): string => n.replace(/\.[^.]+$/, "").trim() || n;
+  const fmtTime = (ts: number): string => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const isDirty = (): boolean => editor.getChangeHead() !== savedHead;
+  const applyTitle = (): void => {
+    titleEl.textContent = docTitle;
+    titleEl.title = docTitle;
+  };
+
+  refreshSaveState = (): void => {
+    const dirty = isDirty();
+    let cls: string;
+    let text: string;
+    let tip: string;
+    if (saving) {
+      cls = "saving"; text = "Saving…"; tip = "Saving your document…";
+    } else if (saveTarget === "online") {
+      // Online continuously streams every edit to the server — genuinely saved.
+      cls = "saved"; text = "Saved"; tip = "Changes are saved automatically to the server.";
+    } else if (saveTarget === "host") {
+      if (dirty) { cls = "dirty"; text = "Unsaved changes"; tip = "You have unsaved changes. Press Ctrl+S to save."; }
+      else if (lastSavedAt != null) { cls = "saved"; text = `Saved ${fmtTime(lastSavedAt)}`; tip = "All changes saved."; }
+      else { cls = "clean"; text = "No unsaved changes"; tip = "Press Ctrl+S to save."; }
+    } else {
+      // "none": nothing persists this session — be honest, never claim "Saved".
+      if (dirty) { cls = "dirty"; text = "Unsaved changes"; tip = "This document isn't connected to storage. Press Ctrl+S to download a .docx copy."; }
+      else if (lastDownloadAt != null) { cls = "clean"; text = `Copy downloaded ${fmtTime(lastDownloadAt)}`; tip = "A .docx copy was downloaded. The live document still isn't connected to storage."; }
+      else { cls = "clean"; text = "Not saved"; tip = "This document isn't connected to storage. Press Ctrl+S to download a .docx copy."; }
+    }
+    saveDot.className = "cw-save-dot " + cls;
+    saveText.textContent = text;
+    saveWrap.title = tip;
+  };
+  resetSaveBaseline = (): void => {
+    savedHead = editor.getChangeHead();
+    lastSavedAt = null;
+    lastDownloadAt = null;
+    refreshSaveState();
+  };
+  setDocTitleFromFile = (name: string | null): void => {
+    if (name) { docTitle = stripExt(name); applyTitle(); }
+  };
+  // Downloaded exports are named after the document title (filesystem-safe).
+  currentDocBaseName = (): string => docTitle.replace(/[\\/:*?"<>|]+/g, "_").trim() || "document";
+
+  // Ctrl+S / Cmd+S — bound so the browser's "Save page" dialog never fires. With
+  // a host onSave it saves through that pipeline; offline it downloads a .docx
+  // copy; online it's already autosynced, so it just re-affirms the state.
+  const triggerSave = async (): Promise<void> => {
+    if (saving) return;
+    if (saveTarget === "online") { refreshSaveState(); return; }
+    saving = true;
+    refreshSaveState();
+    try {
+      // Only re-baseline on a real save: exportAs reports failures rather than
+      // throwing, so awaiting it alone would flip the indicator to "Saved" over an
+      // export that never wrote anything — the exact state this widget exists to warn about.
+      if (await exportAs("docx")) { // honors runtime.onSave; else triggers the .docx download
+        savedHead = editor.getChangeHead();
+        if (saveTarget === "host") lastSavedAt = Date.now();
+        else lastDownloadAt = Date.now();
+      }
+    } catch (e) {
+      console.error("[save]", e);
+    } finally {
+      saving = false;
+      refreshSaveState();
+    }
+  };
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || !keyMatches("s", e)) return;
+      e.preventDefault(); // suppress the browser Save-Page dialog in every mode
+      void triggerSave();
+    },
+    { signal: teardown.signal },
+  );
+  applyTitle();
+  refreshSaveState();
+
+  // ---- Quick-access toolbar: undo / redo / save, always visible on any tab ---
+  // Undo & Redo are the two most-used commands in any editor; burying them in
+  // the File tab (critique C1) put them two clicks deep and invisible from the
+  // default tab. Surface them (plus Save) right after the document title.
+  const qat = el("div", "cw-qat");
+  const qatBtn = (icon: string, title: string, onClick: () => void): HTMLButtonElement => {
+    const b = el("button", "cw-qat-btn");
+    b.innerHTML = icon;
+    b.title = title;
+    b.addEventListener("mousedown", (e) => e.preventDefault()); // keep editor focus
+    b.addEventListener("click", () => {
+      onClick();
+      editor.focus();
+    });
+    qat.appendChild(b);
+    return b;
+  };
+  const undoQat = qatBtn(ICONS.undo, "Undo (Ctrl+Z)", () => editor.undo());
+  const redoQat = qatBtn(ICONS.redo, "Redo (Ctrl+Y)", () => editor.redo());
+  qatBtn(ICONS.save, "Save (Ctrl+S)", () => void triggerSave());
+  identRow.insertBefore(qat, headerReview); // identity row: right after the title/save cluster
+  // Grey undo/redo when the stack is empty (kept live via syncQat, below).
+  syncQat = (): void => {
+    undoQat.disabled = !editor.canUndo();
+    redoQat.disabled = !editor.canRedo();
+  };
 
   group(view, "Zoom");
   txtBtn("−", "Zoom out", () => editor.setZoom(editor.getZoom() / config.behavior.zoomStep), "font-size:15px;");
@@ -2459,10 +3013,8 @@ if (toolbar) {
   // ---- Activity panel (who created/edited, when) — online only ------------
   if (online) {
     const panel = el("div");
-    panel.className = "cw-float-drawer";
-    panel.style.cssText =
-      "position:fixed;top:0;right:0;width:300px;height:100%;z-index:45;background:#fff;border-left:1px solid #e1dfdd;" +
-      "box-shadow:-4px 0 16px rgba(0,0,0,0.08);display:none;flex-direction:column;font-size:13px;";
+    panel.className = "cw-float-drawer"; // positioning/scoping lives in the class
+    panel.style.display = "none";
     const ahead = el("div");
     ahead.style.cssText =
       "flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #e1dfdd;font-weight:600;color:#323130;";
@@ -2477,7 +3029,7 @@ if (toolbar) {
     const alist = el("div");
     alist.style.cssText = "flex:1 1 auto;overflow-y:auto;padding:2px 0;";
     panel.append(ahead, ameta, alist);
-    document.body.appendChild(panel);
+    shell.workarea.appendChild(panel);
 
     const nameOf = (f: string, l: string): string => `${f} ${l}`.trim() || "Unknown";
     const kindLabel = (origin: string): string =>
@@ -2576,16 +3128,303 @@ if (toolbar) {
   // the active highlight follows the caret on every change.
   const outlineEl = shell.outline;
   if (outlineEl) {
+    // ===== Navigator: a 48px icon rail + swappable tab panels (critique S1) ===
+    // One panel unifying the Outline, Bookmarks, page organizer and object lists,
+    // in one paradigm: Headings · Pages · Objects · Marks.
+    outlineEl.classList.add("cw-navigator");
+    const rail = el("div", "cw-nav-rail");
+    const content = el("div", "cw-nav-content");
     const head = el("div", "outline-head");
     const title = el("span");
-    title.textContent = "Outline";
     const closeBtn = el("button");
     closeBtn.innerHTML = "×";
-    closeBtn.title = "Close";
+    closeBtn.title = "Close navigator";
+    closeBtn.setAttribute("aria-label", "Close navigator");
     head.append(title, closeBtn);
-    const list = el("div");
-    list.className = "cw-outline-list";
-    outlineEl.append(head, list);
+    const panels = el("div", "cw-nav-panels");
+    content.append(head, panels);
+    outlineEl.append(rail, content);
+    const mkPanel = (id: string): HTMLElement => {
+      const p = el("div", "cw-nav-panel");
+      p.dataset["nav"] = id;
+      panels.appendChild(p);
+      return p;
+    };
+    const headingsPanel = mkPanel("headings");
+    const pagesPanel = mkPanel("pages");
+    const objectsPanel = mkPanel("objects");
+    const stylesPanel = mkPanel("styles");
+    const marksPanel = mkPanel("marks");
+    navMarksPanel = marksPanel;
+    // Headings tab content: filter + the outline list (rows 9/16).
+    const filterWrap = el("div", "cw-outline-filter");
+    const filterInput = el("input");
+    filterInput.type = "text";
+    filterInput.placeholder = "Filter headings…";
+    filterInput.setAttribute("aria-label", "Filter headings");
+    filterWrap.appendChild(filterInput);
+    const list = el("div", "cw-outline-list");
+    headingsPanel.append(filterWrap, list);
+    // Rail tabs.
+    const NAV_LABELS: Record<string, string> = { headings: "Headings", pages: "Pages", objects: "Objects", styles: "Styles", marks: "Marks" };
+    const railBtns = new Map<string, HTMLButtonElement>();
+    const setNav = (id: string): void => {
+      if (id !== "styles") endStylesPreview(); // leaving the Styles tab drops any live preview
+      title.textContent = NAV_LABELS[id] ?? "";
+      for (const [k, b] of railBtns) b.classList.toggle("active", k === id);
+      for (const p of Array.from(panels.children)) (p as HTMLElement).classList.toggle("active", (p as HTMLElement).dataset["nav"] === id);
+      if (id === "objects") buildObjects();
+      if (id === "pages") buildPages();
+      if (id === "styles") buildStyles();
+      if (id === "marks") refreshBookmarks();
+    };
+    navShow = setNav;
+    const railBtn = (id: string, icon: string, label: string): void => {
+      const b = el("button", "cw-nav-tab");
+      b.innerHTML = icon;
+      b.title = label;
+      b.setAttribute("aria-label", label);
+      b.addEventListener("mousedown", (e) => e.preventDefault());
+      b.addEventListener("click", () => setNav(id));
+      rail.appendChild(b);
+      railBtns.set(id, b);
+    };
+    railBtn("headings", ICONS.outline, "Headings");
+    railBtn("pages", ICONS.organizePages, "Pages");
+    railBtn("objects", ICONS.shapes, "Objects");
+    railBtn("styles", ICONS.styleNew, "Styles");
+    railBtn("marks", ICONS.bookmark, "Marks");
+
+    const openOrganize = (): void => {
+      if (organizeDlg) { organizeDlg.close(); organizeDlg = null; return; }
+      organizeDlg = showOrganizePages({ editor, fontRegistry, theme: config.theme, onClose: () => { organizeDlg = null; } });
+    };
+
+    // Objects tab: images / shapes / tables / equations, click to reveal.
+    const buildObjects = (): void => {
+      objectsPanel.textContent = "";
+      const blocks = editor.getDocument().blocks;
+      const label = (b: (typeof blocks)[number]): string | null =>
+        b.kind === "image" ? "Image" : b.kind === "shape" ? "Shape" : b.kind === "table" ? "Table" : b.kind === "equation" ? "Equation" : null;
+      let n = 0;
+      const counts: Record<string, number> = {};
+      for (const b of blocks) {
+        const l = label(b);
+        if (!l) continue;
+        counts[l] = (counts[l] ?? 0) + 1;
+        const row = el("button", "outline-item");
+        const lbl = el("span", "outline-label");
+        lbl.textContent = `${l} ${counts[l]}`;
+        row.appendChild(lbl);
+        row.addEventListener("mousedown", (e) => e.preventDefault());
+        row.addEventListener("click", () => editor.revealBlock(b.id));
+        objectsPanel.appendChild(row);
+        n++;
+      }
+      if (n === 0) {
+        const empty = el("div", "outline-empty");
+        empty.textContent = "No images, shapes, tables or equations yet.";
+        objectsPanel.appendChild(empty);
+      }
+    };
+
+    // Pages tab: a page list (jump to a page) + the reorder overlay.
+    const buildPages = (): void => {
+      pagesPanel.textContent = "";
+      if (config.organizePages) {
+        const act = el("button", "cw-nav-action");
+        act.textContent = "Reorder pages…";
+        act.addEventListener("mousedown", (e) => e.preventDefault());
+        act.addEventListener("click", () => openOrganize());
+        pagesPanel.appendChild(act);
+      }
+      const blocks = editor.getDocument().blocks;
+      const firstBlockOnPage = new Map<number, string>();
+      for (const b of blocks) {
+        const p = editor.getBlockPage(b.id);
+        if (p != null && !firstBlockOnPage.has(p)) firstBlockOnPage.set(p, b.id);
+      }
+      // Take the count from the layout, not from the blocks: getBlockPage is null for
+      // any block the layout hasn't placed (in the sample doc, 52 of 184), and a page
+      // can legitimately hold no top-level block at all — the sample's last page is
+      // exactly that, so deriving the count from blocks drops it from the list.
+      const lastPage = Math.max(1, editor.getLayoutInfo().pageCount);
+      for (let p = 1; p <= lastPage; p++) {
+        const row = el("button", "outline-item");
+        const lbl = el("span", "outline-label");
+        lbl.textContent = `Page ${p}`;
+        row.appendChild(lbl);
+        const target = firstBlockOnPage.get(p);
+        row.addEventListener("mousedown", (e) => e.preventDefault());
+        if (target) row.addEventListener("click", () => editor.revealBlock(target));
+        pagesPanel.appendChild(row);
+      }
+    };
+    // Styles tab (S2): a live styles panel — hover to preview, click to apply,
+    // right-click for select-all-instances / update-to-match / rename-everywhere.
+    // A chip surfaces the caret's direct-formatting overrides. Preview uses the
+    // "transient" apply + restoreParagraphsCmd primitives (no undo pollution).
+    let stylesChild: ReturnType<typeof editor.createChild> | null = null;
+    let stylesPreviewSnap: ParaSnapshot[] | null = null;
+    const endStylesPreview = (): void => {
+      if (stylesPreviewSnap) { editor.dispatch(restoreParagraphsCmd(stylesPreviewSnap)); stylesPreviewSnap = null; }
+    };
+    const buildStyles = (): void => {
+      endStylesPreview();
+      stylesPanel.textContent = "";
+      stylesChild?.destroy();
+      stylesChild = editor.createChild();
+      const child = stylesChild;
+      const doc = editor.getDocument();
+      const sheet = doc.stylesheet ?? defaultStylesheet();
+      const caret = editor.getSelection()?.focus ?? null;
+
+      if (caret && hasDirectFormattingAt(doc, caret)) {
+        const chip = el("div", "cw-styles-chip");
+        const txt = el("span");
+        txt.textContent = "Direct formatting on this text";
+        const clearBtn = el("button", "cw-styles-chip-clear");
+        clearBtn.textContent = "Clear";
+        clearBtn.title = "Reset this text to its paragraph style";
+        clearBtn.addEventListener("mousedown", (e) => e.preventDefault());
+        clearBtn.addEventListener("click", () => {
+          const s = editor.getSelection();
+          if (!s) return;
+          const collapsed = s.anchor.blockId === s.focus.blockId && s.anchor.offset === s.focus.offset;
+          const orig = s.focus;
+          // clearCharFormatting no-ops on a collapsed caret — expand to the whole
+          // paragraph so "Clear" always does something, then re-bake its named style
+          // (clear resets to raw defaults; the style re-application restores it).
+          if (collapsed) {
+            const b = editor.getDocument().blocks.find((x) => x.id === s.focus.blockId);
+            const len = b && b.kind === "paragraph" ? b.runs.reduce((nn, r) => nn + r.text.length, 0) : 0;
+            editor.setSelection({ anchor: { blockId: s.focus.blockId, offset: 0 }, focus: { blockId: s.focus.blockId, offset: len } });
+          }
+          editor.dispatch(clearCharFormatting());
+          const sid = editor.currentFormat().styleId;
+          if (sid) editor.dispatch(applyNamedStyle(sid));
+          editor.setSelection({ anchor: orig, focus: orig });
+          editor.focus();
+          buildStyles();
+        });
+        chip.append(txt, clearBtn);
+        stylesPanel.appendChild(chip);
+      }
+
+      const listEl = el("div", "cw-styles-list");
+      stylesPanel.appendChild(listEl);
+      const currentId = editor.currentFormat().styleId;
+
+      // Paragraphs the apply would touch — snapshotted before a transient preview.
+      const affectedParas = (): ParaSnapshot[] => {
+        const s = editor.getSelection();
+        if (!s) return [];
+        const blocks = editor.getDocument().blocks;
+        const ai = blocks.findIndex((b) => b.id === s.anchor.blockId);
+        const fi = blocks.findIndex((b) => b.id === s.focus.blockId);
+        if (ai < 0 || fi < 0) return []; // not top-level (e.g. a table cell) — skip preview
+        const [lo, hi] = ai <= fi ? [ai, fi] : [fi, ai];
+        const out: ParaSnapshot[] = [];
+        for (const b of blocks.slice(lo, hi + 1)) if (b.kind === "paragraph") out.push({ id: b.id, style: b.style, runs: b.runs });
+        return out;
+      };
+
+      const selectAllInstances = (styleId: string): void => {
+        const ranges = styleInstanceRanges(editor.getDocument(), styleId);
+        if (!ranges.length) return;
+        const first = ranges[0]!;
+        editor.setSelection({ anchor: { blockId: first.blockId, offset: first.start }, focus: { blockId: first.blockId, offset: first.end } });
+        editor.revealBlock(first.blockId);
+        editor.setDecorations(ranges.map((r) => ({
+          type: "highlight" as const, color: "#1a73e8", opacity: 0.26,
+          range: { anchor: { blockId: r.blockId, offset: r.start }, focus: { blockId: r.blockId, offset: r.end } },
+        })));
+        // Guarded: unmounting inside the 4s window would otherwise call into a
+        // destroyed editor.
+        window.setTimeout(() => {
+          if (!teardown.signal.aborted) editor.setDecorations([]);
+        }, 4000); // flash all instances, don't linger
+        editor.focus();
+      };
+
+      const renameStyle = (styleId: string, currentName: string): void => {
+        showInputDialog({
+          title: "Rename style", label: "Style name", initial: currentName, okLabel: "Rename",
+          validate: (v) => (v.trim() === "" ? "Enter a name." : null),
+          onSubmit: (next) => { if (next.trim() !== currentName) editor.dispatch(renameNamedStyle(styleId, next.trim())); editor.focus(); buildStyles(); },
+        });
+      };
+
+      for (const st of sheet.styles) {
+        const isChar = styleType(st) === "character";
+        const count = styleInstanceRanges(doc, st.id).length;
+        const card = el("button", "cw-style-card");
+        if (st.id === currentId) card.classList.add("current");
+        const swatch = el("span", "cw-style-swatch");
+        const name = el("span", "cw-style-name");
+        name.textContent = st.name + (isChar ? " ⓐ" : "");
+        const cnt = el("span", "cw-style-count");
+        cnt.textContent = count > 0 ? String(count) : "";
+        card.append(swatch, name, cnt);
+        card.title = `Apply "${st.name}"${count ? ` · ${count} in use` : ""}`;
+        child.render(swatch, { kind: "styleSample", styleId: st.id, sampleText: "AaBbCc" }, { fit: true, widthPx: 88, maxHeightPx: 24 });
+        card.addEventListener("mousedown", (e) => e.preventDefault());
+        card.addEventListener("mouseenter", () => {
+          endStylesPreview();
+          const snap = affectedParas();
+          if (!snap.length) return;
+          stylesPreviewSnap = snap;
+          editor.dispatch(isChar ? applyCharStyle(st.id, "transient") : applyNamedStyle(st.id, "transient"));
+        });
+        card.addEventListener("mouseleave", endStylesPreview);
+        card.addEventListener("click", () => {
+          endStylesPreview();
+          editor.dispatch(isChar ? applyCharStyle(st.id) : applyNamedStyle(st.id));
+          editor.focus();
+          buildStyles();
+        });
+        card.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          endStylesPreview();
+          const entries: MenuEntry[] = [
+            { kind: "item", label: "Select all instances", disabled: count === 0, onClick: () => selectAllInstances(st.id) },
+            { kind: "item", label: "Update to match selection", onClick: () => { editor.dispatch(updateStyleToSelection(st.id)); editor.focus(); buildStyles(); } },
+            { kind: "item", label: "Rename everywhere…", onClick: () => renameStyle(st.id, st.name) },
+          ];
+          showContextMenu(e.clientX, e.clientY, entries);
+        });
+        listEl.appendChild(card);
+      }
+      if (sheet.styles.length === 0) {
+        const empty = el("div", "outline-empty");
+        empty.textContent = "No styles defined.";
+        stylesPanel.appendChild(empty);
+      }
+    };
+    setNav("headings"); // default tab
+    // Drag-to-resize handle on the pane's right edge (O5).
+    const resizer = el("div", "cw-outline-resize");
+    resizer.title = "Drag to resize";
+    outlineEl.appendChild(resizer);
+    resizer.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = outlineEl.getBoundingClientRect().width;
+      const onMove = (ev: MouseEvent): void => {
+        const w = Math.max(180, Math.min(520, startW + (ev.clientX - startX)));
+        outlineEl.style.flex = `0 0 ${w}px`;
+        outlineEl.style.width = `${w}px`;
+      };
+      const onUp = (): void => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+
+    const collapsed = new Set<string>(); // heading ids whose sub-tree is collapsed
+    let filterText = "";
 
     // Detect a heading + its outline level. Real .docx files name their styles
     // "Heading 1" but keep an OPAQUE styleId (e.g. "Style27"), so we resolve the
@@ -2615,54 +3454,175 @@ if (toolbar) {
       }
       return level;
     };
-    type Entry = { id: string; index: number; level: number };
+    type Entry = { id: string; index: number; level: number; text: string };
     let entries: Entry[] = [];
-    const buttons = new Map<string, HTMLButtonElement>();
-    let lastSig = "\0"; // sentinel — guarantees the first build runs
+    const rows = new Map<string, HTMLElement>();
+    const pageSpans = new Map<string, HTMLElement>();
+    let lastSig = "\0"; // sentinel — guarantees the first render runs
 
     const updateActive = (): void => {
       const caret = editor.getSelection()?.focus.blockId ?? null;
       const ci = caret ? editor.getDocument().blocks.findIndex((b) => b.id === caret) : -1;
       let activeId: string | null = null;
       for (const e of entries) if (ci >= 0 && e.index <= ci) activeId = e.id; // nearest heading at/above caret
-      for (const [id, b] of buttons) b.classList.toggle("active", id === activeId);
+      for (const [id, r] of rows) r.classList.toggle("active", id === activeId);
+    };
+    const updatePages = (): void => {
+      for (const [id, span] of pageSpans) {
+        const p = editor.getBlockPage(id);
+        span.textContent = p != null ? String(p) : "";
+      }
+    };
+    const hasChildren = (i: number): boolean => i + 1 < entries.length && entries[i + 1]!.level > entries[i]!.level;
+
+    // Drag-to-reorder (O1): dragging a heading moves its WHOLE section — the
+    // heading plus every block up to the next same-or-shallower heading —
+    // reusing the block-range move that Organize Pages uses (never splits).
+    let dragFromId: string | null = null;
+    const dropLine = el("div", "cw-outline-drop");
+    dropLine.style.display = "none";
+    outlineEl.appendChild(dropLine);
+    const sectionRange = (headingId: string): { firstId: string; lastId: string } | null => {
+      const blocks = editor.getDocument().blocks;
+      const i = entries.findIndex((e) => e.id === headingId);
+      const startIdx = blocks.findIndex((b) => b.id === headingId);
+      if (i < 0 || startIdx < 0) return null;
+      let endIdx = blocks.length;
+      for (let j = i + 1; j < entries.length; j++) {
+        if (entries[j]!.level <= entries[i]!.level) {
+          // `entries` is cached from dragstart; an edit landing mid-drag can leave a
+          // heading id the document no longer has. findIndex would return -1 and walk
+          // us off the front of the array — keep the to-end-of-document default instead.
+          const at = blocks.findIndex((b) => b.id === entries[j]!.id);
+          if (at > startIdx) endIdx = at;
+          break;
+        }
+      }
+      const lastBlock = blocks[endIdx - 1];
+      if (!lastBlock) return null;
+      return { firstId: blocks[startIdx]!.id, lastId: lastBlock.id };
+    };
+    const afterAnchor = (headingId: string): string | null => {
+      const i = entries.findIndex((e) => e.id === headingId);
+      for (let j = i + 1; j < entries.length; j++) if (entries[j]!.level <= entries[i]!.level) return entries[j]!.id;
+      return null;
+    };
+    const performDrop = (targetId: string, after: boolean): void => {
+      if (!dragFromId || dragFromId === targetId) return;
+      const range = sectionRange(dragFromId);
+      if (!range) return;
+      const anchorId = after ? afterAnchor(targetId) : targetId;
+      editor.dispatch(reorderPageGroupCmd(range.firstId, range.lastId, anchorId));
+      editor.focus();
+    };
+
+    // Render the visible rows (O2 collapse + O3 filter + O4 level styling + O6
+    // page numbers). Structure-only; page numbers/active state patch separately.
+    const render = (): void => {
+      list.textContent = "";
+      rows.clear();
+      pageSpans.clear();
+      if (entries.length === 0) {
+        const empty = el("div", "outline-empty");
+        empty.textContent = "No headings yet. Apply a Heading style (Heading 1–9) to build an outline.";
+        list.appendChild(empty);
+        return;
+      }
+      const q = filterText.trim().toLowerCase();
+      let collapseLevel: number | null = null; // while set, hide entries deeper than it
+      entries.forEach((e, i) => {
+        let visible: boolean;
+        if (q) visible = e.text.toLowerCase().includes(q); // filter is flat, ignores collapse
+        else if (collapseLevel !== null && e.level > collapseLevel) visible = false;
+        else {
+          collapseLevel = null;
+          visible = true;
+          if (collapsed.has(e.id) && hasChildren(i)) collapseLevel = e.level;
+        }
+        if (!visible) return;
+        const row = el("div", `outline-item lvl-${Math.min(e.level, 3)}`);
+        row.style.paddingLeft = `${6 + e.level * 12}px`;
+        const chev = el("button", "outline-chevron");
+        chev.setAttribute("aria-hidden", "true");
+        if (hasChildren(i) && !q) {
+          const isCol = collapsed.has(e.id);
+          chev.textContent = isCol ? "▸" : "▾";
+          chev.title = isCol ? "Expand section" : "Collapse section";
+          chev.addEventListener("mousedown", (ev) => ev.preventDefault());
+          chev.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            if (collapsed.has(e.id)) collapsed.delete(e.id);
+            else collapsed.add(e.id);
+            build();
+          });
+        } else {
+          chev.classList.add("leaf");
+        }
+        const label = el("span", "outline-label");
+        label.textContent = e.text;
+        label.title = e.text; // full text on hover — truncation is never unrecoverable (O5)
+        const page = el("span", "outline-page");
+        row.append(chev, label, page);
+        row.addEventListener("mousedown", (ev) => ev.preventDefault());
+        row.addEventListener("click", () => editor.revealBlock(e.id));
+        // Drag-to-reorder this heading's section.
+        row.draggable = true;
+        row.addEventListener("dragstart", (ev) => {
+          dragFromId = e.id;
+          if (ev.dataTransfer) { ev.dataTransfer.setData("text/plain", e.id); ev.dataTransfer.effectAllowed = "move"; }
+          row.classList.add("cw-outline-dragging");
+        });
+        row.addEventListener("dragend", () => { row.classList.remove("cw-outline-dragging"); dropLine.style.display = "none"; dragFromId = null; });
+        row.addEventListener("dragover", (ev) => {
+          if (!dragFromId || dragFromId === e.id) return;
+          ev.preventDefault();
+          if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
+          const r = row.getBoundingClientRect();
+          const after = ev.clientY > r.top + r.height / 2;
+          row.dataset["dropAfter"] = after ? "1" : "0";
+          dropLine.style.display = "block";
+          dropLine.style.top = `${(after ? r.bottom : r.top) - outlineEl.getBoundingClientRect().top}px`;
+        });
+        row.addEventListener("drop", (ev) => {
+          ev.preventDefault();
+          performDrop(e.id, row.dataset["dropAfter"] === "1");
+          dropLine.style.display = "none";
+        });
+        rows.set(e.id, row);
+        pageSpans.set(e.id, page);
+        list.appendChild(row);
+      });
     };
 
     const build = (): void => {
-      const collected: { entry: Entry; text: string }[] = [];
+      const collected: Entry[] = [];
       editor.getDocument().blocks.forEach((b, index) => {
         if (b.kind !== "paragraph") return;
         const level = headingLevel(b.style.namedStyle);
         if (level === null) return;
         const text = b.runs.map((r) => r.text).join("").trim();
         if (text === "") return; // skip empty heading-styled paragraphs (structural artifacts)
-        collected.push({ entry: { id: b.id, index, level }, text });
+        collected.push({ id: b.id, index, level, text });
       });
-      const sig = collected.map((c) => `${c.entry.id}|${c.entry.level}|${c.text}`).join("\n");
+      entries = collected;
+      // Re-render only when the heading set / collapse / filter changed, so
+      // typing (which fires refreshOutline) doesn't reset the pane's scroll.
+      const sig =
+        collected.map((c) => `${c.id}|${c.level}|${c.text}`).join("\n") +
+        "" + [...collapsed].sort().join(",") +
+        "" + filterText.trim().toLowerCase();
       if (sig !== lastSig) {
         lastSig = sig;
-        entries = collected.map((c) => c.entry);
-        list.textContent = "";
-        buttons.clear();
-        if (collected.length === 0) {
-          const empty = el("div", "outline-empty");
-          empty.textContent = "No headings yet. Apply a Heading style (Heading 1–9) to build an outline.";
-          list.appendChild(empty);
-        } else {
-          for (const c of collected) {
-            const item = el("button", "outline-item");
-            item.style.paddingLeft = `${12 + c.entry.level * 14}px`;
-            item.textContent = c.text;
-            item.title = c.text;
-            item.addEventListener("mousedown", (e) => e.preventDefault());
-            item.addEventListener("click", () => editor.revealBlock(c.entry.id));
-            buttons.set(c.entry.id, item);
-            list.appendChild(item);
-          }
-        }
+        render();
       }
+      updatePages();
       updateActive();
     };
+
+    filterInput.addEventListener("input", () => {
+      filterText = filterInput.value;
+      build();
+    });
 
     let open = false;
     const setOpen = (v: boolean): void => {
@@ -2671,35 +3631,36 @@ if (toolbar) {
       outlineBtn.classList.toggle("active", v);
       if (v) build();
     };
-    closeBtn.addEventListener("click", () => setOpen(false));
-    outlineToggle = (): void => setOpen(!open);
+    closeBtn.addEventListener("click", () => { setOpen(false); autoCollapsedOutline = false; }); // manual close cancels auto-reopen
+    outlineToggle = (): void => { setOpen(!open); autoCollapsedOutline = false; };
     refreshOutline = (): void => {
       if (open) build();
     };
+    setOutlineOpen = setOpen; // for the responsive auto-collapse (row 12)
+    isOutlineOpen = (): boolean => open;
     setOpen(runtime.view?.outline ?? true); // visible by default; embedder can start it closed
   }
 
   // ---- Bookmarks panel (list + Go To + add/rename/delete) -----------------
   {
-    const panel = el("div", "cw-float-drawer");
-    panel.style.cssText =
-      "position:fixed;top:0;right:0;width:300px;height:100%;z-index:45;background:#fff;border-left:1px solid #e1dfdd;" +
-      "box-shadow:-4px 0 16px rgba(0,0,0,0.08);display:none;flex-direction:column;font-size:13px;";
-    const head = el("div", "outline-head");
-    const title = el("span");
-    title.textContent = "Bookmarks";
-    const addBtn = el("button");
-    addBtn.textContent = "+";
+    // Bookmarks render into the Navigator's Marks tab (row 17), not a drawer.
+    const addBtn = el("button", "cw-nav-action");
+    addBtn.textContent = "＋ Add bookmark";
     addBtn.title = "Add a bookmark for the current selection";
-    addBtn.style.cssText = "margin-left:auto;border:none;background:transparent;font-size:18px;cursor:pointer;color:#2b579a;";
-    const closeBtn = el("button");
-    closeBtn.innerHTML = "×";
-    closeBtn.title = "Close";
-    head.append(title, addBtn, closeBtn);
-    const list = el("div");
-    list.style.cssText = "flex:1 1 auto;overflow-y:auto;padding:2px 0;";
-    panel.append(head, list);
-    document.body.appendChild(panel);
+    const list = el("div", "cw-outline-list");
+    if (navMarksPanel) navMarksPanel.append(addBtn, list);
+
+    // OOXML bookmark-name rules — a native prompt() could neither enforce nor
+    // explain these (critique B5). Returns an error message, or null when valid.
+    const bookmarkNameError = (raw: string, self?: string): string | null => {
+      const n = raw.trim();
+      if (n === "") return "Enter a name.";
+      if (n.length > 40) return "Use 40 characters or fewer.";
+      if (/\s/.test(n)) return "No spaces — use letters, digits, or underscores.";
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(n)) return "Start with a letter or _, then letters, digits, or _.";
+      if (n !== self && Object.prototype.hasOwnProperty.call(editor.getDocument().bookmarks ?? {}, n)) return `"${n}" already exists.`;
+      return null;
+    };
 
     const build = (): void => {
       const names = Object.keys(editor.getDocument().bookmarks ?? {}).sort((a, b) => a.localeCompare(b));
@@ -2729,11 +3690,17 @@ if (toolbar) {
           return b;
         };
         const renameB = iconBtn("✎", "Rename bookmark", () => {
-          const next = prompt("Rename bookmark:", name);
-          if (next && next.trim() && next !== name) {
-            editor.dispatch(renameBookmarkCmd(name, next.trim()));
-            editor.focus();
-          }
+          showInputDialog({
+            title: "Rename bookmark",
+            label: "Bookmark name",
+            initial: name,
+            okLabel: "Rename",
+            validate: (v) => bookmarkNameError(v, name),
+            onSubmit: (next) => {
+              if (next.trim() !== name) editor.dispatch(renameBookmarkCmd(name, next.trim()));
+              editor.focus();
+            },
+          });
         });
         const delB = iconBtn("🗑", "Delete bookmark", () => {
           editor.dispatch(removeBookmarkCmd(name));
@@ -2744,27 +3711,24 @@ if (toolbar) {
       }
     };
 
-    let open = false;
-    const setOpen = (v: boolean): void => {
-      open = v;
-      panel.style.display = v ? "flex" : "none";
-      bookmarksBtn.classList.toggle("active", v);
-      if (v) build();
-    };
     addBtn.addEventListener("click", () => {
-      const name = prompt("Bookmark name:");
-      if (name && name.trim()) {
-        editor.dispatch(addBookmarkCmd(name.trim()));
-        editor.focus();
-        build();
-      }
+      showInputDialog({
+        title: "Add bookmark",
+        label: "Bookmark name",
+        placeholder: "e.g. Introduction",
+        okLabel: "Add",
+        validate: (v) => bookmarkNameError(v),
+        onSubmit: (name) => {
+          editor.dispatch(addBookmarkCmd(name.trim()));
+          editor.focus();
+          build();
+        },
+      });
     });
-    closeBtn.addEventListener("click", () => setOpen(false));
-    toggleBookmarks = (): void => setOpen(!open);
-    refreshBookmarks = (): void => {
-      if (open) build();
-    };
-    if (runtime.view?.bookmarks) setOpen(true); // closed by default; embedder can open it
+    toggleBookmarks = (): void => { setOutlineOpen(true); navShow("marks"); };
+    refreshBookmarks = (): void => { if (navMarksPanel) build(); };
+    build();
+    if (runtime.view?.bookmarks) { setOutlineOpen(true); navShow("marks"); }
   }
 
   // ---- Review pane (track changes + comments) — docked right, in-shell ----
@@ -2975,6 +3939,493 @@ if (toolbar) {
     if (runtime.view?.reviewPane) setOpen(true); // closed by default; embedder can open it
   }
 
+  // ---- Inspector (Move 2): right-docked, selection-aware property sheet ------
+  // Text + Paragraph + Table + Page + Object (image/shape) sections; every control
+  // applies LIVE as one undoable edit (no Apply button). Each section covers the
+  // common levers; the matching dialog stays as the advanced fallback (colour,
+  // effects, borders, page background, anchor offsets) per the parity rule, so no
+  // dialog is deleted.
+  //
+  // Information architecture: a breadcrumb scope trail (Page › Table › Cell ›
+  // Paragraph › Text) heads the panel; below it the sections render outer→inner and
+  // each is a collapsible disclosure whose collapsed header keeps a live one-line
+  // value summary (collapsing costs the controls, never the information). Default
+  // expansion follows the selection's tightest scope; a manual toggle wins and
+  // persists. See the machinery block below.
+  {
+    const inspectorEl = shell.inspector;
+    const head = el("div", "cw-insp-head");
+    const title = el("span", "cw-insp-title");
+    title.textContent = "Inspector";
+    const closeBtn = el("button", "cw-insp-close");
+    closeBtn.innerHTML = "×";
+    closeBtn.title = "Close inspector";
+    closeBtn.setAttribute("aria-label", "Close inspector");
+    closeBtn.addEventListener("click", () => toggleInspector());
+    head.append(title, closeBtn);
+    const bodyEl = el("div", "cw-insp-body");
+    inspectorEl.append(head, bodyEl);
+
+    const toPt = (px: number): number => Math.round(sharedPxToPt(px) * 2) / 2;
+    const fromPt = (pt: number): number => sharedPtToPx(pt);
+
+    // ---- Information architecture (Move 2 restructure) ----------------------
+    // Every section is a collapsible disclosure. A COLLAPSED header still shows a
+    // live one-line value summary of its own state (Text → "Calibri · 12 · Bold"),
+    // so collapsing costs the user the CONTROLS but never the INFORMATION. Default
+    // expansion follows the selection's tightest scope (so "Page collapsed by
+    // default" falls out as a consequence, not a special case); a manual toggle
+    // wins over that rule and PERSISTS (localStorage — the same convention as the
+    // colour/shape recents) so the panel never fights the user.
+    const OVERRIDE_KEY = "cw:inspector:collapse";
+    const loadOverrides = (): Record<string, boolean> => {
+      try {
+        const raw = localStorage.getItem(OVERRIDE_KEY);
+        const o: unknown = raw ? JSON.parse(raw) : {};
+        return o && typeof o === "object" ? (o as Record<string, boolean>) : {};
+      } catch {
+        return {};
+      }
+    };
+    const sectionOverrides = loadOverrides();
+    const persistOverrides = (): void => {
+      try { localStorage.setItem(OVERRIDE_KEY, JSON.stringify(sectionOverrides)); } catch { /* storage optional */ }
+    };
+    // The section whose scope the selection most tightly addresses — set per
+    // rebuild. Its section is expanded by default; ancestors collapse.
+    let tightestSection = "Page";
+    const isExpanded = (name: string): boolean =>
+      name in sectionOverrides ? !!sectionOverrides[name] : name === tightestSection;
+    const toggleSection = (name: string): void => {
+      sectionOverrides[name] = !isExpanded(name);
+      persistOverrides();
+      rebuild();
+    };
+    // A collapsible section. `summary` shows in the header while collapsed; the
+    // returned element is the body the caller appends rows into. Callers early-out
+    // (skip building rows) when `expanded` is false — the summary already carries
+    // the information.
+    const insSection = (name: string, summary: string, expanded: boolean): HTMLElement => {
+      const s = el("div", "cw-insp-section" + (expanded ? "" : " collapsed"));
+      const h = el("button", "cw-insp-sec-head");
+      (h as HTMLButtonElement).type = "button";
+      h.setAttribute("aria-expanded", String(expanded));
+      const chev = el("span", "cw-insp-chevron");
+      chev.innerHTML = chevron(false);
+      const t = el("span", "cw-insp-sec-title");
+      t.textContent = name;
+      const sum = el("span", "cw-insp-sec-summary");
+      sum.textContent = summary;
+      h.append(chev, t, sum);
+      h.addEventListener("click", () => toggleSection(name));
+      const body = el("div", "cw-insp-sec-body");
+      s.append(h, body);
+      bodyEl.append(s);
+      return body;
+    };
+    const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+    const insRow = (parent: HTMLElement, label: string | null, ...controls: HTMLElement[]): void => {
+      const r = el("div", "cw-insp-row");
+      if (label !== null) { const l = el("span", "cw-insp-label"); l.textContent = label; r.append(l); }
+      for (const c of controls) r.append(c);
+      parent.append(r);
+    };
+    const insSelect = (opts: { value: string; label: string }[], value: string, onChange: (v: string) => void): HTMLSelectElement => {
+      const s = document.createElement("select");
+      for (const o of opts) { const op = document.createElement("option"); op.value = o.value; op.textContent = o.label; s.append(op); }
+      s.value = value;
+      s.addEventListener("change", () => { onChange(s.value); editor.focus(); });
+      return s;
+    };
+    const insNumber = (value: number, min: number, max: number, onCommit: (n: number) => void): HTMLInputElement => {
+      const i = document.createElement("input");
+      i.type = "number"; i.min = String(min); i.max = String(max); i.step = "1";
+      i.value = String(value);
+      i.addEventListener("change", () => { const n = Number(i.value); if (Number.isFinite(n)) onCommit(n); editor.focus(); });
+      return i;
+    };
+    // A decimal-stepped numeric input (page margins in inches etc.).
+    const insDecimal = (value: number, min: number, max: number, step: number, onCommit: (n: number) => void): HTMLInputElement => {
+      const i = document.createElement("input");
+      i.type = "number"; i.min = String(min); i.max = String(max); i.step = String(step);
+      i.value = String(value);
+      i.addEventListener("change", () => { const n = Number(i.value); if (Number.isFinite(n)) onCommit(n); editor.focus(); });
+      return i;
+    };
+    // Two controls side-by-side in one row cell (e.g. Top/Bottom margins).
+    const insPair = (a: HTMLElement, b: HTMLElement): HTMLElement => {
+      const w = el("div", "cw-insp-pair");
+      w.append(a, b);
+      return w;
+    };
+    const insToggles = (defs: { label: string; title: string; on: boolean; onClick: () => void }[]): HTMLElement => {
+      const wrap = el("div", "cw-insp-btns");
+      for (const d of defs) {
+        const b = el("button", "cw-insp-tgl");
+        b.textContent = d.label;
+        b.title = d.title;
+        if (d.on) b.classList.add("on");
+        b.addEventListener("mousedown", (e) => e.preventDefault());
+        b.addEventListener("click", () => { d.onClick(); editor.focus(); });
+        wrap.append(b);
+      }
+      return wrap;
+    };
+
+    const textSummary = (f: ReturnType<typeof editor.currentFormat>): string => {
+      const fam = (f.fontFamily ?? "").split(",")[0]!.trim() || "Default";
+      const flags: string[] = [];
+      if (f.bold) flags.push("Bold");
+      if (f.italic) flags.push("Italic");
+      if (f.underline) flags.push("Underline");
+      if (f.strikethrough) flags.push("Strike");
+      return `${fam} · ${toPt(f.fontSizePx ?? 16)} · ${flags.length ? flags.join(" ") : "Regular"}`;
+    };
+    const buildTextSection = (f: ReturnType<typeof editor.currentFormat>): void => {
+      const expanded = isExpanded("Text");
+      const sec = insSection("Text", textSummary(f), expanded);
+      if (!expanded) return;
+      const fams = toolbarFonts(config.fonts).map((x) => ({ value: x.value, label: x.label }));
+      const famVal = fams.find((x) => x.value.toLowerCase() === (f.fontFamily ?? "").toLowerCase())?.value ?? f.fontFamily ?? fams[0]?.value ?? "";
+      insRow(sec, "Font", insSelect(fams, famVal, (v) => editor.setCharStyle({ fontFamily: v })));
+      insRow(sec, "Size (pt)", insNumber(toPt(f.fontSizePx ?? 16), 6, 72, (pt) => editor.setCharStyle({ fontSizePx: Math.min(96, Math.max(6, fromPt(pt))) })));
+      insRow(sec, "Style", insToggles([
+        { label: "B", title: "Bold", on: f.bold, onClick: () => editor.toggleStyle("bold") },
+        { label: "I", title: "Italic", on: f.italic, onClick: () => editor.toggleStyle("italic") },
+        { label: "U", title: "Underline", on: f.underline, onClick: () => editor.toggleStyle("underline") },
+        { label: "S", title: "Strikethrough", on: f.strikethrough, onClick: () => editor.toggleStyle("strikethrough") },
+      ]));
+      insRow(sec, "Caps", insToggles([
+        { label: "AB", title: "All caps", on: f.caps, onClick: () => editor.setCharStyle({ caps: !f.caps }) },
+        { label: "Ab", title: "Small caps", on: f.smallCaps, onClick: () => editor.setCharStyle({ smallCaps: !f.smallCaps }) },
+      ]));
+    };
+
+    const lineLabel = (lh: number): string =>
+      lh === 1 ? "Single" : lh === 1.15 ? "1.15" : lh === 1.5 ? "1.5" : lh === 2 ? "Double" : String(lh);
+    const paragraphSummary = (f: ReturnType<typeof editor.currentFormat>, ps: ParaStyle | null): string => {
+      const lh = ps?.lineHeight ?? 1;
+      return `${cap(f.align ?? "left")} · ${lineLabel(lh)} · ${toPt(ps?.spaceBeforePx ?? 0)}/${toPt(ps?.spaceAfterPx ?? 0)} pt`;
+    };
+    const buildParagraphSection = (f: ReturnType<typeof editor.currentFormat>): void => {
+      const ps = editor.currentParaStyle();
+      const expanded = isExpanded("Paragraph");
+      const sec = insSection("Paragraph", paragraphSummary(f, ps), expanded);
+      if (!expanded) return;
+      const aligns = (["left", "center", "right", "justify"] as const);
+      insRow(sec, "Align", insToggles(aligns.map((a) => ({
+        label: a.charAt(0).toUpperCase(), title: a.charAt(0).toUpperCase() + a.slice(1), on: f.align === a, onClick: () => editor.align(a),
+      }))));
+      const lh = ps?.lineHeight ?? 1;
+      insRow(sec, "Line", insSelect(
+        [{ value: "1", label: "Single" }, { value: "1.15", label: "1.15" }, { value: "1.5", label: "1.5" }, { value: "2", label: "Double" }],
+        String(lh),
+        (v) => {
+          // Clearing lineRule/lineHeightPx via Object.assign (exactOptionalPropertyTypes).
+          const patch: Partial<ParaStyle> = { lineHeight: Number(v) };
+          Object.assign(patch, { lineRule: undefined, lineHeightPx: undefined });
+          editor.dispatch(setParaProps(patch));
+        },
+      ));
+      insRow(sec, "Before (pt)", insNumber(toPt(ps?.spaceBeforePx ?? 0), 0, 200, (pt) => editor.dispatch(setParaProps({ spaceBeforePx: fromPt(Math.max(0, pt)) }))));
+      insRow(sec, "After (pt)", insNumber(toPt(ps?.spaceAfterPx ?? 0), 0, 200, (pt) => editor.dispatch(setParaProps({ spaceAfterPx: fromPt(Math.max(0, pt)) }))));
+    };
+
+    // ---- Page / Section (live page-setup levers) ----------------------------
+    // The common levers, applied live (no Apply); size/orientation/margins/columns.
+    // The Page Layout dialog stays the advanced fallback (borders, page colour,
+    // header/footer distance, line numbering) per the parity rule.
+    const PL_SIZES: Record<string, { w: number; h: number }> = {
+      Letter: { w: 816, h: 1056 },
+      A4: { w: 794, h: 1123 },
+      Legal: { w: 816, h: 1344 },
+    };
+    const PL_MARGINS: Record<string, number> = { Normal: 96, Narrow: 48, Wide: 144 };
+    const applyPage = (mut: (g: ReturnType<typeof pageSetupAt>) => void): void => {
+      const base = pageSetupAt({ doc: editor.getDocument(), selection: editor.getSelection() });
+      mut(base);
+      editor.dispatch(applyPageSetup(base));
+    };
+    const pageSizeName = (geo: ReturnType<typeof pageSetupAt>): string =>
+      Object.keys(PL_SIZES).find((k) => {
+        const s = PL_SIZES[k]!;
+        return (s.w === geo.pageWidthPx && s.h === geo.pageHeightPx) || (s.h === geo.pageWidthPx && s.w === geo.pageHeightPx);
+      }) ?? "Custom";
+    const pageSummary = (geo: ReturnType<typeof pageSetupAt>): string => {
+      const orient = geo.pageWidthPx > geo.pageHeightPx ? "Landscape" : "Portrait";
+      const cm = Math.round((geo.marginPx.top / PX_PER_INCH) * 2.54 * 10) / 10;
+      return `${pageSizeName(geo)} · ${orient} · ${cm} cm`;
+    };
+    const buildPageSection = (): void => {
+      const geo = pageSetupAt({ doc: editor.getDocument(), selection: editor.getSelection() });
+      const expanded = isExpanded("Page");
+      const sec = insSection("Page", pageSummary(geo), expanded);
+      if (!expanded) return;
+      const landscape = geo.pageWidthPx > geo.pageHeightPx;
+      const sizeName = pageSizeName(geo);
+      insRow(sec, "Size", insSelect(
+        [...Object.keys(PL_SIZES).map((k) => ({ value: k, label: k })), { value: "Custom", label: "Custom" }],
+        sizeName,
+        (v) => {
+          const s = PL_SIZES[v];
+          if (!s) return;
+          applyPage((g) => { g.pageWidthPx = landscape ? s.h : s.w; g.pageHeightPx = landscape ? s.w : s.h; });
+        },
+      ));
+      insRow(sec, "Orient", insToggles([
+        { label: "Portrait", title: "Portrait", on: !landscape, onClick: () => { if (landscape) applyPage((g) => { [g.pageWidthPx, g.pageHeightPx] = [g.pageHeightPx, g.pageWidthPx]; }); } },
+        { label: "Landscape", title: "Landscape", on: landscape, onClick: () => { if (!landscape) applyPage((g) => { [g.pageWidthPx, g.pageHeightPx] = [g.pageHeightPx, g.pageWidthPx]; }); } },
+      ]));
+      insRow(sec, "Margins", insToggles(Object.keys(PL_MARGINS).map((k) => ({
+        label: k, title: `${k} margins`, on: false,
+        onClick: () => { const m = PL_MARGINS[k]!; applyPage((g) => { g.marginPx = { top: m, right: m, bottom: m, left: m }; }); },
+      }))));
+      const inch = (px: number): number => Math.round((px / PX_PER_INCH) * 100) / 100;
+      insRow(sec, "Top / Btm", insPair(
+        insDecimal(inch(geo.marginPx.top), 0, 6, 0.1, (v) => applyPage((g) => { g.marginPx = { ...g.marginPx, top: Math.round(v * PX_PER_INCH) }; })),
+        insDecimal(inch(geo.marginPx.bottom), 0, 6, 0.1, (v) => applyPage((g) => { g.marginPx = { ...g.marginPx, bottom: Math.round(v * PX_PER_INCH) }; })),
+      ));
+      insRow(sec, "Left / Rt", insPair(
+        insDecimal(inch(geo.marginPx.left), 0, 6, 0.1, (v) => applyPage((g) => { g.marginPx = { ...g.marginPx, left: Math.round(v * PX_PER_INCH) }; })),
+        insDecimal(inch(geo.marginPx.right), 0, 6, 0.1, (v) => applyPage((g) => { g.marginPx = { ...g.marginPx, right: Math.round(v * PX_PER_INCH) }; })),
+      ));
+      const colCount = geo.columns?.count ?? 1;
+      insRow(sec, "Columns", insSelect(
+        [1, 2, 3].map((n) => ({ value: String(n), label: String(n) })),
+        String(Math.min(3, colCount)),
+        (v) => {
+          const n = Number(v);
+          applyPage((g) => { g.columns = n <= 1 ? null : { count: n, gapPx: g.columns?.gapPx ?? 36, sep: g.columns?.sep ?? false }; });
+        },
+      ));
+    };
+
+    // ---- Table (live cell / row / table levers) -----------------------------
+    // Shown when the caret is in a table cell: cell vertical alignment + text
+    // direction, row height + flags, and table width / alignment / indent — each
+    // applied live to the caret's cell or its table. Borders & Shading stays in the
+    // dialog (advanced fallback) per the parity rule.
+    const buildTableSection = (): void => {
+      const doc = editor.getDocument();
+      const sel = editor.getSelection();
+      const loc = sel ? locateParagraph(doc, sel.focus.blockId) : null;
+      if (!loc || loc.kind !== "cell") return;
+      const table = containerListOf(doc, loc.where)[loc.bi] as TableBlock | undefined;
+      if (!table || table.kind !== "table") return;
+      const row: { cells: TableCell[]; props?: RowProps } | undefined = table.rows[loc.ri];
+      const cell: TableCell | undefined = row?.cells[loc.ci];
+      const rowCount = table.rows.length;
+      const colCount = table.rows.reduce((m, r) => Math.max(m, r.cells.length), 0);
+      const hasBorders = !!table.defaultBorders ||
+        table.rows.some((r) => r.cells.some((c) => { const b = c.borders; return !!b && !!(b.top || b.bottom || b.left || b.right); }));
+      const expanded = isExpanded("Table");
+      const sec = insSection("Table", `${rowCount}×${colCount} · ${hasBorders ? "Grid" : "No borders"}`, expanded);
+      if (!expanded) return;
+
+      // Cell vertical alignment (top = clear, since it's the default).
+      const vAlign = cell?.vAlign ?? "top";
+      insRow(sec, "Cell", insToggles((["top", "center", "bottom"] as const).map((a) => ({
+        label: a.charAt(0).toUpperCase() + a.slice(1), title: `Vertical align ${a}`, on: vAlign === a,
+        onClick: () => editor.dispatch(setCellVAlignCmd(a === "top" ? null : a)),
+      }))));
+
+      // Cell text direction (horizontal = clear).
+      const dirRaw = cell?.textDirection;
+      const dir = dirRaw === "tbRl" || dirRaw === "btLr" ? dirRaw : "lrTb";
+      insRow(sec, "Direction", insSelect(
+        [{ value: "lrTb", label: "Horizontal" }, { value: "tbRl", label: "Rotate 90°" }, { value: "btLr", label: "Rotate 270°" }],
+        dir,
+        (v) => editor.dispatch(setCellTextDirectionCmd(v === "lrTb" ? null : (v as "tbRl" | "btLr"))),
+      ));
+
+      // Row height rule + value.
+      const h = row?.props?.height ?? null;
+      insRow(sec, "Row height", insSelect(
+        [{ value: "none", label: "Auto" }, { value: "atLeast", label: "At least" }, { value: "exact", label: "Exactly" }],
+        h ? h.rule : "none",
+        (v) => {
+          if (v === "none") editor.dispatch(setRowHeightAtSelectionCmd(null));
+          else editor.dispatch(setRowHeightAtSelectionCmd({ value: h && h.value > 0 ? h.value : 40, rule: v as "atLeast" | "exact" }));
+        },
+      ));
+      if (h) insRow(sec, "Height (px)", insNumber(Math.round(h.value), 1, 2000, (n) => {
+        if (n > 0) editor.dispatch(setRowHeightAtSelectionCmd({ value: n, rule: h.rule }));
+      }));
+
+      // Row flags.
+      insRow(sec, "Row", insToggles([
+        { label: "Keep", title: "Keep row together (don't split across pages)", on: !!row?.props?.cantSplit, onClick: () => editor.dispatch(setRowPropsCmd({ cantSplit: !row?.props?.cantSplit })) },
+        { label: "Header", title: "Repeat as header row on every page", on: !!row?.props?.repeatHeader, onClick: () => editor.dispatch(setRowPropsCmd({ repeatHeader: !row?.props?.repeatHeader })) },
+      ]));
+
+      // Table preferred width.
+      const pw = table.preferredWidth ?? null;
+      const wUnit = pw ? (pw.type === "pct" ? "pct" : "in") : "full";
+      insRow(sec, "Width", insSelect(
+        [{ value: "full", label: "Full width" }, { value: "pct", label: "% of page" }, { value: "in", label: "Inches" }],
+        wUnit,
+        (v) => {
+          if (v === "full") editor.dispatch(setTablePreferredWidthAtSelectionCmd(null));
+          else if (v === "pct") editor.dispatch(setTablePreferredWidthAtSelectionCmd({ type: "pct", value: pw?.type === "pct" ? pw.value : 50 }));
+          else editor.dispatch(setTablePreferredWidthAtSelectionCmd({ type: "px", value: pw?.type === "px" ? pw.value : PX_PER_INCH * 4 }));
+        },
+      ));
+      if (pw?.type === "pct") insRow(sec, "Width %", insNumber(Math.round(pw.value), 5, 100, (n) => editor.dispatch(setTablePreferredWidthAtSelectionCmd({ type: "pct", value: Math.min(100, Math.max(5, n)) }))));
+      else if (pw?.type === "px") insRow(sec, "Width (in)", insDecimal(Math.round((pw.value / PX_PER_INCH) * 100) / 100, 0.5, 20, 0.1, (n) => editor.dispatch(setTablePreferredWidthAtSelectionCmd({ type: "px", value: Math.round(n * PX_PER_INCH) }))));
+
+      // Table alignment.
+      const tAlign = table.align ?? "left";
+      insRow(sec, "Align", insToggles((["left", "center", "right"] as const).map((a) => ({
+        label: a.charAt(0).toUpperCase(), title: `Table ${a}`, on: tAlign === a,
+        onClick: () => editor.dispatch(setTableAlignAtSelectionCmd(a)),
+      }))));
+
+      // Table indent from the leading edge.
+      insRow(sec, "Indent (px)", insNumber(Math.round(table.indentPx ?? 0), 0, 400, (n) => editor.dispatch(setTablePropsAtSelectionCmd({ indentPx: n > 0 ? n : null }))));
+    };
+
+    // ---- Object (selected image / shape: size, wrap, align, rotation) --------
+    // Live size/wrap/align/rotation for the object-selected image or drawing shape,
+    // routed to setImageProps / setShapeProps by kind. Fill/stroke/geometry stay on
+    // the object's floating toolbar; the Shape Size & Position dialog remains the
+    // advanced fallback for exact anchor offsets.
+    const applyObject = (patch: { widthPx?: number; heightPx?: number; align?: "left" | "center" | "right"; wrap?: "block" | "square"; rotation?: number }): void => {
+      const id = editor.getSelectedObject();
+      const props = editor.getSelectedObjectProps();
+      if (!id || !props) return;
+      editor.dispatch(props.kind === "shape" ? setShapeProps(id, patch) : setImageProps(id, patch));
+    };
+    const buildObjectSection = (kind: "image" | "shape"): void => {
+      const p = editor.getSelectedObjectProps();
+      if (!p) {
+        insEmpty("Use the object's floating toolbar or right-click menu to work with this selection.");
+        return;
+      }
+      const name = kind === "shape" ? "Shape" : "Image";
+      const summary = `${Math.round(p.widthPx)}×${Math.round(p.heightPx)} · ${p.wrap === "square" ? "Square" : "Inline"} wrap`;
+      const expanded = isExpanded(name);
+      const sec = insSection(name, summary, expanded);
+      if (!expanded) return;
+      insRow(sec, "Size (px)", insPair(
+        insNumber(Math.round(p.widthPx), 8, 4000, (n) => applyObject({ widthPx: Math.max(8, n) })),
+        insNumber(Math.round(p.heightPx), 8, 4000, (n) => applyObject({ heightPx: Math.max(8, n) })),
+      ));
+      insRow(sec, "Wrap", insToggles([
+        { label: "Inline", title: "In line with text", on: p.wrap === "block", onClick: () => applyObject({ wrap: "block" }) },
+        { label: "Float", title: "Float — text wraps around (square)", on: p.wrap === "square", onClick: () => applyObject({ wrap: "square" }) },
+      ]));
+      insRow(sec, "Align", insToggles((["left", "center", "right"] as const).map((a) => ({
+        label: a.charAt(0).toUpperCase(), title: `Align ${a}`, on: p.align === a, onClick: () => applyObject({ align: a }),
+      }))));
+      insRow(sec, "Rotation°", insNumber(Math.round(p.rotation), 0, 359, (n) => applyObject({ rotation: ((Math.round(n) % 360) + 360) % 360 })));
+    };
+
+    const insEmpty = (text: string): void => {
+      const e = el("div", "cw-insp-empty");
+      e.textContent = text;
+      bodyEl.append(e);
+    };
+
+    // --- breadcrumb scope trail + scope-changing selection helpers -----------
+    // Clicking a crumb CHANGES the selection to that scope (via the existing
+    // setSelection primitive), which re-derives the tightest-scope expansion — so
+    // "click Table → whole table selected → Table section expands" falls out.
+    const runsLen = (b: { kind?: string; runs?: { text?: string }[] } | null | undefined): number =>
+      b && b.kind === "paragraph" && b.runs ? b.runs.reduce((n, r) => n + (r.text ? r.text.length : 0), 0) : 0;
+    const firstParaOf = (cell: TableCell | undefined): { id: string } | null =>
+      (cell?.blocks.find((b) => b.kind === "paragraph") as { id: string } | undefined) ?? null;
+    const lastParaOf = (cell: TableCell | undefined): { id: string; kind?: string; runs?: { text?: string }[] } | null => {
+      const ps = cell?.blocks.filter((b) => b.kind === "paragraph") as { id: string; kind?: string; runs?: { text?: string }[] }[] | undefined;
+      return ps && ps.length ? ps[ps.length - 1]! : null;
+    };
+    const selectTable = (table: TableBlock | undefined): void => {
+      if (!table) return;
+      const first = firstParaOf(table.rows[0]?.cells[0]);
+      const lastRow = table.rows[table.rows.length - 1];
+      const last = lastParaOf(lastRow?.cells[(lastRow?.cells.length ?? 1) - 1]);
+      if (!first || !last) return;
+      editor.setSelection({ anchor: { blockId: first.id, offset: 0 }, focus: { blockId: last.id, offset: runsLen(last) } });
+    };
+    const selectCell = (cell: TableCell | undefined): void => {
+      const p = firstParaOf(cell);
+      if (p) editor.setSelection({ anchor: { blockId: p.id, offset: 0 }, focus: { blockId: p.id, offset: 0 } });
+    };
+    const buildBreadcrumb = (
+      scope: "object" | "table" | "text" | "page",
+      f: ReturnType<typeof editor.currentFormat>,
+      doc: Document,
+      loc: ReturnType<typeof locateParagraph> | null,
+    ): void => {
+      const focus = editor.getSelection()?.focus ?? null;
+      const paraBlock = focus ? (paragraphsOf(doc).find((p) => p.id === focus.blockId) ?? null) : null;
+      const crumbs: { label: string; action: (() => void) | null }[] = [];
+      if (scope === "object") {
+        crumbs.push({ label: f.shapeSelected ? "Shape" : "Image", action: null });
+      } else {
+        crumbs.push({ label: "Page", action: () => editor.setSelection(null) });
+        if (scope === "table" && loc?.kind === "cell") {
+          const table = containerListOf(doc, loc.where)[loc.bi] as TableBlock | undefined;
+          crumbs.push({ label: "Table", action: () => selectTable(table) });
+          crumbs.push({ label: "Cell", action: () => selectCell(table?.rows[loc.ri]?.cells[loc.ci]) });
+        }
+        if (paraBlock) {
+          crumbs.push({ label: "Paragraph", action: () => editor.setSelection({ anchor: { blockId: paraBlock.id, offset: 0 }, focus: { blockId: paraBlock.id, offset: runsLen(paraBlock) } }) });
+        }
+        if (focus) crumbs.push({ label: "Text", action: () => editor.setSelection({ anchor: { ...focus }, focus: { ...focus } }) });
+      }
+      const rowEl = el("div", "cw-insp-crumbs");
+      crumbs.forEach((c, i) => {
+        if (i > 0) { const s = el("span", "cw-insp-crumb-sep"); s.textContent = "›"; rowEl.append(s); }
+        const b = el("button", "cw-insp-crumb" + (i === crumbs.length - 1 ? " current" : ""));
+        (b as HTMLButtonElement).type = "button";
+        b.textContent = c.label;
+        if (c.action) {
+          b.addEventListener("mousedown", (e) => e.preventDefault());
+          b.addEventListener("click", () => { c.action?.(); editor.focus(); });
+        }
+        rowEl.append(b);
+      });
+      bodyEl.append(rowEl);
+    };
+
+    let inspOpen = false;
+    const rebuild = (): void => {
+      bodyEl.textContent = "";
+      const f = editor.currentFormat();
+      const doc = editor.getDocument();
+      const sel = editor.getSelection();
+      const loc = sel ? locateParagraph(doc, sel.focus.blockId) : null;
+      // Tightest scope the selection addresses (drives default expansion + the
+      // breadcrumb). Table wins over text for a caret in a cell, per the IA spec.
+      const scope: "object" | "table" | "text" | "page" =
+        f.imageSelected || f.shapeSelected ? "object" : f.inTable ? "table" : sel ? "text" : "page";
+      tightestSection = scope === "object" ? (f.shapeSelected ? "Shape" : "Image")
+        : scope === "table" ? "Table" : scope === "text" ? "Text" : "Page";
+      title.textContent = scope === "object" ? (f.shapeSelected ? "Shape" : "Image") : "Inspector";
+      buildBreadcrumb(scope, f, doc, loc);
+      if (scope === "object") { buildObjectSection(f.shapeSelected ? "shape" : "image"); return; }
+      // Sections outer → inner: Page, Table, Paragraph, Text (only applicable ones).
+      buildPageSection();
+      if (scope === "table") buildTableSection();
+      if (scope === "text" || scope === "table") { buildParagraphSection(f); buildTextSection(f); }
+    };
+    refreshInspector = (): void => {
+      if (!inspOpen) return;
+      // Don't clobber a field the user is mid-edit in; toggle buttons rebuild fine.
+      const ae = document.activeElement;
+      if (ae && inspectorEl.contains(ae) && (ae.tagName === "INPUT" || ae.tagName === "SELECT")) return;
+      rebuild();
+    };
+    const setInspectorOpen = (v: boolean): void => {
+      inspOpen = v;
+      inspectorEl.classList.toggle("open", v);
+      inspectorBtn.classList.toggle("active", v);
+      if (v) rebuild();
+    };
+    toggleInspector = (): void => setInspectorOpen(!inspOpen);
+    // Closed by default; opened via the Inspector header button.
+  }
+
   // Collapse / expand the ribbon body (keeps the tab strip). A pinned chevron
   // on the right of the tab strip toggles it; clicking any tab re-pins.
   const collapseBtn = el("button", "rib-tab");
@@ -2995,7 +4446,7 @@ if (toolbar) {
     }
   }, { signal: teardown.signal });
   setCollapsed(false);
-  tabsBar.appendChild(collapseBtn);
+  identRow.appendChild(collapseBtn); // identity row, far right (after the mode controls)
 
   // ===== customizeRibbon: reorder/remove built-ins + add custom tabs/buttons ===
   if (runtime.customizeRibbon) {
@@ -3033,6 +4484,7 @@ if (toolbar) {
         b.appendChild(s);
       }
       if (spec.tooltip) b.title = spec.tooltip;
+      b.setAttribute("aria-label", spec.tooltip || spec.label || spec.id); // accessible name for custom buttons
       b.dataset["ribbonItem"] = spec.id;
       b.addEventListener("mousedown", (e) => e.preventDefault());
       b.addEventListener("click", () => {
@@ -3147,6 +4599,22 @@ if (toolbar) {
     // (wired to editor onChange + the initial sync below).
   }
 
+  // Fit-to-width zoom: the largest zoom (≤100%) at which the page fits the scroll
+  // area's width. Only shrinks — a page that already fits stays at 100% (R2).
+  const fitWidthZoom = (): number => {
+    const pageW = editor.getDocument().section.pageWidthPx;
+    const avail = app.clientWidth - 40; // small gutter + scrollbar allowance
+    if (pageW <= 0 || avail <= 0) return editor.getZoom();
+    return Math.max(0.3, Math.min(1, avail / pageW));
+  };
+  const applyFitWidth = (): void => {
+    const z = fitWidthZoom();
+    if (Math.abs(z - editor.getZoom()) < 0.005) return;
+    applyingFit = true;
+    editor.setZoom(z);
+    applyingFit = false;
+  };
+
   // Container-width-driven compact ribbon: when the EDITOR itself is narrow (not
   // just the viewport — so it also works embedded in a narrow pane on a wide page),
   // switch the body to a dense, single horizontally-scrollable row. Mirrors the
@@ -3154,20 +4622,208 @@ if (toolbar) {
   if (typeof ResizeObserver !== "undefined") {
     const COMPACT_ON = 720;
     const COMPACT_OFF = 760;
-    const applyCompact = (w: number): void => {
+    // Below this the outline pane + a 100%-zoom page no longer fit side by side.
+    const COLLAPSE_ON = 1000;
+    const COLLAPSE_OFF = 1120;
+    applyResponsive = (w: number): void => {
+      // Compact ribbon (existing hysteresis).
       const on = toolbar.classList.contains("compact");
       if (!on && w < COMPACT_ON) toolbar.classList.add("compact");
       else if (on && w >= COMPACT_OFF) toolbar.classList.remove("compact");
+      // Auto-collapse the outline when it and the page can't share the width
+      // (R1/R4). Remembered, so it reopens once there's room — unless the user
+      // toggled it manually in between (which clears the flag).
+      if (w < COLLAPSE_ON && isOutlineOpen() && !autoCollapsedOutline) {
+        autoCollapsedOutline = true;
+        setOutlineOpen(false);
+      } else if (w >= COLLAPSE_OFF && autoCollapsedOutline) {
+        autoCollapsedOutline = false;
+        setOutlineOpen(true);
+      }
+      // Keep the page fit-to-width while in auto-fit mode (R2).
+      if (autoFit) applyFitWidth();
+      // Tab-strip overflow indicator (R3).
+      tabOverflowBtn.style.display = tabScroll.scrollWidth > tabScroll.clientWidth + 2 ? "" : "none";
     };
     compactRO = new ResizeObserver((entries) => {
-      for (const e of entries) applyCompact(e.contentRect.width);
+      for (const e of entries) applyResponsive(e.contentRect.width);
     });
     compactRO.observe(shell.root);
+    // Initial fit-width: default the zoom to fit the page when the viewport can't
+    // hold it at 100% and the embedder didn't pin a zoom (R2).
+    if (runtime.view?.zoom == null && fitWidthZoom() < 1) {
+      autoFit = true;
+      applyFitWidth();
+    }
+    applyResponsive(shell.root.getBoundingClientRect().width);
   }
 
   showTab("home");
   // After showTab (which re-pins), honor the embedder's initial collapsed choice.
   if (runtime.view?.ribbonCollapsed) setCollapsed(true);
+
+  // ---- Command palette (Ctrl/Cmd+K) — every ribbon command reachable by name.
+  // Gathers the live ribbon controls (enabled buttons only) plus any embedder
+  // commands, so all ~145 actions are one keystroke away (critique Move 1).
+  const gatherPaletteCommands = (): PaletteCommand[] => {
+    const out: PaletteCommand[] = [];
+    const seen = new Set<string>();
+    for (const [id, item] of ribItemsById) {
+      const el = item.el;
+      if (!(el instanceof HTMLButtonElement) || el.disabled) continue;
+      const label = (el.title || el.textContent || "").trim();
+      if (!label) continue;
+      if (seen.has(label)) continue; // the same command often sits on two tabs
+      seen.add(label);
+      const tabId = ribGroupsById.get(item.groupId)?.tabId;
+      const hint = (tabId ? ribTabsById.get(tabId)?.btn.textContent : "") ?? "";
+      out.push({ id, label, hint, run: () => el.click() });
+    }
+    for (const [id, cmd] of commandRegistry) out.push({ id, label: cmd.label ?? id, hint: "Command", run: () => runRegisteredCommand(id) });
+    out.sort((a, b) => a.label.localeCompare(b.label));
+    return out;
+  };
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || !keyMatches("k", e)) return;
+      e.preventDefault();
+      showCommandPalette(gatherPaletteCommands());
+    },
+    { signal: teardown.signal },
+  );
+
+  // ---- Chrome preset: ribbon | minimal (Move 1 / FIX 2b) ------------------
+  // `minimal` demotes the ribbon to a quiet ~44px command bar: hide the ribbon body,
+  // tab strip and collapse chevron (identity/save, quick-access and Inspector/Review
+  // clusters stay) and show a compact command cluster — style picker, the six core
+  // formatting commands, an insert ＋ menu, and a ⋯ overflow that opens the palette.
+  // Everything else reaches the user through the contextual bar, the Inspector and the
+  // palette. The full ribbon is ALWAYS built (all command wiring, popovers, syncToolbar
+  // state stay live) and so is this minibar — the preset is a pure show/hide skin swap.
+  // That is exactly why it can be switched at RUNTIME (File ▸ Settings, FIX 2b) without
+  // touching the editor core: caret/selection, undo history, open Navigator/Inspector
+  // panels + their expanded sections, scroll and zoom all live outside the toolbar and
+  // are left untouched — applyChrome only flips `display` on chrome elements.
+  {
+    const bar = el("div", "cw-minibar");
+
+    const styleSel = document.createElement("select");
+    styleSel.className = "cw-minibar-style";
+    styleSel.title = "Paragraph / character style";
+    styleSel.setAttribute("aria-label", "Style");
+    const fillStyleOptions = (): void => {
+      const cur = styleSel.value;
+      styleSel.textContent = "";
+      for (const s of stylesheet().styles) {
+        const o = document.createElement("option");
+        o.value = s.id;
+        o.textContent = s.name;
+        styleSel.appendChild(o);
+      }
+      if (cur) styleSel.value = cur;
+    };
+    fillStyleOptions();
+    styleSel.addEventListener("mousedown", () => fillStyleOptions()); // stay fresh after an import swaps the stylesheet
+    styleSel.addEventListener("change", () => {
+      const id = styleSel.value;
+      const st = styleById(stylesheet(), id);
+      editor.dispatch(st && styleType(st) === "character" ? applyCharStyle(id) : applyNamedStyle(id));
+      editor.focus();
+    });
+    bar.appendChild(styleSel);
+    bar.appendChild(el("span", "cw-minibar-sep"));
+
+    const glyphBtn = (html: string, title: string, onClick: () => void): HTMLButtonElement => {
+      const b = el("button", "cw-minibar-btn");
+      b.innerHTML = html;
+      b.title = title;
+      b.setAttribute("aria-label", title);
+      b.addEventListener("mousedown", (ev) => ev.preventDefault());
+      b.addEventListener("click", () => { onClick(); editor.focus(); refreshMinimalBar(); });
+      bar.appendChild(b);
+      return b;
+    };
+    const bBold = glyphBtn(`<span style="font-weight:800">B</span>`, "Bold (Ctrl+B)", () => editor.toggleStyle("bold"));
+    const bItalic = glyphBtn(`<span style="font-style:italic;font-weight:600">I</span>`, "Italic (Ctrl+I)", () => editor.toggleStyle("italic"));
+    const bUnder = glyphBtn(`<span style="text-decoration:underline;font-weight:600">U</span>`, "Underline (Ctrl+U)", () => editor.toggleStyle("underline"));
+    const bStrike = glyphBtn(`<span style="text-decoration:line-through;font-weight:600">S</span>`, "Strikethrough", () => editor.toggleStyle("strikethrough"));
+    const bBullet = glyphBtn(ICONS.bullets, "Bulleted list", () => editor.dispatch(toggleList("bullet")));
+    const bNumber = glyphBtn(ICONS.numbering, "Numbered list", () => editor.dispatch(toggleList("decimal")));
+    bar.appendChild(el("span", "cw-minibar-sep"));
+
+    const insertBtn = el("button", "cw-minibar-btn cw-minibar-insert");
+    insertBtn.innerHTML = `<span style="font-size:17px;line-height:1">＋</span>`;
+    insertBtn.title = "Insert";
+    insertBtn.setAttribute("aria-label", "Insert");
+    insertBtn.addEventListener("mousedown", (ev) => ev.preventDefault());
+    insertBtn.addEventListener("click", () => {
+      const r = insertBtn.getBoundingClientRect();
+      const entries: MenuEntry[] = [
+        { kind: "item", label: "Table", onClick: () => editor.dispatch(insertTable(3, 3)) },
+        { kind: "item", label: "Picture…", onClick: () => pickAndInsertImage() },
+        { kind: "item", label: "Page break", onClick: () => editor.dispatch(insertPageBreak()) },
+        { kind: "item", label: "Table of contents", onClick: () => editor.dispatch(insertTocCmd()) },
+        { kind: "item", label: "Footnote", onClick: () => editor.dispatch(insertFootnoteCmd()) },
+        { kind: "sep" },
+        { kind: "item", label: "More commands…", onClick: () => showCommandPalette(gatherPaletteCommands()) },
+      ];
+      showContextMenu(r.left, r.bottom + 2, entries);
+    });
+    bar.appendChild(insertBtn);
+
+    const moreBtn = el("button", "cw-minibar-btn");
+    moreBtn.innerHTML = `<span style="font-size:18px;line-height:1">⋯</span>`;
+    moreBtn.title = "More commands (Ctrl+K)";
+    moreBtn.setAttribute("aria-label", "More commands");
+    moreBtn.addEventListener("mousedown", (ev) => ev.preventDefault());
+    moreBtn.addEventListener("click", () => showCommandPalette(gatherPaletteCommands()));
+    bar.appendChild(moreBtn);
+
+    identRow.insertBefore(bar, headerReview); // between quick-access and the mode controls
+
+    refreshMinimalBar = (): void => {
+      const f = editor.currentFormat();
+      bBold.classList.toggle("on", f.bold);
+      bItalic.classList.toggle("on", f.italic);
+      bUnder.classList.toggle("on", f.underline);
+      bStrike.classList.toggle("on", f.strikethrough);
+      bBullet.classList.toggle("on", f.listKind === "bullet");
+      bNumber.classList.toggle("on", f.listKind === "number");
+      if (f.styleId && Array.from(styleSel.options).some((o) => o.value === f.styleId)) styleSel.value = f.styleId;
+    };
+
+    // Apply / swap the preset by show/hide only — nothing is rebuilt, so switching at
+    // runtime preserves all editor state (caret, undo, panels, scroll, zoom, dirty).
+    const CHROME_PREF_KEY = "cw:pref:chrome";
+    let currentChrome: ChromePreset = config.chrome;
+    const applyChrome = (preset: ChromePreset): void => {
+      const minimal = preset === "minimal";
+      toolbar.classList.toggle("cw-chrome-minimal", minimal);
+      // "" (not a fixed value) so the ribbon's `.collapsed` rule still governs the body.
+      bodies.style.display = minimal ? "none" : "";
+      tabScroll.style.display = minimal ? "none" : "";
+      collapseBtn.style.display = minimal ? "none" : "";
+      tabsBar.style.display = minimal ? "none" : ""; // row 2 (tabs) is empty in minimal
+      bar.style.display = minimal ? "" : "none";
+      if (minimal) { tabOverflowBtn.style.display = "none"; refreshMinimalBar(); }
+      currentChrome = preset;
+      // Recompute width-driven state (tab-overflow indicator, compact) for the new layout.
+      applyResponsive(shell.root.getBoundingClientRect().width);
+    };
+    getChromePref = (): ChromePreset => currentChrome;
+    const chromePaneOn = config.settings.enabled && config.settings.chrome;
+    setChromePref = (preset: ChromePreset): void => {
+      if (preset === currentChrome) return;
+      applyChrome(preset);
+      if (chromePaneOn) writePref(CHROME_PREF_KEY, preset);
+      editor.focus();
+    };
+    // Initial preset: a persisted user choice (when the Chrome pane is available)
+    // overrides the embedder's `chrome` default; a hidden pane hands control back to it.
+    const persistedChrome = chromePaneOn ? readPref(CHROME_PREF_KEY, ["ribbon", "minimal"] as const) : null;
+    applyChrome(persistedChrome ?? config.chrome);
+  }
 
   // ---- toolbar controls mirror the caret formatting -----------------------
   let lastStylesheet = editor.getDocument().stylesheet ?? null;
@@ -3207,7 +4863,17 @@ if (toolbar) {
     for (const e of enableButtons) {
       const on = e.enabled(f);
       e.el.disabled = !on;
-      e.el.title = on || !e.hint ? e.title : `${e.title} — ${e.hint}`;
+      const t = on || !e.hint ? e.title : `${e.title} — ${e.hint}`;
+      e.el.title = t;
+      e.el.setAttribute("aria-label", t); // keep the accessible name in step with the tooltip
+    }
+    syncQat(); // grey the quick-access undo/redo to match the stack
+    // Reveal/hide contextual tabs by selection; if the active tab just hid, fall
+    // back to Home so the user is never stranded on an invisible tab.
+    for (const ct of contextualTabs) {
+      const show = ct.pred(f);
+      ct.btn.style.display = show ? "" : "none";
+      if (!show && ct.btn.classList.contains("active")) showTab("home");
     }
   };
 
@@ -3859,12 +5525,9 @@ if (!readonly) {
   );
 
   // Empty-paragraph insert menu (priority 16) — Notion-style ＋ on an empty line.
-  manager.register(
-    createInsertMenuToolbar({
-      onEmptyParagraph: () => editor.caretInEmptyParagraph(),
-      anchorRect: () => editor.getSelectionAnchorRect(),
-      openMenu: (anchorEl) => {
-        const r = anchorEl.getBoundingClientRect();
+  // Reusable so both the ＋ chip and the "/" keyboard shortcut (S4) open it.
+  const openInsertMenuAt = (clientX: number, clientY: number): void => {
+    {
         const insert = (cmd: Command): (() => void) => () => dispatchFocus(cmd);
         const entries: MenuEntry[] = [
           { kind: "item", label: "Heading 1", onClick: insert(applyNamedStyle("Heading1")) },
@@ -3899,10 +5562,32 @@ if (!readonly) {
             ],
           },
         ];
-        showContextMenu(r.left, r.bottom + 2, entries);
+        showContextMenu(clientX, clientY, entries);
+    }
+  };
+  manager.register(
+    createInsertMenuToolbar({
+      onEmptyParagraph: () => editor.caretInEmptyParagraph(),
+      anchorRect: () => editor.getSelectionAnchorRect(),
+      openMenu: (anchorEl) => {
+        const r = anchorEl.getBoundingClientRect();
+        openInsertMenuAt(r.left, r.bottom + 2);
       },
     }),
   );
+
+  // "/" at the start of an empty paragraph opens the block inserter — the keyboard
+  // door into the ＋ Insert menu (S4). Skipped while a form control (filter box,
+  // dialog input) has focus so it never hijacks a literal slash typed there.
+  app.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT")) return;
+    if (!editor.caretInEmptyParagraph()) return;
+    e.preventDefault();
+    const r = editor.getSelectionAnchorRect();
+    if (r) openInsertMenuAt(r.left, r.top + r.height + 4);
+  });
 
   for (const spec of config.contextToolbars) {
     manager.register(createCustomContextToolbar(spec, { context: buildContext, runButton: runCustomButton }));
@@ -3927,6 +5612,7 @@ if (!readonly) {
   const mkInput = (placeholder: string, width: number): HTMLInputElement => {
     const i = document.createElement("input");
     i.placeholder = placeholder;
+    i.setAttribute("aria-label", placeholder); // the field had no accessible name (L6)
     i.style.cssText = `width:${width}px;height:24px;border:1px solid #dadce0;border-radius:4px;padding:0 6px;font-size:13px;`;
     bar.appendChild(i);
     return i;
@@ -3944,9 +5630,11 @@ if (!readonly) {
   const counter = document.createElement("span");
   counter.style.cssText = "color:#80868b;min-width:40px;text-align:center;";
   counter.textContent = "";
+  counter.setAttribute("aria-live", "polite"); // announce the match count to AT (L6)
+  counter.setAttribute("aria-label", "Match count");
   bar.appendChild(counter);
   const update = (s: { index: number; total: number }): void => {
-    counter.textContent = s.total > 0 ? `${s.index}/${s.total}` : findInput.value ? "0/0" : "";
+    counter.textContent = s.total > 0 ? `${s.index}/${s.total}` : findInput.value ? "No matches" : "";
   };
   // Match-case / whole-word toggles (editor.search already accepts these).
   let matchCase = false;
@@ -3958,9 +5646,11 @@ if (!readonly) {
     const b = document.createElement("button");
     b.textContent = label;
     b.title = title;
+    b.setAttribute("aria-label", title); // a real name, not just the "Aa"/"W" glyph (L6)
     b.style.cssText = "height:24px;min-width:26px;border:1px solid transparent;border-radius:4px;background:transparent;cursor:pointer;font-size:13px;font-weight:600;";
     const paint = (): void => {
       const on = get();
+      b.setAttribute("aria-pressed", String(on)); // it's a toggle — expose its state
       b.style.background = on ? "#cfe3fb" : "transparent";
       b.style.borderColor = on ? "#b3d3f5" : "transparent";
       b.style.color = on ? "#0b57d0" : "#3c4043";
@@ -3975,7 +5665,7 @@ if (!readonly) {
     bar.appendChild(b);
   };
   optBtn("Aa", "Match case", () => matchCase, (v) => (matchCase = v));
-  optBtn("⌈W⌋", "Match whole word only", () => wholeWord, (v) => (wholeWord = v));
+  optBtn("W", "Match whole word only", () => wholeWord, (v) => (wholeWord = v));
   mkBtn("‹", "Previous (Shift+Enter)", () => update(editor.searchNav(-1)));
   mkBtn("›", "Next (Enter)", () => update(editor.searchNav(1)));
   // Replace is an edit — only in editable mode. Find/navigate stay for the viewer.
@@ -3988,9 +5678,12 @@ if (!readonly) {
       counter.textContent += ` (${n} replaced)`;
     });
   }
+  let findSurface: SurfaceHandle | null = null;
   const close = (): void => {
     bar.style.display = "none";
     editor.searchClear();
+    findSurface?.release();
+    findSurface = null;
     editor.focus();
   };
   mkBtn("×", "Close (Esc)", close);
@@ -3998,10 +5691,14 @@ if (!readonly) {
   detachables.push(bar);
 
   openFind = (): void => {
+    const wasOpen = bar.style.display === "flex";
     bar.style.display = "flex";
     findInput.select();
     findInput.focus();
     reSearch();
+    // Register with the surface manager so the bar stacks ABOVE any open dialog
+    // (it used to be z-index 10, behind them) and shares the one Escape handler.
+    if (!wasOpen) findSurface = openSurface({ el: bar, close, kind: "overlay" });
   };
 
   findInput.addEventListener("input", reSearch);
@@ -4009,14 +5706,12 @@ if (!readonly) {
     if (ev.key === "Enter") {
       update(editor.searchNav(ev.shiftKey ? -1 : 1));
       ev.preventDefault();
-    } else if (ev.key === "Escape") {
-      close();
-      ev.preventDefault();
     }
+    // Escape is handled centrally by the surface manager (closes the topmost).
     ev.stopPropagation(); // typing in the bar never reaches the editor keymap
   });
   window.addEventListener("keydown", (ev) => {
-    if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "f") {
+    if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && keyMatches("f", ev)) { // !altKey: AltGr is Ctrl+Alt
       ev.preventDefault();
       openFind();
     }

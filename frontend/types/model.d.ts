@@ -454,7 +454,10 @@ export type FieldSpec =
   | { type: "NUMPAGES"; numFmt?: PageNumFmt }
   | { type: "DATE"; format: string }
   | { type: "TIME"; format: string }
-  | { type: "IF"; operandA: string; op: IfOp; operandB: string; trueRuns: Run[]; falseRuns: Run[] };
+  | { type: "IF"; operandA: string; op: IfOp; operandB: string; trueRuns: Run[]; falseRuns: Run[] }
+  /** A cross-reference to a bookmark: REF shows the bookmarked text, PAGEREF its page. */
+  | { type: "REF"; bookmark: string }
+  | { type: "PAGEREF"; bookmark: string };
 
 /** A generic OOXML field tracked in the model (custom host-resolved + built-in).
  *  Its result is the blocks/runs carrying its `id` as `fieldId`. */

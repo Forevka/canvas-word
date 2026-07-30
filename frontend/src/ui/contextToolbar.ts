@@ -63,8 +63,8 @@ export interface FloatingBarOptions {
   className: string;
   /** aria-label; also sets role="toolbar" when present. */
   ariaLabel?: string;
-  /** Placement overrides passed to placeSelectionBar (gap/margin/topGuard). */
-  place?: { gap?: number; margin?: number; topGuard?: number };
+  /** Placement overrides passed to placeSelectionBar (gap/margin/topGuard/mode). */
+  place?: { gap?: number; margin?: number; topGuard?: number; mode?: "above" | "gutter" };
 }
 
 export function createFloatingBar(opts: FloatingBarOptions): FloatingBar {

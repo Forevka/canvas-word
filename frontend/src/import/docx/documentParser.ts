@@ -334,7 +334,7 @@ interface FieldState {
 
 /** Built-in inline fields the editor models as field objects (PAGE/NUMPAGES emit a
  *  {page}/{pages} token; DATE/TIME/IF keep their materialized cached result). */
-const BUILTIN_INLINE = new Set(["PAGE", "NUMPAGES", "DATE", "TIME", "IF"]);
+const BUILTIN_INLINE = new Set(["PAGE", "NUMPAGES", "DATE", "TIME", "IF", "REF", "PAGEREF"]);
 /** Placeholder style for an IF spec's true/false runs parsed from the instruction
  *  (their text round-trips; the displayed result keeps its own resolved style). */
 const FIELD_SPEC_STYLE: CharStyle = { fontFamily: "", fontSizePx: 16, bold: false, italic: false, underline: false, strikethrough: false, color: "#000000" };
@@ -633,7 +633,14 @@ function handleFldChar(
         const parsed = parseFieldInstruction(field.instr);
         if (BUILTIN_INLINE.has(parsed.name)) {
           const spec = parseFieldSpec(parsed, FIELD_SPEC_STYLE);
-          if (spec) {
+          // A TOC entry's PAGEREF/REF (auto `_Toc…` anchor) belongs to the
+          // tocEntry/pagerefAnchor path below — capturing it as a cross-reference
+          // field would freeze the TOC into un-regenerable frozen references.
+          // Matched on the generated form only (`_Toc` + digits, which is what both
+          // Word and generateTocDocx emit): a bare `_Toc` prefix would also swallow
+          // a hand-made bookmark like `_TocNotes` and strip its editable field.
+          const isTocAnchor = spec !== undefined && (spec.type === "REF" || spec.type === "PAGEREF") && /^_Toc\d+$/i.test(spec.bookmark);
+          if (spec && !isTocAnchor) {
             const fid = `field${ft.next.n++}`;
             ft.registry[fid] = { id: fid, instruction: field.instr, name: parsed.name, kind: "builtin", spec };
             if (spec.type === "PAGE" || spec.type === "NUMPAGES") {

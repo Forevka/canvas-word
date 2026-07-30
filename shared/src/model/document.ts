@@ -948,7 +948,11 @@ export type FieldSpec =
   | { type: "NUMPAGES"; numFmt?: PageNumFmt }
   | { type: "DATE"; format: string }
   | { type: "TIME"; format: string }
-  | { type: "IF"; operandA: string; op: IfOp; operandB: string; trueRuns: Run[]; falseRuns: Run[] };
+  | { type: "IF"; operandA: string; op: IfOp; operandB: string; trueRuns: Run[]; falseRuns: Run[] }
+  /** A cross-reference to a bookmark: REF shows the bookmarked text, PAGEREF its
+   *  page number. `bookmark` is the target name (also a `#`-anchor link target). */
+  | { type: "REF"; bookmark: string }
+  | { type: "PAGEREF"; bookmark: string };
 
 /** A generic OOXML field tracked in the model: its verbatim instruction plus a
  *  classification. CUSTOM (host-resolvable) fields and the BUILT-IN fields the
